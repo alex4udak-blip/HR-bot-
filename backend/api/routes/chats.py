@@ -2,10 +2,12 @@ from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, distinct
+from sqlalchemy.orm import selectinload
 
 from ..database import get_db
 from ..models.database import User, UserRole, Chat, Message, ChatCriteria
 from ..models.schemas import ChatResponse, ChatUpdate, ChatTypeConfig
+from ..services.auth import get_current_user
 from ..services.chat_types import (
     get_all_chat_types, get_chat_type_config, get_quick_actions,
     get_suggested_questions, get_default_criteria
@@ -47,13 +49,14 @@ async def get_chat_type_details(type_id: str):
 @router.get("", response_model=List[ChatResponse])
 async def get_chats(
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(__import__('api.services.auth', fromlist=['get_current_user']).get_current_user),
+    user: User = Depends(get_current_user),
     search: str = Query(None),
     chat_type: str = Query(None, description="Filter by chat type"),
 ):
-    from ..services.auth import get_current_user
+    # Merge detached user into current session
+    user = await db.merge(user)
 
-    query = select(Chat)
+    query = select(Chat).options(selectinload(Chat.owner))
     if user.role != UserRole.SUPERADMIN:
         query = query.where(Chat.owner_id == user.id)
     if search:
@@ -102,11 +105,13 @@ async def get_chats(
 async def get_chat(
     chat_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(__import__('api.services.auth', fromlist=['get_current_user']).get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    from ..services.auth import get_current_user
+    user = await db.merge(user)
 
-    result = await db.execute(select(Chat).where(Chat.id == chat_id))
+    result = await db.execute(
+        select(Chat).options(selectinload(Chat.owner)).where(Chat.id == chat_id)
+    )
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
@@ -147,12 +152,14 @@ async def update_chat(
     chat_id: int,
     data: ChatUpdate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(__import__('api.services.auth', fromlist=['get_current_user']).get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    from ..services.auth import get_current_user
     from ..models.database import ChatType
+    user = await db.merge(user)
 
-    result = await db.execute(select(Chat).where(Chat.id == chat_id))
+    result = await db.execute(
+        select(Chat).options(selectinload(Chat.owner)).where(Chat.id == chat_id)
+    )
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
@@ -201,9 +208,9 @@ async def update_chat(
 async def clear_messages(
     chat_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(__import__('api.services.auth', fromlist=['get_current_user']).get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    from ..services.auth import get_current_user
+    user = await db.merge(user)
 
     result = await db.execute(select(Chat).where(Chat.id == chat_id))
     chat = result.scalar_one_or_none()

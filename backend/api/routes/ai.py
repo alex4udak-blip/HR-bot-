@@ -51,6 +51,7 @@ async def ai_message(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    user = await db.merge(user)
     chat, messages, criteria = await get_chat_context(db, chat_id)
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
@@ -144,6 +145,7 @@ async def get_ai_history(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    user = await db.merge(user)
     result = await db.execute(select(Chat).where(Chat.id == chat_id))
     chat = result.scalar_one_or_none()
     if not chat:
@@ -180,6 +182,7 @@ async def clear_ai_history(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    user = await db.merge(user)
     result = await db.execute(
         select(AIConversation).where(
             AIConversation.chat_id == chat_id,
@@ -200,6 +203,7 @@ async def analyze_chat(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    user = await db.merge(user)
     chat, messages, criteria = await get_chat_context(db, chat_id)
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
@@ -238,6 +242,7 @@ async def get_analysis_history(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    user = await db.merge(user)
     result = await db.execute(select(Chat).where(Chat.id == chat_id))
     chat = result.scalar_one_or_none()
     if not chat:
@@ -268,6 +273,7 @@ async def generate_report_file(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    user = await db.merge(user)
     chat, messages, criteria = await get_chat_context(db, chat_id)
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
