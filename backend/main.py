@@ -42,14 +42,15 @@ async def init_database():
     from api.models.database import Base
     from api.services.auth import create_superadmin_if_not_exists
 
-    # Check if we should reset the database schema
-    reset_schema = os.environ.get("RESET_DB_SCHEMA", "false").lower() == "true"
+    # Force reset database schema to fix column mismatches
+    # Set KEEP_DB_DATA=true in Railway to preserve data after first successful deploy
+    force_reset = os.environ.get("KEEP_DB_DATA", "false").lower() != "true"
 
-    # Create database tables with retry
     for attempt in range(5):
         try:
             async with engine.begin() as conn:
-                if reset_schema:
+                if force_reset:
+                    # Drop all tables and recreate with correct schema
                     await conn.run_sync(Base.metadata.drop_all)
                 await conn.run_sync(Base.metadata.create_all)
 
@@ -57,20 +58,7 @@ async def init_database():
             async with AsyncSessionLocal() as db:
                 await create_superadmin_if_not_exists(db)
             return
-        except Exception as e:
-            if "does not exist" in str(e) and not reset_schema:
-                # Schema mismatch detected - force reset
-                try:
-                    async with engine.begin() as conn:
-                        await conn.run_sync(Base.metadata.drop_all)
-                        await conn.run_sync(Base.metadata.create_all)
-
-                    # Create superadmin
-                    async with AsyncSessionLocal() as db:
-                        await create_superadmin_if_not_exists(db)
-                    return
-                except Exception:
-                    pass
+        except Exception:
             await asyncio.sleep(3)
 
 
