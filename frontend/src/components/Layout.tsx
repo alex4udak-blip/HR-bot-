@@ -38,7 +38,7 @@ export default function Layout() {
       <aside className="hidden lg:flex flex-col w-64 glass border-r border-white/5">
         <div className="p-6 border-b border-white/5">
           <h1 className="text-xl font-bold bg-gradient-to-r from-accent-400 to-accent-600 bg-clip-text text-transparent">
-            HR Аналитика
+            Чат Аналитика
           </h1>
         </div>
 
@@ -87,7 +87,7 @@ export default function Layout() {
       {/* Mobile Header */}
       <header className="lg:hidden glass border-b border-white/5 px-4 py-3 flex items-center justify-between">
         <h1 className="text-lg font-bold bg-gradient-to-r from-accent-400 to-accent-600 bg-clip-text text-transparent">
-          HR Analyzer
+          Чат Аналитика
         </h1>
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

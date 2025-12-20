@@ -124,51 +124,93 @@ body {
 }
 
 /* ============================================
-   AURORA EFFECT
+   AURORA EFFECT - EXTENDED RAYS
    ============================================ */
 .aurora {
   position: fixed;
-  inset: 0;
+  inset: -50%;
+  width: 200%;
+  height: 200%;
   z-index: -2;
   overflow: hidden;
-  opacity: 0.7;
+  opacity: 0.6;
   mix-blend-mode: screen;
+  filter: blur(60px);
 }
 
 .aurora::before,
 .aurora::after {
   content: '';
   position: absolute;
-  width: 150%;
-  height: 150%;
+  width: 200%;
+  height: 200%;
   background: conic-gradient(
     from 0deg at 50% 50%,
     transparent 0deg,
-    rgba(12, 165, 235, 0.2) 60deg,
+    rgba(12, 165, 235, 0.08) 20deg,
+    rgba(12, 165, 235, 0.2) 45deg,
+    rgba(12, 165, 235, 0.08) 70deg,
+    transparent 90deg,
     transparent 120deg,
-    rgba(139, 92, 246, 0.15) 180deg,
+    rgba(139, 92, 246, 0.06) 140deg,
+    rgba(139, 92, 246, 0.15) 165deg,
+    rgba(139, 92, 246, 0.06) 190deg,
+    transparent 210deg,
     transparent 240deg,
-    rgba(6, 182, 212, 0.18) 300deg,
+    rgba(6, 182, 212, 0.07) 260deg,
+    rgba(6, 182, 212, 0.18) 285deg,
+    rgba(6, 182, 212, 0.07) 310deg,
+    transparent 330deg,
     transparent 360deg
   );
-  animation: auroraRotate 30s linear infinite;
+  animation: auroraRotate 45s linear infinite;
 }
 
 .aurora::before {
-  top: -25%;
-  left: -25%;
+  top: -50%;
+  left: -50%;
 }
 
 .aurora::after {
-  bottom: -25%;
-  right: -25%;
+  bottom: -50%;
+  right: -50%;
   animation-direction: reverse;
-  animation-duration: 40s;
+  animation-duration: 60s;
+  opacity: 0.8;
 }
 
 @keyframes auroraRotate {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+/* Light rays effect */
+.light-rays {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.light-rays::before {
+  content: '';
+  position: absolute;
+  top: -100%;
+  left: 50%;
+  width: 200%;
+  height: 300%;
+  transform: translateX(-50%);
+  background:
+    linear-gradient(45deg, transparent 40%, rgba(12, 165, 235, 0.06) 48%, rgba(12, 165, 235, 0.12) 50%, rgba(12, 165, 235, 0.06) 52%, transparent 60%),
+    linear-gradient(135deg, transparent 40%, rgba(139, 92, 246, 0.05) 48%, rgba(139, 92, 246, 0.1) 50%, rgba(139, 92, 246, 0.05) 52%, transparent 60%),
+    linear-gradient(90deg, transparent 42%, rgba(6, 182, 212, 0.04) 49%, rgba(6, 182, 212, 0.08) 50%, rgba(6, 182, 212, 0.04) 51%, transparent 58%);
+  animation: raysPulse 8s ease-in-out infinite;
+}
+
+@keyframes raysPulse {
+  0%, 100% { opacity: 0.5; transform: translateX(-50%) scale(1); }
+  50% { opacity: 0.8; transform: translateX(-50%) scale(1.05); }
 }
 
 /* ============================================

@@ -290,10 +290,13 @@ async def cmd_start(message: types.Message):
         return
 
     await message.answer(
-        "HR Candidate Analyzer Bot\n\n"
-        "Добавьте меня в группу для сбора сообщений кандидатов.\n"
-        "Используйте веб-панель для анализа и управления.\n\n"
-        "Для привязки аккаунта используйте команду /bind <email>"
+        "🤖 Чат Аналитика\n\n"
+        "Добавьте меня в группу для анализа сообщений.\n"
+        "Используйте веб-панель для просмотра аналитики.\n\n"
+        "📋 Команды:\n"
+        "/bind <email> — привязать аккаунт\n"
+        "/settype — установить тип чата (в группе)\n"
+        "/chats — список ваших чатов"
     )
 
 
@@ -366,6 +369,73 @@ async def cmd_chats(message: types.Message):
             text += f"• {chat.custom_name or chat.title}\n"
 
         await message.answer(text)
+
+
+# Available chat types
+CHAT_TYPES = {
+    'work': 'Рабочий чат',
+    'hr': 'HR / Кандидаты',
+    'project': 'Проект',
+    'client': 'Клиент',
+    'contractor': 'Подрядчик',
+    'sales': 'Продажи',
+    'support': 'Поддержка',
+    'custom': 'Другое',
+}
+
+
+@dp.message(Command("settype"))
+async def cmd_settype(message: types.Message):
+    """Set the chat type for analysis."""
+    if message.chat.type not in ("group", "supergroup"):
+        await message.answer(
+            "Эта команда работает только в группах.\n"
+            "Добавьте бота в группу и используйте там."
+        )
+        return
+
+    args = message.text.split(maxsplit=1)
+
+    async with async_session() as session:
+        # Get the chat
+        result = await session.execute(
+            select(Chat).where(Chat.telegram_chat_id == message.chat.id)
+        )
+        chat = result.scalar_one_or_none()
+
+        if not chat:
+            await message.answer("Чат не найден. Попробуйте позже.")
+            return
+
+        # If no argument, show available types
+        if len(args) < 2:
+            types_list = "\n".join([f"• {code} — {name}" for code, name in CHAT_TYPES.items()])
+            current_type = CHAT_TYPES.get(chat.chat_type, chat.chat_type)
+            await message.answer(
+                f"Текущий тип: {current_type}\n\n"
+                f"Доступные типы:\n{types_list}\n\n"
+                f"Использование: /settype <тип>\n"
+                f"Пример: /settype hr"
+            )
+            return
+
+        new_type = args[1].strip().lower()
+
+        if new_type not in CHAT_TYPES:
+            await message.answer(
+                f"Неизвестный тип: {new_type}\n"
+                f"Доступные типы: {', '.join(CHAT_TYPES.keys())}"
+            )
+            return
+
+        # Update chat type
+        chat.chat_type = new_type
+        await session.commit()
+
+        await message.answer(
+            f"✅ Тип чата изменён на: {CHAT_TYPES[new_type]}\n\n"
+            "AI-ассистент теперь будет анализировать чат с учётом этого контекста."
+        )
 
 
 async def start_bot():
