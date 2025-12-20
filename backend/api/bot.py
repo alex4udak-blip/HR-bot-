@@ -58,28 +58,53 @@ async def find_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> U
 
 async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, owner_id: int | None) -> Chat:
     """Get existing chat or create new one."""
+    from sqlalchemy.exc import IntegrityError
+
     result = await session.execute(
         select(Chat).where(Chat.telegram_chat_id == telegram_chat.id)
     )
     chat = result.scalar_one_or_none()
 
-    if not chat:
+    if chat:
+        # Chat exists - update if needed
+        updated = False
+        if not chat.is_active:
+            chat.is_active = True
+            updated = True
+        if owner_id and not chat.owner_id:
+            chat.owner_id = owner_id
+            updated = True
+        if chat.title != (telegram_chat.title or telegram_chat.full_name):
+            chat.title = telegram_chat.title or telegram_chat.full_name
+            updated = True
+        if updated:
+            await session.commit()
+        return chat
+
+    # Try to create new chat
+    try:
         chat = Chat(
             telegram_chat_id=telegram_chat.id,
             title=telegram_chat.title or telegram_chat.full_name,
-            chat_type=ChatType.work,  # Default type, can be changed in UI
+            chat_type=ChatType.work,
             owner_id=owner_id,
         )
         session.add(chat)
         await session.commit()
         await session.refresh(chat)
         logger.debug(f"Created new chat: {chat.title}")
-    elif owner_id and not chat.owner_id:
-        # Update owner if not set
-        chat.owner_id = owner_id
-        await session.commit()
-
-    return chat
+        return chat
+    except IntegrityError:
+        # Race condition - chat was created by another request
+        await session.rollback()
+        result = await session.execute(
+            select(Chat).where(Chat.telegram_chat_id == telegram_chat.id)
+        )
+        chat = result.scalar_one_or_none()
+        if chat and not chat.is_active:
+            chat.is_active = True
+            await session.commit()
+        return chat
 
 
 @dp.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=IS_NOT_MEMBER >> IS_MEMBER))
