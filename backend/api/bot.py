@@ -217,7 +217,7 @@ async def collect_group_message(message: types.Message):
                 document_metadata=document_metadata,
                 parse_status=parse_status,
                 parse_error=parse_error,
-                timestamp=message.date,
+                timestamp=message.date.replace(tzinfo=None),
             )
             session.add(db_message)
             await session.commit()
@@ -260,7 +260,7 @@ async def collect_group_message(message: types.Message):
                 document_metadata=document_metadata,
                 parse_status=parse_status,
                 parse_error=parse_error,
-                timestamp=message.date,
+                timestamp=message.date.replace(tzinfo=None),
             )
             session.add(db_message)
             await session.commit()
