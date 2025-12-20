@@ -243,6 +243,11 @@ export const downloadReport = async (chatId: number, reportType: string, format:
     },
     body: JSON.stringify({ report_type: reportType, format }),
   });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
   return response.blob();
 };
 
