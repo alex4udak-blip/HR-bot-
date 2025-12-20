@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 import json
 
 from ..database import get_db
@@ -93,17 +94,19 @@ async def ai_message(
                 yield f"data: {json.dumps({'content': chunk})}\n\n"
 
             # Save to conversation
-            history.append({
+            new_messages = list(history)  # Create new list to ensure change detection
+            new_messages.append({
                 "role": "user",
                 "content": f"[Быстрое действие: {request.quick_action}]",
                 "timestamp": datetime.utcnow().isoformat()
             })
-            history.append({
+            new_messages.append({
                 "role": "assistant",
                 "content": full_response,
                 "timestamp": datetime.utcnow().isoformat()
             })
-            conversation.messages = history
+            conversation.messages = new_messages
+            flag_modified(conversation, "messages")
             await db.commit()
 
             yield "data: [DONE]\n\n"
@@ -121,17 +124,19 @@ async def ai_message(
             yield f"data: {json.dumps({'content': chunk})}\n\n"
 
         # Save to conversation
-        history.append({
+        new_messages = list(history)  # Create new list to ensure change detection
+        new_messages.append({
             "role": "user",
             "content": request.message,
             "timestamp": datetime.utcnow().isoformat()
         })
-        history.append({
+        new_messages.append({
             "role": "assistant",
             "content": full_response,
             "timestamp": datetime.utcnow().isoformat()
         })
-        conversation.messages = history
+        conversation.messages = new_messages
+        flag_modified(conversation, "messages")
         await db.commit()
 
         yield "data: [DONE]\n\n"

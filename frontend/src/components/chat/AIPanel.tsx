@@ -119,35 +119,55 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
   const [streamingContent, setStreamingContent] = useState('');
   const streamingContentRef = useRef('');
   const [localMessages, setLocalMessages] = useState<AIMessage[]>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   // Flag to prevent overwriting local messages right after streaming
   const justAddedMessageRef = useRef(false);
+  // Track current chatId to detect changes
+  const currentChatIdRef = useRef(chatId);
 
   const { data: conversation } = useQuery({
     queryKey: ['ai-history', chatId],
     queryFn: () => getAIHistory(chatId),
   });
 
-  // Reset flag and messages when chat changes
+  // Reset when chat changes
   useEffect(() => {
-    justAddedMessageRef.current = false;
-    setLocalMessages([]);
+    if (currentChatIdRef.current !== chatId) {
+      currentChatIdRef.current = chatId;
+      justAddedMessageRef.current = false;
+      setLocalMessages([]);
+      setStreamingContent('');
+      streamingContentRef.current = '';
+      setIsStreaming(false);
+    }
   }, [chatId]);
 
+  // Sync messages from server
   useEffect(() => {
-    if (conversation?.messages) {
-      // Don't overwrite if we just added a message locally
-      // This prevents race condition where server data arrives before commit
-      if (!justAddedMessageRef.current) {
-        setLocalMessages(conversation.messages);
-      }
+    const serverMessages = conversation?.messages;
+    if (serverMessages && !justAddedMessageRef.current) {
+      // Only update if messages actually changed
+      setLocalMessages(prev => {
+        // If we have more messages locally (streaming added them), keep local
+        if (prev.length > serverMessages.length) {
+          return prev;
+        }
+        return serverMessages;
+      });
     }
-  }, [conversation]);
+  }, [conversation?.messages]);
+
+  // Scroll to bottom when messages change
+  const scrollToBottom = () => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
+  };
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [localMessages, streamingContent]);
+    scrollToBottom();
+  }, [localMessages.length, streamingContent]);
 
   const clearMutation = useMutation({
     mutationFn: () => clearAIHistory(chatId),
@@ -305,7 +325,10 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth"
+      >
         {localMessages.length === 0 && !isStreaming && (
           <div className="text-center py-8">
             <Sparkles className="w-12 h-12 mx-auto text-dark-600 mb-3" />
@@ -319,7 +342,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
         <AnimatePresence mode="popLayout">
           {localMessages.map((msg, index) => (
             <motion.div
-              key={index}
+              key={`${msg.timestamp}-${index}`}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
@@ -331,7 +354,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
               )}
             >
               {msg.role === 'assistant' ? (
-                <div className="prose prose-sm max-w-none">
+                <div className="prose prose-sm max-w-none prose-invert prose-headings:text-dark-100 prose-p:text-dark-200 prose-strong:text-dark-100 prose-li:text-dark-200">
                   <ReactMarkdown>{msg.content}</ReactMarkdown>
                 </div>
               ) : (
@@ -348,7 +371,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
             animate={{ opacity: 1 }}
             className="glass-light rounded-xl p-3 mr-8"
           >
-            <div className="prose prose-sm max-w-none">
+            <div className="prose prose-sm max-w-none prose-invert prose-headings:text-dark-100 prose-p:text-dark-200 prose-strong:text-dark-100 prose-li:text-dark-200">
               <ReactMarkdown>{streamingContent}</ReactMarkdown>
             </div>
           </motion.div>
@@ -361,8 +384,6 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
             <span className="text-sm">Думаю...</span>
           </div>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
