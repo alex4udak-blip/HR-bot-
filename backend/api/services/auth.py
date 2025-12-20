@@ -20,13 +20,13 @@ def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict) -> str:
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.jwt_expire_minutes))
+    expire = datetime.utcnow() + timedelta(minutes=settings.jwt_expire_minutes)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
@@ -35,62 +35,47 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
     try:
-        token = credentials.credentials
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-        user_id: int = payload.get("sub")
-        if user_id is None:
-            raise credentials_exception
+        payload = jwt.decode(
+            credentials.credentials, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+        )
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
     except JWTError:
-        raise credentials_exception
+        raise HTTPException(status_code=401, detail="Invalid token")
 
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(select(User).where(User.id == int(user_id)))
     user = result.scalar_one_or_none()
 
-    if user is None or not user.is_active:
-        raise credentials_exception
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
 
     return user
 
 
 async def get_superadmin(user: User = Depends(get_current_user)) -> User:
     if user.role != UserRole.SUPERADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Superadmin access required",
-        )
+        raise HTTPException(status_code=403, detail="Superadmin access required")
     return user
 
 
 async def authenticate_user(db: AsyncSession, email: str, password: str) -> Optional[User]:
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
-
     if user and verify_password(password, user.password_hash):
         return user
     return None
 
 
 async def create_superadmin_if_not_exists(db: AsyncSession):
-    """Create superadmin user if not exists."""
-    result = await db.execute(
-        select(User).where(User.role == UserRole.SUPERADMIN)
-    )
-    superadmin = result.scalar_one_or_none()
-
-    if not superadmin:
+    result = await db.execute(select(User).where(User.role == UserRole.SUPERADMIN))
+    if not result.scalar_one_or_none():
         superadmin = User(
             email=settings.superadmin_email,
             password_hash=hash_password(settings.superadmin_password),
             name="Super Admin",
             role=UserRole.SUPERADMIN,
-            is_active=True,
         )
         db.add(superadmin)
         await db.commit()

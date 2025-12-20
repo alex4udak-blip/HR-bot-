@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from sqlalchemy import (
     BigInteger, Boolean, Column, DateTime, Enum as SQLEnum,
-    ForeignKey, Integer, String, Text, func
+    ForeignKey, Integer, String, Text, JSON, func
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 import enum
@@ -20,69 +20,110 @@ class UserRole(str, enum.Enum):
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     name = Column(String(255), nullable=False)
-    role = Column(SQLEnum(UserRole), default=UserRole.ADMIN, nullable=False)
+    role = Column(SQLEnum(UserRole), default=UserRole.ADMIN)
     telegram_id = Column(BigInteger, unique=True, nullable=True, index=True)
-    is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=func.now(), nullable=False)
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    telegram_username = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=func.now())
 
-    # Relationships
-    chats = relationship("Chat", back_populates="owner", lazy="selectin")
-    analysis_history = relationship("AnalysisHistory", back_populates="user", lazy="selectin")
+    chats = relationship("Chat", back_populates="owner")
+    criteria_presets = relationship("CriteriaPreset", back_populates="created_by_user")
+    ai_conversations = relationship("AIConversation", back_populates="user")
+    analyses = relationship("AnalysisHistory", back_populates="user")
 
 
 class Chat(Base):
     __tablename__ = "chats"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    chat_id = Column(BigInteger, unique=True, nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    telegram_chat_id = Column(BigInteger, unique=True, nullable=False, index=True)
     title = Column(String(255), nullable=False)
-    criteria = Column(Text, nullable=True)
+    custom_name = Column(String(255), nullable=True)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
-    is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=func.now(), nullable=False)
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=func.now())
+    last_activity = Column(DateTime, default=func.now(), onupdate=func.now())
 
-    # Relationships
-    owner = relationship("User", back_populates="chats", lazy="selectin")
-    messages = relationship("Message", back_populates="chat", lazy="selectin")
-    analysis_history = relationship("AnalysisHistory", back_populates="chat", lazy="selectin")
+    owner = relationship("User", back_populates="chats")
+    messages = relationship("Message", back_populates="chat", cascade="all, delete-orphan")
+    criteria = relationship("ChatCriteria", back_populates="chat", uselist=False, cascade="all, delete-orphan")
+    ai_conversations = relationship("AIConversation", back_populates="chat", cascade="all, delete-orphan")
+    analyses = relationship("AnalysisHistory", back_populates="chat", cascade="all, delete-orphan")
 
 
 class Message(Base):
     __tablename__ = "messages"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    chat_db_id = Column(Integer, ForeignKey("chats.id"), nullable=False, index=True)
-    chat_id = Column(BigInteger, nullable=False, index=True)
-    user_id = Column(BigInteger, nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(Integer, ForeignKey("chats.id", ondelete="CASCADE"), nullable=False, index=True)
+    telegram_user_id = Column(BigInteger, nullable=False, index=True)
     username = Column(String(255), nullable=True)
     first_name = Column(String(255), nullable=True)
     last_name = Column(String(255), nullable=True)
-    message_type = Column(String(50), nullable=False)  # text, voice, video_note, document
     content = Column(Text, nullable=False)
+    content_type = Column(String(50), nullable=False)  # text, voice, video_note, document, photo
     file_id = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=func.now(), nullable=False)
+    file_name = Column(String(255), nullable=True)
+    timestamp = Column(DateTime, default=func.now())
 
-    # Relationships
-    chat = relationship("Chat", back_populates="messages", lazy="selectin")
+    chat = relationship("Chat", back_populates="messages")
+
+
+class CriteriaPreset(Base):
+    __tablename__ = "criteria_presets"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    criteria = Column(JSON, nullable=False)  # [{name, weight, description, category}]
+    category = Column(String(100), nullable=True)  # basic, red_flags, green_flags, position
+    is_global = Column(Boolean, default=False)  # True = виден всем
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    created_by_user = relationship("User", back_populates="criteria_presets")
+
+
+class ChatCriteria(Base):
+    __tablename__ = "chat_criteria"
+
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(Integer, ForeignKey("chats.id", ondelete="CASCADE"), unique=True, nullable=False)
+    criteria = Column(JSON, nullable=False)  # [{name, weight, description}]
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    chat = relationship("Chat", back_populates="criteria")
+
+
+class AIConversation(Base):
+    __tablename__ = "ai_conversations"
+
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(Integer, ForeignKey("chats.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    messages = Column(JSON, nullable=False, default=list)  # [{role, content, timestamp}]
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    chat = relationship("Chat", back_populates="ai_conversations")
+    user = relationship("User", back_populates="ai_conversations")
 
 
 class AnalysisHistory(Base):
     __tablename__ = "analysis_history"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    chat_id = Column(Integer, ForeignKey("chats.id"), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    analysis_type = Column(String(50), nullable=False)  # full, question
-    question = Column(Text, nullable=True)
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(Integer, ForeignKey("chats.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     result = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=func.now(), nullable=False)
+    report_type = Column(String(50), nullable=True)  # full, quick, red_flags, etc
+    report_format = Column(String(20), nullable=True)  # pdf, docx, markdown
+    criteria_used = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=func.now())
 
-    # Relationships
-    chat = relationship("Chat", back_populates="analysis_history", lazy="selectin")
-    user = relationship("User", back_populates="analysis_history", lazy="selectin")
+    chat = relationship("Chat", back_populates="analyses")
+    user = relationship("User", back_populates="analyses")

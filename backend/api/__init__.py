@@ -1,1 +1,1 @@
-# HR Bot Admin API
+# HR Bot API

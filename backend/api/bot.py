@@ -1,281 +1,276 @@
-import logging
-import os
-import tempfile
 import asyncio
-import subprocess
-from typing import Optional
-
-from aiogram import Bot, Dispatcher, Router, F
-from aiogram.types import Message, ChatMemberUpdated
-from aiogram.filters import ChatMemberUpdatedFilter, IS_MEMBER, IS_NOT_MEMBER
-from aiogram.enums import ChatType
+import logging
+from datetime import datetime
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command, ChatMemberUpdatedFilter, IS_NOT_MEMBER, IS_MEMBER
+from aiogram.types import ChatMemberUpdated, ContentType
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from openai import AsyncOpenAI
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
-from .config import get_settings
-from .database import AsyncSessionLocal
-from .models.database import User, Chat, Message as DBMessage
+from .config import settings
+from .models.database import Base, User, Chat, Message
+from .services.transcription import transcription_service
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
-router = Router()
-openai_client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+bot = Bot(token=settings.telegram_bot_token)
+dp = Dispatcher()
 
-
-async def get_db_session() -> AsyncSession:
-    async with AsyncSessionLocal() as session:
-        return session
+# Database session
+engine = create_async_engine(settings.database_url, echo=False)
+async_session = async_sessionmaker(engine, expire_on_commit=False)
 
 
-async def transcribe_audio(file_path: str) -> str:
-    """Transcribe audio using Whisper API."""
-    if not openai_client:
-        return "[Транскрипция недоступна]"
+async def get_db() -> AsyncSession:
+    async with async_session() as session:
+        yield session
 
-    with open(file_path, "rb") as audio_file:
-        response = await openai_client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            language="ru",
+
+async def find_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> User | None:
+    """Find user by their Telegram ID."""
+    result = await session.execute(
+        select(User).where(User.telegram_id == telegram_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, owner_id: int | None) -> Chat:
+    """Get existing chat or create new one."""
+    result = await session.execute(
+        select(Chat).where(Chat.telegram_chat_id == telegram_chat.id)
+    )
+    chat = result.scalar_one_or_none()
+
+    if not chat:
+        chat = Chat(
+            telegram_chat_id=telegram_chat.id,
+            title=telegram_chat.title or telegram_chat.full_name,
+            chat_type=telegram_chat.type,
+            owner_id=owner_id,
         )
-    return response.text
+        session.add(chat)
+        await session.commit()
+        await session.refresh(chat)
+        logger.info(f"Created new chat: {chat.title} (owner_id: {owner_id})")
+    elif owner_id and not chat.owner_id:
+        # Update owner if not set
+        chat.owner_id = owner_id
+        await session.commit()
+        logger.info(f"Updated chat owner: {chat.title} -> {owner_id}")
+
+    return chat
 
 
-async def transcribe_video(file_path: str) -> str:
-    """Extract audio from video and transcribe."""
-    audio_path = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
-            audio_path = tmp.name
-
-        process = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-i", file_path, "-vn", "-acodec", "libmp3lame",
-            "-ar", "16000", "-ac", "1", "-y", audio_path,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-        await process.wait()
-
-        if process.returncode != 0:
-            return "[Не удалось извлечь аудио]"
-
-        return await transcribe_audio(audio_path)
-    finally:
-        if audio_path and os.path.exists(audio_path):
-            os.unlink(audio_path)
-
-
-# Handler for bot being added to chat
-@router.my_chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> IS_MEMBER))
+@dp.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=IS_NOT_MEMBER >> IS_MEMBER))
 async def on_bot_added(event: ChatMemberUpdated):
-    """When bot is added to a chat, bind it to the user who added."""
-    if event.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+    """Handle bot being added to a chat - auto-bind to the user who added it."""
+    async with async_session() as session:
+        # Find who added the bot
+        adder_id = event.from_user.id
+        owner = await find_user_by_telegram_id(session, adder_id)
+
+        owner_id = owner.id if owner else None
+
+        # Create or get the chat
+        chat = await get_or_create_chat(session, event.chat, owner_id)
+
+        if owner:
+            logger.info(f"Bot added to '{event.chat.title}' by user {owner.email} (telegram: {adder_id})")
+        else:
+            logger.info(f"Bot added to '{event.chat.title}' by unregistered telegram user {adder_id}")
+
+
+@dp.message(F.chat.type.in_({"group", "supergroup"}))
+async def collect_group_message(message: types.Message):
+    """Silently collect all messages from groups."""
+    async with async_session() as session:
+        # Get or create the chat
+        chat = await get_or_create_chat(session, message.chat, None)
+
+        # Determine content type and content
+        content = ""
+        content_type = "text"
+        file_name = None
+
+        if message.text:
+            content = message.text
+            content_type = "text"
+        elif message.caption:
+            content = message.caption
+
+        if message.voice:
+            content_type = "voice"
+            file_name = "voice_message.ogg"
+            # Try to transcribe
+            try:
+                file = await bot.get_file(message.voice.file_id)
+                file_bytes = await bot.download_file(file.file_path)
+                content = await transcription_service.transcribe_audio(file_bytes.read())
+            except Exception as e:
+                logger.error(f"Voice transcription error: {e}")
+                content = "[Voice message - transcription failed]"
+
+        elif message.video_note:
+            content_type = "video_note"
+            file_name = "video_note.mp4"
+            try:
+                file = await bot.get_file(message.video_note.file_id)
+                file_bytes = await bot.download_file(file.file_path)
+                content = await transcription_service.transcribe_video(file_bytes.read())
+            except Exception as e:
+                logger.error(f"Video note transcription error: {e}")
+                content = "[Video note - transcription failed]"
+
+        elif message.video:
+            content_type = "video"
+            file_name = message.video.file_name or "video.mp4"
+            if message.video.file_size < 20 * 1024 * 1024:  # 20MB limit
+                try:
+                    file = await bot.get_file(message.video.file_id)
+                    file_bytes = await bot.download_file(file.file_path)
+                    content = await transcription_service.transcribe_video(file_bytes.read())
+                except Exception as e:
+                    logger.error(f"Video transcription error: {e}")
+                    content = f"[Video: {file_name}]"
+            else:
+                content = f"[Video: {file_name} - too large for transcription]"
+
+        elif message.audio:
+            content_type = "audio"
+            file_name = message.audio.file_name or "audio.mp3"
+            if message.audio.file_size < 20 * 1024 * 1024:
+                try:
+                    file = await bot.get_file(message.audio.file_id)
+                    file_bytes = await bot.download_file(file.file_path)
+                    content = await transcription_service.transcribe_audio(file_bytes.read())
+                except Exception as e:
+                    logger.error(f"Audio transcription error: {e}")
+                    content = f"[Audio: {file_name}]"
+            else:
+                content = f"[Audio: {file_name} - too large]"
+
+        elif message.document:
+            content_type = "document"
+            file_name = message.document.file_name or "document"
+            content = f"[Document: {file_name}]"
+
+        elif message.photo:
+            content_type = "photo"
+            content = message.caption or "[Photo]"
+
+        elif message.sticker:
+            content_type = "sticker"
+            content = f"[Sticker: {message.sticker.emoji or ''}]"
+
+        # Save message
+        db_message = Message(
+            chat_id=chat.id,
+            telegram_message_id=message.message_id,
+            telegram_user_id=message.from_user.id,
+            username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+            content=content,
+            content_type=content_type,
+            file_name=file_name,
+            timestamp=message.date,
+        )
+        session.add(db_message)
+        await session.commit()
+
+
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    """Handle /start command in private chat."""
+    if message.chat.type != "private":
         return
 
-    added_by_id = event.from_user.id
-    chat_id = event.chat.id
-    chat_title = event.chat.title or "Unknown"
-
-    logger.info(f"Bot added to chat {chat_id} ({chat_title}) by user {added_by_id}")
-
-    async with AsyncSessionLocal() as db:
-        # Find admin by telegram_id
-        result = await db.execute(
-            select(User).where(User.telegram_id == added_by_id)
-        )
-        admin = result.scalar_one_or_none()
-
-        # Check if chat exists
-        result = await db.execute(select(Chat).where(Chat.chat_id == chat_id))
-        chat = result.scalar_one_or_none()
-
-        if chat:
-            # Update existing chat
-            chat.title = chat_title
-            if admin:
-                chat.owner_id = admin.id
-        else:
-            # Create new chat
-            chat = Chat(
-                chat_id=chat_id,
-                title=chat_title,
-                owner_id=admin.id if admin else None,
-                is_active=True,
-            )
-            db.add(chat)
-
-        await db.commit()
-
-        if admin:
-            logger.info(f"Chat {chat_id} bound to admin {admin.email}")
-        else:
-            logger.warning(f"User {added_by_id} not found in admins, chat unassigned")
+    await message.answer(
+        "HR Candidate Analyzer Bot\n\n"
+        "Добавьте меня в группу для сбора сообщений кандидатов.\n"
+        "Используйте веб-панель для анализа и управления.\n\n"
+        "Для привязки аккаунта используйте команду /bind <email>"
+    )
 
 
-# Handler for text messages in groups
-@router.message(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}), F.text)
-async def collect_text(message: Message):
-    if not message.text or message.text.startswith("/"):
+@dp.message(Command("bind"))
+async def cmd_bind(message: types.Message):
+    """Bind Telegram account to web admin account."""
+    if message.chat.type != "private":
+        await message.answer("Эта команда доступна только в личных сообщениях.")
         return
 
-    async with AsyncSessionLocal() as db:
-        # Ensure chat exists
-        result = await db.execute(select(Chat).where(Chat.chat_id == message.chat.id))
-        chat = result.scalar_one_or_none()
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Использование: /bind <email>")
+        return
 
-        if not chat:
-            chat = Chat(
-                chat_id=message.chat.id,
-                title=message.chat.title or "Unknown",
-                is_active=True,
-            )
-            db.add(chat)
-            await db.commit()
-            await db.refresh(chat)
+    email = args[1].strip().lower()
 
-        # Add message
-        db_message = DBMessage(
-            chat_db_id=chat.id,
-            chat_id=message.chat.id,
-            user_id=message.from_user.id,
-            username=message.from_user.username,
-            first_name=message.from_user.first_name,
-            last_name=message.from_user.last_name,
-            message_type="text",
-            content=message.text,
+    async with async_session() as session:
+        # Find user by email
+        result = await session.execute(
+            select(User).where(User.email == email)
         )
-        db.add(db_message)
-        await db.commit()
+        user = result.scalar_one_or_none()
 
+        if not user:
+            await message.answer("Пользователь с таким email не найден.")
+            return
 
-# Handler for voice messages
-@router.message(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}), F.voice)
-async def collect_voice(message: Message, bot: Bot):
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(Chat).where(Chat.chat_id == message.chat.id))
-        chat = result.scalar_one_or_none()
+        # Check if already bound
+        if user.telegram_id and user.telegram_id != message.from_user.id:
+            await message.answer("Этот аккаунт уже привязан к другому Telegram.")
+            return
 
-        if not chat:
-            chat = Chat(
-                chat_id=message.chat.id,
-                title=message.chat.title or "Unknown",
-                is_active=True,
-            )
-            db.add(chat)
-            await db.commit()
-            await db.refresh(chat)
+        # Bind
+        user.telegram_id = message.from_user.id
+        user.telegram_username = message.from_user.username
+        await session.commit()
 
-        # Download and transcribe
-        content = "[Голосовое сообщение]"
-        try:
-            file = await bot.get_file(message.voice.file_id)
-            with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
-                file_path = tmp.name
-            await bot.download_file(file.file_path, destination=file_path)
-            content = await transcribe_audio(file_path)
-            os.unlink(file_path)
-        except Exception as e:
-            logger.exception(f"Error transcribing voice: {e}")
-
-        db_message = DBMessage(
-            chat_db_id=chat.id,
-            chat_id=message.chat.id,
-            user_id=message.from_user.id,
-            username=message.from_user.username,
-            first_name=message.from_user.first_name,
-            last_name=message.from_user.last_name,
-            message_type="voice",
-            content=content,
-            file_id=message.voice.file_id,
+        await message.answer(
+            f"Аккаунт успешно привязан!\n"
+            f"Email: {email}\n\n"
+            "Теперь при добавлении бота в группы, они автоматически будут привязаны к вашему аккаунту."
         )
-        db.add(db_message)
-        await db.commit()
 
 
-# Handler for video notes
-@router.message(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}), F.video_note)
-async def collect_video_note(message: Message, bot: Bot):
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(Chat).where(Chat.chat_id == message.chat.id))
-        chat = result.scalar_one_or_none()
+@dp.message(Command("chats"))
+async def cmd_chats(message: types.Message):
+    """List user's chats."""
+    if message.chat.type != "private":
+        return
 
-        if not chat:
-            chat = Chat(
-                chat_id=message.chat.id,
-                title=message.chat.title or "Unknown",
-                is_active=True,
-            )
-            db.add(chat)
-            await db.commit()
-            await db.refresh(chat)
+    async with async_session() as session:
+        user = await find_user_by_telegram_id(session, message.from_user.id)
 
-        content = "[Видео-кружок]"
-        try:
-            file = await bot.get_file(message.video_note.file_id)
-            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
-                file_path = tmp.name
-            await bot.download_file(file.file_path, destination=file_path)
-            content = await transcribe_video(file_path)
-            os.unlink(file_path)
-        except Exception as e:
-            logger.exception(f"Error transcribing video note: {e}")
+        if not user:
+            await message.answer("Сначала привяжите аккаунт: /bind <email>")
+            return
 
-        db_message = DBMessage(
-            chat_db_id=chat.id,
-            chat_id=message.chat.id,
-            user_id=message.from_user.id,
-            username=message.from_user.username,
-            first_name=message.from_user.first_name,
-            last_name=message.from_user.last_name,
-            message_type="video_note",
-            content=content,
-            file_id=message.video_note.file_id,
+        result = await session.execute(
+            select(Chat).where(Chat.owner_id == user.id)
         )
-        db.add(db_message)
-        await db.commit()
+        chats = result.scalars().all()
+
+        if not chats:
+            await message.answer("У вас нет привязанных чатов.")
+            return
+
+        text = "Ваши чаты:\n\n"
+        for chat in chats:
+            text += f"• {chat.custom_name or chat.title}\n"
+
+        await message.answer(text)
 
 
-# Handler for documents
-@router.message(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}), F.document)
-async def collect_document(message: Message):
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(Chat).where(Chat.chat_id == message.chat.id))
-        chat = result.scalar_one_or_none()
-
-        if not chat:
-            chat = Chat(
-                chat_id=message.chat.id,
-                title=message.chat.title or "Unknown",
-                is_active=True,
-            )
-            db.add(chat)
-            await db.commit()
-            await db.refresh(chat)
-
-        doc = message.document
-        content = f"Документ: {doc.file_name or 'без имени'}"
-        if doc.mime_type:
-            content += f" ({doc.mime_type})"
-
-        db_message = DBMessage(
-            chat_db_id=chat.id,
-            chat_id=message.chat.id,
-            user_id=message.from_user.id,
-            username=message.from_user.username,
-            first_name=message.from_user.first_name,
-            last_name=message.from_user.last_name,
-            message_type="document",
-            content=content,
-            file_id=doc.file_id,
-        )
-        db.add(db_message)
-        await db.commit()
+async def start_bot():
+    """Start the bot polling."""
+    logger.info("Starting Telegram bot...")
+    await dp.start_polling(bot)
 
 
-def create_bot() -> tuple[Bot, Dispatcher]:
-    """Create bot and dispatcher."""
-    bot = Bot(token=settings.telegram_bot_token)
-    dp = Dispatcher()
-    dp.include_router(router)
-    return bot, dp
+async def stop_bot():
+    """Stop the bot."""
+    await bot.session.close()

@@ -1,43 +1,48 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:15-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: hrbot
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-hrbot_secret}
-      POSTGRES_DB: hrbot
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hrbot -d hrbot"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   backend:
     build: ./backend
-    restart: unless-stopped
+    container_name: hr-analyzer-backend
     environment:
-      DATABASE_URL: postgresql://hrbot:${DB_PASSWORD:-hrbot_secret}@postgres:5432/hrbot
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
-      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-admin@example.com}
-      SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:-changeme}
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/hr_analyzer
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
-      postgres:
-        condition: service_healthy
+      - db
+    restart: unless-stopped
+    networks:
+      - hr-network
 
   frontend:
     build: ./frontend
-    restart: unless-stopped
+    container_name: hr-analyzer-frontend
     ports:
       - "80:80"
     depends_on:
       - backend
+    restart: unless-stopped
+    networks:
+      - hr-network
+
+  db:
+    image: postgres:15-alpine
+    container_name: hr-analyzer-db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=hr_analyzer
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - hr-network
+
+networks:
+  hr-network:
+    driver: bridge
 
 volumes:
   postgres_data:

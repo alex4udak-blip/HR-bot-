@@ -1,0 +1,286 @@
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { motion } from 'framer-motion';
+import * as Tabs from '@radix-ui/react-tabs';
+import {
+  MessageSquare,
+  Users,
+  Settings,
+  FileText,
+  Download,
+  Edit3,
+  Check,
+  X
+} from 'lucide-react';
+import type { Chat } from '@/types';
+import { getMessages, getParticipants, updateChat, downloadReport } from '@/services/api';
+import CriteriaPanel from './CriteriaPanel';
+import toast from 'react-hot-toast';
+import clsx from 'clsx';
+
+interface ChatDetailProps {
+  chat: Chat;
+}
+
+export default function ChatDetail({ chat }: ChatDetailProps) {
+  const [activeTab, setActiveTab] = useState('messages');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(chat.custom_name || chat.title);
+  const queryClient = useQueryClient();
+
+  const { data: messages = [], isLoading: loadingMessages } = useQuery({
+    queryKey: ['messages', chat.id],
+    queryFn: () => getMessages(chat.id),
+  });
+
+  const { data: participants = [], isLoading: loadingParticipants } = useQuery({
+    queryKey: ['participants', chat.id],
+    queryFn: () => getParticipants(chat.id),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (name: string) => updateChat(chat.id, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+      setIsEditing(false);
+      toast.success('Chat name updated');
+    },
+  });
+
+  const handleDownloadReport = async (format: string) => {
+    try {
+      const blob = await downloadReport(chat.id, 'full_analysis', format);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report_${chat.id}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Report downloaded');
+    } catch {
+      toast.error('Failed to download report');
+    }
+  };
+
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const tabs = [
+    { id: 'messages', label: 'Messages', icon: MessageSquare },
+    { id: 'participants', label: 'Participants', icon: Users },
+    { id: 'criteria', label: 'Criteria', icon: Settings },
+    { id: 'reports', label: 'Reports', icon: FileText },
+  ];
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="p-4 border-b border-white/5 hidden lg:block">
+        <div className="flex items-center gap-3">
+          {isEditing ? (
+            <div className="flex items-center gap-2 flex-1">
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="flex-1 glass-light rounded-lg px-3 py-1.5 text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+                autoFocus
+              />
+              <button
+                onClick={() => updateMutation.mutate(editName)}
+                className="p-2 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30"
+              >
+                <Check className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => {
+                  setIsEditing(false);
+                  setEditName(chat.custom_name || chat.title);
+                }}
+                className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <h2 className="text-xl font-semibold flex-1 truncate">
+                {chat.custom_name || chat.title}
+              </h2>
+              <button
+                onClick={() => setIsEditing(true)}
+                className="p-2 rounded-lg hover:bg-white/5 text-dark-400 hover:text-dark-200"
+              >
+                <Edit3 className="w-4 h-4" />
+              </button>
+            </>
+          )}
+        </div>
+        <p className="text-sm text-dark-400 mt-1">
+          {chat.messages_count} messages | {chat.participants_count} participants
+        </p>
+      </div>
+
+      {/* Tabs */}
+      <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+        <Tabs.List className="flex border-b border-white/5 px-4">
+          {tabs.map((tab) => (
+            <Tabs.Trigger
+              key={tab.id}
+              value={tab.id}
+              className={clsx(
+                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+                activeTab === tab.id
+                  ? 'border-accent-500 text-accent-400'
+                  : 'border-transparent text-dark-400 hover:text-dark-200'
+              )}
+            >
+              <tab.icon className="w-4 h-4" />
+              <span className="hidden sm:inline">{tab.label}</span>
+            </Tabs.Trigger>
+          ))}
+        </Tabs.List>
+
+        {/* Messages Tab */}
+        <Tabs.Content value="messages" className="flex-1 overflow-y-auto p-4">
+          {loadingMessages ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="text-center py-8">
+              <MessageSquare className="w-12 h-12 mx-auto text-dark-600 mb-3" />
+              <p className="text-dark-400">No messages yet</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {messages.map((message, index) => (
+                <motion.div
+                  key={message.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.02 }}
+                  className="glass-light rounded-xl p-3"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-8 h-8 rounded-full bg-accent-500/20 flex items-center justify-center text-xs font-medium text-accent-400">
+                      {(message.first_name?.[0] || message.username?.[0] || '?').toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium text-sm">
+                        {message.first_name || message.username || 'Unknown'}
+                      </span>
+                      {message.username && message.first_name && (
+                        <span className="text-dark-500 text-xs ml-1">@{message.username}</span>
+                      )}
+                    </div>
+                    <span className="text-xs text-dark-500">{formatTime(message.timestamp)}</span>
+                  </div>
+                  <p className="text-sm text-dark-200 whitespace-pre-wrap">{message.content}</p>
+                  {message.content_type !== 'text' && (
+                    <span className="inline-block mt-2 text-xs px-2 py-0.5 rounded-full bg-dark-700 text-dark-400">
+                      {message.content_type}
+                    </span>
+                  )}
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </Tabs.Content>
+
+        {/* Participants Tab */}
+        <Tabs.Content value="participants" className="flex-1 overflow-y-auto p-4">
+          {loadingParticipants ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : participants.length === 0 ? (
+            <div className="text-center py-8">
+              <Users className="w-12 h-12 mx-auto text-dark-600 mb-3" />
+              <p className="text-dark-400">No participants yet</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {participants.map((participant, index) => (
+                <motion.div
+                  key={participant.telegram_user_id}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  className="flex items-center gap-3 glass-light rounded-xl p-3"
+                >
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent-500/20 to-purple-500/20 flex items-center justify-center font-medium text-accent-400">
+                    {(participant.first_name?.[0] || participant.username?.[0] || '?').toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">
+                      {participant.first_name} {participant.last_name}
+                    </p>
+                    {participant.username && (
+                      <p className="text-sm text-dark-400">@{participant.username}</p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-semibold text-accent-400">
+                      {participant.messages_count}
+                    </p>
+                    <p className="text-xs text-dark-500">messages</p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </Tabs.Content>
+
+        {/* Criteria Tab */}
+        <Tabs.Content value="criteria" className="flex-1 overflow-y-auto">
+          <CriteriaPanel chatId={chat.id} />
+        </Tabs.Content>
+
+        {/* Reports Tab */}
+        <Tabs.Content value="reports" className="flex-1 overflow-y-auto p-4">
+          <div className="space-y-4">
+            <div className="glass-light rounded-xl p-4">
+              <h3 className="font-semibold mb-3">Generate Report</h3>
+              <p className="text-sm text-dark-400 mb-4">
+                Download a comprehensive analysis report for this chat
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => handleDownloadReport('pdf')}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  PDF
+                </button>
+                <button
+                  onClick={() => handleDownloadReport('docx')}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  DOCX
+                </button>
+                <button
+                  onClick={() => handleDownloadReport('markdown')}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  Markdown
+                </button>
+              </div>
+            </div>
+          </div>
+        </Tabs.Content>
+      </Tabs.Root>
+    </div>
+  );
+}
