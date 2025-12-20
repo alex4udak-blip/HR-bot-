@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeOff, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
 import { login, register } from '@/services/api';
+import BackgroundEffects from '@/components/BackgroundEffects';
 
 export default function LoginPage() {
   const [isRegister, setIsRegister] = useState(false);
@@ -35,16 +36,30 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4 relative">
+      <BackgroundEffects />
+
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="w-full max-w-md"
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="w-full max-w-md relative z-10"
       >
-        <div className="glass rounded-2xl p-8 shadow-2xl">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-accent-400 to-accent-600 bg-clip-text text-transparent mb-2">
+        <div className="glass rounded-2xl p-8 shadow-2xl relative overflow-hidden">
+          {/* Decorative gradient orb */}
+          <div className="absolute -top-20 -right-20 w-40 h-40 bg-accent-500/20 rounded-full blur-3xl" />
+          <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl" />
+
+          <div className="text-center mb-8 relative">
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+              className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-accent-500 to-accent-600 mb-4 shadow-lg shadow-accent-500/30"
+            >
+              <Sparkles className="w-8 h-8 text-white" />
+            </motion.div>
+            <h1 className="text-3xl font-bold gradient-text mb-2">
               HR Analyzer
             </h1>
             <p className="text-dark-400">
@@ -62,32 +77,32 @@ export default function LoginPage() {
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   required={isRegister}
-                  className="w-full glass-light rounded-xl py-3 pl-12 pr-4 text-dark-100 placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+                  className="w-full input-premium rounded-xl py-3.5 pl-12 pr-4 text-dark-100 placeholder-dark-500 focus:outline-none"
                 />
               </div>
             )}
 
-            <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
+            <div className="relative group">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400 group-focus-within:text-accent-400 transition-colors" />
               <input
                 type="email"
                 placeholder="Email address"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 required
-                className="w-full glass-light rounded-xl py-3 pl-12 pr-4 text-dark-100 placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+                className="w-full input-premium rounded-xl py-3.5 pl-12 pr-4 text-dark-100 placeholder-dark-500 focus:outline-none"
               />
             </div>
 
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
+            <div className="relative group">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400 group-focus-within:text-accent-400 transition-colors" />
               <input
                 type={showPassword ? 'text' : 'password'}
                 placeholder="Password"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required
-                className="w-full glass-light rounded-xl py-3 pl-12 pr-12 text-dark-100 placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+                className="w-full input-premium rounded-xl py-3.5 pl-12 pr-12 text-dark-100 placeholder-dark-500 focus:outline-none"
               />
               <button
                 type="button"
@@ -99,11 +114,11 @@ export default function LoginPage() {
             </div>
 
             <motion.button
-              whileHover={{ scale: 1.02 }}
+              whileHover={{ scale: 1.02, boxShadow: "0 10px 40px rgba(12, 165, 235, 0.4)" }}
               whileTap={{ scale: 0.98 }}
               disabled={loading}
               type="submit"
-              className="w-full bg-gradient-to-r from-accent-500 to-accent-600 hover:from-accent-600 hover:to-accent-700 text-white font-semibold py-3 rounded-xl transition-all duration-200 disabled:opacity-50"
+              className="w-full btn-premium text-white font-semibold py-3.5 rounded-xl transition-all duration-300 disabled:opacity-50 relative overflow-hidden"
             >
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
