@@ -105,6 +105,25 @@ async def on_bot_added(event: ChatMemberUpdated):
         logger.error(f"❌ Error adding chat: {type(e).__name__}: {e}")
 
 
+@dp.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=IS_MEMBER >> IS_NOT_MEMBER))
+async def on_bot_removed(event: ChatMemberUpdated):
+    """Handle bot being removed from a chat - mark chat as inactive."""
+    try:
+        logger.info(f"📤 Bot removed from chat: {event.chat.title} (ID: {event.chat.id})")
+        async with async_session() as session:
+            result = await session.execute(
+                select(Chat).where(Chat.telegram_chat_id == event.chat.id)
+            )
+            chat = result.scalar_one_or_none()
+
+            if chat:
+                chat.is_active = False
+                await session.commit()
+                logger.info(f"✅ Chat '{event.chat.title}' marked as inactive")
+    except Exception as e:
+        logger.error(f"❌ Error handling bot removal: {type(e).__name__}: {e}")
+
+
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
 async def collect_group_message(message: types.Message):
     """Silently collect all messages from groups."""

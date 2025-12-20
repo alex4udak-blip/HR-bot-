@@ -28,10 +28,12 @@ import {
   Briefcase,
   DollarSign,
   Headphones,
-  MoreHorizontal
+  MoreHorizontal,
+  Trash2
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import type { Chat, Message, ChatTypeId } from '@/types';
-import { getMessages, getParticipants, updateChat, downloadReport } from '@/services/api';
+import { getMessages, getParticipants, updateChat, deleteChat, downloadReport } from '@/services/api';
 import CriteriaPanel from './CriteriaPanel';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -186,7 +188,9 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(chat.custom_name || chat.title);
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: messages = [], isLoading: loadingMessages } = useQuery({
     queryKey: ['messages', chat.id],
@@ -213,6 +217,18 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
       queryClient.invalidateQueries({ queryKey: ['chats'] });
       setShowTypeDropdown(false);
       toast.success('Тип чата изменён');
+    },
+  });
+
+  const deleteChatMutation = useMutation({
+    mutationFn: () => deleteChat(chat.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+      toast.success('Чат удалён');
+      navigate('/chats');
+    },
+    onError: () => {
+      toast.error('Ошибка удаления чата');
     },
   });
 
@@ -344,8 +360,52 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
               </div>
             )}
           </div>
+
+          {/* Delete Button */}
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="p-1.5 rounded-lg text-dark-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+            title="Удалить чат"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark-950/80">
+          <div className="glass rounded-2xl max-w-sm w-full p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center">
+                <Trash2 className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <h3 className="font-semibold">Удалить чат?</h3>
+                <p className="text-sm text-dark-400">Это действие необратимо</p>
+              </div>
+            </div>
+            <p className="text-sm text-dark-300">
+              Будут удалены все сообщения, участники и критерии оценки для чата "{chat.custom_name || chat.title}".
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 py-2 rounded-xl glass-light hover:bg-white/10 text-sm font-medium transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={() => deleteChatMutation.mutate()}
+                disabled={deleteChatMutation.isPending}
+                className="flex-1 py-2 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 disabled:opacity-50 transition-colors"
+              >
+                {deleteChatMutation.isPending ? 'Удаление...' : 'Удалить'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
