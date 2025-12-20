@@ -15,8 +15,19 @@ from .services.documents import document_parser
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-bot = Bot(token=settings.telegram_bot_token)
+# Bot is initialized lazily to avoid crashes on invalid/missing token
+bot: Bot | None = None
 dp = Dispatcher()
+
+
+def get_bot() -> Bot:
+    """Get or create bot instance."""
+    global bot
+    if bot is None:
+        if not settings.telegram_bot_token:
+            raise ValueError("TELEGRAM_BOT_TOKEN is not set")
+        bot = Bot(token=settings.telegram_bot_token)
+    return bot
 
 # Database session
 engine = create_async_engine(settings.database_url, echo=False)
@@ -105,8 +116,8 @@ async def collect_group_message(message: types.Message):
             file_name = "voice_message.ogg"
             # Try to transcribe
             try:
-                file = await bot.get_file(message.voice.file_id)
-                file_bytes = await bot.download_file(file.file_path)
+                file = await get_bot().get_file(message.voice.file_id)
+                file_bytes = await get_bot().download_file(file.file_path)
                 content = await transcription_service.transcribe_audio(file_bytes.read())
             except Exception as e:
                 logger.error(f"Voice transcription error: {e}")
@@ -116,8 +127,8 @@ async def collect_group_message(message: types.Message):
             content_type = "video_note"
             file_name = "video_note.mp4"
             try:
-                file = await bot.get_file(message.video_note.file_id)
-                file_bytes = await bot.download_file(file.file_path)
+                file = await get_bot().get_file(message.video_note.file_id)
+                file_bytes = await get_bot().download_file(file.file_path)
                 content = await transcription_service.transcribe_video(file_bytes.read())
             except Exception as e:
                 logger.error(f"Video note transcription error: {e}")
@@ -128,8 +139,8 @@ async def collect_group_message(message: types.Message):
             file_name = message.video.file_name or "video.mp4"
             if message.video.file_size < 20 * 1024 * 1024:  # 20MB limit
                 try:
-                    file = await bot.get_file(message.video.file_id)
-                    file_bytes = await bot.download_file(file.file_path)
+                    file = await get_bot().get_file(message.video.file_id)
+                    file_bytes = await get_bot().download_file(file.file_path)
                     content = await transcription_service.transcribe_video(file_bytes.read())
                 except Exception as e:
                     logger.error(f"Video transcription error: {e}")
@@ -142,8 +153,8 @@ async def collect_group_message(message: types.Message):
             file_name = message.audio.file_name or "audio.mp3"
             if message.audio.file_size < 20 * 1024 * 1024:
                 try:
-                    file = await bot.get_file(message.audio.file_id)
-                    file_bytes = await bot.download_file(file.file_path)
+                    file = await get_bot().get_file(message.audio.file_id)
+                    file_bytes = await get_bot().download_file(file.file_path)
                     content = await transcription_service.transcribe_audio(file_bytes.read())
                 except Exception as e:
                     logger.error(f"Audio transcription error: {e}")
@@ -162,8 +173,8 @@ async def collect_group_message(message: types.Message):
             # Try to parse the document
             if message.document.file_size and message.document.file_size < 20 * 1024 * 1024:
                 try:
-                    file = await bot.get_file(file_id)
-                    file_bytes = await bot.download_file(file.file_path)
+                    file = await get_bot().get_file(file_id)
+                    file_bytes = await get_bot().download_file(file.file_path)
                     result = await document_parser.parse(file_bytes.read(), file_name)
                     content = result.content or f"[Document: {file_name}]"
                     document_metadata = result.metadata
@@ -211,8 +222,8 @@ async def collect_group_message(message: types.Message):
 
             # OCR the photo
             try:
-                file = await bot.get_file(file_id)
-                file_bytes = await bot.download_file(file.file_path)
+                file = await get_bot().get_file(file_id)
+                file_bytes = await get_bot().download_file(file.file_path)
                 result = await document_parser.parse(file_bytes.read(), file_name)
                 content = result.content if result.content else (message.caption or "[Photo]")
                 document_metadata = result.metadata
@@ -353,10 +364,18 @@ async def cmd_chats(message: types.Message):
 
 async def start_bot():
     """Start the bot polling."""
-    logger.info("Starting Telegram bot...")
-    await dp.start_polling(bot)
+    try:
+        bot_instance = get_bot()
+        logger.info("Starting Telegram bot...")
+        await dp.start_polling(bot_instance)
+    except ValueError as e:
+        logger.warning(f"Bot not started: {e}")
+    except Exception as e:
+        logger.error(f"Bot startup failed: {e}")
 
 
 async def stop_bot():
     """Stop the bot."""
-    await bot.session.close()
+    global bot
+    if bot:
+        await bot.session.close()
