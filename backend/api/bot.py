@@ -67,7 +67,7 @@ async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, o
         chat = Chat(
             telegram_chat_id=telegram_chat.id,
             title=telegram_chat.title or telegram_chat.full_name,
-            chat_type=telegram_chat.type,
+            chat_type="work",  # Default type, can be changed in UI
             owner_id=owner_id,
         )
         session.add(chat)
