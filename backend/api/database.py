@@ -1,7 +1,9 @@
+import logging
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from .config import get_settings
 from .models.database import Base
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
@@ -16,8 +18,10 @@ def get_async_database_url(url: str) -> str:
 
 
 database_url = get_async_database_url(settings.database_url)
+logger.info(f"Database URL configured (async): {database_url.split('@')[0] if '@' in database_url else 'invalid'}@***")
 
 engine = create_async_engine(database_url, echo=False, pool_pre_ping=True)
+logger.info("SQLAlchemy engine created")
 
 AsyncSessionLocal = async_sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
