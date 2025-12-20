@@ -14,13 +14,14 @@ interface ChatListProps {
 
 // Chat type configurations for UI
 const CHAT_TYPE_CONFIG: Record<ChatTypeId, { name: string; icon: typeof MessageSquare; color: string; bgColor: string }> = {
+  work: { name: 'Рабочий', icon: MessageSquare, color: 'text-indigo-400', bgColor: 'from-indigo-500/20 to-indigo-600/20' },
   hr: { name: 'HR', icon: UserCheck, color: 'text-blue-400', bgColor: 'from-blue-500/20 to-blue-600/20' },
-  project: { name: 'Project', icon: FolderKanban, color: 'text-purple-400', bgColor: 'from-purple-500/20 to-purple-600/20' },
-  client: { name: 'Client', icon: Building2, color: 'text-green-400', bgColor: 'from-green-500/20 to-green-600/20' },
-  contractor: { name: 'Contractor', icon: Briefcase, color: 'text-orange-400', bgColor: 'from-orange-500/20 to-orange-600/20' },
-  sales: { name: 'Sales', icon: DollarSign, color: 'text-yellow-400', bgColor: 'from-yellow-500/20 to-yellow-600/20' },
-  support: { name: 'Support', icon: Headphones, color: 'text-cyan-400', bgColor: 'from-cyan-500/20 to-cyan-600/20' },
-  custom: { name: 'Custom', icon: Settings, color: 'text-gray-400', bgColor: 'from-gray-500/20 to-gray-600/20' },
+  project: { name: 'Проект', icon: FolderKanban, color: 'text-purple-400', bgColor: 'from-purple-500/20 to-purple-600/20' },
+  client: { name: 'Клиент', icon: Building2, color: 'text-green-400', bgColor: 'from-green-500/20 to-green-600/20' },
+  contractor: { name: 'Подрядчик', icon: Briefcase, color: 'text-orange-400', bgColor: 'from-orange-500/20 to-orange-600/20' },
+  sales: { name: 'Продажи', icon: DollarSign, color: 'text-yellow-400', bgColor: 'from-yellow-500/20 to-yellow-600/20' },
+  support: { name: 'Поддержка', icon: Headphones, color: 'text-cyan-400', bgColor: 'from-cyan-500/20 to-cyan-600/20' },
+  custom: { name: 'Другое', icon: Settings, color: 'text-gray-400', bgColor: 'from-gray-500/20 to-gray-600/20' },
 };
 
 export default function ChatList({ chats, selectedId, onSelect }: ChatListProps) {
@@ -34,9 +35,9 @@ export default function ChatList({ chats, selectedId, onSelect }: ChatListProps)
     if (days === 0) {
       return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     } else if (days === 1) {
-      return 'Yesterday';
+      return 'Вчера';
     } else if (days < 7) {
-      return date.toLocaleDateString('en-US', { weekday: 'short' });
+      return date.toLocaleDateString('ru-RU', { weekday: 'short' });
     } else {
       return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
     }
