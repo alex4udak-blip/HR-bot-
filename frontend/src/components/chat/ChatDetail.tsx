@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import * as Tabs from '@radix-ui/react-tabs';
@@ -193,6 +193,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
   const [downloadingReport, setDownloadingReport] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const { data: messages = [], isLoading: loadingMessages } = useQuery({
     queryKey: ['messages', chat.id],
@@ -203,6 +204,13 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
     queryKey: ['participants', chat.id],
     queryFn: () => getParticipants(chat.id),
   });
+
+  // Scroll to bottom when messages load
+  useEffect(() => {
+    if (messages.length > 0 && messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
 
   const updateNameMutation = useMutation({
     mutationFn: (name: string) => updateChat(chat.id, { custom_name: name }),
@@ -438,7 +446,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
         </Tabs.List>
 
         {/* Messages Tab */}
-        <Tabs.Content value="messages" className="flex-1 overflow-y-auto p-4">
+        <Tabs.Content value="messages" ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4">
           {loadingMessages ? (
             <div className="flex items-center justify-center py-8">
               <div className="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
