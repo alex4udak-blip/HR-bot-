@@ -176,7 +176,7 @@ async def update_chat(
         try:
             chat.chat_type = ChatType(data.chat_type)
         except ValueError:
-            chat.chat_type = ChatType.CUSTOM
+            chat.chat_type = ChatType.custom
     if data.custom_type_name is not None:
         chat.custom_type_name = data.custom_type_name
     if data.custom_type_description is not None:

@@ -18,14 +18,15 @@ class UserRole(str, enum.Enum):
 
 
 class ChatType(str, enum.Enum):
-    WORK = "work"                # General work chat
-    HR = "hr"                    # Candidate evaluation
-    PROJECT = "project"          # Team project chat
-    CLIENT = "client"            # Client communication
-    CONTRACTOR = "contractor"    # External contractor
-    SALES = "sales"              # Sales negotiations
-    SUPPORT = "support"          # Customer support
-    CUSTOM = "custom"            # Custom user-defined type
+    # Names must be lowercase to match PostgreSQL enum values
+    work = "work"                # General work chat
+    hr = "hr"                    # Candidate evaluation
+    project = "project"          # Team project chat
+    client = "client"            # Client communication
+    contractor = "contractor"    # External contractor
+    sales = "sales"              # Sales negotiations
+    support = "support"          # Customer support
+    custom = "custom"            # Custom user-defined type
 
 
 class User(Base):
@@ -54,7 +55,7 @@ class Chat(Base):
     telegram_chat_id = Column(BigInteger, unique=True, nullable=False, index=True)
     title = Column(String(255), nullable=False)
     custom_name = Column(String(255), nullable=True)
-    chat_type = Column(SQLEnum(ChatType), default=ChatType.WORK, index=True)
+    chat_type = Column(SQLEnum(ChatType), default=ChatType.work, index=True)
     custom_type_name = Column(String(255), nullable=True)  # For CUSTOM type
     custom_type_description = Column(Text, nullable=True)  # For CUSTOM type
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)

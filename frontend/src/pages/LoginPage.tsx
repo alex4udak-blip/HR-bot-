@@ -1,17 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Mail, Lock, User, Eye, EyeOff, Sparkles } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
-import { login, register } from '@/services/api';
+import { login } from '@/services/api';
 import BackgroundEffects from '@/components/BackgroundEffects';
 
 export default function LoginPage() {
-  const [isRegister, setIsRegister] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ email: '', password: '', name: '' });
+  const [form, setForm] = useState({ email: '', password: '' });
   const { setToken, setUser } = useAuthStore();
   const navigate = useNavigate();
 
@@ -20,13 +19,10 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = isRegister
-        ? await register(form.email, form.password, form.name)
-        : await login(form.email, form.password);
-
+      const response = await login(form.email, form.password);
       setToken(response.access_token);
       setUser(response.user);
-      toast.success(isRegister ? 'Аккаунт создан!' : 'С возвращением!');
+      toast.success('С возвращением!');
       navigate('/dashboard');
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Ошибка авторизации');
@@ -63,25 +59,11 @@ export default function LoginPage() {
               Чат Аналитика
             </h1>
             <p className="text-dark-400">
-              {isRegister ? 'Создайте аккаунт' : 'Войдите в систему'}
+              Войдите в систему
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            {isRegister && (
-              <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
-                <input
-                  type="text"
-                  placeholder="Полное имя"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  required={isRegister}
-                  className="w-full input-premium rounded-xl py-3.5 pl-12 pr-4 text-dark-100 placeholder-dark-500 focus:outline-none"
-                />
-              </div>
-            )}
-
             <div className="relative group">
               <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400 group-focus-within:text-accent-400 transition-colors" />
               <input
@@ -125,8 +107,6 @@ export default function LoginPage() {
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   Загрузка...
                 </span>
-              ) : isRegister ? (
-                'Создать аккаунт'
               ) : (
                 'Войти'
               )}
@@ -134,12 +114,9 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-6 text-center">
-            <button
-              onClick={() => setIsRegister(!isRegister)}
-              className="text-dark-400 hover:text-accent-400 transition-colors"
-            >
-              {isRegister ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться'}
-            </button>
+            <p className="text-dark-500 text-sm">
+              Нет аккаунта? Обратитесь к администратору
+            </p>
           </div>
         </div>
       </motion.div>
