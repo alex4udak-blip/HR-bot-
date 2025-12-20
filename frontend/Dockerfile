@@ -1,23 +1,26 @@
-# Build stage
-FROM node:20-alpine AS build
+FROM node:20-alpine as builder
 
 WORKDIR /app
 
+# Copy package files
+COPY package.json package-lock.json* ./
+
 # Install dependencies
-COPY package*.json ./
 RUN npm install
 
-# Copy source and build
+# Copy source code
 COPY . .
+
+# Build the application
 RUN npm run build
 
 # Production stage
 FROM nginx:alpine
 
-# Copy built assets
-COPY --from=build /app/dist /usr/share/nginx/html
+# Copy built files
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy nginx configuration
+# Copy nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
