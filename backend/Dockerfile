@@ -1,5 +1,6 @@
 FROM python:3.11-slim
 
+# Universal Chat Analyzer Backend - v1.1
 WORKDIR /app
 
 # Install system dependencies
