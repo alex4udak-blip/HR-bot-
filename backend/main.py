@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
@@ -9,8 +10,22 @@ from fastapi.responses import FileResponse
 
 from api.routes import auth, users, chats, messages, criteria, ai, stats
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Configure logging - reduce verbosity, only show warnings and errors
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(levelname)s: %(name)s - %(message)s",
+    stream=sys.stdout
+)
+# Keep our app logger at INFO level for important messages
+logger = logging.getLogger("hr-analyzer")
+logger.setLevel(logging.INFO)
+
+# Suppress noisy loggers
+logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
+logging.getLogger("aiogram").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 # Static files directory (built frontend)
 STATIC_DIR = Path(__file__).parent / "static"
@@ -18,23 +33,48 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 async def init_database():
     """Initialize database in background."""
-    from api.database import engine, Base, AsyncSessionLocal
+    import os
+    from api.database import engine, AsyncSessionLocal
+    from api.models.database import Base
     from api.services.auth import create_superadmin_if_not_exists
+
+    # Check if we should reset the database schema
+    reset_schema = os.environ.get("RESET_DB_SCHEMA", "false").lower() == "true"
 
     # Create database tables with retry
     for attempt in range(5):
         try:
             async with engine.begin() as conn:
+                if reset_schema:
+                    logger.info("Resetting database schema...")
+                    await conn.run_sync(Base.metadata.drop_all)
                 await conn.run_sync(Base.metadata.create_all)
-            logger.info("Database tables created successfully")
+            logger.info("Database tables ready")
 
             # Create superadmin
             async with AsyncSessionLocal() as db:
                 await create_superadmin_if_not_exists(db)
-                logger.info("Superadmin check completed")
+                logger.info("Superadmin ready")
             return
         except Exception as e:
-            logger.warning(f"Database init attempt {attempt + 1}/5 failed: {e}")
+            if "does not exist" in str(e) and not reset_schema:
+                # Schema mismatch detected - force reset
+                logger.info("Schema mismatch detected, resetting database...")
+                try:
+                    async with engine.begin() as conn:
+                        await conn.run_sync(Base.metadata.drop_all)
+                        await conn.run_sync(Base.metadata.create_all)
+                    logger.info("Database schema reset successfully")
+
+                    # Create superadmin
+                    async with AsyncSessionLocal() as db:
+                        await create_superadmin_if_not_exists(db)
+                        logger.info("Superadmin ready")
+                    return
+                except Exception as reset_error:
+                    logger.warning(f"Schema reset failed: {reset_error}")
+            else:
+                logger.warning(f"Database init attempt {attempt + 1}/5 failed: {e}")
             await asyncio.sleep(3)
 
     logger.error("Failed to initialize database after 5 attempts")

@@ -92,4 +92,3 @@ async def create_superadmin_if_not_exists(db: AsyncSession):
         )
         db.add(superadmin)
         await db.commit()
-        print(f"Superadmin created: {settings.superadmin_email}")

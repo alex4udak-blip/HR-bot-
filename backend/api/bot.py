@@ -12,8 +12,7 @@ from .models.database import Base, User, Chat, Message
 from .services.transcription import transcription_service
 from .services.documents import document_parser
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("hr-analyzer.bot")
 
 # Bot is initialized lazily to avoid crashes on invalid/missing token
 bot: Bot | None = None
@@ -72,12 +71,11 @@ async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, o
         session.add(chat)
         await session.commit()
         await session.refresh(chat)
-        logger.info(f"Created new chat: {chat.title} (owner_id: {owner_id})")
+        logger.debug(f"Created new chat: {chat.title}")
     elif owner_id and not chat.owner_id:
         # Update owner if not set
         chat.owner_id = owner_id
         await session.commit()
-        logger.info(f"Updated chat owner: {chat.title} -> {owner_id}")
 
     return chat
 
@@ -96,9 +94,9 @@ async def on_bot_added(event: ChatMemberUpdated):
         chat = await get_or_create_chat(session, event.chat, owner_id)
 
         if owner:
-            logger.info(f"Bot added to '{event.chat.title}' by user {owner.email} (telegram: {adder_id})")
+            logger.debug(f"Bot added to chat by user {owner.email}")
         else:
-            logger.info(f"Bot added to '{event.chat.title}' by unregistered telegram user {adder_id}")
+            logger.debug(f"Bot added to chat by unregistered user")
 
 
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
@@ -128,7 +126,7 @@ async def collect_group_message(message: types.Message):
                 file_bytes = await get_bot().download_file(file.file_path)
                 content = await transcription_service.transcribe_audio(file_bytes.read())
             except Exception as e:
-                logger.error(f"Voice transcription error: {e}")
+                logger.debug(f"Voice transcription: {e}")
                 content = "[Voice message - transcription failed]"
 
         elif message.video_note:
@@ -139,7 +137,7 @@ async def collect_group_message(message: types.Message):
                 file_bytes = await get_bot().download_file(file.file_path)
                 content = await transcription_service.transcribe_video(file_bytes.read())
             except Exception as e:
-                logger.error(f"Video note transcription error: {e}")
+                logger.debug(f"Video note transcription: {e}")
                 content = "[Video note - transcription failed]"
 
         elif message.video:
@@ -151,7 +149,7 @@ async def collect_group_message(message: types.Message):
                     file_bytes = await get_bot().download_file(file.file_path)
                     content = await transcription_service.transcribe_video(file_bytes.read())
                 except Exception as e:
-                    logger.error(f"Video transcription error: {e}")
+                    logger.debug(f"Video transcription: {e}")
                     content = f"[Video: {file_name}]"
             else:
                 content = f"[Video: {file_name} - too large for transcription]"
@@ -165,7 +163,7 @@ async def collect_group_message(message: types.Message):
                     file_bytes = await get_bot().download_file(file.file_path)
                     content = await transcription_service.transcribe_audio(file_bytes.read())
                 except Exception as e:
-                    logger.error(f"Audio transcription error: {e}")
+                    logger.debug(f"Audio transcription: {e}")
                     content = f"[Audio: {file_name}]"
             else:
                 content = f"[Audio: {file_name} - too large]"
@@ -188,9 +186,8 @@ async def collect_group_message(message: types.Message):
                     document_metadata = result.metadata
                     parse_status = result.status
                     parse_error = result.error
-                    logger.info(f"Parsed document: {file_name} - status: {parse_status}")
                 except Exception as e:
-                    logger.error(f"Document parsing error: {e}")
+                    logger.debug(f"Document parsing: {e}")
                     content = f"[Document: {file_name}]"
                     parse_status = "failed"
                     parse_error = str(e)
@@ -236,9 +233,8 @@ async def collect_group_message(message: types.Message):
                 content = result.content if result.content else (message.caption or "[Photo]")
                 document_metadata = result.metadata
                 parse_status = result.status
-                logger.info(f"OCR photo: status: {parse_status}")
             except Exception as e:
-                logger.error(f"Photo OCR error: {e}")
+                logger.debug(f"Photo OCR: {e}")
                 content = message.caption or "[Photo]"
                 parse_status = "failed"
                 parse_error = str(e)
@@ -374,12 +370,12 @@ async def start_bot():
     """Start the bot polling."""
     try:
         bot_instance = get_bot()
-        logger.info("Starting Telegram bot...")
+        logger.info("Telegram bot started")
         await dp.start_polling(bot_instance)
     except ValueError as e:
-        logger.warning(f"Bot not started: {e}")
+        logger.debug(f"Bot not started: {e}")
     except Exception as e:
-        logger.error(f"Bot startup failed: {e}")
+        logger.warning(f"Bot startup issue: {e}")
 
 
 async def stop_bot():
