@@ -1,1 +1,0 @@
-# HR Candidate Analyzer Bot
