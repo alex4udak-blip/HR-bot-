@@ -3,10 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from ..database import get_db
-from ..models.database import User
+from ..models.database import User, UserRole
 from ..models.schemas import (
     LoginRequest, TokenResponse, ChangePasswordRequest,
-    LinkTelegramRequest, UserResponse
+    LinkTelegramRequest, UserResponse, UserCreate
 )
 from ..services.auth import (
     authenticate_user, create_access_token, get_current_user,
@@ -31,6 +31,37 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             telegram_username=user.telegram_username,
             is_active=user.is_active, created_at=user.created_at,
             chats_count=len(user.chats) if user.chats else 0
+        )
+    )
+
+
+@router.post("/register", response_model=TokenResponse)
+async def register(request: UserCreate, db: AsyncSession = Depends(get_db)):
+    # Check if email already exists
+    result = await db.execute(select(User).where(User.email == request.email))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    # Create new admin user
+    user = User(
+        email=request.email,
+        password_hash=hash_password(request.password),
+        name=request.name,
+        role=UserRole.ADMIN,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    token = create_access_token({"sub": str(user.id)})
+    return TokenResponse(
+        access_token=token,
+        user=UserResponse(
+            id=user.id, email=user.email, name=user.name,
+            role=user.role.value, telegram_id=user.telegram_id,
+            telegram_username=user.telegram_username,
+            is_active=user.is_active, created_at=user.created_at,
+            chats_count=0
         )
     )
 
