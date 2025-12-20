@@ -231,9 +231,13 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
   const handleQuickAction = async (action: string) => {
     if (isStreaming) return;
 
+    // Find the label for this action
+    const actionInfo = quickActions.find(a => a.id === action);
+    const actionLabel = actionInfo?.label || action;
+
     const userMessage: AIMessage = {
       role: 'user',
-      content: `[Quick Action: ${action}]`,
+      content: `🔍 ${actionLabel}`,
       timestamp: new Date().toISOString(),
     };
 
