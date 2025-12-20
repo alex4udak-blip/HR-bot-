@@ -332,8 +332,16 @@ QUICK_ACTION_PROMPTS: Dict[str, Dict[str, str]] = {
 
 class AIService:
     def __init__(self):
-        self.client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self._client = None
         self.model = "claude-sonnet-4-20250514"
+
+    @property
+    def client(self):
+        if self._client is None:
+            if not settings.anthropic_api_key:
+                raise ValueError("ANTHROPIC_API_KEY не настроен! Добавьте его в переменные окружения Railway.")
+            self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        return self._client
 
     def _format_messages(self, messages: List[Message]) -> str:
         lines = []
