@@ -54,52 +54,52 @@ const iconMap: Record<string, typeof FileText> = {
 // Quick actions per chat type
 const QUICK_ACTIONS_BY_TYPE: Record<ChatTypeId, { id: string; label: string; icon: string }[]> = {
   hr: [
-    { id: 'full_analysis', label: 'Full Analysis', icon: 'FileText' },
-    { id: 'red_flags', label: 'Red Flags', icon: 'AlertTriangle' },
-    { id: 'strengths', label: 'Strengths', icon: 'ThumbsUp' },
-    { id: 'recommendation', label: 'Recommendation', icon: 'Sparkles' },
-    { id: 'culture_fit', label: 'Culture Fit', icon: 'Users' },
+    { id: 'full_analysis', label: 'Полный анализ', icon: 'FileText' },
+    { id: 'red_flags', label: 'Красные флаги', icon: 'AlertTriangle' },
+    { id: 'strengths', label: 'Сильные стороны', icon: 'ThumbsUp' },
+    { id: 'recommendation', label: 'Рекомендация', icon: 'Sparkles' },
+    { id: 'culture_fit', label: 'Соответствие', icon: 'Users' },
   ],
   project: [
-    { id: 'project_status', label: 'Project Status', icon: 'BarChart' },
-    { id: 'blockers', label: 'Blockers', icon: 'AlertCircle' },
-    { id: 'responsibilities', label: 'Who Does What', icon: 'Users' },
-    { id: 'deadlines', label: 'Deadline Risks', icon: 'Clock' },
-    { id: 'action_items', label: 'Action Items', icon: 'CheckSquare' },
+    { id: 'project_status', label: 'Статус', icon: 'BarChart' },
+    { id: 'blockers', label: 'Блокеры', icon: 'AlertCircle' },
+    { id: 'responsibilities', label: 'Обязанности', icon: 'Users' },
+    { id: 'deadlines', label: 'Дедлайны', icon: 'Clock' },
+    { id: 'action_items', label: 'Задачи', icon: 'CheckSquare' },
   ],
   client: [
-    { id: 'satisfaction', label: 'Satisfaction', icon: 'Smile' },
-    { id: 'churn_risk', label: 'Churn Risk', icon: 'AlertTriangle' },
-    { id: 'requests', label: 'Requests', icon: 'MessageSquare' },
-    { id: 'promises', label: 'Our Promises', icon: 'HeartHandshake' },
-    { id: 'sentiment', label: 'Sentiment', icon: 'Heart' },
+    { id: 'satisfaction', label: 'Удовлетворённость', icon: 'Smile' },
+    { id: 'churn_risk', label: 'Риск ухода', icon: 'AlertTriangle' },
+    { id: 'requests', label: 'Запросы', icon: 'MessageSquare' },
+    { id: 'promises', label: 'Обещания', icon: 'HeartHandshake' },
+    { id: 'sentiment', label: 'Настроение', icon: 'Heart' },
   ],
   contractor: [
-    { id: 'performance', label: 'Performance', icon: 'TrendingUp' },
-    { id: 'reliability', label: 'Reliability', icon: 'Shield' },
-    { id: 'communication', label: 'Communication', icon: 'MessageCircle' },
-    { id: 'issues', label: 'Issues', icon: 'AlertCircle' },
-    { id: 'recommendation', label: 'Continue?', icon: 'HelpCircle' },
+    { id: 'performance', label: 'Эффективность', icon: 'TrendingUp' },
+    { id: 'reliability', label: 'Надёжность', icon: 'Shield' },
+    { id: 'communication', label: 'Коммуникация', icon: 'MessageCircle' },
+    { id: 'issues', label: 'Проблемы', icon: 'AlertCircle' },
+    { id: 'recommendation', label: 'Продолжать?', icon: 'HelpCircle' },
   ],
   sales: [
-    { id: 'deal_stage', label: 'Deal Stage', icon: 'Target' },
-    { id: 'objections', label: 'Objections', icon: 'XCircle' },
-    { id: 'budget', label: 'Budget Info', icon: 'Wallet' },
-    { id: 'decision_maker', label: 'Decision Maker', icon: 'Crown' },
-    { id: 'next_steps', label: 'Next Steps', icon: 'ArrowRight' },
+    { id: 'deal_stage', label: 'Этап сделки', icon: 'Target' },
+    { id: 'objections', label: 'Возражения', icon: 'XCircle' },
+    { id: 'budget', label: 'Бюджет', icon: 'Wallet' },
+    { id: 'decision_maker', label: 'ЛПР', icon: 'Crown' },
+    { id: 'next_steps', label: 'Следующие шаги', icon: 'ArrowRight' },
   ],
   support: [
-    { id: 'issues_summary', label: 'Issues Summary', icon: 'List' },
-    { id: 'resolution_rate', label: 'Resolution Rate', icon: 'CheckCircle' },
-    { id: 'response_time', label: 'Response Time', icon: 'Clock' },
-    { id: 'sentiment', label: 'Customer Mood', icon: 'Smile' },
-    { id: 'escalations', label: 'Escalations', icon: 'ArrowUp' },
+    { id: 'issues_summary', label: 'Сводка проблем', icon: 'List' },
+    { id: 'resolution_rate', label: 'Решаемость', icon: 'CheckCircle' },
+    { id: 'response_time', label: 'Время ответа', icon: 'Clock' },
+    { id: 'sentiment', label: 'Настроение', icon: 'Smile' },
+    { id: 'escalations', label: 'Эскалации', icon: 'ArrowUp' },
   ],
   custom: [
-    { id: 'full_analysis', label: 'Full Analysis', icon: 'FileText' },
-    { id: 'summary', label: 'Summary', icon: 'AlignLeft' },
-    { id: 'key_points', label: 'Key Points', icon: 'List' },
-    { id: 'action_items', label: 'Action Items', icon: 'CheckSquare' },
+    { id: 'full_analysis', label: 'Полный анализ', icon: 'FileText' },
+    { id: 'summary', label: 'Резюме', icon: 'AlignLeft' },
+    { id: 'key_points', label: 'Ключевые моменты', icon: 'List' },
+    { id: 'action_items', label: 'Задачи', icon: 'CheckSquare' },
   ],
 };
 
@@ -134,7 +134,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
     onSuccess: () => {
       setLocalMessages([]);
       queryClient.invalidateQueries({ queryKey: ['ai-history', chatId] });
-      toast.success('Chat history cleared');
+      toast.success('История очищена');
     },
   });
 
@@ -172,7 +172,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
         }
       );
     } catch (error) {
-      toast.error('Failed to send message');
+      toast.error('Ошибка отправки');
       setIsStreaming(false);
     }
   };
@@ -210,7 +210,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
         }
       );
     } catch (error) {
-      toast.error('Failed to execute action');
+      toast.error('Ошибка выполнения');
       setIsStreaming(false);
     }
   };
@@ -229,7 +229,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
         <div>
           <h3 className="font-semibold flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-accent-400" />
-            AI Assistant
+            AI Ассистент
           </h3>
           <p className="text-xs text-dark-500 truncate">{chatTitle}</p>
         </div>
@@ -267,9 +267,9 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
         {localMessages.length === 0 && !isStreaming && (
           <div className="text-center py-8">
             <Sparkles className="w-12 h-12 mx-auto text-dark-600 mb-3" />
-            <p className="text-dark-400 mb-1">Start a conversation</p>
+            <p className="text-dark-400 mb-1">Начните диалог</p>
             <p className="text-dark-500 text-sm">
-              Ask questions about the candidates
+              Задавайте вопросы о кандидатах
             </p>
           </div>
         )}
@@ -316,7 +316,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
         {isStreaming && !streamingContent && (
           <div className="flex items-center gap-2 text-dark-400">
             <Loader2 className="w-4 h-4 animate-spin" />
-            <span className="text-sm">Thinking...</span>
+            <span className="text-sm">Думаю...</span>
           </div>
         )}
 
@@ -330,7 +330,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about candidates..."
+            placeholder="Спросите о кандидатах..."
             rows={1}
             disabled={isStreaming}
             className="flex-1 glass-light rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent-500/50 disabled:opacity-50"

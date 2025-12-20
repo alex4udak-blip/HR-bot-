@@ -26,10 +26,10 @@ export default function LoginPage() {
 
       setToken(response.access_token);
       setUser(response.user);
-      toast.success(isRegister ? 'Account created!' : 'Welcome back!');
+      toast.success(isRegister ? 'Аккаунт создан!' : 'С возвращением!');
       navigate('/dashboard');
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Authentication failed');
+      toast.error(error.response?.data?.detail || 'Ошибка авторизации');
     } finally {
       setLoading(false);
     }
@@ -60,10 +60,10 @@ export default function LoginPage() {
               <Sparkles className="w-8 h-8 text-white" />
             </motion.div>
             <h1 className="text-3xl font-bold gradient-text mb-2">
-              HR Analyzer
+              HR Аналитика
             </h1>
             <p className="text-dark-400">
-              {isRegister ? 'Create your account' : 'Sign in to your account'}
+              {isRegister ? 'Создайте аккаунт' : 'Войдите в систему'}
             </p>
           </div>
 
@@ -73,7 +73,7 @@ export default function LoginPage() {
                 <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
                 <input
                   type="text"
-                  placeholder="Full Name"
+                  placeholder="Полное имя"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   required={isRegister}
@@ -86,7 +86,7 @@ export default function LoginPage() {
               <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400 group-focus-within:text-accent-400 transition-colors" />
               <input
                 type="email"
-                placeholder="Email address"
+                placeholder="Email адрес"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 required
@@ -98,7 +98,7 @@ export default function LoginPage() {
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400 group-focus-within:text-accent-400 transition-colors" />
               <input
                 type={showPassword ? 'text' : 'password'}
-                placeholder="Password"
+                placeholder="Пароль"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required
@@ -123,12 +123,12 @@ export default function LoginPage() {
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Loading...
+                  Загрузка...
                 </span>
               ) : isRegister ? (
-                'Create Account'
+                'Создать аккаунт'
               ) : (
-                'Sign In'
+                'Войти'
               )}
             </motion.button>
           </form>
@@ -138,7 +138,7 @@ export default function LoginPage() {
               onClick={() => setIsRegister(!isRegister)}
               className="text-dark-400 hover:text-accent-400 transition-colors"
             >
-              {isRegister ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+              {isRegister ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться'}
             </button>
           </div>
         </div>

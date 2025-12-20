@@ -15,10 +15,10 @@ import BackgroundEffects from './BackgroundEffects';
 import clsx from 'clsx';
 
 const navItems = [
-  { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { path: '/chats', icon: MessageSquare, label: 'Chats' },
-  { path: '/users', icon: Users, label: 'Users' },
-  { path: '/settings', icon: Settings, label: 'Settings' },
+  { path: '/dashboard', icon: LayoutDashboard, label: 'Главная' },
+  { path: '/chats', icon: MessageSquare, label: 'Чаты' },
+  { path: '/users', icon: Users, label: 'Пользователи' },
+  { path: '/settings', icon: Settings, label: 'Настройки' },
 ];
 
 export default function Layout() {
@@ -38,7 +38,7 @@ export default function Layout() {
       <aside className="hidden lg:flex flex-col w-64 glass border-r border-white/5">
         <div className="p-6 border-b border-white/5">
           <h1 className="text-xl font-bold bg-gradient-to-r from-accent-400 to-accent-600 bg-clip-text text-transparent">
-            HR Analyzer
+            HR Аналитика
           </h1>
         </div>
 
@@ -79,7 +79,7 @@ export default function Layout() {
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-dark-300 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
           >
             <LogOut className="w-5 h-5" />
-            <span className="font-medium">Logout</span>
+            <span className="font-medium">Выход</span>
           </button>
         </div>
       </aside>

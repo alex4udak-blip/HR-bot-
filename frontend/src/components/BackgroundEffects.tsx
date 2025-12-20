@@ -4,14 +4,29 @@ export default function BackgroundEffects() {
       {/* Premium gradient background */}
       <div className="premium-bg" />
 
-      {/* Grid pattern */}
+      {/* Aurora rotating effect */}
+      <div className="aurora" />
+
+      {/* Grid pattern with pulse */}
       <div className="grid-pattern" />
 
-      {/* Floating orbs */}
+      {/* Floating orbs - enhanced */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none" style={{ zIndex: -1 }}>
         <div className="floating-orb orb-1" />
         <div className="floating-orb orb-2" />
         <div className="floating-orb orb-3" />
+        <div className="floating-orb orb-4" />
+      </div>
+
+      {/* Floating particles */}
+      <div className="particles">
+        <div className="particle" />
+        <div className="particle" />
+        <div className="particle" />
+        <div className="particle" />
+        <div className="particle" />
+        <div className="particle" />
+        <div className="particle" />
       </div>
 
       {/* Subtle noise texture */}
