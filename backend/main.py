@@ -39,18 +39,29 @@ async def init_database():
     from api.database import engine, AsyncSessionLocal
     from api.models.database import Base
     from api.services.auth import create_superadmin_if_not_exists
+    from sqlalchemy import text
 
     for attempt in range(5):
         try:
             async with engine.begin() as conn:
+                # Add 'work' to chattype enum if it doesn't exist (PostgreSQL specific)
+                try:
+                    await conn.execute(text("ALTER TYPE chattype ADD VALUE IF NOT EXISTS 'work'"))
+                    logger.info("Added 'work' to chattype enum")
+                except Exception:
+                    pass  # Enum value already exists or not PostgreSQL
+
                 # Create tables if they don't exist (safe, preserves data)
                 await conn.run_sync(Base.metadata.create_all)
 
             # Create superadmin
             async with AsyncSessionLocal() as db:
                 await create_superadmin_if_not_exists(db)
+
+            logger.info("Database initialized successfully")
             return
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Database init attempt {attempt + 1} failed: {e}")
             await asyncio.sleep(3)
 
 

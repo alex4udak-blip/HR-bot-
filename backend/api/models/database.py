@@ -18,6 +18,7 @@ class UserRole(str, enum.Enum):
 
 
 class ChatType(str, enum.Enum):
+    WORK = "work"                # General work chat
     HR = "hr"                    # Candidate evaluation
     PROJECT = "project"          # Team project chat
     CLIENT = "client"            # Client communication
@@ -53,7 +54,7 @@ class Chat(Base):
     telegram_chat_id = Column(BigInteger, unique=True, nullable=False, index=True)
     title = Column(String(255), nullable=False)
     custom_name = Column(String(255), nullable=True)
-    chat_type = Column(SQLEnum(ChatType), default=ChatType.HR, index=True)
+    chat_type = Column(SQLEnum(ChatType), default=ChatType.WORK, index=True)
     custom_type_name = Column(String(255), nullable=True)  # For CUSTOM type
     custom_type_description = Column(Text, nullable=True)  # For CUSTOM type
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
