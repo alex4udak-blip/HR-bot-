@@ -29,7 +29,8 @@ import {
   DollarSign,
   Headphones,
   MoreHorizontal,
-  Trash2
+  Trash2,
+  Loader2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { Chat, Message, ChatTypeId } from '@/types';
@@ -189,6 +190,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
   const [editName, setEditName] = useState(chat.custom_name || chat.title);
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [downloadingReport, setDownloadingReport] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -234,6 +236,9 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
   });
 
   const handleDownloadReport = async (format: string) => {
+    if (downloadingReport) return;
+
+    setDownloadingReport(format);
     try {
       const blob = await downloadReport(chat.id, 'full_analysis', format);
       const url = URL.createObjectURL(blob);
@@ -247,6 +252,8 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
       toast.success('Отчёт скачан');
     } catch {
       toast.error('Ошибка скачивания');
+    } finally {
+      setDownloadingReport(null);
     }
   };
 
@@ -569,26 +576,47 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
               <p className="text-sm text-dark-400 mb-4">
                 Скачайте полный аналитический отчёт по этому чату
               </p>
+              {downloadingReport && (
+                <div className="flex items-center gap-2 mb-4 p-3 rounded-lg bg-accent-500/10 text-accent-400">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">Генерация отчёта... Это может занять до минуты</span>
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => handleDownloadReport('pdf')}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                  disabled={!!downloadingReport}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50 disabled:cursor-wait transition-colors"
                 >
-                  <Download className="w-4 h-4" />
+                  {downloadingReport === 'pdf' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
                   PDF
                 </button>
                 <button
                   onClick={() => handleDownloadReport('docx')}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
+                  disabled={!!downloadingReport}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 disabled:opacity-50 disabled:cursor-wait transition-colors"
                 >
-                  <Download className="w-4 h-4" />
+                  {downloadingReport === 'docx' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
                   DOCX
                 </button>
                 <button
                   onClick={() => handleDownloadReport('markdown')}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors"
+                  disabled={!!downloadingReport}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-wait transition-colors"
                 >
-                  <Download className="w-4 h-4" />
+                  {downloadingReport === 'markdown' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
                   Markdown
                 </button>
               </div>
