@@ -469,6 +469,29 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
 
                     {isDocument ? (
                       <DocumentMessage message={message} />
+                    ) : message.content_type === 'photo' && message.file_id ? (
+                      <div className="space-y-2">
+                        <img
+                          src={`/api/chats/file/${message.file_id}`}
+                          alt="Photo"
+                          className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => window.open(`/api/chats/file/${message.file_id}`, '_blank')}
+                          loading="lazy"
+                        />
+                        {message.content && !message.content.startsWith('[') && (
+                          <p className="text-sm text-dark-300">{message.content}</p>
+                        )}
+                      </div>
+                    ) : message.content_type === 'sticker' && message.file_id ? (
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={`/api/chats/file/${message.file_id}`}
+                          alt="Sticker"
+                          className="w-24 h-24 object-contain"
+                          loading="lazy"
+                        />
+                        <span className="text-2xl">{message.content.replace('[Sticker: ', '').replace(']', '')}</span>
+                      </div>
                     ) : (
                       <>
                         <p className="text-sm text-dark-200 whitespace-pre-wrap">{message.content}</p>

@@ -313,8 +313,23 @@ async def collect_group_message(message: types.Message):
         elif message.sticker:
             content_type = "sticker"
             content = f"[Sticker: {message.sticker.emoji or ''}]"
+            file_id = message.sticker.file_id
+            file_name = "sticker.webp"
 
         # Save message (for text, voice, video, audio, sticker)
+        # Get file_id for voice/video/audio if not already set
+        msg_file_id = None
+        if message.voice:
+            msg_file_id = message.voice.file_id
+        elif message.video_note:
+            msg_file_id = message.video_note.file_id
+        elif message.video:
+            msg_file_id = message.video.file_id
+        elif message.audio:
+            msg_file_id = message.audio.file_id
+        elif message.sticker:
+            msg_file_id = message.sticker.file_id
+
         db_message = Message(
             chat_id=chat.id,
             telegram_message_id=message.message_id,
@@ -324,6 +339,7 @@ async def collect_group_message(message: types.Message):
             last_name=message.from_user.last_name,
             content=content,
             content_type=content_type,
+            file_id=msg_file_id,
             file_name=file_name,
             timestamp=message.date.replace(tzinfo=None),
         )
