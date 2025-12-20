@@ -44,12 +44,14 @@ async def init_database():
     for attempt in range(5):
         try:
             async with engine.begin() as conn:
-                # Add 'work' to chattype enum if it doesn't exist (PostgreSQL specific)
-                try:
-                    await conn.execute(text("ALTER TYPE chattype ADD VALUE IF NOT EXISTS 'work'"))
-                    logger.info("Added 'work' to chattype enum")
-                except Exception:
-                    pass  # Enum value already exists or not PostgreSQL
+                # Add all enum values to chattype if they don't exist (PostgreSQL specific)
+                enum_values = ['work', 'hr', 'project', 'client', 'contractor', 'sales', 'support', 'custom']
+                for value in enum_values:
+                    try:
+                        await conn.execute(text(f"ALTER TYPE chattype ADD VALUE IF NOT EXISTS '{value}'"))
+                    except Exception:
+                        pass  # Enum value already exists
+                logger.info("Ensured all chattype enum values exist")
 
                 # Create tables if they don't exist (safe, preserves data)
                 await conn.run_sync(Base.metadata.create_all)

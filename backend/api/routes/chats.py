@@ -221,3 +221,28 @@ async def clear_messages(
 
     await db.execute(Message.__table__.delete().where(Message.chat_id == chat_id))
     await db.commit()
+
+
+@router.delete("/{chat_id}", status_code=204)
+async def delete_chat(
+    chat_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Delete a chat and all its messages."""
+    user = await db.merge(user)
+
+    result = await db.execute(select(Chat).where(Chat.id == chat_id))
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if not can_access_chat(user, chat):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Delete related data first
+    await db.execute(Message.__table__.delete().where(Message.chat_id == chat_id))
+    await db.execute(ChatCriteria.__table__.delete().where(ChatCriteria.chat_id == chat_id))
+
+    # Delete the chat
+    await db.delete(chat)
+    await db.commit()
