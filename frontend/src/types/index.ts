@@ -73,6 +73,7 @@ export interface Message {
   last_name?: string;
   content: string;
   content_type: string;
+  file_id?: string;
   file_name?: string;
   document_metadata?: DocumentMetadata;
   parse_status?: 'parsed' | 'partial' | 'failed' | 'skipped';

@@ -121,6 +121,7 @@ class MessageResponse(BaseModel):
     last_name: Optional[str]
     content: str
     content_type: str
+    file_id: Optional[str] = None  # Telegram file ID for images/documents
     file_name: Optional[str]
     document_metadata: Optional[dict] = None  # {file_type, pages_count, sheets, etc}
     parse_status: Optional[str] = None  # parsed, partial, failed

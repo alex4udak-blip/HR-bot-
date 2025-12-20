@@ -37,9 +37,9 @@ const categoryColors = {
 };
 
 const categoryLabels = {
-  basic: 'Basic',
-  red_flags: 'Red Flags',
-  green_flags: 'Green Flags',
+  basic: 'Основные',
+  red_flags: 'Негативные',
+  green_flags: 'Позитивные',
 };
 
 export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
@@ -68,10 +68,10 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['chat-criteria', chatId] });
       setHasChanges(false);
-      toast.success('Criteria saved');
+      toast.success('Критерии сохранены');
     },
     onError: () => {
-      toast.error('Failed to save criteria');
+      toast.error('Ошибка сохранения');
     },
   });
 
@@ -105,7 +105,7 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
     if (preset) {
       setCriteria([...criteria, ...preset.criteria]);
       setHasChanges(true);
-      toast.success(`Applied preset: ${preset.name}`);
+      toast.success(`Применён шаблон: ${preset.name}`);
     }
   };
 
@@ -122,16 +122,16 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-semibold">Evaluation Criteria</h3>
+          <h3 className="font-semibold">Критерии оценки</h3>
           <p className="text-sm text-dark-400">
-            {criteria.length} criteria configured
+            {criteria.length} {criteria.length === 1 ? 'критерий' : criteria.length < 5 ? 'критерия' : 'критериев'}
           </p>
         </div>
         <div className="flex gap-2">
           {presets.length > 0 && (
             <Select.Root onValueChange={handleApplyPreset}>
               <Select.Trigger className="flex items-center gap-2 px-3 py-2 rounded-lg glass-light text-sm hover:bg-white/10 transition-colors">
-                <Select.Value placeholder="Apply Preset" />
+                <Select.Value placeholder="Шаблон" />
                 <ChevronDown className="w-4 h-4" />
               </Select.Trigger>
               <Select.Portal>
@@ -156,7 +156,7 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
             className="flex items-center gap-2 px-3 py-2 rounded-lg bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 text-sm transition-colors"
           >
             <Plus className="w-4 h-4" />
-            Add
+            Добавить
           </button>
         </div>
       </div>
@@ -167,9 +167,9 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
           {criteria.length === 0 ? (
             <div className="text-center py-8 glass-light rounded-xl">
               <Target className="w-12 h-12 mx-auto text-dark-600 mb-3" />
-              <p className="text-dark-400">No criteria configured</p>
+              <p className="text-dark-400">Критерии не настроены</p>
               <p className="text-dark-500 text-sm mt-1">
-                Add criteria or apply a preset
+                Добавьте критерии или выберите шаблон
               </p>
             </div>
           ) : (
@@ -197,7 +197,7 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
                         onChange={(e) =>
                           handleUpdateCriterion(index, { name: e.target.value })
                         }
-                        placeholder="Criterion name"
+                        placeholder="Название критерия"
                         className="w-full bg-transparent border-b border-white/10 pb-1 text-sm font-medium focus:outline-none focus:border-accent-500"
                       />
                       <textarea
@@ -205,13 +205,13 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
                         onChange={(e) =>
                           handleUpdateCriterion(index, { description: e.target.value })
                         }
-                        placeholder="Description..."
+                        placeholder="Описание..."
                         rows={2}
                         className="w-full bg-transparent text-sm text-dark-300 resize-none focus:outline-none"
                       />
                       <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-dark-500">Category:</span>
+                          <span className="text-xs text-dark-500">Категория:</span>
                           <select
                             value={criterion.category}
                             onChange={(e) =>
@@ -229,7 +229,7 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
                           </select>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-dark-500">Weight:</span>
+                          <span className="text-xs text-dark-500">Вес:</span>
                           <input
                             type="range"
                             min="1"
@@ -273,7 +273,7 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
             className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50 transition-colors"
           >
             <Save className="w-4 h-4" />
-            {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
+            {saveMutation.isPending ? 'Сохранение...' : 'Сохранить'}
           </button>
         </motion.div>
       )}
