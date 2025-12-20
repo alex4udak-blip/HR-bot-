@@ -86,12 +86,18 @@ async def ai_message(
     if request.quick_action:
         async def generate():
             full_response = ""
-            async for chunk in ai_service.quick_action(
-                request.quick_action, chat.title, messages, criteria,
-                chat_type, custom_description
-            ):
-                full_response += chunk
-                yield f"data: {json.dumps({'content': chunk})}\n\n"
+            try:
+                async for chunk in ai_service.quick_action(
+                    request.quick_action, chat.title, messages, criteria,
+                    chat_type, custom_description
+                ):
+                    full_response += chunk
+                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+            except Exception as e:
+                error_msg = f"Ошибка AI: {str(e)}"
+                yield f"data: {json.dumps({'content': error_msg, 'error': True})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
 
             # Save to conversation
             new_messages = list(history)  # Create new list to ensure change detection
@@ -116,12 +122,18 @@ async def ai_message(
     # Regular message
     async def generate():
         full_response = ""
-        async for chunk in ai_service.chat_stream(
-            request.message, chat.title, messages, criteria, history,
-            chat_type, custom_description
-        ):
-            full_response += chunk
-            yield f"data: {json.dumps({'content': chunk})}\n\n"
+        try:
+            async for chunk in ai_service.chat_stream(
+                request.message, chat.title, messages, criteria, history,
+                chat_type, custom_description
+            ):
+                full_response += chunk
+                yield f"data: {json.dumps({'content': chunk})}\n\n"
+        except Exception as e:
+            error_msg = f"Ошибка AI: {str(e)}"
+            yield f"data: {json.dumps({'content': error_msg, 'error': True})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
 
         # Save to conversation
         new_messages = list(history)  # Create new list to ensure change detection
