@@ -26,6 +26,12 @@ ENV/
 env/
 .venv/
 
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
 # IDE
 .idea/
 .vscode/
@@ -38,6 +44,7 @@ env/
 .env.local
 .env.*.local
 !.env.example
+!backend/.env.example
 
 # Database
 *.db
@@ -63,3 +70,6 @@ temp/
 # OS
 .DS_Store
 Thumbs.db
+
+# Build outputs
+frontend/dist/

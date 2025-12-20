@@ -1,0 +1,6 @@
+export { LoginPage } from './Login'
+export { DashboardPage } from './Dashboard'
+export { ChatsPage } from './Chats'
+export { ChatDetailPage } from './ChatDetail'
+export { UsersPage } from './Users'
+export { SettingsPage } from './Settings'

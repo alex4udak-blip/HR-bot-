@@ -1,18 +1,20 @@
 from anthropic import AsyncAnthropic
-from typing import Optional
-from .database import Message
+from typing import Optional, List
+from ..config import get_settings
+from ..models.database import Message
+
+settings = get_settings()
 
 
 class AnalyzerService:
-    def __init__(self, api_key: str):
-        self.client = AsyncAnthropic(api_key=api_key)
+    def __init__(self):
+        self.client = AsyncAnthropic(api_key=settings.anthropic_api_key)
         self.model = "claude-sonnet-4-20250514"
 
-    def _format_messages(self, messages: list[Message]) -> str:
+    def _format_messages(self, messages: List[Message]) -> str:
         """Format messages into a readable transcript."""
         lines = []
         for msg in messages:
-            # Format user name
             name_parts = []
             if msg.first_name:
                 name_parts.append(msg.first_name)
@@ -23,44 +25,41 @@ class AnalyzerService:
             if msg.username:
                 name = f"{name} (@{msg.username})"
 
-            # Format message type indicator
             type_indicator = ""
             if msg.message_type == "voice":
-                type_indicator = "[голосовое сообщение] "
+                type_indicator = "[голосовое] "
             elif msg.message_type == "video_note":
                 type_indicator = "[видео-кружок] "
             elif msg.message_type == "document":
                 type_indicator = "[документ] "
 
-            # Format timestamp
             timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M")
-
             lines.append(f"[{timestamp}] {name}: {type_indicator}{msg.content}")
 
         return "\n".join(lines)
 
-    def _format_users(self, users: list[dict]) -> str:
-        """Format users list for analysis."""
+    def _format_participants(self, participants: List[dict]) -> str:
+        """Format participants list for analysis."""
         lines = []
-        for user in users:
+        for p in participants:
             name_parts = []
-            if user["first_name"]:
-                name_parts.append(user["first_name"])
-            if user["last_name"]:
-                name_parts.append(user["last_name"])
+            if p.get("first_name"):
+                name_parts.append(p["first_name"])
+            if p.get("last_name"):
+                name_parts.append(p["last_name"])
             name = " ".join(name_parts) if name_parts else "Unknown"
 
-            if user["username"]:
-                name = f"{name} (@{user['username']})"
+            if p.get("username"):
+                name = f"{name} (@{p['username']})"
 
-            lines.append(f"- {name}: {user['message_count']} сообщений")
+            lines.append(f"- {name}: {p['messages_count']} сообщений")
 
         return "\n".join(lines)
 
     async def analyze_chat(
         self,
-        messages: list[Message],
-        users: list[dict],
+        messages: List[Message],
+        participants: List[dict],
         chat_title: str,
         criteria: Optional[str] = None,
     ) -> str:
@@ -69,7 +68,7 @@ class AnalyzerService:
             return "В этом чате пока нет сообщений для анализа."
 
         transcript = self._format_messages(messages)
-        users_info = self._format_users(users)
+        participants_info = self._format_participants(participants)
 
         criteria_text = ""
         if criteria:
@@ -84,7 +83,7 @@ class AnalyzerService:
 Проанализируй переписку из группового чата "{chat_title}" и составь подробный отчёт о каждом участнике как о потенциальном кандидате.
 
 Участники чата:
-{users_info}
+{participants_info}
 
 Переписка:
 ---
@@ -113,7 +112,7 @@ class AnalyzerService:
 
     async def ask_question(
         self,
-        messages: list[Message],
+        messages: List[Message],
         question: str,
         chat_title: str,
     ) -> str:
@@ -141,3 +140,6 @@ class AnalyzerService:
         )
 
         return response.content[0].text
+
+
+analyzer_service = AnalyzerService()
