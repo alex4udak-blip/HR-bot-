@@ -49,9 +49,12 @@ export default function ChatsPage() {
     queryFn: getChats,
   });
 
+  // Sync chats to store only when data changes (compare by length to avoid infinite loop)
   useEffect(() => {
-    setChats(chats);
-  }, [chats]);
+    if (chats.length > 0) {
+      setChats(chats);
+    }
+  }, [chats.length, setChats]);
 
   useEffect(() => {
     if (chatId) {
