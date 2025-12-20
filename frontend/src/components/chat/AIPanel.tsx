@@ -121,15 +121,27 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
   const [localMessages, setLocalMessages] = useState<AIMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+  // Flag to prevent overwriting local messages right after streaming
+  const justAddedMessageRef = useRef(false);
 
   const { data: conversation } = useQuery({
     queryKey: ['ai-history', chatId],
     queryFn: () => getAIHistory(chatId),
   });
 
+  // Reset flag and messages when chat changes
+  useEffect(() => {
+    justAddedMessageRef.current = false;
+    setLocalMessages([]);
+  }, [chatId]);
+
   useEffect(() => {
     if (conversation?.messages) {
-      setLocalMessages(conversation.messages);
+      // Don't overwrite if we just added a message locally
+      // This prevents race condition where server data arrives before commit
+      if (!justAddedMessageRef.current) {
+        setLocalMessages(conversation.messages);
+      }
     }
   }, [conversation]);
 
@@ -181,7 +193,13 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
           setStreamingContent('');
           streamingContentRef.current = '';
           setIsStreaming(false);
-          queryClient.invalidateQueries({ queryKey: ['ai-history', chatId] });
+          // Set flag before invalidating to prevent race condition
+          justAddedMessageRef.current = true;
+          // Delay invalidation to let server save the message
+          setTimeout(() => {
+            justAddedMessageRef.current = false;
+            queryClient.invalidateQueries({ queryKey: ['ai-history', chatId] });
+          }, 1000);
         }
       );
     } catch (error) {
@@ -224,7 +242,13 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
           setStreamingContent('');
           streamingContentRef.current = '';
           setIsStreaming(false);
-          queryClient.invalidateQueries({ queryKey: ['ai-history', chatId] });
+          // Set flag before invalidating to prevent race condition
+          justAddedMessageRef.current = true;
+          // Delay invalidation to let server save the message
+          setTimeout(() => {
+            justAddedMessageRef.current = false;
+            queryClient.invalidateQueries({ queryKey: ['ai-history', chatId] });
+          }, 1000);
         }
       );
     } catch (error) {
