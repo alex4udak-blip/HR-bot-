@@ -135,7 +135,7 @@ class DocumentParser:
                 metadata={"filename": filename, "file_type": ext}
             )
         except Exception as e:
-            logger.exception(f"Error parsing {filename}")
+            logger.debug(f"Error parsing {filename}: {e}")
             return DocumentParseResult(
                 status="failed",
                 error=str(e),
