@@ -98,13 +98,12 @@ cd HR-bot-
 2. Создайте `.env` файл:
 ```bash
 cat > .env << EOF
+SECRET_KEY=your-super-secret-jwt-key-min-32-chars
+SUPERADMIN_EMAIL=admin@example.com
+SUPERADMIN_PASSWORD=your_secure_password
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 ANTHROPIC_API_KEY=your_anthropic_api_key
 OPENAI_API_KEY=your_openai_api_key
-JWT_SECRET=your-super-secret-jwt-key
-SUPERADMIN_EMAIL=admin@example.com
-SUPERADMIN_PASSWORD=changeme
-DB_PASSWORD=your_db_password
 EOF
 ```
 
@@ -113,27 +112,35 @@ EOF
 docker-compose up -d
 ```
 
-4. Откройте http://localhost в браузере
+4. Откройте http://localhost:8000 в браузере
 
-### Деплой на Railway
+### Деплой на Railway (Monorepo - рекомендуется)
 
-1. Создайте проект на [Railway](https://railway.app/)
+1. Создайте проект на [Railway](https://railway.app/) и подключите репозиторий
 
-2. Добавьте сервисы:
-   - PostgreSQL
-   - Backend (из папки `backend/`)
-   - Frontend (из папки `frontend/`)
+2. Railway автоматически использует корневой `Dockerfile`, который:
+   - Собирает frontend (React + Vite)
+   - Устанавливает backend (FastAPI)
+   - Объединяет всё в один контейнер
 
-3. Настройте переменные окружения для Backend:
-   - `DATABASE_URL` (из PostgreSQL)
-   - `TELEGRAM_BOT_TOKEN`
-   - `ANTHROPIC_API_KEY`
-   - `OPENAI_API_KEY`
-   - `JWT_SECRET`
-   - `SUPERADMIN_EMAIL`
-   - `SUPERADMIN_PASSWORD`
+3. Добавьте PostgreSQL в проект:
+   - Нажмите "New" → "Database" → "PostgreSQL"
+   - Railway автоматически добавит `DATABASE_URL`
 
-4. Настройте Frontend для проксирования к Backend
+4. **ОБЯЗАТЕЛЬНО** настройте переменные в разделе "Variables":
+
+   | Переменная | Описание | Обязательно |
+   |------------|----------|-------------|
+   | `SECRET_KEY` | JWT секрет (минимум 32 символа) | ✅ |
+   | `SUPERADMIN_EMAIL` | Email для входа в админку | ✅ |
+   | `SUPERADMIN_PASSWORD` | Пароль для входа | ✅ |
+   | `TELEGRAM_BOT_TOKEN` | Токен из @BotFather | ✅ |
+   | `ANTHROPIC_API_KEY` | API ключ Claude | ✅ |
+   | `OPENAI_API_KEY` | API ключ для Whisper | ⚠️ для голосовых |
+
+   > **Важно**: `SUPERADMIN_EMAIL` и `SUPERADMIN_PASSWORD` создадут аккаунт суперадмина при первом запуске!
+
+5. Railway автоматически задеплоит при каждом пуше в репозиторий
 
 ## API Endpoints
 
@@ -162,15 +169,15 @@ docker-compose up -d
 
 ## Переменные окружения
 
-| Переменная | Описание |
-|------------|----------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `TELEGRAM_BOT_TOKEN` | Токен бота из @BotFather |
-| `ANTHROPIC_API_KEY` | API ключ Claude |
-| `OPENAI_API_KEY` | API ключ для Whisper |
-| `JWT_SECRET` | Секрет для JWT токенов |
-| `SUPERADMIN_EMAIL` | Email суперадмина |
-| `SUPERADMIN_PASSWORD` | Пароль суперадмина |
+| Переменная | Описание | По умолчанию |
+|------------|----------|--------------|
+| `DATABASE_URL` | PostgreSQL connection string | - |
+| `SECRET_KEY` | Секрет для JWT токенов | `change-me-in-production` |
+| `SUPERADMIN_EMAIL` | Email суперадмина | `admin@example.com` |
+| `SUPERADMIN_PASSWORD` | Пароль суперадмина | `changeme` |
+| `TELEGRAM_BOT_TOKEN` | Токен бота из @BotFather | - |
+| `ANTHROPIC_API_KEY` | API ключ Claude | - |
+| `OPENAI_API_KEY` | API ключ для Whisper | - |
 
 ## Как это работает
 
