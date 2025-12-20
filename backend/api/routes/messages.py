@@ -151,6 +151,8 @@ async def get_telegram_file(
                 content_type = "image/webp"
             elif file_path.endswith('.webm'):
                 content_type = "video/webm"
+            elif file_path.endswith('.mp4'):
+                content_type = "video/mp4"
             elif file_path.endswith('.tgs'):
                 content_type = "application/x-tgsticker"
 
