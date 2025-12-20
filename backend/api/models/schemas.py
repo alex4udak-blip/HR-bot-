@@ -94,6 +94,9 @@ class MessageResponse(BaseModel):
     content: str
     content_type: str
     file_name: Optional[str]
+    document_metadata: Optional[dict] = None  # {file_type, pages_count, sheets, etc}
+    parse_status: Optional[str] = None  # parsed, partial, failed
+    parse_error: Optional[str] = None
     timestamp: datetime
 
     class Config:

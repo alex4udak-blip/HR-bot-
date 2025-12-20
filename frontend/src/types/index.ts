@@ -21,6 +21,22 @@ export interface Chat {
   created_at: string;
 }
 
+export interface DocumentMetadata {
+  filename?: string;
+  file_type?: string;
+  file_size?: number;
+  pages_count?: number;
+  pages_parsed?: number;
+  tables_count?: number;
+  sheets?: string[];
+  sheets_count?: number;
+  slides_count?: number;
+  extracted_files?: { name: string; status: string }[];
+  ocr_method?: string;
+  converted_from?: string;
+  parsed_at?: string;
+}
+
 export interface Message {
   id: number;
   telegram_user_id: number;
@@ -30,6 +46,9 @@ export interface Message {
   content: string;
   content_type: string;
   file_name?: string;
+  document_metadata?: DocumentMetadata;
+  parse_status?: 'parsed' | 'partial' | 'failed' | 'skipped';
+  parse_error?: string;
   timestamp: string;
 }
 

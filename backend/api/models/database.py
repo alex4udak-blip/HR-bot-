@@ -60,14 +60,19 @@ class Message(Base):
 
     id = Column(Integer, primary_key=True)
     chat_id = Column(Integer, ForeignKey("chats.id", ondelete="CASCADE"), nullable=False, index=True)
+    telegram_message_id = Column(BigInteger, nullable=True)
     telegram_user_id = Column(BigInteger, nullable=False, index=True)
     username = Column(String(255), nullable=True)
     first_name = Column(String(255), nullable=True)
     last_name = Column(String(255), nullable=True)
     content = Column(Text, nullable=False)
-    content_type = Column(String(50), nullable=False)  # text, voice, video_note, document, photo
+    content_type = Column(String(50), nullable=False)  # text, voice, video_note, document, photo, etc
     file_id = Column(String(255), nullable=True)
     file_name = Column(String(255), nullable=True)
+    # Document parsing metadata
+    document_metadata = Column(JSON, nullable=True)  # {file_type, pages_count, sheets, etc}
+    parse_status = Column(String(20), nullable=True)  # parsed, partial, failed
+    parse_error = Column(Text, nullable=True)
     timestamp = Column(DateTime, default=func.now())
 
     chat = relationship("Chat", back_populates="messages")
