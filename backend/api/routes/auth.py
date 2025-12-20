@@ -35,34 +35,18 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.post("/register", response_model=TokenResponse)
-async def register(request: UserCreate, db: AsyncSession = Depends(get_db)):
-    # Check if email already exists
-    result = await db.execute(select(User).where(User.email == request.email))
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Email already registered")
+# Registration disabled - only superadmin can create users via /api/users
+# @router.post("/register", response_model=TokenResponse)
+# async def register(request: UserCreate, db: AsyncSession = Depends(get_db)):
+#     ...
 
-    # Create new admin user
-    user = User(
-        email=request.email,
-        password_hash=hash_password(request.password),
-        name=request.name,
-        role=UserRole.ADMIN,
-    )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
 
-    token = create_access_token({"sub": str(user.id)})
-    return TokenResponse(
-        access_token=token,
-        user=UserResponse(
-            id=user.id, email=user.email, name=user.name,
-            role=user.role.value, telegram_id=user.telegram_id,
-            telegram_username=user.telegram_username,
-            is_active=user.is_active, created_at=user.created_at,
-            chats_count=0
-        )
+@router.post("/register")
+async def register():
+    """Public registration is disabled. Contact superadmin to create an account."""
+    raise HTTPException(
+        status_code=403,
+        detail="Регистрация отключена. Обратитесь к администратору для создания аккаунта."
     )
 
 
