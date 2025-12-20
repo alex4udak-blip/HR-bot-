@@ -1,7 +1,10 @@
 import os
+import logging
 from pydantic_settings import BaseSettings
 from pydantic import Field
 from functools import lru_cache
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -53,6 +56,11 @@ class Settings(BaseSettings):
 
 # Global settings instance (for bot.py compatibility)
 settings = Settings()
+
+# Log configuration on startup (hide sensitive data)
+logger.info(f"Config loaded: DATABASE_URL={'***' if settings.database_url else 'NOT SET'}")
+logger.info(f"Config loaded: TELEGRAM_BOT_TOKEN={'***' if settings.telegram_bot_token else 'NOT SET'}")
+logger.info(f"Config loaded: SUPERADMIN_EMAIL={settings.superadmin_email}")
 
 
 @lru_cache()
