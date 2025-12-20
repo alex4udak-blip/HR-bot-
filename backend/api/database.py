@@ -4,9 +4,18 @@ from .models.database import Base
 
 settings = get_settings()
 
-database_url = settings.database_url
-if database_url.startswith("postgresql://"):
-    database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+def get_async_database_url(url: str) -> str:
+    """Convert database URL to async format for asyncpg."""
+    # Railway sometimes provides postgres:// (old format)
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
+database_url = get_async_database_url(settings.database_url)
 
 engine = create_async_engine(database_url, echo=False, pool_pre_ping=True)
 
