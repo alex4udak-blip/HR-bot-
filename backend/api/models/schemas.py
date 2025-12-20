@@ -188,7 +188,7 @@ class ChatCriteriaResponse(BaseModel):
 
 # AI Chat
 class AIMessageRequest(BaseModel):
-    message: str
+    message: Optional[str] = None
     quick_action: Optional[str] = None  # full_analysis, red_flags, strengths, recommendation
 
 
