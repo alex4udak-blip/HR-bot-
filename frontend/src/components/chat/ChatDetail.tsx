@@ -251,7 +251,9 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
   };
 
   const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
+    // Ensure timestamp is parsed as UTC
+    const utcDate = dateString.endsWith('Z') ? dateString : dateString + 'Z';
+    const date = new Date(utcDate);
     return date.toLocaleString('ru-RU', {
       day: '2-digit',
       month: '2-digit',
