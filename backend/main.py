@@ -7,10 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from api.database import engine, Base, AsyncSessionLocal
 from api.routes import auth, users, chats, messages, criteria, ai, stats
-from api.bot import start_bot, stop_bot
-from api.services.auth import create_superadmin_if_not_exists
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,35 +16,62 @@ logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+async def init_database():
+    """Initialize database in background."""
+    from api.database import engine, Base, AsyncSessionLocal
+    from api.services.auth import create_superadmin_if_not_exists
+
+    # Create database tables with retry
+    for attempt in range(5):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("Database tables created successfully")
+
+            # Create superadmin
+            async with AsyncSessionLocal() as db:
+                await create_superadmin_if_not_exists(db)
+                logger.info("Superadmin check completed")
+            return
+        except Exception as e:
+            logger.warning(f"Database init attempt {attempt + 1}/5 failed: {e}")
+            await asyncio.sleep(3)
+
+    logger.error("Failed to initialize database after 5 attempts")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting application...")
 
-    # Create database tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Initialize database in background (don't block startup)
+    db_task = asyncio.create_task(init_database())
 
-    # Create superadmin if not exists
-    async with AsyncSessionLocal() as db:
-        await create_superadmin_if_not_exists(db)
-        logger.info("Superadmin check completed")
-
-    # Start Telegram bot in background (if token is configured)
+    # Start Telegram bot in background
     bot_task = None
     try:
+        from api.bot import start_bot
         bot_task = asyncio.create_task(start_bot())
         logger.info("Telegram bot task started")
     except Exception as e:
         logger.warning(f"Failed to start Telegram bot: {e}")
 
+    logger.info("Application startup complete - ready for requests")
+
     yield
 
     # Shutdown
     logger.info("Shutting down application...")
+    if db_task and not db_task.done():
+        db_task.cancel()
     if bot_task:
         bot_task.cancel()
-    await stop_bot()
+    try:
+        from api.bot import stop_bot
+        await stop_bot()
+    except Exception as e:
+        logger.warning(f"Error stopping bot: {e}")
 
 
 app = FastAPI(
