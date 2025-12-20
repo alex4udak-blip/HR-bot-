@@ -451,8 +451,9 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
           ) : (
             <div className="space-y-3">
               {messages.map((message, index) => {
-                const isDocument = ['document', 'photo'].includes(message.content_type) ||
-                  message.document_metadata;
+                // Only treat actual documents as documents (not photos/stickers/video notes)
+                const isDocument = message.content_type === 'document' ||
+                  (message.document_metadata && !['photo', 'sticker', 'video_note'].includes(message.content_type));
 
                 return (
                   <motion.div
@@ -492,15 +493,33 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                           <p className="text-sm text-dark-300">{message.content}</p>
                         )}
                       </div>
+                    ) : message.content_type === 'video_note' && message.file_id ? (
+                      <div className="space-y-2">
+                        <video
+                          src={`/api/chats/file/${message.file_id}`}
+                          className="w-32 h-32 rounded-full object-cover cursor-pointer"
+                          controls
+                          preload="metadata"
+                        />
+                        {message.content && !message.content.startsWith('[') && (
+                          <p className="text-sm text-dark-300">{message.content}</p>
+                        )}
+                      </div>
                     ) : message.content_type === 'sticker' && message.file_id ? (
                       <div className="flex items-center gap-2">
                         <img
                           src={`/api/chats/file/${message.file_id}`}
                           alt="Sticker"
-                          className="w-24 h-24 object-contain"
+                          className="w-32 h-32 object-contain"
                           loading="lazy"
+                          onError={(e) => {
+                            // Hide broken sticker images (animated .tgs stickers)
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
                         />
-                        <span className="text-2xl">{message.content.replace('[Sticker: ', '').replace(']', '')}</span>
+                        {message.content.includes('[Sticker') && (
+                          <span className="text-2xl">{message.content.replace('[Sticker: ', '').replace(']', '')}</span>
+                        )}
                       </div>
                     ) : (
                       <>
