@@ -136,7 +136,7 @@ export default function DashboardPage() {
                       {index + 1}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{chat.title}</p>
+                      <p className="font-medium truncate">{chat.custom_name || chat.title}</p>
                       <p className="text-sm text-dark-400">{chat.messages} сообщ.</p>
                     </div>
                   </div>

@@ -148,7 +148,7 @@ export interface Stats {
   messages_this_week: number;
   activity_by_day: { date: string; day: string; count: number }[];
   messages_by_type: Record<string, number>;
-  top_chats: { id: number; title: string; messages: number }[];
+  top_chats: { id: number; title: string; custom_name?: string | null; messages: number }[];
 }
 
 export interface AuthResponse {
