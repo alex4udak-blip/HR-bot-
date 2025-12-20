@@ -206,6 +206,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
     mutationFn: (name: string) => updateChat(chat.id, { custom_name: name }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['chats'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
       setIsEditing(false);
       toast.success('Название обновлено');
     },
