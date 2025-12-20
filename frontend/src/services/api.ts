@@ -174,6 +174,11 @@ export const streamAIMessage = async (
     body: JSON.stringify({ message }),
   });
 
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Ошибка сервера' }));
+    throw new Error(error.detail || 'Ошибка AI');
+  }
+
   const reader = response.body?.getReader();
   if (!reader) return;
 
@@ -217,6 +222,11 @@ export const streamQuickAction = async (
     },
     body: JSON.stringify({ quick_action: action }),
   });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Ошибка сервера' }));
+    throw new Error(error.detail || 'Ошибка AI');
+  }
 
   const reader = response.body?.getReader();
   if (!reader) return;
