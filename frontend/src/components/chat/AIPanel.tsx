@@ -117,6 +117,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
   // Get quick actions for current chat type
   const quickActions = QUICK_ACTIONS_BY_TYPE[chatType] || QUICK_ACTIONS_BY_TYPE.custom;
   const [streamingContent, setStreamingContent] = useState('');
+  const streamingContentRef = useRef('');
   const [localMessages, setLocalMessages] = useState<AIMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -158,22 +159,27 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
     setMessage('');
     setIsStreaming(true);
     setStreamingContent('');
+    streamingContentRef.current = '';
 
     try {
       await streamAIMessage(
         chatId,
         message,
-        (chunk) => setStreamingContent((prev) => prev + chunk),
+        (chunk) => {
+          streamingContentRef.current += chunk;
+          setStreamingContent(streamingContentRef.current);
+        },
         () => {
           setLocalMessages((prev) => [
             ...prev,
             {
               role: 'assistant',
-              content: streamingContent,
+              content: streamingContentRef.current,
               timestamp: new Date().toISOString(),
             },
           ]);
           setStreamingContent('');
+          streamingContentRef.current = '';
           setIsStreaming(false);
           queryClient.invalidateQueries({ queryKey: ['ai-history', chatId] });
         }
@@ -196,22 +202,27 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
     setLocalMessages((prev) => [...prev, userMessage]);
     setIsStreaming(true);
     setStreamingContent('');
+    streamingContentRef.current = '';
 
     try {
       await streamQuickAction(
         chatId,
         action,
-        (chunk) => setStreamingContent((prev) => prev + chunk),
+        (chunk) => {
+          streamingContentRef.current += chunk;
+          setStreamingContent(streamingContentRef.current);
+        },
         () => {
           setLocalMessages((prev) => [
             ...prev,
             {
               role: 'assistant',
-              content: streamingContent,
+              content: streamingContentRef.current,
               timestamp: new Date().toISOString(),
             },
           ]);
           setStreamingContent('');
+          streamingContentRef.current = '';
           setIsStreaming(false);
           queryClient.invalidateQueries({ queryKey: ['ai-history', chatId] });
         }
