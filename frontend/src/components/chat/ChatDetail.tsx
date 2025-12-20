@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
   MessageSquare,
@@ -10,13 +10,153 @@ import {
   Download,
   Edit3,
   Check,
-  X
+  X,
+  File,
+  Image,
+  FileSpreadsheet,
+  Presentation,
+  Archive,
+  Mail,
+  CheckCircle,
+  AlertTriangle,
+  XCircle,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
-import type { Chat } from '@/types';
+import type { Chat, Message } from '@/types';
 import { getMessages, getParticipants, updateChat, downloadReport } from '@/services/api';
 import CriteriaPanel from './CriteriaPanel';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+
+// File type icon mapping
+const getFileIcon = (contentType: string, fileName?: string) => {
+  const ext = fileName?.split('.').pop()?.toLowerCase();
+
+  if (contentType === 'photo' || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic'].includes(ext || '')) {
+    return Image;
+  }
+  if (['xlsx', 'xls', 'csv', 'ods'].includes(ext || '')) {
+    return FileSpreadsheet;
+  }
+  if (['pptx', 'ppt', 'odp'].includes(ext || '')) {
+    return Presentation;
+  }
+  if (['zip', 'rar', '7z'].includes(ext || '')) {
+    return Archive;
+  }
+  if (['eml', 'msg'].includes(ext || '')) {
+    return Mail;
+  }
+  return FileText;
+};
+
+// Parse status badge
+const ParseStatusBadge = ({ status, error }: { status?: string; error?: string }) => {
+  if (!status) return null;
+
+  const config = {
+    parsed: { icon: CheckCircle, color: 'bg-green-500/20 text-green-400', label: 'Parsed' },
+    partial: { icon: AlertTriangle, color: 'bg-yellow-500/20 text-yellow-400', label: 'Partial' },
+    failed: { icon: XCircle, color: 'bg-red-500/20 text-red-400', label: 'Failed' },
+    skipped: { icon: AlertTriangle, color: 'bg-gray-500/20 text-gray-400', label: 'Skipped' },
+  }[status] || { icon: File, color: 'bg-gray-500/20 text-gray-400', label: status };
+
+  const Icon = config.icon;
+
+  return (
+    <span
+      className={clsx('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs', config.color)}
+      title={error}
+    >
+      <Icon className="w-3 h-3" />
+      {config.label}
+    </span>
+  );
+};
+
+// Document message component
+const DocumentMessage = ({ message }: { message: Message }) => {
+  const [expanded, setExpanded] = useState(false);
+  const FileIcon = getFileIcon(message.content_type, message.file_name);
+  const meta = message.document_metadata;
+
+  const preview = message.content.length > 300
+    ? message.content.substring(0, 300) + '...'
+    : message.content;
+
+  const hasFullContent = message.content.length > 300;
+
+  return (
+    <div className="space-y-2">
+      {/* Document header */}
+      <div className="flex items-start gap-3 p-3 glass rounded-lg">
+        <div className="p-2 rounded-lg bg-accent-500/20">
+          <FileIcon className="w-5 h-5 text-accent-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium text-sm truncate">{message.file_name}</span>
+            {meta?.file_type && (
+              <span className="px-2 py-0.5 rounded-full text-xs bg-dark-700 text-dark-300 uppercase">
+                {meta.file_type}
+              </span>
+            )}
+            <ParseStatusBadge status={message.parse_status} error={message.parse_error} />
+          </div>
+          {/* Metadata */}
+          <div className="flex flex-wrap gap-3 mt-1 text-xs text-dark-500">
+            {meta?.file_size && (
+              <span>{(meta.file_size / 1024).toFixed(1)} KB</span>
+            )}
+            {meta?.pages_count && (
+              <span>{meta.pages_count} pages</span>
+            )}
+            {meta?.sheets_count && (
+              <span>{meta.sheets_count} sheets</span>
+            )}
+            {meta?.slides_count && (
+              <span>{meta.slides_count} slides</span>
+            )}
+            {meta?.tables_count && meta.tables_count > 0 && (
+              <span>{meta.tables_count} tables</span>
+            )}
+            {meta?.extracted_files && (
+              <span>{meta.extracted_files.length} files</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Content preview */}
+      {message.parse_status === 'parsed' && message.content && !message.content.startsWith('[') && (
+        <div className="pl-4 border-l-2 border-accent-500/30">
+          <p className="text-sm text-dark-300 whitespace-pre-wrap">
+            {expanded ? message.content : preview}
+          </p>
+          {hasFullContent && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="flex items-center gap-1 mt-2 text-xs text-accent-400 hover:text-accent-300"
+            >
+              {expanded ? (
+                <>
+                  <ChevronUp className="w-3 h-3" />
+                  Show less
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-3 h-3" />
+                  Show full content
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface ChatDetailProps {
   chat: Chat;
@@ -163,36 +303,48 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
             </div>
           ) : (
             <div className="space-y-3">
-              {messages.map((message, index) => (
-                <motion.div
-                  key={message.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.02 }}
-                  className="glass-light rounded-xl p-3"
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="w-8 h-8 rounded-full bg-accent-500/20 flex items-center justify-center text-xs font-medium text-accent-400">
-                      {(message.first_name?.[0] || message.username?.[0] || '?').toUpperCase()}
+              {messages.map((message, index) => {
+                const isDocument = ['document', 'photo'].includes(message.content_type) ||
+                  message.document_metadata;
+
+                return (
+                  <motion.div
+                    key={message.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.02 }}
+                    className="glass-light rounded-xl p-3"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-full bg-accent-500/20 flex items-center justify-center text-xs font-medium text-accent-400">
+                        {(message.first_name?.[0] || message.username?.[0] || '?').toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium text-sm">
+                          {message.first_name || message.username || 'Unknown'}
+                        </span>
+                        {message.username && message.first_name && (
+                          <span className="text-dark-500 text-xs ml-1">@{message.username}</span>
+                        )}
+                      </div>
+                      <span className="text-xs text-dark-500">{formatTime(message.timestamp)}</span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="font-medium text-sm">
-                        {message.first_name || message.username || 'Unknown'}
-                      </span>
-                      {message.username && message.first_name && (
-                        <span className="text-dark-500 text-xs ml-1">@{message.username}</span>
-                      )}
-                    </div>
-                    <span className="text-xs text-dark-500">{formatTime(message.timestamp)}</span>
-                  </div>
-                  <p className="text-sm text-dark-200 whitespace-pre-wrap">{message.content}</p>
-                  {message.content_type !== 'text' && (
-                    <span className="inline-block mt-2 text-xs px-2 py-0.5 rounded-full bg-dark-700 text-dark-400">
-                      {message.content_type}
-                    </span>
-                  )}
-                </motion.div>
-              ))}
+
+                    {isDocument ? (
+                      <DocumentMessage message={message} />
+                    ) : (
+                      <>
+                        <p className="text-sm text-dark-200 whitespace-pre-wrap">{message.content}</p>
+                        {message.content_type !== 'text' && (
+                          <span className="inline-block mt-2 text-xs px-2 py-0.5 rounded-full bg-dark-700 text-dark-400">
+                            {message.content_type}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </motion.div>
+                );
+              })}
             </div>
           )}
         </Tabs.Content>

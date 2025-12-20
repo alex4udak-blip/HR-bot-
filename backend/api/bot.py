@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from .config import settings
 from .models.database import Base, User, Chat, Message
 from .services.transcription import transcription_service
+from .services.documents import document_parser
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -153,17 +154,102 @@ async def collect_group_message(message: types.Message):
         elif message.document:
             content_type = "document"
             file_name = message.document.file_name or "document"
-            content = f"[Document: {file_name}]"
+            file_id = message.document.file_id
+            document_metadata = None
+            parse_status = None
+            parse_error = None
+
+            # Try to parse the document
+            if message.document.file_size and message.document.file_size < 20 * 1024 * 1024:
+                try:
+                    file = await bot.get_file(file_id)
+                    file_bytes = await bot.download_file(file.file_path)
+                    result = await document_parser.parse(file_bytes.read(), file_name)
+                    content = result.content or f"[Document: {file_name}]"
+                    document_metadata = result.metadata
+                    parse_status = result.status
+                    parse_error = result.error
+                    logger.info(f"Parsed document: {file_name} - status: {parse_status}")
+                except Exception as e:
+                    logger.error(f"Document parsing error: {e}")
+                    content = f"[Document: {file_name}]"
+                    parse_status = "failed"
+                    parse_error = str(e)
+            else:
+                content = f"[Document: {file_name} - too large]"
+                parse_status = "skipped"
+                parse_error = "File too large"
+
+            # Save message with document metadata
+            db_message = Message(
+                chat_id=chat.id,
+                telegram_message_id=message.message_id,
+                telegram_user_id=message.from_user.id,
+                username=message.from_user.username,
+                first_name=message.from_user.first_name,
+                last_name=message.from_user.last_name,
+                content=content,
+                content_type=content_type,
+                file_id=file_id,
+                file_name=file_name,
+                document_metadata=document_metadata,
+                parse_status=parse_status,
+                parse_error=parse_error,
+                timestamp=message.date,
+            )
+            session.add(db_message)
+            await session.commit()
+            return  # Early return since we've already saved
 
         elif message.photo:
             content_type = "photo"
-            content = message.caption or "[Photo]"
+            file_name = "photo.jpg"
+            file_id = message.photo[-1].file_id  # Get highest resolution
+            document_metadata = None
+            parse_status = None
+            parse_error = None
+
+            # OCR the photo
+            try:
+                file = await bot.get_file(file_id)
+                file_bytes = await bot.download_file(file.file_path)
+                result = await document_parser.parse(file_bytes.read(), file_name)
+                content = result.content if result.content else (message.caption or "[Photo]")
+                document_metadata = result.metadata
+                parse_status = result.status
+                logger.info(f"OCR photo: status: {parse_status}")
+            except Exception as e:
+                logger.error(f"Photo OCR error: {e}")
+                content = message.caption or "[Photo]"
+                parse_status = "failed"
+                parse_error = str(e)
+
+            # Save message with OCR data
+            db_message = Message(
+                chat_id=chat.id,
+                telegram_message_id=message.message_id,
+                telegram_user_id=message.from_user.id,
+                username=message.from_user.username,
+                first_name=message.from_user.first_name,
+                last_name=message.from_user.last_name,
+                content=content,
+                content_type=content_type,
+                file_id=file_id,
+                file_name=file_name,
+                document_metadata=document_metadata,
+                parse_status=parse_status,
+                parse_error=parse_error,
+                timestamp=message.date,
+            )
+            session.add(db_message)
+            await session.commit()
+            return  # Early return
 
         elif message.sticker:
             content_type = "sticker"
             content = f"[Sticker: {message.sticker.emoji or ''}]"
 
-        # Save message
+        # Save message (for text, voice, video, audio, sticker)
         db_message = Message(
             chat_id=chat.id,
             telegram_message_id=message.message_id,

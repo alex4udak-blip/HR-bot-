@@ -52,6 +52,9 @@ async def get_messages(
             content=m.content,
             content_type=m.content_type,
             file_name=m.file_name,
+            document_metadata=m.document_metadata,
+            parse_status=m.parse_status,
+            parse_error=m.parse_error,
             timestamp=m.timestamp,
         ) for m in reversed(messages)
     ]
