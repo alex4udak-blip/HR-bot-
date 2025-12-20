@@ -1,28 +1,23 @@
 version: '3.8'
 
 services:
-  backend:
-    build: ./backend
-    container_name: hr-analyzer-backend
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/hr_analyzer
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    depends_on:
-      - db
-    restart: unless-stopped
-    networks:
-      - hr-network
-
-  frontend:
-    build: ./frontend
-    container_name: hr-analyzer-frontend
+  # Combined backend + frontend (same as Railway deployment)
+  app:
+    build: .
+    container_name: hr-analyzer-app
     ports:
-      - "80:80"
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/hr_analyzer
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL:-admin@example.com}
+      - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD:-changeme123}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     depends_on:
-      - backend
+      db:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - hr-network
@@ -36,6 +31,11 @@ services:
       - POSTGRES_DB=hr_analyzer
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
     networks:
       - hr-network

@@ -29,8 +29,13 @@ def get_bot() -> Bot:
         bot = Bot(token=settings.telegram_bot_token)
     return bot
 
-# Database session
-engine = create_async_engine(settings.database_url, echo=False)
+
+# Database session - convert postgresql:// to postgresql+asyncpg://
+database_url = settings.database_url
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+engine = create_async_engine(database_url, echo=False, pool_pre_ping=True)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 
 
