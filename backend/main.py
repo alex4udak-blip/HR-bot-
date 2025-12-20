@@ -33,14 +33,20 @@ async def lifespan(app: FastAPI):
         await create_superadmin_if_not_exists(db)
         logger.info("Superadmin check completed")
 
-    # Start Telegram bot in background
-    bot_task = asyncio.create_task(start_bot())
+    # Start Telegram bot in background (if token is configured)
+    bot_task = None
+    try:
+        bot_task = asyncio.create_task(start_bot())
+        logger.info("Telegram bot task started")
+    except Exception as e:
+        logger.warning(f"Failed to start Telegram bot: {e}")
 
     yield
 
     # Shutdown
     logger.info("Shutting down application...")
-    bot_task.cancel()
+    if bot_task:
+        bot_task.cancel()
     await stop_bot()
 
 
@@ -77,16 +83,20 @@ async def health_check():
 
 # Serve static files (frontend)
 if STATIC_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+    assets_dir = STATIC_DIR / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-    # Catch-all route for SPA - must be last
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
-        # Serve index.html for all non-API routes (SPA routing)
-        file_path = STATIC_DIR / full_path
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse(STATIC_DIR / "index.html")
+    index_file = STATIC_DIR / "index.html"
+    if index_file.exists():
+        # Catch-all route for SPA - must be last
+        @app.get("/{full_path:path}")
+        async def serve_spa(full_path: str):
+            # Serve index.html for all non-API routes (SPA routing)
+            file_path = STATIC_DIR / full_path
+            if file_path.exists() and file_path.is_file():
+                return FileResponse(file_path)
+            return FileResponse(index_file)
 
 
 if __name__ == "__main__":
