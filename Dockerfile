@@ -35,9 +35,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /frontend/dist ./static
 
-# Railway uses PORT environment variable
+# Railway injects PORT environment variable
 ENV PORT=8000
 EXPOSE 8000
 
-# Use shell form to expand $PORT variable from Railway
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT
+# Use sh -c to ensure PORT variable expansion works
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port $PORT"]
