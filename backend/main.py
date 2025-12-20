@@ -37,21 +37,14 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 async def init_database():
     """Initialize database in background."""
-    import os
     from api.database import engine, AsyncSessionLocal
     from api.models.database import Base
     from api.services.auth import create_superadmin_if_not_exists
 
-    # Force reset database schema to fix column mismatches
-    # Set KEEP_DB_DATA=true in Railway to preserve data after first successful deploy
-    force_reset = os.environ.get("KEEP_DB_DATA", "false").lower() != "true"
-
     for attempt in range(5):
         try:
             async with engine.begin() as conn:
-                if force_reset:
-                    # Drop all tables and recreate with correct schema
-                    await conn.run_sync(Base.metadata.drop_all)
+                # Create tables if they don't exist (safe, preserves data)
                 await conn.run_sync(Base.metadata.create_all)
 
             # Create superadmin
