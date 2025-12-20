@@ -10,26 +10,25 @@ from fastapi.responses import FileResponse
 
 from api.routes import auth, users, chats, messages, criteria, ai, stats
 
-# Configure logging - minimal output, only critical errors
+# Configure logging - show important messages
 logging.basicConfig(
-    level=logging.CRITICAL,
-    format="%(message)s",
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     stream=sys.stdout
 )
 
-# Suppress ALL noisy loggers aggressively
+# Suppress noisy loggers but keep important ones
 for noisy_logger in [
-    "uvicorn", "uvicorn.error", "uvicorn.access",
-    "aiogram", "aiogram.dispatcher", "aiogram.event",
-    "sqlalchemy", "sqlalchemy.engine",
-    "httpx", "httpcore", "asyncio",
-    "watchfiles", "fastapi"
+    "uvicorn.access",
+    "sqlalchemy.engine",
+    "httpx", "httpcore",
+    "watchfiles"
 ]:
-    logging.getLogger(noisy_logger).setLevel(logging.CRITICAL)
+    logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
-# Our app logger - only show critical startup messages
+# Our app logger
 logger = logging.getLogger("hr-analyzer")
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.INFO)
 
 # Static files directory (built frontend)
 STATIC_DIR = Path(__file__).parent / "static"

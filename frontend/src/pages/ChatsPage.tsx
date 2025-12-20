@@ -19,7 +19,8 @@ import {
   Bot,
   Copy,
   Check,
-  Sparkles
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getChats } from '@/services/api';
@@ -63,9 +64,10 @@ export default function ChatsPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const { data: chats = [], isLoading } = useQuery({
+  const { data: chats = [], isLoading, dataUpdatedAt, refetch, isFetching } = useQuery({
     queryKey: ['chats'],
     queryFn: getChats,
+    refetchInterval: 30000, // Auto-refresh every 30 seconds
   });
 
   // Sync chats to store only when data changes (compare by length to avoid infinite loop)
@@ -151,16 +153,31 @@ export default function ChatsPage() {
 
         {/* Search and Add Button */}
         <div className="p-4 border-b border-white/5 space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
-            <input
-              type="text"
-              placeholder="Поиск чатов..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full glass-light rounded-xl py-2.5 pl-10 pr-4 text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
+              <input
+                type="text"
+                placeholder="Поиск чатов..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full glass-light rounded-xl py-2.5 pl-10 pr-4 text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+              />
+            </div>
+            <button
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="p-2.5 rounded-xl glass-light hover:bg-white/10 transition-colors disabled:opacity-50"
+              title="Обновить список"
+            >
+              <RefreshCw className={clsx('w-5 h-5 text-dark-400', isFetching && 'animate-spin')} />
+            </button>
           </div>
+          {dataUpdatedAt && (
+            <p className="text-xs text-dark-500 text-center">
+              Обновлено: {new Date(dataUpdatedAt).toLocaleTimeString('ru-RU')} • авто-обновление каждые 30 сек
+            </p>
+          )}
           <button
             onClick={() => setShowAddModal(true)}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 transition-colors text-sm font-medium"
