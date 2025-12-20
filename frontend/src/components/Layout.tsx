@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+import BackgroundEffects from './BackgroundEffects';
 import clsx from 'clsx';
 
 const navItems = [
@@ -31,7 +32,8 @@ export default function Layout() {
   };
 
   return (
-    <div className="h-screen flex flex-col lg:flex-row">
+    <div className="h-screen flex flex-col lg:flex-row relative">
+      <BackgroundEffects />
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 glass border-r border-white/5">
         <div className="p-6 border-b border-white/5">
