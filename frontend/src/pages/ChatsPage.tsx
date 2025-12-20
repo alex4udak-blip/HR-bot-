@@ -5,21 +5,42 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
   MessageSquare,
-  Users as UsersIcon,
   ChevronLeft,
-  X
+  X,
+  UserCheck,
+  FolderKanban,
+  Building2,
+  Briefcase,
+  DollarSign,
+  Headphones,
+  Settings,
+  LayoutGrid
 } from 'lucide-react';
 import { getChats } from '@/services/api';
 import { useChatStore } from '@/stores/chatStore';
 import ChatList from '@/components/chat/ChatList';
 import ChatDetail from '@/components/chat/ChatDetail';
 import AIPanel from '@/components/chat/AIPanel';
+import type { ChatTypeId } from '@/types';
 import clsx from 'clsx';
+
+// Chat type filter options
+const CHAT_TYPE_FILTERS: { id: ChatTypeId | 'all'; name: string; icon: typeof MessageSquare }[] = [
+  { id: 'all', name: 'All', icon: LayoutGrid },
+  { id: 'hr', name: 'HR', icon: UserCheck },
+  { id: 'project', name: 'Project', icon: FolderKanban },
+  { id: 'client', name: 'Client', icon: Building2 },
+  { id: 'contractor', name: 'Contractor', icon: Briefcase },
+  { id: 'sales', name: 'Sales', icon: DollarSign },
+  { id: 'support', name: 'Support', icon: Headphones },
+  { id: 'custom', name: 'Custom', icon: Settings },
+];
 
 export default function ChatsPage() {
   const { chatId } = useParams();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<ChatTypeId | 'all'>('all');
   const [showAIPanel, setShowAIPanel] = useState(true);
   const { selectedChatId, setSelectedChatId, setChats } = useChatStore();
 
@@ -38,9 +59,17 @@ export default function ChatsPage() {
     }
   }, [chatId]);
 
-  const filteredChats = chats.filter((chat) =>
-    (chat.custom_name || chat.title).toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredChats = chats.filter((chat) => {
+    const matchesSearch = (chat.custom_name || chat.title).toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesType = typeFilter === 'all' || chat.chat_type === typeFilter;
+    return matchesSearch && matchesType;
+  });
+
+  // Count chats per type
+  const typeCounts = chats.reduce((acc, chat) => {
+    acc[chat.chat_type] = (acc[chat.chat_type] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
 
   const selectedChat = chats.find((c) => c.id === selectedChatId);
 
@@ -63,6 +92,42 @@ export default function ChatsPage() {
           selectedChatId && 'hidden lg:flex'
         )}
       >
+        {/* Type Filter Tabs */}
+        <div className="p-2 border-b border-white/5">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+            {CHAT_TYPE_FILTERS.map((filter) => {
+              const Icon = filter.icon;
+              const count = filter.id === 'all' ? chats.length : (typeCounts[filter.id] || 0);
+              const isActive = typeFilter === filter.id;
+
+              return (
+                <button
+                  key={filter.id}
+                  onClick={() => setTypeFilter(filter.id)}
+                  className={clsx(
+                    'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all',
+                    isActive
+                      ? 'bg-accent-500/20 text-accent-400'
+                      : 'text-dark-400 hover:text-dark-200 hover:bg-white/5'
+                  )}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{filter.name}</span>
+                  {count > 0 && (
+                    <span className={clsx(
+                      'px-1.5 py-0.5 rounded-full text-[10px]',
+                      isActive ? 'bg-accent-500/30' : 'bg-white/10'
+                    )}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Search */}
         <div className="p-4 border-b border-white/5">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
@@ -160,7 +225,7 @@ export default function ChatsPage() {
             transition={{ duration: 0.2 }}
             className="hidden xl:flex flex-col border-l border-white/5 glass overflow-hidden"
           >
-            <AIPanel chatId={selectedChat.id} chatTitle={selectedChat.custom_name || selectedChat.title} />
+            <AIPanel chatId={selectedChat.id} chatTitle={selectedChat.custom_name || selectedChat.title} chatType={selectedChat.chat_type} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -184,7 +249,7 @@ export default function ChatsPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <AIPanel chatId={selectedChat.id} chatTitle={selectedChat.custom_name || selectedChat.title} />
+            <AIPanel chatId={selectedChat.id} chatTitle={selectedChat.custom_name || selectedChat.title} chatType={selectedChat.chat_type} />
           </motion.div>
         )}
       </AnimatePresence>

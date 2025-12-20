@@ -59,12 +59,37 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
+# Chat Types
+class ChatTypeInfo(BaseModel):
+    id: str
+    name: str
+    description: str
+    icon: str
+    color: str
+
+
+class QuickAction(BaseModel):
+    id: str
+    label: str
+    icon: str
+
+
+class ChatTypeConfig(BaseModel):
+    type_info: ChatTypeInfo
+    quick_actions: List[QuickAction]
+    suggested_questions: List[str]
+    default_criteria: List[dict]
+
+
 # Chats
 class ChatResponse(BaseModel):
     id: int
     telegram_chat_id: int
     title: str
     custom_name: Optional[str]
+    chat_type: str = "hr"
+    custom_type_name: Optional[str] = None
+    custom_type_description: Optional[str] = None
     owner_id: Optional[int]
     owner_name: Optional[str] = None
     is_active: bool
@@ -80,6 +105,9 @@ class ChatResponse(BaseModel):
 
 class ChatUpdate(BaseModel):
     custom_name: Optional[str] = None
+    chat_type: Optional[str] = None
+    custom_type_name: Optional[str] = None
+    custom_type_description: Optional[str] = None
     owner_id: Optional[int] = None
     is_active: Optional[bool] = None
 

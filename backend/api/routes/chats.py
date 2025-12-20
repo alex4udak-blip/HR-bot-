@@ -1,11 +1,15 @@
-from typing import List
+from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, distinct
 
 from ..database import get_db
 from ..models.database import User, UserRole, Chat, Message, ChatCriteria
-from ..models.schemas import ChatResponse, ChatUpdate
+from ..models.schemas import ChatResponse, ChatUpdate, ChatTypeConfig
+from ..services.chat_types import (
+    get_all_chat_types, get_chat_type_config, get_quick_actions,
+    get_suggested_questions, get_default_criteria
+)
 
 router = APIRouter()
 
@@ -16,11 +20,36 @@ def can_access_chat(user: User, chat: Chat) -> bool:
     return chat.owner_id == user.id
 
 
+@router.get("/types", response_model=List[Dict[str, Any]])
+async def get_chat_types():
+    """Get all available chat types."""
+    return get_all_chat_types()
+
+
+@router.get("/types/{type_id}")
+async def get_chat_type_details(type_id: str):
+    """Get detailed configuration for a chat type."""
+    config = get_chat_type_config(type_id)
+    return {
+        "type_info": {
+            "id": type_id,
+            "name": config["name"],
+            "description": config["description"],
+            "icon": config["icon"],
+            "color": config["color"],
+        },
+        "quick_actions": get_quick_actions(type_id),
+        "suggested_questions": get_suggested_questions(type_id),
+        "default_criteria": get_default_criteria(type_id),
+    }
+
+
 @router.get("", response_model=List[ChatResponse])
 async def get_chats(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(__import__('api.services.auth', fromlist=['get_current_user']).get_current_user),
     search: str = Query(None),
+    chat_type: str = Query(None, description="Filter by chat type"),
 ):
     from ..services.auth import get_current_user
 
@@ -29,6 +58,8 @@ async def get_chats(
         query = query.where(Chat.owner_id == user.id)
     if search:
         query = query.where(Chat.title.ilike(f"%{search}%"))
+    if chat_type:
+        query = query.where(Chat.chat_type == chat_type)
     query = query.order_by(Chat.last_activity.desc())
 
     result = await db.execute(query)
@@ -51,6 +82,9 @@ async def get_chats(
             telegram_chat_id=chat.telegram_chat_id,
             title=chat.title,
             custom_name=chat.custom_name,
+            chat_type=chat.chat_type.value if chat.chat_type else "hr",
+            custom_type_name=chat.custom_type_name,
+            custom_type_description=chat.custom_type_description,
             owner_id=chat.owner_id,
             owner_name=chat.owner.name if chat.owner else None,
             is_active=chat.is_active,
@@ -94,6 +128,9 @@ async def get_chat(
         telegram_chat_id=chat.telegram_chat_id,
         title=chat.title,
         custom_name=chat.custom_name,
+        chat_type=chat.chat_type.value if chat.chat_type else "hr",
+        custom_type_name=chat.custom_type_name,
+        custom_type_description=chat.custom_type_description,
         owner_id=chat.owner_id,
         owner_name=chat.owner.name if chat.owner else None,
         is_active=chat.is_active,
@@ -113,6 +150,7 @@ async def update_chat(
     user: User = Depends(__import__('api.services.auth', fromlist=['get_current_user']).get_current_user),
 ):
     from ..services.auth import get_current_user
+    from ..models.database import ChatType
 
     result = await db.execute(select(Chat).where(Chat.id == chat_id))
     chat = result.scalar_one_or_none()
@@ -127,6 +165,15 @@ async def update_chat(
         chat.is_active = data.is_active
     if data.owner_id is not None and user.role == UserRole.SUPERADMIN:
         chat.owner_id = data.owner_id
+    if data.chat_type is not None:
+        try:
+            chat.chat_type = ChatType(data.chat_type)
+        except ValueError:
+            chat.chat_type = ChatType.CUSTOM
+    if data.custom_type_name is not None:
+        chat.custom_type_name = data.custom_type_name
+    if data.custom_type_description is not None:
+        chat.custom_type_description = data.custom_type_description
 
     await db.commit()
     await db.refresh(chat)
@@ -136,6 +183,9 @@ async def update_chat(
         telegram_chat_id=chat.telegram_chat_id,
         title=chat.title,
         custom_name=chat.custom_name,
+        chat_type=chat.chat_type.value if chat.chat_type else "hr",
+        custom_type_name=chat.custom_type_name,
+        custom_type_description=chat.custom_type_description,
         owner_id=chat.owner_id,
         owner_name=chat.owner.name if chat.owner else None,
         is_active=chat.is_active,

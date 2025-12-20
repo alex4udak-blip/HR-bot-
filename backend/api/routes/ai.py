@@ -76,12 +76,17 @@ async def ai_message(
 
     history = conversation.messages or []
 
+    # Get chat type info
+    chat_type = chat.chat_type.value if chat.chat_type else "hr"
+    custom_description = chat.custom_type_description
+
     # Handle quick actions
     if request.quick_action:
         async def generate():
             full_response = ""
             async for chunk in ai_service.quick_action(
-                request.quick_action, chat.title, messages, criteria
+                request.quick_action, chat.title, messages, criteria,
+                chat_type, custom_description
             ):
                 full_response += chunk
                 yield f"data: {json.dumps({'content': chunk})}\n\n"
@@ -108,7 +113,8 @@ async def ai_message(
     async def generate():
         full_response = ""
         async for chunk in ai_service.chat_stream(
-            request.message, chat.title, messages, criteria, history
+            request.message, chat.title, messages, criteria, history,
+            chat_type, custom_description
         ):
             full_response += chunk
             yield f"data: {json.dumps({'content': chunk})}\n\n"
@@ -200,8 +206,10 @@ async def analyze_chat(
     if not can_access_chat(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
+    chat_type = chat.chat_type.value if chat.chat_type else "hr"
     result = await ai_service.generate_report(
-        chat.title, messages, criteria, request.report_type, request.include_quotes
+        chat.title, messages, criteria, request.report_type, request.include_quotes,
+        chat_type, chat.custom_type_description
     )
 
     analysis = AnalysisHistory(
@@ -254,7 +262,7 @@ async def get_analysis_history(
 
 
 @router.post("/{chat_id}/report")
-async def generate_report(
+async def generate_report_file(
     chat_id: int,
     request: ReportRequest,
     db: AsyncSession = Depends(get_db),
@@ -266,9 +274,11 @@ async def generate_report(
     if not can_access_chat(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
+    chat_type = chat.chat_type.value if chat.chat_type else "hr"
     # Generate report content
     content = await ai_service.generate_report(
-        chat.title, messages, criteria, request.report_type, True
+        chat.title, messages, criteria, request.report_type, True,
+        chat_type, chat.custom_type_description
     )
 
     # Save to history
