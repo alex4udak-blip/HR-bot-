@@ -152,101 +152,189 @@ async def on_bot_removed(event: ChatMemberUpdated):
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
 async def collect_group_message(message: types.Message):
     """Silently collect all messages from groups."""
-    async with async_session() as session:
-        # Get or create the chat
-        chat = await get_or_create_chat(session, message.chat, None)
+    # Skip messages without user info (system messages, channel posts, etc.)
+    if not message.from_user:
+        logger.debug(f"Skipping message without from_user in chat {message.chat.id}")
+        return
 
-        # Determine content type and content
-        content = ""
-        content_type = "text"
-        file_name = None
+    try:
+        async with async_session() as session:
+            # Get or create the chat
+            chat = await get_or_create_chat(session, message.chat, None)
 
-        if message.text:
-            content = message.text
+            # Determine content type and content
+            content = ""
             content_type = "text"
-        elif message.caption:
-            content = message.caption
+            file_name = None
 
-        if message.voice:
-            content_type = "voice"
-            file_name = "voice_message.ogg"
-            # Try to transcribe
-            try:
-                file = await get_bot().get_file(message.voice.file_id)
-                file_bytes = await get_bot().download_file(file.file_path)
-                content = await transcription_service.transcribe_audio(file_bytes.read())
-            except Exception as e:
-                logger.debug(f"Voice transcription: {e}")
-                content = "[Voice message - transcription failed]"
+            if message.text:
+                content = message.text
+                content_type = "text"
+            elif message.caption:
+                content = message.caption
 
-        elif message.video_note:
-            content_type = "video_note"
-            file_name = "video_note.mp4"
-            try:
-                file = await get_bot().get_file(message.video_note.file_id)
-                file_bytes = await get_bot().download_file(file.file_path)
-                content = await transcription_service.transcribe_video(file_bytes.read())
-            except Exception as e:
-                logger.debug(f"Video note transcription: {e}")
-                content = "[Video note - transcription failed]"
-
-        elif message.video:
-            content_type = "video"
-            file_name = message.video.file_name or "video.mp4"
-            if message.video.file_size < 20 * 1024 * 1024:  # 20MB limit
+            if message.voice:
+                content_type = "voice"
+                file_name = "voice_message.ogg"
+                # Try to transcribe
                 try:
-                    file = await get_bot().get_file(message.video.file_id)
-                    file_bytes = await get_bot().download_file(file.file_path)
-                    content = await transcription_service.transcribe_video(file_bytes.read())
-                except Exception as e:
-                    logger.debug(f"Video transcription: {e}")
-                    content = f"[Video: {file_name}]"
-            else:
-                content = f"[Video: {file_name} - too large for transcription]"
-
-        elif message.audio:
-            content_type = "audio"
-            file_name = message.audio.file_name or "audio.mp3"
-            if message.audio.file_size < 20 * 1024 * 1024:
-                try:
-                    file = await get_bot().get_file(message.audio.file_id)
+                    file = await get_bot().get_file(message.voice.file_id)
                     file_bytes = await get_bot().download_file(file.file_path)
                     content = await transcription_service.transcribe_audio(file_bytes.read())
                 except Exception as e:
-                    logger.debug(f"Audio transcription: {e}")
-                    content = f"[Audio: {file_name}]"
-            else:
-                content = f"[Audio: {file_name} - too large]"
+                    logger.debug(f"Voice transcription: {e}")
+                    content = "[Voice message - transcription failed]"
 
-        elif message.document:
-            content_type = "document"
-            file_name = message.document.file_name or "document"
-            file_id = message.document.file_id
-            document_metadata = None
-            parse_status = None
-            parse_error = None
+            elif message.video_note:
+                content_type = "video_note"
+                file_name = "video_note.mp4"
+                try:
+                    file = await get_bot().get_file(message.video_note.file_id)
+                    file_bytes = await get_bot().download_file(file.file_path)
+                    content = await transcription_service.transcribe_video(file_bytes.read())
+                except Exception as e:
+                    logger.debug(f"Video note transcription: {e}")
+                    content = "[Video note - transcription failed]"
 
-            # Try to parse the document
-            if message.document.file_size and message.document.file_size < 20 * 1024 * 1024:
+            elif message.video:
+                content_type = "video"
+                file_name = message.video.file_name or "video.mp4"
+                if message.video.file_size < 20 * 1024 * 1024:  # 20MB limit
+                    try:
+                        file = await get_bot().get_file(message.video.file_id)
+                        file_bytes = await get_bot().download_file(file.file_path)
+                        content = await transcription_service.transcribe_video(file_bytes.read())
+                    except Exception as e:
+                        logger.debug(f"Video transcription: {e}")
+                        content = f"[Video: {file_name}]"
+                else:
+                    content = f"[Video: {file_name} - too large for transcription]"
+
+            elif message.audio:
+                content_type = "audio"
+                file_name = message.audio.file_name or "audio.mp3"
+                if message.audio.file_size < 20 * 1024 * 1024:
+                    try:
+                        file = await get_bot().get_file(message.audio.file_id)
+                        file_bytes = await get_bot().download_file(file.file_path)
+                        content = await transcription_service.transcribe_audio(file_bytes.read())
+                    except Exception as e:
+                        logger.debug(f"Audio transcription: {e}")
+                        content = f"[Audio: {file_name}]"
+                else:
+                    content = f"[Audio: {file_name} - too large]"
+
+            elif message.document:
+                content_type = "document"
+                file_name = message.document.file_name or "document"
+                file_id = message.document.file_id
+                document_metadata = None
+                parse_status = None
+                parse_error = None
+
+                # Try to parse the document
+                if message.document.file_size and message.document.file_size < 20 * 1024 * 1024:
+                    try:
+                        file = await get_bot().get_file(file_id)
+                        file_bytes = await get_bot().download_file(file.file_path)
+                        result = await document_parser.parse(file_bytes.read(), file_name)
+                        content = result.content or f"[Document: {file_name}]"
+                        document_metadata = result.metadata
+                        parse_status = result.status
+                        parse_error = result.error
+                    except Exception as e:
+                        logger.debug(f"Document parsing: {e}")
+                        content = f"[Document: {file_name}]"
+                        parse_status = "failed"
+                        parse_error = str(e)
+                else:
+                    content = f"[Document: {file_name} - too large]"
+                    parse_status = "skipped"
+                    parse_error = "File too large"
+
+                # Save message with document metadata
+                db_message = Message(
+                    chat_id=chat.id,
+                    telegram_message_id=message.message_id,
+                    telegram_user_id=message.from_user.id,
+                    username=message.from_user.username,
+                    first_name=message.from_user.first_name,
+                    last_name=message.from_user.last_name,
+                    content=content,
+                    content_type=content_type,
+                    file_id=file_id,
+                    file_name=file_name,
+                    document_metadata=document_metadata,
+                    parse_status=parse_status,
+                    parse_error=parse_error,
+                    timestamp=message.date.replace(tzinfo=None),
+                )
+                session.add(db_message)
+                await session.commit()
+                return  # Early return since we've already saved
+
+            elif message.photo:
+                content_type = "photo"
+                file_name = "photo.jpg"
+                file_id = message.photo[-1].file_id  # Get highest resolution
+                document_metadata = None
+                parse_status = None
+                parse_error = None
+
+                # OCR the photo
                 try:
                     file = await get_bot().get_file(file_id)
                     file_bytes = await get_bot().download_file(file.file_path)
                     result = await document_parser.parse(file_bytes.read(), file_name)
-                    content = result.content or f"[Document: {file_name}]"
+                    content = result.content if result.content else (message.caption or "[Photo]")
                     document_metadata = result.metadata
                     parse_status = result.status
-                    parse_error = result.error
                 except Exception as e:
-                    logger.debug(f"Document parsing: {e}")
-                    content = f"[Document: {file_name}]"
+                    logger.debug(f"Photo OCR: {e}")
+                    content = message.caption or "[Photo]"
                     parse_status = "failed"
                     parse_error = str(e)
-            else:
-                content = f"[Document: {file_name} - too large]"
-                parse_status = "skipped"
-                parse_error = "File too large"
 
-            # Save message with document metadata
+                # Save message with OCR data
+                db_message = Message(
+                    chat_id=chat.id,
+                    telegram_message_id=message.message_id,
+                    telegram_user_id=message.from_user.id,
+                    username=message.from_user.username,
+                    first_name=message.from_user.first_name,
+                    last_name=message.from_user.last_name,
+                    content=content,
+                    content_type=content_type,
+                    file_id=file_id,
+                    file_name=file_name,
+                    document_metadata=document_metadata,
+                    parse_status=parse_status,
+                    parse_error=parse_error,
+                    timestamp=message.date.replace(tzinfo=None),
+                )
+                session.add(db_message)
+                await session.commit()
+                return  # Early return
+
+            elif message.sticker:
+                content_type = "sticker"
+                content = f"[Sticker: {message.sticker.emoji or ''}]"
+                file_name = "sticker.webp"
+
+            # Save message (for text, voice, video, audio, sticker)
+            # Get file_id for voice/video/audio if not already set
+            msg_file_id = None
+            if message.voice:
+                msg_file_id = message.voice.file_id
+            elif message.video_note:
+                msg_file_id = message.video_note.file_id
+            elif message.video:
+                msg_file_id = message.video.file_id
+            elif message.audio:
+                msg_file_id = message.audio.file_id
+            elif message.sticker:
+                msg_file_id = message.sticker.file_id
+
             db_message = Message(
                 chat_id=chat.id,
                 telegram_message_id=message.message_id,
@@ -256,95 +344,14 @@ async def collect_group_message(message: types.Message):
                 last_name=message.from_user.last_name,
                 content=content,
                 content_type=content_type,
-                file_id=file_id,
+                file_id=msg_file_id,
                 file_name=file_name,
-                document_metadata=document_metadata,
-                parse_status=parse_status,
-                parse_error=parse_error,
                 timestamp=message.date.replace(tzinfo=None),
             )
             session.add(db_message)
             await session.commit()
-            return  # Early return since we've already saved
-
-        elif message.photo:
-            content_type = "photo"
-            file_name = "photo.jpg"
-            file_id = message.photo[-1].file_id  # Get highest resolution
-            document_metadata = None
-            parse_status = None
-            parse_error = None
-
-            # OCR the photo
-            try:
-                file = await get_bot().get_file(file_id)
-                file_bytes = await get_bot().download_file(file.file_path)
-                result = await document_parser.parse(file_bytes.read(), file_name)
-                content = result.content if result.content else (message.caption or "[Photo]")
-                document_metadata = result.metadata
-                parse_status = result.status
-            except Exception as e:
-                logger.debug(f"Photo OCR: {e}")
-                content = message.caption or "[Photo]"
-                parse_status = "failed"
-                parse_error = str(e)
-
-            # Save message with OCR data
-            db_message = Message(
-                chat_id=chat.id,
-                telegram_message_id=message.message_id,
-                telegram_user_id=message.from_user.id,
-                username=message.from_user.username,
-                first_name=message.from_user.first_name,
-                last_name=message.from_user.last_name,
-                content=content,
-                content_type=content_type,
-                file_id=file_id,
-                file_name=file_name,
-                document_metadata=document_metadata,
-                parse_status=parse_status,
-                parse_error=parse_error,
-                timestamp=message.date.replace(tzinfo=None),
-            )
-            session.add(db_message)
-            await session.commit()
-            return  # Early return
-
-        elif message.sticker:
-            content_type = "sticker"
-            content = f"[Sticker: {message.sticker.emoji or ''}]"
-            file_id = message.sticker.file_id
-            file_name = "sticker.webp"
-
-        # Save message (for text, voice, video, audio, sticker)
-        # Get file_id for voice/video/audio if not already set
-        msg_file_id = None
-        if message.voice:
-            msg_file_id = message.voice.file_id
-        elif message.video_note:
-            msg_file_id = message.video_note.file_id
-        elif message.video:
-            msg_file_id = message.video.file_id
-        elif message.audio:
-            msg_file_id = message.audio.file_id
-        elif message.sticker:
-            msg_file_id = message.sticker.file_id
-
-        db_message = Message(
-            chat_id=chat.id,
-            telegram_message_id=message.message_id,
-            telegram_user_id=message.from_user.id,
-            username=message.from_user.username,
-            first_name=message.from_user.first_name,
-            last_name=message.from_user.last_name,
-            content=content,
-            content_type=content_type,
-            file_id=msg_file_id,
-            file_name=file_name,
-            timestamp=message.date.replace(tzinfo=None),
-        )
-        session.add(db_message)
-        await session.commit()
+    except Exception as e:
+        logger.error(f"❌ Error collecting message: {type(e).__name__}: {e}")
 
 
 @dp.message(Command("start"))
