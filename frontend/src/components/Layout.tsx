@@ -5,6 +5,7 @@ import {
   MessageSquare,
   Users,
   Settings,
+  Trash2,
   LogOut,
   Menu,
   X
@@ -17,6 +18,7 @@ import clsx from 'clsx';
 const navItems = [
   { path: '/dashboard', icon: LayoutDashboard, label: 'Главная' },
   { path: '/chats', icon: MessageSquare, label: 'Чаты' },
+  { path: '/trash', icon: Trash2, label: 'Корзина' },
   { path: '/users', icon: Users, label: 'Пользователи' },
   { path: '/settings', icon: Settings, label: 'Настройки' },
 ];

@@ -57,7 +57,7 @@ async def find_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> U
 
 
 async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, owner_id: int | None) -> Chat:
-    """Get existing chat or create new one."""
+    """Get existing chat or create new one. Restores soft-deleted chats."""
     from sqlalchemy.exc import IntegrityError
 
     result = await session.execute(
@@ -68,6 +68,13 @@ async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, o
     if chat:
         # Chat exists - update if needed
         updated = False
+
+        # Restore soft-deleted chat
+        if chat.deleted_at is not None:
+            chat.deleted_at = None
+            updated = True
+            logger.info(f"♻️ Restored deleted chat: {chat.title}")
+
         if not chat.is_active:
             chat.is_active = True
             updated = True
@@ -101,8 +108,12 @@ async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, o
             select(Chat).where(Chat.telegram_chat_id == telegram_chat.id)
         )
         chat = result.scalar_one_or_none()
-        if chat and not chat.is_active:
-            chat.is_active = True
+        if chat:
+            if chat.deleted_at is not None:
+                chat.deleted_at = None
+                logger.info(f"♻️ Restored deleted chat: {chat.title}")
+            if not chat.is_active:
+                chat.is_active = True
             await session.commit()
         return chat
 

@@ -98,6 +98,8 @@ class ChatResponse(BaseModel):
     last_activity: Optional[datetime]
     created_at: datetime
     has_criteria: bool = False
+    deleted_at: Optional[datetime] = None
+    days_until_permanent_delete: Optional[int] = None
 
     class Config:
         from_attributes = True
