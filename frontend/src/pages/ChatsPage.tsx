@@ -43,8 +43,8 @@ const CHAT_TYPE_FILTERS: { id: ChatTypeId | 'all'; name: string; icon: typeof Me
   { id: 'custom', name: 'Другое', icon: Settings },
 ];
 
-// Bot username - this should match your Telegram bot
-const BOT_USERNAME = '@YourBotUsername';
+// Bot username
+const BOT_USERNAME = '@enceladus_mst_bot';
 
 export default function ChatsPage() {
   const { chatId } = useParams();
@@ -389,10 +389,10 @@ export default function ChatsPage() {
                   <div>
                     <p className="font-medium">Установите тип чата</p>
                     <p className="text-sm text-dark-400">
-                      Напишите в чате: <code className="px-1.5 py-0.5 rounded bg-accent-500/20 text-accent-400">/settype</code>
+                      Выберите тип в веб-интерфейсе после появления чата
                     </p>
                     <p className="text-xs text-dark-500 mt-1">
-                      Или измените тип позже в веб-интерфейсе
+                      Нажмите на чат → выберите тип из выпадающего списка
                     </p>
                   </div>
                 </div>
