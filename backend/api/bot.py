@@ -12,9 +12,9 @@ from .models.database import Base, User, Chat, Message
 from .services.transcription import transcription_service
 from .services.documents import document_parser
 
-# Suppress all bot logging
+# Bot logging
 logger = logging.getLogger("hr-analyzer.bot")
-logger.setLevel(logging.CRITICAL)
+logger.setLevel(logging.INFO)
 
 # Bot is initialized lazily to avoid crashes on invalid/missing token
 bot: Bot | None = None
@@ -85,20 +85,24 @@ async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, o
 @dp.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=IS_NOT_MEMBER >> IS_MEMBER))
 async def on_bot_added(event: ChatMemberUpdated):
     """Handle bot being added to a chat - auto-bind to the user who added it."""
-    async with async_session() as session:
-        # Find who added the bot
-        adder_id = event.from_user.id
-        owner = await find_user_by_telegram_id(session, adder_id)
+    try:
+        logger.info(f"📥 Bot added to chat: {event.chat.title} (ID: {event.chat.id})")
+        async with async_session() as session:
+            # Find who added the bot
+            adder_id = event.from_user.id
+            owner = await find_user_by_telegram_id(session, adder_id)
 
-        owner_id = owner.id if owner else None
+            owner_id = owner.id if owner else None
 
-        # Create or get the chat
-        chat = await get_or_create_chat(session, event.chat, owner_id)
+            # Create or get the chat
+            chat = await get_or_create_chat(session, event.chat, owner_id)
 
-        if owner:
-            logger.debug(f"Bot added to chat by user {owner.email}")
-        else:
-            logger.debug(f"Bot added to chat by unregistered user")
+            if owner:
+                logger.info(f"✅ Chat '{event.chat.title}' linked to user {owner.email}")
+            else:
+                logger.info(f"✅ Chat '{event.chat.title}' created (no linked user)")
+    except Exception as e:
+        logger.error(f"❌ Error adding chat: {type(e).__name__}: {e}")
 
 
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
@@ -442,13 +446,18 @@ async def start_bot():
     """Start the bot polling."""
     try:
         bot_instance = get_bot()
+        me = await bot_instance.get_me()
+        logger.info(f"🤖 Bot started: @{me.username} (ID: {me.id})")
         await dp.start_polling(bot_instance)
-    except Exception:
-        pass
+    except ValueError as e:
+        logger.error(f"❌ Bot token error: {e}")
+    except Exception as e:
+        logger.error(f"❌ Bot failed to start: {type(e).__name__}: {e}")
 
 
 async def stop_bot():
     """Stop the bot."""
     global bot
     if bot:
+        logger.info("🛑 Bot stopping...")
         await bot.session.close()
