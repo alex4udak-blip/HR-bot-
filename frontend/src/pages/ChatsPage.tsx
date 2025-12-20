@@ -305,13 +305,13 @@ export default function ChatsPage() {
         <button
           onClick={() => setShowAIPanel(!showAIPanel)}
           className={clsx(
-            'hidden xl:flex fixed right-4 bottom-4 p-3 rounded-xl shadow-lg transition-all duration-200',
+            'hidden xl:flex fixed bottom-4 p-3 rounded-xl shadow-lg transition-all duration-200 z-10',
             showAIPanel
-              ? 'bg-accent-500 text-white'
-              : 'glass hover:bg-white/10'
+              ? 'right-[416px] bg-accent-500 text-white'
+              : 'right-4 glass hover:bg-white/10'
           )}
         >
-          <MessageSquare className="w-5 h-5" />
+          <Sparkles className="w-5 h-5" />
         </button>
       )}
 
