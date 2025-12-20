@@ -1,8 +1,11 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from api.database import engine, Base, AsyncSessionLocal
 from api.routes import auth, users, chats, messages, criteria, ai, stats
@@ -11,6 +14,9 @@ from api.services.auth import create_superadmin_if_not_exists
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Static files directory (built frontend)
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 @asynccontextmanager
@@ -67,6 +73,20 @@ app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+# Serve static files (frontend)
+if STATIC_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+
+    # Catch-all route for SPA - must be last
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Serve index.html for all non-API routes (SPA routing)
+        file_path = STATIC_DIR / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(STATIC_DIR / "index.html")
 
 
 if __name__ == "__main__":
