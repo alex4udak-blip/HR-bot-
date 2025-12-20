@@ -11,7 +11,7 @@ sqlalchemy>=2.0.25
 # Auth
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
-bcrypt>=4.1.2
+bcrypt==4.0.1  # Fixed version for passlib compatibility
 
 # Telegram
 aiogram>=3.3.0
