@@ -26,14 +26,14 @@ import clsx from 'clsx';
 
 // Chat type filter options
 const CHAT_TYPE_FILTERS: { id: ChatTypeId | 'all'; name: string; icon: typeof MessageSquare }[] = [
-  { id: 'all', name: 'All', icon: LayoutGrid },
+  { id: 'all', name: 'Все', icon: LayoutGrid },
   { id: 'hr', name: 'HR', icon: UserCheck },
-  { id: 'project', name: 'Project', icon: FolderKanban },
-  { id: 'client', name: 'Client', icon: Building2 },
-  { id: 'contractor', name: 'Contractor', icon: Briefcase },
-  { id: 'sales', name: 'Sales', icon: DollarSign },
-  { id: 'support', name: 'Support', icon: Headphones },
-  { id: 'custom', name: 'Custom', icon: Settings },
+  { id: 'project', name: 'Проект', icon: FolderKanban },
+  { id: 'client', name: 'Клиент', icon: Building2 },
+  { id: 'contractor', name: 'Подрядчик', icon: Briefcase },
+  { id: 'sales', name: 'Продажи', icon: DollarSign },
+  { id: 'support', name: 'Поддержка', icon: Headphones },
+  { id: 'custom', name: 'Другое', icon: Settings },
 ];
 
 export default function ChatsPage() {
@@ -136,7 +136,7 @@ export default function ChatsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
             <input
               type="text"
-              placeholder="Search chats..."
+              placeholder="Поиск чатов..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full glass-light rounded-xl py-2.5 pl-10 pr-4 text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
@@ -152,9 +152,9 @@ export default function ChatsPage() {
           ) : filteredChats.length === 0 ? (
             <div className="text-center py-8 px-4">
               <MessageSquare className="w-12 h-12 mx-auto text-dark-600 mb-3" />
-              <p className="text-dark-400">No chats found</p>
+              <p className="text-dark-400">Чаты не найдены</p>
               <p className="text-dark-500 text-sm mt-1">
-                Add the bot to a Telegram group to start
+                Добавьте бота в Telegram группу
               </p>
             </div>
           ) : (
@@ -189,7 +189,7 @@ export default function ChatsPage() {
                   {selectedChat.custom_name || selectedChat.title}
                 </h2>
                 <p className="text-sm text-dark-400">
-                  {selectedChat.messages_count} messages
+                  {selectedChat.messages_count} сообщ.
                 </p>
               </div>
               <button
@@ -209,9 +209,9 @@ export default function ChatsPage() {
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <MessageSquare className="w-16 h-16 mx-auto text-dark-600 mb-4" />
-              <h2 className="text-xl font-semibold mb-2">Select a Chat</h2>
+              <h2 className="text-xl font-semibold mb-2">Выберите чат</h2>
               <p className="text-dark-400">
-                Choose a chat from the list to view details
+                Выберите чат из списка для просмотра
               </p>
             </div>
           </div>
@@ -244,7 +244,7 @@ export default function ChatsPage() {
             className="xl:hidden fixed inset-0 z-50 glass flex flex-col"
           >
             <div className="flex items-center justify-between p-4 border-b border-white/5">
-              <h3 className="font-semibold">AI Assistant</h3>
+              <h3 className="font-semibold">AI Ассистент</h3>
               <button
                 onClick={() => setShowAIPanel(false)}
                 className="p-2 rounded-lg hover:bg-white/5"

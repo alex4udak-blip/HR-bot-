@@ -46,10 +46,10 @@ export default function DashboardPage() {
   }
 
   const statCards = [
-    { label: 'Total Chats', value: stats.total_chats, icon: MessageSquare, color: 'from-blue-500 to-blue-600' },
-    { label: 'Total Messages', value: stats.total_messages, icon: BarChart3, color: 'from-purple-500 to-purple-600' },
-    { label: 'Participants', value: stats.total_participants, icon: Users, color: 'from-green-500 to-green-600' },
-    { label: 'Analyses', value: stats.total_analyses, icon: Activity, color: 'from-orange-500 to-orange-600' },
+    { label: 'Всего чатов', value: stats.total_chats, icon: MessageSquare, color: 'from-blue-500 to-blue-600' },
+    { label: 'Сообщений', value: stats.total_messages, icon: BarChart3, color: 'from-purple-500 to-purple-600' },
+    { label: 'Участников', value: stats.total_participants, icon: Users, color: 'from-green-500 to-green-600' },
+    { label: 'Анализов', value: stats.total_analyses, icon: Activity, color: 'from-orange-500 to-orange-600' },
   ];
 
   return (
@@ -62,8 +62,8 @@ export default function DashboardPage() {
       >
         {/* Header */}
         <motion.div variants={item}>
-          <h1 className="text-2xl font-bold mb-2">Dashboard</h1>
-          <p className="text-dark-400">Overview of your HR analytics</p>
+          <h1 className="text-2xl font-bold mb-2">Панель управления</h1>
+          <p className="text-dark-400">Обзор HR аналитики</p>
         </motion.div>
 
         {/* Stats Cards */}
@@ -84,7 +84,7 @@ export default function DashboardPage() {
 
         {/* Activity Chart */}
         <motion.div variants={item} className="glass rounded-2xl p-6">
-          <h2 className="text-lg font-semibold mb-4">Message Activity (Last 7 Days)</h2>
+          <h2 className="text-lg font-semibold mb-4">Активность (7 дней)</h2>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={stats.activity_by_day}>
@@ -122,10 +122,10 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Top Chats */}
           <motion.div variants={item} className="glass rounded-2xl p-6">
-            <h2 className="text-lg font-semibold mb-4">Top Chats</h2>
+            <h2 className="text-lg font-semibold mb-4">Топ чатов</h2>
             <div className="space-y-3">
               {stats.top_chats.length === 0 ? (
-                <p className="text-dark-400 text-center py-4">No chats yet</p>
+                <p className="text-dark-400 text-center py-4">Пока нет чатов</p>
               ) : (
                 stats.top_chats.map((chat, index) => (
                   <div
@@ -137,7 +137,7 @@ export default function DashboardPage() {
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{chat.title}</p>
-                      <p className="text-sm text-dark-400">{chat.messages} messages</p>
+                      <p className="text-sm text-dark-400">{chat.messages} сообщ.</p>
                     </div>
                   </div>
                 ))
@@ -147,10 +147,10 @@ export default function DashboardPage() {
 
           {/* Messages by Type */}
           <motion.div variants={item} className="glass rounded-2xl p-6">
-            <h2 className="text-lg font-semibold mb-4">Messages by Type</h2>
+            <h2 className="text-lg font-semibold mb-4">По типу сообщений</h2>
             <div className="space-y-3">
               {Object.entries(stats.messages_by_type).length === 0 ? (
-                <p className="text-dark-400 text-center py-4">No messages yet</p>
+                <p className="text-dark-400 text-center py-4">Пока нет сообщений</p>
               ) : (
                 Object.entries(stats.messages_by_type).map(([type, count]) => (
                   <div key={type} className="flex items-center gap-4">
@@ -174,15 +174,15 @@ export default function DashboardPage() {
         {/* Quick Stats */}
         <motion.div variants={item} className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <div className="glass rounded-xl p-4 text-center">
-            <p className="text-dark-400 text-sm">Active Chats</p>
+            <p className="text-dark-400 text-sm">Активных</p>
             <p className="text-xl font-bold text-accent-400">{stats.active_chats}</p>
           </div>
           <div className="glass rounded-xl p-4 text-center">
-            <p className="text-dark-400 text-sm">Today</p>
+            <p className="text-dark-400 text-sm">Сегодня</p>
             <p className="text-xl font-bold text-green-400">{stats.messages_today}</p>
           </div>
           <div className="glass rounded-xl p-4 text-center sm:col-span-1 col-span-2">
-            <p className="text-dark-400 text-sm">This Week</p>
+            <p className="text-dark-400 text-sm">За неделю</p>
             <p className="text-xl font-bold text-purple-400">{stats.messages_this_week}</p>
           </div>
         </motion.div>
