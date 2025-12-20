@@ -59,6 +59,10 @@ async def ai_message(
     if not can_access_chat(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
+    # Validate that at least one of message or quick_action is provided
+    if not request.message and not request.quick_action:
+        raise HTTPException(status_code=400, detail="Требуется message или quick_action")
+
     # Get or create conversation
     result = await db.execute(
         select(AIConversation).where(
