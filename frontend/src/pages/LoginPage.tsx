@@ -60,7 +60,7 @@ export default function LoginPage() {
               <Sparkles className="w-8 h-8 text-white" />
             </motion.div>
             <h1 className="text-3xl font-bold gradient-text mb-2">
-              HR Аналитика
+              Чат Аналитика
             </h1>
             <p className="text-dark-400">
               {isRegister ? 'Создайте аккаунт' : 'Войдите в систему'}

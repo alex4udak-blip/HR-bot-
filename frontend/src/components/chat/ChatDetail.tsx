@@ -21,13 +21,32 @@ import {
   AlertTriangle,
   XCircle,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  UserCheck,
+  FolderKanban,
+  Building2,
+  Briefcase,
+  DollarSign,
+  Headphones,
+  MoreHorizontal
 } from 'lucide-react';
-import type { Chat, Message } from '@/types';
+import type { Chat, Message, ChatTypeId } from '@/types';
 import { getMessages, getParticipants, updateChat, downloadReport } from '@/services/api';
 import CriteriaPanel from './CriteriaPanel';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+
+// Chat type options
+const CHAT_TYPES: { id: ChatTypeId; name: string; icon: typeof UserCheck }[] = [
+  { id: 'work', name: 'Рабочий чат', icon: MessageSquare },
+  { id: 'hr', name: 'HR / Кандидаты', icon: UserCheck },
+  { id: 'project', name: 'Проект', icon: FolderKanban },
+  { id: 'client', name: 'Клиент', icon: Building2 },
+  { id: 'contractor', name: 'Подрядчик', icon: Briefcase },
+  { id: 'sales', name: 'Продажи', icon: DollarSign },
+  { id: 'support', name: 'Поддержка', icon: Headphones },
+  { id: 'custom', name: 'Другое', icon: MoreHorizontal },
+];
 
 // File type icon mapping
 const getFileIcon = (contentType: string, fileName?: string) => {
@@ -142,12 +161,12 @@ const DocumentMessage = ({ message }: { message: Message }) => {
               {expanded ? (
                 <>
                   <ChevronUp className="w-3 h-3" />
-                  Show less
+                  Свернуть
                 </>
               ) : (
                 <>
                   <ChevronDown className="w-3 h-3" />
-                  Show full content
+                  Показать полностью
                 </>
               )}
             </button>
@@ -166,6 +185,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
   const [activeTab, setActiveTab] = useState('messages');
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(chat.custom_name || chat.title);
+  const [showTypeDropdown, setShowTypeDropdown] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: messages = [], isLoading: loadingMessages } = useQuery({
@@ -178,12 +198,21 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
     queryFn: () => getParticipants(chat.id),
   });
 
-  const updateMutation = useMutation({
-    mutationFn: (name: string) => updateChat(chat.id, name),
+  const updateNameMutation = useMutation({
+    mutationFn: (name: string) => updateChat(chat.id, { custom_name: name }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['chats'] });
       setIsEditing(false);
-      toast.success('Chat name updated');
+      toast.success('Название обновлено');
+    },
+  });
+
+  const updateTypeMutation = useMutation({
+    mutationFn: (chatType: ChatTypeId) => updateChat(chat.id, { chat_type: chatType }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+      setShowTypeDropdown(false);
+      toast.success('Тип чата изменён');
     },
   });
 
@@ -198,9 +227,9 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast.success('Report downloaded');
+      toast.success('Отчёт скачан');
     } catch {
-      toast.error('Failed to download report');
+      toast.error('Ошибка скачивания');
     }
   };
 
@@ -215,10 +244,10 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
   };
 
   const tabs = [
-    { id: 'messages', label: 'Messages', icon: MessageSquare },
-    { id: 'participants', label: 'Participants', icon: Users },
-    { id: 'criteria', label: 'Criteria', icon: Settings },
-    { id: 'reports', label: 'Reports', icon: FileText },
+    { id: 'messages', label: 'Сообщения', icon: MessageSquare },
+    { id: 'participants', label: 'Участники', icon: Users },
+    { id: 'criteria', label: 'Критерии', icon: Settings },
+    { id: 'reports', label: 'Отчёты', icon: FileText },
   ];
 
   return (
@@ -236,7 +265,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                 autoFocus
               />
               <button
-                onClick={() => updateMutation.mutate(editName)}
+                onClick={() => updateNameMutation.mutate(editName)}
                 className="p-2 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30"
               >
                 <Check className="w-4 h-4" />
@@ -265,9 +294,57 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
             </>
           )}
         </div>
-        <p className="text-sm text-dark-400 mt-1">
-          {chat.messages_count} messages | {chat.participants_count} participants
-        </p>
+        <div className="flex items-center gap-3 mt-2">
+          <p className="text-sm text-dark-400">
+            {chat.messages_count} сообщ. | {chat.participants_count} участн.
+          </p>
+
+          {/* Chat Type Selector */}
+          <div className="relative">
+            <button
+              onClick={() => setShowTypeDropdown(!showTypeDropdown)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 transition-colors"
+            >
+              {(() => {
+                const typeInfo = CHAT_TYPES.find(t => t.id === chat.chat_type);
+                const Icon = typeInfo?.icon || MoreHorizontal;
+                return (
+                  <>
+                    <Icon className="w-3.5 h-3.5" />
+                    {typeInfo?.name || chat.chat_type}
+                    <ChevronDown className="w-3 h-3" />
+                  </>
+                );
+              })()}
+            </button>
+
+            {showTypeDropdown && (
+              <div className="absolute top-full left-0 mt-1 w-48 glass rounded-xl border border-white/10 shadow-xl z-50 overflow-hidden">
+                {CHAT_TYPES.map((type) => {
+                  const Icon = type.icon;
+                  const isActive = chat.chat_type === type.id;
+                  return (
+                    <button
+                      key={type.id}
+                      onClick={() => updateTypeMutation.mutate(type.id)}
+                      disabled={updateTypeMutation.isPending}
+                      className={clsx(
+                        'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors',
+                        isActive
+                          ? 'bg-accent-500/20 text-accent-400'
+                          : 'text-dark-200 hover:bg-white/5'
+                      )}
+                    >
+                      <Icon className="w-4 h-4" />
+                      {type.name}
+                      {isActive && <Check className="w-3.5 h-3.5 ml-auto" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -299,7 +376,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
           ) : messages.length === 0 ? (
             <div className="text-center py-8">
               <MessageSquare className="w-12 h-12 mx-auto text-dark-600 mb-3" />
-              <p className="text-dark-400">No messages yet</p>
+              <p className="text-dark-400">Сообщений пока нет</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -358,7 +435,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
           ) : participants.length === 0 ? (
             <div className="text-center py-8">
               <Users className="w-12 h-12 mx-auto text-dark-600 mb-3" />
-              <p className="text-dark-400">No participants yet</p>
+              <p className="text-dark-400">Участников пока нет</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -385,7 +462,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                     <p className="text-lg font-semibold text-accent-400">
                       {participant.messages_count}
                     </p>
-                    <p className="text-xs text-dark-500">messages</p>
+                    <p className="text-xs text-dark-500">сообщ.</p>
                   </div>
                 </motion.div>
               ))}
@@ -402,9 +479,9 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
         <Tabs.Content value="reports" className="flex-1 overflow-y-auto p-4">
           <div className="space-y-4">
             <div className="glass-light rounded-xl p-4">
-              <h3 className="font-semibold mb-3">Generate Report</h3>
+              <h3 className="font-semibold mb-3">Создать отчёт</h3>
               <p className="text-sm text-dark-400 mb-4">
-                Download a comprehensive analysis report for this chat
+                Скачайте полный аналитический отчёт по этому чату
               </p>
               <div className="flex flex-wrap gap-2">
                 <button

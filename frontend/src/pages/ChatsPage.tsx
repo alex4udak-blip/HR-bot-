@@ -14,8 +14,14 @@ import {
   DollarSign,
   Headphones,
   Settings,
-  LayoutGrid
+  LayoutGrid,
+  Plus,
+  Bot,
+  Copy,
+  Check,
+  Sparkles
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { getChats } from '@/services/api';
 import { useChatStore } from '@/stores/chatStore';
 import ChatList from '@/components/chat/ChatList';
@@ -27,6 +33,7 @@ import clsx from 'clsx';
 // Chat type filter options
 const CHAT_TYPE_FILTERS: { id: ChatTypeId | 'all'; name: string; icon: typeof MessageSquare }[] = [
   { id: 'all', name: 'Все', icon: LayoutGrid },
+  { id: 'work', name: 'Рабочий', icon: MessageSquare },
   { id: 'hr', name: 'HR', icon: UserCheck },
   { id: 'project', name: 'Проект', icon: FolderKanban },
   { id: 'client', name: 'Клиент', icon: Building2 },
@@ -36,13 +43,25 @@ const CHAT_TYPE_FILTERS: { id: ChatTypeId | 'all'; name: string; icon: typeof Me
   { id: 'custom', name: 'Другое', icon: Settings },
 ];
 
+// Bot username - this should match your Telegram bot
+const BOT_USERNAME = '@YourBotUsername';
+
 export default function ChatsPage() {
   const { chatId } = useParams();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<ChatTypeId | 'all'>('all');
   const [showAIPanel, setShowAIPanel] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [copied, setCopied] = useState(false);
   const { selectedChatId, setSelectedChatId, setChats } = useChatStore();
+
+  const handleCopyUsername = () => {
+    navigator.clipboard.writeText(BOT_USERNAME);
+    setCopied(true);
+    toast.success('Скопировано!');
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const { data: chats = [], isLoading } = useQuery({
     queryKey: ['chats'],
@@ -130,8 +149,8 @@ export default function ChatsPage() {
           </div>
         </div>
 
-        {/* Search */}
-        <div className="p-4 border-b border-white/5">
+        {/* Search and Add Button */}
+        <div className="p-4 border-b border-white/5 space-y-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
             <input
@@ -142,6 +161,13 @@ export default function ChatsPage() {
               className="w-full glass-light rounded-xl py-2.5 pl-10 pr-4 text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
             />
           </div>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 transition-colors text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            Добавить чат
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -271,6 +297,127 @@ export default function ChatsPage() {
           <MessageSquare className="w-5 h-5" />
         </button>
       )}
+
+      {/* Add Chat Instructions Modal */}
+      <AnimatePresence>
+        {showAddModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark-950/80"
+            onClick={() => setShowAddModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="glass rounded-2xl max-w-md w-full p-6 space-y-5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-accent-500/20 flex items-center justify-center">
+                    <Bot className="w-6 h-6 text-accent-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold">Добавить чат</h2>
+                    <p className="text-sm text-dark-400">Инструкция подключения</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAddModal(false)}
+                  className="p-2 rounded-lg hover:bg-white/5 text-dark-400"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Step 1 */}
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent-500/20 flex items-center justify-center text-accent-400 font-semibold text-sm">
+                    1
+                  </div>
+                  <div>
+                    <p className="font-medium">Откройте Telegram группу</p>
+                    <p className="text-sm text-dark-400">Группа, которую хотите анализировать</p>
+                  </div>
+                </div>
+
+                {/* Step 2 */}
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent-500/20 flex items-center justify-center text-accent-400 font-semibold text-sm">
+                    2
+                  </div>
+                  <div>
+                    <p className="font-medium">Добавьте бота в группу</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <code className="flex-1 px-3 py-2 rounded-lg glass-light text-accent-400 text-sm">
+                        {BOT_USERNAME}
+                      </code>
+                      <button
+                        onClick={handleCopyUsername}
+                        className="p-2 rounded-lg glass-light hover:bg-white/10 transition-colors"
+                      >
+                        {copied ? (
+                          <Check className="w-4 h-4 text-green-400" />
+                        ) : (
+                          <Copy className="w-4 h-4 text-dark-400" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Step 3 */}
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent-500/20 flex items-center justify-center text-accent-400 font-semibold text-sm">
+                    3
+                  </div>
+                  <div>
+                    <p className="font-medium">Дайте права администратора</p>
+                    <p className="text-sm text-dark-400">Для чтения сообщений</p>
+                  </div>
+                </div>
+
+                {/* Step 4 */}
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent-500/20 flex items-center justify-center text-accent-400 font-semibold text-sm">
+                    4
+                  </div>
+                  <div>
+                    <p className="font-medium">Установите тип чата</p>
+                    <p className="text-sm text-dark-400">
+                      Напишите в чате: <code className="px-1.5 py-0.5 rounded bg-accent-500/20 text-accent-400">/settype</code>
+                    </p>
+                    <p className="text-xs text-dark-500 mt-1">
+                      Или измените тип позже в веб-интерфейсе
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="glass-light rounded-xl p-4 flex items-start gap-3">
+                <Sparkles className="w-5 h-5 text-accent-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium">Чат появится автоматически</p>
+                  <p className="text-xs text-dark-400 mt-1">
+                    После добавления бота, чат появится в списке в течение минуты
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="w-full py-3 rounded-xl bg-accent-500 text-white font-medium hover:bg-accent-600 transition-colors"
+              >
+                Понятно
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -7,6 +7,9 @@ export default function BackgroundEffects() {
       {/* Aurora rotating effect */}
       <div className="aurora" />
 
+      {/* Light rays with smooth gradients */}
+      <div className="light-rays" />
+
       {/* Grid pattern with pulse */}
       <div className="grid-pattern" />
 

@@ -8,7 +8,7 @@ export interface User {
   created_at: string;
 }
 
-export type ChatTypeId = 'hr' | 'project' | 'client' | 'contractor' | 'sales' | 'support' | 'custom';
+export type ChatTypeId = 'work' | 'hr' | 'project' | 'client' | 'contractor' | 'sales' | 'support' | 'custom';
 
 export interface ChatTypeInfo {
   id: ChatTypeId;

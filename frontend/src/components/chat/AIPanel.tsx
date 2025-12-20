@@ -53,6 +53,13 @@ const iconMap: Record<string, typeof FileText> = {
 
 // Quick actions per chat type
 const QUICK_ACTIONS_BY_TYPE: Record<ChatTypeId, { id: string; label: string; icon: string }[]> = {
+  work: [
+    { id: 'summary', label: 'Сводка', icon: 'FileText' },
+    { id: 'action_items', label: 'Задачи', icon: 'CheckSquare' },
+    { id: 'decisions', label: 'Решения', icon: 'CheckCircle' },
+    { id: 'problems', label: 'Проблемы', icon: 'AlertCircle' },
+    { id: 'key_points', label: 'Ключевое', icon: 'List' },
+  ],
   hr: [
     { id: 'full_analysis', label: 'Полный анализ', icon: 'FileText' },
     { id: 'red_flags', label: 'Красные флаги', icon: 'AlertTriangle' },
