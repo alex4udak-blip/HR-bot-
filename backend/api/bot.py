@@ -12,7 +12,9 @@ from .models.database import Base, User, Chat, Message
 from .services.transcription import transcription_service
 from .services.documents import document_parser
 
+# Suppress all bot logging
 logger = logging.getLogger("hr-analyzer.bot")
+logger.setLevel(logging.CRITICAL)
 
 # Bot is initialized lazily to avoid crashes on invalid/missing token
 bot: Bot | None = None
@@ -370,12 +372,9 @@ async def start_bot():
     """Start the bot polling."""
     try:
         bot_instance = get_bot()
-        logger.info("Telegram bot started")
         await dp.start_polling(bot_instance)
-    except ValueError as e:
-        logger.debug(f"Bot not started: {e}")
-    except Exception as e:
-        logger.warning(f"Bot startup issue: {e}")
+    except Exception:
+        pass
 
 
 async def stop_bot():

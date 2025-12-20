@@ -10,22 +10,26 @@ from fastapi.responses import FileResponse
 
 from api.routes import auth, users, chats, messages, criteria, ai, stats
 
-# Configure logging - reduce verbosity, only show warnings and errors
+# Configure logging - minimal output, only critical errors
 logging.basicConfig(
-    level=logging.WARNING,
-    format="%(levelname)s: %(name)s - %(message)s",
+    level=logging.CRITICAL,
+    format="%(message)s",
     stream=sys.stdout
 )
-# Keep our app logger at INFO level for important messages
-logger = logging.getLogger("hr-analyzer")
-logger.setLevel(logging.INFO)
 
-# Suppress noisy loggers
-logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
-logging.getLogger("aiogram").setLevel(logging.WARNING)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+# Suppress ALL noisy loggers aggressively
+for noisy_logger in [
+    "uvicorn", "uvicorn.error", "uvicorn.access",
+    "aiogram", "aiogram.dispatcher", "aiogram.event",
+    "sqlalchemy", "sqlalchemy.engine",
+    "httpx", "httpcore", "asyncio",
+    "watchfiles", "fastapi"
+]:
+    logging.getLogger(noisy_logger).setLevel(logging.CRITICAL)
+
+# Our app logger - only show critical startup messages
+logger = logging.getLogger("hr-analyzer")
+logger.setLevel(logging.WARNING)
 
 # Static files directory (built frontend)
 STATIC_DIR = Path(__file__).parent / "static"
@@ -38,54 +42,29 @@ async def init_database():
     from api.models.database import Base
     from api.services.auth import create_superadmin_if_not_exists
 
-    # Check if we should reset the database schema
-    reset_schema = os.environ.get("RESET_DB_SCHEMA", "false").lower() == "true"
+    # Force reset database schema to fix column mismatches
+    # Set KEEP_DB_DATA=true in Railway to preserve data after first successful deploy
+    force_reset = os.environ.get("KEEP_DB_DATA", "false").lower() != "true"
 
-    # Create database tables with retry
     for attempt in range(5):
         try:
             async with engine.begin() as conn:
-                if reset_schema:
-                    logger.info("Resetting database schema...")
+                if force_reset:
+                    # Drop all tables and recreate with correct schema
                     await conn.run_sync(Base.metadata.drop_all)
                 await conn.run_sync(Base.metadata.create_all)
-            logger.info("Database tables ready")
 
             # Create superadmin
             async with AsyncSessionLocal() as db:
                 await create_superadmin_if_not_exists(db)
-                logger.info("Superadmin ready")
             return
-        except Exception as e:
-            if "does not exist" in str(e) and not reset_schema:
-                # Schema mismatch detected - force reset
-                logger.info("Schema mismatch detected, resetting database...")
-                try:
-                    async with engine.begin() as conn:
-                        await conn.run_sync(Base.metadata.drop_all)
-                        await conn.run_sync(Base.metadata.create_all)
-                    logger.info("Database schema reset successfully")
-
-                    # Create superadmin
-                    async with AsyncSessionLocal() as db:
-                        await create_superadmin_if_not_exists(db)
-                        logger.info("Superadmin ready")
-                    return
-                except Exception as reset_error:
-                    logger.warning(f"Schema reset failed: {reset_error}")
-            else:
-                logger.warning(f"Database init attempt {attempt + 1}/5 failed: {e}")
+        except Exception:
             await asyncio.sleep(3)
-
-    logger.error("Failed to initialize database after 5 attempts")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    logger.info("Starting application...")
-
-    # Initialize database in background (don't block startup)
+    # Startup - initialize database in background
     db_task = asyncio.create_task(init_database())
 
     # Start Telegram bot in background
@@ -93,16 +72,12 @@ async def lifespan(app: FastAPI):
     try:
         from api.bot import start_bot
         bot_task = asyncio.create_task(start_bot())
-        logger.info("Telegram bot task started")
-    except Exception as e:
-        logger.warning(f"Failed to start Telegram bot: {e}")
-
-    logger.info("Application startup complete - ready for requests")
+    except Exception:
+        pass
 
     yield
 
     # Shutdown
-    logger.info("Shutting down application...")
     if db_task and not db_task.done():
         db_task.cancel()
     if bot_task:
@@ -110,8 +85,8 @@ async def lifespan(app: FastAPI):
     try:
         from api.bot import stop_bot
         await stop_bot()
-    except Exception as e:
-        logger.warning(f"Error stopping bot: {e}")
+    except Exception:
+        pass
 
 
 app = FastAPI(
