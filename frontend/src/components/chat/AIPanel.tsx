@@ -16,7 +16,7 @@ import {
   CheckSquare,
   Smile,
   MessageSquare,
-  Handshake,
+  HeartHandshake,
   Heart,
   TrendingUp,
   Shield,
@@ -47,7 +47,7 @@ interface AIPanelProps {
 // Icon mapping
 const iconMap: Record<string, typeof FileText> = {
   FileText, AlertTriangle, ThumbsUp, Sparkles, BarChart, AlertCircle, Users, Clock,
-  CheckSquare, Smile, MessageSquare, Handshake, Heart, TrendingUp, Shield, MessageCircle,
+  CheckSquare, Smile, MessageSquare, HeartHandshake, Heart, TrendingUp, Shield, MessageCircle,
   HelpCircle, Target, XCircle, Wallet, Crown, ArrowRight, List, CheckCircle, ArrowUp, AlignLeft
 };
 
@@ -71,7 +71,7 @@ const QUICK_ACTIONS_BY_TYPE: Record<ChatTypeId, { id: string; label: string; ico
     { id: 'satisfaction', label: 'Satisfaction', icon: 'Smile' },
     { id: 'churn_risk', label: 'Churn Risk', icon: 'AlertTriangle' },
     { id: 'requests', label: 'Requests', icon: 'MessageSquare' },
-    { id: 'promises', label: 'Our Promises', icon: 'Handshake' },
+    { id: 'promises', label: 'Our Promises', icon: 'HeartHandshake' },
     { id: 'sentiment', label: 'Sentiment', icon: 'Heart' },
   ],
   contractor: [
