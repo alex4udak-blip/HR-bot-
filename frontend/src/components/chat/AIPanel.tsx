@@ -146,17 +146,26 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
   // Sync messages from server
   useEffect(() => {
     const serverMessages = conversation?.messages;
-    if (serverMessages && !justAddedMessageRef.current) {
-      // Only update if messages actually changed
+    if (serverMessages && !justAddedMessageRef.current && !isStreaming) {
+      // Only update if server has more or equal messages
       setLocalMessages(prev => {
         // If we have more messages locally (streaming added them), keep local
         if (prev.length > serverMessages.length) {
           return prev;
         }
+        // If server has same count, compare last message to avoid flicker
+        if (prev.length === serverMessages.length && prev.length > 0) {
+          const lastLocal = prev[prev.length - 1];
+          const lastServer = serverMessages[serverMessages.length - 1];
+          // If same content, don't update to avoid re-render
+          if (lastLocal.content === lastServer.content) {
+            return prev;
+          }
+        }
         return serverMessages;
       });
     }
-  }, [conversation?.messages]);
+  }, [conversation?.messages, isStreaming]);
 
   // Scroll to bottom when messages change
   const scrollToBottom = () => {
@@ -219,10 +228,11 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
           setTimeout(() => {
             justAddedMessageRef.current = false;
             queryClient.invalidateQueries({ queryKey: ['ai-history', chatId] });
-          }, 1000);
+          }, 2000);
         }
       );
     } catch (error) {
+      console.error('AI message error:', error);
       toast.error('Ошибка отправки');
       setIsStreaming(false);
     }
@@ -272,11 +282,12 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
           setTimeout(() => {
             justAddedMessageRef.current = false;
             queryClient.invalidateQueries({ queryKey: ['ai-history', chatId] });
-          }, 1000);
+          }, 2000);
         }
       );
     } catch (error) {
-      toast.error('Ошибка выполнения');
+      console.error('Quick action error:', error);
+      toast.error(error instanceof Error ? error.message : 'Ошибка выполнения');
       setIsStreaming(false);
     }
   };

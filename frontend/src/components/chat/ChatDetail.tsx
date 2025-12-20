@@ -488,45 +488,66 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
 
                     {isDocument ? (
                       <DocumentMessage message={message} />
-                    ) : message.content_type === 'photo' && message.file_id ? (
+                    ) : message.content_type === 'photo' ? (
                       <div className="space-y-2">
-                        <img
-                          src={`/api/chats/file/${message.file_id}`}
-                          alt="Photo"
-                          className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                          onClick={() => window.open(`/api/chats/file/${message.file_id}`, '_blank')}
-                          loading="lazy"
-                        />
-                        {message.content && !message.content.startsWith('[') && (
+                        {message.file_id ? (
+                          <img
+                            src={`/api/chats/file/${message.file_id}`}
+                            alt="Photo"
+                            className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                            onClick={() => window.open(`/api/chats/file/${message.file_id}`, '_blank')}
+                            loading="lazy"
+                            onError={(e) => {
+                              // Hide broken images
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="flex items-center gap-2 text-dark-400">
+                            <Image className="w-5 h-5" />
+                            <span className="text-sm">[Фото недоступно]</span>
+                          </div>
+                        )}
+                        {message.content && !message.content.startsWith('[Photo') && (
                           <p className="text-sm text-dark-300">{message.content}</p>
                         )}
                       </div>
-                    ) : message.content_type === 'video_note' && message.file_id ? (
+                    ) : message.content_type === 'video_note' ? (
                       <div className="space-y-2">
-                        <video
-                          src={`/api/chats/file/${message.file_id}`}
-                          className="w-32 h-32 rounded-full object-cover cursor-pointer"
-                          controls
-                          preload="metadata"
-                        />
-                        {message.content && !message.content.startsWith('[') && (
+                        {message.file_id ? (
+                          <video
+                            src={`/api/chats/file/${message.file_id}`}
+                            className="w-32 h-32 rounded-full object-cover cursor-pointer"
+                            controls
+                            preload="metadata"
+                          />
+                        ) : (
+                          <div className="w-32 h-32 rounded-full bg-dark-700 flex items-center justify-center text-dark-400">
+                            <span className="text-xs">Видео</span>
+                          </div>
+                        )}
+                        {message.content && !message.content.startsWith('[Video') && (
                           <p className="text-sm text-dark-300">{message.content}</p>
                         )}
                       </div>
-                    ) : message.content_type === 'sticker' && message.file_id ? (
+                    ) : message.content_type === 'sticker' ? (
                       <div className="flex items-center gap-2">
-                        <img
-                          src={`/api/chats/file/${message.file_id}`}
-                          alt="Sticker"
-                          className="w-32 h-32 object-contain"
-                          loading="lazy"
-                          onError={(e) => {
-                            // Hide broken sticker images (animated .tgs stickers)
-                            (e.target as HTMLImageElement).style.display = 'none';
-                          }}
-                        />
-                        {message.content.includes('[Sticker') && (
+                        {message.file_id && (
+                          <img
+                            src={`/api/chats/file/${message.file_id}`}
+                            alt="Sticker"
+                            className="w-32 h-32 object-contain"
+                            loading="lazy"
+                            onError={(e) => {
+                              // Hide broken sticker images (animated .tgs stickers)
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        )}
+                        {message.content.includes('[Sticker') ? (
                           <span className="text-2xl">{message.content.replace('[Sticker: ', '').replace(']', '')}</span>
+                        ) : (
+                          <span className="text-2xl">{message.content}</span>
                         )}
                       </div>
                     ) : (
