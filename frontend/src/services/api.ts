@@ -85,6 +85,19 @@ export const deleteChat = async (id: number): Promise<void> => {
   await api.delete(`/chats/${id}`);
 };
 
+export const getDeletedChats = async (): Promise<Chat[]> => {
+  const { data } = await api.get('/chats/deleted/list');
+  return data;
+};
+
+export const restoreChat = async (id: number): Promise<void> => {
+  await api.post(`/chats/${id}/restore`);
+};
+
+export const permanentDeleteChat = async (id: number): Promise<void> => {
+  await api.delete(`/chats/${id}/permanent`);
+};
+
 // Messages
 export const getMessages = async (chatId: number, page = 1, limit = 50, contentType?: string): Promise<Message[]> => {
   const params = new URLSearchParams({ page: String(page), limit: String(limit) });

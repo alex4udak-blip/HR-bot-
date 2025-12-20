@@ -47,6 +47,8 @@ export interface Chat {
   last_activity?: string;
   created_at: string;
   has_criteria?: boolean;
+  deleted_at?: string;
+  days_until_permanent_delete?: number;
 }
 
 export interface DocumentMetadata {

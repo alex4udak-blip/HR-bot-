@@ -53,6 +53,18 @@ async def init_database():
                         pass  # Enum value already exists
                 logger.info("Ensured all chattype enum values exist")
 
+                # Add deleted_at column if it doesn't exist
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE chats ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP"
+                    ))
+                    await conn.execute(text(
+                        "CREATE INDEX IF NOT EXISTS ix_chats_deleted_at ON chats(deleted_at)"
+                    ))
+                    logger.info("Added deleted_at column to chats table")
+                except Exception:
+                    pass  # Column already exists
+
                 # Create tables if they don't exist (safe, preserves data)
                 await conn.run_sync(Base.metadata.create_all)
 
@@ -65,6 +77,27 @@ async def init_database():
         except Exception as e:
             logger.warning(f"Database init attempt {attempt + 1} failed: {e}")
             await asyncio.sleep(3)
+
+
+async def cleanup_deleted_chats_task():
+    """Periodically clean up chats deleted more than 30 days ago."""
+    from api.database import AsyncSessionLocal
+    from api.routes.chats import cleanup_old_deleted_chats
+
+    # Wait for database to initialize
+    await asyncio.sleep(60)
+
+    while True:
+        try:
+            async with AsyncSessionLocal() as db:
+                count = await cleanup_old_deleted_chats(db)
+                if count > 0:
+                    logger.info(f"Cleaned up {count} old deleted chats")
+        except Exception as e:
+            logger.error(f"Error cleaning up deleted chats: {e}")
+
+        # Run every 24 hours
+        await asyncio.sleep(86400)
 
 
 @asynccontextmanager
@@ -80,6 +113,9 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
+    # Start cleanup task for old deleted chats
+    cleanup_task = asyncio.create_task(cleanup_deleted_chats_task())
+
     yield
 
     # Shutdown
@@ -87,6 +123,8 @@ async def lifespan(app: FastAPI):
         db_task.cancel()
     if bot_task:
         bot_task.cancel()
+    if cleanup_task:
+        cleanup_task.cancel()
     try:
         from api.bot import stop_bot
         await stop_bot()

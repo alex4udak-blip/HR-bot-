@@ -62,6 +62,7 @@ class Chat(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=func.now())
     last_activity = Column(DateTime, default=func.now(), onupdate=func.now())
+    deleted_at = Column(DateTime, nullable=True, index=True)  # Soft delete timestamp
 
     owner = relationship("User", back_populates="chats")
     messages = relationship("Message", back_populates="chat", cascade="all, delete-orphan")

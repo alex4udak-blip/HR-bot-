@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/services/api';
 import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
 import ChatsPage from '@/pages/ChatsPage';
+import TrashPage from '@/pages/TrashPage';
 import UsersPage from '@/pages/UsersPage';
 import SettingsPage from '@/pages/SettingsPage';
 import Layout from '@/components/Layout';
@@ -64,6 +65,7 @@ export default function App() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="chats" element={<ChatsPage />} />
         <Route path="chats/:chatId" element={<ChatsPage />} />
+        <Route path="trash" element={<TrashPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>

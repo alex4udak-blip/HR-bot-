@@ -1,11 +1,12 @@
+from datetime import datetime, timedelta
 from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, distinct
+from sqlalchemy import select, func, distinct, delete
 from sqlalchemy.orm import selectinload
 
 from ..database import get_db
-from ..models.database import User, UserRole, Chat, Message, ChatCriteria
+from ..models.database import User, UserRole, Chat, Message, ChatCriteria, AIConversation, AnalysisHistory
 from ..models.schemas import ChatResponse, ChatUpdate, ChatTypeConfig
 from ..services.auth import get_current_user
 from ..services.chat_types import (
@@ -56,7 +57,7 @@ async def get_chats(
     # Merge detached user into current session
     user = await db.merge(user)
 
-    query = select(Chat).options(selectinload(Chat.owner))
+    query = select(Chat).options(selectinload(Chat.owner)).where(Chat.deleted_at.is_(None))
     if user.role != UserRole.SUPERADMIN:
         query = query.where(Chat.owner_id == user.id)
     if search:
@@ -110,7 +111,10 @@ async def get_chat(
     user = await db.merge(user)
 
     result = await db.execute(
-        select(Chat).options(selectinload(Chat.owner)).where(Chat.id == chat_id)
+        select(Chat).options(selectinload(Chat.owner)).where(
+            Chat.id == chat_id,
+            Chat.deleted_at.is_(None)
+        )
     )
     chat = result.scalar_one_or_none()
     if not chat:
@@ -229,7 +233,95 @@ async def delete_chat(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Delete a chat and all its messages."""
+    """Soft delete a chat (moves to trash for 30 days)."""
+    user = await db.merge(user)
+
+    result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.deleted_at.is_(None)))
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if not can_access_chat(user, chat):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Soft delete - just set deleted_at timestamp
+    chat.deleted_at = datetime.utcnow()
+    await db.commit()
+
+
+@router.get("/deleted/list", response_model=List[ChatResponse])
+async def get_deleted_chats(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Get list of deleted chats (trash)."""
+    user = await db.merge(user)
+
+    query = select(Chat).options(selectinload(Chat.owner)).where(Chat.deleted_at.isnot(None))
+    if user.role != UserRole.SUPERADMIN:
+        query = query.where(Chat.owner_id == user.id)
+    query = query.order_by(Chat.deleted_at.desc())
+
+    result = await db.execute(query)
+    chats = result.scalars().all()
+
+    response = []
+    for chat in chats:
+        msg_count = await db.execute(
+            select(func.count(Message.id)).where(Message.chat_id == chat.id)
+        )
+        days_left = 30 - (datetime.utcnow() - chat.deleted_at).days if chat.deleted_at else 30
+
+        response.append(ChatResponse(
+            id=chat.id,
+            telegram_chat_id=chat.telegram_chat_id,
+            title=chat.title,
+            custom_name=chat.custom_name,
+            chat_type=chat.chat_type.value if chat.chat_type else "hr",
+            custom_type_name=chat.custom_type_name,
+            custom_type_description=chat.custom_type_description,
+            owner_id=chat.owner_id,
+            owner_name=chat.owner.name if chat.owner else None,
+            is_active=chat.is_active,
+            messages_count=msg_count.scalar() or 0,
+            participants_count=0,
+            last_activity=chat.last_activity,
+            created_at=chat.created_at,
+            has_criteria=False,
+            deleted_at=chat.deleted_at,
+            days_until_permanent_delete=max(0, days_left),
+        ))
+
+    return response
+
+
+@router.post("/{chat_id}/restore", status_code=200)
+async def restore_chat(
+    chat_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Restore a deleted chat from trash."""
+    user = await db.merge(user)
+
+    result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.deleted_at.isnot(None)))
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Deleted chat not found")
+    if not can_access_chat(user, chat):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    chat.deleted_at = None
+    await db.commit()
+    return {"message": "Chat restored successfully"}
+
+
+@router.delete("/{chat_id}/permanent", status_code=204)
+async def permanent_delete_chat(
+    chat_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Permanently delete a chat (no recovery)."""
     user = await db.merge(user)
 
     result = await db.execute(select(Chat).where(Chat.id == chat_id))
@@ -239,10 +331,31 @@ async def delete_chat(
     if not can_access_chat(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Delete related data first
-    await db.execute(Message.__table__.delete().where(Message.chat_id == chat_id))
-    await db.execute(ChatCriteria.__table__.delete().where(ChatCriteria.chat_id == chat_id))
-
-    # Delete the chat
+    # Delete all related data
+    await db.execute(delete(Message).where(Message.chat_id == chat_id))
+    await db.execute(delete(ChatCriteria).where(ChatCriteria.chat_id == chat_id))
+    await db.execute(delete(AIConversation).where(AIConversation.chat_id == chat_id))
+    await db.execute(delete(AnalysisHistory).where(AnalysisHistory.chat_id == chat_id))
     await db.delete(chat)
     await db.commit()
+
+
+async def cleanup_old_deleted_chats(db: AsyncSession):
+    """Delete chats that have been in trash for more than 30 days."""
+    cutoff = datetime.utcnow() - timedelta(days=30)
+
+    # Find old deleted chats
+    result = await db.execute(
+        select(Chat.id).where(Chat.deleted_at < cutoff)
+    )
+    old_chat_ids = [row[0] for row in result.fetchall()]
+
+    for chat_id in old_chat_ids:
+        await db.execute(delete(Message).where(Message.chat_id == chat_id))
+        await db.execute(delete(ChatCriteria).where(ChatCriteria.chat_id == chat_id))
+        await db.execute(delete(AIConversation).where(AIConversation.chat_id == chat_id))
+        await db.execute(delete(AnalysisHistory).where(AnalysisHistory.chat_id == chat_id))
+        await db.execute(delete(Chat).where(Chat.id == chat_id))
+
+    await db.commit()
+    return len(old_chat_ids)
