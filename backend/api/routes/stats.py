@@ -147,23 +147,23 @@ async def get_stats(
     # Top chats
     if is_super:
         top_q = (
-            select(Chat.id, Chat.title, func.count(Message.id).label("cnt"))
+            select(Chat.id, Chat.title, Chat.custom_name, func.count(Message.id).label("cnt"))
             .join(Message, Message.chat_id == Chat.id)
-            .group_by(Chat.id, Chat.title)
+            .group_by(Chat.id, Chat.title, Chat.custom_name)
             .order_by(func.count(Message.id).desc())
             .limit(5)
         )
     else:
         top_q = (
-            select(Chat.id, Chat.title, func.count(Message.id).label("cnt"))
+            select(Chat.id, Chat.title, Chat.custom_name, func.count(Message.id).label("cnt"))
             .join(Message, Message.chat_id == Chat.id)
             .where(Chat.owner_id == user.id)
-            .group_by(Chat.id, Chat.title)
+            .group_by(Chat.id, Chat.title, Chat.custom_name)
             .order_by(func.count(Message.id).desc())
             .limit(5)
         )
     top_result = await db.execute(top_q)
-    top_chats = [{"id": r[0], "title": r[1], "messages": r[2]} for r in top_result.all()]
+    top_chats = [{"id": r[0], "title": r[1], "custom_name": r[2], "messages": r[3]} for r in top_result.all()]
 
     return StatsResponse(
         total_chats=total_chats,
