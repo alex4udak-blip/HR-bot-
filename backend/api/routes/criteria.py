@@ -21,6 +21,7 @@ async def get_presets(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    user = await db.merge(user)
     # Global presets + user's own presets
     query = select(CriteriaPreset).where(
         or_(
@@ -52,6 +53,7 @@ async def create_preset(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    user = await db.merge(user)
     # Only superadmin can create global presets
     is_global = data.is_global and user.role == UserRole.SUPERADMIN
 
@@ -85,6 +87,7 @@ async def delete_preset(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    user = await db.merge(user)
     result = await db.execute(select(CriteriaPreset).where(CriteriaPreset.id == preset_id))
     preset = result.scalar_one_or_none()
 
@@ -107,6 +110,7 @@ async def get_chat_criteria(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    user = await db.merge(user)
     # Check access
     result = await db.execute(select(Chat).where(Chat.id == chat_id))
     chat = result.scalar_one_or_none()
@@ -142,6 +146,7 @@ async def update_chat_criteria(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    user = await db.merge(user)
     # Check access
     result = await db.execute(select(Chat).where(Chat.id == chat_id))
     chat = result.scalar_one_or_none()

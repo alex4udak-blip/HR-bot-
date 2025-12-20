@@ -26,6 +26,7 @@ async def get_messages(
     limit: int = Query(50, le=200),
     content_type: str = Query(None),
 ):
+    user = await db.merge(user)
     result = await db.execute(select(Chat).where(Chat.id == chat_id))
     chat = result.scalar_one_or_none()
     if not chat:
@@ -66,6 +67,7 @@ async def get_participants(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    user = await db.merge(user)
     result = await db.execute(select(Chat).where(Chat.id == chat_id))
     chat = result.scalar_one_or_none()
     if not chat:
