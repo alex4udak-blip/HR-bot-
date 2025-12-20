@@ -300,7 +300,7 @@ async def collect_group_message(message: types.Message):
             content=content,
             content_type=content_type,
             file_name=file_name,
-            timestamp=message.date,
+            timestamp=message.date.replace(tzinfo=None),
         )
         session.add(db_message)
         await session.commit()
