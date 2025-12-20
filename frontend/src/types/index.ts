@@ -8,17 +8,45 @@ export interface User {
   created_at: string;
 }
 
+export type ChatTypeId = 'hr' | 'project' | 'client' | 'contractor' | 'sales' | 'support' | 'custom';
+
+export interface ChatTypeInfo {
+  id: ChatTypeId;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+}
+
+export interface QuickAction {
+  id: string;
+  label: string;
+  icon: string;
+}
+
+export interface ChatTypeConfig {
+  type_info: ChatTypeInfo;
+  quick_actions: QuickAction[];
+  suggested_questions: string[];
+  default_criteria: Criterion[];
+}
+
 export interface Chat {
   id: number;
   telegram_chat_id: number;
   title: string;
   custom_name?: string;
-  chat_type: string;
+  chat_type: ChatTypeId;
+  custom_type_name?: string;
+  custom_type_description?: string;
   owner_id?: number;
+  owner_name?: string;
+  is_active: boolean;
   messages_count: number;
   participants_count: number;
   last_activity?: string;
   created_at: string;
+  has_criteria?: boolean;
 }
 
 export interface DocumentMetadata {

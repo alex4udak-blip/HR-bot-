@@ -8,29 +8,107 @@ import {
   AlertTriangle,
   ThumbsUp,
   FileText,
-  Loader2
+  Loader2,
+  BarChart,
+  AlertCircle,
+  Users,
+  Clock,
+  CheckSquare,
+  Smile,
+  MessageSquare,
+  Handshake,
+  Heart,
+  TrendingUp,
+  Shield,
+  MessageCircle,
+  HelpCircle,
+  Target,
+  XCircle,
+  Wallet,
+  Crown,
+  ArrowRight,
+  List,
+  CheckCircle,
+  ArrowUp,
+  AlignLeft
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { getAIHistory, clearAIHistory, streamAIMessage, streamQuickAction } from '@/services/api';
-import type { AIMessage } from '@/types';
+import type { AIMessage, ChatTypeId } from '@/types';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
 interface AIPanelProps {
   chatId: number;
   chatTitle: string;
+  chatType?: ChatTypeId;
 }
 
-const quickActions = [
-  { id: 'full_analysis', label: 'Full Analysis', icon: FileText },
-  { id: 'red_flags', label: 'Red Flags', icon: AlertTriangle },
-  { id: 'strengths', label: 'Strengths', icon: ThumbsUp },
-  { id: 'recommendation', label: 'Recommendation', icon: Sparkles },
-];
+// Icon mapping
+const iconMap: Record<string, typeof FileText> = {
+  FileText, AlertTriangle, ThumbsUp, Sparkles, BarChart, AlertCircle, Users, Clock,
+  CheckSquare, Smile, MessageSquare, Handshake, Heart, TrendingUp, Shield, MessageCircle,
+  HelpCircle, Target, XCircle, Wallet, Crown, ArrowRight, List, CheckCircle, ArrowUp, AlignLeft
+};
 
-export default function AIPanel({ chatId, chatTitle }: AIPanelProps) {
+// Quick actions per chat type
+const QUICK_ACTIONS_BY_TYPE: Record<ChatTypeId, { id: string; label: string; icon: string }[]> = {
+  hr: [
+    { id: 'full_analysis', label: 'Full Analysis', icon: 'FileText' },
+    { id: 'red_flags', label: 'Red Flags', icon: 'AlertTriangle' },
+    { id: 'strengths', label: 'Strengths', icon: 'ThumbsUp' },
+    { id: 'recommendation', label: 'Recommendation', icon: 'Sparkles' },
+    { id: 'culture_fit', label: 'Culture Fit', icon: 'Users' },
+  ],
+  project: [
+    { id: 'project_status', label: 'Project Status', icon: 'BarChart' },
+    { id: 'blockers', label: 'Blockers', icon: 'AlertCircle' },
+    { id: 'responsibilities', label: 'Who Does What', icon: 'Users' },
+    { id: 'deadlines', label: 'Deadline Risks', icon: 'Clock' },
+    { id: 'action_items', label: 'Action Items', icon: 'CheckSquare' },
+  ],
+  client: [
+    { id: 'satisfaction', label: 'Satisfaction', icon: 'Smile' },
+    { id: 'churn_risk', label: 'Churn Risk', icon: 'AlertTriangle' },
+    { id: 'requests', label: 'Requests', icon: 'MessageSquare' },
+    { id: 'promises', label: 'Our Promises', icon: 'Handshake' },
+    { id: 'sentiment', label: 'Sentiment', icon: 'Heart' },
+  ],
+  contractor: [
+    { id: 'performance', label: 'Performance', icon: 'TrendingUp' },
+    { id: 'reliability', label: 'Reliability', icon: 'Shield' },
+    { id: 'communication', label: 'Communication', icon: 'MessageCircle' },
+    { id: 'issues', label: 'Issues', icon: 'AlertCircle' },
+    { id: 'recommendation', label: 'Continue?', icon: 'HelpCircle' },
+  ],
+  sales: [
+    { id: 'deal_stage', label: 'Deal Stage', icon: 'Target' },
+    { id: 'objections', label: 'Objections', icon: 'XCircle' },
+    { id: 'budget', label: 'Budget Info', icon: 'Wallet' },
+    { id: 'decision_maker', label: 'Decision Maker', icon: 'Crown' },
+    { id: 'next_steps', label: 'Next Steps', icon: 'ArrowRight' },
+  ],
+  support: [
+    { id: 'issues_summary', label: 'Issues Summary', icon: 'List' },
+    { id: 'resolution_rate', label: 'Resolution Rate', icon: 'CheckCircle' },
+    { id: 'response_time', label: 'Response Time', icon: 'Clock' },
+    { id: 'sentiment', label: 'Customer Mood', icon: 'Smile' },
+    { id: 'escalations', label: 'Escalations', icon: 'ArrowUp' },
+  ],
+  custom: [
+    { id: 'full_analysis', label: 'Full Analysis', icon: 'FileText' },
+    { id: 'summary', label: 'Summary', icon: 'AlignLeft' },
+    { id: 'key_points', label: 'Key Points', icon: 'List' },
+    { id: 'action_items', label: 'Action Items', icon: 'CheckSquare' },
+  ],
+};
+
+export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelProps) {
   const [message, setMessage] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+
+  // Get quick actions for current chat type
+  const quickActions = QUICK_ACTIONS_BY_TYPE[chatType] || QUICK_ACTIONS_BY_TYPE.custom;
   const [streamingContent, setStreamingContent] = useState('');
   const [localMessages, setLocalMessages] = useState<AIMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -167,17 +245,20 @@ export default function AIPanel({ chatId, chatTitle }: AIPanelProps) {
       {/* Quick Actions */}
       <div className="p-3 border-b border-white/5">
         <div className="flex flex-wrap gap-2">
-          {quickActions.map((action) => (
-            <button
-              key={action.id}
-              onClick={() => handleQuickAction(action.id)}
-              disabled={isStreaming}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium glass-light hover:bg-white/10 disabled:opacity-50 transition-colors"
-            >
-              <action.icon className="w-3.5 h-3.5 text-accent-400" />
-              {action.label}
-            </button>
-          ))}
+          {quickActions.map((action) => {
+            const Icon = iconMap[action.icon] || FileText;
+            return (
+              <button
+                key={action.id}
+                onClick={() => handleQuickAction(action.id)}
+                disabled={isStreaming}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium glass-light hover:bg-white/10 disabled:opacity-50 transition-colors"
+              >
+                <Icon className="w-3.5 h-3.5 text-accent-400" />
+                {action.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 

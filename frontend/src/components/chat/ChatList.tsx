@@ -1,6 +1,9 @@
 import { motion } from 'framer-motion';
-import { MessageSquare, Users } from 'lucide-react';
-import type { Chat } from '@/types';
+import {
+  MessageSquare, Users, UserCheck, FolderKanban, Building2,
+  Briefcase, DollarSign, Headphones, Settings
+} from 'lucide-react';
+import type { Chat, ChatTypeId } from '@/types';
 import clsx from 'clsx';
 
 interface ChatListProps {
@@ -8,6 +11,17 @@ interface ChatListProps {
   selectedId: number | null;
   onSelect: (id: number) => void;
 }
+
+// Chat type configurations for UI
+const CHAT_TYPE_CONFIG: Record<ChatTypeId, { name: string; icon: typeof MessageSquare; color: string; bgColor: string }> = {
+  hr: { name: 'HR', icon: UserCheck, color: 'text-blue-400', bgColor: 'from-blue-500/20 to-blue-600/20' },
+  project: { name: 'Project', icon: FolderKanban, color: 'text-purple-400', bgColor: 'from-purple-500/20 to-purple-600/20' },
+  client: { name: 'Client', icon: Building2, color: 'text-green-400', bgColor: 'from-green-500/20 to-green-600/20' },
+  contractor: { name: 'Contractor', icon: Briefcase, color: 'text-orange-400', bgColor: 'from-orange-500/20 to-orange-600/20' },
+  sales: { name: 'Sales', icon: DollarSign, color: 'text-yellow-400', bgColor: 'from-yellow-500/20 to-yellow-600/20' },
+  support: { name: 'Support', icon: Headphones, color: 'text-cyan-400', bgColor: 'from-cyan-500/20 to-cyan-600/20' },
+  custom: { name: 'Custom', icon: Settings, color: 'text-gray-400', bgColor: 'from-gray-500/20 to-gray-600/20' },
+};
 
 export default function ChatList({ chats, selectedId, onSelect }: ChatListProps) {
   const formatDate = (dateString?: string) => {
@@ -28,47 +42,62 @@ export default function ChatList({ chats, selectedId, onSelect }: ChatListProps)
     }
   };
 
+  const getChatTypeConfig = (type: ChatTypeId) => {
+    return CHAT_TYPE_CONFIG[type] || CHAT_TYPE_CONFIG.custom;
+  };
+
   return (
     <div className="divide-y divide-white/5">
-      {chats.map((chat, index) => (
-        <motion.button
-          key={chat.id}
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: index * 0.05 }}
-          onClick={() => onSelect(chat.id)}
-          className={clsx(
-            'w-full p-4 text-left transition-all duration-200 hover:bg-white/5',
-            selectedId === chat.id && 'bg-accent-500/10 border-l-2 border-accent-500'
-          )}
-        >
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-500/20 to-accent-600/20 flex items-center justify-center flex-shrink-0">
-              <MessageSquare className="w-5 h-5 text-accent-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <h3 className="font-medium truncate">
-                  {chat.custom_name || chat.title}
-                </h3>
-                <span className="text-xs text-dark-500 flex-shrink-0">
-                  {formatDate(chat.last_activity)}
-                </span>
+      {chats.map((chat, index) => {
+        const typeConfig = getChatTypeConfig(chat.chat_type);
+        const TypeIcon = typeConfig.icon;
+
+        return (
+          <motion.button
+            key={chat.id}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: index * 0.05 }}
+            onClick={() => onSelect(chat.id)}
+            className={clsx(
+              'w-full p-4 text-left transition-all duration-200 hover:bg-white/5',
+              selectedId === chat.id && 'bg-accent-500/10 border-l-2 border-accent-500'
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <div className={clsx(
+                'w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center flex-shrink-0',
+                typeConfig.bgColor
+              )}>
+                <TypeIcon className={clsx('w-5 h-5', typeConfig.color)} />
               </div>
-              <div className="flex items-center gap-3 text-sm text-dark-400">
-                <span className="flex items-center gap-1">
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  {chat.messages_count}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Users className="w-3.5 h-3.5" />
-                  {chat.participants_count}
-                </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <h3 className="font-medium truncate">
+                    {chat.custom_name || chat.title}
+                  </h3>
+                  <span className="text-xs text-dark-500 flex-shrink-0">
+                    {formatDate(chat.last_activity)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-sm text-dark-400">
+                  <span className={clsx('text-xs px-1.5 py-0.5 rounded', typeConfig.color, 'bg-white/5')}>
+                    {chat.custom_type_name || typeConfig.name}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    {chat.messages_count}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Users className="w-3.5 h-3.5" />
+                    {chat.participants_count}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        </motion.button>
-      ))}
+          </motion.button>
+        );
+      })}
     </div>
   );
 }
