@@ -557,22 +557,31 @@ class TelegramHTMLParser(HTMLParser):
         elif self.in_media and self.current_message:
             if tag == 'a':
                 href = attrs_dict.get('href', '')
-                if href and not href.startswith('#') and not href.startswith('http'):
+                # Prefer full-size files (from <a>) over thumbnails (from <img>)
+                # Skip thumbnail links
+                if href and not href.startswith('#') and not href.startswith('http') and '_thumb' not in href:
                     self.current_message['media_file'] = href
                     # Detect type from file path
-                    if 'photos/' in href or href.endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                    if 'photos/' in href or href.endswith(('.jpg', '.jpeg', '.png')):
                         self.current_message['media_type'] = 'photo'
                     elif 'video_files/' in href or 'round_video' in href:
                         self.current_message['media_type'] = 'video_note'
                     elif 'videos/' in href or href.endswith(('.mp4', '.webm')):
                         self.current_message['media_type'] = 'video'
-                    elif 'stickers/' in href or href.endswith('.webp'):
+                    elif 'stickers/' in href:
                         self.current_message['media_type'] = 'sticker'
                     elif 'voice_messages/' in href or href.endswith('.ogg'):
                         self.current_message['media_type'] = 'voice'
+                    elif href.endswith('.webp'):
+                        # .webp can be sticker or photo, check folder
+                        if 'sticker' in href.lower():
+                            self.current_message['media_type'] = 'sticker'
+                        else:
+                            self.current_message['media_type'] = 'photo'
             elif tag == 'img':
                 src = attrs_dict.get('src', '')
-                if src and not src.startswith('http'):
+                # Only use img src if we don't have a file from <a> tag yet
+                if src and not src.startswith('http') and not self.current_message.get('media_file'):
                     self.current_message['media_file'] = src
                     if 'sticker' in src.lower():
                         self.current_message['media_type'] = 'sticker'
@@ -580,7 +589,7 @@ class TelegramHTMLParser(HTMLParser):
                         self.current_message['media_type'] = 'photo'
             elif tag == 'video':
                 src = attrs_dict.get('src', '')
-                if src:
+                if src and not self.current_message.get('media_file'):
                     self.current_message['media_file'] = src
                     if 'round' in src.lower():
                         self.current_message['media_type'] = 'video_note'
