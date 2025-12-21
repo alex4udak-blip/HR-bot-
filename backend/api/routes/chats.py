@@ -1136,8 +1136,10 @@ async def import_telegram_history(
 
             # If no user ID, generate one from the sender name (for HTML imports)
             if telegram_user_id == 0 and from_name:
+                # Normalize name for consistent hashing (lowercase, strip spaces, remove extra whitespace)
+                normalized_name = ' '.join(from_name.lower().split())
                 # Generate consistent ID from name hash (negative to avoid collision with real IDs)
-                name_hash = hashlib.md5(from_name.encode()).hexdigest()[:8]
+                name_hash = hashlib.md5(normalized_name.encode()).hexdigest()[:8]
                 telegram_user_id = -abs(int(name_hash, 16) % 1000000000)
 
             # Split name into first/last name

@@ -85,21 +85,18 @@ async def get_participants(
     if not can_access_chat(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
+    # Group by telegram_user_id only, take max of other fields to avoid duplicates
+    # when the same user has slightly different names
     result = await db.execute(
         select(
             Message.telegram_user_id,
-            Message.username,
-            Message.first_name,
-            Message.last_name,
+            func.max(Message.username).label("username"),
+            func.max(Message.first_name).label("first_name"),
+            func.max(Message.last_name).label("last_name"),
             func.count(Message.id).label("count")
         )
         .where(Message.chat_id == chat_id)
-        .group_by(
-            Message.telegram_user_id,
-            Message.username,
-            Message.first_name,
-            Message.last_name
-        )
+        .group_by(Message.telegram_user_id)
         .order_by(func.count(Message.id).desc())
     )
     participants = result.all()
