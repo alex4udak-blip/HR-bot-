@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Upload, FileJson, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Upload, FileJson, FileArchive, CheckCircle, AlertCircle, Loader2, Apple, Monitor } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { importTelegramHistory, ImportResult } from '@/services/api';
 import toast from 'react-hot-toast';
+import clsx from 'clsx';
 
 interface ImportHistoryModalProps {
   chatId: number;
@@ -16,6 +17,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [platform, setPlatform] = useState<'mac' | 'windows'>('mac');
   const queryClient = useQueryClient();
 
   const importMutation = useMutation({
@@ -47,11 +49,11 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
     e.preventDefault();
     setIsDragging(false);
     const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && droppedFile.name.endsWith('.json')) {
+    if (droppedFile && (droppedFile.name.endsWith('.json') || droppedFile.name.endsWith('.zip'))) {
       setFile(droppedFile);
       setResult(null);
     } else {
-      toast.error('Пожалуйста, загрузите JSON файл');
+      toast.error('Пожалуйста, загрузите JSON или ZIP файл');
     }
   }, []);
 
@@ -110,15 +112,82 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
             </div>
 
             {/* Instructions */}
-            <div className="mb-6 p-4 glass-light rounded-xl text-sm">
-              <p className="font-medium mb-2">Как экспортировать историю:</p>
-              <ol className="list-decimal list-inside space-y-1 text-dark-300">
-                <li>Откройте <strong>Telegram Desktop</strong></li>
-                <li>Откройте нужный чат</li>
-                <li>Нажмите <strong>⋮</strong> → <strong>Export chat history</strong></li>
-                <li>Выберите формат <strong>JSON</strong></li>
-                <li>Загрузите файл <strong>result.json</strong> сюда</li>
-              </ol>
+            <div className="mb-6 glass-light rounded-xl overflow-hidden max-h-[300px] overflow-y-auto">
+              {/* Platform tabs */}
+              <div className="flex border-b border-white/5 sticky top-0 bg-dark-800/95 backdrop-blur-sm">
+                <button
+                  onClick={() => setPlatform('mac')}
+                  className={clsx(
+                    'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors',
+                    platform === 'mac'
+                      ? 'bg-white/5 text-white'
+                      : 'text-dark-400 hover:text-dark-200'
+                  )}
+                >
+                  <Apple className="w-4 h-4" />
+                  macOS
+                </button>
+                <button
+                  onClick={() => setPlatform('windows')}
+                  className={clsx(
+                    'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors',
+                    platform === 'windows'
+                      ? 'bg-white/5 text-white'
+                      : 'text-dark-400 hover:text-dark-200'
+                  )}
+                >
+                  <Monitor className="w-4 h-4" />
+                  Windows
+                </button>
+              </div>
+
+              {/* Instructions content */}
+              <div className="p-4 text-sm">
+                <p className="font-medium mb-3">📤 Шаг 1: Экспорт из Telegram</p>
+                {platform === 'mac' ? (
+                  <ol className="list-decimal list-inside space-y-1.5 text-dark-300 mb-4">
+                    <li>Откройте <strong>Telegram Desktop</strong></li>
+                    <li>Откройте нужный чат</li>
+                    <li>Нажмите <strong>⋮</strong> (три точки) в правом верхнем углу</li>
+                    <li>Выберите <strong>Export chat history</strong></li>
+                    <li>Снимите все галочки (фото, видео и т.д.) — нужен только текст</li>
+                    <li>Формат: <strong>Machine-readable JSON</strong></li>
+                    <li>Нажмите <strong>Export</strong></li>
+                  </ol>
+                ) : (
+                  <ol className="list-decimal list-inside space-y-1.5 text-dark-300 mb-4">
+                    <li>Откройте <strong>Telegram Desktop</strong></li>
+                    <li>Откройте нужный чат</li>
+                    <li>Нажмите на <strong>имя чата</strong> вверху (откроется профиль)</li>
+                    <li>Нажмите <strong>⋮</strong> (три точки) → <strong>Export chat history</strong></li>
+                    <li>Снимите все галочки (фото, видео и т.д.) — нужен только текст</li>
+                    <li>Формат: <strong>Machine-readable JSON</strong></li>
+                    <li>Нажмите <strong>Export</strong></li>
+                  </ol>
+                )}
+
+                <p className="font-medium mb-3">📦 Шаг 2: Сжатие в ZIP (если файл большой)</p>
+                {platform === 'mac' ? (
+                  <ol className="list-decimal list-inside space-y-1.5 text-dark-300 mb-4">
+                    <li>Откройте папку <code className="px-1 py-0.5 rounded bg-white/5">Telegram Desktop</code></li>
+                    <li>Найдите папку <code className="px-1 py-0.5 rounded bg-white/5">ChatExport_дата</code></li>
+                    <li>Правый клик на <strong>result.json</strong></li>
+                    <li>Выберите <strong>Сжать "result.json"</strong></li>
+                    <li>Получится файл <strong>result.json.zip</strong></li>
+                  </ol>
+                ) : (
+                  <ol className="list-decimal list-inside space-y-1.5 text-dark-300 mb-4">
+                    <li>Откройте папку <code className="px-1 py-0.5 rounded bg-white/5">Telegram Desktop</code></li>
+                    <li>Найдите папку <code className="px-1 py-0.5 rounded bg-white/5">ChatExport_дата</code></li>
+                    <li>Правый клик на <strong>result.json</strong></li>
+                    <li>Выберите <strong>Отправить → Сжатая ZIP-папка</strong></li>
+                    <li>Получится файл <strong>result.zip</strong></li>
+                  </ol>
+                )}
+
+                <p className="font-medium mb-3">📥 Шаг 3: Загрузка</p>
+                <p className="text-dark-300">Загрузите <strong>result.json</strong> или <strong>ZIP-архив</strong> ниже</p>
+              </div>
             </div>
 
             {/* Drop zone */}
@@ -134,17 +203,24 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
             >
               <input
                 type="file"
-                accept=".json"
+                accept=".json,.zip"
                 onChange={handleFileChange}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
 
               {file ? (
                 <div className="flex flex-col items-center gap-2">
-                  <FileJson className="w-12 h-12 text-green-400" />
+                  {file.name.endsWith('.zip') ? (
+                    <FileArchive className="w-12 h-12 text-green-400" />
+                  ) : (
+                    <FileJson className="w-12 h-12 text-green-400" />
+                  )}
                   <p className="font-medium">{file.name}</p>
                   <p className="text-sm text-dark-400">
-                    {(file.size / 1024).toFixed(1)} KB
+                    {file.size > 1024 * 1024
+                      ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
+                      : `${(file.size / 1024).toFixed(1)} KB`
+                    }
                   </p>
                 </div>
               ) : (
@@ -153,7 +229,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                   <p className="text-dark-300">
                     Перетащите файл сюда или <span className="text-accent-400">выберите</span>
                   </p>
-                  <p className="text-sm text-dark-500">Поддерживается: JSON</p>
+                  <p className="text-sm text-dark-500">Поддерживается: JSON, ZIP</p>
                 </div>
               )}
             </div>
