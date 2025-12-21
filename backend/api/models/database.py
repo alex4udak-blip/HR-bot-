@@ -83,7 +83,8 @@ class Message(Base):
     last_name = Column(String(255), nullable=True)
     content = Column(Text, nullable=False)
     content_type = Column(String(50), nullable=False)  # text, voice, video_note, document, photo, etc
-    file_id = Column(String(255), nullable=True)
+    file_id = Column(String(255), nullable=True)  # Telegram Bot API file_id
+    file_path = Column(String(512), nullable=True)  # Local file path for imported media
     file_name = Column(String(255), nullable=True)
     # Document parsing metadata
     document_metadata = Column(JSON, nullable=True)  # {file_type, pages_count, sheets, etc}

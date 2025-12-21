@@ -76,6 +76,7 @@ export interface Message {
   content: string;
   content_type: string;
   file_id?: string;
+  file_path?: string;  // Local file path for imported media
   file_name?: string;
   document_metadata?: DocumentMetadata;
   parse_status?: 'parsed' | 'partial' | 'failed' | 'skipped';

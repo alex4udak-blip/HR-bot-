@@ -1,6 +1,7 @@
 from typing import List
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 import httpx
@@ -10,6 +11,9 @@ from ..models.database import User, UserRole, Chat, Message
 from ..models.schemas import MessageResponse, ParticipantResponse
 from ..services.auth import get_current_user, get_current_user_optional, get_user_from_token
 from ..config import settings
+
+# Uploads directory for imported media
+UPLOADS_DIR = Path(__file__).parent.parent.parent / "uploads"
 
 router = APIRouter()
 
@@ -177,3 +181,74 @@ async def get_telegram_file(
             )
     except httpx.RequestError as e:
         raise HTTPException(status_code=500, detail=f"Network error: {str(e)}")
+
+
+@router.get("/local/{chat_id}/{filename:path}")
+async def get_local_file(
+    chat_id: int,
+    filename: str,
+    token: str = Query(None, description="Auth token for img/video tags"),
+    user: User = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Serve locally stored imported media files.
+
+    Supports two auth methods:
+    - Authorization header (for fetch requests)
+    - Query param ?token=xxx (for img/video tags that can't send headers)
+    """
+    # Check auth - either from header or query param
+    if not user and token:
+        user = await get_user_from_token(token, db)
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    # Verify user has access to this chat
+    result = await db.execute(
+        select(Chat).where(Chat.id == chat_id, Chat.deleted_at.is_(None))
+    )
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if not can_access_chat(user, chat):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Build file path and verify it exists
+    file_path = UPLOADS_DIR / str(chat_id) / filename
+
+    # Security: ensure path doesn't escape uploads directory
+    try:
+        file_path = file_path.resolve()
+        if not str(file_path).startswith(str(UPLOADS_DIR.resolve())):
+            raise HTTPException(status_code=403, detail="Access denied")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Determine content type
+    content_type = "application/octet-stream"
+    suffix = file_path.suffix.lower()
+    if suffix in ('.jpg', '.jpeg'):
+        content_type = "image/jpeg"
+    elif suffix == '.png':
+        content_type = "image/png"
+    elif suffix == '.gif':
+        content_type = "image/gif"
+    elif suffix == '.webp':
+        content_type = "image/webp"
+    elif suffix == '.webm':
+        content_type = "video/webm"
+    elif suffix == '.mp4':
+        content_type = "video/mp4"
+    elif suffix == '.ogg':
+        content_type = "audio/ogg"
+
+    return FileResponse(
+        file_path,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"}  # Cache for 24h
+    )
