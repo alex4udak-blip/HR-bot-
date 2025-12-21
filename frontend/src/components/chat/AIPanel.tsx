@@ -129,6 +129,8 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
   const { data: conversation } = useQuery({
     queryKey: ['ai-history', chatId],
     queryFn: () => getAIHistory(chatId),
+    refetchOnWindowFocus: false,
+    staleTime: 30000, // Consider data fresh for 30 seconds
   });
 
   // Reset when chat changes
@@ -169,14 +171,17 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
 
   // Scroll to bottom when messages change
   const scrollToBottom = () => {
-    if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
-    }
+    // Use requestAnimationFrame to ensure DOM is updated before scrolling
+    requestAnimationFrame(() => {
+      if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      }
+    });
   };
 
   useEffect(() => {
     scrollToBottom();
-  }, [localMessages.length, streamingContent]);
+  }, [localMessages, streamingContent]);
 
   const clearMutation = useMutation({
     mutationFn: () => clearAIHistory(chatId),
@@ -354,13 +359,13 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
           </div>
         )}
 
-        <AnimatePresence mode="popLayout">
+        <AnimatePresence initial={false}>
           {localMessages.map((msg, index) => (
             <motion.div
-              key={`${msg.timestamp}-${index}`}
+              key={`msg-${index}-${msg.role}`}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
               className={clsx(
                 'rounded-xl p-3',
                 msg.role === 'user'
