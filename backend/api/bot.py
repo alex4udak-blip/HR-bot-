@@ -202,7 +202,7 @@ async def collect_group_message(message: types.Message):
                 try:
                     file = await get_bot().get_file(message.video_note.file_id)
                     file_bytes = await get_bot().download_file(file.file_path)
-                    content = await transcription_service.transcribe_video(file_bytes.read())
+                    content = await transcription_service.transcribe_video(file_bytes.read(), file.file_path)
                 except Exception as e:
                     logger.debug(f"Video note transcription: {e}")
                     content = "[Video note - transcription failed]"
@@ -214,7 +214,7 @@ async def collect_group_message(message: types.Message):
                     try:
                         file = await get_bot().get_file(message.video.file_id)
                         file_bytes = await get_bot().download_file(file.file_path)
-                        content = await transcription_service.transcribe_video(file_bytes.read())
+                        content = await transcription_service.transcribe_video(file_bytes.read(), file_name)
                     except Exception as e:
                         logger.debug(f"Video transcription: {e}")
                         content = f"[Video: {file_name}]"

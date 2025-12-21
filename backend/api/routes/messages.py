@@ -287,6 +287,7 @@ async def transcribe_message(
     # Get file bytes - either from local file or from Telegram
     file_bytes = None
     suffix = ''
+    filename = None  # For transcription format detection
 
     if message.file_path:
         # Local file from import
@@ -295,6 +296,7 @@ async def transcribe_message(
             raise HTTPException(status_code=404, detail="Media file not found")
         file_bytes = file_path.read_bytes()
         suffix = file_path.suffix.lower()
+        filename = message.file_path  # Full path for format detection
     elif message.file_id:
         # Telegram file - download via API
         import httpx
@@ -317,6 +319,7 @@ async def transcribe_message(
 
                 tg_file_path = data["result"]["file_path"]
                 suffix = f".{tg_file_path.split('.')[-1]}" if '.' in tg_file_path else ''
+                filename = tg_file_path  # For format detection
 
                 # Download file from Telegram
                 file_url = f"https://api.telegram.org/file/bot{settings.telegram_bot_token}/{tg_file_path}"
@@ -340,7 +343,7 @@ async def transcribe_message(
 
     # Transcribe
     if is_video:
-        transcription = await transcription_service.transcribe_video(file_bytes)
+        transcription = await transcription_service.transcribe_video(file_bytes, filename)
     else:
         transcription = await transcription_service.transcribe_audio(file_bytes)
 
