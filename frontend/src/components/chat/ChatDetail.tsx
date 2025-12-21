@@ -593,6 +593,42 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                           <span className="text-2xl">{message.content}</span>
                         )}
                       </div>
+                    ) : message.content_type === 'voice' ? (
+                      <div className="space-y-2">
+                        {(message.file_id || message.file_path) ? (
+                          <audio
+                            src={getMediaUrl(message)}
+                            controls
+                            preload="metadata"
+                            className="w-full max-w-xs"
+                          />
+                        ) : (
+                          <div className="flex items-center gap-2 text-dark-400">
+                            <span className="text-sm">[Голосовое сообщение недоступно]</span>
+                          </div>
+                        )}
+                        {message.content && !message.content.startsWith('[Голосов') && !message.content.startsWith('[Voice') && (
+                          <p className="text-sm text-dark-300">{message.content}</p>
+                        )}
+                      </div>
+                    ) : message.content_type === 'video' ? (
+                      <div className="space-y-2">
+                        {(message.file_id || message.file_path) ? (
+                          <video
+                            src={getMediaUrl(message)}
+                            className="max-w-xs rounded-lg"
+                            controls
+                            preload="metadata"
+                          />
+                        ) : (
+                          <div className="flex items-center gap-2 text-dark-400">
+                            <span className="text-sm">[Видео недоступно]</span>
+                          </div>
+                        )}
+                        {message.content && !message.content.startsWith('[Видео') && !message.content.startsWith('[Video') && (
+                          <p className="text-sm text-dark-300">{message.content}</p>
+                        )}
+                      </div>
                     ) : (
                       <>
                         <p className="text-sm text-dark-200 whitespace-pre-wrap">{message.content}</p>

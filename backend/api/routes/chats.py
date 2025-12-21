@@ -493,6 +493,7 @@ class TelegramHTMLParser(HTMLParser):
         self.message_div_depth = 0  # Depth where message div started
         self.is_joined = False
         self.media_type = None  # photo, video, sticker, video_note, voice
+        self.skipped_service = 0  # Track skipped service messages
 
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
@@ -502,27 +503,34 @@ class TelegramHTMLParser(HTMLParser):
         if tag == 'div':
             self.div_depth += 1
 
-            # Check for message container: div.message.default
-            if 'message' in classes and 'default' in classes:
-                self.message_div_depth = self.div_depth
-                self.is_joined = 'joined' in classes
-                self.current_message = {
-                    'id': None,
-                    'from': self.last_sender if self.is_joined else None,
-                    'date': '',
-                    'text': '',
-                    'has_media': False,
-                    'media_file': None,  # Path to media file in export
-                    'media_type': None,  # photo, video, sticker, video_note, voice
-                    'type': 'message'
-                }
-                # Get message ID from id attribute (format: "message123")
-                msg_id = attrs_dict.get('id', '')
-                if msg_id.startswith('message'):
-                    try:
-                        self.current_message['id'] = int(msg_id[7:])
-                    except ValueError:
-                        pass
+            # Check for message container: div.message.default or div.message.service
+            if 'message' in classes:
+                # Skip service messages (like "User joined the group")
+                if 'service' in classes:
+                    self.skipped_service += 1
+                    return  # Skip service messages
+
+                # Only process default messages
+                if 'default' in classes:
+                    self.message_div_depth = self.div_depth
+                    self.is_joined = 'joined' in classes
+                    self.current_message = {
+                        'id': None,
+                        'from': self.last_sender if self.is_joined else None,
+                        'date': '',
+                        'text': '',
+                        'has_media': False,
+                        'media_file': None,  # Path to media file in export
+                        'media_type': None,  # photo, video, sticker, video_note, voice
+                        'type': 'message'
+                    }
+                    # Get message ID from id attribute (format: "message123")
+                    msg_id = attrs_dict.get('id', '')
+                    if msg_id.startswith('message'):
+                        try:
+                            self.current_message['id'] = int(msg_id[7:])
+                        except ValueError:
+                            pass
 
             elif self.current_message:
                 # Check for from_name
@@ -748,7 +756,7 @@ def parse_html_export(html_content: str) -> List[dict]:
             'media_type': media_type   # photo, video, sticker, video_note, voice
         })
 
-    logger.info(f"HTML parse result: {len(messages)} messages, skipped {skipped_no_sender} (no sender), {skipped_empty} (empty)")
+    logger.info(f"HTML parse result: {len(messages)} messages, skipped {skipped_no_sender} (no sender), {skipped_empty} (empty), {parser.skipped_service} (service)")
     return messages
 
 

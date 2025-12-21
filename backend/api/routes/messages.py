@@ -60,6 +60,7 @@ async def get_messages(
             content=m.content,
             content_type=m.content_type,
             file_id=m.file_id,
+            file_path=m.file_path,
             file_name=m.file_name,
             document_metadata=m.document_metadata,
             parse_status=m.parse_status,
