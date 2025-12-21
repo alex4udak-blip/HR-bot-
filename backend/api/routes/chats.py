@@ -615,6 +615,9 @@ async def import_telegram_history(
 
     Expected format: result.json, messages.html or ZIP archive containing them
     """
+    import logging
+    logger = logging.getLogger("hr-analyzer")
+
     user = await db.merge(user)
 
     # Check chat exists and user has access
@@ -627,10 +630,14 @@ async def import_telegram_history(
 
     # Read file content
     messages_data = None
+    is_html_source = False  # Track if data came from HTML parser
     filename = file.filename.lower() if file.filename else ""
+
+    logger.info(f"Import started for chat {chat_id}, file: {filename}")
 
     try:
         content = await file.read()
+        logger.info(f"File size: {len(content)} bytes")
 
         # Check if it's a ZIP file
         if filename.endswith('.zip'):
@@ -640,20 +647,23 @@ async def import_telegram_history(
                     target_file = None
                     is_html = False
 
-                    for name in zf.namelist():
+                    file_list = zf.namelist()
+                    logger.info(f"ZIP contents: {file_list}")
+
+                    for name in file_list:
                         if name.endswith('result.json') or name == 'result.json':
                             target_file = name
                             break
 
                     if not target_file:
-                        for name in zf.namelist():
+                        for name in file_list:
                             if name.endswith('.json'):
                                 target_file = name
                                 break
 
                     # If no JSON, try HTML
                     if not target_file:
-                        for name in zf.namelist():
+                        for name in file_list:
                             if name.endswith('.html') or name.endswith('.htm'):
                                 target_file = name
                                 is_html = True
@@ -662,13 +672,17 @@ async def import_telegram_history(
                     if not target_file:
                         raise HTTPException(status_code=400, detail="ZIP-архив не содержит JSON или HTML файл")
 
+                    logger.info(f"Using file from ZIP: {target_file}, is_html: {is_html}")
                     file_content = zf.read(target_file).decode('utf-8')
 
                     if is_html:
                         messages_data = parse_html_export(file_content)
+                        is_html_source = True
+                        logger.info(f"HTML parsed, got {len(messages_data)} messages")
                     else:
                         data = json.loads(file_content)
                         messages_data = data.get('messages', [])
+                        logger.info(f"JSON parsed, got {len(messages_data)} messages")
 
             except zipfile.BadZipFile:
                 raise HTTPException(status_code=400, detail="Повреждённый ZIP-архив")
@@ -677,17 +691,22 @@ async def import_telegram_history(
         elif filename.endswith('.html') or filename.endswith('.htm'):
             html_content = content.decode('utf-8')
             messages_data = parse_html_export(html_content)
+            is_html_source = True
+            logger.info(f"HTML file parsed, got {len(messages_data)} messages")
 
         # Regular JSON file
         else:
             data = json.loads(content.decode('utf-8'))
             messages_data = data.get('messages', [])
+            logger.info(f"JSON file parsed, got {len(messages_data)} messages")
 
     except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error: {e}")
         raise HTTPException(status_code=400, detail=f"Неверный формат JSON: {str(e)}")
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"File read error: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"Ошибка чтения файла: {str(e)}")
 
     # Validate structure
@@ -721,20 +740,27 @@ async def import_telegram_history(
                 skipped_count += 1
                 continue
 
-            # Parse message data
-            timestamp = parse_telegram_date(msg.get('date', ''))
-            content = extract_text_content(msg)
-            content_type = detect_content_type(msg)
+            # Handle differently based on source
+            if is_html_source:
+                # HTML parser already extracted text in 'text' field
+                content = msg.get('text', '')
+                content_type = 'text'
+                timestamp = parse_telegram_date(msg.get('date', ''))
+                from_name = msg.get('from', 'Unknown')
+                from_id = msg.get('from_id', '')
+            else:
+                # JSON format - use original extract functions
+                timestamp = parse_telegram_date(msg.get('date', ''))
+                content = extract_text_content(msg)
+                content_type = detect_content_type(msg)
+                from_name = msg.get('from', 'Unknown')
+                from_id = msg.get('from_id', '')
 
             # Check for duplicates by content hash (when no message_id)
             content_hash = get_content_hash(content, timestamp)
             if content_hash in existing_hashes:
                 skipped_count += 1
                 continue
-
-            # Extract user info
-            from_name = msg.get('from', 'Unknown')
-            from_id = msg.get('from_id', '')
 
             # Parse telegram user ID from string like "user123456"
             telegram_user_id = 0
@@ -747,7 +773,7 @@ async def import_telegram_history(
                 telegram_user_id = from_id
 
             # Split name into first/last name
-            name_parts = from_name.split(' ', 1)
+            name_parts = from_name.split(' ', 1) if from_name else ['Unknown']
             first_name = name_parts[0] if name_parts else 'Unknown'
             last_name = name_parts[1] if len(name_parts) > 1 else None
 
@@ -772,12 +798,14 @@ async def import_telegram_history(
             imported_count += 1
 
         except Exception as e:
+            logger.error(f"Error importing message {msg.get('id', '?')}: {e}")
             errors.append(f"Message {msg.get('id', '?')}: {str(e)}")
             continue
 
     # Update chat's last_activity if we imported newer messages
     if imported_count > 0:
         await db.commit()
+        logger.info(f"Imported {imported_count} messages, skipped {skipped_count}")
 
         # Get the latest message timestamp
         latest_result = await db.execute(
