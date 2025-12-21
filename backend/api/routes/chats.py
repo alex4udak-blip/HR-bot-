@@ -555,11 +555,16 @@ class TelegramHTMLParser(HTMLParser):
 
                 # Check for text content
                 elif 'text' in classes:
+                    # IMPORTANT: Close from_name when text starts
+                    # This prevents message text from being added to sender name
+                    self.in_from_name = False
                     self.in_text = True
                     self.text_buffer = ""
 
                 # Check for media
                 elif 'media_wrap' in classes or 'media' in classes:
+                    # Also close from_name when media starts
+                    self.in_from_name = False
                     self.in_media = True
                     self.current_message['has_media'] = True
                     # Detect media type from classes
@@ -576,6 +581,7 @@ class TelegramHTMLParser(HTMLParser):
 
                 # Check for document wrapper (separate from media_wrap)
                 elif 'document_wrap' in classes or 'document' in classes:
+                    self.in_from_name = False  # Close from_name
                     self.in_media = True
                     self.current_message['has_media'] = True
                     self.current_message['media_type'] = 'document'
