@@ -27,6 +27,7 @@ from ..services.chat_types import (
     get_suggested_questions, get_default_criteria
 )
 from ..services.transcription import transcription_service
+from ..services.documents import document_parser
 
 router = APIRouter()
 
@@ -954,6 +955,9 @@ async def import_telegram_history(
 
             # Handle differently based on source
             file_path = None  # For imported media files
+            document_metadata = None
+            parse_status = None
+            parse_error = None
 
             if is_html_source:
                 # HTML parser already extracted text in 'text' field
@@ -1008,6 +1012,26 @@ async def import_telegram_history(
                                         logger.warning(f"Transcription returned: {transcription}")
                                 except Exception as e:
                                     logger.error(f"Auto-transcription error: {e}")
+
+                            # Auto-parse documents and photos (OCR)
+                            elif content_type in ('document', 'photo') and file_data:
+                                try:
+                                    file_name_for_parse = os.path.basename(media_file)
+                                    logger.info(f"Auto-parsing {content_type}: {file_name_for_parse}")
+                                    result = await document_parser.parse(file_data, file_name_for_parse)
+                                    if result.content and result.status in ('parsed', 'partial'):
+                                        content = result.content
+                                        document_metadata = result.metadata
+                                        parse_status = result.status
+                                        logger.info(f"Parse success: {content[:50]}...")
+                                    else:
+                                        parse_status = result.status
+                                        parse_error = result.error
+                                        logger.warning(f"Parse returned: {result.error}")
+                                except Exception as e:
+                                    logger.error(f"Auto-parse error: {e}")
+                                    parse_status = "failed"
+                                    parse_error = str(e)
                     except Exception as e:
                         logger.error(f"Error extracting media {media_file}: {e}")
             else:
@@ -1072,6 +1096,9 @@ async def import_telegram_history(
                 file_id=None,  # Telegram Bot API file_id (not available in export)
                 file_path=file_path,  # Local file path for imported media
                 file_name=file_name,
+                document_metadata=document_metadata,
+                parse_status=parse_status,
+                parse_error=parse_error,
                 is_imported=True,  # Mark as imported from file
                 timestamp=timestamp,
             )
