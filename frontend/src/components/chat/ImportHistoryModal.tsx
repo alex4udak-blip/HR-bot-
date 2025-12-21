@@ -344,7 +344,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
             </div>
 
             {/* Auto-process option */}
-            {!result && file && (
+            {!result && file && !importMutation.isPending && (
               <label className="flex items-center gap-2 mt-4 text-sm text-dark-300 cursor-pointer">
                 <input
                   type="checkbox"
@@ -355,6 +355,47 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                 <span>Авто-транскрипция голосовых/видео и парсинг документов</span>
                 <span className="text-dark-500">(медленно)</span>
               </label>
+            )}
+
+            {/* Import progress indicator */}
+            {importMutation.isPending && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-4 p-4 rounded-xl bg-accent-500/10 border border-accent-500/20"
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="relative">
+                    <Loader2 className="w-6 h-6 text-accent-400 animate-spin" />
+                    <div className="absolute inset-0 w-6 h-6 rounded-full border-2 border-accent-400/20" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-accent-300">Импорт в процессе...</p>
+                    <p className="text-xs text-dark-400">Не закрывайте окно</p>
+                  </div>
+                </div>
+
+                {/* Progress bar animation */}
+                <div className="h-1.5 bg-dark-700 rounded-full overflow-hidden">
+                  <motion.div
+                    className="h-full bg-gradient-to-r from-accent-500 to-accent-400"
+                    initial={{ x: '-100%' }}
+                    animate={{ x: '100%' }}
+                    transition={{
+                      repeat: Infinity,
+                      duration: 1.5,
+                      ease: 'linear'
+                    }}
+                    style={{ width: '50%' }}
+                  />
+                </div>
+
+                {autoProcess && (
+                  <p className="text-xs text-dark-400 mt-2">
+                    Авто-обработка включена: транскрипция и парсинг файлов...
+                  </p>
+                )}
+              </motion.div>
             )}
 
             {/* Actions */}
