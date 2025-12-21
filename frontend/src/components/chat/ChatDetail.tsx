@@ -41,6 +41,12 @@ import ImportHistoryModal from './ImportHistoryModal';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
+// Helper to get file URL with auth token (img/video tags can't send headers)
+const getFileUrl = (fileId: string) => {
+  const token = localStorage.getItem('token');
+  return `/api/chats/file/${fileId}${token ? `?token=${token}` : ''}`;
+};
+
 // Chat type options
 const CHAT_TYPES: { id: ChatTypeId; name: string; icon: typeof UserCheck }[] = [
   { id: 'work', name: 'Рабочий чат', icon: MessageSquare },
@@ -504,10 +510,10 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                       <div className="space-y-2">
                         {message.file_id ? (
                           <img
-                            src={`/api/chats/file/${message.file_id}`}
+                            src={getFileUrl(message.file_id)}
                             alt="Photo"
                             className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                            onClick={() => window.open(`/api/chats/file/${message.file_id}`, '_blank')}
+                            onClick={() => window.open(getFileUrl(message.file_id), '_blank')}
                             loading="lazy"
                             onError={(e) => {
                               // Hide broken images
@@ -528,7 +534,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                       <div className="space-y-2">
                         {message.file_id ? (
                           <video
-                            src={`/api/chats/file/${message.file_id}`}
+                            src={getFileUrl(message.file_id)}
                             className="w-32 h-32 rounded-full object-cover cursor-pointer"
                             controls
                             preload="metadata"
@@ -546,7 +552,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                       <div className="flex items-center gap-2">
                         {message.file_id && (
                           <img
-                            src={`/api/chats/file/${message.file_id}`}
+                            src={getFileUrl(message.file_id)}
                             alt="Sticker"
                             className="w-32 h-32 object-contain"
                             loading="lazy"
