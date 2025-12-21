@@ -308,12 +308,15 @@ export const importTelegramHistory = async (chatId: number, file: File): Promise
 export interface CleanupResult {
   success: boolean;
   deleted: number;
+  mode?: string;
 }
 
-export const cleanupBadImport = async (chatId: number): Promise<CleanupResult> => {
+export type CleanupMode = 'bad' | 'today' | 'all_imported';
+
+export const cleanupBadImport = async (chatId: number, mode: CleanupMode = 'bad'): Promise<CleanupResult> => {
   const token = localStorage.getItem('token');
 
-  const response = await fetch(`/api/chats/${chatId}/import/cleanup`, {
+  const response = await fetch(`/api/chats/${chatId}/import/cleanup?mode=${mode}`, {
     method: 'DELETE',
     headers: {
       'Authorization': `Bearer ${token}`,
