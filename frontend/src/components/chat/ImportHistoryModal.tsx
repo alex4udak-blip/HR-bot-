@@ -314,6 +314,13 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                       Unknown/Медиа
                     </button>
                     <button
+                      onClick={() => cleanupMutation.mutate('duplicates')}
+                      disabled={cleanupMutation.isPending}
+                      className="px-2.5 py-1 rounded-lg text-xs bg-orange-500/20 text-orange-300 hover:bg-orange-500/30 disabled:opacity-50 transition-colors"
+                    >
+                      Дубликаты
+                    </button>
+                    <button
                       onClick={() => cleanupMutation.mutate('all_imported')}
                       disabled={cleanupMutation.isPending}
                       className="px-2.5 py-1 rounded-lg text-xs bg-red-500/20 text-red-300 hover:bg-red-500/30 disabled:opacity-50 transition-colors"

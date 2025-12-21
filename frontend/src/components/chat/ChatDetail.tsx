@@ -606,9 +606,9 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                             <span className="text-xs">Видео</span>
                           </div>
                         )}
-                        {message.content && !message.content.startsWith('[Video') && !message.content.startsWith('[Видео') ? (
+                        {message.content && !message.content.startsWith('[Video') && !message.content.startsWith('[Видео') && !message.content.includes('transcription failed') ? (
                           <p className="text-sm text-dark-300">{message.content}</p>
-                        ) : message.file_path && (
+                        ) : (message.file_path || message.file_id) && (
                           <button
                             onClick={() => handleTranscribe(message.id)}
                             disabled={transcribingMessageId === message.id}

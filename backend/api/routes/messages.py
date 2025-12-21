@@ -284,21 +284,54 @@ async def transcribe_message(
     if not can_access_chat(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Check if message has a local file
-    if not message.file_path:
+    # Get file bytes - either from local file or from Telegram
+    file_bytes = None
+    suffix = ''
+
+    if message.file_path:
+        # Local file from import
+        file_path = UPLOADS_DIR.parent / message.file_path
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Media file not found")
+        file_bytes = file_path.read_bytes()
+        suffix = file_path.suffix.lower()
+    elif message.file_id:
+        # Telegram file - download via API
+        import httpx
+        from api.config import settings
+
+        if not settings.telegram_bot_token:
+            raise HTTPException(status_code=500, detail="Bot token not configured")
+
+        try:
+            async with httpx.AsyncClient() as client:
+                # Get file path from Telegram
+                response = await client.get(
+                    f"https://api.telegram.org/bot{settings.telegram_bot_token}/getFile",
+                    params={"file_id": message.file_id}
+                )
+                data = response.json()
+
+                if not data.get("ok"):
+                    raise HTTPException(status_code=404, detail="File not found on Telegram")
+
+                tg_file_path = data["result"]["file_path"]
+                suffix = f".{tg_file_path.split('.')[-1]}" if '.' in tg_file_path else ''
+
+                # Download file from Telegram
+                file_url = f"https://api.telegram.org/file/bot{settings.telegram_bot_token}/{tg_file_path}"
+                file_response = await client.get(file_url)
+
+                if file_response.status_code != 200:
+                    raise HTTPException(status_code=404, detail="File download failed")
+
+                file_bytes = file_response.content
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=500, detail=f"Network error: {str(e)}")
+    else:
         raise HTTPException(status_code=400, detail="Message has no media file")
 
-    # Build file path
-    file_path = UPLOADS_DIR.parent / message.file_path
-
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Media file not found")
-
-    # Read file
-    file_bytes = file_path.read_bytes()
-
     # Determine if audio or video based on content_type or file extension
-    suffix = file_path.suffix.lower()
     is_video = message.content_type in ('video', 'video_note') or suffix in ('.mp4', '.webm')
     is_audio = message.content_type == 'voice' or suffix in ('.ogg', '.mp3', '.wav')
 
