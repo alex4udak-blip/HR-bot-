@@ -1062,7 +1062,7 @@ async def import_telegram_history(
                                     if content_type == 'voice':
                                         transcription = await transcription_service.transcribe_audio(file_data)
                                     else:
-                                        transcription = await transcription_service.transcribe_video(file_data)
+                                        transcription = await transcription_service.transcribe_video(file_data, media_file)
 
                                     # Only use transcription if successful (not an error message)
                                     if transcription and not transcription.startswith("["):

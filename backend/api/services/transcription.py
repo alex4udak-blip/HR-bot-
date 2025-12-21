@@ -36,16 +36,26 @@ class TranscriptionService:
         except Exception as e:
             return f"[Ошибка транскрипции: {e}]"
 
-    async def transcribe_video(self, video_bytes: bytes) -> str:
+    async def transcribe_video(self, video_bytes: bytes, filename: str = None) -> str:
         """Extract audio from video and transcribe."""
         if not self.client:
             return "[Транскрипция недоступна - OPENAI_API_KEY не настроен]"
 
+        # Detect file extension from filename or use mp4 as default
+        suffix = ".mp4"
+        if filename:
+            if filename.lower().endswith('.webm'):
+                suffix = ".webm"
+            elif filename.lower().endswith('.mov'):
+                suffix = ".mov"
+            elif filename.lower().endswith('.avi'):
+                suffix = ".avi"
+
         video_path = None
         audio_path = None
         try:
-            # Save video to temp file
-            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            # Save video to temp file with correct extension
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
                 tmp.write(video_bytes)
                 video_path = tmp.name
 
@@ -56,12 +66,20 @@ class TranscriptionService:
             process = await asyncio.create_subprocess_exec(
                 "ffmpeg", "-i", video_path, "-vn", "-acodec", "libmp3lame",
                 "-ar", "16000", "-ac", "1", "-y", audio_path,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
             )
-            await process.wait()
+            _, stderr = await process.communicate()
 
             if process.returncode != 0:
+                # Check if video has no audio stream
+                stderr_text = stderr.decode() if stderr else ""
+                if "does not contain any stream" in stderr_text or "Output file is empty" in stderr_text:
+                    return "[Видео без звука]"
                 return "[Не удалось извлечь аудио из видео]"
+
+            # Check if audio file has content
+            if os.path.getsize(audio_path) < 100:
+                return "[Видео без звука]"
 
             # Read audio and transcribe
             with open(audio_path, "rb") as f:
