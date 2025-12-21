@@ -728,3 +728,39 @@ async def import_telegram_history(
         "errors": errors[:10] if errors else [],  # Return first 10 errors
         "total_errors": len(errors),
     }
+
+
+@router.delete("/{chat_id}/import/cleanup")
+async def cleanup_bad_import(
+    chat_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Delete badly imported messages (Unknown sender with [Медиа] content).
+    """
+    user = await db.merge(user)
+
+    result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.deleted_at.is_(None)))
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if not can_access_chat(user, chat):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Delete messages with Unknown sender and [Медиа] content
+    delete_result = await db.execute(
+        delete(Message).where(
+            Message.chat_id == chat_id,
+            Message.first_name == 'Unknown',
+            Message.content == '[Медиа]'
+        )
+    )
+    deleted_count = delete_result.rowcount
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "deleted": deleted_count,
+    }
