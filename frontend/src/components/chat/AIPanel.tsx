@@ -354,7 +354,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
             <Sparkles className="w-12 h-12 mx-auto text-dark-600 mb-3" />
             <p className="text-dark-400 mb-1">Начните диалог</p>
             <p className="text-dark-500 text-sm">
-              Задавайте вопросы о кандидатах
+              Задавайте вопросы по переписке
             </p>
           </div>
         )}
@@ -413,7 +413,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Спросите о кандидатах..."
+            placeholder="Задайте вопрос..."
             rows={1}
             disabled={isStreaming}
             className="flex-1 glass-light rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent-500/50 disabled:opacity-50"
