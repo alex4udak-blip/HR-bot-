@@ -1050,6 +1050,13 @@ async def cleanup_bad_import(
         )
         deleted_count = delete_result.rowcount
 
+    elif mode == "all":
+        # Delete ALL messages in the chat (for complete re-import)
+        delete_result = await db.execute(
+            delete(Message).where(Message.chat_id == chat_id)
+        )
+        deleted_count = delete_result.rowcount
+
     await db.commit()
 
     return {
