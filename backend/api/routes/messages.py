@@ -85,21 +85,18 @@ async def get_participants(
     if not can_access_chat(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
+    # Group by telegram_user_id only, take max of other fields to avoid duplicates
+    # when the same user has slightly different names
     result = await db.execute(
         select(
             Message.telegram_user_id,
-            Message.username,
-            Message.first_name,
-            Message.last_name,
+            func.max(Message.username).label("username"),
+            func.max(Message.first_name).label("first_name"),
+            func.max(Message.last_name).label("last_name"),
             func.count(Message.id).label("count")
         )
         .where(Message.chat_id == chat_id)
-        .group_by(
-            Message.telegram_user_id,
-            Message.username,
-            Message.first_name,
-            Message.last_name
-        )
+        .group_by(Message.telegram_user_id)
         .order_by(func.count(Message.id).desc())
     )
     participants = result.all()
@@ -412,10 +409,13 @@ async def transcribe_all_media(
         elif msg.content.startswith('[') and (
             'Голосов' in msg.content or
             'Voice' in msg.content or
-            'Видео' in msg.content or
-            'Video' in msg.content or
+            'Видео-кружок' in msg.content or
+            'Video note' in msg.content or
             'transcription failed' in msg.content
         ):
+            # Skip already processed results like [Видео без звука], [Без звука]
+            if 'без звука' in msg.content.lower() or 'no audio' in msg.content.lower():
+                continue
             untranscribed.append(msg)
 
     logger.info(f"Found {len(untranscribed)} messages to transcribe in chat {chat_id}")

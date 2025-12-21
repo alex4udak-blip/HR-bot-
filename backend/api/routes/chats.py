@@ -1032,12 +1032,23 @@ async def import_telegram_history(
 
                         # Try to find the file in ZIP (might have different path prefix)
                         file_found = False
+
+                        # For video_note, if we have a thumb file, find the actual video
+                        search_file = media_file
+                        if content_type == 'video_note' and '_thumb.jpg' in media_file:
+                            # Strip _thumb.jpg to get actual video filename
+                            search_file = media_file.replace('_thumb.jpg', '')
+                            logger.info(f"Video note: looking for {search_file} instead of thumb {media_file}")
+
                         for zip_path in zip_file.namelist():
-                            if zip_path.endswith(media_file) or media_file in zip_path:
+                            if zip_path.endswith(search_file) or search_file in zip_path:
+                                # Make sure it's the actual file, not another thumb
+                                if '_thumb' in zip_path and '_thumb' not in search_file:
+                                    continue
                                 # Extract and save the file
                                 file_data = zip_file.read(zip_path)
                                 # Create a unique filename
-                                safe_name = os.path.basename(media_file)
+                                safe_name = os.path.basename(search_file)
                                 if telegram_msg_id:
                                     safe_name = f"{telegram_msg_id}_{safe_name}"
                                 dest_path = chat_uploads_dir / safe_name
@@ -1125,8 +1136,10 @@ async def import_telegram_history(
 
             # If no user ID, generate one from the sender name (for HTML imports)
             if telegram_user_id == 0 and from_name:
+                # Normalize name for consistent hashing (lowercase, strip spaces, remove extra whitespace)
+                normalized_name = ' '.join(from_name.lower().split())
                 # Generate consistent ID from name hash (negative to avoid collision with real IDs)
-                name_hash = hashlib.md5(from_name.encode()).hexdigest()[:8]
+                name_hash = hashlib.md5(normalized_name.encode()).hexdigest()[:8]
                 telegram_user_id = -abs(int(name_hash, 16) % 1000000000)
 
             # Split name into first/last name
