@@ -493,6 +493,7 @@ class TelegramHTMLParser(HTMLParser):
         self.message_div_depth = 0  # Depth where message div started
         self.is_joined = False
         self.media_type = None  # photo, video, sticker, video_note, voice
+        self.skipped_service = 0  # Track skipped service messages
 
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
@@ -502,27 +503,34 @@ class TelegramHTMLParser(HTMLParser):
         if tag == 'div':
             self.div_depth += 1
 
-            # Check for message container: div.message.default
-            if 'message' in classes and 'default' in classes:
-                self.message_div_depth = self.div_depth
-                self.is_joined = 'joined' in classes
-                self.current_message = {
-                    'id': None,
-                    'from': self.last_sender if self.is_joined else None,
-                    'date': '',
-                    'text': '',
-                    'has_media': False,
-                    'media_file': None,  # Path to media file in export
-                    'media_type': None,  # photo, video, sticker, video_note, voice
-                    'type': 'message'
-                }
-                # Get message ID from id attribute (format: "message123")
-                msg_id = attrs_dict.get('id', '')
-                if msg_id.startswith('message'):
-                    try:
-                        self.current_message['id'] = int(msg_id[7:])
-                    except ValueError:
-                        pass
+            # Check for message container: div.message.default or div.message.service
+            if 'message' in classes:
+                # Skip service messages (like "User joined the group")
+                if 'service' in classes:
+                    self.skipped_service += 1
+                    return  # Skip service messages
+
+                # Only process default messages
+                if 'default' in classes:
+                    self.message_div_depth = self.div_depth
+                    self.is_joined = 'joined' in classes
+                    self.current_message = {
+                        'id': None,
+                        'from': self.last_sender if self.is_joined else None,
+                        'date': '',
+                        'text': '',
+                        'has_media': False,
+                        'media_file': None,  # Path to media file in export
+                        'media_type': None,  # photo, video, sticker, video_note, voice
+                        'type': 'message'
+                    }
+                    # Get message ID from id attribute (format: "message123")
+                    msg_id = attrs_dict.get('id', '')
+                    if msg_id.startswith('message'):
+                        try:
+                            self.current_message['id'] = int(msg_id[7:])
+                        except ValueError:
+                            pass
 
             elif self.current_message:
                 # Check for from_name
@@ -557,22 +565,31 @@ class TelegramHTMLParser(HTMLParser):
         elif self.in_media and self.current_message:
             if tag == 'a':
                 href = attrs_dict.get('href', '')
-                if href and not href.startswith('#') and not href.startswith('http'):
+                # Prefer full-size files (from <a>) over thumbnails (from <img>)
+                # Skip thumbnail links
+                if href and not href.startswith('#') and not href.startswith('http') and '_thumb' not in href:
                     self.current_message['media_file'] = href
                     # Detect type from file path
-                    if 'photos/' in href or href.endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                    if 'photos/' in href or href.endswith(('.jpg', '.jpeg', '.png')):
                         self.current_message['media_type'] = 'photo'
                     elif 'video_files/' in href or 'round_video' in href:
                         self.current_message['media_type'] = 'video_note'
                     elif 'videos/' in href or href.endswith(('.mp4', '.webm')):
                         self.current_message['media_type'] = 'video'
-                    elif 'stickers/' in href or href.endswith('.webp'):
+                    elif 'stickers/' in href:
                         self.current_message['media_type'] = 'sticker'
                     elif 'voice_messages/' in href or href.endswith('.ogg'):
                         self.current_message['media_type'] = 'voice'
+                    elif href.endswith('.webp'):
+                        # .webp can be sticker or photo, check folder
+                        if 'sticker' in href.lower():
+                            self.current_message['media_type'] = 'sticker'
+                        else:
+                            self.current_message['media_type'] = 'photo'
             elif tag == 'img':
                 src = attrs_dict.get('src', '')
-                if src and not src.startswith('http'):
+                # Only use img src if we don't have a file from <a> tag yet
+                if src and not src.startswith('http') and not self.current_message.get('media_file'):
                     self.current_message['media_file'] = src
                     if 'sticker' in src.lower():
                         self.current_message['media_type'] = 'sticker'
@@ -580,7 +597,7 @@ class TelegramHTMLParser(HTMLParser):
                         self.current_message['media_type'] = 'photo'
             elif tag == 'video':
                 src = attrs_dict.get('src', '')
-                if src:
+                if src and not self.current_message.get('media_file'):
                     self.current_message['media_file'] = src
                     if 'round' in src.lower():
                         self.current_message['media_type'] = 'video_note'
@@ -611,9 +628,10 @@ class TelegramHTMLParser(HTMLParser):
                 if self.text_buffer.strip():
                     self.current_message['text'] = self.text_buffer.strip()
 
-                # Only save if we have sender (from current or previous)
-                if self.current_message.get('from'):
-                    self.messages.append(self.current_message)
+                # Save message (use last sender or "Unknown" if no sender)
+                if not self.current_message.get('from'):
+                    self.current_message['from'] = self.last_sender or 'Unknown'
+                self.messages.append(self.current_message)
 
                 # Reset state
                 self.current_message = None
@@ -639,20 +657,30 @@ class TelegramHTMLParser(HTMLParser):
 
 def parse_html_export(html_content: str) -> List[dict]:
     """Parse Telegram HTML export and return messages list."""
+    import logging
+    logger = logging.getLogger("hr-analyzer")
+
     parser = TelegramHTMLParser()
     try:
         parser.feed(html_content)
     except Exception as e:
-        print(f"HTML parse error: {e}")
+        logger.error(f"HTML parse error: {e}")
         return []
 
-    import logging
-    logger = logging.getLogger("hr-analyzer")
+    logger.info(f"HTML parser found {len(parser.messages)} raw messages")
 
     messages = []
+    skipped_no_sender = 0
+    skipped_empty = 0
+
     for msg in parser.messages:
-        # Skip if no sender
+        # Log media detection
+        if msg.get('has_media') or msg.get('media_file'):
+            logger.info(f"Media message: type={msg.get('media_type')}, file={msg.get('media_file')}, has_media={msg.get('has_media')}")
+
+        # Skip if no sender (shouldn't happen now)
         if not msg.get('from'):
+            skipped_no_sender += 1
             continue
 
         # Parse date (format: "DD.MM.YYYY HH:MM:SS" or "DD.MM.YYYY HH:MM:SS UTC+03:00")
@@ -685,22 +713,37 @@ def parse_html_export(html_content: str) -> List[dict]:
         media_file = msg.get('media_file')
         media_type = msg.get('media_type')
 
-        if not text and msg.get('has_media'):
-            # Set appropriate placeholder based on media type
-            if media_type == 'photo':
-                text = '[Фото]'
-            elif media_type == 'video_note':
-                text = '[Видео-кружок]'
-            elif media_type == 'video':
-                text = '[Видео]'
-            elif media_type == 'sticker':
-                text = '[Стикер]'
-            elif media_type == 'voice':
-                text = '[Голосовое сообщение]'
-            else:
-                text = '[Медиа]'
+        # Handle messages with media
+        if msg.get('has_media') or media_file:
+            if not media_type:
+                # Try to detect type from file path
+                if media_file:
+                    if 'photo' in media_file or media_file.endswith(('.jpg', '.jpeg', '.png')):
+                        media_type = 'photo'
+                    elif 'sticker' in media_file:
+                        media_type = 'sticker'
+                    elif 'video' in media_file or media_file.endswith(('.mp4', '.webm')):
+                        media_type = 'video'
+                    elif 'voice' in media_file or media_file.endswith('.ogg'):
+                        media_type = 'voice'
+
+            if not text:
+                # Set appropriate placeholder based on media type
+                if media_type == 'photo':
+                    text = '[Фото]'
+                elif media_type == 'video_note':
+                    text = '[Видео-кружок]'
+                elif media_type == 'video':
+                    text = '[Видео]'
+                elif media_type == 'sticker':
+                    text = '[Стикер]'
+                elif media_type == 'voice':
+                    text = '[Голосовое сообщение]'
+                else:
+                    text = '[Медиа]'
         elif not text:
-            continue  # Skip empty messages
+            skipped_empty += 1
+            continue  # Skip empty messages without media
 
         messages.append({
             'id': msg.get('id'),
@@ -713,6 +756,7 @@ def parse_html_export(html_content: str) -> List[dict]:
             'media_type': media_type   # photo, video, sticker, video_note, voice
         })
 
+    logger.info(f"HTML parse result: {len(messages)} messages, skipped {skipped_no_sender} (no sender), {skipped_empty} (empty), {parser.skipped_service} (service)")
     return messages
 
 
