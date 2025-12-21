@@ -513,7 +513,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                             src={getFileUrl(message.file_id)}
                             alt="Photo"
                             className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                            onClick={() => window.open(getFileUrl(message.file_id), '_blank')}
+                            onClick={() => window.open(getFileUrl(message.file_id!), '_blank')}
                             loading="lazy"
                             onError={(e) => {
                               // Hide broken images
