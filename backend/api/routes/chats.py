@@ -649,20 +649,30 @@ class TelegramHTMLParser(HTMLParser):
 
 def parse_html_export(html_content: str) -> List[dict]:
     """Parse Telegram HTML export and return messages list."""
+    import logging
+    logger = logging.getLogger("hr-analyzer")
+
     parser = TelegramHTMLParser()
     try:
         parser.feed(html_content)
     except Exception as e:
-        print(f"HTML parse error: {e}")
+        logger.error(f"HTML parse error: {e}")
         return []
 
-    import logging
-    logger = logging.getLogger("hr-analyzer")
+    logger.info(f"HTML parser found {len(parser.messages)} raw messages")
 
     messages = []
+    skipped_no_sender = 0
+    skipped_empty = 0
+
     for msg in parser.messages:
-        # Skip if no sender
+        # Log media detection
+        if msg.get('has_media') or msg.get('media_file'):
+            logger.info(f"Media message: type={msg.get('media_type')}, file={msg.get('media_file')}, has_media={msg.get('has_media')}")
+
+        # Skip if no sender (shouldn't happen now)
         if not msg.get('from'):
+            skipped_no_sender += 1
             continue
 
         # Parse date (format: "DD.MM.YYYY HH:MM:SS" or "DD.MM.YYYY HH:MM:SS UTC+03:00")
@@ -724,6 +734,7 @@ def parse_html_export(html_content: str) -> List[dict]:
                 else:
                     text = '[Медиа]'
         elif not text:
+            skipped_empty += 1
             continue  # Skip empty messages without media
 
         messages.append({
@@ -737,6 +748,7 @@ def parse_html_export(html_content: str) -> List[dict]:
             'media_type': media_type   # photo, video, sticker, video_note, voice
         })
 
+    logger.info(f"HTML parse result: {len(messages)} messages, skipped {skipped_no_sender} (no sender), {skipped_empty} (empty)")
     return messages
 
 
