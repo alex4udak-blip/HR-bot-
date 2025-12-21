@@ -90,6 +90,7 @@ class Message(Base):
     document_metadata = Column(JSON, nullable=True)  # {file_type, pages_count, sheets, etc}
     parse_status = Column(String(20), nullable=True)  # parsed, partial, failed
     parse_error = Column(Text, nullable=True)
+    is_imported = Column(Boolean, default=False)  # True if imported from file (not from bot)
     timestamp = Column(DateTime, default=func.now())
 
     chat = relationship("Chat", back_populates="messages")

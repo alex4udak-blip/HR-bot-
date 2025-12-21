@@ -83,6 +83,20 @@ async def init_database():
                 except Exception:
                     pass  # Column already exists
 
+                # Add is_imported column to track imported messages
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_imported BOOLEAN DEFAULT FALSE"
+                    ))
+                    logger.info("Added is_imported column to messages table")
+                    # Mark existing messages with file_path as imported
+                    await conn.execute(text(
+                        "UPDATE messages SET is_imported = TRUE WHERE file_path IS NOT NULL AND is_imported = FALSE"
+                    ))
+                    logger.info("Marked existing messages with file_path as imported")
+                except Exception:
+                    pass  # Column already exists
+
                 # Create tables if they don't exist (safe, preserves data)
                 await conn.run_sync(Base.metadata.create_all)
 
