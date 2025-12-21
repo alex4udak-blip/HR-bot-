@@ -47,6 +47,31 @@ const getFileUrl = (fileId: string) => {
   return `/api/chats/file/${fileId}${token ? `?token=${token}` : ''}`;
 };
 
+// Helper to get local file URL for imported media
+const getLocalFileUrl = (filePath: string) => {
+  const token = localStorage.getItem('token');
+  // filePath format: "uploads/{chat_id}/{filename}"
+  // Convert to: "/api/chats/local/{chat_id}/{filename}"
+  const parts = filePath.replace('uploads/', '').split('/');
+  if (parts.length >= 2) {
+    const chatId = parts[0];
+    const filename = parts.slice(1).join('/');
+    return `/api/chats/local/${chatId}/${filename}${token ? `?token=${token}` : ''}`;
+  }
+  return '';
+};
+
+// Get media URL for a message (either from Telegram or local import)
+const getMediaUrl = (message: { file_id?: string; file_path?: string }) => {
+  if (message.file_id) {
+    return getFileUrl(message.file_id);
+  }
+  if (message.file_path) {
+    return getLocalFileUrl(message.file_path);
+  }
+  return '';
+};
+
 // Chat type options
 const CHAT_TYPES: { id: ChatTypeId; name: string; icon: typeof UserCheck }[] = [
   { id: 'work', name: 'Рабочий чат', icon: MessageSquare },
@@ -508,12 +533,12 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                       <DocumentMessage message={message} />
                     ) : message.content_type === 'photo' ? (
                       <div className="space-y-2">
-                        {message.file_id ? (
+                        {(message.file_id || message.file_path) ? (
                           <img
-                            src={getFileUrl(message.file_id)}
+                            src={getMediaUrl(message)}
                             alt="Photo"
                             className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                            onClick={() => window.open(getFileUrl(message.file_id!), '_blank')}
+                            onClick={() => window.open(getMediaUrl(message), '_blank')}
                             loading="lazy"
                             onError={(e) => {
                               // Hide broken images
@@ -526,15 +551,15 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                             <span className="text-sm">[Фото недоступно]</span>
                           </div>
                         )}
-                        {message.content && !message.content.startsWith('[Photo') && (
+                        {message.content && !message.content.startsWith('[Photo') && !message.content.startsWith('[Фото') && (
                           <p className="text-sm text-dark-300">{message.content}</p>
                         )}
                       </div>
                     ) : message.content_type === 'video_note' ? (
                       <div className="space-y-2">
-                        {message.file_id ? (
+                        {(message.file_id || message.file_path) ? (
                           <video
-                            src={getFileUrl(message.file_id)}
+                            src={getMediaUrl(message)}
                             className="w-32 h-32 rounded-full object-cover cursor-pointer"
                             controls
                             preload="metadata"
@@ -544,15 +569,15 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                             <span className="text-xs">Видео</span>
                           </div>
                         )}
-                        {message.content && !message.content.startsWith('[Video') && (
+                        {message.content && !message.content.startsWith('[Video') && !message.content.startsWith('[Видео') && (
                           <p className="text-sm text-dark-300">{message.content}</p>
                         )}
                       </div>
                     ) : message.content_type === 'sticker' ? (
                       <div className="flex items-center gap-2">
-                        {message.file_id && (
+                        {(message.file_id || message.file_path) && (
                           <img
-                            src={getFileUrl(message.file_id)}
+                            src={getMediaUrl(message)}
                             alt="Sticker"
                             className="w-32 h-32 object-contain"
                             loading="lazy"
@@ -562,8 +587,8 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                             }}
                           />
                         )}
-                        {message.content.includes('[Sticker') ? (
-                          <span className="text-2xl">{message.content.replace('[Sticker: ', '').replace(']', '')}</span>
+                        {message.content.includes('[Sticker') || message.content.includes('[Стикер') ? (
+                          <span className="text-2xl">{message.content.replace('[Sticker: ', '').replace('[Стикер]', '').replace(']', '')}</span>
                         ) : (
                           <span className="text-2xl">{message.content}</span>
                         )}

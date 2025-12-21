@@ -1,11 +1,17 @@
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from pathlib import Path
 import json
 import hashlib
 import zipfile
 import io
 import re
+import os
+import shutil
 from html.parser import HTMLParser
+
+# Uploads directory for imported media
+UPLOADS_DIR = Path(__file__).parent.parent.parent / "uploads"
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -486,6 +492,7 @@ class TelegramHTMLParser(HTMLParser):
         self.div_depth = 0  # Track div nesting to know when message ends
         self.message_div_depth = 0  # Depth where message div started
         self.is_joined = False
+        self.media_type = None  # photo, video, sticker, video_note, voice
 
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
@@ -505,6 +512,8 @@ class TelegramHTMLParser(HTMLParser):
                     'date': '',
                     'text': '',
                     'has_media': False,
+                    'media_file': None,  # Path to media file in export
+                    'media_type': None,  # photo, video, sticker, video_note, voice
                     'type': 'message'
                 }
                 # Get message ID from id attribute (format: "message123")
@@ -530,12 +539,57 @@ class TelegramHTMLParser(HTMLParser):
                 elif 'media_wrap' in classes or 'media' in classes:
                     self.in_media = True
                     self.current_message['has_media'] = True
+                    # Detect media type from classes
+                    if 'photo' in classes:
+                        self.current_message['media_type'] = 'photo'
+                    elif 'video' in classes:
+                        self.current_message['media_type'] = 'video'
+                    elif 'sticker' in classes:
+                        self.current_message['media_type'] = 'sticker'
 
                 # Check for date (datetime in title attribute)
                 elif 'date' in classes:
                     title = attrs_dict.get('title', '')
                     if title:
                         self.current_message['date'] = title
+
+        # Capture media file paths from a, img, video tags inside media div
+        elif self.in_media and self.current_message:
+            if tag == 'a':
+                href = attrs_dict.get('href', '')
+                if href and not href.startswith('#') and not href.startswith('http'):
+                    self.current_message['media_file'] = href
+                    # Detect type from file path
+                    if 'photos/' in href or href.endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                        self.current_message['media_type'] = 'photo'
+                    elif 'video_files/' in href or 'round_video' in href:
+                        self.current_message['media_type'] = 'video_note'
+                    elif 'videos/' in href or href.endswith(('.mp4', '.webm')):
+                        self.current_message['media_type'] = 'video'
+                    elif 'stickers/' in href or href.endswith('.webp'):
+                        self.current_message['media_type'] = 'sticker'
+                    elif 'voice_messages/' in href or href.endswith('.ogg'):
+                        self.current_message['media_type'] = 'voice'
+            elif tag == 'img':
+                src = attrs_dict.get('src', '')
+                if src and not src.startswith('http'):
+                    self.current_message['media_file'] = src
+                    if 'sticker' in src.lower():
+                        self.current_message['media_type'] = 'sticker'
+                    else:
+                        self.current_message['media_type'] = 'photo'
+            elif tag == 'video':
+                src = attrs_dict.get('src', '')
+                if src:
+                    self.current_message['media_file'] = src
+                    if 'round' in src.lower():
+                        self.current_message['media_type'] = 'video_note'
+                    else:
+                        self.current_message['media_type'] = 'video'
+            elif tag == 'source':
+                src = attrs_dict.get('src', '')
+                if src and not self.current_message.get('media_file'):
+                    self.current_message['media_file'] = src
 
         # Handle links and other inline elements in text
         elif tag == 'a' and self.in_text:
@@ -626,10 +680,25 @@ def parse_html_export(html_content: str) -> List[dict]:
             parsed_date = datetime.now()
             logger.error(f"HTML Parser - date parse error for '{date_str}': {e}")
 
-        # Determine text content
+        # Determine text content and media type
         text = msg.get('text', '').strip()
+        media_file = msg.get('media_file')
+        media_type = msg.get('media_type')
+
         if not text and msg.get('has_media'):
-            text = '[Медиа]'
+            # Set appropriate placeholder based on media type
+            if media_type == 'photo':
+                text = '[Фото]'
+            elif media_type == 'video_note':
+                text = '[Видео-кружок]'
+            elif media_type == 'video':
+                text = '[Видео]'
+            elif media_type == 'sticker':
+                text = '[Стикер]'
+            elif media_type == 'voice':
+                text = '[Голосовое сообщение]'
+            else:
+                text = '[Медиа]'
         elif not text:
             continue  # Skip empty messages
 
@@ -639,7 +708,9 @@ def parse_html_export(html_content: str) -> List[dict]:
             'date': parsed_date.isoformat(),
             'from': msg.get('from'),
             'from_id': '',
-            'text': text
+            'text': text,
+            'media_file': media_file,  # Path to media file in export
+            'media_type': media_type   # photo, video, sticker, video_note, voice
         })
 
     return messages
@@ -681,50 +752,57 @@ async def import_telegram_history(
         content = await file.read()
         logger.info(f"File size: {len(content)} bytes")
 
+        # Variables for ZIP file handling
+        zip_file = None
+        zip_bytes = None
+
         # Check if it's a ZIP file
         if filename.endswith('.zip'):
             try:
-                with zipfile.ZipFile(io.BytesIO(content)) as zf:
-                    # First try to find JSON file
-                    target_file = None
-                    is_html = False
+                zip_bytes = io.BytesIO(content)
+                zip_file = zipfile.ZipFile(zip_bytes)
 
-                    file_list = zf.namelist()
-                    logger.info(f"ZIP contents: {file_list}")
+                # First try to find JSON file
+                target_file = None
+                is_html = False
 
+                file_list = zip_file.namelist()
+                logger.info(f"ZIP contents: {file_list}")
+
+                for name in file_list:
+                    if name.endswith('result.json') or name == 'result.json':
+                        target_file = name
+                        break
+
+                if not target_file:
                     for name in file_list:
-                        if name.endswith('result.json') or name == 'result.json':
+                        if name.endswith('.json'):
                             target_file = name
                             break
 
-                    if not target_file:
-                        for name in file_list:
-                            if name.endswith('.json'):
-                                target_file = name
-                                break
+                # If no JSON, try HTML
+                if not target_file:
+                    for name in file_list:
+                        if name.endswith('.html') or name.endswith('.htm'):
+                            target_file = name
+                            is_html = True
+                            break
 
-                    # If no JSON, try HTML
-                    if not target_file:
-                        for name in file_list:
-                            if name.endswith('.html') or name.endswith('.htm'):
-                                target_file = name
-                                is_html = True
-                                break
+                if not target_file:
+                    zip_file.close()
+                    raise HTTPException(status_code=400, detail="ZIP-архив не содержит JSON или HTML файл")
 
-                    if not target_file:
-                        raise HTTPException(status_code=400, detail="ZIP-архив не содержит JSON или HTML файл")
+                logger.info(f"Using file from ZIP: {target_file}, is_html: {is_html}")
+                file_content = zip_file.read(target_file).decode('utf-8')
 
-                    logger.info(f"Using file from ZIP: {target_file}, is_html: {is_html}")
-                    file_content = zf.read(target_file).decode('utf-8')
-
-                    if is_html:
-                        messages_data = parse_html_export(file_content)
-                        is_html_source = True
-                        logger.info(f"HTML parsed, got {len(messages_data)} messages")
-                    else:
-                        data = json.loads(file_content)
-                        messages_data = data.get('messages', [])
-                        logger.info(f"JSON parsed, got {len(messages_data)} messages")
+                if is_html:
+                    messages_data = parse_html_export(file_content)
+                    is_html_source = True
+                    logger.info(f"HTML parsed, got {len(messages_data)} messages")
+                else:
+                    data = json.loads(file_content)
+                    messages_data = data.get('messages', [])
+                    logger.info(f"JSON parsed, got {len(messages_data)} messages")
 
             except zipfile.BadZipFile:
                 raise HTTPException(status_code=400, detail="Повреждённый ZIP-архив")
@@ -783,13 +861,45 @@ async def import_telegram_history(
                 continue
 
             # Handle differently based on source
+            file_path = None  # For imported media files
+
             if is_html_source:
                 # HTML parser already extracted text in 'text' field
                 content = msg.get('text', '')
-                content_type = 'text'
+                content_type = msg.get('media_type') or 'text'
                 timestamp = parse_telegram_date(msg.get('date', ''))
                 from_name = msg.get('from', 'Unknown')
                 from_id = msg.get('from_id', '')
+
+                # Extract media file from ZIP if available
+                media_file = msg.get('media_file')
+                if media_file and zip_file:
+                    try:
+                        # Create uploads directory for this chat
+                        chat_uploads_dir = UPLOADS_DIR / str(chat_id)
+                        chat_uploads_dir.mkdir(parents=True, exist_ok=True)
+
+                        # Try to find the file in ZIP (might have different path prefix)
+                        file_found = False
+                        for zip_path in zip_file.namelist():
+                            if zip_path.endswith(media_file) or media_file in zip_path:
+                                # Extract and save the file
+                                file_data = zip_file.read(zip_path)
+                                # Create a unique filename
+                                safe_name = os.path.basename(media_file)
+                                if telegram_msg_id:
+                                    safe_name = f"{telegram_msg_id}_{safe_name}"
+                                dest_path = chat_uploads_dir / safe_name
+                                dest_path.write_bytes(file_data)
+                                file_path = f"uploads/{chat_id}/{safe_name}"
+                                file_found = True
+                                logger.info(f"Extracted media: {zip_path} -> {file_path}")
+                                break
+
+                        if not file_found:
+                            logger.warning(f"Media file not found in ZIP: {media_file}")
+                    except Exception as e:
+                        logger.error(f"Error extracting media {media_file}: {e}")
             else:
                 # JSON format - use original extract functions
                 timestamp = parse_telegram_date(msg.get('date', ''))
@@ -836,7 +946,8 @@ async def import_telegram_history(
                 last_name=last_name,
                 content=content,
                 content_type=content_type[:50] if content_type else 'text',  # Truncate to 50
-                file_id=None,  # Files not imported
+                file_id=None,  # Telegram Bot API file_id (not available in export)
+                file_path=file_path,  # Local file path for imported media
                 file_name=file_name,
                 timestamp=timestamp,
             )
@@ -850,6 +961,13 @@ async def import_telegram_history(
             logger.error(f"Error importing message {msg.get('id', '?')}: {e}")
             errors.append(f"Message {msg.get('id', '?')}: {str(e)}")
             continue
+
+    # Close ZIP file if open
+    if zip_file:
+        try:
+            zip_file.close()
+        except Exception:
+            pass
 
     # Update chat's last_activity if we imported newer messages
     if imported_count > 0:

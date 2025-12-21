@@ -74,6 +74,15 @@ async def init_database():
                 except Exception:
                     pass  # Already TEXT or table doesn't exist
 
+                # Add file_path column for imported media
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_path VARCHAR(512)"
+                    ))
+                    logger.info("Added file_path column to messages table")
+                except Exception:
+                    pass  # Column already exists
+
                 # Create tables if they don't exist (safe, preserves data)
                 await conn.run_sync(Base.metadata.create_all)
 
