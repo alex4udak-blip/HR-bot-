@@ -405,4 +405,32 @@ export const transcribeAllMedia = async (chatId: number): Promise<TranscribeAllR
   return response.json();
 };
 
+export interface RepairVideoResult {
+  repaired: number;
+  total: number;
+  message?: string;
+}
+
+export const repairVideoNotes = async (chatId: number, file: File): Promise<RepairVideoResult> => {
+  const token = localStorage.getItem('token');
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`/api/chats/${chatId}/repair-video-notes`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Ошибка восстановления видео' }));
+    throw new Error(error.detail || 'Ошибка восстановления видео');
+  }
+
+  return response.json();
+};
+
 export default api;

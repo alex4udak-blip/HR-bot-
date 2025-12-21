@@ -1259,6 +1259,98 @@ async def get_import_progress(
     return progress
 
 
+@router.post("/{chat_id}/repair-video-notes")
+async def repair_video_notes(
+    chat_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Repair video_note files from ZIP without re-importing messages.
+
+    Finds all video_note messages in the chat and re-extracts
+    the actual video files from the ZIP (not thumbnails).
+    """
+    user = await db.merge(user)
+
+    result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.deleted_at.is_(None)))
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if not can_access_chat(user, chat):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Read the ZIP file
+    content = await file.read()
+
+    try:
+        zip_file = zipfile.ZipFile(io.BytesIO(content))
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid ZIP file")
+
+    # Find all video_note messages
+    result = await db.execute(
+        select(Message).where(
+            Message.chat_id == chat_id,
+            Message.content_type == 'video_note',
+            Message.file_path.isnot(None)
+        )
+    )
+    video_notes = result.scalars().all()
+
+    if not video_notes:
+        return {"repaired": 0, "message": "No video_note messages found"}
+
+    # List all .mp4 files in ZIP (not thumbs)
+    mp4_files = [z for z in zip_file.namelist()
+                 if z.endswith('.mp4') and '_thumb' not in z and 'round_video' in z.lower()]
+
+    logger.info(f"Found {len(video_notes)} video_notes and {len(mp4_files)} mp4 files in ZIP")
+    logger.info(f"MP4 files: {mp4_files}")
+
+    repaired = 0
+    chat_uploads_dir = UPLOADS_DIR / str(chat_id)
+    chat_uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    for msg in video_notes:
+        # Extract filename from current file_path
+        if not msg.file_path:
+            continue
+
+        current_filename = os.path.basename(msg.file_path)
+        # Remove message ID prefix if present
+        base_filename = current_filename
+        if '_' in current_filename:
+            parts = current_filename.split('_', 1)
+            if parts[0].isdigit():
+                base_filename = parts[1]
+
+        # Remove _thumb.jpg if present in base filename
+        if '_thumb.jpg' in base_filename:
+            base_filename = base_filename.replace('_thumb.jpg', '')
+
+        logger.info(f"Looking for video matching: {base_filename}")
+
+        # Find matching file in ZIP
+        for zip_path in mp4_files:
+            zip_filename = os.path.basename(zip_path)
+            if zip_filename == base_filename or base_filename in zip_filename:
+                # Found it! Extract and replace
+                file_data = zip_file.read(zip_path)
+
+                # Keep the same filename in uploads
+                dest_path = chat_uploads_dir / current_filename
+                dest_path.write_bytes(file_data)
+
+                logger.info(f"Repaired: {zip_path} -> {dest_path}")
+                repaired += 1
+                break
+
+    zip_file.close()
+    return {"repaired": repaired, "total": len(video_notes)}
+
+
 @router.delete("/{chat_id}/import/cleanup")
 async def cleanup_bad_import(
     chat_id: int,

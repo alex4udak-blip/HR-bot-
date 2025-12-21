@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Upload, FileJson, FileArchive, FileCode, CheckCircle, AlertCircle, Loader2, Apple, Monitor, Trash2, Mic } from 'lucide-react';
+import { X, Upload, FileJson, FileArchive, FileCode, CheckCircle, AlertCircle, Loader2, Apple, Monitor, Trash2, Mic, Video } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { importTelegramHistory, cleanupBadImport, transcribeAllMedia, ImportResult, CleanupResult, CleanupMode, ImportProgress, getImportProgress, generateImportId, TranscribeAllResult } from '@/services/api';
+import { importTelegramHistory, cleanupBadImport, transcribeAllMedia, repairVideoNotes, ImportResult, CleanupResult, CleanupMode, ImportProgress, getImportProgress, generateImportId, TranscribeAllResult, RepairVideoResult } from '@/services/api';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -112,6 +112,26 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
         toast.success('Все медиа уже транскрибированы');
       } else {
         toast.error('Не удалось транскрибировать сообщения');
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const [repairResult, setRepairResult] = useState<RepairVideoResult | null>(null);
+
+  const repairMutation = useMutation({
+    mutationFn: (repairFile: File) => repairVideoNotes(chatId, repairFile),
+    onSuccess: (data) => {
+      setRepairResult(data);
+      if (data.repaired > 0) {
+        queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
+        toast.success(`Исправлено ${data.repaired} из ${data.total} видео-кружков`);
+      } else if (data.total === 0) {
+        toast.success('Видео-кружков не найдено');
+      } else {
+        toast.error('Не удалось исправить видео-кружки');
       }
     },
     onError: (error: Error) => {
@@ -369,23 +389,49 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                       Транскрибировано: {transcribeResult.transcribed} / {transcribeResult.total_found}
                     </p>
                   )}
-                  <button
-                    onClick={() => transcribeMutation.mutate()}
-                    disabled={transcribeMutation.isPending}
-                    className="px-3 py-1.5 rounded-lg text-xs bg-accent-500/20 text-accent-300 hover:bg-accent-500/30 disabled:opacity-50 transition-colors flex items-center gap-2"
-                  >
-                    {transcribeMutation.isPending ? (
-                      <>
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        Транскрибирую...
-                      </>
-                    ) : (
-                      <>
-                        <Mic className="w-3 h-3" />
-                        Транскрибировать все голосовые/видео
-                      </>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => transcribeMutation.mutate()}
+                      disabled={transcribeMutation.isPending}
+                      className="px-3 py-1.5 rounded-lg text-xs bg-accent-500/20 text-accent-300 hover:bg-accent-500/30 disabled:opacity-50 transition-colors flex items-center gap-2"
+                    >
+                      {transcribeMutation.isPending ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Транскрибирую...
+                        </>
+                      ) : (
+                        <>
+                          <Mic className="w-3 h-3" />
+                          Транскрибировать всё
+                        </>
+                      )}
+                    </button>
+                    {file && file.name.toLowerCase().endsWith('.zip') && (
+                      <button
+                        onClick={() => repairMutation.mutate(file)}
+                        disabled={repairMutation.isPending}
+                        className="px-3 py-1.5 rounded-lg text-xs bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 disabled:opacity-50 transition-colors flex items-center gap-2"
+                      >
+                        {repairMutation.isPending ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            Исправляю...
+                          </>
+                        ) : (
+                          <>
+                            <Video className="w-3 h-3" />
+                            Починить кружочки
+                          </>
+                        )}
+                      </button>
                     )}
-                  </button>
+                  </div>
+                  {repairResult && (
+                    <p className="text-xs text-purple-400 mt-2">
+                      Исправлено кружков: {repairResult.repaired} / {repairResult.total}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
