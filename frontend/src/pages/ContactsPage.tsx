@@ -8,23 +8,19 @@ import {
   Building2,
   Wrench,
   Target,
-  Handshake,
   User,
   Users,
   Phone,
-  Mail,
   MessageSquare,
   ArrowRightLeft,
   ChevronLeft,
-  MoreVertical,
   Edit,
-  Trash2,
-  X
+  Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
-import type { EntityType, EntityStatus, Entity } from '@/types';
+import type { EntityType, Entity } from '@/types';
 import { ENTITY_TYPES, STATUS_LABELS, STATUS_COLORS } from '@/types';
 import ContactForm from '@/components/contacts/ContactForm';
 import TransferModal from '@/components/contacts/TransferModal';
@@ -37,7 +33,7 @@ const ENTITY_TYPE_FILTERS: { id: EntityType | 'all'; name: string; icon: typeof 
   { id: 'client', name: 'Clients', icon: Building2 },
   { id: 'contractor', name: 'Contractors', icon: Wrench },
   { id: 'lead', name: 'Leads', icon: Target },
-  { id: 'partner', name: 'Partners', icon: Handshake },
+  { id: 'partner', name: 'Partners', icon: Users },
   { id: 'custom', name: 'Custom', icon: User },
 ];
 
@@ -58,7 +54,6 @@ export default function ContactsPage() {
     entities,
     currentEntity,
     loading,
-    fetchEntities,
     fetchEntity,
     deleteEntity,
     setFilters,
@@ -145,7 +140,7 @@ export default function ContactsPage() {
       client: Building2,
       contractor: Wrench,
       lead: Target,
-      partner: Handshake,
+      partner: Users,
       custom: User
     };
     return icons[type] || User;

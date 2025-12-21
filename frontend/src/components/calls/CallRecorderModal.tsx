@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Upload, Video, Phone, Link as LinkIcon, User } from 'lucide-react';
+import { X, Upload, Video, Link as LinkIcon, User } from 'lucide-react';
 import clsx from 'clsx';
 import { useCallStore } from '@/stores/callStore';
 import { getEntities } from '@/services/api';

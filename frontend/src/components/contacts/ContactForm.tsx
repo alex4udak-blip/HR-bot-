@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, UserCheck, Building2, Wrench, Target, Handshake, User } from 'lucide-react';
+import { X, UserCheck, Building2, Wrench, Target, Users, User } from 'lucide-react';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
 import type { Entity, EntityType, EntityStatus } from '@/types';
@@ -18,7 +18,7 @@ const ENTITY_TYPE_OPTIONS: { id: EntityType; icon: typeof User }[] = [
   { id: 'client', icon: Building2 },
   { id: 'contractor', icon: Wrench },
   { id: 'lead', icon: Target },
-  { id: 'partner', icon: Handshake },
+  { id: 'partner', icon: Users },
   { id: 'custom', icon: User },
 ];
 
