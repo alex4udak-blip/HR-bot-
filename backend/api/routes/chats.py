@@ -1284,12 +1284,11 @@ async def cleanup_bad_import(
         deleted_count = delete_result.rowcount
 
     elif mode == "all_imported":
-        # Delete all messages without file_id (imported from file, not from bot)
-        # Bot messages have file_id, imported messages don't
+        # Delete all imported messages (is_imported=True flag)
         delete_result = await db.execute(
             delete(Message).where(
                 Message.chat_id == chat_id,
-                Message.file_id.is_(None)
+                Message.is_imported == True
             )
         )
         deleted_count = delete_result.rowcount
