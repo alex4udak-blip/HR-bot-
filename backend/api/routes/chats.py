@@ -370,12 +370,36 @@ async def cleanup_old_deleted_chats(db: AsyncSession):
 
 def parse_telegram_date(date_str: str) -> datetime:
     """Parse Telegram export date format."""
-    # Telegram uses ISO format: 2024-12-10T14:30:00
+    if not date_str:
+        return datetime.now()
+
+    # Try ISO format first: 2024-12-10T14:30:00
     try:
         return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
     except ValueError:
-        # Fallback for other formats
-        return datetime.now()
+        pass
+
+    # Try Russian format: DD.MM.YYYY HH:MM:SS
+    try:
+        if '.' in date_str and len(date_str.split('.')[0]) <= 2:
+            return datetime.strptime(date_str, '%d.%m.%Y %H:%M:%S')
+    except ValueError:
+        pass
+
+    # Try other common formats
+    formats = [
+        '%Y-%m-%d %H:%M:%S',
+        '%d/%m/%Y %H:%M:%S',
+        '%Y-%m-%dT%H:%M:%S',
+    ]
+    for fmt in formats:
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+
+    # Fallback - return now (shouldn't happen often)
+    return datetime.now()
 
 
 def detect_content_type(msg: dict) -> str:
@@ -835,11 +859,17 @@ async def import_telegram_history(
 @router.delete("/{chat_id}/import/cleanup")
 async def cleanup_bad_import(
     chat_id: int,
+    mode: str = Query("bad", description="Cleanup mode: 'bad' for Unknown/[Медиа], 'today' for messages with today's date, 'all_imported' for all without telegram_message_id"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """
-    Delete badly imported messages (Unknown sender with [Медиа] content).
+    Delete badly imported messages.
+
+    Modes:
+    - bad: Delete messages with Unknown sender and [Медиа] content
+    - today: Delete messages with today's timestamp (wrong date import)
+    - all_imported: Delete all messages without telegram_message_id (imported from file)
     """
     user = await db.merge(user)
 
@@ -850,19 +880,44 @@ async def cleanup_bad_import(
     if not can_access_chat(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Delete messages with Unknown sender and [Медиа] content
-    delete_result = await db.execute(
-        delete(Message).where(
-            Message.chat_id == chat_id,
-            Message.first_name == 'Unknown',
-            Message.content == '[Медиа]'
+    deleted_count = 0
+
+    if mode == "bad":
+        # Delete messages with Unknown sender and [Медиа] content
+        delete_result = await db.execute(
+            delete(Message).where(
+                Message.chat_id == chat_id,
+                Message.first_name == 'Unknown',
+                Message.content == '[Медиа]'
+            )
         )
-    )
-    deleted_count = delete_result.rowcount
+        deleted_count = delete_result.rowcount
+
+    elif mode == "today":
+        # Delete messages with today's timestamp (likely wrong date import)
+        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        delete_result = await db.execute(
+            delete(Message).where(
+                Message.chat_id == chat_id,
+                Message.timestamp >= today_start
+            )
+        )
+        deleted_count = delete_result.rowcount
+
+    elif mode == "all_imported":
+        # Delete all messages without telegram_message_id (imported from file, not from bot)
+        delete_result = await db.execute(
+            delete(Message).where(
+                Message.chat_id == chat_id,
+                Message.telegram_message_id.is_(None)
+            )
+        )
+        deleted_count = delete_result.rowcount
 
     await db.commit()
 
     return {
         "success": True,
         "deleted": deleted_count,
+        "mode": mode,
     }

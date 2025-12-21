@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Upload, FileJson, FileArchive, FileCode, CheckCircle, AlertCircle, Loader2, Apple, Monitor, Trash2 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { importTelegramHistory, cleanupBadImport, ImportResult, CleanupResult } from '@/services/api';
+import { importTelegramHistory, cleanupBadImport, ImportResult, CleanupResult, CleanupMode } from '@/services/api';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -37,15 +37,15 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
   });
 
   const cleanupMutation = useMutation({
-    mutationFn: () => cleanupBadImport(chatId),
+    mutationFn: (mode: CleanupMode) => cleanupBadImport(chatId, mode),
     onSuccess: (data) => {
       setCleanupResult(data);
       if (data.deleted > 0) {
         queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
         queryClient.invalidateQueries({ queryKey: ['chats'] });
-        toast.success(`Удалено ${data.deleted} плохих сообщений`);
+        toast.success(`Удалено ${data.deleted} сообщений`);
       } else {
-        toast.success('Плохих сообщений не найдено');
+        toast.success('Сообщений для удаления не найдено');
       }
     },
     onError: (error: Error) => {
@@ -291,28 +291,36 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
               <div className="flex items-start gap-3">
                 <Trash2 className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-red-300">Очистить неудачный импорт</p>
-                  <p className="text-xs text-dark-400 mt-1">
-                    Удалит сообщения с отправителем "Unknown" и текстом "[Медиа]"
-                  </p>
+                  <p className="text-sm font-medium text-red-300 mb-2">Очистить неудачный импорт</p>
                   {cleanupResult && (
-                    <p className="text-xs text-green-400 mt-2">
+                    <p className="text-xs text-green-400 mb-2">
                       Удалено: {cleanupResult.deleted} сообщений
                     </p>
                   )}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => cleanupMutation.mutate('today')}
+                      disabled={cleanupMutation.isPending}
+                      className="px-2.5 py-1 rounded-lg text-xs bg-red-500/20 text-red-300 hover:bg-red-500/30 disabled:opacity-50 transition-colors"
+                    >
+                      {cleanupMutation.isPending ? '...' : 'Сегодняшние'}
+                    </button>
+                    <button
+                      onClick={() => cleanupMutation.mutate('bad')}
+                      disabled={cleanupMutation.isPending}
+                      className="px-2.5 py-1 rounded-lg text-xs bg-red-500/20 text-red-300 hover:bg-red-500/30 disabled:opacity-50 transition-colors"
+                    >
+                      Unknown/Медиа
+                    </button>
+                    <button
+                      onClick={() => cleanupMutation.mutate('all_imported')}
+                      disabled={cleanupMutation.isPending}
+                      className="px-2.5 py-1 rounded-lg text-xs bg-red-500/20 text-red-300 hover:bg-red-500/30 disabled:opacity-50 transition-colors"
+                    >
+                      Все импортированные
+                    </button>
+                  </div>
                 </div>
-                <button
-                  onClick={() => cleanupMutation.mutate()}
-                  disabled={cleanupMutation.isPending}
-                  className="px-3 py-1.5 rounded-lg text-sm bg-red-500/20 text-red-300 hover:bg-red-500/30 disabled:opacity-50 transition-colors flex items-center gap-1.5"
-                >
-                  {cleanupMutation.isPending ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-3.5 h-3.5" />
-                  )}
-                  Очистить
-                </button>
               </div>
             </div>
 
