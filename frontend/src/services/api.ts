@@ -311,7 +311,7 @@ export interface CleanupResult {
   mode?: string;
 }
 
-export type CleanupMode = 'bad' | 'today' | 'all_imported';
+export type CleanupMode = 'bad' | 'today' | 'all_imported' | 'all';
 
 export const cleanupBadImport = async (chatId: number, mode: CleanupMode = 'bad'): Promise<CleanupResult> => {
   const token = localStorage.getItem('token');

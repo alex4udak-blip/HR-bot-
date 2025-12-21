@@ -949,6 +949,7 @@ async def import_telegram_history(
                 file_id=None,  # Telegram Bot API file_id (not available in export)
                 file_path=file_path,  # Local file path for imported media
                 file_name=file_name,
+                is_imported=True,  # Mark as imported from file
                 timestamp=timestamp,
             )
 
@@ -1041,11 +1042,22 @@ async def cleanup_bad_import(
         deleted_count = delete_result.rowcount
 
     elif mode == "all_imported":
-        # Delete all messages without telegram_message_id (imported from file, not from bot)
+        # Delete all messages without file_id (imported from file, not from bot)
+        # Bot messages have file_id, imported messages don't
         delete_result = await db.execute(
             delete(Message).where(
                 Message.chat_id == chat_id,
-                Message.telegram_message_id.is_(None)
+                Message.file_id.is_(None)
+            )
+        )
+        deleted_count = delete_result.rowcount
+
+    elif mode == "all":
+        # Delete all imported messages (is_imported=True)
+        delete_result = await db.execute(
+            delete(Message).where(
+                Message.chat_id == chat_id,
+                Message.is_imported == True
             )
         )
         deleted_count = delete_result.rowcount
