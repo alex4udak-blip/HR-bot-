@@ -184,7 +184,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.9, opacity: 0 }}
-            className="glass rounded-2xl p-6 max-w-lg w-full"
+            className="glass rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -205,7 +205,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
             </div>
 
             {/* Instructions */}
-            <div className="mb-6 glass-light rounded-xl overflow-hidden max-h-[300px] overflow-y-auto">
+            <div className="mb-4 glass-light rounded-xl overflow-hidden max-h-[200px] overflow-y-auto">
               {/* Platform tabs */}
               <div className="flex border-b border-white/5 sticky top-0 bg-dark-800/95 backdrop-blur-sm">
                 <button
