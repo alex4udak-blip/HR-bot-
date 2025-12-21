@@ -49,13 +49,13 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
     e.preventDefault();
     setIsDragging(false);
     const droppedFile = e.dataTransfer.files[0];
-    const validExtensions = ['.json', '.zip'];
+    const validExtensions = ['.json', '.zip', '.html', '.htm'];
     const isValid = validExtensions.some(ext => droppedFile?.name.toLowerCase().endsWith(ext));
     if (droppedFile && isValid) {
       setFile(droppedFile);
       setResult(null);
     } else {
-      toast.error('Пожалуйста, загрузите JSON или ZIP файл');
+      toast.error('Пожалуйста, загрузите JSON, HTML или ZIP файл');
     }
   }, []);
 
@@ -205,7 +205,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
             >
               <input
                 type="file"
-                accept=".json,.zip"
+                accept=".json,.zip,.html,.htm"
                 onChange={handleFileChange}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
@@ -214,6 +214,8 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                 <div className="flex flex-col items-center gap-2">
                   {file.name.toLowerCase().endsWith('.zip') ? (
                     <FileArchive className="w-12 h-12 text-green-400" />
+                  ) : file.name.toLowerCase().endsWith('.html') || file.name.toLowerCase().endsWith('.htm') ? (
+                    <FileCode className="w-12 h-12 text-green-400" />
                   ) : (
                     <FileJson className="w-12 h-12 text-green-400" />
                   )}
@@ -231,7 +233,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                   <p className="text-dark-300">
                     Перетащите файл сюда или <span className="text-accent-400">выберите</span>
                   </p>
-                  <p className="text-sm text-dark-500">Поддерживается: JSON, ZIP</p>
+                  <p className="text-sm text-dark-500">Поддерживается: JSON, HTML, ZIP</p>
                 </div>
               )}
             </div>

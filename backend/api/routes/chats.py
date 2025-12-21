@@ -432,105 +432,177 @@ def get_content_hash(content: str, timestamp: datetime) -> str:
 
 
 class TelegramHTMLParser(HTMLParser):
-    """Parser for Telegram HTML export format."""
+    """
+    Parser for Telegram Desktop HTML export format.
+
+    HTML structure:
+    - Message container: div.message.default (or div.message.default.joined for continuation)
+    - Sender name: div.from_name (only in first message of a sequence)
+    - Message body: div.body > div.text
+    - Date: div.date (datetime in title attribute, format: "DD.MM.YYYY HH:MM:SS")
+    - Media: div.media_wrap (photos, videos, etc.)
+
+    Messages with class "joined" don't have from_name - they continue from previous sender.
+    """
 
     def __init__(self):
         super().__init__()
         self.messages = []
         self.current_message = None
-        self.current_field = None
+        self.last_sender = None  # Track last sender for "joined" messages
+        self.in_from_name = False
+        self.in_text = False
+        self.in_media = False
         self.text_buffer = ""
-        self.in_message = False
-        self.in_body = False
+        self.from_buffer = ""
+        self.div_depth = 0  # Track div nesting to know when message ends
+        self.message_div_depth = 0  # Depth where message div started
+        self.is_joined = False
 
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
         class_name = attrs_dict.get('class', '')
+        classes = class_name.split() if class_name else []
 
-        if 'message' in class_name and 'default' in class_name:
-            self.in_message = True
-            self.current_message = {
-                'id': None,
-                'from': 'Unknown',
-                'date': '',
-                'text': '',
-                'type': 'message'
-            }
-            # Try to get message ID from id attribute
-            if 'id' in attrs_dict:
-                msg_id = attrs_dict['id'].replace('message', '')
-                try:
-                    self.current_message['id'] = int(msg_id)
-                except ValueError:
-                    pass
+        if tag == 'div':
+            self.div_depth += 1
 
-        elif self.in_message:
-            if 'from_name' in class_name:
-                self.current_field = 'from'
-                self.text_buffer = ""
-            elif 'date' in class_name:
-                self.current_field = 'date'
-                # Get title attribute for full datetime
-                if 'title' in attrs_dict:
-                    self.current_message['date'] = attrs_dict['title']
-            elif 'text' in class_name:
-                self.current_field = 'text'
-                self.text_buffer = ""
-            elif 'media_wrap' in class_name:
-                self.current_field = 'media'
-            elif 'body' in class_name:
-                self.in_body = True
+            # Check for message container: div.message.default
+            if 'message' in classes and 'default' in classes:
+                self.message_div_depth = self.div_depth
+                self.is_joined = 'joined' in classes
+                self.current_message = {
+                    'id': None,
+                    'from': self.last_sender if self.is_joined else None,
+                    'date': '',
+                    'text': '',
+                    'has_media': False,
+                    'type': 'message'
+                }
+                # Get message ID from id attribute (format: "message123")
+                msg_id = attrs_dict.get('id', '')
+                if msg_id.startswith('message'):
+                    try:
+                        self.current_message['id'] = int(msg_id[7:])
+                    except ValueError:
+                        pass
+
+            elif self.current_message:
+                # Check for from_name
+                if 'from_name' in classes:
+                    self.in_from_name = True
+                    self.from_buffer = ""
+
+                # Check for text content
+                elif 'text' in classes:
+                    self.in_text = True
+                    self.text_buffer = ""
+
+                # Check for media
+                elif 'media_wrap' in classes or 'media' in classes:
+                    self.in_media = True
+                    self.current_message['has_media'] = True
+
+                # Check for date (datetime in title attribute)
+                elif 'date' in classes:
+                    title = attrs_dict.get('title', '')
+                    if title:
+                        self.current_message['date'] = title
+
+        # Handle links and other inline elements in text
+        elif tag == 'a' and self.in_text:
+            # Links are part of text, continue collecting
+            pass
+
+        elif tag == 'br' and self.in_text:
+            self.text_buffer += '\n'
 
     def handle_endtag(self, tag):
-        if self.current_field == 'from' and tag in ['span', 'div']:
-            if self.current_message:
-                self.current_message['from'] = self.text_buffer.strip()
-            self.current_field = None
-        elif self.current_field == 'text' and tag == 'div':
-            if self.current_message:
-                self.current_message['text'] = self.text_buffer.strip()
-            self.current_field = None
+        if tag == 'div':
+            # Check if we're closing the message div
+            if self.current_message and self.div_depth == self.message_div_depth:
+                # Finalize the message
+                if self.from_buffer.strip():
+                    self.current_message['from'] = self.from_buffer.strip()
+                    self.last_sender = self.from_buffer.strip()
 
-        if tag == 'div' and self.in_message and self.in_body:
-            if self.current_message and (self.current_message.get('text') or self.current_message.get('from')):
-                self.messages.append(self.current_message)
-            self.current_message = None
-            self.in_message = False
-            self.in_body = False
+                if self.text_buffer.strip():
+                    self.current_message['text'] = self.text_buffer.strip()
+
+                # Only save if we have sender (from current or previous)
+                if self.current_message.get('from'):
+                    self.messages.append(self.current_message)
+
+                # Reset state
+                self.current_message = None
+                self.in_from_name = False
+                self.in_text = False
+                self.in_media = False
+                self.text_buffer = ""
+                self.from_buffer = ""
+                self.is_joined = False
+
+            # Check for inner div closings
+            elif self.current_message:
+                if self.in_from_name and 'from_name' not in str(self.get_starttag_text() or ''):
+                    # from_name div closed
+                    self.in_from_name = False
+                if self.in_text:
+                    # Don't close text on every div - only when message ends
+                    pass
+
+            self.div_depth -= 1
 
     def handle_data(self, data):
-        if self.current_field in ['from', 'text']:
+        if self.in_from_name:
+            self.from_buffer += data
+        elif self.in_text:
             self.text_buffer += data
 
 
 def parse_html_export(html_content: str) -> List[dict]:
     """Parse Telegram HTML export and return messages list."""
     parser = TelegramHTMLParser()
-    parser.feed(html_content)
+    try:
+        parser.feed(html_content)
+    except Exception as e:
+        print(f"HTML parse error: {e}")
+        return []
 
     messages = []
     for msg in parser.messages:
-        if not msg.get('text') and not msg.get('from'):
+        # Skip if no sender
+        if not msg.get('from'):
             continue
 
-        # Parse date
+        # Parse date (format: "DD.MM.YYYY HH:MM:SS")
         date_str = msg.get('date', '')
         try:
-            # Try common formats: "DD.MM.YYYY HH:MM:SS" or "YYYY-MM-DD HH:MM:SS"
             if '.' in date_str and len(date_str.split('.')[0]) <= 2:
+                # Russian format: DD.MM.YYYY HH:MM:SS
                 parsed_date = datetime.strptime(date_str, '%d.%m.%Y %H:%M:%S')
-            else:
+            elif 'T' in date_str:
+                # ISO format
                 parsed_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            else:
+                parsed_date = datetime.now()
         except (ValueError, AttributeError):
             parsed_date = datetime.now()
+
+        # Determine text content
+        text = msg.get('text', '').strip()
+        if not text and msg.get('has_media'):
+            text = '[Медиа]'
+        elif not text:
+            continue  # Skip empty messages
 
         messages.append({
             'id': msg.get('id'),
             'type': 'message',
             'date': parsed_date.isoformat(),
-            'from': msg.get('from', 'Unknown'),
+            'from': msg.get('from'),
             'from_id': '',
-            'text': msg.get('text', '')
+            'text': text
         })
 
     return messages
