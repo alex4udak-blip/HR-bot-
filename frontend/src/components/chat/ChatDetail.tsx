@@ -31,11 +31,12 @@ import {
   MoreHorizontal,
   Trash2,
   Loader2,
-  Upload
+  Upload,
+  Mic
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { Chat, Message, ChatTypeId } from '@/types';
-import { getMessages, getParticipants, updateChat, deleteChat, downloadReport } from '@/services/api';
+import { getMessages, getParticipants, updateChat, deleteChat, downloadReport, transcribeMessage } from '@/services/api';
 import CriteriaPanel from './CriteriaPanel';
 import ImportHistoryModal from './ImportHistoryModal';
 import toast from 'react-hot-toast';
@@ -225,6 +226,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [downloadingReport, setDownloadingReport] = useState<string | null>(null);
+  const [transcribingMessageId, setTranscribingMessageId] = useState<number | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -296,6 +298,23 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
       toast.error('Ошибка скачивания');
     } finally {
       setDownloadingReport(null);
+    }
+  };
+
+  const handleTranscribe = async (messageId: number) => {
+    if (transcribingMessageId) return;
+
+    setTranscribingMessageId(messageId);
+    try {
+      const result = await transcribeMessage(messageId);
+      if (result.success) {
+        toast.success('Транскрипция завершена');
+        queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
+      }
+    } catch {
+      toast.error('Ошибка транскрипции');
+    } finally {
+      setTranscribingMessageId(null);
     }
   };
 
@@ -569,8 +588,21 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                             <span className="text-xs">Видео</span>
                           </div>
                         )}
-                        {message.content && !message.content.startsWith('[Video') && !message.content.startsWith('[Видео') && (
+                        {message.content && !message.content.startsWith('[Video') && !message.content.startsWith('[Видео') ? (
                           <p className="text-sm text-dark-300">{message.content}</p>
+                        ) : message.file_path && (
+                          <button
+                            onClick={() => handleTranscribe(message.id)}
+                            disabled={transcribingMessageId === message.id}
+                            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 disabled:opacity-50"
+                          >
+                            {transcribingMessageId === message.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Mic className="w-3 h-3" />
+                            )}
+                            Транскрибировать
+                          </button>
                         )}
                       </div>
                     ) : message.content_type === 'sticker' ? (
@@ -607,8 +639,21 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                             <span className="text-sm">[Голосовое сообщение недоступно]</span>
                           </div>
                         )}
-                        {message.content && !message.content.startsWith('[Голосов') && !message.content.startsWith('[Voice') && (
+                        {message.content && !message.content.startsWith('[Голосов') && !message.content.startsWith('[Voice') ? (
                           <p className="text-sm text-dark-300">{message.content}</p>
+                        ) : message.file_path && (
+                          <button
+                            onClick={() => handleTranscribe(message.id)}
+                            disabled={transcribingMessageId === message.id}
+                            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 disabled:opacity-50"
+                          >
+                            {transcribingMessageId === message.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Mic className="w-3 h-3" />
+                            )}
+                            Транскрибировать
+                          </button>
                         )}
                       </div>
                     ) : message.content_type === 'video' ? (
@@ -625,8 +670,21 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                             <span className="text-sm">[Видео недоступно]</span>
                           </div>
                         )}
-                        {message.content && !message.content.startsWith('[Видео') && !message.content.startsWith('[Video') && (
+                        {message.content && !message.content.startsWith('[Видео') && !message.content.startsWith('[Video') ? (
                           <p className="text-sm text-dark-300">{message.content}</p>
+                        ) : message.file_path && (
+                          <button
+                            onClick={() => handleTranscribe(message.id)}
+                            disabled={transcribingMessageId === message.id}
+                            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 disabled:opacity-50"
+                          >
+                            {transcribingMessageId === message.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Mic className="w-3 h-3" />
+                            )}
+                            Транскрибировать
+                          </button>
                         )}
                       </div>
                     ) : (
