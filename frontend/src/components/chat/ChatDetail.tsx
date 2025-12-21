@@ -143,6 +143,13 @@ const DocumentMessage = ({ message }: { message: Message }) => {
 
   const hasFullContent = message.content.length > 300;
 
+  // Get download URL for the document
+  const downloadUrl = message.file_id
+    ? getFileUrl(message.file_id)
+    : message.file_path
+      ? getLocalFileUrl(message.file_path)
+      : '';
+
   return (
     <div className="space-y-2">
       {/* Document header */}
@@ -152,7 +159,18 @@ const DocumentMessage = ({ message }: { message: Message }) => {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-sm truncate">{message.file_name}</span>
+            {downloadUrl ? (
+              <a
+                href={downloadUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-sm truncate text-accent-400 hover:underline"
+              >
+                {message.file_name || 'Скачать файл'}
+              </a>
+            ) : (
+              <span className="font-medium text-sm truncate">{message.file_name || '[Файл]'}</span>
+            )}
             {meta?.file_type && (
               <span className="px-2 py-0.5 rounded-full text-xs bg-dark-700 text-dark-300 uppercase">
                 {meta.file_type}

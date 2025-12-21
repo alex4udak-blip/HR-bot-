@@ -616,10 +616,20 @@ class TelegramHTMLParser(HTMLParser):
                         self.current_message['media_type'] = 'video_note'
                     else:
                         self.current_message['media_type'] = 'video'
+            elif tag == 'audio':
+                src = attrs_dict.get('src', '')
+                if src and not self.current_message.get('media_file'):
+                    self.current_message['media_file'] = src
+                    self.current_message['media_type'] = 'voice'
             elif tag == 'source':
                 src = attrs_dict.get('src', '')
                 if src and not self.current_message.get('media_file'):
                     self.current_message['media_file'] = src
+                    # Detect type from source src
+                    if 'voice' in src.lower() or src.endswith('.ogg'):
+                        self.current_message['media_type'] = 'voice'
+                    elif 'round' in src.lower():
+                        self.current_message['media_type'] = 'video_note'
 
         # Handle links and other inline elements in text
         elif tag == 'a' and self.in_text:
@@ -1010,8 +1020,14 @@ async def import_telegram_history(
             if last_name:
                 last_name = last_name[:255]  # Truncate to 255
 
-            # Truncate file_name if too long
+            # Get file_name from msg or extract from media_file path
             file_name = msg.get('file_name')
+            if not file_name and file_path:
+                # Extract filename from path like "uploads/3/123_document.pdf"
+                file_name = os.path.basename(file_path)
+                # Remove message ID prefix if present (e.g., "123_document.pdf" -> "document.pdf")
+                if '_' in file_name and file_name.split('_')[0].isdigit():
+                    file_name = '_'.join(file_name.split('_')[1:])
             if file_name:
                 file_name = file_name[:255]
 
