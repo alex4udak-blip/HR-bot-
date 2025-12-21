@@ -600,9 +600,11 @@ class TelegramHTMLParser(HTMLParser):
                                 self.current_message['media_type'] = 'video'
                             elif 'stickers/' in href or is_sticker:
                                 self.current_message['media_type'] = 'sticker'
-                            elif 'voice_messages/' in href or href.endswith('.ogg'):
+                            elif 'voice_messages/' in href or href.endswith(('.ogg', '.mp3', '.wav', '.m4a', '.opus')):
                                 self.current_message['media_type'] = 'voice'
-                            elif 'files/' in href or href.endswith(('.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.zip', '.rar', '.7z', '.csv', '.json')):
+                            elif 'files/' in href and not href.endswith(('.ogg', '.mp3', '.wav', '.m4a', '.opus', '.mp4', '.webm', '.mov')):
+                                self.current_message['media_type'] = 'document'
+                            elif href.endswith(('.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.zip', '.rar', '.7z', '.csv', '.json')):
                                 self.current_message['media_type'] = 'document'
                             elif href.endswith('.webp'):
                                 # .webp can be sticker or photo
@@ -769,9 +771,9 @@ def parse_html_export(html_content: str) -> List[dict]:
                         media_type = 'video_note'
                     elif 'video' in media_file or media_file.endswith(('.mp4', '.webm', '.mov')):
                         media_type = 'video'
-                    elif 'voice' in media_file or media_file.endswith(('.ogg', '.opus')):
+                    elif 'voice' in media_file or media_file.endswith(('.ogg', '.opus', '.mp3', '.wav', '.m4a')):
                         media_type = 'voice'
-                    elif 'files/' in media_file or media_file.endswith(('.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.zip', '.rar', '.7z', '.csv', '.json')):
+                    elif ('files/' in media_file and not media_file.endswith(('.ogg', '.opus', '.mp3', '.wav', '.m4a', '.mp4', '.webm', '.mov'))) or media_file.endswith(('.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.zip', '.rar', '.7z', '.csv', '.json')):
                         media_type = 'document'
 
             if not text:
@@ -813,6 +815,7 @@ def parse_html_export(html_content: str) -> List[dict]:
 async def import_telegram_history(
     chat_id: int,
     file: UploadFile = File(...),
+    auto_process: bool = Query(False, description="Auto-transcribe voice/video and parse documents (slow)"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -820,6 +823,9 @@ async def import_telegram_history(
     Import chat history from Telegram Desktop export (JSON, HTML or ZIP format).
 
     Expected format: result.json, messages.html or ZIP archive containing them
+
+    Set auto_process=true to automatically transcribe voice/video and parse documents.
+    This is slow but provides immediate content. Otherwise use manual transcription buttons.
     """
     import logging
     logger = logging.getLogger("hr-analyzer")
@@ -994,9 +1000,9 @@ async def import_telegram_history(
 
                         if not file_found:
                             logger.warning(f"Media file not found in ZIP: {media_file}")
-                        else:
-                            # Auto-transcribe voice and video files
-                            if content_type in ('voice', 'video_note', 'video') and file_data:
+                        elif auto_process and file_data:
+                            # Auto-transcribe voice and video files (only if auto_process=True)
+                            if content_type in ('voice', 'video_note', 'video'):
                                 try:
                                     logger.info(f"Auto-transcribing {content_type}: {file_path}")
                                     if content_type == 'voice':
@@ -1014,7 +1020,7 @@ async def import_telegram_history(
                                     logger.error(f"Auto-transcription error: {e}")
 
                             # Auto-parse documents and photos (OCR)
-                            elif content_type in ('document', 'photo') and file_data:
+                            elif content_type in ('document', 'photo'):
                                 try:
                                     file_name_for_parse = os.path.basename(media_file)
                                     logger.info(f"Auto-parsing {content_type}: {file_name_for_parse}")

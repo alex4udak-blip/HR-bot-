@@ -19,10 +19,11 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
   const [result, setResult] = useState<ImportResult | null>(null);
   const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
   const [platform, setPlatform] = useState<'mac' | 'windows'>('mac');
+  const [autoProcess, setAutoProcess] = useState(false);
   const queryClient = useQueryClient();
 
   const importMutation = useMutation({
-    mutationFn: (file: File) => importTelegramHistory(chatId, file),
+    mutationFn: (file: File) => importTelegramHistory(chatId, file, autoProcess),
     onSuccess: (data) => {
       setResult(data);
       if (data.imported > 0) {
@@ -341,6 +342,20 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                 </div>
               </div>
             </div>
+
+            {/* Auto-process option */}
+            {!result && file && (
+              <label className="flex items-center gap-2 mt-4 text-sm text-dark-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoProcess}
+                  onChange={(e) => setAutoProcess(e.target.checked)}
+                  className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-accent-500 focus:ring-accent-500 focus:ring-offset-dark-900"
+                />
+                <span>Авто-транскрипция голосовых/видео и парсинг документов</span>
+                <span className="text-dark-500">(медленно)</span>
+              </label>
+            )}
 
             {/* Actions */}
             <div className="flex gap-3 mt-6">
