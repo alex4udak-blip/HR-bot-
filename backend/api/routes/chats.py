@@ -607,9 +607,11 @@ class TelegramHTMLParser(HTMLParser):
                             # Detect type from file path
                             if 'photos/' in href or href.endswith(('.jpg', '.jpeg', '.png')):
                                 self.current_message['media_type'] = 'photo'
-                            elif 'video_files/' in href or 'round_video' in href:
+                            elif 'round_video' in href or 'video_messages/' in href:
+                                # Video notes (circles) are in round_video_messages/ folder
                                 self.current_message['media_type'] = 'video_note'
-                            elif 'videos/' in href or href.endswith(('.mp4', '.webm')):
+                            elif 'video_files/' in href or 'videos/' in href or href.endswith(('.mp4', '.webm')):
+                                # Regular videos in video_files/ or videos/ folder
                                 self.current_message['media_type'] = 'video'
                             elif 'stickers/' in href or is_sticker:
                                 self.current_message['media_type'] = 'sticker'
