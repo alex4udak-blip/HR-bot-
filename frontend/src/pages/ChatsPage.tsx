@@ -311,7 +311,7 @@ export default function ChatsPage() {
               : 'right-4 glass hover:bg-white/10'
           )}
         >
-          <Sparkles className="w-5 h-5" />
+          <Bot className="w-5 h-5" />
         </button>
       )}
 
