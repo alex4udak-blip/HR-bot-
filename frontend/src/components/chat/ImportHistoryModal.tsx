@@ -68,6 +68,10 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
         queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
         queryClient.invalidateQueries({ queryKey: ['chats'] });
         toast.success(`Импортировано ${data.imported} сообщений`);
+        // Auto-trigger transcription after successful import
+        setTimeout(() => {
+          transcribeMutation.mutate();
+        }, 500);
       }
     },
     onError: (error: Error) => {
