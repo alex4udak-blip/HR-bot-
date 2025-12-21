@@ -1,0 +1,187 @@
+import { create } from 'zustand';
+import type { CallRecording, CallStatus } from '@/types';
+import * as api from '@/services/api';
+
+interface ActiveRecording {
+  id: number;
+  status: CallStatus;
+  duration: number;
+  error?: string;
+}
+
+interface CallState {
+  calls: CallRecording[];
+  currentCall: CallRecording | null;
+  activeRecording: ActiveRecording | null;
+  loading: boolean;
+  error: string | null;
+  pollingInterval: ReturnType<typeof setInterval> | null;
+
+  // Actions
+  fetchCalls: (entityId?: number) => Promise<void>;
+  fetchCall: (id: number) => Promise<void>;
+  uploadCall: (file: File, entityId?: number) => Promise<number>;
+  startBot: (url: string, botName: string, entityId?: number) => Promise<number>;
+  stopRecording: () => Promise<void>;
+  deleteCall: (id: number) => Promise<void>;
+  reprocessCall: (id: number) => Promise<void>;
+  pollStatus: (id: number) => void;
+  stopPolling: () => void;
+  clearActiveRecording: () => void;
+  clearError: () => void;
+}
+
+export const useCallStore = create<CallState>((set, get) => ({
+  calls: [],
+  currentCall: null,
+  activeRecording: null,
+  loading: false,
+  error: null,
+  pollingInterval: null,
+
+  fetchCalls: async (entityId) => {
+    set({ loading: true, error: null });
+    try {
+      const calls = await api.getCalls({ entity_id: entityId });
+      set({ calls, loading: false });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch calls';
+      set({ error: message, loading: false });
+    }
+  },
+
+  fetchCall: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      const call = await api.getCall(id);
+      set({ currentCall: call, loading: false });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch call';
+      set({ error: message, loading: false });
+    }
+  },
+
+  uploadCall: async (file, entityId) => {
+    set({ loading: true, error: null });
+    try {
+      const result = await api.uploadCallRecording(file, entityId);
+      set({
+        activeRecording: { id: result.id, status: 'processing' as CallStatus, duration: 0 },
+        loading: false
+      });
+      get().pollStatus(result.id);
+      return result.id;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to upload call';
+      set({ error: message, loading: false });
+      throw err;
+    }
+  },
+
+  startBot: async (url, botName, entityId) => {
+    set({ loading: true, error: null });
+    try {
+      const result = await api.startCallBot({ source_url: url, bot_name: botName, entity_id: entityId });
+      set({
+        activeRecording: { id: result.id, status: 'pending' as CallStatus, duration: 0 },
+        loading: false
+      });
+      get().pollStatus(result.id);
+      return result.id;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start recording bot';
+      set({ error: message, loading: false });
+      throw err;
+    }
+  },
+
+  stopRecording: async () => {
+    const { activeRecording } = get();
+    if (!activeRecording) return;
+
+    try {
+      await api.stopCallRecording(activeRecording.id);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to stop recording';
+      set({ error: message });
+    }
+  },
+
+  deleteCall: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      await api.deleteCall(id);
+      set((state) => ({
+        calls: state.calls.filter((c) => c.id !== id),
+        currentCall: state.currentCall?.id === id ? null : state.currentCall,
+        loading: false
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete call';
+      set({ error: message, loading: false });
+      throw err;
+    }
+  },
+
+  reprocessCall: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      await api.reprocessCall(id);
+      set({
+        activeRecording: { id, status: 'processing' as CallStatus, duration: 0 },
+        loading: false
+      });
+      get().pollStatus(id);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to reprocess call';
+      set({ error: message, loading: false });
+      throw err;
+    }
+  },
+
+  pollStatus: (id) => {
+    // Clear any existing polling
+    get().stopPolling();
+
+    const interval = setInterval(async () => {
+      try {
+        const status = await api.getCallStatus(id);
+
+        set({
+          activeRecording: {
+            id,
+            status: status.status,
+            duration: status.duration_seconds || 0,
+            error: status.error_message
+          }
+        });
+
+        // Stop polling when done or failed
+        if (status.status === 'done' || status.status === 'failed') {
+          get().stopPolling();
+          // Refresh calls list
+          get().fetchCalls();
+        }
+      } catch {
+        get().stopPolling();
+      }
+    }, 2000);
+
+    set({ pollingInterval: interval });
+  },
+
+  stopPolling: () => {
+    const { pollingInterval } = get();
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      set({ pollingInterval: null });
+    }
+  },
+
+  clearActiveRecording: () => {
+    get().stopPolling();
+    set({ activeRecording: null });
+  },
+
+  clearError: () => set({ error: null })
+}));

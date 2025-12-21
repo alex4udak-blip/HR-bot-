@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from api.routes import auth, users, chats, messages, criteria, ai, stats
+from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls
 
 # Configure logging - show important messages
 logging.basicConfig(
@@ -52,6 +52,23 @@ async def init_database():
                     except Exception:
                         pass  # Enum value already exists
                 logger.info("Ensured all chattype enum values exist")
+
+                # Create new enum types for entities and calls if they don't exist
+                new_enums = [
+                    ("entitytype", ['candidate', 'client', 'contractor', 'lead', 'partner', 'custom']),
+                    ("entitystatus", ['new', 'screening', 'interview', 'offer', 'hired', 'rejected', 'active', 'paused', 'churned', 'converted', 'ended', 'negotiation']),
+                    ("callsource", ['meet', 'zoom', 'upload', 'telegram']),
+                    ("callstatus", ['pending', 'connecting', 'recording', 'processing', 'transcribing', 'analyzing', 'done', 'failed']),
+                    ("reporttype", ['daily_hr', 'weekly_summary', 'daily_calls', 'weekly_pipeline']),
+                    ("deliverymethod", ['telegram', 'email'])
+                ]
+                for enum_name, values in new_enums:
+                    try:
+                        values_str = ', '.join([f"'{v}'" for v in values])
+                        await conn.execute(text(f"CREATE TYPE {enum_name} AS ENUM ({values_str})"))
+                        logger.info(f"Created enum type {enum_name}")
+                    except Exception:
+                        pass  # Enum already exists
 
                 # Add deleted_at column if it doesn't exist
                 try:
@@ -99,6 +116,30 @@ async def init_database():
 
                 # Create tables if they don't exist (safe, preserves data)
                 await conn.run_sync(Base.metadata.create_all)
+
+                # Add entity_id column to chats if it doesn't exist
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE chats ADD COLUMN IF NOT EXISTS entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL"
+                    ))
+                    await conn.execute(text(
+                        "CREATE INDEX IF NOT EXISTS ix_chats_entity_id ON chats(entity_id)"
+                    ))
+                    logger.info("Added entity_id column to chats table")
+                except Exception:
+                    pass  # Column already exists or entities table doesn't exist
+
+                # Add entity_id column to analysis_history if it doesn't exist
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL"
+                    ))
+                    await conn.execute(text(
+                        "CREATE INDEX IF NOT EXISTS ix_analysis_history_entity_id ON analysis_history(entity_id)"
+                    ))
+                    logger.info("Added entity_id column to analysis_history table")
+                except Exception:
+                    pass  # Column already exists or entities table doesn't exist
 
             # Create superadmin
             async with AsyncSessionLocal() as db:
@@ -188,6 +229,8 @@ app.include_router(messages.router, prefix="/api/chats", tags=["messages"])
 app.include_router(criteria.router, prefix="/api/criteria", tags=["criteria"])
 app.include_router(ai.router, prefix="/api/chats", tags=["ai"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
+app.include_router(entities.router, prefix="/api/entities", tags=["entities"])
+app.include_router(calls.router, prefix="/api/calls", tags=["calls"])
 
 
 @app.get("/health")

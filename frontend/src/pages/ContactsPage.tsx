@@ -1,0 +1,429 @@
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Search,
+  Plus,
+  UserCheck,
+  Building2,
+  Wrench,
+  Target,
+  Handshake,
+  User,
+  Users,
+  Phone,
+  Mail,
+  MessageSquare,
+  ArrowRightLeft,
+  ChevronLeft,
+  MoreVertical,
+  Edit,
+  Trash2,
+  X
+} from 'lucide-react';
+import toast from 'react-hot-toast';
+import clsx from 'clsx';
+import { useEntityStore } from '@/stores/entityStore';
+import type { EntityType, EntityStatus, Entity } from '@/types';
+import { ENTITY_TYPES, STATUS_LABELS, STATUS_COLORS } from '@/types';
+import ContactForm from '@/components/contacts/ContactForm';
+import TransferModal from '@/components/contacts/TransferModal';
+import ContactDetail from '@/components/contacts/ContactDetail';
+
+// Entity type filter options
+const ENTITY_TYPE_FILTERS: { id: EntityType | 'all'; name: string; icon: typeof Users }[] = [
+  { id: 'all', name: 'All', icon: Users },
+  { id: 'candidate', name: 'Candidates', icon: UserCheck },
+  { id: 'client', name: 'Clients', icon: Building2 },
+  { id: 'contractor', name: 'Contractors', icon: Wrench },
+  { id: 'lead', name: 'Leads', icon: Target },
+  { id: 'partner', name: 'Partners', icon: Handshake },
+  { id: 'custom', name: 'Custom', icon: User },
+];
+
+export default function ContactsPage() {
+  const { entityId } = useParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialType = searchParams.get('type') as EntityType | null;
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<EntityType | 'all'>(initialType || 'all');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
+  const [selectedEntityForTransfer, setSelectedEntityForTransfer] = useState<Entity | null>(null);
+
+  const {
+    entities,
+    currentEntity,
+    loading,
+    fetchEntities,
+    fetchEntity,
+    deleteEntity,
+    setFilters,
+    clearCurrentEntity
+  } = useEntityStore();
+
+  // Load entities on mount and when filter changes
+  useEffect(() => {
+    setFilters({
+      type: typeFilter === 'all' ? undefined : typeFilter,
+      search: searchQuery || undefined
+    });
+  }, [typeFilter]);
+
+  // Load specific entity when URL changes
+  useEffect(() => {
+    if (entityId) {
+      fetchEntity(parseInt(entityId));
+    } else {
+      clearCurrentEntity();
+    }
+  }, [entityId]);
+
+  // Handle search with debounce
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (searchQuery) {
+        setFilters({ search: searchQuery });
+      } else {
+        setFilters({ search: undefined });
+      }
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [searchQuery]);
+
+  // Update type filter from URL
+  useEffect(() => {
+    if (initialType) {
+      setTypeFilter(initialType);
+    }
+  }, [initialType]);
+
+  const handleSelectEntity = (id: number) => {
+    navigate(`/contacts/${id}`);
+  };
+
+  const handleBack = () => {
+    navigate('/contacts');
+  };
+
+  const handleDelete = async (entity: Entity) => {
+    if (!confirm(`Are you sure you want to delete "${entity.name}"?`)) return;
+
+    try {
+      await deleteEntity(entity.id);
+      toast.success('Contact deleted');
+      if (currentEntity?.id === entity.id) {
+        navigate('/contacts');
+      }
+    } catch {
+      toast.error('Failed to delete contact');
+    }
+  };
+
+  const handleTransfer = (entity: Entity) => {
+    setSelectedEntityForTransfer(entity);
+    setShowTransferModal(true);
+  };
+
+  const handleEdit = (entity: Entity) => {
+    setEditingEntity(entity);
+    setShowCreateModal(true);
+  };
+
+  // Count entities per type
+  const typeCounts = entities.reduce((acc, entity) => {
+    acc[entity.type] = (acc[entity.type] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const getEntityIcon = (type: EntityType) => {
+    const icons = {
+      candidate: UserCheck,
+      client: Building2,
+      contractor: Wrench,
+      lead: Target,
+      partner: Handshake,
+      custom: User
+    };
+    return icons[type] || User;
+  };
+
+  return (
+    <div className="h-full flex">
+      {/* Sidebar - Entity List */}
+      <motion.div
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        className={clsx(
+          'flex-shrink-0 border-r border-white/5 flex flex-col bg-black/20',
+          currentEntity ? 'w-80' : 'w-full max-w-2xl'
+        )}
+      >
+        {/* Header */}
+        <div className="p-4 border-b border-white/5">
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-xl font-semibold text-white">Contacts</h1>
+            <button
+              onClick={() => {
+                setEditingEntity(null);
+                setShowCreateModal(true);
+              }}
+              className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors"
+            >
+              <Plus size={20} />
+            </button>
+          </div>
+
+          {/* Search */}
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={18} />
+            <input
+              type="text"
+              placeholder="Search contacts..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+            />
+          </div>
+
+          {/* Type Filters */}
+          <div className="flex flex-wrap gap-2">
+            {ENTITY_TYPE_FILTERS.map((filter) => {
+              const Icon = filter.icon;
+              const count = filter.id === 'all'
+                ? entities.length
+                : typeCounts[filter.id] || 0;
+
+              return (
+                <button
+                  key={filter.id}
+                  onClick={() => setTypeFilter(filter.id)}
+                  className={clsx(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors',
+                    typeFilter === filter.id
+                      ? 'bg-cyan-500/20 text-cyan-400'
+                      : 'bg-white/5 text-white/60 hover:bg-white/10'
+                  )}
+                >
+                  <Icon size={14} />
+                  <span>{filter.name}</span>
+                  <span className="text-xs opacity-60">({count})</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Entity List */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {loading && entities.length === 0 ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : entities.length === 0 ? (
+            <div className="text-center py-8 text-white/40">
+              <Users className="mx-auto mb-2" size={40} />
+              <p>No contacts found</p>
+              <button
+                onClick={() => {
+                  setEditingEntity(null);
+                  setShowCreateModal(true);
+                }}
+                className="mt-4 px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors"
+              >
+                Add your first contact
+              </button>
+            </div>
+          ) : (
+            entities.map((entity) => {
+              const Icon = getEntityIcon(entity.type);
+              const isSelected = currentEntity?.id === entity.id;
+
+              return (
+                <motion.div
+                  key={entity.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  onClick={() => handleSelectEntity(entity.id)}
+                  className={clsx(
+                    'p-4 rounded-xl cursor-pointer transition-all group',
+                    isSelected
+                      ? 'bg-cyan-500/20 border border-cyan-500/30'
+                      : 'bg-white/5 border border-white/5 hover:bg-white/10'
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={clsx(
+                      'p-2 rounded-lg',
+                      isSelected ? 'bg-cyan-500/30' : 'bg-white/10'
+                    )}>
+                      <Icon size={20} className={isSelected ? 'text-cyan-400' : 'text-white/60'} />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-medium text-white truncate">{entity.name}</h3>
+                        <span className={clsx('text-xs px-2 py-0.5 rounded-full', STATUS_COLORS[entity.status])}>
+                          {STATUS_LABELS[entity.status]}
+                        </span>
+                      </div>
+
+                      {(entity.company || entity.position) && (
+                        <p className="text-sm text-white/60 truncate mt-1">
+                          {entity.position}{entity.position && entity.company && ' @ '}{entity.company}
+                        </p>
+                      )}
+
+                      <div className="flex items-center gap-4 mt-2 text-xs text-white/40">
+                        {entity.chats_count !== undefined && entity.chats_count > 0 && (
+                          <span className="flex items-center gap-1">
+                            <MessageSquare size={12} />
+                            {entity.chats_count} chats
+                          </span>
+                        )}
+                        {entity.calls_count !== undefined && entity.calls_count > 0 && (
+                          <span className="flex items-center gap-1">
+                            <Phone size={12} />
+                            {entity.calls_count} calls
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Quick Actions */}
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleTransfer(entity);
+                        }}
+                        className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
+                        title="Transfer"
+                      >
+                        <ArrowRightLeft size={14} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEdit(entity);
+                        }}
+                        className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
+                        title="Edit"
+                      >
+                        <Edit size={14} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(entity);
+                        }}
+                        className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400"
+                        title="Delete"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })
+          )}
+        </div>
+      </motion.div>
+
+      {/* Main Content - Entity Detail */}
+      <AnimatePresence mode="wait">
+        {currentEntity && (
+          <motion.div
+            key={currentEntity.id}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="flex-1 flex flex-col"
+          >
+            {/* Header */}
+            <div className="p-4 border-b border-white/5 flex items-center gap-4">
+              <button
+                onClick={handleBack}
+                className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+              >
+                <ChevronLeft size={20} className="text-white/60" />
+              </button>
+              <div className="flex-1">
+                <h2 className="text-xl font-semibold text-white">{currentEntity.name}</h2>
+                <p className="text-sm text-white/60">
+                  {ENTITY_TYPES[currentEntity.type].name}
+                  {currentEntity.company && ` @ ${currentEntity.company}`}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleTransfer(currentEntity as Entity)}
+                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
+                >
+                  <ArrowRightLeft size={16} />
+                  Transfer
+                </button>
+                <button
+                  onClick={() => handleEdit(currentEntity as Entity)}
+                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
+                >
+                  <Edit size={16} />
+                  Edit
+                </button>
+              </div>
+            </div>
+
+            {/* Detail Content */}
+            <div className="flex-1 overflow-y-auto">
+              <ContactDetail entity={currentEntity} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Create/Edit Modal */}
+      <AnimatePresence>
+        {showCreateModal && (
+          <ContactForm
+            entity={editingEntity}
+            defaultType={typeFilter === 'all' ? undefined : typeFilter}
+            onClose={() => {
+              setShowCreateModal(false);
+              setEditingEntity(null);
+            }}
+            onSuccess={(entity) => {
+              setShowCreateModal(false);
+              setEditingEntity(null);
+              toast.success(editingEntity ? 'Contact updated' : 'Contact created');
+              if (!editingEntity) {
+                navigate(`/contacts/${entity.id}`);
+              }
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Transfer Modal */}
+      <AnimatePresence>
+        {showTransferModal && selectedEntityForTransfer && (
+          <TransferModal
+            entity={selectedEntityForTransfer}
+            onClose={() => {
+              setShowTransferModal(false);
+              setSelectedEntityForTransfer(null);
+            }}
+            onSuccess={() => {
+              setShowTransferModal(false);
+              setSelectedEntityForTransfer(null);
+              toast.success('Contact transferred');
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

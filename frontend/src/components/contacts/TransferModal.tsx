@@ -1,0 +1,160 @@
+import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { X, ArrowRightLeft, User } from 'lucide-react';
+import clsx from 'clsx';
+import { useEntityStore } from '@/stores/entityStore';
+import { getUsers } from '@/services/api';
+import type { Entity, User as UserType } from '@/types';
+
+interface TransferModalProps {
+  entity: Entity;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+export default function TransferModal({ entity, onClose, onSuccess }: TransferModalProps) {
+  const { transferEntity, loading } = useEntityStore();
+  const [users, setUsers] = useState<UserType[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [comment, setComment] = useState('');
+  const [loadingUsers, setLoadingUsers] = useState(true);
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      const data = await getUsers();
+      setUsers(data);
+    } catch (err) {
+      console.error('Failed to load users:', err);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUserId) return;
+
+    try {
+      await transferEntity(entity.id, selectedUserId, comment || undefined);
+      onSuccess();
+    } catch {
+      // Error handled by store
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="bg-gray-900 rounded-2xl w-full max-w-md border border-white/10 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-purple-500/20 rounded-lg">
+              <ArrowRightLeft size={20} className="text-purple-400" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-white">Transfer Contact</h2>
+              <p className="text-sm text-white/60">{entity.name}</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+          >
+            <X size={20} className="text-white/60" />
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Select User */}
+          <div>
+            <label className="block text-sm font-medium text-white/60 mb-2">Transfer to</label>
+            {loadingUsers ? (
+              <div className="flex items-center justify-center py-4">
+                <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {users.map((user) => (
+                  <button
+                    key={user.id}
+                    type="button"
+                    onClick={() => setSelectedUserId(user.id)}
+                    className={clsx(
+                      'w-full p-3 rounded-lg flex items-center gap-3 transition-colors text-left',
+                      selectedUserId === user.id
+                        ? 'bg-purple-500/20 border border-purple-500/50'
+                        : 'bg-white/5 border border-white/10 hover:bg-white/10'
+                    )}
+                  >
+                    <div className={clsx(
+                      'p-2 rounded-full',
+                      selectedUserId === user.id ? 'bg-purple-500/30' : 'bg-white/10'
+                    )}>
+                      <User size={16} className={selectedUserId === user.id ? 'text-purple-400' : 'text-white/60'} />
+                    </div>
+                    <div>
+                      <p className="text-white font-medium">{user.name}</p>
+                      <p className="text-xs text-white/40">{user.email}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Comment */}
+          <div>
+            <label className="block text-sm font-medium text-white/60 mb-2">
+              Comment (optional)
+            </label>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-purple-500/50 resize-none"
+              rows={3}
+              placeholder="Add a note about this transfer..."
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading || !selectedUserId}
+              className="flex-1 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {loading && (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              )}
+              Transfer
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </motion.div>
+  );
+}

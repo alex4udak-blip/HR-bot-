@@ -8,7 +8,11 @@ import {
   Trash2,
   LogOut,
   Menu,
-  X
+  X,
+  Phone,
+  UserCheck,
+  Building2,
+  Wrench
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
@@ -18,6 +22,11 @@ import clsx from 'clsx';
 const navItems = [
   { path: '/dashboard', icon: LayoutDashboard, label: 'Главная' },
   { path: '/chats', icon: MessageSquare, label: 'Чаты' },
+  { path: '/calls', icon: Phone, label: 'Созвоны' },
+  { path: '/contacts', icon: Users, label: 'Контакты' },
+  { path: '/contacts?type=candidate', icon: UserCheck, label: 'Кандидаты', indent: true },
+  { path: '/contacts?type=client', icon: Building2, label: 'Клиенты', indent: true },
+  { path: '/contacts?type=contractor', icon: Wrench, label: 'Подрядчики', indent: true },
   { path: '/trash', icon: Trash2, label: 'Корзина' },
   { path: '/users', icon: Users, label: 'Пользователи' },
   { path: '/settings', icon: Settings, label: 'Настройки' },
@@ -44,21 +53,24 @@ export default function Layout() {
           </h1>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
+              end={item.path.includes('?')}
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200',
+                  'flex items-center gap-3 py-2.5 rounded-xl transition-all duration-200',
+                  'indent' in item && item.indent ? 'pl-8 pr-4' : 'px-4',
                   isActive
                     ? 'bg-accent-500/20 text-accent-400'
-                    : 'text-dark-300 hover:text-dark-100 hover:bg-white/5'
+                    : 'text-dark-300 hover:text-dark-100 hover:bg-white/5',
+                  'indent' in item && item.indent && 'text-sm'
                 )
               }
             >
-              <item.icon className="w-5 h-5" />
+              <item.icon className={clsx('indent' in item && item.indent ? 'w-4 h-4' : 'w-5 h-5')} />
               <span className="font-medium">{item.label}</span>
             </NavLink>
           ))}

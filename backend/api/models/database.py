@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import datetime, time
 from typing import Optional
 from sqlalchemy import (
     BigInteger, Boolean, Column, DateTime, Enum as SQLEnum,
-    ForeignKey, Integer, String, Text, JSON, func
+    ForeignKey, Integer, String, Text, JSON, Time, func
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 import enum
@@ -27,6 +27,60 @@ class ChatType(str, enum.Enum):
     sales = "sales"              # Sales negotiations
     support = "support"          # Customer support
     custom = "custom"            # Custom user-defined type
+
+
+class EntityType(str, enum.Enum):
+    candidate = "candidate"
+    client = "client"
+    contractor = "contractor"
+    lead = "lead"
+    partner = "partner"
+    custom = "custom"
+
+
+class EntityStatus(str, enum.Enum):
+    new = "new"
+    screening = "screening"
+    interview = "interview"
+    offer = "offer"
+    hired = "hired"
+    rejected = "rejected"
+    active = "active"
+    paused = "paused"
+    churned = "churned"
+    converted = "converted"
+    ended = "ended"
+    negotiation = "negotiation"
+
+
+class CallSource(str, enum.Enum):
+    meet = "meet"
+    zoom = "zoom"
+    upload = "upload"
+    telegram = "telegram"
+
+
+class CallStatus(str, enum.Enum):
+    pending = "pending"
+    connecting = "connecting"
+    recording = "recording"
+    processing = "processing"
+    transcribing = "transcribing"
+    analyzing = "analyzing"
+    done = "done"
+    failed = "failed"
+
+
+class ReportType(str, enum.Enum):
+    daily_hr = "daily_hr"
+    weekly_summary = "weekly_summary"
+    daily_calls = "daily_calls"
+    weekly_pipeline = "weekly_pipeline"
+
+
+class DeliveryMethod(str, enum.Enum):
+    telegram = "telegram"
+    email = "email"
 
 
 class User(Base):
@@ -59,12 +113,14 @@ class Chat(Base):
     custom_type_name = Column(String(255), nullable=True)  # For CUSTOM type
     custom_type_description = Column(Text, nullable=True)  # For CUSTOM type
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True, index=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=func.now())
     last_activity = Column(DateTime, default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime, nullable=True, index=True)  # Soft delete timestamp
 
     owner = relationship("User", back_populates="chats")
+    entity = relationship("Entity", back_populates="chats")
     messages = relationship("Message", back_populates="chat", cascade="all, delete-orphan")
     criteria = relationship("ChatCriteria", back_populates="chat", uselist=False, cascade="all, delete-orphan")
     ai_conversations = relationship("AIConversation", back_populates="chat", cascade="all, delete-orphan")
@@ -144,6 +200,7 @@ class AnalysisHistory(Base):
     id = Column(Integer, primary_key=True)
     chat_id = Column(Integer, ForeignKey("chats.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True, index=True)
     result = Column(Text, nullable=False)
     report_type = Column(String(50), nullable=True)  # full, quick, red_flags, etc
     report_format = Column(String(20), nullable=True)  # pdf, docx, markdown
@@ -152,3 +209,88 @@ class AnalysisHistory(Base):
 
     chat = relationship("Chat", back_populates="analyses")
     user = relationship("User", back_populates="analyses")
+    entity = relationship("Entity", back_populates="analyses")
+
+
+class Entity(Base):
+    __tablename__ = "entities"
+
+    id = Column(Integer, primary_key=True)
+    type = Column(SQLEnum(EntityType), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    status = Column(SQLEnum(EntityStatus), default=EntityStatus.new, index=True)
+    phone = Column(String(50), nullable=True)
+    email = Column(String(255), nullable=True)
+    telegram_user_id = Column(BigInteger, nullable=True, index=True)
+    company = Column(String(255), nullable=True)
+    position = Column(String(255), nullable=True)
+    tags = Column(JSON, default=list)
+    metadata = Column(JSON, default=dict)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    creator = relationship("User", foreign_keys=[created_by])
+    chats = relationship("Chat", back_populates="entity")
+    calls = relationship("CallRecording", back_populates="entity")
+    transfers = relationship("EntityTransfer", back_populates="entity")
+    analyses = relationship("AnalysisHistory", back_populates="entity")
+
+
+class EntityTransfer(Base):
+    __tablename__ = "entity_transfers"
+
+    id = Column(Integer, primary_key=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    to_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    from_department = Column(String(100), nullable=True)
+    to_department = Column(String(100), nullable=True)
+    comment = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    entity = relationship("Entity", back_populates="transfers")
+    from_user = relationship("User", foreign_keys=[from_user_id])
+    to_user = relationship("User", foreign_keys=[to_user_id])
+
+
+class CallRecording(Base):
+    __tablename__ = "call_recordings"
+
+    id = Column(Integer, primary_key=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    source_type = Column(SQLEnum(CallSource), nullable=False)
+    source_url = Column(String(500), nullable=True)
+    bot_name = Column(String(100), default="HR Recorder")
+    status = Column(SQLEnum(CallStatus), default=CallStatus.pending, index=True)
+    duration_seconds = Column(Integer, nullable=True)
+    audio_file_path = Column(String(500), nullable=True)
+    transcript = Column(Text, nullable=True)
+    speakers = Column(JSON, nullable=True)  # [{speaker: "Speaker 1", start: 0.0, end: 5.2, text: "..."}, ...]
+    summary = Column(Text, nullable=True)
+    action_items = Column(JSON, nullable=True)
+    key_points = Column(JSON, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    started_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    processed_at = Column(DateTime, nullable=True)
+
+    entity = relationship("Entity", back_populates="calls")
+    owner = relationship("User")
+
+
+class ReportSubscription(Base):
+    __tablename__ = "report_subscriptions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    report_type = Column(SQLEnum(ReportType), nullable=False)
+    delivery_method = Column(SQLEnum(DeliveryMethod), nullable=False)
+    delivery_time = Column(Time, default=time(18, 0))
+    filters = Column(JSON, default=dict)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=func.now())
+
+    user = relationship("User")
