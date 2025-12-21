@@ -461,9 +461,17 @@ def extract_text_content(msg: dict) -> str:
     return text
 
 
-def get_content_hash(content: str, timestamp: datetime) -> str:
-    """Generate hash for deduplication when message_id is not available."""
-    data = f"{content}:{timestamp.isoformat()}"
+def get_content_hash(content: str, timestamp: datetime, media_file: str = None) -> str:
+    """Generate hash for deduplication when message_id is not available.
+
+    For media messages, use media_file instead of content to avoid
+    duplicates when content changes (e.g., transcription replaces placeholder).
+    """
+    if media_file:
+        # Use media file path - stable across auto-processing runs
+        data = f"media:{media_file}:{timestamp.isoformat()}"
+    else:
+        data = f"{content}:{timestamp.isoformat()}"
     return hashlib.md5(data.encode()).hexdigest()
 
 
@@ -934,13 +942,13 @@ async def import_telegram_history(
 
     # Get existing message IDs and hashes for deduplication
     existing_result = await db.execute(
-        select(Message.telegram_message_id, Message.content, Message.timestamp)
+        select(Message.telegram_message_id, Message.content, Message.timestamp, Message.file_path)
         .where(Message.chat_id == chat_id)
     )
     existing_messages = existing_result.fetchall()
 
     existing_msg_ids = {row[0] for row in existing_messages if row[0] is not None}
-    existing_hashes = {get_content_hash(row[1], row[2]) for row in existing_messages}
+    existing_hashes = {get_content_hash(row[1], row[2], row[3]) for row in existing_messages}
 
     imported_count = 0
     skipped_count = 0
@@ -1049,7 +1057,9 @@ async def import_telegram_history(
                 from_id = msg.get('from_id', '')
 
             # Check for duplicates by content hash (when no message_id)
-            content_hash = get_content_hash(content, timestamp)
+            # For media messages, use media_file for stable hash
+            media_file_for_hash = msg.get('media_file') if is_html_source else None
+            content_hash = get_content_hash(content, timestamp, media_file_for_hash)
             if content_hash in existing_hashes:
                 skipped_count += 1
                 continue
@@ -1224,6 +1234,43 @@ async def cleanup_bad_import(
             delete(Message).where(Message.chat_id == chat_id)
         )
         deleted_count = delete_result.rowcount
+
+    elif mode == "duplicates":
+        # Find and remove duplicate messages (same timestamp and content/file_path)
+        # Keep the first (lowest id) message, delete others
+        from sqlalchemy import and_, or_
+
+        # Get all messages in the chat
+        result = await db.execute(
+            select(Message)
+            .where(Message.chat_id == chat_id)
+            .order_by(Message.id)
+        )
+        all_messages = result.scalars().all()
+
+        # Find duplicates - group by timestamp + (content or file_path)
+        seen = {}  # key -> first message id
+        duplicates_to_delete = []
+
+        for msg in all_messages:
+            # Create a key for deduplication
+            if msg.file_path:
+                key = f"{msg.timestamp.isoformat()}:file:{msg.file_path}"
+            else:
+                key = f"{msg.timestamp.isoformat()}:text:{msg.content[:100] if msg.content else ''}"
+
+            if key in seen:
+                # This is a duplicate, mark for deletion
+                duplicates_to_delete.append(msg.id)
+            else:
+                seen[key] = msg.id
+
+        # Delete duplicates
+        if duplicates_to_delete:
+            delete_result = await db.execute(
+                delete(Message).where(Message.id.in_(duplicates_to_delete))
+            )
+            deleted_count = delete_result.rowcount
 
     await db.commit()
 
