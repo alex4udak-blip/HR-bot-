@@ -555,6 +555,16 @@ class TelegramHTMLParser(HTMLParser):
                         self.current_message['media_type'] = 'video'
                     elif 'sticker' in classes:
                         self.current_message['media_type'] = 'sticker'
+                    elif 'document' in classes:
+                        self.current_message['media_type'] = 'document'
+                    elif 'audio_file' in classes:
+                        self.current_message['media_type'] = 'voice'
+
+                # Check for document wrapper (separate from media_wrap)
+                elif 'document_wrap' in classes or 'document' in classes:
+                    self.in_media = True
+                    self.current_message['has_media'] = True
+                    self.current_message['media_type'] = 'document'
 
                 # Check for date (datetime in title attribute)
                 elif 'date' in classes:
@@ -591,7 +601,7 @@ class TelegramHTMLParser(HTMLParser):
                                 self.current_message['media_type'] = 'sticker'
                             elif 'voice_messages/' in href or href.endswith('.ogg'):
                                 self.current_message['media_type'] = 'voice'
-                            elif 'files/' in href:
+                            elif 'files/' in href or href.endswith(('.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.zip', '.rar', '.7z', '.csv', '.json')):
                                 self.current_message['media_type'] = 'document'
                             elif href.endswith('.webp'):
                                 # .webp can be sticker or photo
@@ -631,10 +641,19 @@ class TelegramHTMLParser(HTMLParser):
                     elif 'round' in src.lower():
                         self.current_message['media_type'] = 'video_note'
 
-        # Handle links and other inline elements in text
-        elif tag == 'a' and self.in_text:
-            # Links are part of text, continue collecting
-            pass
+        # Handle links in text - might be document links
+        elif tag == 'a' and self.in_text and self.current_message:
+            href = attrs_dict.get('href', '')
+            # Check if it's a file link (not external)
+            if href and not href.startswith('#') and not href.startswith('http'):
+                # Check if it's a document/file by extension
+                doc_extensions = ('.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+                                  '.txt', '.zip', '.rar', '.7z', '.csv', '.json')
+                if href.endswith(doc_extensions) or 'files/' in href:
+                    if not self.current_message.get('media_file'):
+                        self.current_message['media_file'] = href
+                        self.current_message['media_type'] = 'document'
+                        self.current_message['has_media'] = True
 
         elif tag == 'br' and self.in_text:
             self.text_buffer += '\n'
@@ -741,15 +760,17 @@ def parse_html_export(html_content: str) -> List[dict]:
             if not media_type:
                 # Try to detect type from file path
                 if media_file:
-                    if 'photo' in media_file or media_file.endswith(('.jpg', '.jpeg', '.png')):
+                    if 'photo' in media_file or media_file.endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp')):
                         media_type = 'photo'
                     elif 'sticker' in media_file:
                         media_type = 'sticker'
-                    elif 'video' in media_file or media_file.endswith(('.mp4', '.webm')):
+                    elif 'round' in media_file or 'video_note' in media_file:
+                        media_type = 'video_note'
+                    elif 'video' in media_file or media_file.endswith(('.mp4', '.webm', '.mov')):
                         media_type = 'video'
-                    elif 'voice' in media_file or media_file.endswith('.ogg'):
+                    elif 'voice' in media_file or media_file.endswith(('.ogg', '.opus')):
                         media_type = 'voice'
-                    elif 'files/' in media_file:
+                    elif 'files/' in media_file or media_file.endswith(('.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.zip', '.rar', '.7z', '.csv', '.json')):
                         media_type = 'document'
 
             if not text:
