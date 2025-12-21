@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   SendHorizontal,
   Trash2,
@@ -110,6 +110,15 @@ const QUICK_ACTIONS_BY_TYPE: Record<ChatTypeId, { id: string; label: string; ico
   ],
 };
 
+// Local message type with unique ID for stable React keys
+interface LocalMessage extends AIMessage {
+  id: string;
+}
+
+// Generate unique ID for messages
+let messageIdCounter = 0;
+const generateMessageId = () => `msg-${Date.now()}-${++messageIdCounter}`;
+
 export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelProps) {
   const [message, setMessage] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -118,7 +127,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
   const quickActions = QUICK_ACTIONS_BY_TYPE[chatType] || QUICK_ACTIONS_BY_TYPE.custom;
   const [streamingContent, setStreamingContent] = useState('');
   const streamingContentRef = useRef('');
-  const [localMessages, setLocalMessages] = useState<AIMessage[]>([]);
+  const [localMessages, setLocalMessages] = useState<LocalMessage[]>([]);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   // Flag to prevent overwriting local messages right after streaming
@@ -145,11 +154,19 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
     }
   }, [chatId]);
 
+  // Convert server messages to local format with stable IDs
+  const convertToLocalMessages = useCallback((messages: AIMessage[]): LocalMessage[] => {
+    return messages.map((msg, idx) => ({
+      ...msg,
+      // Use timestamp + index as stable ID for server messages
+      id: `server-${msg.timestamp}-${idx}`,
+    }));
+  }, []);
+
   // Sync messages from server
   useEffect(() => {
     const serverMessages = conversation?.messages;
     if (serverMessages && !justAddedMessageRef.current && !isStreaming) {
-      // Only update if server has more or equal messages
       setLocalMessages(prev => {
         // If we have more messages locally (streaming added them), keep local
         if (prev.length > serverMessages.length) {
@@ -164,10 +181,10 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
             return prev;
           }
         }
-        return serverMessages;
+        return convertToLocalMessages(serverMessages);
       });
     }
-  }, [conversation?.messages, isStreaming]);
+  }, [conversation?.messages, isStreaming, convertToLocalMessages]);
 
   // Scroll to bottom when messages change
   const scrollToBottom = () => {
@@ -195,38 +212,46 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
   const handleSend = async () => {
     if (!message.trim() || isStreaming) return;
 
-    const userMessage: AIMessage = {
+    const userMessage: LocalMessage = {
+      id: generateMessageId(),
       role: 'user',
       content: message,
       timestamp: new Date().toISOString(),
     };
 
+    const currentMessage = message;
     setLocalMessages((prev) => [...prev, userMessage]);
     setMessage('');
     setIsStreaming(true);
     setStreamingContent('');
     streamingContentRef.current = '';
 
+    // Pre-generate assistant message ID for stable transition
+    const assistantMessageId = generateMessageId();
+
     try {
       await streamAIMessage(
         chatId,
-        message,
+        currentMessage,
         (chunk) => {
           streamingContentRef.current += chunk;
           setStreamingContent(streamingContentRef.current);
         },
         () => {
+          const finalContent = streamingContentRef.current;
+          // Atomic update: clear streaming and add message in one batch
+          setIsStreaming(false);
+          setStreamingContent('');
+          streamingContentRef.current = '';
           setLocalMessages((prev) => [
             ...prev,
             {
+              id: assistantMessageId,
               role: 'assistant',
-              content: streamingContentRef.current,
+              content: finalContent,
               timestamp: new Date().toISOString(),
             },
           ]);
-          setStreamingContent('');
-          streamingContentRef.current = '';
-          setIsStreaming(false);
           // Set flag before invalidating to prevent race condition
           justAddedMessageRef.current = true;
           // Delay invalidation to let server save the message
@@ -240,6 +265,8 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
       console.error('AI message error:', error);
       toast.error('Ошибка отправки');
       setIsStreaming(false);
+      setStreamingContent('');
+      streamingContentRef.current = '';
     }
   };
 
@@ -250,7 +277,8 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
     const actionInfo = quickActions.find(a => a.id === action);
     const actionLabel = actionInfo?.label || action;
 
-    const userMessage: AIMessage = {
+    const userMessage: LocalMessage = {
+      id: generateMessageId(),
       role: 'user',
       content: `🔍 ${actionLabel}`,
       timestamp: new Date().toISOString(),
@@ -261,6 +289,9 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
     setStreamingContent('');
     streamingContentRef.current = '';
 
+    // Pre-generate assistant message ID for stable transition
+    const assistantMessageId = generateMessageId();
+
     try {
       await streamQuickAction(
         chatId,
@@ -270,17 +301,20 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
           setStreamingContent(streamingContentRef.current);
         },
         () => {
+          const finalContent = streamingContentRef.current;
+          // Atomic update: clear streaming and add message in one batch
+          setIsStreaming(false);
+          setStreamingContent('');
+          streamingContentRef.current = '';
           setLocalMessages((prev) => [
             ...prev,
             {
+              id: assistantMessageId,
               role: 'assistant',
-              content: streamingContentRef.current,
+              content: finalContent,
               timestamp: new Date().toISOString(),
             },
           ]);
-          setStreamingContent('');
-          streamingContentRef.current = '';
-          setIsStreaming(false);
           // Set flag before invalidating to prevent race condition
           justAddedMessageRef.current = true;
           // Delay invalidation to let server save the message
@@ -294,6 +328,8 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
       console.error('Quick action error:', error);
       toast.error(error instanceof Error ? error.message : 'Ошибка выполнения');
       setIsStreaming(false);
+      setStreamingContent('');
+      streamingContentRef.current = '';
     }
   };
 
@@ -359,30 +395,28 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
           </div>
         )}
 
-        <AnimatePresence initial={false}>
-          {localMessages.map((msg, index) => (
-            <motion.div
-              key={`msg-${index}-${msg.role}`}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.15 }}
-              className={clsx(
-                'rounded-xl p-3',
-                msg.role === 'user'
-                  ? 'bg-accent-500/20 ml-8'
-                  : 'glass-light mr-8'
-              )}
-            >
-              {msg.role === 'assistant' ? (
-                <div className="prose prose-sm max-w-none prose-invert prose-headings:text-dark-100 prose-p:text-dark-200 prose-strong:text-dark-100 prose-li:text-dark-200">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
-                </div>
-              ) : (
-                <p className="text-sm">{msg.content}</p>
-              )}
-            </motion.div>
-          ))}
-        </AnimatePresence>
+        {localMessages.map((msg) => (
+          <motion.div
+            key={msg.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.15 }}
+            className={clsx(
+              'rounded-xl p-3',
+              msg.role === 'user'
+                ? 'bg-accent-500/20 ml-8'
+                : 'glass-light mr-8'
+            )}
+          >
+            {msg.role === 'assistant' ? (
+              <div className="prose prose-sm max-w-none prose-invert prose-headings:text-dark-100 prose-p:text-dark-200 prose-strong:text-dark-100 prose-li:text-dark-200">
+                <ReactMarkdown>{msg.content}</ReactMarkdown>
+              </div>
+            ) : (
+              <p className="text-sm">{msg.content}</p>
+            )}
+          </motion.div>
+        ))}
 
         {/* Streaming message */}
         {isStreaming && streamingContent && (
