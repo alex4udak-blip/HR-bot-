@@ -373,6 +373,10 @@ def parse_telegram_date(date_str: str) -> datetime:
     if not date_str:
         return datetime.now()
 
+    # Strip timezone suffix like " UTC+03:00"
+    if ' UTC' in date_str:
+        date_str = date_str.split(' UTC')[0]
+
     # Try ISO format first: 2024-12-10T14:30:00
     try:
         return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
@@ -597,9 +601,14 @@ def parse_html_export(html_content: str) -> List[dict]:
         if not msg.get('from'):
             continue
 
-        # Parse date (format: "DD.MM.YYYY HH:MM:SS")
+        # Parse date (format: "DD.MM.YYYY HH:MM:SS" or "DD.MM.YYYY HH:MM:SS UTC+03:00")
         date_str = msg.get('date', '')
-        logger.info(f"HTML Parser - raw date string: '{date_str}'")
+
+        # Strip timezone suffix like " UTC+03:00"
+        if ' UTC' in date_str:
+            date_str = date_str.split(' UTC')[0]
+
+        logger.info(f"HTML Parser - cleaned date string: '{date_str}'")
 
         try:
             if '.' in date_str and len(date_str.split('.')[0]) <= 2:
