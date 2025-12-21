@@ -1032,12 +1032,23 @@ async def import_telegram_history(
 
                         # Try to find the file in ZIP (might have different path prefix)
                         file_found = False
+
+                        # For video_note, if we have a thumb file, find the actual video
+                        search_file = media_file
+                        if content_type == 'video_note' and '_thumb.jpg' in media_file:
+                            # Strip _thumb.jpg to get actual video filename
+                            search_file = media_file.replace('_thumb.jpg', '')
+                            logger.info(f"Video note: looking for {search_file} instead of thumb {media_file}")
+
                         for zip_path in zip_file.namelist():
-                            if zip_path.endswith(media_file) or media_file in zip_path:
+                            if zip_path.endswith(search_file) or search_file in zip_path:
+                                # Make sure it's the actual file, not another thumb
+                                if '_thumb' in zip_path and '_thumb' not in search_file:
+                                    continue
                                 # Extract and save the file
                                 file_data = zip_file.read(zip_path)
                                 # Create a unique filename
-                                safe_name = os.path.basename(media_file)
+                                safe_name = os.path.basename(search_file)
                                 if telegram_msg_id:
                                     safe_name = f"{telegram_msg_id}_{safe_name}"
                                 dest_path = chat_uploads_dir / safe_name
