@@ -288,12 +288,30 @@ export interface ImportResult {
   total_errors: number;
 }
 
-export const importTelegramHistory = async (chatId: number, file: File, autoProcess: boolean = false): Promise<ImportResult> => {
+// Generate UUID for import tracking
+const generateImportId = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
+export const importTelegramHistory = async (
+  chatId: number,
+  file: File,
+  autoProcess: boolean = false,
+  importId?: string
+): Promise<ImportResult> => {
   const token = localStorage.getItem('token');
   const formData = new FormData();
   formData.append('file', file);
 
-  const url = `/api/chats/${chatId}/import?auto_process=${autoProcess}`;
+  let url = `/api/chats/${chatId}/import?auto_process=${autoProcess}`;
+  if (importId) {
+    url += `&import_id=${importId}`;
+  }
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -309,6 +327,30 @@ export const importTelegramHistory = async (chatId: number, file: File, autoProc
 
   return response.json();
 };
+
+// Import progress tracking
+export interface ImportProgress {
+  status: 'starting' | 'processing' | 'completed' | 'error' | 'not_found';
+  phase?: 'reading_file' | 'importing' | 'processing_media' | 'done';
+  current: number;
+  total: number;
+  imported: number;
+  skipped: number;
+  current_file?: string | null;
+  error?: string;
+}
+
+export const getImportProgress = async (chatId: number, importId: string): Promise<ImportProgress> => {
+  const token = localStorage.getItem('token');
+  const response = await fetch(`/api/chats/${chatId}/import/progress/${importId}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+  return response.json();
+};
+
+export { generateImportId };
 
 // Cleanup badly imported messages
 export interface CleanupResult {

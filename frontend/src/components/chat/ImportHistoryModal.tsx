@@ -1,8 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Upload, FileJson, FileArchive, FileCode, CheckCircle, AlertCircle, Loader2, Apple, Monitor, Trash2 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { importTelegramHistory, cleanupBadImport, ImportResult, CleanupResult, CleanupMode } from '@/services/api';
+import { importTelegramHistory, cleanupBadImport, ImportResult, CleanupResult, CleanupMode, ImportProgress, getImportProgress, generateImportId } from '@/services/api';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -20,12 +20,50 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
   const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
   const [platform, setPlatform] = useState<'mac' | 'windows'>('mac');
   const [autoProcess, setAutoProcess] = useState(false);
+  const [progress, setProgress] = useState<ImportProgress | null>(null);
+  const [importId, setImportId] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const queryClient = useQueryClient();
 
+  // Poll for progress during import
+  useEffect(() => {
+    if (importId && isImporting) {
+      progressInterval.current = setInterval(async () => {
+        try {
+          const p = await getImportProgress(chatId, importId);
+          setProgress(p);
+          if (p.status === 'completed' || p.status === 'error') {
+            if (progressInterval.current) {
+              clearInterval(progressInterval.current);
+            }
+          }
+        } catch {
+          // Ignore errors during polling
+        }
+      }, 500);
+
+      return () => {
+        if (progressInterval.current) {
+          clearInterval(progressInterval.current);
+        }
+      };
+    }
+  }, [importId, isImporting, chatId]);
+
   const importMutation = useMutation({
-    mutationFn: (file: File) => importTelegramHistory(chatId, file, autoProcess),
+    mutationFn: (file: File) => {
+      const newImportId = generateImportId();
+      setImportId(newImportId);
+      setProgress(null);
+      setIsImporting(true);
+      return importTelegramHistory(chatId, file, autoProcess, newImportId);
+    },
     onSuccess: (data) => {
       setResult(data);
+      setProgress(null);
+      setImportId(null);
+      setIsImporting(false);
       if (data.imported > 0) {
         queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
         queryClient.invalidateQueries({ queryKey: ['chats'] });
@@ -33,6 +71,9 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
       }
     },
     onError: (error: Error) => {
+      setProgress(null);
+      setImportId(null);
+      setIsImporting(false);
       toast.error(error.message);
     },
   });
@@ -96,6 +137,12 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
     setFile(null);
     setResult(null);
     setCleanupResult(null);
+    setProgress(null);
+    setImportId(null);
+    setIsImporting(false);
+    if (progressInterval.current) {
+      clearInterval(progressInterval.current);
+    }
     onClose();
   };
 
@@ -376,28 +423,55 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                     <Loader2 className="w-6 h-6 text-accent-400 animate-spin" />
                     <div className="absolute inset-0 w-6 h-6 rounded-full border-2 border-accent-400/20" />
                   </div>
-                  <div>
-                    <p className="font-medium text-accent-300">Импорт в процессе...</p>
-                    <p className="text-xs text-dark-400">Не закрывайте окно</p>
+                  <div className="flex-1">
+                    <p className="font-medium text-accent-300">
+                      {progress?.phase === 'reading_file' && 'Чтение файла...'}
+                      {progress?.phase === 'importing' && 'Импорт сообщений...'}
+                      {progress?.phase === 'processing_media' && 'Обработка медиа...'}
+                      {!progress?.phase && 'Импорт в процессе...'}
+                    </p>
+                    <p className="text-xs text-dark-400">
+                      {progress?.total ? (
+                        <>
+                          {progress.current} / {progress.total} сообщений
+                          {progress.imported > 0 && ` • ${progress.imported} импортировано`}
+                          {progress.skipped > 0 && ` • ${progress.skipped} пропущено`}
+                        </>
+                      ) : (
+                        'Не закрывайте окно'
+                      )}
+                    </p>
                   </div>
                 </div>
 
-                {/* Progress bar animation */}
-                <div className="h-1.5 bg-dark-700 rounded-full overflow-hidden">
-                  <motion.div
-                    className="h-full bg-gradient-to-r from-accent-500 to-accent-400"
-                    initial={{ x: '-100%' }}
-                    animate={{ x: '100%' }}
-                    transition={{
-                      repeat: Infinity,
-                      duration: 1.5,
-                      ease: 'linear'
-                    }}
-                    style={{ width: '50%' }}
-                  />
+                {/* Progress bar - real progress when available */}
+                <div className="h-2 bg-dark-700 rounded-full overflow-hidden">
+                  {progress?.total ? (
+                    <motion.div
+                      className="h-full bg-gradient-to-r from-accent-500 to-accent-400"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.round((progress.current / progress.total) * 100)}%` }}
+                      transition={{ duration: 0.3 }}
+                    />
+                  ) : (
+                    <motion.div
+                      className="h-full bg-gradient-to-r from-accent-500 to-accent-400"
+                      initial={{ x: '-100%' }}
+                      animate={{ x: '100%' }}
+                      transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
+                      style={{ width: '50%' }}
+                    />
+                  )}
                 </div>
 
-                {autoProcess && (
+                {/* Current file being processed */}
+                {progress?.current_file && (
+                  <p className="text-xs text-dark-500 mt-2 truncate">
+                    📁 {progress.current_file}
+                  </p>
+                )}
+
+                {autoProcess && !progress?.current_file && (
                   <p className="text-xs text-dark-400 mt-2">
                     Авто-обработка включена: транскрипция и парсинг файлов...
                   </p>
