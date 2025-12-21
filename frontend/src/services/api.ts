@@ -274,4 +274,34 @@ export const downloadReport = async (chatId: number, reportType: string, format:
   return response.blob();
 };
 
+// Import Telegram history
+export interface ImportResult {
+  success: boolean;
+  imported: number;
+  skipped: number;
+  errors: string[];
+  total_errors: number;
+}
+
+export const importTelegramHistory = async (chatId: number, file: File): Promise<ImportResult> => {
+  const token = localStorage.getItem('token');
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`/api/chats/${chatId}/import`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Ошибка импорта' }));
+    throw new Error(error.detail || 'Ошибка импорта');
+  }
+
+  return response.json();
+};
+
 export default api;
