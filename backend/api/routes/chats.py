@@ -1278,6 +1278,9 @@ async def repair_video_notes(
     Finds all video_note messages in the chat and re-extracts
     the actual video files from the ZIP (not thumbnails).
     """
+    import logging
+    logger = logging.getLogger("hr-analyzer")
+
     user = await db.merge(user)
 
     result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.deleted_at.is_(None)))
