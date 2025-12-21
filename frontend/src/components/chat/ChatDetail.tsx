@@ -30,12 +30,14 @@ import {
   Headphones,
   MoreHorizontal,
   Trash2,
-  Loader2
+  Loader2,
+  Upload
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { Chat, Message, ChatTypeId } from '@/types';
 import { getMessages, getParticipants, updateChat, deleteChat, downloadReport } from '@/services/api';
 import CriteriaPanel from './CriteriaPanel';
+import ImportHistoryModal from './ImportHistoryModal';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -190,6 +192,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
   const [editName, setEditName] = useState(chat.custom_name || chat.title);
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [downloadingReport, setDownloadingReport] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -378,6 +381,15 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
               </div>
             )}
           </div>
+
+          {/* Import History Button */}
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="p-1.5 rounded-lg text-dark-400 hover:text-accent-400 hover:bg-accent-500/10 transition-colors"
+            title="Загрузить историю"
+          >
+            <Upload className="w-4 h-4" />
+          </button>
 
           {/* Delete Button */}
           <button
@@ -672,6 +684,14 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
           </div>
         </Tabs.Content>
       </Tabs.Root>
+
+      {/* Import History Modal */}
+      <ImportHistoryModal
+        chatId={chat.id}
+        chatTitle={chat.custom_name || chat.title}
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+      />
     </div>
   );
 }
