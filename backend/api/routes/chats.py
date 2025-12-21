@@ -1025,6 +1025,7 @@ async def import_telegram_history(
                 continue
 
             # Parse telegram user ID from string like "user123456"
+            # For HTML imports without user IDs, generate consistent ID from name
             telegram_user_id = 0
             if isinstance(from_id, str) and from_id.startswith('user'):
                 try:
@@ -1033,6 +1034,12 @@ async def import_telegram_history(
                     pass
             elif isinstance(from_id, int):
                 telegram_user_id = from_id
+
+            # If no user ID, generate one from the sender name (for HTML imports)
+            if telegram_user_id == 0 and from_name:
+                # Generate consistent ID from name hash (negative to avoid collision with real IDs)
+                name_hash = hashlib.md5(from_name.encode()).hexdigest()[:8]
+                telegram_user_id = -abs(int(name_hash, 16) % 1000000000)
 
             # Split name into first/last name
             name_parts = from_name.split(' ', 1) if from_name else ['Unknown']
