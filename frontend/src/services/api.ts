@@ -304,4 +304,28 @@ export const importTelegramHistory = async (chatId: number, file: File): Promise
   return response.json();
 };
 
+// Cleanup badly imported messages
+export interface CleanupResult {
+  success: boolean;
+  deleted: number;
+}
+
+export const cleanupBadImport = async (chatId: number): Promise<CleanupResult> => {
+  const token = localStorage.getItem('token');
+
+  const response = await fetch(`/api/chats/${chatId}/import/cleanup`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Ошибка очистки' }));
+    throw new Error(error.detail || 'Ошибка очистки');
+  }
+
+  return response.json();
+};
+
 export default api;
