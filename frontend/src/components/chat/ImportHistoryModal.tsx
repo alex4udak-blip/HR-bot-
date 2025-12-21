@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Upload, FileJson, FileArchive, FileCode, CheckCircle, AlertCircle, Loader2, Apple, Monitor } from 'lucide-react';
+import { X, Upload, FileJson, FileArchive, FileCode, CheckCircle, AlertCircle, Loader2, Apple, Monitor, Trash2 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { importTelegramHistory, ImportResult } from '@/services/api';
+import { importTelegramHistory, cleanupBadImport, ImportResult, CleanupResult } from '@/services/api';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -17,6 +17,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
   const [platform, setPlatform] = useState<'mac' | 'windows'>('mac');
   const queryClient = useQueryClient();
 
@@ -28,6 +29,23 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
         queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
         queryClient.invalidateQueries({ queryKey: ['chats'] });
         toast.success(`Импортировано ${data.imported} сообщений`);
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const cleanupMutation = useMutation({
+    mutationFn: () => cleanupBadImport(chatId),
+    onSuccess: (data) => {
+      setCleanupResult(data);
+      if (data.deleted > 0) {
+        queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
+        queryClient.invalidateQueries({ queryKey: ['chats'] });
+        toast.success(`Удалено ${data.deleted} плохих сообщений`);
+      } else {
+        toast.success('Плохих сообщений не найдено');
       }
     },
     onError: (error: Error) => {
@@ -76,6 +94,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
   const handleClose = () => {
     setFile(null);
     setResult(null);
+    setCleanupResult(null);
     onClose();
   };
 
@@ -266,6 +285,36 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                 </div>
               </motion.div>
             )}
+
+            {/* Cleanup section */}
+            <div className="mt-4 p-3 rounded-xl bg-red-500/5 border border-red-500/20">
+              <div className="flex items-start gap-3">
+                <Trash2 className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-red-300">Очистить неудачный импорт</p>
+                  <p className="text-xs text-dark-400 mt-1">
+                    Удалит сообщения с отправителем "Unknown" и текстом "[Медиа]"
+                  </p>
+                  {cleanupResult && (
+                    <p className="text-xs text-green-400 mt-2">
+                      Удалено: {cleanupResult.deleted} сообщений
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => cleanupMutation.mutate()}
+                  disabled={cleanupMutation.isPending}
+                  className="px-3 py-1.5 rounded-lg text-sm bg-red-500/20 text-red-300 hover:bg-red-500/30 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                >
+                  {cleanupMutation.isPending ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                  Очистить
+                </button>
+              </div>
+            </div>
 
             {/* Actions */}
             <div className="flex gap-3 mt-6">
