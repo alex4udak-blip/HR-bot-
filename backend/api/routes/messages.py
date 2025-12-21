@@ -1,6 +1,6 @@
 from typing import List
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
@@ -186,6 +186,7 @@ async def get_telegram_file(
 async def get_local_file(
     chat_id: int,
     filename: str,
+    request: Request,
     token: str = Query(None, description="Auth token for img/video tags"),
     user: User = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
@@ -196,6 +197,8 @@ async def get_local_file(
     Supports two auth methods:
     - Authorization header (for fetch requests)
     - Query param ?token=xxx (for img/video tags that can't send headers)
+
+    Supports Range requests for video streaming/seeking.
     """
     # Check auth - either from header or query param
     if not user and token:
@@ -245,11 +248,55 @@ async def get_local_file(
         content_type = "video/mp4"
     elif suffix == '.ogg':
         content_type = "audio/ogg"
+    elif suffix == '.opus':
+        content_type = "audio/opus"
 
+    file_size = file_path.stat().st_size
+
+    # Handle Range requests for video/audio streaming
+    range_header = request.headers.get("range")
+    if range_header and content_type.startswith(("video/", "audio/")):
+        # Parse range header: "bytes=start-end"
+        try:
+            range_spec = range_header.replace("bytes=", "")
+            parts = range_spec.split("-")
+            start = int(parts[0]) if parts[0] else 0
+            end = int(parts[1]) if parts[1] else file_size - 1
+
+            # Ensure valid range
+            if start >= file_size:
+                raise HTTPException(status_code=416, detail="Range not satisfiable")
+            end = min(end, file_size - 1)
+            content_length = end - start + 1
+
+            # Read the requested range
+            with open(file_path, "rb") as f:
+                f.seek(start)
+                data = f.read(content_length)
+
+            return Response(
+                content=data,
+                status_code=206,
+                media_type=content_type,
+                headers={
+                    "Content-Range": f"bytes {start}-{end}/{file_size}",
+                    "Accept-Ranges": "bytes",
+                    "Content-Length": str(content_length),
+                    "Cache-Control": "public, max-age=86400",
+                },
+            )
+        except (ValueError, IndexError):
+            # Invalid range format, fall through to regular response
+            pass
+
+    # Regular response (no range or non-video)
     return FileResponse(
         file_path,
         media_type=content_type,
-        headers={"Cache-Control": "public, max-age=86400"}  # Cache for 24h
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=86400"
+        }
     )
 
 

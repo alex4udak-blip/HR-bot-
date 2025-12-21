@@ -1040,10 +1040,17 @@ async def import_telegram_history(
                             search_file = media_file.replace('_thumb.jpg', '')
                             logger.info(f"Video note: looking for {search_file} instead of thumb {media_file}")
 
+                        # Get just the filename for more flexible matching
+                        search_filename = os.path.basename(search_file)
+
                         for zip_path in zip_file.namelist():
-                            if zip_path.endswith(search_file) or search_file in zip_path:
+                            zip_filename = os.path.basename(zip_path)
+
+                            # Match by filename or full path
+                            if zip_filename == search_filename or zip_path.endswith(search_file) or search_file in zip_path:
                                 # Make sure it's the actual file, not another thumb
                                 if '_thumb' in zip_path and '_thumb' not in search_file:
+                                    logger.debug(f"Skipping thumb file: {zip_path}")
                                     continue
                                 # Extract and save the file
                                 file_data = zip_file.read(zip_path)
@@ -1059,7 +1066,11 @@ async def import_telegram_history(
                                 break
 
                         if not file_found:
-                            logger.warning(f"Media file not found in ZIP: {media_file}")
+                            logger.warning(f"Media file not found in ZIP: {media_file} (searching for: {search_filename})")
+                            # List available files in ZIP for debugging video_note issues
+                            if content_type == 'video_note':
+                                round_videos = [z for z in zip_file.namelist() if 'round_video' in z.lower()]
+                                logger.warning(f"Available round_video files in ZIP: {round_videos[:5]}")
                         elif auto_process and file_data:
                             # Update progress with current file
                             if import_id:
