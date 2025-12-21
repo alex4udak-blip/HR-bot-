@@ -10,6 +10,7 @@ from ..database import get_db
 from ..models.database import User, UserRole, Chat, Message
 from ..models.schemas import MessageResponse, ParticipantResponse
 from ..services.auth import get_current_user, get_current_user_optional, get_user_from_token
+from ..services.transcription import transcription_service
 from ..config import settings
 
 # Uploads directory for imported media
@@ -253,3 +254,76 @@ async def get_local_file(
         media_type=content_type,
         headers={"Cache-Control": "public, max-age=86400"}  # Cache for 24h
     )
+
+
+@router.post("/messages/{message_id}/transcribe")
+async def transcribe_message(
+    message_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Transcribe audio/video from an imported message.
+    Updates the message content with the transcription.
+    """
+    user = await db.merge(user)
+
+    # Get message
+    result = await db.execute(select(Message).where(Message.id == message_id))
+    message = result.scalar_one_or_none()
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    # Verify user has access to the chat
+    result = await db.execute(
+        select(Chat).where(Chat.id == message.chat_id, Chat.deleted_at.is_(None))
+    )
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if not can_access_chat(user, chat):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Check if message has a local file
+    if not message.file_path:
+        raise HTTPException(status_code=400, detail="Message has no media file")
+
+    # Build file path
+    file_path = UPLOADS_DIR.parent / message.file_path
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Media file not found")
+
+    # Read file
+    file_bytes = file_path.read_bytes()
+
+    # Determine if audio or video based on content_type or file extension
+    suffix = file_path.suffix.lower()
+    is_video = message.content_type in ('video', 'video_note') or suffix in ('.mp4', '.webm')
+    is_audio = message.content_type == 'voice' or suffix in ('.ogg', '.mp3', '.wav')
+
+    if not is_video and not is_audio:
+        raise HTTPException(status_code=400, detail="File is not audio or video")
+
+    # Transcribe
+    if is_video:
+        transcription = await transcription_service.transcribe_video(file_bytes)
+    else:
+        transcription = await transcription_service.transcribe_audio(file_bytes)
+
+    # Update message content with transcription (keep original placeholder + add transcription)
+    original_placeholder = message.content if message.content else ""
+    if transcription and not transcription.startswith("["):
+        # Successful transcription - replace placeholder with actual text
+        message.content = transcription
+    else:
+        # Error or unavailable - append to placeholder
+        message.content = f"{original_placeholder}\n{transcription}" if original_placeholder else transcription
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "transcription": transcription,
+        "message_id": message_id
+    }

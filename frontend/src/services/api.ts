@@ -111,6 +111,11 @@ export const getParticipants = async (chatId: number): Promise<Participant[]> =>
   return data;
 };
 
+export const transcribeMessage = async (messageId: number): Promise<{ success: boolean; transcription: string; message_id: number }> => {
+  const { data } = await api.post(`/chats/messages/${messageId}/transcribe`);
+  return data;
+};
+
 // Criteria
 export const getCriteriaPresets = async (): Promise<CriteriaPreset[]> => {
   const { data } = await api.get('/criteria/presets');
