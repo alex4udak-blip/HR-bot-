@@ -412,10 +412,13 @@ async def transcribe_all_media(
         elif msg.content.startswith('[') and (
             'Голосов' in msg.content or
             'Voice' in msg.content or
-            'Видео' in msg.content or
-            'Video' in msg.content or
+            'Видео-кружок' in msg.content or
+            'Video note' in msg.content or
             'transcription failed' in msg.content
         ):
+            # Skip already processed results like [Видео без звука], [Без звука]
+            if 'без звука' in msg.content.lower() or 'no audio' in msg.content.lower():
+                continue
             untranscribed.append(msg)
 
     logger.info(f"Found {len(untranscribed)} messages to transcribe in chat {chat_id}")
