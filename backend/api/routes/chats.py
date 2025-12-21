@@ -542,16 +542,11 @@ class TelegramHTMLParser(HTMLParser):
                 self.from_buffer = ""
                 self.is_joined = False
 
-            # Check for inner div closings
-            elif self.current_message:
-                if self.in_from_name and 'from_name' not in str(self.get_starttag_text() or ''):
-                    # from_name div closed
-                    self.in_from_name = False
-                if self.in_text:
-                    # Don't close text on every div - only when message ends
-                    pass
-
             self.div_depth -= 1
+
+        # Reset from_name flag when its span/div closes
+        elif tag in ('span', 'div') and self.in_from_name:
+            self.in_from_name = False
 
     def handle_data(self, data):
         if self.in_from_name:
