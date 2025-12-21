@@ -326,6 +326,17 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                     >
                       Все из файла
                     </button>
+                    <button
+                      onClick={() => {
+                        if (confirm('⚠️ Удалить ВСЕ сообщения чата? Это нельзя отменить!')) {
+                          cleanupMutation.mutate('clear_all');
+                        }
+                      }}
+                      disabled={cleanupMutation.isPending}
+                      className="px-2.5 py-1 rounded-lg text-xs bg-red-700/40 text-red-100 hover:bg-red-700/60 disabled:opacity-50 transition-colors font-bold border border-red-500/50"
+                    >
+                      🗑️ ОЧИСТИТЬ ВСЁ
+                    </button>
                   </div>
                 </div>
               </div>
