@@ -99,7 +99,7 @@ export const permanentDeleteChat = async (id: number): Promise<void> => {
 };
 
 // Messages
-export const getMessages = async (chatId: number, page = 1, limit = 50, contentType?: string): Promise<Message[]> => {
+export const getMessages = async (chatId: number, page = 1, limit = 1000, contentType?: string): Promise<Message[]> => {
   const params = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (contentType) params.append('content_type', contentType);
   const { data } = await api.get(`/chats/${chatId}/messages?${params}`);

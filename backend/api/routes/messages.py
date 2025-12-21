@@ -26,7 +26,7 @@ async def get_messages(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
     page: int = Query(1, ge=1),
-    limit: int = Query(50, le=200),
+    limit: int = Query(1000, le=2000),
     content_type: str = Query(None),
 ):
     user = await db.merge(user)
