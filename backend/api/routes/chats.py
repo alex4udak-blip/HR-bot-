@@ -774,8 +774,15 @@ async def import_telegram_history(
 
             # Split name into first/last name
             name_parts = from_name.split(' ', 1) if from_name else ['Unknown']
-            first_name = name_parts[0] if name_parts else 'Unknown'
-            last_name = name_parts[1] if len(name_parts) > 1 else None
+            first_name = (name_parts[0] if name_parts else 'Unknown')[:255]  # Truncate to 255
+            last_name = (name_parts[1] if len(name_parts) > 1 else None)
+            if last_name:
+                last_name = last_name[:255]  # Truncate to 255
+
+            # Truncate file_name if too long
+            file_name = msg.get('file_name')
+            if file_name:
+                file_name = file_name[:255]
 
             # Create message
             new_message = Message(
@@ -786,9 +793,9 @@ async def import_telegram_history(
                 first_name=first_name,
                 last_name=last_name,
                 content=content,
-                content_type=content_type,
+                content_type=content_type[:50] if content_type else 'text',  # Truncate to 50
                 file_id=None,  # Files not imported
-                file_name=msg.get('file_name'),
+                file_name=file_name,
                 timestamp=timestamp,
             )
 

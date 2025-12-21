@@ -65,6 +65,15 @@ async def init_database():
                 except Exception:
                     pass  # Column already exists
 
+                # Migrate content column to TEXT if it's VARCHAR
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE messages ALTER COLUMN content TYPE TEXT"
+                    ))
+                    logger.info("Migrated messages.content to TEXT")
+                except Exception:
+                    pass  # Already TEXT or table doesn't exist
+
                 # Create tables if they don't exist (safe, preserves data)
                 await conn.run_sync(Base.metadata.create_all)
 
