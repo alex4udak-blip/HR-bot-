@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Upload, FileJson, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Upload, FileJson, CheckCircle, AlertCircle, Loader2, Apple, Monitor } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { importTelegramHistory, ImportResult } from '@/services/api';
 import toast from 'react-hot-toast';
+import clsx from 'clsx';
 
 interface ImportHistoryModalProps {
   chatId: number;
@@ -16,6 +17,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [platform, setPlatform] = useState<'mac' | 'windows'>('mac');
   const queryClient = useQueryClient();
 
   const importMutation = useMutation({
@@ -110,15 +112,63 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
             </div>
 
             {/* Instructions */}
-            <div className="mb-6 p-4 glass-light rounded-xl text-sm">
-              <p className="font-medium mb-2">Как экспортировать историю:</p>
-              <ol className="list-decimal list-inside space-y-1 text-dark-300">
-                <li>Откройте <strong>Telegram Desktop</strong></li>
-                <li>Откройте нужный чат</li>
-                <li>Нажмите <strong>⋮</strong> → <strong>Export chat history</strong></li>
-                <li>Выберите формат <strong>JSON</strong></li>
-                <li>Загрузите файл <strong>result.json</strong> сюда</li>
-              </ol>
+            <div className="mb-6 glass-light rounded-xl overflow-hidden">
+              {/* Platform tabs */}
+              <div className="flex border-b border-white/5">
+                <button
+                  onClick={() => setPlatform('mac')}
+                  className={clsx(
+                    'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors',
+                    platform === 'mac'
+                      ? 'bg-white/5 text-white'
+                      : 'text-dark-400 hover:text-dark-200'
+                  )}
+                >
+                  <Apple className="w-4 h-4" />
+                  macOS
+                </button>
+                <button
+                  onClick={() => setPlatform('windows')}
+                  className={clsx(
+                    'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors',
+                    platform === 'windows'
+                      ? 'bg-white/5 text-white'
+                      : 'text-dark-400 hover:text-dark-200'
+                  )}
+                >
+                  <Monitor className="w-4 h-4" />
+                  Windows
+                </button>
+              </div>
+
+              {/* Instructions content */}
+              <div className="p-4 text-sm">
+                <p className="font-medium mb-3">Как экспортировать историю:</p>
+                {platform === 'mac' ? (
+                  <ol className="list-decimal list-inside space-y-1.5 text-dark-300">
+                    <li>Откройте <strong>Telegram Desktop</strong></li>
+                    <li>Откройте нужный чат</li>
+                    <li>Нажмите <strong>⋮</strong> (три точки) в правом верхнем углу</li>
+                    <li>Выберите <strong>Export chat history</strong></li>
+                    <li>В настройках выберите формат <strong>JSON</strong></li>
+                    <li>Нажмите <strong>Export</strong> и дождитесь завершения</li>
+                    <li>Загрузите файл <strong>result.json</strong> сюда</li>
+                  </ol>
+                ) : (
+                  <ol className="list-decimal list-inside space-y-1.5 text-dark-300">
+                    <li>Откройте <strong>Telegram Desktop</strong></li>
+                    <li>Откройте нужный чат</li>
+                    <li>Нажмите на <strong>имя чата</strong> вверху (откроется профиль)</li>
+                    <li>Нажмите <strong>⋮</strong> (три точки) → <strong>Export chat history</strong></li>
+                    <li>В настройках выберите формат <strong>JSON</strong></li>
+                    <li>Нажмите <strong>Export</strong> и дождитесь завершения</li>
+                    <li>Загрузите файл <strong>result.json</strong> сюда</li>
+                  </ol>
+                )}
+                <p className="mt-3 text-xs text-dark-500">
+                  Файл обычно сохраняется в папку <code className="px-1 py-0.5 rounded bg-white/5">Telegram Desktop/ChatExport_дата</code>
+                </p>
+              </div>
             </div>
 
             {/* Drop zone */}
