@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Send,
+  SendHorizontal,
   Trash2,
   Sparkles,
   AlertTriangle,
@@ -354,7 +354,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
             <Sparkles className="w-12 h-12 mx-auto text-dark-600 mb-3" />
             <p className="text-dark-400 mb-1">Начните диалог</p>
             <p className="text-dark-500 text-sm">
-              Задавайте вопросы о кандидатах
+              Задавайте вопросы по переписке
             </p>
           </div>
         )}
@@ -413,7 +413,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Спросите о кандидатах..."
+            placeholder="Задайте вопрос..."
             rows={1}
             disabled={isStreaming}
             className="flex-1 glass-light rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent-500/50 disabled:opacity-50"
@@ -421,9 +421,9 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
           <button
             onClick={handleSend}
             disabled={!message.trim() || isStreaming}
-            className="p-3 rounded-xl bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-11 h-11 flex items-center justify-center rounded-xl bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            <Send className="w-5 h-5" />
+            <SendHorizontal className="w-5 h-5" />
           </button>
         </div>
       </div>
