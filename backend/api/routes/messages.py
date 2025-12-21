@@ -8,7 +8,7 @@ import httpx
 from ..database import get_db
 from ..models.database import User, UserRole, Chat, Message
 from ..models.schemas import MessageResponse, ParticipantResponse
-from ..services.auth import get_current_user
+from ..services.auth import get_current_user, get_current_user_optional, get_user_from_token
 from ..config import settings
 
 router = APIRouter()
@@ -112,9 +112,23 @@ async def get_participants(
 @router.get("/file/{file_id}")
 async def get_telegram_file(
     file_id: str,
-    _: User = Depends(get_current_user),
+    token: str = Query(None, description="Auth token for img/video tags"),
+    user: User = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Proxy Telegram file downloads."""
+    """
+    Proxy Telegram file downloads.
+
+    Supports two auth methods:
+    - Authorization header (for fetch requests)
+    - Query param ?token=xxx (for img/video tags that can't send headers)
+    """
+    # Check auth - either from header or query param
+    if not user and token:
+        user = await get_user_from_token(token, db)
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
     if not settings.telegram_bot_token:
         raise HTTPException(status_code=500, detail="Bot token not configured")
 
