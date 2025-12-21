@@ -35,6 +35,12 @@ class Settings(BaseSettings):
         alias="OPENAI_API_KEY"
     )
 
+    # Redis for call recording queue
+    redis_url: str = Field(
+        default="redis://localhost:6379",
+        alias="REDIS_URL"
+    )
+
     # Superadmin credentials - MUST be set in Railway Variables
     superadmin_email: str = Field(
         default="admin@example.com",

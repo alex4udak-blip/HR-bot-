@@ -1,7 +1,9 @@
 import axios from 'axios';
 import type {
   User, Chat, Message, Participant, CriteriaPreset,
-  ChatCriteria, AIConversation, AnalysisResult, Stats, AuthResponse
+  ChatCriteria, AIConversation, AnalysisResult, Stats, AuthResponse,
+  Entity, EntityWithRelations, EntityType, EntityStatus,
+  CallRecording, CallStatus
 } from '@/types';
 
 const api = axios.create({
@@ -431,6 +433,178 @@ export const repairVideoNotes = async (chatId: number, file: File): Promise<Repa
   }
 
   return response.json();
+};
+
+// === ENTITIES ===
+
+export const getEntities = async (params?: {
+  type?: EntityType;
+  status?: EntityStatus;
+  search?: string;
+  tags?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<Entity[]> => {
+  const searchParams = new URLSearchParams();
+  if (params) {
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) searchParams.set(key, String(value));
+    });
+  }
+  const { data } = await api.get(`/entities?${searchParams}`);
+  return data;
+};
+
+export const getEntity = async (id: number): Promise<EntityWithRelations> => {
+  const { data } = await api.get(`/entities/${id}`);
+  return data;
+};
+
+export const createEntity = async (entityData: {
+  type: EntityType;
+  name: string;
+  status?: EntityStatus;
+  phone?: string;
+  email?: string;
+  telegram_user_id?: number;
+  company?: string;
+  position?: string;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+}): Promise<Entity> => {
+  const { data } = await api.post('/entities', entityData);
+  return data;
+};
+
+export const updateEntity = async (id: number, updates: {
+  name?: string;
+  status?: EntityStatus;
+  phone?: string;
+  email?: string;
+  company?: string;
+  position?: string;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+}): Promise<Entity> => {
+  const { data } = await api.put(`/entities/${id}`, updates);
+  return data;
+};
+
+export const deleteEntity = async (id: number): Promise<void> => {
+  await api.delete(`/entities/${id}`);
+};
+
+export const transferEntity = async (entityId: number, data: {
+  to_user_id: number;
+  to_department?: string;
+  comment?: string;
+}): Promise<{ success: boolean; transfer_id: number }> => {
+  const response = await api.post(`/entities/${entityId}/transfer`, data);
+  return response.data;
+};
+
+export const linkChatToEntity = async (entityId: number, chatId: number): Promise<void> => {
+  await api.post(`/entities/${entityId}/link-chat/${chatId}`);
+};
+
+export const unlinkChatFromEntity = async (entityId: number, chatId: number): Promise<void> => {
+  await api.delete(`/entities/${entityId}/unlink-chat/${chatId}`);
+};
+
+export const getEntityStatsByType = async (): Promise<Record<string, number>> => {
+  const { data } = await api.get('/entities/stats/by-type');
+  return data;
+};
+
+export const getEntityStatsByStatus = async (type?: EntityType): Promise<Record<string, number>> => {
+  const params = type ? `?type=${type}` : '';
+  const { data } = await api.get(`/entities/stats/by-status${params}`);
+  return data;
+};
+
+// === CALLS ===
+
+export const getCalls = async (params?: {
+  entity_id?: number;
+  status?: CallStatus;
+  limit?: number;
+  offset?: number;
+}): Promise<CallRecording[]> => {
+  const searchParams = new URLSearchParams();
+  if (params) {
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) searchParams.set(key, String(value));
+    });
+  }
+  const { data } = await api.get(`/calls?${searchParams}`);
+  return data;
+};
+
+export const getCall = async (id: number): Promise<CallRecording> => {
+  const { data } = await api.get(`/calls/${id}`);
+  return data;
+};
+
+export const uploadCallRecording = async (
+  file: File,
+  entityId?: number
+): Promise<{ id: number; status: string }> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (entityId) {
+    formData.append('entity_id', String(entityId));
+  }
+
+  const token = localStorage.getItem('token');
+  const response = await fetch('/api/calls/upload', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Upload error' }));
+    throw new Error(error.detail || 'Upload failed');
+  }
+
+  return response.json();
+};
+
+export const startCallBot = async (data: {
+  source_url: string;
+  bot_name?: string;
+  entity_id?: number;
+}): Promise<{ id: number; status: string }> => {
+  const response = await api.post('/calls/start-bot', data);
+  return response.data;
+};
+
+export const getCallStatus = async (id: number): Promise<{
+  status: CallStatus;
+  duration_seconds?: number;
+  error_message?: string;
+}> => {
+  const { data } = await api.get(`/calls/${id}/status`);
+  return data;
+};
+
+export const stopCallRecording = async (id: number): Promise<void> => {
+  await api.post(`/calls/${id}/stop`);
+};
+
+export const deleteCall = async (id: number): Promise<void> => {
+  await api.delete(`/calls/${id}`);
+};
+
+export const linkCallToEntity = async (callId: number, entityId: number): Promise<void> => {
+  await api.post(`/calls/${callId}/link-entity/${entityId}`);
+};
+
+export const reprocessCall = async (id: number): Promise<{ success: boolean; status: string }> => {
+  const { data } = await api.post(`/calls/${id}/reprocess`);
+  return data;
 };
 
 export default api;
