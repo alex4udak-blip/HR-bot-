@@ -566,27 +566,39 @@ class TelegramHTMLParser(HTMLParser):
         elif self.in_media and self.current_message:
             if tag == 'a':
                 href = attrs_dict.get('href', '')
-                # Prefer full-size files (from <a>) over thumbnails (from <img>)
-                # Skip thumbnail links
-                if href and not href.startswith('#') and not href.startswith('http') and '_thumb' not in href:
-                    self.current_message['media_file'] = href
-                    # Detect type from file path
-                    if 'photos/' in href or href.endswith(('.jpg', '.jpeg', '.png')):
-                        self.current_message['media_type'] = 'photo'
-                    elif 'video_files/' in href or 'round_video' in href:
-                        self.current_message['media_type'] = 'video_note'
-                    elif 'videos/' in href or href.endswith(('.mp4', '.webm')):
-                        self.current_message['media_type'] = 'video'
-                    elif 'stickers/' in href:
-                        self.current_message['media_type'] = 'sticker'
-                    elif 'voice_messages/' in href or href.endswith('.ogg'):
-                        self.current_message['media_type'] = 'voice'
-                    elif href.endswith('.webp'):
-                        # .webp can be sticker or photo, check folder
-                        if 'sticker' in href.lower():
-                            self.current_message['media_type'] = 'sticker'
+                # Skip external links and anchors
+                if href and not href.startswith('#') and not href.startswith('http'):
+                    # For photos, prefer full-size over thumbnail
+                    # For stickers, accept thumbs (they only have thumb versions)
+                    is_thumb = '_thumb' in href
+                    is_sticker = 'sticker' in href.lower()
+
+                    # Accept if: not a thumb, OR is a sticker thumb, OR we don't have a file yet
+                    if not is_thumb or is_sticker or not self.current_message.get('media_file'):
+                        # Don't overwrite full-size with thumb for photos
+                        if is_thumb and self.current_message.get('media_file') and not is_sticker:
+                            pass  # Keep existing full-size file
                         else:
-                            self.current_message['media_type'] = 'photo'
+                            self.current_message['media_file'] = href
+                            # Detect type from file path
+                            if 'photos/' in href or href.endswith(('.jpg', '.jpeg', '.png')):
+                                self.current_message['media_type'] = 'photo'
+                            elif 'video_files/' in href or 'round_video' in href:
+                                self.current_message['media_type'] = 'video_note'
+                            elif 'videos/' in href or href.endswith(('.mp4', '.webm')):
+                                self.current_message['media_type'] = 'video'
+                            elif 'stickers/' in href or is_sticker:
+                                self.current_message['media_type'] = 'sticker'
+                            elif 'voice_messages/' in href or href.endswith('.ogg'):
+                                self.current_message['media_type'] = 'voice'
+                            elif 'files/' in href:
+                                self.current_message['media_type'] = 'document'
+                            elif href.endswith('.webp'):
+                                # .webp can be sticker or photo
+                                if 'sticker' in href.lower():
+                                    self.current_message['media_type'] = 'sticker'
+                                else:
+                                    self.current_message['media_type'] = 'photo'
             elif tag == 'img':
                 src = attrs_dict.get('src', '')
                 # Only use img src if we don't have a file from <a> tag yet
@@ -604,10 +616,20 @@ class TelegramHTMLParser(HTMLParser):
                         self.current_message['media_type'] = 'video_note'
                     else:
                         self.current_message['media_type'] = 'video'
+            elif tag == 'audio':
+                src = attrs_dict.get('src', '')
+                if src and not self.current_message.get('media_file'):
+                    self.current_message['media_file'] = src
+                    self.current_message['media_type'] = 'voice'
             elif tag == 'source':
                 src = attrs_dict.get('src', '')
                 if src and not self.current_message.get('media_file'):
                     self.current_message['media_file'] = src
+                    # Detect type from source src
+                    if 'voice' in src.lower() or src.endswith('.ogg'):
+                        self.current_message['media_type'] = 'voice'
+                    elif 'round' in src.lower():
+                        self.current_message['media_type'] = 'video_note'
 
         # Handle links and other inline elements in text
         elif tag == 'a' and self.in_text:
@@ -727,6 +749,8 @@ def parse_html_export(html_content: str) -> List[dict]:
                         media_type = 'video'
                     elif 'voice' in media_file or media_file.endswith('.ogg'):
                         media_type = 'voice'
+                    elif 'files/' in media_file:
+                        media_type = 'document'
 
             if not text:
                 # Set appropriate placeholder based on media type
@@ -740,6 +764,8 @@ def parse_html_export(html_content: str) -> List[dict]:
                     text = '[Стикер]'
                 elif media_type == 'voice':
                     text = '[Голосовое сообщение]'
+                elif media_type == 'document':
+                    text = '[Файл]'
                 else:
                     text = '[Медиа]'
         elif not text:
@@ -994,8 +1020,14 @@ async def import_telegram_history(
             if last_name:
                 last_name = last_name[:255]  # Truncate to 255
 
-            # Truncate file_name if too long
+            # Get file_name from msg or extract from media_file path
             file_name = msg.get('file_name')
+            if not file_name and file_path:
+                # Extract filename from path like "uploads/3/123_document.pdf"
+                file_name = os.path.basename(file_path)
+                # Remove message ID prefix if present (e.g., "123_document.pdf" -> "document.pdf")
+                if '_' in file_name and file_name.split('_')[0].isdigit():
+                    file_name = '_'.join(file_name.split('_')[1:])
             if file_name:
                 file_name = file_name[:255]
 
