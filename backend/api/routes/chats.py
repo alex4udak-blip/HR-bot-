@@ -2,6 +2,8 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any
 import json
 import hashlib
+import zipfile
+import io
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -435,9 +437,9 @@ async def import_telegram_history(
     user: User = Depends(get_current_user),
 ):
     """
-    Import chat history from Telegram Desktop export (JSON format).
+    Import chat history from Telegram Desktop export (JSON or ZIP format).
 
-    Expected format: result.json from Telegram Desktop export
+    Expected format: result.json or ZIP archive containing result.json
     """
     user = await db.merge(user)
 
@@ -449,14 +451,45 @@ async def import_telegram_history(
     if not can_access_chat(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Read and parse JSON file
+    # Read file content
     try:
         content = await file.read()
-        data = json.loads(content.decode('utf-8'))
+
+        # Check if it's a ZIP file
+        if file.filename and file.filename.lower().endswith('.zip'):
+            try:
+                with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                    # Find result.json in the archive
+                    json_file = None
+                    for name in zf.namelist():
+                        if name.endswith('result.json') or name == 'result.json':
+                            json_file = name
+                            break
+
+                    if not json_file:
+                        # Try to find any .json file
+                        for name in zf.namelist():
+                            if name.endswith('.json'):
+                                json_file = name
+                                break
+
+                    if not json_file:
+                        raise HTTPException(status_code=400, detail="ZIP-архив не содержит JSON файл")
+
+                    json_content = zf.read(json_file)
+                    data = json.loads(json_content.decode('utf-8'))
+            except zipfile.BadZipFile:
+                raise HTTPException(status_code=400, detail="Повреждённый ZIP-архив")
+        else:
+            # Regular JSON file
+            data = json.loads(content.decode('utf-8'))
+
     except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON file: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Неверный формат JSON: {str(e)}")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error reading file: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Ошибка чтения файла: {str(e)}")
 
     # Validate structure
     if 'messages' not in data:
