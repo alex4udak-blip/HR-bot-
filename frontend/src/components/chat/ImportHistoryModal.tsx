@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Upload, FileJson, FileArchive, FileCode, CheckCircle, AlertCircle, Loader2, Apple, Monitor, Trash2 } from 'lucide-react';
+import { X, Upload, FileJson, FileArchive, FileCode, CheckCircle, AlertCircle, Loader2, Apple, Monitor, Trash2, Mic } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { importTelegramHistory, cleanupBadImport, ImportResult, CleanupResult, CleanupMode, ImportProgress, getImportProgress, generateImportId } from '@/services/api';
+import { importTelegramHistory, cleanupBadImport, transcribeAllMedia, ImportResult, CleanupResult, CleanupMode, ImportProgress, getImportProgress, generateImportId, TranscribeAllResult } from '@/services/api';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -88,6 +88,26 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
         toast.success(`Удалено ${data.deleted} сообщений`);
       } else {
         toast.success('Сообщений для удаления не найдено');
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const [transcribeResult, setTranscribeResult] = useState<TranscribeAllResult | null>(null);
+
+  const transcribeMutation = useMutation({
+    mutationFn: () => transcribeAllMedia(chatId),
+    onSuccess: (data) => {
+      setTranscribeResult(data);
+      if (data.transcribed > 0) {
+        queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
+        toast.success(`Транскрибировано ${data.transcribed} из ${data.total_found} сообщений`);
+      } else if (data.total_found === 0) {
+        toast.success('Все медиа уже транскрибированы');
+      } else {
+        toast.error('Не удалось транскрибировать сообщения');
       }
     },
     onError: (error: Error) => {
@@ -333,6 +353,38 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                 </div>
               </motion.div>
             )}
+
+            {/* Transcribe all section */}
+            <div className="mt-4 p-3 rounded-xl bg-accent-500/5 border border-accent-500/20">
+              <div className="flex items-start gap-3">
+                <Mic className="w-5 h-5 text-accent-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-accent-300 mb-2">Транскрипция медиа</p>
+                  {transcribeResult && (
+                    <p className="text-xs text-green-400 mb-2">
+                      Транскрибировано: {transcribeResult.transcribed} / {transcribeResult.total_found}
+                    </p>
+                  )}
+                  <button
+                    onClick={() => transcribeMutation.mutate()}
+                    disabled={transcribeMutation.isPending}
+                    className="px-3 py-1.5 rounded-lg text-xs bg-accent-500/20 text-accent-300 hover:bg-accent-500/30 disabled:opacity-50 transition-colors flex items-center gap-2"
+                  >
+                    {transcribeMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Транскрибирую...
+                      </>
+                    ) : (
+                      <>
+                        <Mic className="w-3 h-3" />
+                        Транскрибировать все голосовые/видео
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
 
             {/* Cleanup section */}
             <div className="mt-4 p-3 rounded-xl bg-red-500/5 border border-red-500/20">

@@ -363,3 +363,122 @@ async def transcribe_message(
         "transcription": transcription,
         "message_id": message_id
     }
+
+
+@router.post("/{chat_id}/transcribe-all")
+async def transcribe_all_media(
+    chat_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Transcribe all untranscribed voice/video messages in a chat.
+    Returns count of successfully transcribed messages.
+    """
+    import logging
+    logger = logging.getLogger("hr-analyzer")
+
+    user = await db.merge(user)
+
+    # Verify user has access to the chat
+    result = await db.execute(
+        select(Chat).where(Chat.id == chat_id, Chat.deleted_at.is_(None))
+    )
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if not can_access_chat(user, chat):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Find all messages that need transcription
+    # - content_type is voice, video_note, or video
+    # - has file_path or file_id
+    # - content starts with placeholder (not yet transcribed)
+    result = await db.execute(
+        select(Message)
+        .where(
+            Message.chat_id == chat_id,
+            Message.content_type.in_(['voice', 'video_note', 'video']),
+            or_(Message.file_path.isnot(None), Message.file_id.isnot(None))
+        )
+    )
+    messages = result.scalars().all()
+
+    # Filter to only untranscribed messages
+    untranscribed = []
+    for msg in messages:
+        if not msg.content:
+            untranscribed.append(msg)
+        elif msg.content.startswith('[') and (
+            'Голосов' in msg.content or
+            'Voice' in msg.content or
+            'Видео' in msg.content or
+            'Video' in msg.content or
+            'transcription failed' in msg.content
+        ):
+            untranscribed.append(msg)
+
+    logger.info(f"Found {len(untranscribed)} messages to transcribe in chat {chat_id}")
+
+    transcribed_count = 0
+    errors = []
+
+    for msg in untranscribed:
+        try:
+            # Get file bytes
+            file_bytes = None
+            filename = None
+
+            if msg.file_path:
+                file_path = UPLOADS_DIR.parent / msg.file_path
+                if file_path.exists():
+                    file_bytes = file_path.read_bytes()
+                    filename = msg.file_path
+            elif msg.file_id:
+                # Download from Telegram
+                import httpx
+                from api.config import settings
+
+                if settings.telegram_bot_token:
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(
+                            f"https://api.telegram.org/bot{settings.telegram_bot_token}/getFile",
+                            params={"file_id": msg.file_id}
+                        )
+                        data = response.json()
+                        if data.get("ok"):
+                            tg_file_path = data["result"]["file_path"]
+                            filename = tg_file_path
+                            file_url = f"https://api.telegram.org/file/bot{settings.telegram_bot_token}/{tg_file_path}"
+                            file_response = await client.get(file_url)
+                            if file_response.status_code == 200:
+                                file_bytes = file_response.content
+
+            if not file_bytes:
+                continue
+
+            # Transcribe
+            is_video = msg.content_type in ('video', 'video_note')
+            if is_video:
+                transcription = await transcription_service.transcribe_video(file_bytes, filename)
+            else:
+                transcription = await transcription_service.transcribe_audio(file_bytes)
+
+            # Update message if successful
+            if transcription and not transcription.startswith("["):
+                msg.content = transcription
+                transcribed_count += 1
+                logger.info(f"Transcribed message {msg.id}: {transcription[:50]}...")
+
+        except Exception as e:
+            logger.error(f"Error transcribing message {msg.id}: {e}")
+            errors.append(str(e))
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "transcribed": transcribed_count,
+        "total_found": len(untranscribed),
+        "errors": len(errors)
+    }

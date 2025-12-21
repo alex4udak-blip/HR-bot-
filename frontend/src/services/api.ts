@@ -379,4 +379,30 @@ export const cleanupBadImport = async (chatId: number, mode: CleanupMode = 'bad'
   return response.json();
 };
 
+// Bulk transcribe all untranscribed media
+export interface TranscribeAllResult {
+  success: boolean;
+  transcribed: number;
+  total_found: number;
+  errors: number;
+}
+
+export const transcribeAllMedia = async (chatId: number): Promise<TranscribeAllResult> => {
+  const token = localStorage.getItem('token');
+
+  const response = await fetch(`/api/chats/${chatId}/transcribe-all`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Ошибка транскрипции' }));
+    throw new Error(error.detail || 'Ошибка транскрипции');
+  }
+
+  return response.json();
+};
+
 export default api;
