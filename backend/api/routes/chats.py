@@ -26,6 +26,7 @@ from ..services.chat_types import (
     get_all_chat_types, get_chat_type_config, get_quick_actions,
     get_suggested_questions, get_default_criteria
 )
+from ..services.transcription import transcription_service
 
 router = APIRouter()
 
@@ -942,6 +943,24 @@ async def import_telegram_history(
 
                         if not file_found:
                             logger.warning(f"Media file not found in ZIP: {media_file}")
+                        else:
+                            # Auto-transcribe voice and video files
+                            if content_type in ('voice', 'video_note', 'video') and file_data:
+                                try:
+                                    logger.info(f"Auto-transcribing {content_type}: {file_path}")
+                                    if content_type == 'voice':
+                                        transcription = await transcription_service.transcribe_audio(file_data)
+                                    else:
+                                        transcription = await transcription_service.transcribe_video(file_data)
+
+                                    # Only use transcription if successful (not an error message)
+                                    if transcription and not transcription.startswith("["):
+                                        content = transcription
+                                        logger.info(f"Transcription success: {transcription[:50]}...")
+                                    else:
+                                        logger.warning(f"Transcription returned: {transcription}")
+                                except Exception as e:
+                                    logger.error(f"Auto-transcription error: {e}")
                     except Exception as e:
                         logger.error(f"Error extracting media {media_file}: {e}")
             else:
