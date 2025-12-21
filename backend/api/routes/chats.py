@@ -620,9 +620,10 @@ class TelegramHTMLParser(HTMLParser):
                 if self.text_buffer.strip():
                     self.current_message['text'] = self.text_buffer.strip()
 
-                # Only save if we have sender (from current or previous)
-                if self.current_message.get('from'):
-                    self.messages.append(self.current_message)
+                # Save message (use last sender or "Unknown" if no sender)
+                if not self.current_message.get('from'):
+                    self.current_message['from'] = self.last_sender or 'Unknown'
+                self.messages.append(self.current_message)
 
                 # Reset state
                 self.current_message = None
@@ -694,22 +695,36 @@ def parse_html_export(html_content: str) -> List[dict]:
         media_file = msg.get('media_file')
         media_type = msg.get('media_type')
 
-        if not text and msg.get('has_media'):
-            # Set appropriate placeholder based on media type
-            if media_type == 'photo':
-                text = '[Фото]'
-            elif media_type == 'video_note':
-                text = '[Видео-кружок]'
-            elif media_type == 'video':
-                text = '[Видео]'
-            elif media_type == 'sticker':
-                text = '[Стикер]'
-            elif media_type == 'voice':
-                text = '[Голосовое сообщение]'
-            else:
-                text = '[Медиа]'
+        # Handle messages with media
+        if msg.get('has_media') or media_file:
+            if not media_type:
+                # Try to detect type from file path
+                if media_file:
+                    if 'photo' in media_file or media_file.endswith(('.jpg', '.jpeg', '.png')):
+                        media_type = 'photo'
+                    elif 'sticker' in media_file:
+                        media_type = 'sticker'
+                    elif 'video' in media_file or media_file.endswith(('.mp4', '.webm')):
+                        media_type = 'video'
+                    elif 'voice' in media_file or media_file.endswith('.ogg'):
+                        media_type = 'voice'
+
+            if not text:
+                # Set appropriate placeholder based on media type
+                if media_type == 'photo':
+                    text = '[Фото]'
+                elif media_type == 'video_note':
+                    text = '[Видео-кружок]'
+                elif media_type == 'video':
+                    text = '[Видео]'
+                elif media_type == 'sticker':
+                    text = '[Стикер]'
+                elif media_type == 'voice':
+                    text = '[Голосовое сообщение]'
+                else:
+                    text = '[Медиа]'
         elif not text:
-            continue  # Skip empty messages
+            continue  # Skip empty messages without media
 
         messages.append({
             'id': msg.get('id'),
