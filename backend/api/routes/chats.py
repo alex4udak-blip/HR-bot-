@@ -588,6 +588,9 @@ def parse_html_export(html_content: str) -> List[dict]:
         print(f"HTML parse error: {e}")
         return []
 
+    import logging
+    logger = logging.getLogger("hr-analyzer")
+
     messages = []
     for msg in parser.messages:
         # Skip if no sender
@@ -596,17 +599,23 @@ def parse_html_export(html_content: str) -> List[dict]:
 
         # Parse date (format: "DD.MM.YYYY HH:MM:SS")
         date_str = msg.get('date', '')
+        logger.info(f"HTML Parser - raw date string: '{date_str}'")
+
         try:
             if '.' in date_str and len(date_str.split('.')[0]) <= 2:
                 # Russian format: DD.MM.YYYY HH:MM:SS
                 parsed_date = datetime.strptime(date_str, '%d.%m.%Y %H:%M:%S')
+                logger.info(f"HTML Parser - parsed as DD.MM.YYYY: {parsed_date}")
             elif 'T' in date_str:
                 # ISO format
                 parsed_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                logger.info(f"HTML Parser - parsed as ISO: {parsed_date}")
             else:
                 parsed_date = datetime.now()
-        except (ValueError, AttributeError):
+                logger.warning(f"HTML Parser - using datetime.now() for unknown format: '{date_str}'")
+        except (ValueError, AttributeError) as e:
             parsed_date = datetime.now()
+            logger.error(f"HTML Parser - date parse error for '{date_str}': {e}")
 
         # Determine text content
         text = msg.get('text', '').strip()
