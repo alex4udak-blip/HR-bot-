@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Upload, FileJson, FileArchive, CheckCircle, AlertCircle, Loader2, Apple, Monitor } from 'lucide-react';
+import { X, Upload, FileJson, FileArchive, FileCode, CheckCircle, AlertCircle, Loader2, Apple, Monitor } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { importTelegramHistory, ImportResult } from '@/services/api';
 import toast from 'react-hot-toast';
@@ -49,11 +49,13 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
     e.preventDefault();
     setIsDragging(false);
     const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && (droppedFile.name.endsWith('.json') || droppedFile.name.endsWith('.zip'))) {
+    const validExtensions = ['.json', '.zip', '.html', '.htm'];
+    const isValid = validExtensions.some(ext => droppedFile?.name.toLowerCase().endsWith(ext));
+    if (droppedFile && isValid) {
       setFile(droppedFile);
       setResult(null);
     } else {
-      toast.error('Пожалуйста, загрузите JSON или ZIP файл');
+      toast.error('Пожалуйста, загрузите JSON, HTML или ZIP файл');
     }
   }, []);
 
@@ -150,8 +152,8 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                     <li>Откройте нужный чат</li>
                     <li>Нажмите <strong>⋮</strong> (три точки) в правом верхнем углу</li>
                     <li>Выберите <strong>Export chat history</strong></li>
-                    <li>Снимите все галочки (фото, видео и т.д.) — нужен только текст</li>
-                    <li>Формат: <strong>Machine-readable JSON</strong></li>
+                    <li>Выберите нужные данные (текст, фото, документы)</li>
+                    <li>Формат: <strong>JSON</strong> или <strong>HTML</strong></li>
                     <li>Нажмите <strong>Export</strong></li>
                   </ol>
                 ) : (
@@ -160,8 +162,8 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                     <li>Откройте нужный чат</li>
                     <li>Нажмите на <strong>имя чата</strong> вверху (откроется профиль)</li>
                     <li>Нажмите <strong>⋮</strong> (три точки) → <strong>Export chat history</strong></li>
-                    <li>Снимите все галочки (фото, видео и т.д.) — нужен только текст</li>
-                    <li>Формат: <strong>Machine-readable JSON</strong></li>
+                    <li>Выберите нужные данные (текст, фото, документы)</li>
+                    <li>Формат: <strong>JSON</strong> или <strong>HTML</strong></li>
                     <li>Нажмите <strong>Export</strong></li>
                   </ol>
                 )}
@@ -203,15 +205,17 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
             >
               <input
                 type="file"
-                accept=".json,.zip"
+                accept=".json,.zip,.html,.htm"
                 onChange={handleFileChange}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
 
               {file ? (
                 <div className="flex flex-col items-center gap-2">
-                  {file.name.endsWith('.zip') ? (
+                  {file.name.toLowerCase().endsWith('.zip') ? (
                     <FileArchive className="w-12 h-12 text-green-400" />
+                  ) : file.name.toLowerCase().endsWith('.html') || file.name.toLowerCase().endsWith('.htm') ? (
+                    <FileCode className="w-12 h-12 text-green-400" />
                   ) : (
                     <FileJson className="w-12 h-12 text-green-400" />
                   )}
@@ -229,7 +233,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                   <p className="text-dark-300">
                     Перетащите файл сюда или <span className="text-accent-400">выберите</span>
                   </p>
-                  <p className="text-sm text-dark-500">Поддерживается: JSON, ZIP</p>
+                  <p className="text-sm text-dark-500">Поддерживается: JSON, HTML, ZIP</p>
                 </div>
               )}
             </div>

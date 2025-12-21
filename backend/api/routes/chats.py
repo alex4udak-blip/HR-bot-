@@ -4,6 +4,8 @@ import json
 import hashlib
 import zipfile
 import io
+import re
+from html.parser import HTMLParser
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -429,6 +431,111 @@ def get_content_hash(content: str, timestamp: datetime) -> str:
     return hashlib.md5(data.encode()).hexdigest()
 
 
+class TelegramHTMLParser(HTMLParser):
+    """Parser for Telegram HTML export format."""
+
+    def __init__(self):
+        super().__init__()
+        self.messages = []
+        self.current_message = None
+        self.current_field = None
+        self.text_buffer = ""
+        self.in_message = False
+        self.in_body = False
+
+    def handle_starttag(self, tag, attrs):
+        attrs_dict = dict(attrs)
+        class_name = attrs_dict.get('class', '')
+
+        if 'message' in class_name and 'default' in class_name:
+            self.in_message = True
+            self.current_message = {
+                'id': None,
+                'from': 'Unknown',
+                'date': '',
+                'text': '',
+                'type': 'message'
+            }
+            # Try to get message ID from id attribute
+            if 'id' in attrs_dict:
+                msg_id = attrs_dict['id'].replace('message', '')
+                try:
+                    self.current_message['id'] = int(msg_id)
+                except ValueError:
+                    pass
+
+        elif self.in_message:
+            if 'from_name' in class_name:
+                self.current_field = 'from'
+                self.text_buffer = ""
+            elif 'date' in class_name:
+                self.current_field = 'date'
+                # Get title attribute for full datetime
+                if 'title' in attrs_dict:
+                    self.current_message['date'] = attrs_dict['title']
+            elif 'text' in class_name:
+                self.current_field = 'text'
+                self.text_buffer = ""
+            elif 'media_wrap' in class_name:
+                self.current_field = 'media'
+            elif 'body' in class_name:
+                self.in_body = True
+
+    def handle_endtag(self, tag):
+        if self.current_field == 'from' and tag in ['span', 'div']:
+            if self.current_message:
+                self.current_message['from'] = self.text_buffer.strip()
+            self.current_field = None
+        elif self.current_field == 'text' and tag == 'div':
+            if self.current_message:
+                self.current_message['text'] = self.text_buffer.strip()
+            self.current_field = None
+
+        if tag == 'div' and self.in_message and self.in_body:
+            if self.current_message and (self.current_message.get('text') or self.current_message.get('from')):
+                self.messages.append(self.current_message)
+            self.current_message = None
+            self.in_message = False
+            self.in_body = False
+
+    def handle_data(self, data):
+        if self.current_field in ['from', 'text']:
+            self.text_buffer += data
+
+
+def parse_html_export(html_content: str) -> List[dict]:
+    """Parse Telegram HTML export and return messages list."""
+    parser = TelegramHTMLParser()
+    parser.feed(html_content)
+
+    messages = []
+    for msg in parser.messages:
+        if not msg.get('text') and not msg.get('from'):
+            continue
+
+        # Parse date
+        date_str = msg.get('date', '')
+        try:
+            # Try common formats: "DD.MM.YYYY HH:MM:SS" or "YYYY-MM-DD HH:MM:SS"
+            if '.' in date_str and len(date_str.split('.')[0]) <= 2:
+                parsed_date = datetime.strptime(date_str, '%d.%m.%Y %H:%M:%S')
+            else:
+                parsed_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            parsed_date = datetime.now()
+
+        messages.append({
+            'id': msg.get('id'),
+            'type': 'message',
+            'date': parsed_date.isoformat(),
+            'from': msg.get('from', 'Unknown'),
+            'from_id': '',
+            'text': msg.get('text', '')
+        })
+
+    return messages
+
+
 @router.post("/{chat_id}/import")
 async def import_telegram_history(
     chat_id: int,
@@ -437,9 +544,9 @@ async def import_telegram_history(
     user: User = Depends(get_current_user),
 ):
     """
-    Import chat history from Telegram Desktop export (JSON or ZIP format).
+    Import chat history from Telegram Desktop export (JSON, HTML or ZIP format).
 
-    Expected format: result.json or ZIP archive containing result.json
+    Expected format: result.json, messages.html or ZIP archive containing them
     """
     user = await db.merge(user)
 
@@ -452,37 +559,62 @@ async def import_telegram_history(
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Read file content
+    messages_data = None
+    filename = file.filename.lower() if file.filename else ""
+
     try:
         content = await file.read()
 
         # Check if it's a ZIP file
-        if file.filename and file.filename.lower().endswith('.zip'):
+        if filename.endswith('.zip'):
             try:
                 with zipfile.ZipFile(io.BytesIO(content)) as zf:
-                    # Find result.json in the archive
-                    json_file = None
+                    # First try to find JSON file
+                    target_file = None
+                    is_html = False
+
                     for name in zf.namelist():
                         if name.endswith('result.json') or name == 'result.json':
-                            json_file = name
+                            target_file = name
                             break
 
-                    if not json_file:
-                        # Try to find any .json file
+                    if not target_file:
                         for name in zf.namelist():
                             if name.endswith('.json'):
-                                json_file = name
+                                target_file = name
                                 break
 
-                    if not json_file:
-                        raise HTTPException(status_code=400, detail="ZIP-архив не содержит JSON файл")
+                    # If no JSON, try HTML
+                    if not target_file:
+                        for name in zf.namelist():
+                            if name.endswith('.html') or name.endswith('.htm'):
+                                target_file = name
+                                is_html = True
+                                break
 
-                    json_content = zf.read(json_file)
-                    data = json.loads(json_content.decode('utf-8'))
+                    if not target_file:
+                        raise HTTPException(status_code=400, detail="ZIP-архив не содержит JSON или HTML файл")
+
+                    file_content = zf.read(target_file).decode('utf-8')
+
+                    if is_html:
+                        messages_data = parse_html_export(file_content)
+                    else:
+                        data = json.loads(file_content)
+                        messages_data = data.get('messages', [])
+
             except zipfile.BadZipFile:
                 raise HTTPException(status_code=400, detail="Повреждённый ZIP-архив")
+
+        # Check if it's an HTML file
+        elif filename.endswith('.html') or filename.endswith('.htm'):
+            html_content = content.decode('utf-8')
+            messages_data = parse_html_export(html_content)
+
+        # Regular JSON file
         else:
-            # Regular JSON file
             data = json.loads(content.decode('utf-8'))
+            messages_data = data.get('messages', [])
 
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=400, detail=f"Неверный формат JSON: {str(e)}")
@@ -492,10 +624,8 @@ async def import_telegram_history(
         raise HTTPException(status_code=400, detail=f"Ошибка чтения файла: {str(e)}")
 
     # Validate structure
-    if 'messages' not in data:
-        raise HTTPException(status_code=400, detail="Invalid Telegram export format: 'messages' field not found")
-
-    messages_data = data['messages']
+    if not messages_data:
+        raise HTTPException(status_code=400, detail="Файл не содержит сообщений")
 
     # Get existing message IDs and hashes for deduplication
     existing_result = await db.execute(
