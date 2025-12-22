@@ -173,8 +173,7 @@ async function recordMeeting() {
         console.log(`Page title: ${pageTitle}`);
         console.log(`Current URL: ${currentUrl}`);
 
-        // Detect meeting type
-        const isMeet = meetingUrl.includes('meet.google.com');
+        // Detect meeting type (isMeet already defined above)
         const isZoom = meetingUrl.includes('zoom.us');
 
         if (isMeet) {
