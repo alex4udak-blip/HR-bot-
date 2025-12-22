@@ -187,7 +187,7 @@ export interface Entity {
   company?: string;
   position?: string;
   tags: string[];
-  metadata: Record<string, unknown>;
+  extra_data: Record<string, unknown>;
   created_by?: number;
   created_at: string;
   updated_at: string;

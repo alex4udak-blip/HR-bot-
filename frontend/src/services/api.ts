@@ -470,7 +470,7 @@ export const createEntity = async (entityData: {
   company?: string;
   position?: string;
   tags?: string[];
-  metadata?: Record<string, unknown>;
+  extra_data?: Record<string, unknown>;
 }): Promise<Entity> => {
   const { data } = await api.post('/entities', entityData);
   return data;
@@ -484,7 +484,7 @@ export const updateEntity = async (id: number, updates: {
   company?: string;
   position?: string;
   tags?: string[];
-  metadata?: Record<string, unknown>;
+  extra_data?: Record<string, unknown>;
 }): Promise<Entity> => {
   const { data } = await api.put(`/entities/${id}`, updates);
   return data;

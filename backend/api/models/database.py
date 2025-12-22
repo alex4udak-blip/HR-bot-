@@ -225,7 +225,7 @@ class Entity(Base):
     company = Column(String(255), nullable=True)
     position = Column(String(255), nullable=True)
     tags = Column(JSON, default=list)
-    metadata = Column(JSON, default=dict)
+    extra_data = Column(JSON, default=dict)  # renamed from 'metadata' (reserved by SQLAlchemy)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())

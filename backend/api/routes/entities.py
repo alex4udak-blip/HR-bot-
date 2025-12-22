@@ -27,7 +27,7 @@ class EntityCreate(BaseModel):
     company: Optional[str] = None
     position: Optional[str] = None
     tags: Optional[List[str]] = []
-    metadata: Optional[dict] = {}
+    extra_data: Optional[dict] = {}
 
 
 class EntityUpdate(BaseModel):
@@ -38,7 +38,7 @@ class EntityUpdate(BaseModel):
     company: Optional[str] = None
     position: Optional[str] = None
     tags: Optional[List[str]] = None
-    metadata: Optional[dict] = None
+    extra_data: Optional[dict] = None
 
 
 class TransferCreate(BaseModel):
@@ -58,7 +58,7 @@ class EntityResponse(BaseModel):
     company: Optional[str] = None
     position: Optional[str] = None
     tags: List[str] = []
-    metadata: dict = {}
+    extra_data: dict = {}
     created_by: Optional[int] = None
     created_at: datetime
     updated_at: datetime
@@ -147,7 +147,7 @@ async def list_entities(
             "company": entity.company,
             "position": entity.position,
             "tags": entity.tags or [],
-            "metadata": entity.metadata or {},
+            "extra_data": entity.extra_data or {},
             "created_by": entity.created_by,
             "created_at": entity.created_at,
             "updated_at": entity.updated_at,
@@ -175,7 +175,7 @@ async def create_entity(
         company=data.company,
         position=data.position,
         tags=data.tags or [],
-        metadata=data.metadata or {},
+        extra_data=data.extra_data or {},
         created_by=current_user.id
     )
     db.add(entity)
@@ -193,7 +193,7 @@ async def create_entity(
         "company": entity.company,
         "position": entity.position,
         "tags": entity.tags or [],
-        "metadata": entity.metadata or {},
+        "extra_data": entity.extra_data or {},
         "created_by": entity.created_by,
         "created_at": entity.created_at,
         "updated_at": entity.updated_at,
@@ -272,7 +272,7 @@ async def get_entity(
         "company": entity.company,
         "position": entity.position,
         "tags": entity.tags or [],
-        "metadata": entity.metadata or {},
+        "extra_data": entity.extra_data or {},
         "created_by": entity.created_by,
         "created_at": entity.created_at,
         "updated_at": entity.updated_at,
@@ -344,7 +344,7 @@ async def update_entity(
         "company": entity.company,
         "position": entity.position,
         "tags": entity.tags or [],
-        "metadata": entity.metadata or {},
+        "extra_data": entity.extra_data or {},
         "created_by": entity.created_by,
         "created_at": entity.created_at,
         "updated_at": entity.updated_at
