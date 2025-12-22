@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls
+from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai
 
 # Configure logging - show important messages
 logging.basicConfig(
@@ -138,6 +138,35 @@ async def init_database():
     await run_migration(engine, "ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_imported BOOLEAN DEFAULT FALSE", "Add is_imported to messages")
     await run_migration(engine, "ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL", "Add entity_id to analysis_history")
 
+    # Entity AI tables
+    create_entity_ai_conversations = """
+        CREATE TABLE IF NOT EXISTS entity_ai_conversations (
+            id SERIAL PRIMARY KEY,
+            entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            messages JSONB DEFAULT '[]'::jsonb,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """
+    await run_migration(engine, create_entity_ai_conversations, "Create entity_ai_conversations table")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entity_ai_conversations_entity_id ON entity_ai_conversations(entity_id)", "Index entity_ai_conversations.entity_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entity_ai_conversations_user_id ON entity_ai_conversations(user_id)", "Index entity_ai_conversations.user_id")
+
+    create_entity_analyses = """
+        CREATE TABLE IF NOT EXISTS entity_analyses (
+            id SERIAL PRIMARY KEY,
+            entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            analysis_type VARCHAR(50),
+            result TEXT NOT NULL,
+            scores JSONB DEFAULT '{}'::jsonb,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """
+    await run_migration(engine, create_entity_analyses, "Create entity_analyses table")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entity_analyses_entity_id ON entity_analyses(entity_id)", "Index entity_analyses.entity_id")
+
     # Step 6: Create superadmin
     try:
         async with AsyncSessionLocal() as db:
@@ -230,6 +259,7 @@ app.include_router(ai.router, prefix="/api/chats", tags=["ai"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(entities.router, prefix="/api/entities", tags=["entities"])
 app.include_router(calls.router, prefix="/api/calls", tags=["calls"])
+app.include_router(entity_ai.router, prefix="/api", tags=["entity-ai"])
 
 
 @app.get("/health")

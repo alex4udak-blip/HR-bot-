@@ -17,6 +17,7 @@ import {
 import clsx from 'clsx';
 import type { EntityWithRelations } from '@/types';
 import { STATUS_LABELS, STATUS_COLORS, CALL_STATUS_LABELS, CALL_STATUS_COLORS } from '@/types';
+import EntityAI from './EntityAI';
 
 interface ContactDetailProps {
   entity: EntityWithRelations;
@@ -138,7 +139,11 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
       {/* Tab Content */}
       <div className="space-y-4">
         {activeTab === 'overview' && (
-          <div className="grid grid-cols-2 gap-6">
+          <>
+            {/* AI Assistant */}
+            <EntityAI entity={entity} />
+
+            <div className="grid grid-cols-2 gap-6 mt-6">
             {/* Recent Chats */}
             <div className="bg-white/5 rounded-xl p-4">
               <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
@@ -224,6 +229,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
               )}
             </div>
           </div>
+          </>
         )}
 
         {activeTab === 'chats' && (

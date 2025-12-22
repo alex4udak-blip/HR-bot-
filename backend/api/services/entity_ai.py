@@ -1,0 +1,281 @@
+"""
+Entity AI Service - AI assistant for Entity (contact card) analysis.
+
+Provides:
+- Quick actions: full_analysis, red_flags, comparison, prediction, summary, questions
+- Free-form chat about the entity based on all linked chats and calls
+- Streaming responses
+"""
+from typing import List, AsyncGenerator, Optional
+from anthropic import AsyncAnthropic
+import logging
+
+from ..config import get_settings
+from ..models.database import Entity, Chat, Message, CallRecording
+
+logger = logging.getLogger("hr-analyzer.entity-ai")
+
+settings = get_settings()
+
+# Quick action prompts
+ENTITY_QUICK_ACTIONS = {
+    "full_analysis": """Проведи полный анализ этого контакта на основе ВСЕХ доступных данных:
+
+1. **Общий портрет** — кто этот человек, его сильные и слабые стороны
+2. **Стиль коммуникации** — как общается, насколько активен, особенности
+3. **Red flags** 🚩 — тревожные сигналы с конкретными цитатами
+4. **Green flags** ✅ — позитивные моменты с конкретными цитатами
+5. **Динамика поведения** — как менялось поведение со временем
+6. **Прогноз успеха** — оценка 0-100% с подробным обоснованием
+7. **Рекомендации** — что делать дальше, на что обратить внимание""",
+
+    "red_flags": """Найди ВСЕ red flags (тревожные сигналы) по этому контакту из всех чатов и звонков.
+
+Для каждого red flag укажи:
+🚩 **Описание проблемы** — что именно настораживает
+📝 **Цитата/пример** — конкретные слова или действия
+⚠️ **Уровень риска** — низкий/средний/высокий
+💡 **Рекомендация** — как с этим работать
+
+Будь объективен — не придумывай проблемы, если их нет.""",
+
+    "comparison": """Сравни поведение контакта ДО и ПОСЛЕ ключевых этапов (найма, сделки, начала работы):
+
+**ДО:**
+- Стиль общения
+- Обещания и ожидания
+- Уровень активности и вовлечённости
+
+**ПОСЛЕ:**
+- Реальное поведение
+- Выполнение обещаний
+- Изменения в коммуникации
+
+📊 **Совпадение ожиданий:** X%
+⚠️ **Главные расхождения** (если есть)
+💡 **Рекомендации**
+
+Если данных для сравнения недостаточно — укажи это.""",
+
+    "prediction": """Спрогнозируй успешность работы с этим контактом:
+
+📊 **Прогноз успеха:** X%
+
+**Факторы "за" ✅**
+- (перечисли позитивные факторы)
+
+**Факторы "против" ❌**
+- (перечисли негативные факторы)
+
+**Основные риски ⚠️**
+- (перечисли риски)
+
+**Итоговая рекомендация:**
+(одним абзацем — что делать)""",
+
+    "summary": """Дай краткое резюме по контакту:
+
+👤 **Имя:** [имя]
+📊 **Статус:** [текущий статус]
+⭐ **Общая оценка:** X/10
+
+**Три главных плюса:**
+1. ...
+2. ...
+3. ...
+
+**Три главных минуса:**
+1. ...
+2. ...
+3. ...
+
+🚩 **Главный риск:** (одним предложением)
+
+💡 **Рекомендация:** (одним предложением)""",
+
+    "questions": """Подготовь вопросы для следующей встречи/разговора с этим контактом:
+
+**1. Уточняющие вопросы** (что нужно прояснить)
+- ...
+
+**2. Проверочные вопросы** (проверить red flags)
+- ...
+
+**3. Развивающие вопросы** (раскрыть потенциал)
+- ...
+
+**4. Критические вопросы** (для принятия решения)
+- ...
+
+Вопросы должны быть конкретными и основанными на данных из переписок/звонков."""
+}
+
+
+class EntityAIService:
+    """AI service for Entity analysis with streaming support"""
+
+    def __init__(self):
+        self._client: Optional[AsyncAnthropic] = None
+        self.model = "claude-sonnet-4-20250514"
+
+    @property
+    def client(self) -> AsyncAnthropic:
+        if self._client is None:
+            if not settings.anthropic_api_key:
+                raise ValueError("ANTHROPIC_API_KEY не настроен")
+            self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        return self._client
+
+    def _build_entity_context(
+        self,
+        entity: Entity,
+        chats: List[Chat],
+        calls: List[CallRecording]
+    ) -> str:
+        """Build comprehensive context about the entity from all sources"""
+        parts = []
+
+        # Basic entity info
+        parts.append(f"""## Контакт: {entity.name}
+- **Тип:** {entity.type.value}
+- **Статус:** {entity.status.value}
+- **Компания:** {entity.company or 'Не указана'}
+- **Должность:** {entity.position or 'Не указана'}
+- **Email:** {entity.email or 'Не указан'}
+- **Телефон:** {entity.phone or 'Не указан'}
+- **Теги:** {', '.join(entity.tags) if entity.tags else 'Нет'}
+""")
+
+        # All linked chats with messages
+        if chats:
+            parts.append("\n## ПЕРЕПИСКИ:")
+            for chat in chats:
+                parts.append(f"\n### Чат: {chat.custom_name or chat.title} ({chat.chat_type.value})")
+                if hasattr(chat, 'messages') and chat.messages:
+                    # Get last 100 messages to avoid context overflow
+                    messages = sorted(chat.messages, key=lambda m: m.timestamp)[-100:]
+                    for msg in messages:
+                        name = f"{msg.first_name or ''} {msg.last_name or ''}".strip() or msg.username or "Unknown"
+                        ts = msg.timestamp.strftime("%d.%m %H:%M") if msg.timestamp else ""
+                        content = msg.content[:500] if msg.content else "[медиа]"
+                        parts.append(f"[{ts}] {name}: {content}")
+                else:
+                    parts.append("(нет сообщений)")
+
+        # All linked calls with transcripts
+        if calls:
+            parts.append("\n## ЗВОНКИ:")
+            for call in calls:
+                call_date = call.created_at.strftime('%d.%m.%Y') if call.created_at else "дата неизвестна"
+                parts.append(f"\n### Звонок от {call_date}")
+                if call.title:
+                    parts.append(f"**Название:** {call.title}")
+                if call.duration_seconds:
+                    mins = call.duration_seconds // 60
+                    secs = call.duration_seconds % 60
+                    parts.append(f"**Длительность:** {mins}м {secs}с")
+                if call.summary:
+                    parts.append(f"**Саммари:** {call.summary}")
+                if call.key_points:
+                    parts.append("**Ключевые моменты:**")
+                    for point in call.key_points[:10]:
+                        parts.append(f"- {point}")
+                if call.transcript:
+                    # Limit transcript to avoid context overflow
+                    transcript = call.transcript[:5000]
+                    if len(call.transcript) > 5000:
+                        transcript += "\n... (транскрипт обрезан)"
+                    parts.append(f"**Транскрипт:**\n{transcript}")
+
+        if not chats and not calls:
+            parts.append("\n⚠️ К этому контакту пока не привязаны чаты или звонки.")
+
+        return "\n".join(parts)
+
+    def _build_system_prompt(self, entity_context: str) -> str:
+        """Build system prompt with entity context"""
+        return f"""Ты — AI-ассистент для HR-аналитики. У тебя есть полные данные о контакте:
+все переписки из Telegram и все записи звонков.
+
+{entity_context}
+
+ПРАВИЛА:
+1. Отвечай на русском языке
+2. Основывайся ТОЛЬКО на фактах из предоставленных данных
+3. Приводи конкретные цитаты из переписок/звонков где возможно
+4. Если информации недостаточно — честно скажи об этом
+5. Будь объективен и профессионален
+6. Используй форматирование markdown для структурирования ответа
+7. Не придумывай факты — работай только с тем, что есть"""
+
+    async def chat_stream(
+        self,
+        user_message: str,
+        entity: Entity,
+        chats: List[Chat],
+        calls: List[CallRecording],
+        conversation_history: List[dict]
+    ) -> AsyncGenerator[str, None]:
+        """Stream AI response for chat"""
+        context = self._build_entity_context(entity, chats, calls)
+        system = self._build_system_prompt(context)
+
+        # Build messages for API
+        api_messages = []
+        for msg in conversation_history:
+            api_messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+        api_messages.append({
+            "role": "user",
+            "content": user_message
+        })
+
+        logger.info(f"Entity AI chat for entity {entity.id}, {len(chats)} chats, {len(calls)} calls")
+
+        try:
+            async with self.client.messages.stream(
+                model=self.model,
+                max_tokens=4096,
+                system=system,
+                messages=api_messages
+            ) as stream:
+                async for text in stream.text_stream:
+                    yield text
+        except Exception as e:
+            logger.error(f"Entity AI streaming error: {e}")
+            raise
+
+    async def quick_action(
+        self,
+        action: str,
+        entity: Entity,
+        chats: List[Chat],
+        calls: List[CallRecording]
+    ) -> AsyncGenerator[str, None]:
+        """Execute quick action and stream response"""
+        prompt = ENTITY_QUICK_ACTIONS.get(action)
+        if not prompt:
+            yield f"Неизвестное действие: {action}"
+            return
+
+        logger.info(f"Entity AI quick action '{action}' for entity {entity.id}")
+
+        async for text in self.chat_stream(prompt, entity, chats, calls, []):
+            yield text
+
+    def get_available_actions(self) -> List[dict]:
+        """Get list of available quick actions"""
+        return [
+            {"id": "full_analysis", "label": "Полный анализ", "icon": "file-search"},
+            {"id": "red_flags", "label": "Red flags", "icon": "alert-triangle"},
+            {"id": "comparison", "label": "До/После", "icon": "git-compare"},
+            {"id": "prediction", "label": "Прогноз", "icon": "trending-up"},
+            {"id": "summary", "label": "Резюме", "icon": "file-text"},
+            {"id": "questions", "label": "Вопросы", "icon": "help-circle"},
+        ]
+
+
+# Singleton instance
+entity_ai_service = EntityAIService()
