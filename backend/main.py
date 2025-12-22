@@ -141,14 +141,27 @@ async def init_database():
                 except Exception:
                     pass  # Column already exists or entities table doesn't exist
 
-                # Add title column to call_recordings if it doesn't exist
-                try:
-                    await conn.execute(text(
-                        "ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS title VARCHAR(255)"
-                    ))
-                    logger.info("Added title column to call_recordings table")
-                except Exception:
-                    pass  # Column already exists
+                # Add missing columns to call_recordings table
+                call_columns = [
+                    ("title", "VARCHAR(255)"),
+                    ("speakers", "JSONB"),
+                    ("action_items", "JSONB"),
+                    ("key_points", "JSONB"),
+                ]
+                for col_name, col_type in call_columns:
+                    try:
+                        # Check if column exists
+                        result = await conn.execute(text(
+                            f"SELECT 1 FROM information_schema.columns WHERE table_name='call_recordings' AND column_name='{col_name}'"
+                        ))
+                        if not result.first():
+                            await conn.execute(text(
+                                f"ALTER TABLE call_recordings ADD COLUMN {col_name} {col_type}"
+                            ))
+                            logger.info(f"Added {col_name} column to call_recordings table")
+                    except Exception as e:
+                        logger.warning(f"Failed to add {col_name} column: {e}")
+
 
             # Create superadmin
             async with AsyncSessionLocal() as db:
