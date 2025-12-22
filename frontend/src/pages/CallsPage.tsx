@@ -58,25 +58,25 @@ export default function CallsPage() {
   };
 
   const handleDelete = async (call: CallRecording) => {
-    if (!confirm('Are you sure you want to delete this recording?')) return;
+    if (!confirm('Вы уверены, что хотите удалить эту запись?')) return;
 
     try {
       await deleteCall(call.id);
-      toast.success('Recording deleted');
+      toast.success('Запись удалена');
       if (currentCall?.id === call.id) {
         navigate('/calls');
       }
     } catch {
-      toast.error('Failed to delete recording');
+      toast.error('Не удалось удалить запись');
     }
   };
 
   const handleReprocess = async (call: CallRecording) => {
     try {
       await reprocessCall(call.id);
-      toast.success('Reprocessing started');
+      toast.success('Переобработка запущена');
     } catch {
-      toast.error('Failed to start reprocessing');
+      toast.error('Не удалось запустить переобработку');
     }
   };
 
@@ -88,7 +88,7 @@ export default function CallsPage() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    return new Date(dateString).toLocaleDateString('ru-RU', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -123,13 +123,13 @@ export default function CallsPage() {
         {/* Header */}
         <div className="p-4 border-b border-white/5">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-semibold text-white">Call Recordings</h1>
+            <h1 className="text-xl font-semibold text-white">Записи звонков</h1>
             <button
               onClick={() => setShowRecorderModal(true)}
               className="px-4 py-2 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors flex items-center gap-2"
             >
               <Phone size={18} />
-              New Recording
+              Новая запись
             </button>
           </div>
 
@@ -144,7 +144,7 @@ export default function CallsPage() {
               >
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-white">
-                    {activeRecording.status === 'recording' ? 'Recording in progress' : 'Processing...'}
+                    {activeRecording.status === 'recording' ? 'Запись идёт' : 'Обработка...'}
                   </span>
                   <span className={clsx('text-xs px-2 py-0.5 rounded-full', CALL_STATUS_COLORS[activeRecording.status])}>
                     {CALL_STATUS_LABELS[activeRecording.status]}
@@ -163,7 +163,7 @@ export default function CallsPage() {
                       onClick={stopRecording}
                       className="px-3 py-1 bg-red-500/20 text-red-400 rounded-lg text-sm hover:bg-red-500/30 transition-colors"
                     >
-                      Stop Recording
+                      Остановить
                     </button>
                   </div>
                 )}
@@ -177,7 +177,7 @@ export default function CallsPage() {
                     onClick={clearActiveRecording}
                     className="text-xs text-white/40 hover:text-white/60 mt-2"
                   >
-                    Dismiss
+                    Скрыть
                   </button>
                 )}
               </motion.div>
@@ -194,12 +194,12 @@ export default function CallsPage() {
           ) : calls.length === 0 ? (
             <div className="text-center py-8 text-white/40">
               <Phone className="mx-auto mb-2" size={40} />
-              <p>No call recordings yet</p>
+              <p>Нет записей звонков</p>
               <button
                 onClick={() => setShowRecorderModal(true)}
                 className="mt-4 px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors"
               >
-                Record your first call
+                Записать первый звонок
               </button>
             </div>
           ) : (
@@ -237,7 +237,7 @@ export default function CallsPage() {
                       <div className="flex items-center gap-2 mb-1">
                         {getStatusIcon(call.status)}
                         <span className="text-sm font-medium text-white truncate">
-                          {call.entity_name || call.source_type.toUpperCase() + ' Call'}
+                          {call.entity_name || 'Звонок ' + call.source_type.toUpperCase()}
                         </span>
                       </div>
 
@@ -263,7 +263,7 @@ export default function CallsPage() {
                             handleReprocess(call);
                           }}
                           className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
-                          title="Reprocess"
+                          title="Переобработать"
                         >
                           <RefreshCw size={14} />
                         </button>

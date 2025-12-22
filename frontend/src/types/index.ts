@@ -307,54 +307,54 @@ export interface EntityTypeInfo {
 export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
   candidate: {
     id: 'candidate',
-    name: 'Candidate',
-    namePlural: 'Candidates',
-    description: 'Job candidates and applicants',
+    name: 'Кандидат',
+    namePlural: 'Кандидаты',
+    description: 'Соискатели на вакансии',
     icon: 'UserCheck',
     color: 'blue',
     statuses: ['new', 'screening', 'interview', 'offer', 'hired', 'rejected']
   },
   client: {
     id: 'client',
-    name: 'Client',
-    namePlural: 'Clients',
-    description: 'Business clients and customers',
+    name: 'Клиент',
+    namePlural: 'Клиенты',
+    description: 'Заказчики и компании-клиенты',
     icon: 'Building',
     color: 'green',
     statuses: ['new', 'active', 'paused', 'churned']
   },
   contractor: {
     id: 'contractor',
-    name: 'Contractor',
-    namePlural: 'Contractors',
-    description: 'External contractors and freelancers',
+    name: 'Подрядчик',
+    namePlural: 'Подрядчики',
+    description: 'Внешние подрядчики и фрилансеры',
     icon: 'Wrench',
     color: 'orange',
     statuses: ['new', 'active', 'paused', 'ended']
   },
   lead: {
     id: 'lead',
-    name: 'Lead',
-    namePlural: 'Leads',
-    description: 'Sales leads and prospects',
+    name: 'Лид',
+    namePlural: 'Лиды',
+    description: 'Потенциальные клиенты',
     icon: 'Target',
     color: 'purple',
     statuses: ['new', 'negotiation', 'converted', 'rejected']
   },
   partner: {
     id: 'partner',
-    name: 'Partner',
-    namePlural: 'Partners',
-    description: 'Business partners',
-    icon: 'Handshake',
+    name: 'Партнёр',
+    namePlural: 'Партнёры',
+    description: 'Бизнес-партнёры',
+    icon: 'Users',
     color: 'cyan',
     statuses: ['new', 'active', 'paused', 'ended']
   },
   custom: {
     id: 'custom',
-    name: 'Custom',
-    namePlural: 'Custom',
-    description: 'Custom entity type',
+    name: 'Другое',
+    namePlural: 'Другие',
+    description: 'Другой тип контакта',
     icon: 'User',
     color: 'gray',
     statuses: ['new', 'active', 'paused', 'ended']
@@ -362,18 +362,18 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
 };
 
 export const STATUS_LABELS: Record<EntityStatus, string> = {
-  new: 'New',
-  screening: 'Screening',
-  interview: 'Interview',
-  offer: 'Offer',
-  hired: 'Hired',
-  rejected: 'Rejected',
-  active: 'Active',
-  paused: 'Paused',
-  churned: 'Churned',
-  converted: 'Converted',
-  ended: 'Ended',
-  negotiation: 'Negotiation'
+  new: 'Новый',
+  screening: 'Скрининг',
+  interview: 'Интервью',
+  offer: 'Оффер',
+  hired: 'Принят',
+  rejected: 'Отклонён',
+  active: 'Активный',
+  paused: 'На паузе',
+  churned: 'Ушёл',
+  converted: 'Сконвертирован',
+  ended: 'Завершён',
+  negotiation: 'Переговоры'
 };
 
 export const STATUS_COLORS: Record<EntityStatus, string> = {
@@ -392,14 +392,14 @@ export const STATUS_COLORS: Record<EntityStatus, string> = {
 };
 
 export const CALL_STATUS_LABELS: Record<CallStatus, string> = {
-  pending: 'Pending',
-  connecting: 'Connecting',
-  recording: 'Recording',
-  processing: 'Processing',
-  transcribing: 'Transcribing',
-  analyzing: 'Analyzing',
-  done: 'Done',
-  failed: 'Failed'
+  pending: 'Ожидание',
+  connecting: 'Подключение',
+  recording: 'Запись',
+  processing: 'Обработка',
+  transcribing: 'Транскрибация',
+  analyzing: 'Анализ',
+  done: 'Готово',
+  failed: 'Ошибка'
 };
 
 export const CALL_STATUS_COLORS: Record<CallStatus, string> = {

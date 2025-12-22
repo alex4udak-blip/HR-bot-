@@ -68,7 +68,7 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
               <ArrowRightLeft size={20} className="text-purple-400" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-white">Transfer Contact</h2>
+              <h2 className="text-xl font-semibold text-white">Передача контакта</h2>
               <p className="text-sm text-white/60">{entity.name}</p>
             </div>
           </div>
@@ -84,7 +84,7 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Select User */}
           <div>
-            <label className="block text-sm font-medium text-white/60 mb-2">Transfer to</label>
+            <label className="block text-sm font-medium text-white/60 mb-2">Передать кому</label>
             {loadingUsers ? (
               <div className="flex items-center justify-center py-4">
                 <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
@@ -122,14 +122,14 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
           {/* Comment */}
           <div>
             <label className="block text-sm font-medium text-white/60 mb-2">
-              Comment (optional)
+              Комментарий (опционально)
             </label>
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-purple-500/50 resize-none"
               rows={3}
-              placeholder="Add a note about this transfer..."
+              placeholder="Добавьте заметку о передаче..."
             />
           </div>
 
@@ -140,7 +140,7 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
               onClick={onClose}
               className="flex-1 px-4 py-2 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 transition-colors"
             >
-              Cancel
+              Отмена
             </button>
             <button
               type="submit"
@@ -150,7 +150,7 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
               {loading && (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               )}
-              Transfer
+              Передать
             </button>
           </div>
         </form>

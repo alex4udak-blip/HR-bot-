@@ -76,13 +76,13 @@ export default function CallDetail({ call }: CallDetailProps) {
           <div className="flex items-center gap-3">
             <div className="w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
             <div>
-              <p className="text-cyan-400 font-medium">Processing in progress</p>
+              <p className="text-cyan-400 font-medium">Обработка</p>
               <p className="text-sm text-cyan-300/60">
-                {call.status === 'transcribing' && 'Transcribing audio...'}
-                {call.status === 'analyzing' && 'Analyzing content...'}
-                {call.status === 'processing' && 'Processing audio file...'}
-                {call.status === 'recording' && 'Recording in progress...'}
-                {call.status === 'connecting' && 'Connecting to meeting...'}
+                {call.status === 'transcribing' && 'Транскрибируем аудио...'}
+                {call.status === 'analyzing' && 'Анализируем содержимое...'}
+                {call.status === 'processing' && 'Обрабатываем аудио файл...'}
+                {call.status === 'recording' && 'Идёт запись...'}
+                {call.status === 'connecting' && 'Подключаемся к встрече...'}
               </p>
             </div>
           </div>
@@ -94,7 +94,7 @@ export default function CallDetail({ call }: CallDetailProps) {
         <div className="bg-white/5 rounded-xl p-4">
           <div className="flex items-center gap-2 text-white/40 text-sm mb-2">
             <Clock size={16} />
-            Duration
+            Длительность
           </div>
           <p className="text-2xl font-semibold text-white">
             {formatDuration(call.duration_seconds)}
@@ -104,7 +104,7 @@ export default function CallDetail({ call }: CallDetailProps) {
         <div className="bg-white/5 rounded-xl p-4">
           <div className="flex items-center gap-2 text-white/40 text-sm mb-2">
             <FileText size={16} />
-            Source
+            Источник
           </div>
           <p className="text-2xl font-semibold text-white capitalize">
             {call.source_type}
@@ -114,10 +114,10 @@ export default function CallDetail({ call }: CallDetailProps) {
         <div className="bg-white/5 rounded-xl p-4">
           <div className="flex items-center gap-2 text-white/40 text-sm mb-2">
             <User size={16} />
-            Entity
+            Контакт
           </div>
           <p className="text-lg font-semibold text-white truncate">
-            {call.entity_name || 'Not linked'}
+            {call.entity_name || 'Не связан'}
           </p>
         </div>
       </div>
@@ -127,9 +127,9 @@ export default function CallDetail({ call }: CallDetailProps) {
         <>
           <div className="flex gap-2 mb-6">
             {[
-              { id: 'summary', label: 'Summary', icon: FileText },
-              { id: 'transcript', label: 'Transcript', icon: FileText },
-              { id: 'actions', label: 'Action Items', icon: CheckSquare }
+              { id: 'summary', label: 'Резюме', icon: FileText },
+              { id: 'transcript', label: 'Транскрипт', icon: FileText },
+              { id: 'actions', label: 'Задачи', icon: CheckSquare }
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -164,7 +164,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                         <FileText size={20} className="text-cyan-400" />
-                        Summary
+                        Резюме
                       </h3>
                       <button
                         onClick={() => handleCopy(call.summary || '')}
@@ -181,7 +181,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                   <div>
                     <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-3">
                       <Lightbulb size={20} className="text-yellow-400" />
-                      Key Points
+                      Ключевые моменты
                     </h3>
                     <ul className="space-y-2">
                       {call.key_points.map((point, idx) => (
@@ -201,7 +201,7 @@ export default function CallDetail({ call }: CallDetailProps) {
             {activeTab === 'transcript' && (
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-white">Transcript</h3>
+                  <h3 className="text-lg font-semibold text-white">Транскрипт</h3>
                   {call.transcript && (
                     <button
                       onClick={() => handleCopy(call.transcript || '')}
@@ -217,7 +217,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                     <p className="text-white/80 whitespace-pre-wrap leading-relaxed">{call.transcript}</p>
                   </div>
                 ) : (
-                  <p className="text-white/40">No transcript available</p>
+                  <p className="text-white/40">Транскрипт недоступен</p>
                 )}
               </div>
             )}
@@ -226,7 +226,7 @@ export default function CallDetail({ call }: CallDetailProps) {
               <div>
                 <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
                   <CheckSquare size={20} className="text-green-400" />
-                  Action Items
+                  Задачи
                 </h3>
 
                 {call.action_items && call.action_items.length > 0 ? (
@@ -241,7 +241,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-white/40">No action items identified</p>
+                  <p className="text-white/40">Задачи не обнаружены</p>
                 )}
               </div>
             )}
