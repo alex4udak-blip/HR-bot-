@@ -216,13 +216,13 @@ async function recordMeeting() {
     let fileStream = null;
 
     try {
-        // Login to Google if credentials are provided
+        // Check if it's a Meet URL
         const isMeet = meetingUrl.includes('meet.google.com');
-        if (isMeet && GOOGLE_EMAIL && GOOGLE_PASSWORD) {
-            const loginSuccess = await loginToGoogle(page);
-            if (!loginSuccess) {
-                console.log('Warning: Google login failed, will try to join as guest');
-            }
+
+        // Skip login for now - join as guest (simpler and more reliable)
+        // The host will need to admit the bot
+        if (isMeet) {
+            console.log('Joining Google Meet as guest (no login)');
         }
 
         // Navigate to meeting URL

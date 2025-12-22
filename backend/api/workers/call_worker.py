@@ -102,7 +102,8 @@ class CallWorker:
                 await self._update_db_status(call_id, "failed", "Recorder script not found")
                 return
 
-            # Run Node.js Puppeteer script
+            # Run Node.js Puppeteer script with real-time logging
+            logger.info(f"Starting Node.js recorder: {RECORDER_SCRIPT}")
             process = await asyncio.create_subprocess_exec(
                 "node", RECORDER_SCRIPT,
                 "--url", meeting_url,
@@ -110,7 +111,7 @@ class CallWorker:
                 "--output", output_file,
                 "--call-id", str(call_id),
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.STDOUT  # Merge stderr into stdout
             )
 
             self.active_recordings[call_id] = process
@@ -119,8 +120,19 @@ class CallWorker:
             await self._update_status(call_id, "recording")
             await self._update_db_status(call_id, "recording")
 
-            # Wait for completion
-            stdout, stderr = await process.communicate()
+            # Stream logs in real-time
+            all_output = []
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                line_str = line.decode().strip()
+                if line_str:
+                    logger.info(f"[Recorder {call_id}] {line_str}")
+                    all_output.append(line_str)
+
+            # Wait for process to finish
+            await process.wait()
 
             del self.active_recordings[call_id]
 
@@ -134,7 +146,7 @@ class CallWorker:
                 from api.services.call_processor import call_processor
                 await call_processor.process_call(call_id)
             else:
-                error = stderr.decode() if stderr else "Unknown error"
+                error = "\n".join(all_output[-10:]) if all_output else "Unknown error"
                 logger.error(f"Recording failed for call {call_id}: {error}")
                 await self._update_status(call_id, "failed", error=error)
                 await self._update_db_status(call_id, "failed", error)
