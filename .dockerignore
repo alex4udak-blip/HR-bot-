@@ -1,0 +1,47 @@
+# Node modules (rebuilt in Docker)
+**/node_modules
+
+# Build outputs (rebuilt in Docker)
+frontend/dist
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Python cache
+**/__pycache__
+**/*.pyc
+**/*.pyo
+*.egg-info
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+**/*.test.*
+**/*.spec.*
+coverage/
+.pytest_cache/
+
+# Documentation
+README.md
+*.md
+
+# Backend Dockerfile (we use root Dockerfile)
+backend/Dockerfile
