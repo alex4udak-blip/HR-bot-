@@ -114,6 +114,30 @@ async def init_database():
                 except Exception:
                     pass  # Column already exists
 
+                # Fix call_recordings table - drop and recreate if columns are missing
+                try:
+                    # Check if table exists and has the title column
+                    check_result = await conn.execute(text("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_name = 'call_recordings' AND column_name = 'title'
+                    """))
+                    has_title = check_result.first() is not None
+
+                    if not has_title:
+                        # Check if table exists at all
+                        table_check = await conn.execute(text("""
+                            SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'call_recordings')
+                        """))
+                        table_exists = table_check.scalar()
+
+                        if table_exists:
+                            # Table exists but missing columns - drop it
+                            logger.warning("call_recordings table is missing columns, dropping and recreating...")
+                            await conn.execute(text("DROP TABLE IF EXISTS call_recordings CASCADE"))
+                            logger.info("Dropped call_recordings table")
+                except Exception as e:
+                    logger.warning(f"Error checking/fixing call_recordings: {e}")
+
                 # Create tables if they don't exist (safe, preserves data)
                 await conn.run_sync(Base.metadata.create_all)
 
@@ -141,52 +165,6 @@ async def init_database():
                 except Exception:
                     pass  # Column already exists or entities table doesn't exist
 
-            # Run call_recordings migrations in separate transaction
-            async with engine.begin() as conn2:
-                logger.info("Running call_recordings column migrations...")
-
-                # Use DO block for more reliable column addition
-                migration_sql = """
-                DO $$
-                BEGIN
-                    -- Add title column
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                                   WHERE table_name='call_recordings' AND column_name='title') THEN
-                        ALTER TABLE call_recordings ADD COLUMN title VARCHAR(255);
-                        RAISE NOTICE 'Added title column';
-                    END IF;
-
-                    -- Add speakers column
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                                   WHERE table_name='call_recordings' AND column_name='speakers') THEN
-                        ALTER TABLE call_recordings ADD COLUMN speakers JSONB;
-                        RAISE NOTICE 'Added speakers column';
-                    END IF;
-
-                    -- Add action_items column
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                                   WHERE table_name='call_recordings' AND column_name='action_items') THEN
-                        ALTER TABLE call_recordings ADD COLUMN action_items JSONB;
-                        RAISE NOTICE 'Added action_items column';
-                    END IF;
-
-                    -- Add key_points column
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                                   WHERE table_name='call_recordings' AND column_name='key_points') THEN
-                        ALTER TABLE call_recordings ADD COLUMN key_points JSONB;
-                        RAISE NOTICE 'Added key_points column';
-                    END IF;
-                EXCEPTION
-                    WHEN undefined_table THEN
-                        RAISE NOTICE 'call_recordings table does not exist yet';
-                END $$;
-                """
-
-                try:
-                    await conn2.execute(text(migration_sql))
-                    logger.info("call_recordings column migrations completed")
-                except Exception as e:
-                    logger.error(f"call_recordings migration failed: {e}")
 
             # Create superadmin
             async with AsyncSessionLocal() as db:
