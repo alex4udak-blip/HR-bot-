@@ -237,7 +237,7 @@ export default function CallsPage() {
                       <div className="flex items-center gap-2 mb-1">
                         {getStatusIcon(call.status)}
                         <span className="text-sm font-medium text-white truncate">
-                          {call.entity_name || 'Звонок ' + call.source_type.toUpperCase()}
+                          {call.title || call.entity_name || 'Звонок ' + call.source_type.toUpperCase()}
                         </span>
                       </div>
 
@@ -247,6 +247,9 @@ export default function CallsPage() {
                           {formatDuration(call.duration_seconds)}
                         </span>
                         <span>{formatDate(call.created_at)}</span>
+                        {call.entity_name && call.title && (
+                          <span className="text-cyan-400/60">• {call.entity_name}</span>
+                        )}
                       </div>
 
                       {call.summary && (
@@ -307,10 +310,11 @@ export default function CallsPage() {
               </button>
               <div className="flex-1">
                 <h2 className="text-xl font-semibold text-white">
-                  {currentCall.entity_name || currentCall.source_type.toUpperCase() + ' Call'}
+                  {currentCall.title || currentCall.entity_name || 'Звонок ' + currentCall.source_type.toUpperCase()}
                 </h2>
                 <p className="text-sm text-white/60">
                   {formatDate(currentCall.created_at)} • {formatDuration(currentCall.duration_seconds)}
+                  {currentCall.entity_name && currentCall.title && ` • ${currentCall.entity_name}`}
                 </p>
               </div>
               <span className={clsx('px-3 py-1 rounded-full text-sm', CALL_STATUS_COLORS[currentCall.status])}>

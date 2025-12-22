@@ -248,6 +248,7 @@ export type CallStatus =
 
 export interface CallRecording {
   id: number;
+  title?: string;
   entity_id?: number;
   owner_id?: number;
   source_type: CallSource;
