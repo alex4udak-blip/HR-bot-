@@ -41,6 +41,8 @@ export interface Chat {
   custom_type_description?: string;
   owner_id?: number;
   owner_name?: string;
+  entity_id?: number;
+  entity_name?: string;
   is_active: boolean;
   messages_count: number;
   participants_count: number;
