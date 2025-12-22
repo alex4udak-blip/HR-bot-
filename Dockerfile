@@ -22,20 +22,18 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies including Node.js and Chromium for Puppeteer
-RUN apt-get update && apt-get install -y \
+# Copy requirements first for better caching
+COPY backend/requirements.txt ./
+
+# Install Python dependencies early (cache optimization)
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    libreoffice-common \
-    libreoffice-writer \
-    libreoffice-calc \
-    libreoffice-impress \
-    unrar-free \
-    libheif-dev \
     curl \
     gnupg \
-    # Chromium dependencies
     chromium \
-    chromium-sandbox \
     fonts-liberation \
     libasound2 \
     libatk-bridge2.0-0 \
@@ -55,6 +53,14 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
+# Install LibreOffice separately (large package)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libreoffice-common \
+    libreoffice-writer \
+    libreoffice-calc \
+    libreoffice-impress \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Node.js
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
@@ -64,14 +70,13 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Copy backend files
-COPY backend/ .
+# Copy backend code files explicitly
+COPY backend/main.py ./
+COPY backend/api/ ./api/
+COPY backend/recorder/ ./recorder/
 
 # Copy recorder node_modules from builder stage
 COPY --from=recorder-builder /recorder/node_modules ./recorder/node_modules
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /frontend/dist ./static
