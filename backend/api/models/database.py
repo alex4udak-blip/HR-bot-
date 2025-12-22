@@ -236,6 +236,8 @@ class Entity(Base):
     calls = relationship("CallRecording", back_populates="entity")
     transfers = relationship("EntityTransfer", back_populates="entity")
     analyses = relationship("AnalysisHistory", back_populates="entity")
+    ai_conversations = relationship("EntityAIConversation", back_populates="entity", cascade="all, delete-orphan")
+    ai_analyses = relationship("EntityAnalysis", back_populates="entity", cascade="all, delete-orphan")
 
 
 class EntityTransfer(Base):
@@ -296,4 +298,35 @@ class ReportSubscription(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=func.now())
 
+    user = relationship("User")
+
+
+class EntityAIConversation(Base):
+    """AI conversation history for Entity (contact card)"""
+    __tablename__ = "entity_ai_conversations"
+
+    id = Column(Integer, primary_key=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    messages = Column(JSON, default=list)  # [{role, content, timestamp}]
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    entity = relationship("Entity", back_populates="ai_conversations")
+    user = relationship("User")
+
+
+class EntityAnalysis(Base):
+    """Saved AI analysis results for Entity"""
+    __tablename__ = "entity_analyses"
+
+    id = Column(Integer, primary_key=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    analysis_type = Column(String(50))  # full_analysis, red_flags, prediction, etc
+    result = Column(Text, nullable=False)
+    scores = Column(JSON, default=dict)  # {success_rate: 75, risk_level: "medium"}
+    created_at = Column(DateTime, default=func.now())
+
+    entity = relationship("Entity", back_populates="ai_analyses")
     user = relationship("User")
