@@ -60,7 +60,7 @@ async def init_database():
     new_enums = [
         ("entitytype", ['candidate', 'client', 'contractor', 'lead', 'partner', 'custom']),
         ("entitystatus", ['new', 'screening', 'interview', 'offer', 'hired', 'rejected', 'active', 'paused', 'churned', 'converted', 'ended', 'negotiation']),
-        ("callsource", ['meet', 'zoom', 'upload', 'telegram']),
+        ("callsource", ['meet', 'zoom', 'teams', 'upload', 'telegram']),
         ("callstatus", ['pending', 'connecting', 'recording', 'processing', 'transcribing', 'analyzing', 'done', 'failed']),
         ("reporttype", ['daily_hr', 'weekly_summary', 'daily_calls', 'weekly_pipeline']),
         ("deliverymethod", ['telegram', 'email'])
@@ -103,6 +103,7 @@ async def init_database():
             status callstatus DEFAULT 'pending',
             duration_seconds INTEGER,
             audio_file_path VARCHAR(500),
+            fireflies_transcript_id VARCHAR(100),
             transcript TEXT,
             speakers JSONB,
             summary TEXT,
@@ -121,10 +122,17 @@ async def init_database():
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_entity_id ON call_recordings(entity_id)", "Index entity_id")
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_owner_id ON call_recordings(owner_id)", "Index owner_id")
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_status ON call_recordings(status)", "Index status")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_fireflies_transcript_id ON call_recordings(fireflies_transcript_id)", "Index fireflies_transcript_id")
 
     logger.info("=== call_recordings TABLE FIXED ===")
 
     # Step 5: Other column migrations
+
+    # Fireflies integration migrations
+    await run_migration(engine, "ALTER TYPE callsource ADD VALUE IF NOT EXISTS 'teams'", "Add teams to callsource enum")
+    await run_migration(engine, "ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS fireflies_transcript_id VARCHAR(100)", "Add fireflies_transcript_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_fireflies_transcript_id ON call_recordings(fireflies_transcript_id)", "Index fireflies_transcript_id on existing table")
+
     await run_migration(engine, "ALTER TABLE chats ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP", "Add deleted_at to chats")
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_chats_deleted_at ON chats(deleted_at)", "Index chats.deleted_at")
     await run_migration(engine, "ALTER TABLE chats ADD COLUMN IF NOT EXISTS entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL", "Add entity_id to chats")
