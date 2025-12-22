@@ -163,11 +163,11 @@ class CallWorker:
     async def _update_db_status(self, call_id: int, status: str, error: str = None):
         """Update status in database."""
         try:
-            from api.database import async_session
+            from api.database import AsyncSessionLocal
             from api.models.database import CallRecording, CallStatus
             from sqlalchemy import select
 
-            async with async_session() as db:
+            async with AsyncSessionLocal() as db:
                 result = await db.execute(
                     select(CallRecording).where(CallRecording.id == call_id)
                 )
@@ -189,11 +189,11 @@ class CallWorker:
     async def _update_db_audio_path(self, call_id: int, path: str):
         """Update audio file path in database."""
         try:
-            from api.database import async_session
+            from api.database import AsyncSessionLocal
             from api.models.database import CallRecording, CallStatus
             from sqlalchemy import select
 
-            async with async_session() as db:
+            async with AsyncSessionLocal() as db:
                 result = await db.execute(
                     select(CallRecording).where(CallRecording.id == call_id)
                 )

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -7,15 +7,11 @@ import {
   Video,
   Clock,
   ChevronLeft,
-  Play,
-  Pause,
   RefreshCw,
   Trash2,
-  FileText,
   CheckCircle,
   XCircle,
-  Loader2,
-  Link as LinkIcon
+  Loader2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -335,7 +331,7 @@ export default function CallsPage() {
         {showRecorderModal && (
           <CallRecorderModal
             onClose={() => setShowRecorderModal(false)}
-            onSuccess={(callId) => {
+            onSuccess={() => {
               setShowRecorderModal(false);
               toast.success('Recording started');
             }}

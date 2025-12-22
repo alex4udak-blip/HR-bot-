@@ -34,13 +34,13 @@ class CallProcessor:
 
     async def process_call(self, call_id: int):
         """Full processing pipeline for a call recording."""
-        from ..database import async_session
+        from ..database import AsyncSessionLocal
         from ..models.database import CallRecording, CallStatus
         from sqlalchemy import select
 
         self._init_clients()
 
-        async with async_session() as db:
+        async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(CallRecording).where(CallRecording.id == call_id)
             )
