@@ -184,8 +184,13 @@ async def cleanup_deleted_chats_task():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup - initialize database in background
-    db_task = asyncio.create_task(init_database())
+    # Startup - initialize database (wait for it to complete)
+    try:
+        await asyncio.wait_for(init_database(), timeout=60)
+    except asyncio.TimeoutError:
+        logger.error("Database initialization timed out")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
 
     # Start Telegram bot in background
     bot_task = None
@@ -201,8 +206,6 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    if db_task and not db_task.done():
-        db_task.cancel()
     if bot_task:
         bot_task.cancel()
     if cleanup_task:
