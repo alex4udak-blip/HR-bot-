@@ -142,6 +142,7 @@ async def init_database():
                     pass  # Column already exists or entities table doesn't exist
 
                 # Add missing columns to call_recordings table
+                logger.info("Checking call_recordings columns...")
                 call_columns = [
                     ("title", "VARCHAR(255)"),
                     ("speakers", "JSONB"),
@@ -150,17 +151,12 @@ async def init_database():
                 ]
                 for col_name, col_type in call_columns:
                     try:
-                        # Check if column exists
-                        result = await conn.execute(text(
-                            f"SELECT 1 FROM information_schema.columns WHERE table_name='call_recordings' AND column_name='{col_name}'"
+                        await conn.execute(text(
+                            f"ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
                         ))
-                        if not result.first():
-                            await conn.execute(text(
-                                f"ALTER TABLE call_recordings ADD COLUMN {col_name} {col_type}"
-                            ))
-                            logger.info(f"Added {col_name} column to call_recordings table")
+                        logger.info(f"Ensured {col_name} column exists in call_recordings")
                     except Exception as e:
-                        logger.warning(f"Failed to add {col_name} column: {e}")
+                        logger.error(f"Failed to add {col_name} column to call_recordings: {e}")
 
 
             # Create superadmin
