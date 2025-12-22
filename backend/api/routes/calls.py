@@ -637,10 +637,56 @@ async def process_fireflies_transcript(call_id: int, transcript: dict):
             call.status = CallStatus.analyzing
 
             # Use Fireflies summary if available, otherwise analyze with Claude
-            if summary_data.get("overview"):
-                call.summary = summary_data.get("overview") or summary_data.get("short_summary", "")
-                call.action_items = summary_data.get("action_items", [])
-                call.key_points = summary_data.get("keywords", [])
+            if summary_data.get("overview") or summary_data.get("short_summary"):
+                # Build comprehensive summary from Fireflies data
+                summary_parts = []
+
+                # Main overview
+                overview = summary_data.get("overview") or summary_data.get("short_summary", "")
+                if overview:
+                    summary_parts.append(overview)
+
+                # Add bullet gist for more details
+                bullet_gist = summary_data.get("bullet_gist") or []
+                if bullet_gist and isinstance(bullet_gist, list):
+                    summary_parts.append("\n\n**Основные пункты обсуждения:**")
+                    for item in bullet_gist[:10]:  # Limit to 10 items
+                        if isinstance(item, str):
+                            summary_parts.append(f"• {item}")
+                        elif isinstance(item, dict) and item.get("text"):
+                            summary_parts.append(f"• {item.get('text')}")
+
+                call.summary = "\n".join(summary_parts)
+
+                # Get action items
+                action_items = summary_data.get("action_items") or []
+                if isinstance(action_items, list):
+                    call.action_items = [
+                        item.get("text") if isinstance(item, dict) else str(item)
+                        for item in action_items if item
+                    ][:15]  # Limit to 15 items
+                else:
+                    call.action_items = []
+
+                # Get keywords/outline as key points
+                key_points = []
+
+                # Try outline first (more detailed)
+                outline = summary_data.get("outline") or []
+                if outline and isinstance(outline, list):
+                    for item in outline[:10]:
+                        if isinstance(item, str):
+                            key_points.append(item)
+                        elif isinstance(item, dict) and item.get("text"):
+                            key_points.append(item.get("text"))
+
+                # Fall back to keywords if no outline
+                if not key_points:
+                    keywords = summary_data.get("keywords") or []
+                    if isinstance(keywords, list):
+                        key_points = [str(k) for k in keywords[:15]]
+
+                call.key_points = key_points
                 call.status = CallStatus.done
                 call.processed_at = datetime.utcnow()
                 call.ended_at = datetime.utcnow()

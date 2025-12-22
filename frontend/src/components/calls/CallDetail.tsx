@@ -13,7 +13,8 @@ import {
   X,
   Save,
   Link,
-  Unlink
+  Unlink,
+  Download
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -92,6 +93,80 @@ export default function CallDetail({ call }: CallDetailProps) {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}м ${secs}с`;
+  };
+
+  const formatTimeForExport = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const downloadFile = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success(`Файл "${filename}" скачан`);
+  };
+
+  const handleExportTranscript = () => {
+    if (!call.speakers || call.speakers.length === 0) {
+      if (call.transcript) {
+        downloadFile(call.transcript, `transcript_${call.id}.txt`);
+      }
+      return;
+    }
+
+    // Format transcript with timestamps and speakers
+    const lines = call.speakers.map(segment => {
+      const time = `[${formatTimeForExport(segment.start)}]`;
+      return `${time} ${segment.speaker}:\n${segment.text}\n`;
+    });
+
+    const content = `Транскрипт: ${call.title || 'Звонок #' + call.id}\n` +
+      `Дата: ${new Date(call.created_at).toLocaleString('ru-RU')}\n` +
+      `Длительность: ${formatDuration(call.duration_seconds)}\n` +
+      `${'='.repeat(50)}\n\n` +
+      lines.join('\n');
+
+    downloadFile(content, `transcript_${call.id}.txt`);
+  };
+
+  const handleExportAnalysis = () => {
+    const sections: string[] = [
+      `Анализ звонка: ${call.title || 'Звонок #' + call.id}`,
+      `Дата: ${new Date(call.created_at).toLocaleString('ru-RU')}`,
+      `Длительность: ${formatDuration(call.duration_seconds)}`,
+      '='.repeat(50),
+      ''
+    ];
+
+    if (call.summary) {
+      sections.push('📋 РЕЗЮМЕ', '-'.repeat(30), call.summary, '');
+    }
+
+    if (call.key_points && call.key_points.length > 0) {
+      sections.push('💡 КЛЮЧЕВЫЕ МОМЕНТЫ', '-'.repeat(30));
+      call.key_points.forEach((point, i) => {
+        sections.push(`${i + 1}. ${point}`);
+      });
+      sections.push('');
+    }
+
+    if (call.action_items && call.action_items.length > 0) {
+      sections.push('✅ ЗАДАЧИ', '-'.repeat(30));
+      call.action_items.forEach((item, i) => {
+        sections.push(`${i + 1}. ${item}`);
+      });
+      sections.push('');
+    }
+
+    downloadFile(sections.join('\n'), `analysis_${call.id}.txt`);
   };
 
   return (
@@ -334,6 +409,20 @@ export default function CallDetail({ call }: CallDetailProps) {
           >
             {activeTab === 'summary' && (
               <div className="space-y-6">
+                {/* Export button for analysis */}
+                {(call.summary || (call.key_points && call.key_points.length > 0) || (call.action_items && call.action_items.length > 0)) && (
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleExportAnalysis}
+                      className="px-3 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 transition-colors flex items-center gap-2"
+                      title="Скачать анализ"
+                    >
+                      <Download size={16} className="text-cyan-400" />
+                      <span className="text-sm text-cyan-400">Скачать анализ</span>
+                    </button>
+                  </div>
+                )}
+
                 {call.summary && (
                   <div>
                     <div className="flex items-center justify-between mb-3">
@@ -348,7 +437,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                         {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} className="text-white/40" />}
                       </button>
                     </div>
-                    <p className="text-white/80 whitespace-pre-wrap leading-relaxed">{call.summary}</p>
+                    <p className="text-white/80 whitespace-pre-wrap leading-relaxed break-words">{call.summary}</p>
                   </div>
                 )}
 
@@ -360,11 +449,11 @@ export default function CallDetail({ call }: CallDetailProps) {
                     </h3>
                     <ul className="space-y-2">
                       {call.key_points.map((point, idx) => (
-                        <li key={idx} className="flex items-start gap-3 text-white/80">
+                        <li key={idx} className="flex items-start gap-3 text-white/80 break-words">
                           <span className="w-6 h-6 rounded-full bg-yellow-500/20 text-yellow-400 flex items-center justify-center text-xs flex-shrink-0 mt-0.5">
                             {idx + 1}
                           </span>
-                          {point}
+                          <span className="break-words">{point}</span>
                         </li>
                       ))}
                     </ul>
@@ -381,14 +470,27 @@ export default function CallDetail({ call }: CallDetailProps) {
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-white">Транскрипт</h3>
-                  {call.transcript && (
-                    <button
-                      onClick={() => handleCopy(call.transcript || '')}
-                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
-                    >
-                      {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} className="text-white/40" />}
-                    </button>
-                  )}
+                  <div className="flex gap-2">
+                    {(call.transcript || (call.speakers && call.speakers.length > 0)) && (
+                      <>
+                        <button
+                          onClick={handleExportTranscript}
+                          className="p-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 transition-colors flex items-center gap-2"
+                          title="Скачать транскрипт"
+                        >
+                          <Download size={16} className="text-cyan-400" />
+                          <span className="text-sm text-cyan-400 hidden sm:inline">Скачать</span>
+                        </button>
+                        <button
+                          onClick={() => handleCopy(call.transcript || '')}
+                          className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                          title="Копировать"
+                        >
+                          {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} className="text-white/40" />}
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {/* Speaker-based transcript (chat style) */}
@@ -420,14 +522,14 @@ export default function CallDetail({ call }: CallDetailProps) {
                         <div
                           key={idx}
                           className={clsx(
-                            'p-4 rounded-xl border',
+                            'p-4 rounded-xl border overflow-hidden',
                             colorSet.bg,
                             colorSet.border
                           )}
                         >
-                          <div className="flex items-center gap-3 mb-2">
+                          <div className="flex items-center gap-3 mb-2 flex-wrap">
                             <div className={clsx(
-                              'w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium',
+                              'w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium flex-shrink-0',
                               colorSet.bg,
                               colorSet.text
                             )}>
@@ -436,11 +538,14 @@ export default function CallDetail({ call }: CallDetailProps) {
                             <span className={clsx('font-medium', colorSet.text)}>
                               {segment.speaker}
                             </span>
-                            <span className="text-white/30 text-xs ml-auto">
-                              {formatTime(segment.start)} — {formatTime(segment.end)}
-                            </span>
+                            {(segment.start > 0 || segment.end > 0) && (
+                              <span className="px-2 py-0.5 rounded bg-white/10 text-white/50 text-xs flex items-center gap-1 ml-auto">
+                                <Clock size={12} />
+                                {formatTime(segment.start)}
+                              </span>
+                            )}
                           </div>
-                          <p className="text-white/80 leading-relaxed pl-11">
+                          <p className="text-white/80 leading-relaxed pl-11 break-words whitespace-pre-wrap">
                             {segment.text}
                           </p>
                         </div>
@@ -449,7 +554,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                   </div>
                 ) : call.transcript ? (
                   <div className="prose prose-invert max-w-none">
-                    <p className="text-white/80 whitespace-pre-wrap leading-relaxed">{call.transcript}</p>
+                    <p className="text-white/80 whitespace-pre-wrap leading-relaxed break-words">{call.transcript}</p>
                   </div>
                 ) : (
                   <p className="text-white/40">Транскрипт недоступен</p>
@@ -471,7 +576,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                         <div className="w-5 h-5 rounded border border-green-500/50 flex items-center justify-center flex-shrink-0 mt-0.5">
                           <CheckSquare size={12} className="text-green-400 opacity-0" />
                         </div>
-                        <span className="text-white/80">{item}</span>
+                        <span className="text-white/80 break-words">{item}</span>
                       </li>
                     ))}
                   </ul>
