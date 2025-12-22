@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileText,
   CheckSquare,
@@ -8,11 +8,17 @@ import {
   User,
   Copy,
   Check,
-  RefreshCw
+  RefreshCw,
+  Edit3,
+  X,
+  Save,
+  Link,
+  Unlink
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useCallStore } from '@/stores/callStore';
+import { useEntityStore } from '@/stores/entityStore';
 import type { CallRecording } from '@/types';
 
 interface CallDetailProps {
@@ -20,41 +26,168 @@ interface CallDetailProps {
 }
 
 export default function CallDetail({ call }: CallDetailProps) {
-  const { reprocessCall, loading } = useCallStore();
+  const { reprocessCall, updateCall, loading } = useCallStore();
+  const { entities, fetchEntities } = useEntityStore();
+
   const [activeTab, setActiveTab] = useState<'transcript' | 'summary' | 'actions'>('summary');
   const [copied, setCopied] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(call.title || '');
+  const [editEntityId, setEditEntityId] = useState<number | null>(call.entity_id || null);
+  const [saving, setSaving] = useState(false);
+
+  // Fetch entities for dropdown
+  useEffect(() => {
+    if (isEditing && entities.length === 0) {
+      fetchEntities();
+    }
+  }, [isEditing]);
+
+  // Sync edit state when call changes
+  useEffect(() => {
+    setEditTitle(call.title || '');
+    setEditEntityId(call.entity_id || null);
+  }, [call.id, call.title, call.entity_id]);
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
-    toast.success('Copied to clipboard');
+    toast.success('Скопировано');
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleReprocess = async () => {
     try {
       await reprocessCall(call.id);
-      toast.success('Reprocessing started');
+      toast.success('Переобработка запущена');
     } catch {
-      toast.error('Failed to start reprocessing');
+      toast.error('Не удалось запустить переобработку');
     }
+  };
+
+  const handleSaveEdit = async () => {
+    setSaving(true);
+    try {
+      await updateCall(call.id, {
+        title: editTitle || undefined,
+        entity_id: editEntityId === null ? -1 : editEntityId
+      });
+      toast.success('Изменения сохранены');
+      setIsEditing(false);
+    } catch {
+      toast.error('Не удалось сохранить');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditTitle(call.title || '');
+    setEditEntityId(call.entity_id || null);
+    setIsEditing(false);
   };
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return '—';
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins}m ${secs}s`;
+    return `${mins}м ${secs}с`;
   };
 
   return (
     <div className="p-6">
+      {/* Edit Panel */}
+      <AnimatePresence>
+        {isEditing && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="bg-gradient-to-r from-purple-500/20 to-cyan-500/20 border border-purple-500/30 rounded-xl p-4 mb-6"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Edit3 size={20} className="text-purple-400" />
+                Редактирование звонка
+              </h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCancelEdit}
+                  className="px-3 py-1.5 rounded-lg bg-white/10 text-white/60 hover:bg-white/20 transition-colors flex items-center gap-2"
+                >
+                  <X size={16} />
+                  Отмена
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={saving}
+                  className="px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors flex items-center gap-2"
+                >
+                  {saving ? (
+                    <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Save size={16} />
+                  )}
+                  Сохранить
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {/* Title */}
+              <div>
+                <label className="block text-sm text-white/60 mb-2">
+                  Название звонка
+                </label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="Например: Интервью с кандидатом"
+                  className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-500/50"
+                />
+              </div>
+
+              {/* Entity Link */}
+              <div>
+                <label className="block text-sm text-white/60 mb-2">
+                  Связать с контактом
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={editEntityId || ''}
+                    onChange={(e) => setEditEntityId(e.target.value ? parseInt(e.target.value) : null)}
+                    className="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-cyan-500/50 appearance-none cursor-pointer"
+                  >
+                    <option value="" className="bg-gray-900">Не связан</option>
+                    {entities.map((entity) => (
+                      <option key={entity.id} value={entity.id} className="bg-gray-900">
+                        {entity.name} ({entity.type})
+                      </option>
+                    ))}
+                  </select>
+                  {editEntityId && (
+                    <button
+                      onClick={() => setEditEntityId(null)}
+                      className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                      title="Отвязать"
+                    >
+                      <Unlink size={20} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Status Banner */}
       {call.status === 'failed' && (
         <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-4 mb-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-red-400 font-medium">Processing Failed</p>
+              <p className="text-red-400 font-medium">Обработка не удалась</p>
               {call.error_message && (
                 <p className="text-sm text-red-300/60 mt-1">{call.error_message}</p>
               )}
@@ -65,7 +198,7 @@ export default function CallDetail({ call }: CallDetailProps) {
               className="px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors flex items-center gap-2"
             >
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-              Retry
+              Повторить
             </button>
           </div>
         </div>
@@ -83,6 +216,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                 {call.status === 'processing' && 'Обрабатываем аудио файл...'}
                 {call.status === 'recording' && 'Идёт запись...'}
                 {call.status === 'connecting' && 'Подключаемся к встрече...'}
+                {call.status === 'pending' && 'Ожидание...'}
               </p>
             </div>
           </div>
@@ -111,16 +245,57 @@ export default function CallDetail({ call }: CallDetailProps) {
           </p>
         </div>
 
-        <div className="bg-white/5 rounded-xl p-4">
+        <div className="bg-white/5 rounded-xl p-4 relative group">
           <div className="flex items-center gap-2 text-white/40 text-sm mb-2">
             <User size={16} />
             Контакт
           </div>
-          <p className="text-lg font-semibold text-white truncate">
-            {call.entity_name || 'Не связан'}
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-lg font-semibold text-white truncate">
+              {call.entity_name || 'Не связан'}
+            </p>
+            {!isEditing && (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-all"
+                title="Редактировать"
+              >
+                <Edit3 size={14} className="text-white/60" />
+              </button>
+            )}
+          </div>
+          {call.entity_id && (
+            <div className="mt-1 flex items-center gap-1 text-xs text-cyan-400/60">
+              <Link size={12} />
+              Связан
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Title Display/Edit Button */}
+      {(call.title || !isEditing) && (
+        <div className="flex items-center gap-3 mb-6">
+          {call.title && (
+            <div className="flex-1 bg-white/5 rounded-xl p-4">
+              <div className="flex items-center gap-2 text-white/40 text-sm mb-1">
+                <FileText size={14} />
+                Название
+              </div>
+              <p className="text-white font-medium">{call.title}</p>
+            </div>
+          )}
+          {!isEditing && (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="px-4 py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors flex items-center gap-2"
+            >
+              <Edit3 size={16} />
+              {call.title || call.entity_name ? 'Редактировать' : 'Добавить название / связать'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       {call.status === 'done' && (
@@ -194,6 +369,10 @@ export default function CallDetail({ call }: CallDetailProps) {
                       ))}
                     </ul>
                   </div>
+                )}
+
+                {!call.summary && (!call.key_points || call.key_points.length === 0) && (
+                  <p className="text-white/40">Резюме недоступно</p>
                 )}
               </div>
             )}

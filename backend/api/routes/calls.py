@@ -29,16 +29,24 @@ class CallCreate(BaseModel):
     entity_id: Optional[int] = None
     source_url: Optional[str] = None
     bot_name: str = "HR Recorder"
+    title: Optional[str] = None
 
 
 class StartBotRequest(BaseModel):
     source_url: str
     bot_name: str = "HR Recorder"
     entity_id: Optional[int] = None
+    title: Optional[str] = None
+
+
+class CallUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    entity_id: Optional[int] = None  # Use -1 to unlink
 
 
 class CallResponse(BaseModel):
     id: int
+    title: Optional[str] = None
     entity_id: Optional[int] = None
     owner_id: Optional[int] = None
     source_type: CallSource
@@ -97,6 +105,7 @@ async def list_calls(
 
         response.append({
             "id": call.id,
+            "title": call.title,
             "entity_id": call.entity_id,
             "owner_id": call.owner_id,
             "source_type": call.source_type,
@@ -230,6 +239,7 @@ async def get_call(
 
     return {
         "id": call.id,
+        "title": call.title,
         "entity_id": call.entity_id,
         "owner_id": call.owner_id,
         "source_type": call.source_type,
@@ -390,3 +400,58 @@ async def reprocess_call(
     background_tasks.add_task(process_call_background, call.id)
 
     return {"success": True, "status": call.status.value}
+
+
+@router.patch("/{call_id}")
+async def update_call(
+    call_id: int,
+    data: CallUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update call recording (title, entity link)"""
+    result = await db.execute(
+        select(CallRecording).where(CallRecording.id == call_id)
+    )
+    call = result.scalar_one_or_none()
+
+    if not call:
+        raise HTTPException(404, "Call not found")
+
+    # Update title if provided
+    if data.title is not None:
+        call.title = data.title if data.title else None
+
+    # Update entity link
+    if data.entity_id is not None:
+        if data.entity_id == -1:
+            # Unlink entity
+            call.entity_id = None
+        else:
+            # Verify entity exists
+            entity_result = await db.execute(
+                select(Entity).where(Entity.id == data.entity_id)
+            )
+            entity = entity_result.scalar_one_or_none()
+            if not entity:
+                raise HTTPException(404, "Entity not found")
+            call.entity_id = data.entity_id
+
+    await db.commit()
+    await db.refresh(call)
+
+    # Get entity name for response
+    entity_name = None
+    if call.entity_id:
+        entity_result = await db.execute(
+            select(Entity.name).where(Entity.id == call.entity_id)
+        )
+        entity_name = entity_result.scalar()
+
+    return {
+        "id": call.id,
+        "title": call.title,
+        "entity_id": call.entity_id,
+        "entity_name": entity_name,
+        "success": True
+    }

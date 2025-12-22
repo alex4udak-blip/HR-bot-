@@ -607,4 +607,12 @@ export const reprocessCall = async (id: number): Promise<{ success: boolean; sta
   return data;
 };
 
+export const updateCall = async (
+  id: number,
+  data: { title?: string; entity_id?: number }
+): Promise<{ id: number; title?: string; entity_id?: number; entity_name?: string; success: boolean }> => {
+  const { data: result } = await api.patch(`/calls/${id}`, data);
+  return result;
+};
+
 export default api;

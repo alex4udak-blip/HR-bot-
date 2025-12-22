@@ -258,6 +258,7 @@ class CallRecording(Base):
     __tablename__ = "call_recordings"
 
     id = Column(Integer, primary_key=True)
+    title = Column(String(255), nullable=True)  # Custom name for the call
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True, index=True)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     source_type = Column(SQLEnum(CallSource), nullable=False)

@@ -25,6 +25,7 @@ interface CallState {
   stopRecording: () => Promise<void>;
   deleteCall: (id: number) => Promise<void>;
   reprocessCall: (id: number) => Promise<void>;
+  updateCall: (id: number, data: { title?: string; entity_id?: number }) => Promise<void>;
   pollStatus: (id: number) => void;
   stopPolling: () => void;
   clearActiveRecording: () => void;
@@ -134,6 +135,27 @@ export const useCallStore = create<CallState>((set, get) => ({
       get().pollStatus(id);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to reprocess call';
+      set({ error: message, loading: false });
+      throw err;
+    }
+  },
+
+  updateCall: async (id, data) => {
+    set({ loading: true, error: null });
+    try {
+      const result = await api.updateCall(id, data);
+      // Update current call if it matches
+      set((state) => ({
+        currentCall: state.currentCall?.id === id
+          ? { ...state.currentCall, title: result.title, entity_id: result.entity_id, entity_name: result.entity_name }
+          : state.currentCall,
+        calls: state.calls.map((c) =>
+          c.id === id ? { ...c, title: result.title, entity_id: result.entity_id, entity_name: result.entity_name } : c
+        ),
+        loading: false
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update call';
       set({ error: message, loading: false });
       throw err;
     }
