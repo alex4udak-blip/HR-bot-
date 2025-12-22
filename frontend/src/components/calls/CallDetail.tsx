@@ -317,7 +317,7 @@ export default function CallDetail({ call }: CallDetailProps) {
         )}
       </AnimatePresence>
 
-      {/* Status Banner */}
+      {/* Status Banner - Failed */}
       {call.status === 'failed' && (
         <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-4 mb-6">
           <div className="flex items-center justify-between">
@@ -339,21 +339,61 @@ export default function CallDetail({ call }: CallDetailProps) {
         </div>
       )}
 
+      {/* Reanalyze button for completed calls */}
+      {call.status === 'done' && call.transcript && (
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={handleReprocess}
+            disabled={loading}
+            className="px-3 py-2 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors flex items-center gap-2 text-sm"
+            title="Переанализировать транскрипт с обновлённым промптом"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Переанализировать
+          </button>
+        </div>
+      )}
+
       {call.status !== 'done' && call.status !== 'failed' && (
-        <div className="bg-cyan-500/20 border border-cyan-500/30 rounded-xl p-4 mb-6">
+        <div className={clsx(
+          'rounded-xl p-4 mb-6 border',
+          call.status === 'recording'
+            ? 'bg-red-500/20 border-red-500/30'
+            : 'bg-cyan-500/20 border-cyan-500/30'
+        )}>
           <div className="flex items-center gap-3">
-            <div className="w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-            <div>
-              <p className="text-cyan-400 font-medium">Обработка</p>
-              <p className="text-sm text-cyan-300/60">
+            {call.status === 'recording' ? (
+              <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse" />
+            ) : (
+              <div className="w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+            )}
+            <div className="flex-1">
+              <p className={clsx(
+                'font-medium',
+                call.status === 'recording' ? 'text-red-400' : 'text-cyan-400'
+              )}>
+                {call.status === 'recording' ? '● REC' : 'Обработка'}
+              </p>
+              <p className={clsx(
+                'text-sm',
+                call.status === 'recording' ? 'text-red-300/60' : 'text-cyan-300/60'
+              )}>
                 {call.status === 'transcribing' && 'Транскрибируем аудио...'}
                 {call.status === 'analyzing' && 'Анализируем содержимое...'}
                 {call.status === 'processing' && 'Обрабатываем аудио файл...'}
-                {call.status === 'recording' && 'Идёт запись...'}
+                {call.status === 'recording' && 'Fireflies бот записывает встречу. Завершите встречу для обработки.'}
                 {call.status === 'connecting' && 'Подключаемся к встрече...'}
                 {call.status === 'pending' && 'Ожидание...'}
               </p>
             </div>
+            {call.status === 'recording' && call.started_at && (
+              <div className="text-right">
+                <p className="text-xs text-red-400/60">Начало</p>
+                <p className="text-sm text-red-300">
+                  {new Date(call.started_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

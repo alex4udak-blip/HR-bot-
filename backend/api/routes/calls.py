@@ -223,8 +223,11 @@ async def start_bot(
             await db.commit()
             raise HTTPException(500, f"Fireflies error: {error_msg}")
 
-        # Update status to connecting (bot is joining the meeting)
-        call.status = CallStatus.connecting
+        # Update status to recording
+        # Note: Fireflies bot joins within ~1 minute, and we have no webhook for "joined"
+        # So we set to "recording" immediately - the bot IS recording once it joins
+        call.status = CallStatus.recording
+        call.started_at = datetime.utcnow()
         await db.commit()
         logger.info(f"Call {call.id} Fireflies bot dispatched for {data.source_url}")
 
