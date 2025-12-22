@@ -1,105 +1,121 @@
 """
-Call Recorder Service - Manages recording tasks via Redis queue.
-Puppeteer worker reads from the queue and performs the actual recording.
+Call Recorder Service - Uses Fireflies.ai for meeting recording & transcription.
+
+Instead of self-hosted Puppeteer recorder, we now use Fireflies API:
+- addToLiveMeeting: Fireflies bot joins the meeting
+- Fireflies handles recording, transcription, and speaker diarization
+- Webhook notifies us when transcription is ready
 """
 
 import logging
-import json
-from datetime import datetime
 from typing import Optional
 
-from ..config import settings
+from .fireflies_client import fireflies_client
 
 logger = logging.getLogger("hr-analyzer.call_recorder")
 
 
 class CallRecorder:
-    """Manages call recording tasks via Redis queue."""
+    """
+    Manages call recording via Fireflies.ai API.
 
-    def __init__(self):
-        self._redis = None
+    Flow:
+    1. User provides meeting URL (Google Meet, Zoom, Teams)
+    2. We call Fireflies addToLiveMeeting with title "HR Call #{call_id}"
+    3. Fireflies bot joins, records, and transcribes
+    4. Fireflies sends webhook when done
+    5. We fetch transcript and process with Claude
+    """
 
-    async def get_redis(self):
-        """Get or create Redis connection."""
-        if self._redis is None:
-            try:
-                import redis.asyncio as redis
-                self._redis = await redis.from_url(
-                    settings.redis_url,
-                    encoding="utf-8",
-                    decode_responses=True
-                )
-                logger.info("Redis connection established")
-            except Exception as e:
-                logger.error(f"Failed to connect to Redis: {e}")
-                raise
-        return self._redis
+    async def start_recording(
+        self,
+        call_id: int,
+        meeting_url: str,
+        bot_name: str = "HR Recorder",
+        duration: int = 90
+    ) -> dict:
+        """
+        Start recording a meeting via Fireflies.
 
-    async def start_recording(self, call_id: int, meeting_url: str, bot_name: str):
-        """Add a recording task to the queue."""
-        try:
-            r = await self.get_redis()
+        Args:
+            call_id: Our internal call ID (used to identify in webhook)
+            meeting_url: URL of the meeting (Google Meet, Zoom, Teams)
+            bot_name: Not used by Fireflies, but kept for compatibility
+            duration: Max recording duration in minutes (default 90)
 
-            task = {
-                "call_id": call_id,
-                "meeting_url": meeting_url,
-                "bot_name": bot_name,
-                "created_at": datetime.utcnow().isoformat()
-            }
+        Returns:
+            {"success": True/False, "message": "..."}
+        """
+        # Create title that includes call_id for webhook identification
+        title = f"HR Call #{call_id}"
 
-            await r.lpush("call_recording_tasks", json.dumps(task))
-            logger.info(f"Recording task added for call {call_id}: {meeting_url}")
+        logger.info(f"Starting Fireflies recording for call {call_id}: {meeting_url}")
 
-        except Exception as e:
-            logger.error(f"Failed to add recording task: {e}")
-            raise
+        result = await fireflies_client.add_to_live_meeting(
+            meeting_link=meeting_url,
+            title=title,
+            language="ru",
+            duration=duration
+        )
+
+        if result.get("success"):
+            logger.info(f"Fireflies bot dispatched for call {call_id}")
+        else:
+            logger.error(f"Failed to start Fireflies for call {call_id}: {result.get('message')}")
+
+        return result
 
     async def stop_recording(self, call_id: int):
-        """Send a stop command for a recording."""
-        try:
-            r = await self.get_redis()
-            await r.publish(f"call_control:{call_id}", "stop")
-            logger.info(f"Stop command sent for call {call_id}")
+        """
+        Stop recording is not directly supported by Fireflies.
+        The bot will leave when the meeting ends or after duration timeout.
+        """
+        logger.warning(
+            f"Stop recording requested for call {call_id}, "
+            "but Fireflies bot leaves automatically when meeting ends"
+        )
 
-        except Exception as e:
-            logger.error(f"Failed to send stop command: {e}")
-            raise
+    async def get_transcript(self, transcript_id: str) -> Optional[dict]:
+        """
+        Fetch transcript from Fireflies.
 
-    async def get_status(self, call_id: int) -> Optional[dict]:
-        """Get recording status from Redis (for quick status checks)."""
-        try:
-            r = await self.get_redis()
-            status = await r.hgetall(f"call:{call_id}")
-            return status if status else None
-
-        except Exception as e:
-            logger.warning(f"Failed to get status from Redis: {e}")
-            return None
-
-    async def update_status(self, call_id: int, status: str, **kwargs):
-        """Update recording status in Redis (called by worker)."""
-        try:
-            r = await self.get_redis()
-
-            data = {
-                "status": status,
-                "updated_at": datetime.utcnow().isoformat()
+        Returns:
+            {
+                "id": "...",
+                "title": "...",
+                "duration": 1234,
+                "speakers": [...],
+                "sentences": [...],
+                "summary": {...}
             }
-            data.update(kwargs)
+        """
+        return await fireflies_client.get_transcript(transcript_id)
 
-            await r.hset(f"call:{call_id}", mapping=data)
-            await r.expire(f"call:{call_id}", 3600)  # TTL 1 hour
+    async def upload_audio(
+        self,
+        audio_url: str,
+        call_id: int,
+        webhook_url: Optional[str] = None
+    ) -> dict:
+        """
+        Upload audio file to Fireflies for transcription.
 
-            logger.info(f"Status updated for call {call_id}: {status}")
+        Args:
+            audio_url: Public URL of the audio file
+            call_id: Our internal call ID
+            webhook_url: Optional webhook URL for notification
 
-        except Exception as e:
-            logger.warning(f"Failed to update Redis status: {e}")
+        Returns:
+            {"success": True/False, "message": "..."}
+        """
+        title = f"HR Call #{call_id}"
 
-    async def cleanup(self):
-        """Close Redis connection."""
-        if self._redis:
-            await self._redis.close()
-            self._redis = None
+        return await fireflies_client.upload_audio(
+            audio_url=audio_url,
+            title=title,
+            webhook_url=webhook_url,
+            language="ru"
+        )
 
 
 # Global instance

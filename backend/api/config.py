@@ -35,10 +35,16 @@ class Settings(BaseSettings):
         alias="OPENAI_API_KEY"
     )
 
-    # Redis for call recording queue
+    # Redis (optional, for future use)
     redis_url: str = Field(
         default="redis://localhost:6379",
         alias="REDIS_URL"
+    )
+
+    # Fireflies.ai API for call recording & transcription
+    fireflies_api_key: str = Field(
+        default="",
+        alias="FIREFLIES_API_KEY"
     )
 
     # Superadmin credentials - MUST be set in Railway Variables

@@ -166,6 +166,72 @@ class CallProcessor:
         except Exception:
             return 0
 
+    async def analyze_transcript(
+        self,
+        call_id: int,
+        transcript: str,
+        speakers: list,
+        fireflies_summary: Optional[dict] = None
+    ):
+        """
+        Analyze a transcript from Fireflies (already transcribed with speaker diarization).
+
+        Args:
+            call_id: Internal call ID
+            transcript: Formatted transcript text
+            speakers: List of speaker segments with timestamps
+            fireflies_summary: Optional summary from Fireflies
+        """
+        from ..database import AsyncSessionLocal
+        from ..models.database import CallRecording, CallStatus
+        from sqlalchemy import select
+
+        self._init_clients()
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(CallRecording).where(CallRecording.id == call_id)
+            )
+            call = result.scalar_one_or_none()
+
+            if not call:
+                logger.error(f"Call {call_id} not found for transcript analysis")
+                return
+
+            try:
+                call.status = CallStatus.analyzing
+                call.transcript = transcript
+                call.speakers = speakers
+                await db.commit()
+
+                # Use Fireflies summary if available, otherwise use Claude
+                if fireflies_summary and fireflies_summary.get("overview"):
+                    analysis = {
+                        "summary": fireflies_summary.get("overview", ""),
+                        "key_points": fireflies_summary.get("keywords", []),
+                        "action_items": fireflies_summary.get("action_items", [])
+                    }
+                    logger.info(f"Using Fireflies summary for call {call_id}")
+                else:
+                    # Fallback to Claude analysis
+                    analysis = await self._analyze(transcript)
+                    logger.info(f"Used Claude analysis for call {call_id}")
+
+                call.summary = analysis.get("summary")
+                call.action_items = analysis.get("action_items")
+                call.key_points = analysis.get("key_points")
+                call.status = CallStatus.done
+                call.processed_at = datetime.utcnow()
+                await db.commit()
+
+                logger.info(f"Call {call_id} transcript analyzed successfully")
+
+            except Exception as e:
+                logger.error(f"Error analyzing transcript for call {call_id}: {e}")
+                call.status = CallStatus.failed
+                call.error_message = str(e)
+                await db.commit()
+
     async def _analyze(self, transcript: str) -> dict:
         """Analyze transcript using Claude."""
         if not self.anthropic:

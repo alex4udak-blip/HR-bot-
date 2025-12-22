@@ -234,7 +234,7 @@ export interface EntityTransfer {
 
 // === Call Types ===
 
-export type CallSource = 'meet' | 'zoom' | 'upload' | 'telegram';
+export type CallSource = 'meet' | 'zoom' | 'teams' | 'upload' | 'telegram';
 
 export type CallStatus =
   | 'pending'
