@@ -141,6 +141,15 @@ async def init_database():
                 except Exception:
                     pass  # Column already exists or entities table doesn't exist
 
+                # Add title column to call_recordings if it doesn't exist
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS title VARCHAR(255)"
+                    ))
+                    logger.info("Added title column to call_recordings table")
+                except Exception:
+                    pass  # Column already exists
+
             # Create superadmin
             async with AsyncSessionLocal() as db:
                 await create_superadmin_if_not_exists(db)

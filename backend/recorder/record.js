@@ -43,6 +43,7 @@ async function recordMeeting() {
 
     const browser = await puppeteer.launch({
         headless: 'new',
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -51,7 +52,8 @@ async function recordMeeting() {
             '--use-fake-ui-for-media-stream',
             '--use-fake-device-for-media-stream',
             '--autoplay-policy=no-user-gesture-required',
-            '--disable-features=AudioServiceOutOfProcess'
+            '--disable-features=AudioServiceOutOfProcess',
+            '--disable-gpu'
         ]
     });
 
