@@ -81,25 +81,78 @@ async function loginToGoogle(page) {
 
         // Wait for and fill email
         await page.waitForSelector('input[type="email"]', { timeout: 15000 });
-        await page.type('input[type="email"]', GOOGLE_EMAIL, { delay: 50 });
+        await page.type('input[type="email"]', GOOGLE_EMAIL, { delay: 100 });
         console.log('Email entered');
 
+        await saveScreenshot(page, 'login_02_email_entered');
+
         // Click Next
         await page.keyboard.press('Enter');
-        await new Promise(r => setTimeout(r, 3000));
+        console.log('Clicked Next after email');
 
-        await saveScreenshot(page, 'login_02_after_email');
+        // Wait longer for the page to transition
+        await new Promise(r => setTimeout(r, 5000));
 
-        // Wait for password field
-        await page.waitForSelector('input[type="password"]', { visible: true, timeout: 15000 });
-        await new Promise(r => setTimeout(r, 1000));
+        await saveScreenshot(page, 'login_03_after_email_next');
+
+        // Log current URL and page content for debugging
+        const currentUrl = page.url();
+        console.log(`Current URL after email: ${currentUrl}`);
+
+        // Check if we're on a challenge page
+        const pageContent = await page.content();
+        if (pageContent.includes('captcha') || pageContent.includes('challenge')) {
+            console.log('WARNING: Google is showing a captcha or challenge page');
+            await saveScreenshot(page, 'login_challenge');
+            return false;
+        }
+
+        // Try multiple selectors for password field
+        const passwordSelectors = [
+            'input[type="password"]',
+            'input[name="password"]',
+            'input[name="Passwd"]',
+            '#password input',
+            '[aria-label*="password" i]',
+            '[aria-label*="пароль" i]'
+        ];
+
+        let passwordField = null;
+        for (const selector of passwordSelectors) {
+            try {
+                await page.waitForSelector(selector, { visible: true, timeout: 5000 });
+                passwordField = await page.$(selector);
+                if (passwordField) {
+                    console.log(`Found password field with selector: ${selector}`);
+                    break;
+                }
+            } catch (e) {
+                console.log(`Password selector ${selector} not found, trying next...`);
+            }
+        }
+
+        if (!passwordField) {
+            console.error('Could not find password field with any selector');
+            await saveScreenshot(page, 'login_no_password_field');
+
+            // Log what's on the page
+            const title = await page.title();
+            console.log(`Page title: ${title}`);
+
+            return false;
+        }
+
+        await saveScreenshot(page, 'login_04_password_field_found');
 
         // Fill password
-        await page.type('input[type="password"]', GOOGLE_PASSWORD, { delay: 50 });
+        await passwordField.type(GOOGLE_PASSWORD, { delay: 100 });
         console.log('Password entered');
+
+        await saveScreenshot(page, 'login_05_password_entered');
 
         // Click Next
         await page.keyboard.press('Enter');
+        console.log('Clicked Next after password');
 
         // Wait for login to complete (redirect away from accounts.google.com)
         await page.waitForFunction(
@@ -107,13 +160,23 @@ async function loginToGoogle(page) {
             { timeout: 30000 }
         );
 
-        await saveScreenshot(page, 'login_03_complete');
+        await saveScreenshot(page, 'login_06_complete');
         console.log('Successfully logged in to Google');
         return true;
 
     } catch (error) {
         console.error('Google login failed:', error.message);
         await saveScreenshot(page, 'login_error');
+
+        // Try to log more debug info
+        try {
+            const title = await page.title();
+            const url = page.url();
+            console.log(`Failed at - Title: ${title}, URL: ${url}`);
+        } catch (e) {
+            console.log('Could not get page info');
+        }
+
         return false;
     }
 }
