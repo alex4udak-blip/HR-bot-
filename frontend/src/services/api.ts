@@ -77,6 +77,7 @@ export const getChat = async (id: number): Promise<Chat> => {
 export const updateChat = async (id: number, updates: {
   custom_name?: string;
   chat_type?: string;
+  entity_id?: number;
   is_active?: boolean;
 }): Promise<Chat> => {
   const { data } = await api.patch(`/chats/${id}`, updates);
