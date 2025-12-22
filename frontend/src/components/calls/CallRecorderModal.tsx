@@ -17,7 +17,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
   const { uploadCall, startBot, loading } = useCallStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [mode, setMode] = useState<RecordMode>('upload');
+  const [mode, setMode] = useState<RecordMode>('bot');
   const [file, setFile] = useState<File | null>(null);
   const [meetingUrl, setMeetingUrl] = useState('');
   const [botName, setBotName] = useState('HR Recorder');
@@ -101,7 +101,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
       >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
-          <h2 className="text-xl font-semibold text-white">New Recording</h2>
+          <h2 className="text-xl font-semibold text-white">Новая запись</h2>
           <button
             onClick={onClose}
             className="p-2 rounded-lg hover:bg-white/10 transition-colors"
@@ -113,18 +113,6 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
         {/* Mode Tabs */}
         <div className="flex p-4 gap-2 border-b border-white/10">
           <button
-            onClick={() => setMode('upload')}
-            className={clsx(
-              'flex-1 p-3 rounded-lg flex items-center justify-center gap-2 transition-colors',
-              mode === 'upload'
-                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
-                : 'bg-white/5 text-white/60 border border-white/10 hover:bg-white/10'
-            )}
-          >
-            <Upload size={20} />
-            Upload File
-          </button>
-          <button
             onClick={() => setMode('bot')}
             className={clsx(
               'flex-1 p-3 rounded-lg flex items-center justify-center gap-2 transition-colors',
@@ -134,7 +122,19 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
             )}
           >
             <Video size={20} />
-            Join Meeting
+            Присоединиться к встрече
+          </button>
+          <button
+            onClick={() => setMode('upload')}
+            className={clsx(
+              'flex-1 p-3 rounded-lg flex items-center justify-center gap-2 transition-colors',
+              mode === 'upload'
+                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
+                : 'bg-white/5 text-white/60 border border-white/10 hover:bg-white/10'
+            )}
+          >
+            <Upload size={20} />
+            Загрузить файл
           </button>
         </div>
 
@@ -172,9 +172,9 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
                 ) : (
                   <div className="flex flex-col items-center">
                     <Upload size={40} className="text-white/40 mb-3" />
-                    <p className="text-white/60">Drop audio/video file here</p>
+                    <p className="text-white/60">Перетащите аудио/видео файл сюда</p>
                     <p className="text-sm text-white/40 mt-1">
-                      or click to browse
+                      или нажмите для выбора
                     </p>
                     <p className="text-xs text-white/30 mt-3">
                       MP3, MP4, WAV, M4A, WebM, OGG
@@ -188,7 +188,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
               {/* Meeting URL */}
               <div>
                 <label className="block text-sm font-medium text-white/60 mb-2">
-                  Meeting URL
+                  Ссылка на встречу
                 </label>
                 <div className="relative">
                   <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={18} />
@@ -207,7 +207,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
                 </div>
                 {meetingUrl && !isValidUrl(meetingUrl) && (
                   <p className="text-red-400 text-xs mt-1">
-                    Only Google Meet and Zoom are supported
+                    Поддерживаются только Google Meet и Zoom
                   </p>
                 )}
               </div>
@@ -215,7 +215,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
               {/* Bot Name */}
               <div>
                 <label className="block text-sm font-medium text-white/60 mb-2">
-                  Bot Display Name
+                  Имя бота
                 </label>
                 <input
                   type="text"
@@ -231,7 +231,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
           {/* Link to Entity */}
           <div className="relative">
             <label className="block text-sm font-medium text-white/60 mb-2">
-              Link to Contact (optional)
+              Связать с контактом (опционально)
             </label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={18} />
@@ -245,7 +245,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
                 }}
                 onFocus={() => setShowEntityDropdown(true)}
                 className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
-                placeholder="Search contacts..."
+                placeholder="Поиск контактов..."
               />
               {selectedEntityId && (
                 <button
@@ -288,7 +288,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
                     </button>
                   ))
                 ) : (
-                  <div className="px-4 py-3 text-white/40 text-sm">No contacts found</div>
+                  <div className="px-4 py-3 text-white/40 text-sm">Контакты не найдены</div>
                 )}
               </motion.div>
             )}
@@ -301,7 +301,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
               onClick={onClose}
               className="flex-1 px-4 py-2 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 transition-colors"
             >
-              Cancel
+              Отмена
             </button>
             <button
               type="submit"
@@ -311,7 +311,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
               {loading && (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               )}
-              {mode === 'upload' ? 'Upload & Process' : 'Start Recording'}
+              {mode === 'upload' ? 'Загрузить и обработать' : 'Начать запись'}
             </button>
           </div>
         </form>

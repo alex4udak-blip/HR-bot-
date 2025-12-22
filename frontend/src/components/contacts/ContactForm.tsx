@@ -50,10 +50,10 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
   const validate = () => {
     const newErrors: Record<string, string> = {};
     if (!formData.name.trim()) {
-      newErrors.name = 'Name is required';
+      newErrors.name = 'Имя обязательно';
     }
     if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Invalid email format';
+      newErrors.email = 'Неверный формат email';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -109,7 +109,7 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <h2 className="text-xl font-semibold text-white">
-            {entity ? 'Edit Contact' : 'New Contact'}
+            {entity ? 'Редактирование контакта' : 'Новый контакт'}
           </h2>
           <button
             onClick={onClose}
@@ -123,7 +123,7 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Entity Type */}
           <div>
-            <label className="block text-sm font-medium text-white/60 mb-2">Type</label>
+            <label className="block text-sm font-medium text-white/60 mb-2">Тип</label>
             <div className="grid grid-cols-3 gap-2">
               {ENTITY_TYPE_OPTIONS.map((option) => {
                 const Icon = option.icon;
@@ -150,7 +150,7 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
 
           {/* Name */}
           <div>
-            <label className="block text-sm font-medium text-white/60 mb-2">Name *</label>
+            <label className="block text-sm font-medium text-white/60 mb-2">Имя *</label>
             <input
               type="text"
               value={formData.name}
@@ -159,14 +159,14 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
                 'w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50',
                 errors.name ? 'border-red-500/50' : 'border-white/10'
               )}
-              placeholder="John Doe"
+              placeholder="Иван Иванов"
             />
             {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
           </div>
 
           {/* Status */}
           <div>
-            <label className="block text-sm font-medium text-white/60 mb-2">Status</label>
+            <label className="block text-sm font-medium text-white/60 mb-2">Статус</label>
             <select
               value={formData.status}
               onChange={(e) => setFormData((prev) => ({ ...prev, status: e.target.value as EntityStatus }))}
@@ -198,7 +198,7 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-white/60 mb-2">Phone</label>
+              <label className="block text-sm font-medium text-white/60 mb-2">Телефон</label>
               <input
                 type="tel"
                 value={formData.phone}
@@ -212,37 +212,37 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
           {/* Company & Position */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-white/60 mb-2">Company</label>
+              <label className="block text-sm font-medium text-white/60 mb-2">Компания</label>
               <input
                 type="text"
                 value={formData.company}
                 onChange={(e) => setFormData((prev) => ({ ...prev, company: e.target.value }))}
                 className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
-                placeholder="Acme Inc"
+                placeholder="ООО Компания"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-white/60 mb-2">Position</label>
+              <label className="block text-sm font-medium text-white/60 mb-2">Должность</label>
               <input
                 type="text"
                 value={formData.position}
                 onChange={(e) => setFormData((prev) => ({ ...prev, position: e.target.value }))}
                 className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
-                placeholder="Software Engineer"
+                placeholder="Разработчик"
               />
             </div>
           </div>
 
           {/* Tags */}
           <div>
-            <label className="block text-sm font-medium text-white/60 mb-2">Tags (comma-separated)</label>
+            <label className="block text-sm font-medium text-white/60 mb-2">Теги (через запятую)</label>
             <input
               type="text"
               value={formData.tags}
               onChange={(e) => setFormData((prev) => ({ ...prev, tags: e.target.value }))}
               className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
-              placeholder="senior, remote, frontend"
+              placeholder="senior, удалённо, frontend"
             />
           </div>
 
@@ -253,7 +253,7 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
               onClick={onClose}
               className="flex-1 px-4 py-2 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 transition-colors"
             >
-              Cancel
+              Отмена
             </button>
             <button
               type="submit"
@@ -263,7 +263,7 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
               {loading && (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               )}
-              {entity ? 'Save Changes' : 'Create Contact'}
+              {entity ? 'Сохранить' : 'Создать контакт'}
             </button>
           </div>
         </form>

@@ -28,13 +28,13 @@ import ContactDetail from '@/components/contacts/ContactDetail';
 
 // Entity type filter options
 const ENTITY_TYPE_FILTERS: { id: EntityType | 'all'; name: string; icon: typeof Users }[] = [
-  { id: 'all', name: 'All', icon: Users },
-  { id: 'candidate', name: 'Candidates', icon: UserCheck },
-  { id: 'client', name: 'Clients', icon: Building2 },
-  { id: 'contractor', name: 'Contractors', icon: Wrench },
-  { id: 'lead', name: 'Leads', icon: Target },
-  { id: 'partner', name: 'Partners', icon: Users },
-  { id: 'custom', name: 'Custom', icon: User },
+  { id: 'all', name: 'Все', icon: Users },
+  { id: 'candidate', name: 'Кандидаты', icon: UserCheck },
+  { id: 'client', name: 'Клиенты', icon: Building2 },
+  { id: 'contractor', name: 'Подрядчики', icon: Wrench },
+  { id: 'lead', name: 'Лиды', icon: Target },
+  { id: 'partner', name: 'Партнёры', icon: Users },
+  { id: 'custom', name: 'Другие', icon: User },
 ];
 
 export default function ContactsPage() {
@@ -105,16 +105,16 @@ export default function ContactsPage() {
   };
 
   const handleDelete = async (entity: Entity) => {
-    if (!confirm(`Are you sure you want to delete "${entity.name}"?`)) return;
+    if (!confirm(`Вы уверены, что хотите удалить "${entity.name}"?`)) return;
 
     try {
       await deleteEntity(entity.id);
-      toast.success('Contact deleted');
+      toast.success('Контакт удалён');
       if (currentEntity?.id === entity.id) {
         navigate('/contacts');
       }
     } catch {
-      toast.error('Failed to delete contact');
+      toast.error('Не удалось удалить контакт');
     }
   };
 
@@ -160,7 +160,7 @@ export default function ContactsPage() {
         {/* Header */}
         <div className="p-4 border-b border-white/5">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-semibold text-white">Contacts</h1>
+            <h1 className="text-xl font-semibold text-white">Контакты</h1>
             <button
               onClick={() => {
                 setEditingEntity(null);
@@ -177,7 +177,7 @@ export default function ContactsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={18} />
             <input
               type="text"
-              placeholder="Search contacts..."
+              placeholder="Поиск контактов..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
@@ -221,7 +221,7 @@ export default function ContactsPage() {
           ) : entities.length === 0 ? (
             <div className="text-center py-8 text-white/40">
               <Users className="mx-auto mb-2" size={40} />
-              <p>No contacts found</p>
+              <p>Контакты не найдены</p>
               <button
                 onClick={() => {
                   setEditingEntity(null);
@@ -229,7 +229,7 @@ export default function ContactsPage() {
                 }}
                 className="mt-4 px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors"
               >
-                Add your first contact
+                Добавить первый контакт
               </button>
             </div>
           ) : (
@@ -276,13 +276,13 @@ export default function ContactsPage() {
                         {entity.chats_count !== undefined && entity.chats_count > 0 && (
                           <span className="flex items-center gap-1">
                             <MessageSquare size={12} />
-                            {entity.chats_count} chats
+                            {entity.chats_count} чатов
                           </span>
                         )}
                         {entity.calls_count !== undefined && entity.calls_count > 0 && (
                           <span className="flex items-center gap-1">
                             <Phone size={12} />
-                            {entity.calls_count} calls
+                            {entity.calls_count} звонков
                           </span>
                         )}
                       </div>
@@ -296,7 +296,7 @@ export default function ContactsPage() {
                           handleTransfer(entity);
                         }}
                         className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
-                        title="Transfer"
+                        title="Передать"
                       >
                         <ArrowRightLeft size={14} />
                       </button>
@@ -306,7 +306,7 @@ export default function ContactsPage() {
                           handleEdit(entity);
                         }}
                         className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
-                        title="Edit"
+                        title="Редактировать"
                       >
                         <Edit size={14} />
                       </button>
@@ -316,7 +316,7 @@ export default function ContactsPage() {
                           handleDelete(entity);
                         }}
                         className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400"
-                        title="Delete"
+                        title="Удалить"
                       >
                         <Trash2 size={14} />
                       </button>

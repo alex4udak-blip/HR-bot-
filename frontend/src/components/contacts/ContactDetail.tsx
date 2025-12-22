@@ -115,10 +115,10 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
       {/* Tabs */}
       <div className="flex gap-2 mb-6">
         {[
-          { id: 'overview', label: 'Overview' },
-          { id: 'chats', label: `Chats (${entity.chats?.length || 0})` },
-          { id: 'calls', label: `Calls (${entity.calls?.length || 0})` },
-          { id: 'history', label: 'History' }
+          { id: 'overview', label: 'Обзор' },
+          { id: 'chats', label: `Чаты (${entity.chats?.length || 0})` },
+          { id: 'calls', label: `Звонки (${entity.calls?.length || 0})` },
+          { id: 'history', label: 'История' }
         ].map((tab) => (
           <button
             key={tab.id}
@@ -143,7 +143,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
             <div className="bg-white/5 rounded-xl p-4">
               <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                 <MessageSquare size={20} className="text-cyan-400" />
-                Recent Chats
+                Последние чаты
               </h3>
               {entity.chats && entity.chats.length > 0 ? (
                 <div className="space-y-2">
@@ -162,7 +162,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
                   ))}
                 </div>
               ) : (
-                <p className="text-white/40 text-sm">No linked chats</p>
+                <p className="text-white/40 text-sm">Нет связанных чатов</p>
               )}
             </div>
 
@@ -170,7 +170,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
             <div className="bg-white/5 rounded-xl p-4">
               <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                 <Phone size={20} className="text-green-400" />
-                Recent Calls
+                Последние звонки
               </h3>
               {entity.calls && entity.calls.length > 0 ? (
                 <div className="space-y-2">
@@ -193,7 +193,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
                   ))}
                 </div>
               ) : (
-                <p className="text-white/40 text-sm">No calls recorded</p>
+                <p className="text-white/40 text-sm">Нет записей звонков</p>
               )}
             </div>
 
@@ -201,16 +201,16 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
             <div className="bg-white/5 rounded-xl p-4 col-span-2">
               <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                 <ArrowRightLeft size={20} className="text-purple-400" />
-                Transfer History
+                История передач
               </h3>
               {entity.transfers && entity.transfers.length > 0 ? (
                 <div className="space-y-2">
                   {entity.transfers.slice(0, 5).map((transfer) => (
                     <div key={transfer.id} className="p-3 bg-white/5 rounded-lg">
                       <div className="flex items-center gap-2 text-sm">
-                        <span className="text-white/60">{transfer.from_user_name || 'Unknown'}</span>
+                        <span className="text-white/60">{transfer.from_user_name || 'Неизвестно'}</span>
                         <ArrowRightLeft size={14} className="text-white/40" />
-                        <span className="text-white">{transfer.to_user_name || 'Unknown'}</span>
+                        <span className="text-white">{transfer.to_user_name || 'Неизвестно'}</span>
                       </div>
                       {transfer.comment && (
                         <p className="text-xs text-white/40 mt-1">{transfer.comment}</p>
@@ -220,7 +220,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
                   ))}
                 </div>
               ) : (
-                <p className="text-white/40 text-sm">No transfers recorded</p>
+                <p className="text-white/40 text-sm">Нет истории передач</p>
               )}
             </div>
           </div>
@@ -244,7 +244,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
                     <div>
                       <p className="text-white font-medium">{chat.title}</p>
                       <p className="text-sm text-white/40">
-                        {chat.chat_type} • Created {formatDate(chat.created_at)}
+                        {chat.chat_type} • Создан {formatDate(chat.created_at)}
                       </p>
                     </div>
                   </div>
@@ -254,7 +254,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
             ) : (
               <div className="text-center py-8 text-white/40">
                 <MessageSquare className="mx-auto mb-2" size={40} />
-                <p>No linked chats</p>
+                <p>Нет связанных чатов</p>
               </div>
             )}
           </div>
@@ -278,7 +278,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
                       </div>
                       <div>
                         <p className="text-white font-medium">
-                          {call.source_type.toUpperCase()} Call
+                          Звонок {call.source_type.toUpperCase()}
                         </p>
                         <p className="text-sm text-white/40">{formatDate(call.created_at)}</p>
                       </div>
@@ -300,7 +300,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
             ) : (
               <div className="text-center py-8 text-white/40">
                 <Phone className="mx-auto mb-2" size={40} />
-                <p>No calls recorded</p>
+                <p>Нет записей звонков</p>
               </div>
             )}
           </div>
@@ -311,7 +311,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
             {/* Transfers */}
             {entity.transfers && entity.transfers.length > 0 && (
               <div>
-                <h4 className="text-sm font-medium text-white/60 mb-2">Transfers</h4>
+                <h4 className="text-sm font-medium text-white/60 mb-2">Передачи</h4>
                 <div className="space-y-2">
                   {entity.transfers.map((transfer) => (
                     <div key={transfer.id} className="p-3 bg-white/5 rounded-lg flex items-start gap-3">
@@ -338,7 +338,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
             {/* Analyses */}
             {entity.analyses && entity.analyses.length > 0 && (
               <div>
-                <h4 className="text-sm font-medium text-white/60 mb-2">Analyses</h4>
+                <h4 className="text-sm font-medium text-white/60 mb-2">Анализы</h4>
                 <div className="space-y-2">
                   {entity.analyses.map((analysis) => (
                     <div key={analysis.id} className="p-3 bg-white/5 rounded-lg flex items-start gap-3">
@@ -347,7 +347,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
                       </div>
                       <div className="flex-1">
                         <p className="text-sm text-white font-medium">
-                          {analysis.report_type || 'Analysis'}
+                          {analysis.report_type || 'Анализ'}
                         </p>
                         {analysis.result && (
                           <p className="text-xs text-white/50 mt-1 line-clamp-2">{analysis.result}</p>
@@ -364,7 +364,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
               (!entity.analyses || entity.analyses.length === 0) && (
                 <div className="text-center py-8 text-white/40">
                   <Clock className="mx-auto mb-2" size={40} />
-                  <p>No history yet</p>
+                  <p>История пуста</p>
                 </div>
               )}
           </div>
