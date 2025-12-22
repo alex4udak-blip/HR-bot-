@@ -46,14 +46,24 @@ class FirefliesClient:
         if variables:
             payload["variables"] = variables
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                self.ENDPOINT,
-                json=payload,
-                headers=self.headers
-            )
-            response.raise_for_status()
-            return response.json()
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    self.ENDPOINT,
+                    json=payload,
+                    headers=self.headers
+                )
+                response.raise_for_status()
+                return response.json()
+        except httpx.TimeoutException:
+            logger.error("Fireflies API timeout")
+            return {"errors": [{"message": "API request timeout"}]}
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Fireflies API HTTP error: {e.response.status_code}")
+            return {"errors": [{"message": f"HTTP error {e.response.status_code}"}]}
+        except Exception as e:
+            logger.error(f"Fireflies API error: {e}")
+            return {"errors": [{"message": str(e)}]}
 
     async def add_to_live_meeting(
         self,

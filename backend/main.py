@@ -84,13 +84,10 @@ async def init_database():
         logger.error(f"Error creating tables: {e}")
         return
 
-    # Step 4: Fix call_recordings table (drop and recreate with correct schema)
-    logger.info("=== FIXING call_recordings TABLE ===")
+    # Step 4: Create call_recordings table if not exists (preserves existing data)
+    logger.info("=== SETTING UP call_recordings TABLE ===")
 
-    # Drop old table
-    await run_migration(engine, "DROP TABLE IF EXISTS call_recordings CASCADE", "Drop call_recordings")
-
-    # Create with explicit SQL
+    # Create table only if it doesn't exist
     create_call_recordings_sql = """
         CREATE TABLE IF NOT EXISTS call_recordings (
             id SERIAL PRIMARY KEY,
@@ -124,7 +121,7 @@ async def init_database():
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_status ON call_recordings(status)", "Index status")
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_fireflies_transcript_id ON call_recordings(fireflies_transcript_id)", "Index fireflies_transcript_id")
 
-    logger.info("=== call_recordings TABLE FIXED ===")
+    logger.info("=== call_recordings TABLE READY ===")
 
     # Step 5: Other column migrations
 
