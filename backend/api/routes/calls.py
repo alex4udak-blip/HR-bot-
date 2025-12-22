@@ -544,6 +544,11 @@ async def fireflies_webhook(
             logger.error(f"Call {call_id} not found in database")
             return {"status": "error", "reason": "call_not_found", "call_id": call_id}
 
+        # Prevent duplicate processing
+        if call.status in (CallStatus.done, CallStatus.processing, CallStatus.analyzing):
+            logger.info(f"Call {call_id} already processed or in progress, skipping")
+            return {"status": "ignored", "reason": "already_processed", "call_id": call_id}
+
         # Update call with Fireflies transcript ID
         call.fireflies_transcript_id = meeting_id
         call.status = CallStatus.processing
@@ -584,10 +589,9 @@ async def process_fireflies_transcript(call_id: int, transcript: dict):
                 return
 
             # Format transcript with speaker labels
-            sentences = transcript.get("sentences", [])
-            speakers = transcript.get("speakers", [])
-            duration = transcript.get("duration", 0)
-            summary_data = transcript.get("summary", {})
+            sentences = transcript.get("sentences") or []
+            duration = transcript.get("duration") or 0
+            summary_data = transcript.get("summary") or {}
 
             # Build formatted transcript text
             formatted_lines = []
@@ -595,9 +599,13 @@ async def process_fireflies_transcript(call_id: int, transcript: dict):
 
             for sentence in sentences:
                 speaker_name = sentence.get("speaker_name") or f"Speaker {sentence.get('speaker_id', '?')}"
-                text = sentence.get("text", "")
-                start_time = sentence.get("start_time", 0)
-                end_time = sentence.get("end_time", 0)
+                text = sentence.get("text") or sentence.get("raw_text") or ""
+                start_time = float(sentence.get("start_time") or 0)
+                end_time = float(sentence.get("end_time") or 0)
+
+                # Skip empty sentences
+                if not text.strip():
+                    continue
 
                 # Format timestamp
                 start_min = int(start_time // 60)
@@ -619,7 +627,7 @@ async def process_fireflies_transcript(call_id: int, transcript: dict):
             # Update call with transcript data
             call.transcript = formatted_transcript
             call.speakers = speaker_segments
-            call.duration_seconds = duration
+            call.duration_seconds = int(duration) if duration else None
             call.status = CallStatus.analyzing
 
             # Use Fireflies summary if available, otherwise analyze with Claude
