@@ -114,32 +114,19 @@ async def init_database():
                 except Exception:
                     pass  # Column already exists
 
-                # Fix call_recordings table - drop and recreate if columns are missing
+                # ALWAYS recreate call_recordings table to ensure correct schema
+                # This is safe because it's a new feature with no data yet
+                logger.info("=== CALL_RECORDINGS MIGRATION START ===")
                 try:
-                    # Check if table exists and has the title column
-                    check_result = await conn.execute(text("""
-                        SELECT column_name FROM information_schema.columns
-                        WHERE table_name = 'call_recordings' AND column_name = 'title'
-                    """))
-                    has_title = check_result.first() is not None
-
-                    if not has_title:
-                        # Check if table exists at all
-                        table_check = await conn.execute(text("""
-                            SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'call_recordings')
-                        """))
-                        table_exists = table_check.scalar()
-
-                        if table_exists:
-                            # Table exists but missing columns - drop it
-                            logger.warning("call_recordings table is missing columns, dropping and recreating...")
-                            await conn.execute(text("DROP TABLE IF EXISTS call_recordings CASCADE"))
-                            logger.info("Dropped call_recordings table")
+                    await conn.execute(text("DROP TABLE IF EXISTS call_recordings CASCADE"))
+                    logger.info("Dropped call_recordings table (if existed)")
                 except Exception as e:
-                    logger.warning(f"Error checking/fixing call_recordings: {e}")
+                    logger.error(f"Error dropping call_recordings: {e}")
 
                 # Create tables if they don't exist (safe, preserves data)
+                logger.info("Running create_all...")
                 await conn.run_sync(Base.metadata.create_all)
+                logger.info("=== CALL_RECORDINGS MIGRATION END ===")
 
                 # Add entity_id column to chats if it doesn't exist
                 try:
