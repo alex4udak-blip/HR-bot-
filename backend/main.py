@@ -144,30 +144,49 @@ async def init_database():
             # Run call_recordings migrations in separate transaction
             async with engine.begin() as conn2:
                 logger.info("Running call_recordings column migrations...")
-                call_columns = [
-                    ("title", "VARCHAR(255)"),
-                    ("speakers", "JSONB"),
-                    ("action_items", "JSONB"),
-                    ("key_points", "JSONB"),
-                ]
-                for col_name, col_type in call_columns:
-                    try:
-                        # Check if table exists first
-                        table_check = await conn2.execute(text(
-                            "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'call_recordings')"
-                        ))
-                        table_exists = table_check.scalar()
 
-                        if table_exists:
-                            await conn2.execute(text(
-                                f"ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
-                            ))
-                            logger.info(f"Ensured {col_name} column exists in call_recordings")
-                        else:
-                            logger.warning("call_recordings table does not exist yet")
-                            break
-                    except Exception as e:
-                        logger.error(f"Failed to add {col_name} column to call_recordings: {e}")
+                # Use DO block for more reliable column addition
+                migration_sql = """
+                DO $$
+                BEGIN
+                    -- Add title column
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name='call_recordings' AND column_name='title') THEN
+                        ALTER TABLE call_recordings ADD COLUMN title VARCHAR(255);
+                        RAISE NOTICE 'Added title column';
+                    END IF;
+
+                    -- Add speakers column
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name='call_recordings' AND column_name='speakers') THEN
+                        ALTER TABLE call_recordings ADD COLUMN speakers JSONB;
+                        RAISE NOTICE 'Added speakers column';
+                    END IF;
+
+                    -- Add action_items column
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name='call_recordings' AND column_name='action_items') THEN
+                        ALTER TABLE call_recordings ADD COLUMN action_items JSONB;
+                        RAISE NOTICE 'Added action_items column';
+                    END IF;
+
+                    -- Add key_points column
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                   WHERE table_name='call_recordings' AND column_name='key_points') THEN
+                        ALTER TABLE call_recordings ADD COLUMN key_points JSONB;
+                        RAISE NOTICE 'Added key_points column';
+                    END IF;
+                EXCEPTION
+                    WHEN undefined_table THEN
+                        RAISE NOTICE 'call_recordings table does not exist yet';
+                END $$;
+                """
+
+                try:
+                    await conn2.execute(text(migration_sql))
+                    logger.info("call_recordings column migrations completed")
+                except Exception as e:
+                    logger.error(f"call_recordings migration failed: {e}")
 
             # Create superadmin
             async with AsyncSessionLocal() as db:
