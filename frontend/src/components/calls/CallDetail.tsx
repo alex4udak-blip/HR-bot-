@@ -339,20 +339,6 @@ export default function CallDetail({ call }: CallDetailProps) {
         </div>
       )}
 
-      {/* Reanalyze button for completed calls */}
-      {call.status === 'done' && call.transcript && (
-        <div className="flex justify-end mb-4">
-          <button
-            onClick={handleReprocess}
-            disabled={loading}
-            className="px-3 py-2 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors flex items-center gap-2 text-sm"
-            title="Переанализировать транскрипт с обновлённым промптом"
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            Переанализировать
-          </button>
-        </div>
-      )}
 
       {call.status !== 'done' && call.status !== 'failed' && (
         <div className={clsx(
@@ -558,16 +544,25 @@ export default function CallDetail({ call }: CallDetailProps) {
           >
             {activeTab === 'summary' && (
               <div className="space-y-6">
-                {/* Export button for analysis */}
+                {/* Action buttons for analysis */}
                 {(call.summary || (call.key_points && call.key_points.length > 0) || (call.action_items && call.action_items.length > 0)) && (
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={handleReprocess}
+                      disabled={loading}
+                      className="px-3 py-2 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 transition-colors flex items-center gap-2"
+                      title="Переанализировать с обновлённым AI промптом"
+                    >
+                      <RefreshCw size={16} className={clsx('text-purple-400', loading && 'animate-spin')} />
+                      <span className="text-sm text-purple-400">Переанализировать</span>
+                    </button>
                     <button
                       onClick={handleExportAnalysis}
                       className="px-3 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 transition-colors flex items-center gap-2"
                       title="Скачать анализ"
                     >
                       <Download size={16} className="text-cyan-400" />
-                      <span className="text-sm text-cyan-400">Скачать анализ</span>
+                      <span className="text-sm text-cyan-400">Скачать</span>
                     </button>
                   </div>
                 )}
@@ -644,7 +639,7 @@ export default function CallDetail({ call }: CallDetailProps) {
 
                 {/* Speaker-based transcript (chat style) */}
                 {call.speakers && call.speakers.length > 0 ? (
-                  <div className="space-y-3">
+                  <div className="space-y-3 overflow-hidden max-w-full">
                     {call.speakers.map((segment, idx) => {
                       // Generate consistent color for each speaker
                       const speakerColors = [
@@ -671,7 +666,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                         <div
                           key={idx}
                           className={clsx(
-                            'p-4 rounded-xl border overflow-hidden',
+                            'p-4 rounded-xl border overflow-hidden w-full max-w-full',
                             colorSet.bg,
                             colorSet.border
                           )}
@@ -687,14 +682,12 @@ export default function CallDetail({ call }: CallDetailProps) {
                             <span className={clsx('font-medium', colorSet.text)}>
                               {segment.speaker}
                             </span>
-                            {(segment.start > 0 || segment.end > 0) && (
-                              <span className="px-2 py-0.5 rounded bg-white/10 text-white/50 text-xs flex items-center gap-1 ml-auto">
-                                <Clock size={12} />
-                                {formatTime(segment.start)}
-                              </span>
-                            )}
+                            <span className="px-2 py-0.5 rounded bg-white/10 text-white/50 text-xs flex items-center gap-1 ml-auto flex-shrink-0">
+                            <Clock size={12} />
+                            {formatTime(segment.start)}
+                          </span>
                           </div>
-                          <p className="text-white/80 leading-relaxed pl-11 break-words whitespace-pre-wrap">
+                          <p className="text-white/80 leading-relaxed pl-11 break-words whitespace-pre-wrap overflow-hidden" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                             {segment.text}
                           </p>
                         </div>
@@ -702,8 +695,8 @@ export default function CallDetail({ call }: CallDetailProps) {
                     })}
                   </div>
                 ) : call.transcript ? (
-                  <div className="prose prose-invert max-w-none">
-                    <p className="text-white/80 whitespace-pre-wrap leading-relaxed break-words">{call.transcript}</p>
+                  <div className="prose prose-invert max-w-full overflow-hidden">
+                    <p className="text-white/80 whitespace-pre-wrap leading-relaxed break-words overflow-hidden" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{call.transcript}</p>
                   </div>
                 ) : (
                   <p className="text-white/40">Транскрипт недоступен</p>
