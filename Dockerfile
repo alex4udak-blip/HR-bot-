@@ -3,7 +3,6 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /frontend
 
-# Copy frontend files
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install
 
