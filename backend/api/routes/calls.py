@@ -38,6 +38,7 @@ class StartBotRequest(BaseModel):
     bot_name: str = "HR Recorder"
     entity_id: Optional[int] = None
     title: Optional[str] = None
+    max_duration: int = 90  # Max recording duration in minutes (15-120)
 
 
 class CallUpdateRequest(BaseModel):
@@ -207,7 +208,12 @@ async def start_bot(
     # Start the recording bot via Fireflies
     try:
         from ..services.call_recorder import call_recorder
-        result = await call_recorder.start_recording(call.id, data.source_url, data.bot_name)
+        result = await call_recorder.start_recording(
+            call.id,
+            data.source_url,
+            data.bot_name,
+            duration=data.max_duration
+        )
 
         if not result.get("success"):
             error_msg = result.get("message", "Fireflies API error")
