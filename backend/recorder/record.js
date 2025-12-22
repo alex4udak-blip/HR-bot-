@@ -13,7 +13,19 @@ const { getStream } = require('puppeteer-stream');
 const fs = require('fs');
 const path = require('path');
 
-puppeteer.use(StealthPlugin());
+// Configure stealth plugin
+const stealth = StealthPlugin();
+// Disable some evasions that cause issues with Google
+stealth.enabledEvasions.delete('iframe.contentWindow');
+stealth.enabledEvasions.delete('media.codecs');
+puppeteer.use(stealth);
+
+// Google account credentials from environment
+const GOOGLE_EMAIL = process.env.GOOGLE_BOT_EMAIL;
+const GOOGLE_PASSWORD = process.env.GOOGLE_BOT_PASSWORD;
+
+// User agent to appear as real browser
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -49,8 +61,66 @@ async function saveScreenshot(page, name) {
     }
 }
 
+// Login to Google account
+async function loginToGoogle(page) {
+    if (!GOOGLE_EMAIL || !GOOGLE_PASSWORD) {
+        console.log('No Google credentials provided, skipping login');
+        return false;
+    }
+
+    console.log(`Logging in to Google as ${GOOGLE_EMAIL}...`);
+
+    try {
+        // Go to Google login page
+        await page.goto('https://accounts.google.com/signin/v2/identifier?flowName=GlifWebSignIn&flowEntry=ServiceLogin', {
+            waitUntil: 'networkidle2',
+            timeout: 60000
+        });
+
+        await saveScreenshot(page, 'login_01_start');
+
+        // Wait for and fill email
+        await page.waitForSelector('input[type="email"]', { timeout: 15000 });
+        await page.type('input[type="email"]', GOOGLE_EMAIL, { delay: 50 });
+        console.log('Email entered');
+
+        // Click Next
+        await page.keyboard.press('Enter');
+        await new Promise(r => setTimeout(r, 3000));
+
+        await saveScreenshot(page, 'login_02_after_email');
+
+        // Wait for password field
+        await page.waitForSelector('input[type="password"]', { visible: true, timeout: 15000 });
+        await new Promise(r => setTimeout(r, 1000));
+
+        // Fill password
+        await page.type('input[type="password"]', GOOGLE_PASSWORD, { delay: 50 });
+        console.log('Password entered');
+
+        // Click Next
+        await page.keyboard.press('Enter');
+
+        // Wait for login to complete (redirect away from accounts.google.com)
+        await page.waitForFunction(
+            () => !window.location.href.includes('accounts.google.com/signin'),
+            { timeout: 30000 }
+        );
+
+        await saveScreenshot(page, 'login_03_complete');
+        console.log('Successfully logged in to Google');
+        return true;
+
+    } catch (error) {
+        console.error('Google login failed:', error.message);
+        await saveScreenshot(page, 'login_error');
+        return false;
+    }
+}
+
 async function recordMeeting() {
     console.log(`Starting recording for: ${meetingUrl}`);
+    console.log(`Google credentials: ${GOOGLE_EMAIL ? 'provided' : 'not provided'}`);
 
     const browser = await puppeteer.launch({
         headless: 'new',
@@ -64,20 +134,34 @@ async function recordMeeting() {
             '--use-fake-device-for-media-stream',
             '--autoplay-policy=no-user-gesture-required',
             '--disable-features=AudioServiceOutOfProcess',
-            '--disable-gpu'
+            '--disable-gpu',
+            '--window-size=1280,720'
         ]
     });
 
     const page = await browser.newPage();
 
+    // Set user agent to appear as real browser
+    await page.setUserAgent(USER_AGENT);
+    await page.setViewport({ width: 1280, height: 720 });
+
     // Allow microphone and camera permissions
     const context = browser.defaultBrowserContext();
-    await context.overridePermissions(meetingUrl, ['camera', 'microphone']);
+    await context.overridePermissions('https://meet.google.com', ['camera', 'microphone', 'notifications']);
 
     let stream = null;
     let fileStream = null;
 
     try {
+        // Login to Google if credentials are provided
+        const isMeet = meetingUrl.includes('meet.google.com');
+        if (isMeet && GOOGLE_EMAIL && GOOGLE_PASSWORD) {
+            const loginSuccess = await loginToGoogle(page);
+            if (!loginSuccess) {
+                console.log('Warning: Google login failed, will try to join as guest');
+            }
+        }
+
         // Navigate to meeting URL
         console.log(`Navigating to: ${meetingUrl}`);
         await page.goto(meetingUrl, { waitUntil: 'networkidle2', timeout: 60000 });
