@@ -204,11 +204,26 @@ async def start_bot(
     await db.commit()
     await db.refresh(call)
 
-    # Start the recording bot via Redis queue
+    # Start the recording bot via Fireflies
     try:
         from ..services.call_recorder import call_recorder
-        await call_recorder.start_recording(call.id, data.source_url, data.bot_name)
-        logger.info(f"Call {call.id} bot started for {data.source_url}")
+        result = await call_recorder.start_recording(call.id, data.source_url, data.bot_name)
+
+        if not result.get("success"):
+            error_msg = result.get("message", "Fireflies API error")
+            logger.error(f"Fireflies rejected call {call.id}: {error_msg}")
+            call.status = CallStatus.failed
+            call.error_message = error_msg
+            await db.commit()
+            raise HTTPException(500, f"Fireflies error: {error_msg}")
+
+        # Update status to connecting (bot is joining the meeting)
+        call.status = CallStatus.connecting
+        await db.commit()
+        logger.info(f"Call {call.id} Fireflies bot dispatched for {data.source_url}")
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to start bot for call {call.id}: {e}")
         call.status = CallStatus.failed
@@ -620,7 +635,7 @@ async def process_fireflies_transcript(call_id: int, transcript: dict):
             else:
                 # Analyze with Claude
                 await db.commit()
-                await call_processor.analyze_transcript(call_id, formatted_transcript, speakers)
+                await call_processor.analyze_transcript(call_id, formatted_transcript, speaker_segments)
 
     except Exception as e:
         logger.exception(f"Error processing transcript for call {call_id}: {e}")

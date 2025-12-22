@@ -39,6 +39,9 @@ class FirefliesClient:
 
     async def _execute(self, query: str, variables: Optional[Dict] = None) -> Dict[str, Any]:
         """Выполнить GraphQL запрос"""
+        if not self.api_key:
+            raise ValueError("FIREFLIES_API_KEY is not configured. Add it to Railway Variables.")
+
         payload = {"query": query}
         if variables:
             payload["variables"] = variables
