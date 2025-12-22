@@ -43,5 +43,6 @@ coverage/
 README.md
 *.md
 
-# Backend Dockerfile (we use root Dockerfile)
+# Nested Dockerfiles (we use root Dockerfile only)
 backend/Dockerfile
+frontend/Dockerfile
