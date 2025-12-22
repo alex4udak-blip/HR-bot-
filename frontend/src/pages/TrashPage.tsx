@@ -21,6 +21,7 @@ export default function TrashPage() {
   const { data: deletedChats = [], isLoading } = useQuery({
     queryKey: ['deleted-chats'],
     queryFn: getDeletedChats,
+    refetchOnMount: 'always', // Always fetch fresh data when navigating to trash
   });
 
   const restoreMutation = useMutation({

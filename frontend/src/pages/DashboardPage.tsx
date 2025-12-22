@@ -35,6 +35,7 @@ export default function DashboardPage() {
   const { data: stats, isLoading } = useQuery({
     queryKey: ['stats'],
     queryFn: getStats,
+    refetchOnMount: 'always', // Always fetch fresh stats when navigating to dashboard
   });
 
   if (isLoading || !stats) {
