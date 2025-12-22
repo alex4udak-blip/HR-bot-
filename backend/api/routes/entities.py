@@ -8,9 +8,9 @@ from pydantic import BaseModel
 from ..database import get_db
 from ..models.database import (
     Entity, EntityType, EntityStatus, EntityTransfer,
-    Chat, CallRecording, AnalysisHistory, User
+    Chat, CallRecording, AnalysisHistory, User, Organization
 )
-from ..services.auth import get_current_user
+from ..services.auth import get_current_user, get_user_org
 
 router = APIRouter()
 
@@ -98,8 +98,13 @@ async def list_entities(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List contacts with filters"""
-    query = select(Entity)
+    """List contacts with filters (filtered by user's organization)"""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        return []
+
+    query = select(Entity).where(Entity.org_id == org.id)
 
     if type:
         query = query.where(Entity.type == type)
@@ -164,8 +169,14 @@ async def create_entity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Create a contact"""
+    """Create a contact (in user's organization)"""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
     entity = Entity(
+        org_id=org.id,
         type=data.type,
         name=data.name,
         status=data.status,
@@ -209,8 +220,13 @@ async def get_entity(
     current_user: User = Depends(get_current_user)
 ):
     """Get contact with all relations"""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
     result = await db.execute(
-        select(Entity).where(Entity.id == entity_id)
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
     )
     entity = result.scalar_one_or_none()
 
@@ -317,8 +333,13 @@ async def update_entity(
     current_user: User = Depends(get_current_user)
 ):
     """Update a contact"""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
     result = await db.execute(
-        select(Entity).where(Entity.id == entity_id)
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
     )
     entity = result.scalar_one_or_none()
 
@@ -358,8 +379,13 @@ async def delete_entity(
     current_user: User = Depends(get_current_user)
 ):
     """Delete a contact"""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
     result = await db.execute(
-        select(Entity).where(Entity.id == entity_id)
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
     )
     entity = result.scalar_one_or_none()
 
@@ -454,9 +480,15 @@ async def get_entities_stats_by_type(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get entity counts by type"""
+    """Get entity counts by type (filtered by org)"""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        return {}
+
     result = await db.execute(
         select(Entity.type, func.count(Entity.id))
+        .where(Entity.org_id == org.id)
         .group_by(Entity.type)
     )
     stats = {row[0].value: row[1] for row in result.all()}
@@ -469,8 +501,13 @@ async def get_entities_stats_by_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get entity counts by status"""
-    query = select(Entity.status, func.count(Entity.id))
+    """Get entity counts by status (filtered by org)"""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        return {}
+
+    query = select(Entity.status, func.count(Entity.id)).where(Entity.org_id == org.id)
     if type:
         query = query.where(Entity.type == type)
     query = query.group_by(Entity.status)

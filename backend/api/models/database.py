@@ -84,6 +84,53 @@ class DeliveryMethod(str, enum.Enum):
     email = "email"
 
 
+class OrgRole(str, enum.Enum):
+    owner = "owner"      # Full access, can delete org
+    admin = "admin"      # Can manage members, full data access
+    member = "member"    # Read/write own data only
+
+
+class SubscriptionPlan(str, enum.Enum):
+    free = "free"
+    pro = "pro"
+    enterprise = "enterprise"
+
+
+class Organization(Base):
+    """Organization for multi-tenancy"""
+    __tablename__ = "organizations"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(100), unique=True, nullable=False, index=True)
+    subscription_plan = Column(SQLEnum(SubscriptionPlan), default=SubscriptionPlan.free)
+    settings = Column(JSON, default=dict)  # {max_users, max_chats, features, etc}
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    members = relationship("OrgMember", back_populates="organization", cascade="all, delete-orphan")
+    entities = relationship("Entity", back_populates="organization")
+    chats = relationship("Chat", back_populates="organization")
+    calls = relationship("CallRecording", back_populates="organization")
+
+
+class OrgMember(Base):
+    """Organization membership - links users to organizations"""
+    __tablename__ = "org_members"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(SQLEnum(OrgRole), default=OrgRole.member)
+    invited_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    organization = relationship("Organization", back_populates="members")
+    user = relationship("User", foreign_keys=[user_id], back_populates="org_memberships")
+    inviter = relationship("User", foreign_keys=[invited_by])
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -101,12 +148,14 @@ class User(Base):
     criteria_presets = relationship("CriteriaPreset", back_populates="created_by_user")
     ai_conversations = relationship("AIConversation", back_populates="user")
     analyses = relationship("AnalysisHistory", back_populates="user")
+    org_memberships = relationship("OrgMember", foreign_keys="OrgMember.user_id", back_populates="user")
 
 
 class Chat(Base):
     __tablename__ = "chats"
 
     id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     telegram_chat_id = Column(BigInteger, unique=True, nullable=False, index=True)
     title = Column(String(255), nullable=False)
     custom_name = Column(String(255), nullable=True)
@@ -120,6 +169,7 @@ class Chat(Base):
     last_activity = Column(DateTime, default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime, nullable=True, index=True)  # Soft delete timestamp
 
+    organization = relationship("Organization", back_populates="chats")
     owner = relationship("User", back_populates="chats")
     entity = relationship("Entity", back_populates="chats")
     messages = relationship("Message", back_populates="chat", cascade="all, delete-orphan")
@@ -217,6 +267,7 @@ class Entity(Base):
     __tablename__ = "entities"
 
     id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     type = Column(SQLEnum(EntityType), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     status = Column(SQLEnum(EntityStatus), default=EntityStatus.new, index=True)
@@ -231,6 +282,7 @@ class Entity(Base):
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
+    organization = relationship("Organization", back_populates="entities")
     creator = relationship("User", foreign_keys=[created_by])
     chats = relationship("Chat", back_populates="entity")
     calls = relationship("CallRecording", back_populates="entity")
@@ -261,6 +313,7 @@ class CallRecording(Base):
     __tablename__ = "call_recordings"
 
     id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     title = Column(String(255), nullable=True)  # Custom name for the call
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True, index=True)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
@@ -282,6 +335,7 @@ class CallRecording(Base):
     ended_at = Column(DateTime, nullable=True)
     processed_at = Column(DateTime, nullable=True)
 
+    organization = relationship("Organization", back_populates="calls")
     entity = relationship("Entity", back_populates="calls")
     owner = relationship("User")
 
