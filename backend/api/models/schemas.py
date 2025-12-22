@@ -92,6 +92,8 @@ class ChatResponse(BaseModel):
     custom_type_description: Optional[str] = None
     owner_id: Optional[int]
     owner_name: Optional[str] = None
+    entity_id: Optional[int] = None
+    entity_name: Optional[str] = None
     is_active: bool
     messages_count: int = 0
     participants_count: int = 0
@@ -111,6 +113,7 @@ class ChatUpdate(BaseModel):
     custom_type_name: Optional[str] = None
     custom_type_description: Optional[str] = None
     owner_id: Optional[int] = None
+    entity_id: Optional[int] = None
     is_active: Optional[bool] = None
 
 
