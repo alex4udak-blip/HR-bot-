@@ -84,10 +84,12 @@ export const useCallStore = create<CallState>((set, get) => ({
     try {
       const result = await api.startCallBot({ source_url: url, bot_name: botName, entity_id: entityId });
       set({
-        activeRecording: { id: result.id, status: 'pending' as CallStatus, duration: 0 },
+        activeRecording: { id: result.id, status: (result.status || 'recording') as CallStatus, duration: 0 },
         loading: false
       });
       get().pollStatus(result.id);
+      // Also fetch the full call to update currentCall
+      get().fetchCall(result.id);
       return result.id;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start recording bot';
@@ -169,6 +171,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       try {
         const status = await api.getCallStatus(id);
 
+        const prevStatus = get().activeRecording?.status;
         set({
           activeRecording: {
             id,
@@ -178,16 +181,22 @@ export const useCallStore = create<CallState>((set, get) => ({
           }
         });
 
+        // If status changed, also refetch the full call data
+        if (prevStatus !== status.status) {
+          get().fetchCall(id);
+        }
+
         // Stop polling when done or failed
         if (status.status === 'done' || status.status === 'failed') {
           get().stopPolling();
-          // Refresh calls list
+          // Refresh calls list and current call
           get().fetchCalls();
+          get().fetchCall(id);
         }
       } catch {
         get().stopPolling();
       }
-    }, 2000);
+    }, 3000); // Poll every 3 seconds
 
     set({ pollingInterval: interval });
   },
