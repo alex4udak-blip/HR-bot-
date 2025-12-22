@@ -141,7 +141,9 @@ async def init_database():
                 except Exception:
                     pass  # Column already exists or entities table doesn't exist
 
-                # Add missing columns to call_recordings table
+            # Run call_recordings migrations in separate transaction
+            async with engine.begin() as conn2:
+                logger.info("Running call_recordings column migrations...")
                 call_columns = [
                     ("title", "VARCHAR(255)"),
                     ("speakers", "JSONB"),
@@ -150,18 +152,22 @@ async def init_database():
                 ]
                 for col_name, col_type in call_columns:
                     try:
-                        # Check if column exists
-                        result = await conn.execute(text(
-                            f"SELECT 1 FROM information_schema.columns WHERE table_name='call_recordings' AND column_name='{col_name}'"
+                        # Check if table exists first
+                        table_check = await conn2.execute(text(
+                            "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'call_recordings')"
                         ))
-                        if not result.first():
-                            await conn.execute(text(
-                                f"ALTER TABLE call_recordings ADD COLUMN {col_name} {col_type}"
-                            ))
-                            logger.info(f"Added {col_name} column to call_recordings table")
-                    except Exception as e:
-                        logger.warning(f"Failed to add {col_name} column: {e}")
+                        table_exists = table_check.scalar()
 
+                        if table_exists:
+                            await conn2.execute(text(
+                                f"ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                            ))
+                            logger.info(f"Ensured {col_name} column exists in call_recordings")
+                        else:
+                            logger.warning("call_recordings table does not exist yet")
+                            break
+                    except Exception as e:
+                        logger.error(f"Failed to add {col_name} column to call_recordings: {e}")
 
             # Create superadmin
             async with AsyncSessionLocal() as db:
