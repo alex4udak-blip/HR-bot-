@@ -403,7 +403,7 @@ async def reprocess_call(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Re-process a failed call recording"""
+    """Re-process a call recording - works for both audio files and Fireflies transcripts"""
     result = await db.execute(
         select(CallRecording).where(CallRecording.id == call_id)
     )
@@ -412,17 +412,56 @@ async def reprocess_call(
     if not call:
         raise HTTPException(404, "Call not found")
 
-    if not call.audio_file_path:
-        raise HTTPException(400, "No audio file to process")
+    # Check what we have to reprocess
+    has_audio = bool(call.audio_file_path)
+    has_transcript = bool(call.transcript)
+    has_fireflies = bool(call.fireflies_transcript_id)
+
+    if not has_audio and not has_transcript and not has_fireflies:
+        raise HTTPException(400, "No data to process")
 
     # Reset status
-    call.status = CallStatus.processing
+    call.status = CallStatus.analyzing
     call.error_message = None
     await db.commit()
 
-    # Start background processing
-    from ..services.call_processor import process_call_background
-    background_tasks.add_task(process_call_background, call.id)
+    if has_fireflies or has_transcript:
+        # Re-analyze existing transcript with Claude
+        from ..services.call_processor import call_processor
+
+        async def reanalyze_transcript():
+            try:
+                # Get speaker segments from database
+                speakers = call.speakers if call.speakers else []
+                transcript = call.transcript or ""
+
+                if transcript:
+                    await call_processor.analyze_transcript(
+                        call_id=call.id,
+                        transcript=transcript,
+                        speakers=speakers
+                    )
+                    logger.info(f"Call {call_id} re-analyzed successfully")
+            except Exception as e:
+                logger.error(f"Failed to re-analyze call {call_id}: {e}")
+                # Mark as failed
+                async with AsyncSessionLocal() as db2:
+                    result2 = await db2.execute(
+                        select(CallRecording).where(CallRecording.id == call_id)
+                    )
+                    call2 = result2.scalar_one_or_none()
+                    if call2:
+                        call2.status = CallStatus.failed
+                        call2.error_message = str(e)
+                        await db2.commit()
+
+        background_tasks.add_task(reanalyze_transcript)
+    elif has_audio:
+        # Process audio file from scratch
+        from ..services.call_processor import process_call_background
+        call.status = CallStatus.processing
+        await db.commit()
+        background_tasks.add_task(process_call_background, call.id)
 
     return {"success": True, "status": call.status.value}
 

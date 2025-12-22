@@ -14,7 +14,9 @@ import {
   Save,
   Link,
   Unlink,
-  Download
+  Download,
+  Mic,
+  Users
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -137,6 +139,53 @@ export default function CallDetail({ call }: CallDetailProps) {
     downloadFile(content, `transcript_${call.id}.txt`);
   };
 
+  // Calculate speaker statistics
+  const getSpeakerStats = () => {
+    if (!call.speakers || call.speakers.length === 0) return [];
+
+    const stats: Record<string, { talkTime: number; wordCount: number }> = {};
+    let totalTalkTime = 0;
+
+    call.speakers.forEach(segment => {
+      const speaker = segment.speaker;
+      const duration = segment.end - segment.start;
+      const words = segment.text.split(/\s+/).filter(w => w.length > 0).length;
+
+      if (!stats[speaker]) {
+        stats[speaker] = { talkTime: 0, wordCount: 0 };
+      }
+      stats[speaker].talkTime += duration;
+      stats[speaker].wordCount += words;
+      totalTalkTime += duration;
+    });
+
+    // Convert to array with percentages and WPM
+    return Object.entries(stats).map(([speaker, data]) => {
+      const percentage = totalTalkTime > 0 ? (data.talkTime / totalTalkTime) * 100 : 0;
+      const minutes = data.talkTime / 60;
+      const wpm = minutes > 0 ? Math.round(data.wordCount / minutes) : 0;
+
+      return {
+        speaker,
+        talkTime: data.talkTime,
+        percentage: Math.round(percentage),
+        wordCount: data.wordCount,
+        wpm
+      };
+    }).sort((a, b) => b.percentage - a.percentage);
+  };
+
+  const speakerStats = getSpeakerStats();
+
+  const speakerColors = [
+    { bg: 'bg-cyan-500', light: 'bg-cyan-500/20', text: 'text-cyan-400' },
+    { bg: 'bg-purple-500', light: 'bg-purple-500/20', text: 'text-purple-400' },
+    { bg: 'bg-green-500', light: 'bg-green-500/20', text: 'text-green-400' },
+    { bg: 'bg-yellow-500', light: 'bg-yellow-500/20', text: 'text-yellow-400' },
+    { bg: 'bg-pink-500', light: 'bg-pink-500/20', text: 'text-pink-400' },
+    { bg: 'bg-orange-500', light: 'bg-orange-500/20', text: 'text-orange-400' },
+  ];
+
   const handleExportAnalysis = () => {
     const sections: string[] = [
       `Анализ звонка: ${call.title || 'Звонок #' + call.id}`,
@@ -145,6 +194,17 @@ export default function CallDetail({ call }: CallDetailProps) {
       '='.repeat(50),
       ''
     ];
+
+    // Add speaker statistics
+    if (speakerStats.length > 0) {
+      sections.push('🎤 СТАТИСТИКА УЧАСТНИКОВ', '-'.repeat(30));
+      speakerStats.forEach(stat => {
+        const talkMin = Math.floor(stat.talkTime / 60);
+        const talkSec = Math.floor(stat.talkTime % 60);
+        sections.push(`${stat.speaker}: ${stat.percentage}% (${talkMin}м ${talkSec}с) | ${stat.wpm} слов/мин`);
+      });
+      sections.push('');
+    }
 
     if (call.summary) {
       sections.push('📋 РЕЗЮМЕ', '-'.repeat(30), call.summary, '');
@@ -347,6 +407,55 @@ export default function CallDetail({ call }: CallDetailProps) {
           )}
         </div>
       </div>
+
+      {/* Speaker Statistics */}
+      {call.status === 'done' && speakerStats.length > 0 && (
+        <div className="bg-white/5 rounded-xl p-4 mb-6">
+          <h3 className="text-sm font-medium text-white/60 flex items-center gap-2 mb-4">
+            <Users size={16} />
+            Статистика участников
+          </h3>
+          <div className="space-y-3">
+            {speakerStats.map((stat, idx) => {
+              const colorSet = speakerColors[idx % speakerColors.length];
+              return (
+                <div key={stat.speaker} className="flex items-center gap-4">
+                  {/* Speaker name and icon */}
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <div className={clsx(
+                      'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0',
+                      colorSet.light
+                    )}>
+                      <Mic size={14} className={colorSet.text} />
+                    </div>
+                    <span className="text-white text-sm truncate">{stat.speaker}</span>
+                  </div>
+
+                  {/* WPM */}
+                  <div className="text-right w-16">
+                    <span className="text-white/60 text-xs">WPM</span>
+                    <p className={clsx('text-sm font-medium', colorSet.text)}>{stat.wpm}</p>
+                  </div>
+
+                  {/* Percentage bar */}
+                  <div className="w-32">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-white/40">{Math.floor(stat.talkTime / 60)}м {Math.floor(stat.talkTime % 60)}с</span>
+                      <span className={clsx('font-medium', colorSet.text)}>{stat.percentage}%</span>
+                    </div>
+                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className={clsx('h-full rounded-full transition-all', colorSet.bg)}
+                        style={{ width: `${stat.percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Title Display/Edit Button */}
       {(call.title || !isEditing) && (
