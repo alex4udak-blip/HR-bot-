@@ -56,6 +56,7 @@ class EntityStatus(str, enum.Enum):
 class CallSource(str, enum.Enum):
     meet = "meet"
     zoom = "zoom"
+    teams = "teams"
     upload = "upload"
     telegram = "telegram"
 
@@ -267,6 +268,7 @@ class CallRecording(Base):
     status = Column(SQLEnum(CallStatus), default=CallStatus.pending, index=True)
     duration_seconds = Column(Integer, nullable=True)
     audio_file_path = Column(String(500), nullable=True)
+    fireflies_transcript_id = Column(String(100), nullable=True, index=True)  # Fireflies transcript ID
     transcript = Column(Text, nullable=True)
     speakers = Column(JSON, nullable=True)  # [{speaker: "Speaker 1", start: 0.0, end: 5.2, text: "..."}, ...]
     summary = Column(Text, nullable=True)

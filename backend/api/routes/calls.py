@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
@@ -8,6 +8,7 @@ import aiofiles
 import os
 import uuid
 import logging
+import re
 
 from ..database import get_db
 from ..models.database import (
@@ -182,10 +183,13 @@ async def start_bot(
     """Start a bot to record a Meet/Zoom call"""
     # Determine source type by URL
     source_type = CallSource.meet
-    if "zoom.us" in data.source_url:
+    url_lower = data.source_url.lower()
+    if "zoom.us" in url_lower or "zoom.com" in url_lower:
         source_type = CallSource.zoom
-    elif "meet.google.com" not in data.source_url:
-        raise HTTPException(400, "Unsupported meeting URL. Use Google Meet or Zoom.")
+    elif "teams.microsoft.com" in url_lower or "teams.live.com" in url_lower:
+        source_type = CallSource.teams
+    elif "meet.google.com" not in url_lower:
+        raise HTTPException(400, "Unsupported meeting URL. Use Google Meet, Zoom, or Microsoft Teams.")
 
     # Create record
     call = CallRecording(
@@ -455,3 +459,182 @@ async def update_call(
         "entity_name": entity_name,
         "success": True
     }
+
+
+# === Fireflies Webhook ===
+
+@router.post("/fireflies-webhook")
+async def fireflies_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Webhook endpoint for Fireflies.ai notifications.
+
+    Fireflies sends this when transcription is completed:
+    {
+        "meetingId": "abc123",           # Fireflies transcript ID
+        "eventType": "Transcription completed",
+        "clientReferenceId": null        # Only for uploadAudio
+    }
+
+    We identify our call by parsing the title "HR Call #123"
+    which Fireflies returns in the transcript.
+    """
+    try:
+        data = await request.json()
+        logger.info(f"Fireflies webhook received: {data}")
+
+        meeting_id = data.get("meetingId")
+        event_type = data.get("eventType", "")
+
+        # Only process transcription completed events
+        if "completed" not in event_type.lower():
+            logger.info(f"Ignoring Fireflies event: {event_type}")
+            return {"status": "ignored", "reason": f"event_type: {event_type}"}
+
+        if not meeting_id:
+            logger.warning("Fireflies webhook missing meetingId")
+            return {"status": "error", "reason": "missing_meeting_id"}
+
+        # Fetch transcript from Fireflies to get the title
+        from ..services.fireflies_client import fireflies_client
+
+        transcript = await fireflies_client.get_transcript(meeting_id)
+        if not transcript:
+            logger.error(f"Could not fetch transcript {meeting_id} from Fireflies")
+            return {"status": "error", "reason": "transcript_not_found"}
+
+        title = transcript.get("title", "")
+        logger.info(f"Fireflies transcript title: {title}")
+
+        # Extract call_id from title "HR Call #123"
+        call_id = None
+        match = re.search(r"HR Call #(\d+)", title)
+        if match:
+            call_id = int(match.group(1))
+        else:
+            # Try to find by meeting URL or just log
+            logger.warning(f"Could not extract call_id from title: {title}")
+            return {"status": "ignored", "reason": "unknown_meeting", "title": title}
+
+        # Get call from database
+        result = await db.execute(
+            select(CallRecording).where(CallRecording.id == call_id)
+        )
+        call = result.scalar_one_or_none()
+
+        if not call:
+            logger.error(f"Call {call_id} not found in database")
+            return {"status": "error", "reason": "call_not_found", "call_id": call_id}
+
+        # Update call with Fireflies transcript ID
+        call.fireflies_transcript_id = meeting_id
+        call.status = CallStatus.processing
+        await db.commit()
+
+        logger.info(f"Processing Fireflies transcript for call {call_id}")
+
+        # Process transcript in background
+        background_tasks.add_task(
+            process_fireflies_transcript,
+            call_id,
+            transcript
+        )
+
+        return {"status": "ok", "call_id": call_id, "transcript_id": meeting_id}
+
+    except Exception as e:
+        logger.exception(f"Error processing Fireflies webhook: {e}")
+        return {"status": "error", "reason": str(e)}
+
+
+async def process_fireflies_transcript(call_id: int, transcript: dict):
+    """
+    Process Fireflies transcript: format speakers, analyze with Claude, save results.
+    """
+    from ..database import AsyncSessionLocal
+    from ..services.call_processor import call_processor
+
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(CallRecording).where(CallRecording.id == call_id)
+            )
+            call = result.scalar_one_or_none()
+
+            if not call:
+                logger.error(f"Call {call_id} not found for processing")
+                return
+
+            # Format transcript with speaker labels
+            sentences = transcript.get("sentences", [])
+            speakers = transcript.get("speakers", [])
+            duration = transcript.get("duration", 0)
+            summary_data = transcript.get("summary", {})
+
+            # Build formatted transcript text
+            formatted_lines = []
+            speaker_segments = []
+
+            for sentence in sentences:
+                speaker_name = sentence.get("speaker_name") or f"Speaker {sentence.get('speaker_id', '?')}"
+                text = sentence.get("text", "")
+                start_time = sentence.get("start_time", 0)
+                end_time = sentence.get("end_time", 0)
+
+                # Format timestamp
+                start_min = int(start_time // 60)
+                start_sec = int(start_time % 60)
+                timestamp = f"[{start_min:02d}:{start_sec:02d}]"
+
+                formatted_lines.append(f"{timestamp} {speaker_name}: {text}")
+
+                # Store speaker segment for JSON
+                speaker_segments.append({
+                    "speaker": speaker_name,
+                    "start": start_time,
+                    "end": end_time,
+                    "text": text
+                })
+
+            formatted_transcript = "\n".join(formatted_lines)
+
+            # Update call with transcript data
+            call.transcript = formatted_transcript
+            call.speakers = speaker_segments
+            call.duration_seconds = duration
+            call.status = CallStatus.analyzing
+
+            # Use Fireflies summary if available, otherwise analyze with Claude
+            if summary_data.get("overview"):
+                call.summary = summary_data.get("overview") or summary_data.get("short_summary", "")
+                call.action_items = summary_data.get("action_items", [])
+                call.key_points = summary_data.get("keywords", [])
+                call.status = CallStatus.done
+                call.processed_at = datetime.utcnow()
+                call.ended_at = datetime.utcnow()
+                await db.commit()
+                logger.info(f"Call {call_id} processed with Fireflies summary")
+            else:
+                # Analyze with Claude
+                await db.commit()
+                await call_processor.analyze_transcript(call_id, formatted_transcript, speakers)
+
+    except Exception as e:
+        logger.exception(f"Error processing transcript for call {call_id}: {e}")
+
+        # Mark as failed
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(CallRecording).where(CallRecording.id == call_id)
+                )
+                call = result.scalar_one_or_none()
+                if call:
+                    call.status = CallStatus.failed
+                    call.error_message = str(e)
+                    await db.commit()
+        except Exception as db_error:
+            logger.error(f"Failed to update call status: {db_error}")

@@ -391,7 +391,63 @@ export default function CallDetail({ call }: CallDetailProps) {
                   )}
                 </div>
 
-                {call.transcript ? (
+                {/* Speaker-based transcript (chat style) */}
+                {call.speakers && call.speakers.length > 0 ? (
+                  <div className="space-y-3">
+                    {call.speakers.map((segment, idx) => {
+                      // Generate consistent color for each speaker
+                      const speakerColors = [
+                        { bg: 'bg-cyan-500/20', border: 'border-cyan-500/30', text: 'text-cyan-400' },
+                        { bg: 'bg-purple-500/20', border: 'border-purple-500/30', text: 'text-purple-400' },
+                        { bg: 'bg-green-500/20', border: 'border-green-500/30', text: 'text-green-400' },
+                        { bg: 'bg-yellow-500/20', border: 'border-yellow-500/30', text: 'text-yellow-400' },
+                        { bg: 'bg-pink-500/20', border: 'border-pink-500/30', text: 'text-pink-400' },
+                        { bg: 'bg-orange-500/20', border: 'border-orange-500/30', text: 'text-orange-400' },
+                      ];
+
+                      // Get unique speakers to assign colors
+                      const uniqueSpeakers = [...new Set(call.speakers?.map(s => s.speaker) || [])];
+                      const speakerIndex = uniqueSpeakers.indexOf(segment.speaker);
+                      const colorSet = speakerColors[speakerIndex % speakerColors.length];
+
+                      const formatTime = (seconds: number) => {
+                        const mins = Math.floor(seconds / 60);
+                        const secs = Math.floor(seconds % 60);
+                        return `${mins}:${secs.toString().padStart(2, '0')}`;
+                      };
+
+                      return (
+                        <div
+                          key={idx}
+                          className={clsx(
+                            'p-4 rounded-xl border',
+                            colorSet.bg,
+                            colorSet.border
+                          )}
+                        >
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className={clsx(
+                              'w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium',
+                              colorSet.bg,
+                              colorSet.text
+                            )}>
+                              <User size={16} />
+                            </div>
+                            <span className={clsx('font-medium', colorSet.text)}>
+                              {segment.speaker}
+                            </span>
+                            <span className="text-white/30 text-xs ml-auto">
+                              {formatTime(segment.start)} — {formatTime(segment.end)}
+                            </span>
+                          </div>
+                          <p className="text-white/80 leading-relaxed pl-11">
+                            {segment.text}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : call.transcript ? (
                   <div className="prose prose-invert max-w-none">
                     <p className="text-white/80 whitespace-pre-wrap leading-relaxed">{call.transcript}</p>
                   </div>
