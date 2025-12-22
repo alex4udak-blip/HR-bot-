@@ -34,168 +34,113 @@ logger.setLevel(logging.INFO)
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+async def run_migration(engine, sql: str, description: str):
+    """Run a single migration in its own transaction."""
+    try:
+        async with engine.begin() as conn:
+            from sqlalchemy import text
+            await conn.execute(text(sql))
+        logger.info(f"Migration OK: {description}")
+        return True
+    except Exception as e:
+        logger.debug(f"Migration skipped ({description}): {e}")
+        return False
+
+
 async def init_database():
-    """Initialize database in background."""
+    """Initialize database with separate transactions for each migration."""
     from api.database import engine, AsyncSessionLocal
     from api.models.database import Base
     from api.services.auth import create_superadmin_if_not_exists
     from sqlalchemy import text
 
-    for attempt in range(5):
-        try:
-            async with engine.begin() as conn:
-                # Add all enum values to chattype if they don't exist (PostgreSQL specific)
-                enum_values = ['work', 'hr', 'project', 'client', 'contractor', 'sales', 'support', 'custom']
-                for value in enum_values:
-                    try:
-                        await conn.execute(text(f"ALTER TYPE chattype ADD VALUE IF NOT EXISTS '{value}'"))
-                    except Exception:
-                        pass  # Enum value already exists
-                logger.info("Ensured all chattype enum values exist")
+    logger.info("=== DATABASE INITIALIZATION START ===")
 
-                # Create new enum types for entities and calls if they don't exist
-                new_enums = [
-                    ("entitytype", ['candidate', 'client', 'contractor', 'lead', 'partner', 'custom']),
-                    ("entitystatus", ['new', 'screening', 'interview', 'offer', 'hired', 'rejected', 'active', 'paused', 'churned', 'converted', 'ended', 'negotiation']),
-                    ("callsource", ['meet', 'zoom', 'upload', 'telegram']),
-                    ("callstatus", ['pending', 'connecting', 'recording', 'processing', 'transcribing', 'analyzing', 'done', 'failed']),
-                    ("reporttype", ['daily_hr', 'weekly_summary', 'daily_calls', 'weekly_pipeline']),
-                    ("deliverymethod", ['telegram', 'email'])
-                ]
-                for enum_name, values in new_enums:
-                    try:
-                        values_str = ', '.join([f"'{v}'" for v in values])
-                        await conn.execute(text(f"CREATE TYPE {enum_name} AS ENUM ({values_str})"))
-                        logger.info(f"Created enum type {enum_name}")
-                    except Exception:
-                        pass  # Enum already exists
+    # Step 1: Create enum types (each in separate transaction)
+    new_enums = [
+        ("entitytype", ['candidate', 'client', 'contractor', 'lead', 'partner', 'custom']),
+        ("entitystatus", ['new', 'screening', 'interview', 'offer', 'hired', 'rejected', 'active', 'paused', 'churned', 'converted', 'ended', 'negotiation']),
+        ("callsource", ['meet', 'zoom', 'upload', 'telegram']),
+        ("callstatus", ['pending', 'connecting', 'recording', 'processing', 'transcribing', 'analyzing', 'done', 'failed']),
+        ("reporttype", ['daily_hr', 'weekly_summary', 'daily_calls', 'weekly_pipeline']),
+        ("deliverymethod", ['telegram', 'email'])
+    ]
 
-                # Add deleted_at column if it doesn't exist
-                try:
-                    await conn.execute(text(
-                        "ALTER TABLE chats ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP"
-                    ))
-                    await conn.execute(text(
-                        "CREATE INDEX IF NOT EXISTS ix_chats_deleted_at ON chats(deleted_at)"
-                    ))
-                    logger.info("Added deleted_at column to chats table")
-                except Exception:
-                    pass  # Column already exists
+    for enum_name, values in new_enums:
+        values_str = ', '.join([f"'{v}'" for v in values])
+        await run_migration(engine, f"CREATE TYPE {enum_name} AS ENUM ({values_str})", f"Create {enum_name} enum")
 
-                # Migrate content column to TEXT if it's VARCHAR
-                try:
-                    await conn.execute(text(
-                        "ALTER TABLE messages ALTER COLUMN content TYPE TEXT"
-                    ))
-                    logger.info("Migrated messages.content to TEXT")
-                except Exception:
-                    pass  # Already TEXT or table doesn't exist
+    # Step 2: Add enum values to chattype (each in separate transaction)
+    for value in ['work', 'hr', 'project', 'client', 'contractor', 'sales', 'support', 'custom']:
+        await run_migration(engine, f"ALTER TYPE chattype ADD VALUE IF NOT EXISTS '{value}'", f"Add {value} to chattype")
 
-                # Add file_path column for imported media
-                try:
-                    await conn.execute(text(
-                        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_path VARCHAR(512)"
-                    ))
-                    logger.info("Added file_path column to messages table")
-                except Exception:
-                    pass  # Column already exists
+    # Step 3: Create all tables
+    logger.info("Creating tables with create_all...")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Tables created successfully")
+    except Exception as e:
+        logger.error(f"Error creating tables: {e}")
+        return
 
-                # Add is_imported column to track imported messages
-                try:
-                    await conn.execute(text(
-                        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_imported BOOLEAN DEFAULT FALSE"
-                    ))
-                    logger.info("Added is_imported column to messages table")
-                    # Mark existing messages with file_path as imported
-                    await conn.execute(text(
-                        "UPDATE messages SET is_imported = TRUE WHERE file_path IS NOT NULL AND is_imported = FALSE"
-                    ))
-                    logger.info("Marked existing messages with file_path as imported")
-                except Exception:
-                    pass  # Column already exists
+    # Step 4: Fix call_recordings table (drop and recreate with correct schema)
+    logger.info("=== FIXING call_recordings TABLE ===")
 
-                # Create tables first
-                logger.info("Running create_all for base tables...")
-                await conn.run_sync(Base.metadata.create_all)
+    # Drop old table
+    await run_migration(engine, "DROP TABLE IF EXISTS call_recordings CASCADE", "Drop call_recordings")
 
-                # FORCE recreate call_recordings with correct schema via raw SQL
-                logger.info("=== FIXING call_recordings TABLE ===")
-                try:
-                    # Drop existing table
-                    await conn.execute(text("DROP TABLE IF EXISTS call_recordings CASCADE"))
-                    logger.info("Dropped old call_recordings table")
+    # Create with explicit SQL
+    create_call_recordings_sql = """
+        CREATE TABLE IF NOT EXISTS call_recordings (
+            id SERIAL PRIMARY KEY,
+            title VARCHAR(255),
+            entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL,
+            owner_id INTEGER REFERENCES users(id),
+            source_type callsource NOT NULL,
+            source_url VARCHAR(500),
+            bot_name VARCHAR(100) DEFAULT 'HR Recorder',
+            status callstatus DEFAULT 'pending',
+            duration_seconds INTEGER,
+            audio_file_path VARCHAR(500),
+            transcript TEXT,
+            speakers JSONB,
+            summary TEXT,
+            action_items JSONB,
+            key_points JSONB,
+            error_message TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            started_at TIMESTAMP,
+            ended_at TIMESTAMP,
+            processed_at TIMESTAMP
+        )
+    """
+    await run_migration(engine, create_call_recordings_sql, "Create call_recordings table")
 
-                    # Create with explicit SQL (bypasses SQLAlchemy caching)
-                    await conn.execute(text("""
-                        CREATE TABLE IF NOT EXISTS call_recordings (
-                            id SERIAL PRIMARY KEY,
-                            title VARCHAR(255),
-                            entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL,
-                            owner_id INTEGER REFERENCES users(id),
-                            source_type callsource NOT NULL,
-                            source_url VARCHAR(500),
-                            bot_name VARCHAR(100) DEFAULT 'HR Recorder',
-                            status callstatus DEFAULT 'pending',
-                            duration_seconds INTEGER,
-                            audio_file_path VARCHAR(500),
-                            transcript TEXT,
-                            speakers JSONB,
-                            summary TEXT,
-                            action_items JSONB,
-                            key_points JSONB,
-                            error_message TEXT,
-                            created_at TIMESTAMP DEFAULT NOW(),
-                            started_at TIMESTAMP,
-                            ended_at TIMESTAMP,
-                            processed_at TIMESTAMP
-                        )
-                    """))
-                    logger.info("Created call_recordings table with explicit SQL")
+    # Create indexes
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_entity_id ON call_recordings(entity_id)", "Index entity_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_owner_id ON call_recordings(owner_id)", "Index owner_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_status ON call_recordings(status)", "Index status")
 
-                    # Create indexes
-                    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_call_recordings_entity_id ON call_recordings(entity_id)"))
-                    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_call_recordings_owner_id ON call_recordings(owner_id)"))
-                    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_call_recordings_status ON call_recordings(status)"))
-                    logger.info("Created call_recordings indexes")
+    logger.info("=== call_recordings TABLE FIXED ===")
 
-                except Exception as e:
-                    logger.error(f"Error creating call_recordings: {e}")
-                logger.info("=== call_recordings TABLE FIXED ===")
+    # Step 5: Other column migrations
+    await run_migration(engine, "ALTER TABLE chats ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP", "Add deleted_at to chats")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_chats_deleted_at ON chats(deleted_at)", "Index chats.deleted_at")
+    await run_migration(engine, "ALTER TABLE chats ADD COLUMN IF NOT EXISTS entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL", "Add entity_id to chats")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_chats_entity_id ON chats(entity_id)", "Index chats.entity_id")
+    await run_migration(engine, "ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_path VARCHAR(512)", "Add file_path to messages")
+    await run_migration(engine, "ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_imported BOOLEAN DEFAULT FALSE", "Add is_imported to messages")
+    await run_migration(engine, "ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL", "Add entity_id to analysis_history")
 
-                # Add entity_id column to chats if it doesn't exist
-                try:
-                    await conn.execute(text(
-                        "ALTER TABLE chats ADD COLUMN IF NOT EXISTS entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL"
-                    ))
-                    await conn.execute(text(
-                        "CREATE INDEX IF NOT EXISTS ix_chats_entity_id ON chats(entity_id)"
-                    ))
-                    logger.info("Added entity_id column to chats table")
-                except Exception:
-                    pass  # Column already exists or entities table doesn't exist
+    # Step 6: Create superadmin
+    try:
+        async with AsyncSessionLocal() as db:
+            await create_superadmin_if_not_exists(db)
+    except Exception as e:
+        logger.warning(f"Superadmin creation: {e}")
 
-                # Add entity_id column to analysis_history if it doesn't exist
-                try:
-                    await conn.execute(text(
-                        "ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL"
-                    ))
-                    await conn.execute(text(
-                        "CREATE INDEX IF NOT EXISTS ix_analysis_history_entity_id ON analysis_history(entity_id)"
-                    ))
-                    logger.info("Added entity_id column to analysis_history table")
-                except Exception:
-                    pass  # Column already exists or entities table doesn't exist
-
-
-            # Create superadmin
-            async with AsyncSessionLocal() as db:
-                await create_superadmin_if_not_exists(db)
-
-            logger.info("Database initialized successfully")
-            return
-        except Exception as e:
-            logger.warning(f"Database init attempt {attempt + 1} failed: {e}")
-            await asyncio.sleep(3)
+    logger.info("=== DATABASE INITIALIZATION COMPLETE ===")
 
 
 async def cleanup_deleted_chats_task():
@@ -223,7 +168,7 @@ async def cleanup_deleted_chats_task():
 async def lifespan(app: FastAPI):
     # Startup - initialize database (wait for it to complete)
     try:
-        await asyncio.wait_for(init_database(), timeout=60)
+        await asyncio.wait_for(init_database(), timeout=120)
     except asyncio.TimeoutError:
         logger.error("Database initialization timed out")
     except Exception as e:
