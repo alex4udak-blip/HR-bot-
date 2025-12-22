@@ -114,19 +114,53 @@ async def init_database():
                 except Exception:
                     pass  # Column already exists
 
-                # ALWAYS recreate call_recordings table to ensure correct schema
-                # This is safe because it's a new feature with no data yet
-                logger.info("=== CALL_RECORDINGS MIGRATION START ===")
-                try:
-                    await conn.execute(text("DROP TABLE IF EXISTS call_recordings CASCADE"))
-                    logger.info("Dropped call_recordings table (if existed)")
-                except Exception as e:
-                    logger.error(f"Error dropping call_recordings: {e}")
-
-                # Create tables if they don't exist (safe, preserves data)
-                logger.info("Running create_all...")
+                # Create tables first
+                logger.info("Running create_all for base tables...")
                 await conn.run_sync(Base.metadata.create_all)
-                logger.info("=== CALL_RECORDINGS MIGRATION END ===")
+
+                # FORCE recreate call_recordings with correct schema via raw SQL
+                logger.info("=== FIXING call_recordings TABLE ===")
+                try:
+                    # Drop existing table
+                    await conn.execute(text("DROP TABLE IF EXISTS call_recordings CASCADE"))
+                    logger.info("Dropped old call_recordings table")
+
+                    # Create with explicit SQL (bypasses SQLAlchemy caching)
+                    await conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS call_recordings (
+                            id SERIAL PRIMARY KEY,
+                            title VARCHAR(255),
+                            entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL,
+                            owner_id INTEGER REFERENCES users(id),
+                            source_type callsource NOT NULL,
+                            source_url VARCHAR(500),
+                            bot_name VARCHAR(100) DEFAULT 'HR Recorder',
+                            status callstatus DEFAULT 'pending',
+                            duration_seconds INTEGER,
+                            audio_file_path VARCHAR(500),
+                            transcript TEXT,
+                            speakers JSONB,
+                            summary TEXT,
+                            action_items JSONB,
+                            key_points JSONB,
+                            error_message TEXT,
+                            created_at TIMESTAMP DEFAULT NOW(),
+                            started_at TIMESTAMP,
+                            ended_at TIMESTAMP,
+                            processed_at TIMESTAMP
+                        )
+                    """))
+                    logger.info("Created call_recordings table with explicit SQL")
+
+                    # Create indexes
+                    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_call_recordings_entity_id ON call_recordings(entity_id)"))
+                    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_call_recordings_owner_id ON call_recordings(owner_id)"))
+                    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_call_recordings_status ON call_recordings(status)"))
+                    logger.info("Created call_recordings indexes")
+
+                except Exception as e:
+                    logger.error(f"Error creating call_recordings: {e}")
+                logger.info("=== call_recordings TABLE FIXED ===")
 
                 # Add entity_id column to chats if it doesn't exist
                 try:
