@@ -619,11 +619,11 @@ export default function CallDetail({ call }: CallDetailProps) {
                       <>
                         <button
                           onClick={handleExportTranscript}
-                          className="p-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 transition-colors flex items-center gap-2"
-                          title="Скачать транскрипт"
+                          className="px-3 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 transition-colors flex items-center gap-2"
+                          title="Скачать транскрипт как текстовый файл"
                         >
                           <Download size={16} className="text-cyan-400" />
-                          <span className="text-sm text-cyan-400 hidden sm:inline">Скачать</span>
+                          <span className="text-sm text-cyan-400">Скачать транскрипт</span>
                         </button>
                         <button
                           onClick={() => handleCopy(call.transcript || '')}
