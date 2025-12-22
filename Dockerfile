@@ -9,30 +9,21 @@ RUN npm install
 COPY frontend/ ./
 RUN npm run build
 
-# Stage 2: Build recorder dependencies
-FROM node:20-slim AS recorder-builder
-
-WORKDIR /recorder
-
-COPY backend/recorder/package.json ./
-RUN npm install --production
-
-# Stage 3: Final image with Python + Node + Chromium
+# Stage 2: Final image
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy requirements first for better caching
-COPY backend/requirements.txt ./
-
-# Install Python dependencies early (cache optimization)
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install system dependencies including Node.js and Chromium
+RUN apt-get update && apt-get install -y \
     ffmpeg \
+    libreoffice-common \
+    libreoffice-writer \
+    libreoffice-calc \
+    libreoffice-impress \
+    unrar-free \
+    libheif-dev \
     curl \
-    gnupg \
     chromium \
     fonts-liberation \
     libasound2 \
@@ -51,18 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxkbcommon0 \
     libxrandr2 \
     xdg-utils \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install LibreOffice separately (large package)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libreoffice-common \
-    libreoffice-writer \
-    libreoffice-calc \
-    libreoffice-impress \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Node.js
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
@@ -70,13 +50,14 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Copy backend code files explicitly
-COPY backend/main.py ./
-COPY backend/api/ ./api/
-COPY backend/recorder/ ./recorder/
+# Copy backend files
+COPY backend/ .
 
-# Copy recorder node_modules from builder stage
-COPY --from=recorder-builder /recorder/node_modules ./recorder/node_modules
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install recorder Node.js dependencies
+RUN cd recorder && npm install --production && cd ..
 
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /frontend/dist ./static
