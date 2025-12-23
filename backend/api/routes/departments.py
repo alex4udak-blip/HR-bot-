@@ -160,6 +160,12 @@ async def list_departments(
     result = await db.execute(query)
     departments = result.scalars().all()
 
+    if not departments:
+        return []
+
+    # Get all department IDs for batch queries
+    dept_ids = [d.id for d in departments]
+
     # Pre-fetch all parent names
     parent_ids = [d.parent_id for d in departments if d.parent_id]
     parent_names = {}
@@ -170,27 +176,35 @@ async def list_departments(
         for p in parents_result.scalars().all():
             parent_names[p.id] = p.name
 
+    # Batch query: Get member counts for all departments
+    from sqlalchemy import func
+    members_counts_result = await db.execute(
+        select(DepartmentMember.department_id, func.count(DepartmentMember.id))
+        .where(DepartmentMember.department_id.in_(dept_ids))
+        .group_by(DepartmentMember.department_id)
+    )
+    members_counts = {row[0]: row[1] for row in members_counts_result.fetchall()}
+
+    # Batch query: Get entity counts for all departments
+    from ..models.database import Entity
+    entities_counts_result = await db.execute(
+        select(Entity.department_id, func.count(Entity.id))
+        .where(Entity.department_id.in_(dept_ids))
+        .group_by(Entity.department_id)
+    )
+    entities_counts = {row[0]: row[1] for row in entities_counts_result.fetchall()}
+
+    # Batch query: Get children counts for all departments
+    children_counts_result = await db.execute(
+        select(Department.parent_id, func.count(Department.id))
+        .where(Department.parent_id.in_(dept_ids))
+        .group_by(Department.parent_id)
+    )
+    children_counts = {row[0]: row[1] for row in children_counts_result.fetchall()}
+
+    # Build response using the pre-fetched data
     response = []
     for dept in departments:
-        # Count members
-        members_result = await db.execute(
-            select(DepartmentMember).where(DepartmentMember.department_id == dept.id)
-        )
-        members_count = len(list(members_result.scalars().all()))
-
-        # Count entities
-        from ..models.database import Entity
-        entities_result = await db.execute(
-            select(Entity).where(Entity.department_id == dept.id)
-        )
-        entities_count = len(list(entities_result.scalars().all()))
-
-        # Count children
-        children_result = await db.execute(
-            select(Department).where(Department.parent_id == dept.id)
-        )
-        children_count = len(list(children_result.scalars().all()))
-
         response.append(DepartmentResponse(
             id=dept.id,
             name=dept.name,
@@ -199,9 +213,9 @@ async def list_departments(
             is_active=dept.is_active,
             parent_id=dept.parent_id,
             parent_name=parent_names.get(dept.parent_id) if dept.parent_id else None,
-            members_count=members_count,
-            entities_count=entities_count,
-            children_count=children_count,
+            members_count=members_counts.get(dept.id, 0),
+            entities_count=entities_counts.get(dept.id, 0),
+            children_count=children_counts.get(dept.id, 0),
             created_at=dept.created_at
         ))
 

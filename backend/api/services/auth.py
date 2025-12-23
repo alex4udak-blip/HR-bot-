@@ -37,15 +37,23 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(truncated, hashed)
 
 
-def create_access_token(data: dict) -> str:
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create JWT access token.
+
+    Args:
+        data: Dictionary containing token data (sub, user_id, etc.)
+        expires_delta: Optional custom expiration time. If not provided,
+                      uses the default from settings.
 
     SECURITY NOTE: Tokens are currently stored in localStorage on the frontend,
     which is vulnerable to XSS attacks. Future implementation should use httpOnly
     cookies with CSRF tokens for better security.
     """
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=settings.jwt_expire_minutes)
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.jwt_expire_minutes)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 

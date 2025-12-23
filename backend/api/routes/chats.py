@@ -230,18 +230,39 @@ async def get_chats(
     result = await db.execute(query)
     chats = result.scalars().all()
 
+    if not chats:
+        return []
+
+    # Get all chat IDs for batch queries
+    chat_ids = [chat.id for chat in chats]
+
+    # Batch query: Get message counts for all chats
+    msg_counts_result = await db.execute(
+        select(Message.chat_id, func.count(Message.id))
+        .where(Message.chat_id.in_(chat_ids))
+        .group_by(Message.chat_id)
+    )
+    msg_counts = {row[0]: row[1] for row in msg_counts_result.fetchall()}
+
+    # Batch query: Get participant counts for all chats
+    part_counts_result = await db.execute(
+        select(Message.chat_id, func.count(distinct(Message.telegram_user_id)))
+        .where(Message.chat_id.in_(chat_ids))
+        .group_by(Message.chat_id)
+    )
+    part_counts = {row[0]: row[1] for row in part_counts_result.fetchall()}
+
+    # Batch query: Get chats with criteria
+    criteria_result = await db.execute(
+        select(ChatCriteria.chat_id)
+        .where(ChatCriteria.chat_id.in_(chat_ids))
+        .distinct()
+    )
+    chats_with_criteria = {row[0] for row in criteria_result.fetchall()}
+
+    # Build response using the pre-fetched data
     response = []
     for chat in chats:
-        msg_count = await db.execute(
-            select(func.count(Message.id)).where(Message.chat_id == chat.id)
-        )
-        part_count = await db.execute(
-            select(func.count(distinct(Message.telegram_user_id))).where(Message.chat_id == chat.id)
-        )
-        has_crit = await db.execute(
-            select(ChatCriteria.id).where(ChatCriteria.chat_id == chat.id)
-        )
-
         response.append(ChatResponse(
             id=chat.id,
             telegram_chat_id=chat.telegram_chat_id,
@@ -255,11 +276,11 @@ async def get_chats(
             entity_id=chat.entity_id,
             entity_name=chat.entity.name if chat.entity else None,
             is_active=chat.is_active,
-            messages_count=msg_count.scalar() or 0,
-            participants_count=part_count.scalar() or 0,
+            messages_count=msg_counts.get(chat.id, 0),
+            participants_count=part_counts.get(chat.id, 0),
             last_activity=chat.last_activity,
             created_at=chat.created_at,
-            has_criteria=has_crit.scalar() is not None,
+            has_criteria=chat.id in chats_with_criteria,
         ))
 
     return response

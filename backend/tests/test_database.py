@@ -95,6 +95,7 @@ class TestUniqueConstraints:
         share1 = SharedAccess(
             resource_type=ResourceType.entity,
             resource_id=entity.id,
+            entity_id=entity.id,
             shared_by_id=admin_user.id,
             shared_with_id=second_user.id,
             access_level=AccessLevel.view,
@@ -107,6 +108,7 @@ class TestUniqueConstraints:
         share2 = SharedAccess(
             resource_type=ResourceType.entity,
             resource_id=entity.id,
+            entity_id=entity.id,
             shared_by_id=admin_user.id,
             shared_with_id=second_user.id,
             access_level=AccessLevel.edit,  # Different level shouldn't matter
@@ -119,47 +121,60 @@ class TestUniqueConstraints:
             await db_session.commit()
 
     @pytest.mark.asyncio
-    async def test_duplicate_shares_actually_created(self, db_session, entity, admin_user, second_user):
+    async def test_duplicate_shares_now_prevented(self, db_session, entity, admin_user, second_user):
         """
-        Verify that duplicate shares can actually be created (documenting the bug).
-        This test should PASS, proving the integrity issue exists.
+        Verify that duplicate shares are now prevented by the unique constraint.
+        This test verifies the bug fix is working correctly.
         """
+        # Store IDs before operations
+        entity_id = entity.id
+        admin_user_id = admin_user.id
+        second_user_id = second_user.id
+
         # Create first share
         share1 = SharedAccess(
             resource_type=ResourceType.entity,
-            resource_id=entity.id,
-            shared_by_id=admin_user.id,
-            shared_with_id=second_user.id,
+            resource_id=entity_id,
+            entity_id=entity_id,
+            shared_by_id=admin_user_id,
+            shared_with_id=second_user_id,
             access_level=AccessLevel.view,
             created_at=datetime.utcnow()
         )
         db_session.add(share1)
         await db_session.commit()
 
-        # Create duplicate share - this WILL succeed (demonstrating the bug)
+        # Try to create duplicate share - this should now FAIL
         share2 = SharedAccess(
             resource_type=ResourceType.entity,
-            resource_id=entity.id,
-            shared_by_id=admin_user.id,
-            shared_with_id=second_user.id,
+            resource_id=entity_id,
+            entity_id=entity_id,
+            shared_by_id=admin_user_id,
+            shared_with_id=second_user_id,
             access_level=AccessLevel.edit,
             created_at=datetime.utcnow()
         )
         db_session.add(share2)
-        await db_session.commit()
 
-        # Verify both exist
+        # This should raise IntegrityError due to unique constraint
+        with pytest.raises(IntegrityError):
+            await db_session.commit()
+
+        # Rollback the failed transaction
+        await db_session.rollback()
+
+        # Verify only one share exists
         result = await db_session.execute(
             select(SharedAccess).where(
                 SharedAccess.resource_type == ResourceType.entity,
-                SharedAccess.resource_id == entity.id,
-                SharedAccess.shared_with_id == second_user.id
+                SharedAccess.resource_id == entity_id,
+                SharedAccess.shared_with_id == second_user_id
             )
         )
         shares = result.scalars().all()
 
-        # This demonstrates the bug - we have 2 duplicate shares!
-        assert len(shares) == 2
+        # Bug is fixed - we have only 1 share!
+        assert len(shares) == 1
 
 
 class TestCascadeDelete:
@@ -574,6 +589,7 @@ class TestOrphanRecords:
         share = SharedAccess(
             resource_type=ResourceType.entity,
             resource_id=entity.id,
+            entity_id=entity.id,
             shared_by_id=admin_user.id,
             shared_with_id=second_user.id,
             access_level=AccessLevel.view,
@@ -612,6 +628,7 @@ class TestOrphanRecords:
         share = SharedAccess(
             resource_type=ResourceType.chat,
             resource_id=chat.id,
+            chat_id=chat.id,
             shared_by_id=admin_user.id,
             shared_with_id=second_user.id,
             access_level=AccessLevel.view,
@@ -650,6 +667,7 @@ class TestOrphanRecords:
         share = SharedAccess(
             resource_type=ResourceType.call,
             resource_id=call_recording.id,
+            call_id=call_recording.id,
             shared_by_id=admin_user.id,
             shared_with_id=second_user.id,
             access_level=AccessLevel.view,

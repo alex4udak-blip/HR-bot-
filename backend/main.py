@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations
+from api.config import settings
 
 # Configure logging - show important messages
 logging.basicConfig(
@@ -368,10 +369,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
+# CORS - use allowed origins from settings (not wildcard)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.get_allowed_origins_list(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
