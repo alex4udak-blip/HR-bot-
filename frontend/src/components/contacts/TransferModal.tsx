@@ -58,30 +58,30 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-gray-900 rounded-2xl w-full max-w-md border border-white/10 shadow-2xl"
+        className="bg-gray-900 rounded-2xl w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col border border-white/10 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-500/20 rounded-lg">
+        <div className="flex items-center justify-between p-6 border-b border-white/10 flex-shrink-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="p-2 bg-purple-500/20 rounded-lg flex-shrink-0">
               <ArrowRightLeft size={20} className="text-purple-400" />
             </div>
-            <div>
+            <div className="min-w-0 flex-1">
               <h2 className="text-xl font-semibold text-white">Передача контакта</h2>
-              <p className="text-sm text-white/60">{entity.name}</p>
+              <p className="text-sm text-white/60 truncate">{entity.name}</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+            className="p-2 rounded-lg hover:bg-white/10 transition-colors flex-shrink-0"
           >
             <X size={20} className="text-white/60" />
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto flex-1">
           {/* Select User */}
           <div>
             <label className="block text-sm font-medium text-white/60 mb-2">Передать кому</label>
@@ -90,7 +90,7 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
                 <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : (
-              <div className="space-y-2 max-h-48 overflow-y-auto">
+              <div className="space-y-2 max-h-64 overflow-y-auto">
                 {users.map((user) => (
                   <button
                     key={user.id}
@@ -104,14 +104,14 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
                     )}
                   >
                     <div className={clsx(
-                      'p-2 rounded-full',
+                      'p-2 rounded-full flex-shrink-0',
                       selectedUserId === user.id ? 'bg-purple-500/30' : 'bg-white/10'
                     )}>
                       <User size={16} className={selectedUserId === user.id ? 'text-purple-400' : 'text-white/60'} />
                     </div>
-                    <div>
-                      <p className="text-white font-medium">{user.name}</p>
-                      <p className="text-xs text-white/40">{user.email}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-white font-medium truncate">{user.name}</p>
+                      <p className="text-xs text-white/40 truncate">{user.email}</p>
                     </div>
                   </button>
                 ))}
@@ -134,7 +134,7 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
           </div>
 
           {/* Actions */}
-          <div className="flex gap-3 pt-4">
+          <div className="flex gap-3 pt-4 flex-shrink-0">
             <button
               type="button"
               onClick={onClose}

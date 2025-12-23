@@ -260,31 +260,31 @@ export default function EntityAI({ entity }: EntityAIProps) {
           <div
             key={i}
             className={clsx(
-              'p-3 rounded-lg',
+              'p-3 rounded-lg overflow-hidden',
               msg.role === 'user'
-                ? 'bg-cyan-500/20 ml-8'
-                : 'bg-white/5 mr-4'
+                ? 'bg-cyan-500/20 ml-4 sm:ml-8'
+                : 'bg-white/5 mr-2 sm:mr-4'
             )}
           >
-            <div className="prose prose-invert prose-sm max-w-none break-words">
+            <div className="prose prose-invert prose-sm max-w-none break-words overflow-wrap-anywhere">
               <ReactMarkdown>{msg.content}</ReactMarkdown>
             </div>
           </div>
         ))}
 
         {streamingContent && (
-          <div className="p-3 rounded-lg bg-white/5 mr-4">
-            <div className="prose prose-invert prose-sm max-w-none break-words">
+          <div className="p-3 rounded-lg bg-white/5 mr-2 sm:mr-4 overflow-hidden">
+            <div className="prose prose-invert prose-sm max-w-none break-words overflow-wrap-anywhere">
               <ReactMarkdown>{streamingContent}</ReactMarkdown>
             </div>
           </div>
         )}
 
         {loading && !streamingContent && (
-          <div className="p-3 rounded-lg bg-white/5 mr-4">
+          <div className="p-3 rounded-lg bg-white/5 mr-2 sm:mr-4">
             <div className="flex items-center gap-2 text-white/60">
-              <Loader2 size={16} className="animate-spin" />
-              Анализирую данные...
+              <Loader2 size={16} className="animate-spin flex-shrink-0" />
+              <span className="truncate">Анализирую данные...</span>
             </div>
           </div>
         )}
@@ -301,13 +301,13 @@ export default function EntityAI({ entity }: EntityAIProps) {
           onKeyDown={handleKeyDown}
           placeholder="Задайте вопрос о контакте..."
           disabled={loading}
-          className="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50 disabled:opacity-50 transition-colors"
+          className="flex-1 min-w-0 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50 disabled:opacity-50 transition-colors"
         />
         <button
           onClick={() => sendMessage(input)}
           disabled={loading || !input.trim()}
           className={clsx(
-            'px-4 py-2 rounded-lg transition-colors flex items-center gap-2',
+            'px-4 py-2 rounded-lg transition-colors flex items-center gap-2 flex-shrink-0',
             loading || !input.trim()
               ? 'bg-white/5 text-white/30 cursor-not-allowed'
               : 'bg-cyan-500 hover:bg-cyan-600 text-white'

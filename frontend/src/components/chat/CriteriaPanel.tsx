@@ -120,14 +120,14 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
   return (
     <div className="p-4 space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0">
           <h3 className="font-semibold">Критерии оценки</h3>
-          <p className="text-sm text-dark-400">
+          <p className="text-sm text-dark-400 truncate">
             {criteria.length} {criteria.length === 1 ? 'критерий' : criteria.length < 5 ? 'критерия' : 'критериев'}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-shrink-0">
           {presets.length > 0 && (
             <Select.Root onValueChange={handleApplyPreset}>
               <Select.Trigger className="flex items-center gap-2 px-3 py-2 rounded-lg glass-light text-sm hover:bg-white/10 transition-colors">
@@ -187,10 +187,10 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
                   className="glass-light rounded-xl p-4 space-y-3"
                 >
                   <div className="flex items-start gap-3">
-                    <div className={clsx('p-2 rounded-lg', colorClass)}>
+                    <div className={clsx('p-2 rounded-lg flex-shrink-0', colorClass)}>
                       <Icon className="w-4 h-4" />
                     </div>
-                    <div className="flex-1 space-y-3">
+                    <div className="flex-1 min-w-0 space-y-3">
                       <input
                         type="text"
                         value={criterion.name}
@@ -209,8 +209,8 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
                         rows={2}
                         className="w-full bg-transparent text-sm text-dark-300 resize-none focus:outline-none"
                       />
-                      <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-4 flex-wrap">
+                        <div className="flex items-center gap-2 flex-shrink-0">
                           <span className="text-xs text-dark-500">Категория:</span>
                           <select
                             value={criterion.category}
@@ -228,7 +228,7 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
                             ))}
                           </select>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-shrink-0">
                           <span className="text-xs text-dark-500">Вес:</span>
                           <input
                             type="range"
@@ -248,7 +248,7 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
                     </div>
                     <button
                       onClick={() => handleRemoveCriterion(index)}
-                      className="p-2 rounded-lg text-dark-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      className="p-2 rounded-lg text-dark-400 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

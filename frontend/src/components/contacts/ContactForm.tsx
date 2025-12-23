@@ -124,7 +124,7 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
           {/* Entity Type */}
           <div>
             <label className="block text-sm font-medium text-white/60 mb-2">Тип</label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {ENTITY_TYPE_OPTIONS.map((option) => {
                 const Icon = option.icon;
                 const typeInfo = ENTITY_TYPES[option.id];
@@ -140,8 +140,8 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
                         : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10'
                     )}
                   >
-                    <Icon size={20} />
-                    <span className="text-xs">{typeInfo.name}</span>
+                    <Icon size={20} className="flex-shrink-0" />
+                    <span className="text-xs text-center">{typeInfo.name}</span>
                   </button>
                 );
               })}
@@ -181,7 +181,7 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
           </div>
 
           {/* Contact Info Grid */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-white/60 mb-2">Email</label>
               <input
@@ -210,7 +210,7 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
           </div>
 
           {/* Company & Position */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-white/60 mb-2">Компания</label>
               <input

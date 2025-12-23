@@ -584,7 +584,7 @@ function InviteMemberModal({
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.9, opacity: 0 }}
-          className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md"
+          className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md max-w-[calc(100%-2rem)]"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="text-center mb-6">
@@ -660,10 +660,10 @@ function InviteMemberModal({
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
+        className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 flex-shrink-0">
           <h3 className="text-lg font-semibold text-white flex items-center gap-2">
             <LinkIcon className="text-cyan-400" size={20} />
             Создать приглашение
@@ -673,7 +673,7 @@ function InviteMemberModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-1">
           <div>
             <label className="block text-sm text-white/60 mb-1">Имя (необязательно)</label>
             <input
@@ -730,7 +730,7 @@ function InviteMemberModal({
 
           {/* Department Selection */}
           {departments.length > 0 && (
-            <div>
+            <div className="flex-shrink-0">
               <label className="block text-sm text-white/60 mb-2">Департаменты</label>
               <div className="max-h-40 overflow-y-auto space-y-1.5 mb-2">
                 {departments.map((dept) => {
@@ -792,6 +792,7 @@ function InviteMemberModal({
             </select>
           </div>
 
+          <div className="flex-shrink-0 pt-4">
           <button
             type="submit"
             disabled={loading}
@@ -800,6 +801,7 @@ function InviteMemberModal({
             {loading ? <Loader2 size={18} className="animate-spin" /> : <LinkIcon size={18} />}
             Создать приглашение
           </button>
+          </div>
         </form>
       </motion.div>
     </motion.div>
@@ -877,7 +879,7 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
           </Dialog.Trigger>
           <Dialog.Portal>
             <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
-            <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-gray-900 border border-white/10 rounded-xl p-6 z-50">
+            <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-y-auto bg-gray-900 border border-white/10 rounded-xl p-6 z-50">
               <Dialog.Title className="text-xl font-semibold mb-4 text-white">
                 Создать пользователя
               </Dialog.Title>

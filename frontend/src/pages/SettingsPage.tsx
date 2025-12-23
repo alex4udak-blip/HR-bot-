@@ -142,8 +142,8 @@ export default function SettingsPage() {
               </Dialog.Trigger>
               <Dialog.Portal>
                 <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
-                <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl max-h-[90vh] glass rounded-2xl p-6 shadow-xl overflow-y-auto">
-                  <Dialog.Title className="text-xl font-semibold mb-4">
+                <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl max-w-[calc(100%-2rem)] max-h-[90vh] glass rounded-2xl p-6 shadow-xl overflow-hidden flex flex-col">
+                  <Dialog.Title className="text-xl font-semibold mb-4 flex-shrink-0">
                     Create Criteria Preset
                   </Dialog.Title>
                   <form
@@ -151,7 +151,7 @@ export default function SettingsPage() {
                       e.preventDefault();
                       createMutation.mutate();
                     }}
-                    className="space-y-4"
+                    className="space-y-4 overflow-y-auto flex-1"
                   >
                     <div className="grid grid-cols-2 gap-4">
                       <div>
@@ -267,7 +267,7 @@ export default function SettingsPage() {
                       </div>
                     </div>
 
-                    <div className="flex gap-3 pt-4">
+                    <div className="flex gap-3 pt-4 flex-shrink-0">
                       <Dialog.Close asChild>
                         <button
                           type="button"

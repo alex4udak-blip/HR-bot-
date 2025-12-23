@@ -129,47 +129,47 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
       {/* Contact Info Card */}
       <div className="bg-white/5 rounded-xl p-6 mb-6">
         <div className="flex items-start gap-4">
-          <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-cyan-500/30 to-purple-500/30 flex items-center justify-center">
+          <div className="w-16 h-16 aspect-square rounded-xl bg-gradient-to-br from-cyan-500/30 to-purple-500/30 flex items-center justify-center flex-shrink-0">
             <User size={32} className="text-white" />
           </div>
 
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 mb-2">
-              <h2 className="text-2xl font-bold text-white">{entity.name}</h2>
-              <span className={clsx('text-sm px-3 py-1 rounded-full', STATUS_COLORS[entity.status])}>
+              <h2 className="text-2xl font-bold text-white truncate">{entity.name}</h2>
+              <span className={clsx('text-sm px-3 py-1 rounded-full flex-shrink-0 whitespace-nowrap', STATUS_COLORS[entity.status])}>
                 {STATUS_LABELS[entity.status]}
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mt-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
               {entity.email && (
                 <a
                   href={`mailto:${entity.email}`}
-                  className="flex items-center gap-2 text-white/60 hover:text-cyan-400 transition-colors"
+                  className="flex items-center gap-2 text-white/60 hover:text-cyan-400 transition-colors min-w-0"
                 >
-                  <Mail size={16} />
-                  {entity.email}
+                  <Mail size={16} className="flex-shrink-0" />
+                  <span className="truncate">{entity.email}</span>
                 </a>
               )}
               {entity.phone && (
                 <a
                   href={`tel:${entity.phone}`}
-                  className="flex items-center gap-2 text-white/60 hover:text-cyan-400 transition-colors"
+                  className="flex items-center gap-2 text-white/60 hover:text-cyan-400 transition-colors min-w-0"
                 >
-                  <Phone size={16} />
-                  {entity.phone}
+                  <Phone size={16} className="flex-shrink-0" />
+                  <span className="truncate">{entity.phone}</span>
                 </a>
               )}
               {entity.company && (
-                <div className="flex items-center gap-2 text-white/60">
-                  <Building2 size={16} />
-                  {entity.company}
+                <div className="flex items-center gap-2 text-white/60 min-w-0">
+                  <Building2 size={16} className="flex-shrink-0" />
+                  <span className="truncate">{entity.company}</span>
                 </div>
               )}
               {entity.position && (
-                <div className="flex items-center gap-2 text-white/60">
-                  <Briefcase size={16} />
-                  {entity.position}
+                <div className="flex items-center gap-2 text-white/60 min-w-0">
+                  <Briefcase size={16} className="flex-shrink-0" />
+                  <span className="truncate">{entity.position}</span>
                 </div>
               )}
             </div>
@@ -194,7 +194,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-6">
+      <div className="flex flex-wrap gap-2 mb-6">
         {[
           { id: 'overview', label: 'Обзор' },
           { id: 'chats', label: `Чаты (${entity.chats?.length || 0})` },
@@ -205,7 +205,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
             key={tab.id}
             onClick={() => setActiveTab(tab.id as typeof activeTab)}
             className={clsx(
-              'px-4 py-2 rounded-lg text-sm transition-colors',
+              'px-4 py-2 rounded-lg text-sm transition-colors whitespace-nowrap',
               activeTab === tab.id
                 ? 'bg-cyan-500/20 text-cyan-400'
                 : 'bg-white/5 text-white/60 hover:bg-white/10'
@@ -245,13 +245,13 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                     <div
                       key={chat.id}
                       onClick={() => navigate(`/chats/${chat.id}`)}
-                      className="p-3 bg-white/5 rounded-lg cursor-pointer hover:bg-white/10 transition-colors flex items-center justify-between"
+                      className="p-3 bg-white/5 rounded-lg cursor-pointer hover:bg-white/10 transition-colors flex items-center justify-between gap-2"
                     >
-                      <div>
-                        <p className="text-white font-medium">{chat.title}</p>
-                        <p className="text-xs text-white/40">{formatDate(chat.created_at)}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white font-medium truncate">{chat.title}</p>
+                        <p className="text-xs text-white/40 truncate">{formatDate(chat.created_at)}</p>
                       </div>
-                      <ChevronRight size={16} className="text-white/40" />
+                      <ChevronRight size={16} className="text-white/40 flex-shrink-0" />
                     </div>
                   ))}
                 </div>
@@ -339,20 +339,20 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   onClick={() => navigate(`/chats/${chat.id}`)}
-                  className="p-4 bg-white/5 rounded-xl cursor-pointer hover:bg-white/10 transition-colors flex items-center justify-between"
+                  className="p-4 bg-white/5 rounded-xl cursor-pointer hover:bg-white/10 transition-colors flex items-center justify-between gap-3"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-cyan-500/20 rounded-lg">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="p-2 bg-cyan-500/20 rounded-lg flex-shrink-0">
                       <MessageSquare size={20} className="text-cyan-400" />
                     </div>
-                    <div>
-                      <p className="text-white font-medium">{chat.title}</p>
-                      <p className="text-sm text-white/40">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-white font-medium truncate">{chat.title}</p>
+                      <p className="text-sm text-white/40 truncate">
                         {chat.chat_type} • Создан {formatDate(chat.created_at)}
                       </p>
                     </div>
                   </div>
-                  <ChevronRight size={20} className="text-white/40" />
+                  <ChevronRight size={20} className="text-white/40 flex-shrink-0" />
                 </motion.div>
               ))
             ) : (
@@ -375,20 +375,20 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   onClick={() => navigate(`/calls/${call.id}`)}
                   className="p-4 bg-white/5 rounded-xl cursor-pointer hover:bg-white/10 transition-colors"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-green-500/20 rounded-lg">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="p-2 bg-green-500/20 rounded-lg flex-shrink-0">
                         <Phone size={20} className="text-green-400" />
                       </div>
-                      <div>
-                        <p className="text-white font-medium">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white font-medium truncate">
                           Звонок {call.source_type.toUpperCase()}
                         </p>
-                        <p className="text-sm text-white/40">{formatDate(call.created_at)}</p>
+                        <p className="text-sm text-white/40 truncate">{formatDate(call.created_at)}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <span className={clsx('text-xs px-2 py-0.5 rounded-full', CALL_STATUS_COLORS[call.status])}>
+                    <div className="text-right flex-shrink-0">
+                      <span className={clsx('text-xs px-2 py-0.5 rounded-full whitespace-nowrap', CALL_STATUS_COLORS[call.status])}>
                         {CALL_STATUS_LABELS[call.status]}
                       </span>
                       <p className="text-sm text-white/60 mt-1">
@@ -489,10 +489,10 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col"
+              className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-4 flex-shrink-0">
                 <h3 className="text-lg font-semibold text-white">Привязать чат</h3>
                 <button
                   onClick={() => setShowLinkChatModal(false)}
@@ -502,7 +502,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto space-y-2">
+              <div className="flex-1 overflow-y-auto space-y-2 max-h-[60vh]">
                 {loadingData ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
@@ -519,16 +519,16 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                       key={chat.id}
                       onClick={() => handleLinkChat(chat.id)}
                       disabled={loadingLink}
-                      className="w-full p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors text-left flex items-center justify-between disabled:opacity-50"
+                      className="w-full p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-3 disabled:opacity-50"
                     >
-                      <div>
-                        <p className="text-white font-medium">{chat.title}</p>
-                        <p className="text-xs text-white/40">{chat.chat_type} • {formatDate(chat.created_at)}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white font-medium truncate">{chat.title}</p>
+                        <p className="text-xs text-white/40 truncate">{chat.chat_type} • {formatDate(chat.created_at)}</p>
                       </div>
                       {loadingLink ? (
-                        <Loader2 size={16} className="text-cyan-400 animate-spin" />
+                        <Loader2 size={16} className="text-cyan-400 animate-spin flex-shrink-0" />
                       ) : (
-                        <Link2 size={16} className="text-cyan-400" />
+                        <Link2 size={16} className="text-cyan-400 flex-shrink-0" />
                       )}
                     </button>
                   ))
@@ -553,10 +553,10 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col"
+              className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-4 flex-shrink-0">
                 <h3 className="text-lg font-semibold text-white">Привязать звонок</h3>
                 <button
                   onClick={() => setShowLinkCallModal(false)}
@@ -566,7 +566,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto space-y-2">
+              <div className="flex-1 overflow-y-auto space-y-2 max-h-[60vh]">
                 {loadingData ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-6 h-6 text-green-400 animate-spin" />
@@ -583,23 +583,23 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                       key={call.id}
                       onClick={() => handleLinkCall(call.id)}
                       disabled={loadingLink}
-                      className="w-full p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors text-left flex items-center justify-between disabled:opacity-50"
+                      className="w-full p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-3 disabled:opacity-50"
                     >
-                      <div>
-                        <p className="text-white font-medium">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white font-medium truncate">
                           Звонок {call.source_type?.toUpperCase() || 'N/A'}
                         </p>
-                        <p className="text-xs text-white/40">
+                        <p className="text-xs text-white/40 truncate">
                           {formatDuration(call.duration_seconds)} • {formatDate(call.created_at)}
                         </p>
-                        <span className={clsx('text-xs px-2 py-0.5 rounded-full mt-1 inline-block', CALL_STATUS_COLORS[call.status])}>
+                        <span className={clsx('text-xs px-2 py-0.5 rounded-full mt-1 inline-block whitespace-nowrap', CALL_STATUS_COLORS[call.status])}>
                           {CALL_STATUS_LABELS[call.status]}
                         </span>
                       </div>
                       {loadingLink ? (
-                        <Loader2 size={16} className="text-green-400 animate-spin" />
+                        <Loader2 size={16} className="text-green-400 animate-spin flex-shrink-0" />
                       ) : (
-                        <Link2 size={16} className="text-green-400" />
+                        <Link2 size={16} className="text-green-400 flex-shrink-0" />
                       )}
                     </button>
                   ))

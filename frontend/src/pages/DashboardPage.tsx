@@ -40,7 +40,7 @@ export default function DashboardPage() {
 
   if (isLoading || !stats) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex items-center justify-center min-h-[200px]">
         <div className="w-8 h-8 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -77,8 +77,8 @@ export default function DashboardPage() {
                 </div>
                 <TrendingUp className="w-5 h-5 text-green-500" />
               </div>
-              <p className="text-dark-400 text-sm mb-1">{stat.label}</p>
-              <p className="text-2xl font-bold">{stat.value.toLocaleString()}</p>
+              <p className="text-dark-400 text-sm mb-1 truncate">{stat.label}</p>
+              <p className="text-2xl font-bold truncate">{stat.value.toLocaleString()}</p>
             </div>
           ))}
         </motion.div>
@@ -86,7 +86,7 @@ export default function DashboardPage() {
         {/* Activity Chart */}
         <motion.div variants={item} className="glass rounded-2xl p-6">
           <h2 className="text-lg font-semibold mb-4">Активность (7 дней)</h2>
-          <div className="h-64">
+          <div className="h-64 overflow-hidden">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={stats.activity_by_day}>
                 <defs>
@@ -124,7 +124,7 @@ export default function DashboardPage() {
           {/* Top Chats */}
           <motion.div variants={item} className="glass rounded-2xl p-6">
             <h2 className="text-lg font-semibold mb-4">Топ чатов</h2>
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-64 overflow-y-auto">
               {stats.top_chats.length === 0 ? (
                 <p className="text-dark-400 text-center py-4">Пока нет чатов</p>
               ) : (
@@ -138,7 +138,7 @@ export default function DashboardPage() {
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{chat.custom_name || chat.title}</p>
-                      <p className="text-sm text-dark-400">{chat.messages} сообщ.</p>
+                      <p className="text-sm text-dark-400 truncate">{chat.messages} сообщ.</p>
                     </div>
                   </div>
                 ))
@@ -149,13 +149,13 @@ export default function DashboardPage() {
           {/* Messages by Type */}
           <motion.div variants={item} className="glass rounded-2xl p-6">
             <h2 className="text-lg font-semibold mb-4">По типу сообщений</h2>
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-64 overflow-y-auto">
               {Object.entries(stats.messages_by_type).length === 0 ? (
                 <p className="text-dark-400 text-center py-4">Пока нет сообщений</p>
               ) : (
                 Object.entries(stats.messages_by_type).map(([type, count]) => (
                   <div key={type} className="flex items-center gap-4">
-                    <span className="w-20 text-sm text-dark-400 capitalize">{type}</span>
+                    <span className="w-20 text-sm text-dark-400 capitalize truncate">{type}</span>
                     <div className="flex-1 h-2 bg-dark-800 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-gradient-to-r from-accent-500 to-accent-600 rounded-full"
@@ -175,16 +175,16 @@ export default function DashboardPage() {
         {/* Quick Stats */}
         <motion.div variants={item} className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <div className="glass rounded-xl p-4 text-center">
-            <p className="text-dark-400 text-sm">Активных</p>
-            <p className="text-xl font-bold text-accent-400">{stats.active_chats}</p>
+            <p className="text-dark-400 text-sm truncate">Активных</p>
+            <p className="text-xl font-bold text-accent-400 truncate">{stats.active_chats}</p>
           </div>
           <div className="glass rounded-xl p-4 text-center">
-            <p className="text-dark-400 text-sm">Сегодня</p>
-            <p className="text-xl font-bold text-green-400">{stats.messages_today}</p>
+            <p className="text-dark-400 text-sm truncate">Сегодня</p>
+            <p className="text-xl font-bold text-green-400 truncate">{stats.messages_today}</p>
           </div>
           <div className="glass rounded-xl p-4 text-center sm:col-span-1 col-span-2">
-            <p className="text-dark-400 text-sm">За неделю</p>
-            <p className="text-xl font-bold text-purple-400">{stats.messages_this_week}</p>
+            <p className="text-dark-400 text-sm truncate">За неделю</p>
+            <p className="text-xl font-bold text-purple-400 truncate">{stats.messages_this_week}</p>
           </div>
         </motion.div>
       </motion.div>

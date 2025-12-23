@@ -204,28 +204,28 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.9, opacity: 0 }}
-            className="glass rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
+            className="glass rounded-2xl p-6 max-w-lg w-full max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-              <div>
+            <div className="flex items-center justify-between mb-6 flex-shrink-0 gap-3">
+              <div className="flex-1 min-w-0">
                 <h2 className="text-xl font-semibold flex items-center gap-2">
                   <Upload className="w-5 h-5 text-accent-400" />
                   Загрузить историю
                 </h2>
-                <p className="text-sm text-dark-400 mt-1 truncate max-w-[300px]">{chatTitle}</p>
+                <p className="text-sm text-dark-400 mt-1 truncate">{chatTitle}</p>
               </div>
               <button
                 onClick={handleClose}
-                className="p-2 rounded-lg hover:bg-white/5 transition-colors"
+                className="p-2 rounded-lg hover:bg-white/5 transition-colors flex-shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Instructions */}
-            <div className="mb-4 glass-light rounded-xl overflow-hidden max-h-[200px] overflow-y-auto">
+            <div className="mb-4 glass-light rounded-xl overflow-hidden max-h-[200px] overflow-y-auto flex-shrink-0">
               {/* Platform tabs */}
               <div className="flex border-b border-white/5 sticky top-0 bg-dark-800/95 backdrop-blur-sm">
                 <button
@@ -303,6 +303,8 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
               </div>
             </div>
 
+            {/* Content wrapper - scrollable */}
+            <div className="flex-1 overflow-y-auto space-y-4">
             {/* Drop zone */}
             <div
               onDragOver={handleDragOver}
@@ -330,7 +332,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                   ) : (
                     <FileJson className="w-12 h-12 text-green-400" />
                   )}
-                  <p className="font-medium">{file.name}</p>
+                  <p className="font-medium truncate max-w-full px-4">{file.name}</p>
                   <p className="text-sm text-dark-400">
                     {file.size > 1024 * 1024
                       ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
@@ -362,7 +364,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                   ) : (
                     <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
                   )}
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <p className="font-medium">
                       {result.imported > 0 ? 'Импорт завершён' : 'Нет новых сообщений'}
                     </p>
@@ -379,10 +381,10 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
             )}
 
             {/* Transcribe all section */}
-            <div className="mt-4 p-3 rounded-xl bg-accent-500/5 border border-accent-500/20">
+            <div className="p-3 rounded-xl bg-accent-500/5 border border-accent-500/20">
               <div className="flex items-start gap-3">
                 <Mic className="w-5 h-5 text-accent-400 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-accent-300 mb-2">Транскрипция медиа</p>
                   {transcribeResult && (
                     <p className="text-xs text-green-400 mb-2">
@@ -437,10 +439,10 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
             </div>
 
             {/* Cleanup section */}
-            <div className="mt-4 p-3 rounded-xl bg-red-500/5 border border-red-500/20">
+            <div className="p-3 rounded-xl bg-red-500/5 border border-red-500/20">
               <div className="flex items-start gap-3">
                 <Trash2 className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-red-300 mb-2">Очистить неудачный импорт</p>
                   {cleanupResult && (
                     <p className="text-xs text-green-400 mb-2">
@@ -501,7 +503,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
 
             {/* Auto-process option */}
             {!result && file && !importMutation.isPending && (
-              <label className="flex items-center gap-2 mt-4 text-sm text-dark-300 cursor-pointer">
+              <label className="flex items-center gap-2 text-sm text-dark-300 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={autoProcess}
@@ -521,11 +523,11 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                 className="mt-4 p-4 rounded-xl bg-accent-500/10 border border-accent-500/20"
               >
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="relative">
+                  <div className="relative flex-shrink-0">
                     <Loader2 className="w-6 h-6 text-accent-400 animate-spin" />
                     <div className="absolute inset-0 w-6 h-6 rounded-full border-2 border-accent-400/20" />
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <p className="font-medium text-accent-300">
                       {progress?.phase === 'reading_file' && 'Чтение файла...'}
                       {progress?.phase === 'importing' && 'Импорт сообщений...'}
@@ -580,9 +582,10 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                 )}
               </motion.div>
             )}
+            </div>
 
             {/* Actions */}
-            <div className="flex gap-3 mt-6">
+            <div className="flex gap-3 mt-6 flex-shrink-0">
               <button
                 onClick={handleClose}
                 className="flex-1 px-4 py-2.5 rounded-xl glass-light hover:bg-white/10 transition-colors"

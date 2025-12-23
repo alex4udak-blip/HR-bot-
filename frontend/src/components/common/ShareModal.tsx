@@ -115,11 +115,11 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.9, opacity: 0 }}
-          className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
+          className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-lg max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-6 flex-shrink-0">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-cyan-500/20 rounded-lg">
                 <Share2 className="text-cyan-400" size={20} />
@@ -144,7 +144,7 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
           ) : (
             <>
               {/* Add new share */}
-              <div className="bg-white/5 rounded-xl p-4 mb-6">
+              <div className="bg-white/5 rounded-xl p-4 mb-6 flex-shrink-0">
                 <h4 className="text-sm font-medium text-white mb-3">Добавить доступ</h4>
 
                 {availableUsers.length === 0 ? (
@@ -214,7 +214,7 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
               </div>
 
               {/* Current shares */}
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto min-h-0">
                 <h4 className="text-sm font-medium text-white mb-3 flex items-center gap-2">
                   <Users size={16} />
                   Кому доступен этот {getResourceTypeLabel(resourceType)}
@@ -225,7 +225,7 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
                     Пока никому не предоставлен доступ
                   </p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
                     {shares.map((share) => {
                       const level = ACCESS_LEVELS.find(l => l.id === share.access_level);
                       const LevelIcon = level?.icon || Eye;

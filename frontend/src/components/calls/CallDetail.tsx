@@ -406,19 +406,19 @@ export default function CallDetail({ call }: CallDetailProps) {
           </p>
         </div>
 
-        <div className="bg-white/5 rounded-xl p-4 relative group">
+        <div className="bg-white/5 rounded-xl p-4 relative group overflow-hidden">
           <div className="flex items-center gap-2 text-white/40 text-sm mb-2">
-            <User size={16} />
+            <User size={16} className="flex-shrink-0" />
             Контакт
           </div>
-          <div className="flex items-center justify-between">
-            <p className="text-lg font-semibold text-white truncate">
+          <div className="flex items-center justify-between gap-2 overflow-hidden min-w-0">
+            <p className="text-lg font-semibold text-white truncate min-w-0">
               {call.entity_name || 'Не связан'}
             </p>
             {!isEditing && (
               <button
                 onClick={() => setIsEditing(true)}
-                className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-all"
+                className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-all flex-shrink-0"
                 title="Редактировать"
               >
                 <Edit3 size={14} className="text-white/60" />
@@ -427,7 +427,7 @@ export default function CallDetail({ call }: CallDetailProps) {
           </div>
           {call.entity_id && (
             <div className="mt-1 flex items-center gap-1 text-xs text-cyan-400/60">
-              <Link size={12} />
+              <Link size={12} className="flex-shrink-0" />
               Связан
             </div>
           )}
@@ -436,40 +436,40 @@ export default function CallDetail({ call }: CallDetailProps) {
 
       {/* Speaker Statistics */}
       {call.status === 'done' && speakerStats.length > 0 && (
-        <div className="bg-white/5 rounded-xl p-4 mb-6">
+        <div className="bg-white/5 rounded-xl p-4 mb-6 overflow-hidden">
           <h3 className="text-sm font-medium text-white/60 flex items-center gap-2 mb-4">
             <Users size={16} />
             Статистика участников
           </h3>
-          <div className="space-y-3">
+          <div className="space-y-3 overflow-hidden">
             {speakerStats.map((stat, idx) => {
               const colorSet = speakerColors[idx % speakerColors.length];
               return (
-                <div key={stat.speaker} className="flex items-center gap-4">
+                <div key={stat.speaker} className="flex items-center gap-4 overflow-hidden min-w-0">
                   {/* Speaker name and icon */}
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                     <div className={clsx(
                       'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0',
                       colorSet.light
                     )}>
                       <Mic size={14} className={colorSet.text} />
                     </div>
-                    <span className="text-white text-sm truncate">{stat.speaker}</span>
+                    <span className="text-white text-sm truncate min-w-0">{stat.speaker}</span>
                   </div>
 
                   {/* WPM */}
-                  <div className="text-right w-16">
+                  <div className="text-right w-16 flex-shrink-0">
                     <span className="text-white/60 text-xs">WPM</span>
                     <p className={clsx('text-sm font-medium', colorSet.text)}>{stat.wpm}</p>
                   </div>
 
                   {/* Percentage bar */}
-                  <div className="w-32">
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="text-white/40">{Math.floor(stat.talkTime / 60)}м {Math.floor(stat.talkTime % 60)}с</span>
-                      <span className={clsx('font-medium', colorSet.text)}>{stat.percentage}%</span>
+                  <div className="w-32 flex-shrink-0 max-w-[8rem]">
+                    <div className="flex justify-between text-xs mb-1 overflow-hidden">
+                      <span className="text-white/40 truncate">{Math.floor(stat.talkTime / 60)}м {Math.floor(stat.talkTime % 60)}с</span>
+                      <span className={clsx('font-medium flex-shrink-0 ml-1', colorSet.text)}>{stat.percentage}%</span>
                     </div>
-                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-2 bg-white/10 rounded-full overflow-hidden max-w-full">
                       <div
                         className={clsx('h-full rounded-full transition-all', colorSet.bg)}
                         style={{ width: `${stat.percentage}%` }}
@@ -510,7 +510,7 @@ export default function CallDetail({ call }: CallDetailProps) {
       {/* Tabs */}
       {call.status === 'done' && (
         <>
-          <div className="flex gap-2 mb-6">
+          <div className="flex gap-2 mb-6 overflow-x-auto flex-wrap">
             {[
               { id: 'summary', label: 'Резюме', icon: FileText },
               { id: 'transcript', label: 'Транскрипт', icon: FileText },
@@ -522,14 +522,14 @@ export default function CallDetail({ call }: CallDetailProps) {
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as typeof activeTab)}
                   className={clsx(
-                    'px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors',
+                    'px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors flex-shrink-0',
                     activeTab === tab.id
                       ? 'bg-cyan-500/20 text-cyan-400'
                       : 'bg-white/5 text-white/60 hover:bg-white/10'
                   )}
                 >
-                  <Icon size={16} />
-                  {tab.label}
+                  <Icon size={16} className="flex-shrink-0" />
+                  <span className="whitespace-nowrap">{tab.label}</span>
                 </button>
               );
             })}
@@ -543,61 +543,61 @@ export default function CallDetail({ call }: CallDetailProps) {
             className="bg-white/5 rounded-xl p-6"
           >
             {activeTab === 'summary' && (
-              <div className="space-y-6">
+              <div className="space-y-6 overflow-hidden">
                 {/* Action buttons for analysis */}
                 {(call.summary || (call.key_points && call.key_points.length > 0) || (call.action_items && call.action_items.length > 0)) && (
-                  <div className="flex justify-end gap-2">
+                  <div className="flex justify-end gap-2 flex-wrap">
                     <button
                       onClick={handleReprocess}
                       disabled={loading}
-                      className="px-3 py-2 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 transition-colors flex items-center gap-2"
+                      className="px-3 py-2 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 transition-colors flex items-center gap-2 flex-shrink-0"
                       title="Переанализировать с обновлённым AI промптом"
                     >
-                      <RefreshCw size={16} className={clsx('text-purple-400', loading && 'animate-spin')} />
-                      <span className="text-sm text-purple-400">Переанализировать</span>
+                      <RefreshCw size={16} className={clsx('text-purple-400 flex-shrink-0', loading && 'animate-spin')} />
+                      <span className="text-sm text-purple-400 whitespace-nowrap">Переанализировать</span>
                     </button>
                     <button
                       onClick={handleExportAnalysis}
-                      className="px-3 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 transition-colors flex items-center gap-2"
+                      className="px-3 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 transition-colors flex items-center gap-2 flex-shrink-0"
                       title="Скачать анализ"
                     >
-                      <Download size={16} className="text-cyan-400" />
-                      <span className="text-sm text-cyan-400">Скачать</span>
+                      <Download size={16} className="text-cyan-400 flex-shrink-0" />
+                      <span className="text-sm text-cyan-400 whitespace-nowrap">Скачать</span>
                     </button>
                   </div>
                 )}
 
                 {call.summary && (
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                        <FileText size={20} className="text-cyan-400" />
-                        Резюме
+                  <div className="overflow-hidden">
+                    <div className="flex items-center justify-between mb-3 gap-2">
+                      <h3 className="text-lg font-semibold text-white flex items-center gap-2 min-w-0">
+                        <FileText size={20} className="text-cyan-400 flex-shrink-0" />
+                        <span className="truncate">Резюме</span>
                       </h3>
                       <button
                         onClick={() => handleCopy(call.summary || '')}
-                        className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                        className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex-shrink-0"
                       >
                         {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} className="text-white/40" />}
                       </button>
                     </div>
-                    <p className="text-white/80 whitespace-pre-wrap leading-relaxed break-words">{call.summary}</p>
+                    <p className="text-white/80 whitespace-pre-wrap leading-relaxed break-words overflow-hidden">{call.summary}</p>
                   </div>
                 )}
 
                 {call.key_points && call.key_points.length > 0 && (
-                  <div>
+                  <div className="overflow-hidden">
                     <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-3">
-                      <Lightbulb size={20} className="text-yellow-400" />
-                      Ключевые моменты
+                      <Lightbulb size={20} className="text-yellow-400 flex-shrink-0" />
+                      <span className="truncate">Ключевые моменты</span>
                     </h3>
-                    <ul className="space-y-2">
+                    <ul className="space-y-2 overflow-hidden">
                       {call.key_points.map((point, idx) => (
-                        <li key={idx} className="flex items-start gap-3 text-white/80 break-words">
+                        <li key={idx} className="flex items-start gap-3 text-white/80 break-words overflow-hidden">
                           <span className="w-6 h-6 rounded-full bg-yellow-500/20 text-yellow-400 flex items-center justify-center text-xs flex-shrink-0 mt-0.5">
                             {idx + 1}
                           </span>
-                          <span className="break-words">{point}</span>
+                          <span className="break-words overflow-hidden min-w-0">{point}</span>
                         </li>
                       ))}
                     </ul>
@@ -611,23 +611,23 @@ export default function CallDetail({ call }: CallDetailProps) {
             )}
 
             {activeTab === 'transcript' && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-white">Транскрипт</h3>
-                  <div className="flex gap-2">
+              <div className="overflow-hidden">
+                <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+                  <h3 className="text-lg font-semibold text-white truncate min-w-0">Транскрипт</h3>
+                  <div className="flex gap-2 flex-shrink-0 flex-wrap">
                     {(call.transcript || (call.speakers && call.speakers.length > 0)) && (
                       <>
                         <button
                           onClick={handleExportTranscript}
-                          className="px-3 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 transition-colors flex items-center gap-2"
+                          className="px-3 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 transition-colors flex items-center gap-2 flex-shrink-0"
                           title="Скачать транскрипт как текстовый файл"
                         >
-                          <Download size={16} className="text-cyan-400" />
-                          <span className="text-sm text-cyan-400">Скачать транскрипт</span>
+                          <Download size={16} className="text-cyan-400 flex-shrink-0" />
+                          <span className="text-sm text-cyan-400 whitespace-nowrap">Скачать транскрипт</span>
                         </button>
                         <button
                           onClick={() => handleCopy(call.transcript || '')}
-                          className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                          className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex-shrink-0"
                           title="Копировать"
                         >
                           {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} className="text-white/40" />}
@@ -671,7 +671,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                             colorSet.border
                           )}
                         >
-                          <div className="flex items-center gap-3 mb-2 flex-wrap">
+                          <div className="flex items-center gap-3 mb-2 flex-wrap overflow-hidden min-w-0">
                             <div className={clsx(
                               'w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium flex-shrink-0',
                               colorSet.bg,
@@ -679,13 +679,13 @@ export default function CallDetail({ call }: CallDetailProps) {
                             )}>
                               <User size={16} />
                             </div>
-                            <span className={clsx('font-medium', colorSet.text)}>
+                            <span className={clsx('font-medium truncate min-w-0', colorSet.text)}>
                               {segment.speaker}
                             </span>
                             <span className="px-2 py-0.5 rounded bg-white/10 text-white/50 text-xs flex items-center gap-1 ml-auto flex-shrink-0">
-                            <Clock size={12} />
-                            {formatTime(segment.start)}
-                          </span>
+                              <Clock size={12} className="flex-shrink-0" />
+                              <span className="whitespace-nowrap">{formatTime(segment.start)}</span>
+                            </span>
                           </div>
                           <p className="text-white/80 leading-relaxed pl-11 break-words whitespace-pre-wrap overflow-hidden" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                             {segment.text}
@@ -705,20 +705,20 @@ export default function CallDetail({ call }: CallDetailProps) {
             )}
 
             {activeTab === 'actions' && (
-              <div>
+              <div className="overflow-hidden">
                 <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
-                  <CheckSquare size={20} className="text-green-400" />
-                  Задачи
+                  <CheckSquare size={20} className="text-green-400 flex-shrink-0" />
+                  <span className="truncate">Задачи</span>
                 </h3>
 
                 {call.action_items && call.action_items.length > 0 ? (
-                  <ul className="space-y-3">
+                  <ul className="space-y-3 overflow-hidden">
                     {call.action_items.map((item, idx) => (
-                      <li key={idx} className="flex items-start gap-3 p-3 bg-white/5 rounded-lg">
+                      <li key={idx} className="flex items-start gap-3 p-3 bg-white/5 rounded-lg overflow-hidden">
                         <div className="w-5 h-5 rounded border border-green-500/50 flex items-center justify-center flex-shrink-0 mt-0.5">
                           <CheckSquare size={12} className="text-green-400 opacity-0" />
                         </div>
-                        <span className="text-white/80 break-words">{item}</span>
+                        <span className="text-white/80 break-words overflow-hidden min-w-0">{item}</span>
                       </li>
                     ))}
                   </ul>
