@@ -10,9 +10,7 @@ import {
   Menu,
   X,
   Phone,
-  UserCheck,
-  Building2,
-  Wrench
+  Building2
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
@@ -24,9 +22,6 @@ const navItems = [
   { path: '/chats', icon: MessageSquare, label: 'Чаты' },
   { path: '/calls', icon: Phone, label: 'Созвоны' },
   { path: '/contacts', icon: Users, label: 'Контакты' },
-  { path: '/contacts?type=candidate', icon: UserCheck, label: 'Кандидаты', indent: true },
-  { path: '/contacts?type=client', icon: Building2, label: 'Клиенты', indent: true },
-  { path: '/contacts?type=contractor', icon: Wrench, label: 'Подрядчики', indent: true },
   { path: '/trash', icon: Trash2, label: 'Корзина' },
   { path: '/users', icon: Users, label: 'Пользователи' },
   { path: '/departments', icon: Building2, label: 'Департаменты' },

@@ -456,8 +456,8 @@ async def transcribe_all_media(
         elif msg.content.startswith('[') and (
             'Голосов' in msg.content or
             'Voice' in msg.content or
-            'Видео-кружок' in msg.content or
-            'Video note' in msg.content or
+            'Видео' in msg.content or  # Covers both [Видео] and [Видео-кружок]
+            'Video' in msg.content or  # Covers both [Video] and [Video note]
             'transcription failed' in msg.content
         ):
             # Skip already processed results like [Видео без звука], [Без звука]

@@ -32,13 +32,12 @@ import {
   Trash2,
   Loader2,
   Upload,
-  Mic,
   Link,
   Unlink
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { Chat, Message, ChatTypeId } from '@/types';
-import { getMessages, getParticipants, updateChat, deleteChat, downloadReport, transcribeMessage } from '@/services/api';
+import { getMessages, getParticipants, updateChat, deleteChat, downloadReport } from '@/services/api';
 import { useEntityStore } from '@/stores/entityStore';
 import CriteriaPanel from './CriteriaPanel';
 import ImportHistoryModal from './ImportHistoryModal';
@@ -60,7 +59,9 @@ const getLocalFileUrl = (filePath: string) => {
   if (parts.length >= 2) {
     const chatId = parts[0];
     const filename = parts.slice(1).join('/');
-    return `/api/chats/local/${chatId}/${filename}${token ? `?token=${token}` : ''}`;
+    // URL-encode the filename to handle special characters like @, spaces, etc.
+    const encodedFilename = encodeURIComponent(filename);
+    return `/api/chats/local/${chatId}/${encodedFilename}${token ? `?token=${token}` : ''}`;
   }
   return '';
 };
@@ -248,7 +249,6 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [downloadingReport, setDownloadingReport] = useState<string | null>(null);
-  const [transcribingMessageId, setTranscribingMessageId] = useState<number | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -339,23 +339,6 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
       toast.error('Ошибка скачивания');
     } finally {
       setDownloadingReport(null);
-    }
-  };
-
-  const handleTranscribe = async (messageId: number) => {
-    if (transcribingMessageId) return;
-
-    setTranscribingMessageId(messageId);
-    try {
-      const result = await transcribeMessage(messageId);
-      if (result.success) {
-        toast.success('Транскрипция завершена');
-        queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
-      }
-    } catch {
-      toast.error('Ошибка транскрипции');
-    } finally {
-      setTranscribingMessageId(null);
     }
   };
 
@@ -695,27 +678,23 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                             className="w-32 h-32 rounded-full object-cover cursor-pointer"
                             controls
                             preload="metadata"
+                            onError={(e) => {
+                              // Show placeholder on load error
+                              const video = e.target as HTMLVideoElement;
+                              video.style.display = 'none';
+                              const placeholder = video.parentElement?.querySelector('.video-placeholder');
+                              if (placeholder) (placeholder as HTMLElement).style.display = 'flex';
+                            }}
                           />
-                        ) : (
-                          <div className="w-32 h-32 rounded-full bg-dark-700 flex items-center justify-center text-dark-400">
-                            <span className="text-xs">Видео</span>
-                          </div>
-                        )}
-                        {message.content && !message.content.startsWith('[Video') && !message.content.startsWith('[Видео') && !message.content.includes('transcription failed') ? (
+                        ) : null}
+                        <div
+                          className="video-placeholder w-32 h-32 rounded-full bg-dark-700 flex items-center justify-center text-dark-400"
+                          style={{ display: (message.file_id || message.file_path) ? 'none' : 'flex' }}
+                        >
+                          <span className="text-xs">Видео</span>
+                        </div>
+                        {message.content && !message.content.startsWith('[Video') && !message.content.startsWith('[Видео') && !message.content.includes('transcription failed') && (
                           <p className="text-sm text-dark-300">{message.content}</p>
-                        ) : (message.file_path || message.file_id) && (
-                          <button
-                            onClick={() => handleTranscribe(message.id)}
-                            disabled={transcribingMessageId === message.id}
-                            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 disabled:opacity-50"
-                          >
-                            {transcribingMessageId === message.id ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Mic className="w-3 h-3" />
-                            )}
-                            Транскрибировать
-                          </button>
                         )}
                       </div>
                     ) : message.content_type === 'sticker' ? (
@@ -746,27 +725,23 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                             controls
                             preload="metadata"
                             className="w-full max-w-xs"
+                            onError={(e) => {
+                              // Show placeholder on load error
+                              const audio = e.target as HTMLAudioElement;
+                              audio.style.display = 'none';
+                              const placeholder = audio.parentElement?.querySelector('.audio-error-placeholder');
+                              if (placeholder) (placeholder as HTMLElement).style.display = 'flex';
+                            }}
                           />
-                        ) : (
-                          <div className="flex items-center gap-2 text-dark-400">
-                            <span className="text-sm">[Голосовое сообщение недоступно]</span>
-                          </div>
-                        )}
-                        {message.content && !message.content.startsWith('[Голосов') && !message.content.startsWith('[Voice') ? (
+                        ) : null}
+                        <div
+                          className="audio-error-placeholder flex items-center gap-2 text-dark-400"
+                          style={{ display: (message.file_id || message.file_path) ? 'none' : 'flex' }}
+                        >
+                          <span className="text-sm">[Голосовое сообщение недоступно]</span>
+                        </div>
+                        {message.content && !message.content.startsWith('[Голосов') && !message.content.startsWith('[Voice') && (
                           <p className="text-sm text-dark-300">{message.content}</p>
-                        ) : message.file_path && (
-                          <button
-                            onClick={() => handleTranscribe(message.id)}
-                            disabled={transcribingMessageId === message.id}
-                            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 disabled:opacity-50"
-                          >
-                            {transcribingMessageId === message.id ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Mic className="w-3 h-3" />
-                            )}
-                            Транскрибировать
-                          </button>
                         )}
                       </div>
                     ) : message.content_type === 'video' ? (
@@ -777,27 +752,23 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                             className="max-w-xs rounded-lg"
                             controls
                             preload="metadata"
+                            onError={(e) => {
+                              // Show placeholder on load error
+                              const video = e.target as HTMLVideoElement;
+                              video.style.display = 'none';
+                              const placeholder = video.parentElement?.querySelector('.video-error-placeholder');
+                              if (placeholder) (placeholder as HTMLElement).style.display = 'flex';
+                            }}
                           />
-                        ) : (
-                          <div className="flex items-center gap-2 text-dark-400">
-                            <span className="text-sm">[Видео недоступно]</span>
-                          </div>
-                        )}
-                        {message.content && !message.content.startsWith('[Видео') && !message.content.startsWith('[Video') ? (
+                        ) : null}
+                        <div
+                          className="video-error-placeholder flex items-center gap-2 text-dark-400"
+                          style={{ display: (message.file_id || message.file_path) ? 'none' : 'flex' }}
+                        >
+                          <span className="text-sm">[Видео недоступно]</span>
+                        </div>
+                        {message.content && !message.content.startsWith('[Видео') && !message.content.startsWith('[Video') && (
                           <p className="text-sm text-dark-300">{message.content}</p>
-                        ) : message.file_path && (
-                          <button
-                            onClick={() => handleTranscribe(message.id)}
-                            disabled={transcribingMessageId === message.id}
-                            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 disabled:opacity-50"
-                          >
-                            {transcribingMessageId === message.id ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Mic className="w-3 h-3" />
-                            )}
-                            Транскрибировать
-                          </button>
                         )}
                       </div>
                     ) : (
