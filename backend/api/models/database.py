@@ -462,3 +462,25 @@ class SharedAccess(Base):
 
     shared_by = relationship("User", foreign_keys=[shared_by_id])
     shared_with = relationship("User", foreign_keys=[shared_with_id])
+
+
+class Invitation(Base):
+    """User invitation for onboarding new members"""
+    __tablename__ = "invitations"
+
+    id = Column(Integer, primary_key=True)
+    token = Column(String(64), unique=True, nullable=False, index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    email = Column(String(255), nullable=True)  # Pre-filled email
+    name = Column(String(255), nullable=True)  # Pre-filled name
+    org_role = Column(SQLEnum(OrgRole), default=OrgRole.member)
+    department_ids = Column(JSON, default=list)  # [{"id": 1, "role": "member"}, ...]
+    invited_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    expires_at = Column(DateTime, nullable=True)  # When invitation expires
+    used_at = Column(DateTime, nullable=True)  # When invitation was used
+    used_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    organization = relationship("Organization")
+    invited_by = relationship("User", foreign_keys=[invited_by_id])
+    used_by = relationship("User", foreign_keys=[used_by_id])

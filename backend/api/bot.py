@@ -367,9 +367,20 @@ async def collect_group_message(message: types.Message):
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    """Handle /start command in private chat."""
+    """Handle /start command in private chat. Supports deep linking for auto-bind."""
     if message.chat.type != "private":
         return
+
+    # Check for deep link parameter (e.g., /start bind_123)
+    args = message.text.split(maxsplit=1)
+    if len(args) > 1 and args[1].startswith("bind_"):
+        # Extract user_id from deep link
+        try:
+            user_id = int(args[1].replace("bind_", ""))
+            await handle_deep_link_bind(message, user_id)
+            return
+        except ValueError:
+            pass
 
     await message.answer(
         "🤖 Чат Аналитика\n\n"
@@ -380,6 +391,60 @@ async def cmd_start(message: types.Message):
         "/settype — установить тип чата (в группе)\n"
         "/chats — список ваших чатов"
     )
+
+
+async def handle_deep_link_bind(message: types.Message, user_id: int):
+    """Handle deep link binding from invitation."""
+    async with async_session() as session:
+        # Find user by ID
+        result = await session.execute(
+            select(User).where(User.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            await message.answer(
+                "❌ Ссылка недействительна или устарела.\n\n"
+                "Если у вас есть аккаунт, используйте /bind <email>"
+            )
+            return
+
+        # Check if this Telegram ID is already bound to another user
+        result = await session.execute(
+            select(User).where(
+                User.telegram_id == message.from_user.id,
+                User.id != user_id
+            )
+        )
+        already_bound_user = result.scalar_one_or_none()
+
+        if already_bound_user:
+            await message.answer(
+                "❌ Ваш Telegram уже привязан к другому аккаунту.\n\n"
+                "Обратитесь к администратору для решения проблемы."
+            )
+            return
+
+        # Check if target user already has a different Telegram bound
+        if user.telegram_id and user.telegram_id != message.from_user.id:
+            await message.answer(
+                "❌ Этот аккаунт уже привязан к другому Telegram.\n\n"
+                "Обратитесь к администратору для решения проблемы."
+            )
+            return
+
+        # Bind
+        user.telegram_id = message.from_user.id
+        user.telegram_username = message.from_user.username
+        await session.commit()
+
+        await message.answer(
+            f"✅ Аккаунт успешно привязан!\n\n"
+            f"👤 {user.name}\n"
+            f"📧 {user.email}\n\n"
+            "Теперь при добавлении бота в группы, они автоматически будут привязаны к вашему аккаунту.\n\n"
+            "Добавьте меня в рабочую группу для начала работы!"
+        )
 
 
 @dp.message(Command("bind"))

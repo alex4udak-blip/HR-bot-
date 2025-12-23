@@ -848,4 +848,76 @@ export const getMyDepartments = async (): Promise<Department[]> => {
   return data;
 };
 
+
+// === INVITATIONS ===
+
+export interface Invitation {
+  id: number;
+  token: string;
+  email?: string;
+  name?: string;
+  org_role: OrgRole;
+  department_ids: { id: number; role: DeptRole }[];
+  invited_by_name?: string;
+  expires_at?: string;
+  used_at?: string;
+  used_by_name?: string;
+  created_at: string;
+  invitation_url: string;
+}
+
+export interface InvitationValidation {
+  valid: boolean;
+  expired: boolean;
+  used: boolean;
+  email?: string;
+  name?: string;
+  org_name?: string;
+  org_role: string;
+}
+
+export interface AcceptInvitationRequest {
+  email: string;
+  name: string;
+  password: string;
+}
+
+export interface AcceptInvitationResponse {
+  success: boolean;
+  access_token: string;
+  user_id: number;
+  telegram_bind_url?: string;
+}
+
+export const createInvitation = async (data: {
+  email?: string;
+  name?: string;
+  org_role?: OrgRole;
+  department_ids?: { id: number; role: DeptRole }[];
+  expires_in_days?: number;
+}): Promise<Invitation> => {
+  const { data: result } = await api.post('/invitations', data);
+  return result;
+};
+
+export const getInvitations = async (includeUsed: boolean = false): Promise<Invitation[]> => {
+  const { data } = await api.get(`/invitations?include_used=${includeUsed}`);
+  return data;
+};
+
+export const validateInvitation = async (token: string): Promise<InvitationValidation> => {
+  const { data } = await api.get(`/invitations/validate/${token}`);
+  return data;
+};
+
+export const acceptInvitation = async (token: string, data: AcceptInvitationRequest): Promise<AcceptInvitationResponse> => {
+  const { data: result } = await api.post(`/invitations/accept/${token}`, data);
+  return result;
+};
+
+export const revokeInvitation = async (id: number): Promise<{ success: boolean }> => {
+  const { data } = await api.delete(`/invitations/${id}`);
+  return data;
+};
+
 export default api;

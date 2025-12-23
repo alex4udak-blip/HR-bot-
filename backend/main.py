@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments
+from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations
 
 # Configure logging - show important messages
 logging.basicConfig(
@@ -271,7 +271,31 @@ async def init_database():
 
     logger.info("=== DEPARTMENTS TABLES READY ===")
 
-    # Step 7: Create superadmin and default organization
+    # Step 8: Invitations table
+    logger.info("=== SETTING UP INVITATIONS ===")
+    create_invitations = """
+        CREATE TABLE IF NOT EXISTS invitations (
+            id SERIAL PRIMARY KEY,
+            token VARCHAR(64) UNIQUE NOT NULL,
+            org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            email VARCHAR(255),
+            name VARCHAR(255),
+            org_role orgrole DEFAULT 'member',
+            department_ids JSONB DEFAULT '[]'::jsonb,
+            invited_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            expires_at TIMESTAMP,
+            used_at TIMESTAMP,
+            used_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """
+    await run_migration(engine, create_invitations, "Create invitations table")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_invitations_token ON invitations(token)", "Index invitations.token")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_invitations_org_id ON invitations(org_id)", "Index invitations.org_id")
+
+    logger.info("=== INVITATIONS TABLE READY ===")
+
+    # Step 9: Create superadmin and default organization
     try:
         async with AsyncSessionLocal() as db:
             await create_superadmin_if_not_exists(db)
@@ -367,6 +391,7 @@ app.include_router(entity_ai.router, prefix="/api", tags=["entity-ai"])
 app.include_router(organizations.router, prefix="/api/organizations", tags=["organizations"])
 app.include_router(sharing.router, prefix="/api/sharing", tags=["sharing"])
 app.include_router(departments.router, prefix="/api/departments", tags=["departments"])
+app.include_router(invitations.router, prefix="/api/invitations", tags=["invitations"])
 
 
 @app.get("/health")
