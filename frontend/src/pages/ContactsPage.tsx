@@ -318,7 +318,7 @@ export default function ContactsPage() {
                   animate={{ opacity: 1, y: 0 }}
                   onClick={() => handleSelectEntity(entity.id)}
                   className={clsx(
-                    'p-4 rounded-xl cursor-pointer transition-all group',
+                    'p-4 rounded-xl cursor-pointer transition-all group overflow-hidden',
                     isSelected
                       ? 'bg-cyan-500/20 border border-cyan-500/30'
                       : 'bg-white/5 border border-white/5 hover:bg-white/10'
@@ -427,9 +427,9 @@ export default function ContactsPage() {
               >
                 <ChevronLeft size={20} className="text-white/60" />
               </button>
-              <div className="flex-1">
-                <h2 className="text-xl font-semibold text-white">{currentEntity.name}</h2>
-                <p className="text-sm text-white/60">
+              <div className="flex-1 min-w-0">
+                <h2 className="text-xl font-semibold text-white truncate">{currentEntity.name}</h2>
+                <p className="text-sm text-white/60 truncate">
                   {ENTITY_TYPES[currentEntity.type].name}
                   {currentEntity.company && ` @ ${currentEntity.company}`}
                 </p>

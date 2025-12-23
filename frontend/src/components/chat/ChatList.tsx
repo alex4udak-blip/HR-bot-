@@ -81,15 +81,15 @@ export default function ChatList({ chats, selectedId, onSelect }: ChatListProps)
                     {formatDate(chat.last_activity)}
                   </span>
                 </div>
-                <div className="flex items-center gap-3 text-sm text-dark-400">
-                  <span className={clsx('text-xs px-1.5 py-0.5 rounded', typeConfig.color, 'bg-white/5')}>
+                <div className="flex items-center gap-3 text-sm text-dark-400 overflow-hidden flex-wrap">
+                  <span className={clsx('text-xs px-1.5 py-0.5 rounded flex-shrink-0', typeConfig.color, 'bg-white/5')}>
                     {chat.custom_type_name || typeConfig.name}
                   </span>
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1 flex-shrink-0">
                     <MessageSquare className="w-3.5 h-3.5" />
                     {chat.messages_count}
                   </span>
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1 flex-shrink-0">
                     <Users className="w-3.5 h-3.5" />
                     {chat.participants_count}
                   </span>

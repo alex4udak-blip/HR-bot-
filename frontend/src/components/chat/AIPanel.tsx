@@ -344,7 +344,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
     <div className="flex-1 flex flex-col h-full">
       {/* Header */}
       <div className="p-4 border-b border-white/5 flex items-center justify-between">
-        <div>
+        <div className="flex-1 min-w-0">
           <h3 className="font-semibold flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-accent-400" />
             AI Ассистент
@@ -402,18 +402,18 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.15 }}
             className={clsx(
-              'rounded-xl p-3',
+              'rounded-xl p-3 max-w-[85%]',
               msg.role === 'user'
-                ? 'bg-accent-500/20 ml-8'
-                : 'glass-light mr-8'
+                ? 'bg-accent-500/20 ml-auto'
+                : 'glass-light mr-auto'
             )}
           >
             {msg.role === 'assistant' ? (
-              <div className="prose prose-sm max-w-none prose-invert prose-headings:text-dark-100 prose-p:text-dark-200 prose-strong:text-dark-100 prose-li:text-dark-200">
+              <div className="prose prose-sm max-w-none prose-invert prose-headings:text-dark-100 prose-p:text-dark-200 prose-strong:text-dark-100 prose-li:text-dark-200 break-words">
                 <ReactMarkdown>{msg.content}</ReactMarkdown>
               </div>
             ) : (
-              <p className="text-sm">{msg.content}</p>
+              <p className="text-sm break-words">{msg.content}</p>
             )}
           </motion.div>
         ))}
@@ -423,9 +423,9 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="glass-light rounded-xl p-3 mr-8"
+            className="glass-light rounded-xl p-3 max-w-[85%] mr-auto"
           >
-            <div className="prose prose-sm max-w-none prose-invert prose-headings:text-dark-100 prose-p:text-dark-200 prose-strong:text-dark-100 prose-li:text-dark-200">
+            <div className="prose prose-sm max-w-none prose-invert prose-headings:text-dark-100 prose-p:text-dark-200 prose-strong:text-dark-100 prose-li:text-dark-200 break-words">
               <ReactMarkdown>{streamingContent}</ReactMarkdown>
             </div>
           </motion.div>
@@ -441,7 +441,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
       </div>
 
       {/* Input */}
-      <div className="p-4 border-t border-white/5">
+      <div className="p-4 border-t border-white/5 flex-shrink-0">
         <div className="flex gap-2">
           <textarea
             value={message}
@@ -450,12 +450,12 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
             placeholder="Задайте вопрос..."
             rows={1}
             disabled={isStreaming}
-            className="flex-1 glass-light rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent-500/50 disabled:opacity-50"
+            className="flex-1 glass-light rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent-500/50 disabled:opacity-50 min-w-0"
           />
           <button
             onClick={handleSend}
             disabled={!message.trim() || isStreaming}
-            className="w-11 h-11 flex items-center justify-center rounded-xl bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-11 h-11 flex items-center justify-center rounded-xl bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
           >
             <SendHorizontal className="w-5 h-5" />
           </button>

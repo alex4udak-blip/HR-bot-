@@ -39,10 +39,10 @@ export default function Layout() {
   };
 
   return (
-    <div className="h-screen flex flex-col lg:flex-row relative">
+    <div className="h-screen flex flex-col lg:flex-row relative overflow-x-hidden">
       <BackgroundEffects />
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col w-64 glass border-r border-white/5">
+      <aside className="hidden lg:flex flex-col w-64 h-screen glass border-r border-white/5">
         <div className="p-6 border-b border-white/5">
           <h1 className="text-xl font-bold bg-gradient-to-r from-accent-400 to-accent-600 bg-clip-text text-transparent">
             Чат Аналитика
@@ -64,8 +64,8 @@ export default function Layout() {
                 )
               }
             >
-              <item.icon className="w-5 h-5" />
-              <span className="font-medium">{item.label}</span>
+              <item.icon className="w-5 h-5 flex-shrink-0" />
+              <span className="font-medium truncate">{item.label}</span>
             </NavLink>
           ))}
         </nav>
@@ -119,10 +119,10 @@ export default function Layout() {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="absolute right-0 top-0 h-full w-64 glass"
+            className="absolute right-0 top-0 h-full w-64 glass flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-4 space-y-1">
+            <div className="p-4 space-y-1 overflow-y-auto flex-1">
               {navItems.map((item) => (
                 <NavLink
                   key={item.path}
@@ -137,8 +137,8 @@ export default function Layout() {
                     )
                   }
                 >
-                  <item.icon className="w-5 h-5" />
-                  <span className="font-medium">{item.label}</span>
+                  <item.icon className="w-5 h-5 flex-shrink-0" />
+                  <span className="font-medium truncate">{item.label}</span>
                 </NavLink>
               ))}
               <button
@@ -154,27 +154,29 @@ export default function Layout() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 overflow-hidden">
-        <Outlet />
+      <main className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+          <Outlet />
+        </div>
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="lg:hidden glass border-t border-white/5 px-2 py-2 flex justify-around">
+      <nav className="lg:hidden glass border-t border-white/5 px-2 py-2 flex">
         {navItems.slice(0, 4).map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             className={({ isActive }) =>
               clsx(
-                'flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all duration-200',
+                'flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-all duration-200',
                 isActive
                   ? 'text-accent-400'
                   : 'text-dark-400 hover:text-dark-200'
               )
             }
           >
-            <item.icon className="w-5 h-5" />
-            <span className="text-xs">{item.label}</span>
+            <item.icon className="w-5 h-5 flex-shrink-0" />
+            <span className="text-xs truncate max-w-full">{item.label}</span>
           </NavLink>
         ))}
       </nav>

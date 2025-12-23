@@ -251,9 +251,9 @@ export default function CallsPage() {
                       : 'bg-white/5 border border-white/5 hover:bg-white/10'
                   )}
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start gap-3 overflow-hidden">
                     <div className={clsx(
-                      'p-2 rounded-lg',
+                      'p-2 rounded-lg flex-shrink-0',
                       isSelected ? 'bg-cyan-500/30' : 'bg-white/10'
                     )}>
                       {call.source_type === 'upload' ? (
@@ -265,39 +265,39 @@ export default function CallsPage() {
                       )}
                     </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        {getStatusIcon(call.status)}
-                        <span className="text-sm font-medium text-white truncate">
+                    <div className="flex-1 min-w-0 overflow-hidden">
+                      <div className="flex items-center gap-2 mb-1 overflow-hidden min-w-0">
+                        <div className="flex-shrink-0">{getStatusIcon(call.status)}</div>
+                        <span className="text-sm font-medium text-white truncate min-w-0">
                           {call.title || call.entity_name || 'Звонок ' + call.source_type.toUpperCase()}
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-3 text-xs text-white/40">
-                        <span className="flex items-center gap-1">
+                      <div className="flex items-center gap-3 text-xs text-white/40 overflow-hidden min-w-0 flex-wrap">
+                        <span className="flex items-center gap-1 flex-shrink-0">
                           <Clock size={12} />
                           {formatDuration(call.duration_seconds)}
                         </span>
-                        <span>{formatDate(call.created_at)}</span>
+                        <span className="flex-shrink-0">{formatDate(call.created_at)}</span>
                         {call.entity_name && call.title && (
-                          <span className="text-cyan-400/60">• {call.entity_name}</span>
+                          <span className="text-cyan-400/60 truncate min-w-0">• {call.entity_name}</span>
                         )}
                       </div>
 
                       {call.summary && (
-                        <p className="text-xs text-white/50 mt-2 line-clamp-2">{call.summary}</p>
+                        <p className="text-xs text-white/50 mt-2 line-clamp-2 break-words overflow-hidden">{call.summary}</p>
                       )}
                     </div>
 
                     {/* Quick Actions */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 flex-shrink-0">
                       {call.status === 'failed' && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleReprocess(call);
                           }}
-                          className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
+                          className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60 flex-shrink-0"
                           title="Переобработать"
                         >
                           <RefreshCw size={14} />
@@ -308,7 +308,7 @@ export default function CallsPage() {
                           e.stopPropagation();
                           handleDelete(call);
                         }}
-                        className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400"
+                        className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 flex-shrink-0"
                         title="Delete"
                       >
                         <Trash2 size={14} />
@@ -333,23 +333,23 @@ export default function CallsPage() {
             className="flex-1 flex flex-col"
           >
             {/* Header */}
-            <div className="p-4 border-b border-white/5 flex items-center gap-4">
+            <div className="p-4 border-b border-white/5 flex items-center gap-4 overflow-hidden">
               <button
                 onClick={handleBack}
-                className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex-shrink-0"
               >
                 <ChevronLeft size={20} className="text-white/60" />
               </button>
-              <div className="flex-1">
-                <h2 className="text-xl font-semibold text-white">
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <h2 className="text-xl font-semibold text-white truncate">
                   {currentCall.title || currentCall.entity_name || 'Звонок ' + currentCall.source_type.toUpperCase()}
                 </h2>
-                <p className="text-sm text-white/60">
+                <p className="text-sm text-white/60 truncate">
                   {formatDate(currentCall.created_at)} • {formatDuration(currentCall.duration_seconds)}
                   {currentCall.entity_name && currentCall.title && ` • ${currentCall.entity_name}`}
                 </p>
               </div>
-              <span className={clsx('px-3 py-1 rounded-full text-sm', CALL_STATUS_COLORS[currentCall.status])}>
+              <span className={clsx('px-3 py-1 rounded-full text-sm flex-shrink-0', CALL_STATUS_COLORS[currentCall.status])}>
                 {CALL_STATUS_LABELS[currentCall.status]}
               </span>
             </div>

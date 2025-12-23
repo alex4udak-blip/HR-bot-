@@ -96,22 +96,22 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-gray-900 rounded-2xl w-full max-w-lg border border-white/10 shadow-2xl"
+        className="bg-gray-900 rounded-2xl w-full max-w-lg max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col border border-white/10 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-white/10">
-          <h2 className="text-xl font-semibold text-white">Новая запись</h2>
+        <div className="flex items-center justify-between p-6 border-b border-white/10 flex-shrink-0 gap-4 overflow-hidden">
+          <h2 className="text-xl font-semibold text-white truncate min-w-0">Новая запись</h2>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+            className="p-2 rounded-lg hover:bg-white/10 transition-colors flex-shrink-0"
           >
             <X size={20} className="text-white/60" />
           </button>
         </div>
 
         {/* Mode Tabs */}
-        <div className="flex p-4 gap-2 border-b border-white/10">
+        <div className="flex p-4 gap-2 border-b border-white/10 flex-shrink-0">
           <button
             onClick={() => setMode('bot')}
             className={clsx(
@@ -139,7 +139,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto flex-1">
           {mode === 'upload' ? (
             <>
               {/* File Upload */}
@@ -162,9 +162,9 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
                   className="hidden"
                 />
                 {file ? (
-                  <div className="flex flex-col items-center">
-                    <Upload size={40} className="text-cyan-400 mb-3" />
-                    <p className="text-white font-medium">{file.name}</p>
+                  <div className="flex flex-col items-center overflow-hidden max-w-full">
+                    <Upload size={40} className="text-cyan-400 mb-3 flex-shrink-0" />
+                    <p className="text-white font-medium truncate max-w-full px-4">{file.name}</p>
                     <p className="text-sm text-white/40 mt-1">
                       {(file.size / 1024 / 1024).toFixed(2)} MB
                     </p>
@@ -233,8 +233,8 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
             <label className="block text-sm font-medium text-white/60 mb-2">
               Связать с контактом (опционально)
             </label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={18} />
+            <div className="relative overflow-hidden">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 flex-shrink-0" size={18} />
               <input
                 type="text"
                 value={selectedEntity ? selectedEntity.name : searchEntity}
@@ -244,7 +244,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
                   setShowEntityDropdown(true);
                 }}
                 onFocus={() => setShowEntityDropdown(true)}
-                className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+                className="w-full pl-10 pr-10 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50 truncate"
                 placeholder="Поиск контактов..."
               />
               {selectedEntityId && (
@@ -254,7 +254,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
                     setSelectedEntityId(null);
                     setSearchEntity('');
                   }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/60"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/60 flex-shrink-0"
                 >
                   <X size={16} />
                 </button>
@@ -278,12 +278,12 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
                         setSearchEntity('');
                         setShowEntityDropdown(false);
                       }}
-                      className="w-full px-4 py-2 text-left hover:bg-white/10 transition-colors flex items-center gap-3"
+                      className="w-full px-4 py-2 text-left hover:bg-white/10 transition-colors flex items-center gap-3 overflow-hidden min-w-0"
                     >
-                      <User size={16} className="text-white/40" />
-                      <div>
-                        <p className="text-white text-sm">{entity.name}</p>
-                        <p className="text-xs text-white/40">{entity.type}</p>
+                      <User size={16} className="text-white/40 flex-shrink-0" />
+                      <div className="overflow-hidden min-w-0 flex-1">
+                        <p className="text-white text-sm truncate">{entity.name}</p>
+                        <p className="text-xs text-white/40 truncate">{entity.type}</p>
                       </div>
                     </button>
                   ))
@@ -295,23 +295,23 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
           </div>
 
           {/* Actions */}
-          <div className="flex gap-3 pt-4">
+          <div className="flex gap-3 pt-4 flex-shrink-0 flex-wrap">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 transition-colors"
+              className="flex-1 px-4 py-2 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 transition-colors min-w-[120px]"
             >
               Отмена
             </button>
             <button
               type="submit"
               disabled={loading || (mode === 'upload' ? !file : !meetingUrl || !isValidUrl(meetingUrl))}
-              className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[120px]"
             >
               {loading && (
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin flex-shrink-0" />
               )}
-              {mode === 'upload' ? 'Загрузить и обработать' : 'Начать запись'}
+              <span className="whitespace-nowrap">{mode === 'upload' ? 'Загрузить и обработать' : 'Начать запись'}</span>
             </button>
           </div>
         </form>
