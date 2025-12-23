@@ -384,3 +384,35 @@ class EntityAnalysis(Base):
 
     entity = relationship("Entity", back_populates="ai_analyses")
     user = relationship("User")
+
+
+class ResourceType(str, enum.Enum):
+    """Type of resource that can be shared"""
+    chat = "chat"
+    entity = "entity"
+    call = "call"
+
+
+class AccessLevel(str, enum.Enum):
+    """Level of access granted"""
+    view = "view"      # Can only view
+    edit = "edit"      # Can view and edit
+    full = "full"      # Full access (can share with others)
+
+
+class SharedAccess(Base):
+    """Shared access to resources (chats, entities, calls)"""
+    __tablename__ = "shared_access"
+
+    id = Column(Integer, primary_key=True)
+    resource_type = Column(SQLEnum(ResourceType), nullable=False, index=True)
+    resource_id = Column(Integer, nullable=False, index=True)  # ID of chat/entity/call
+    shared_by_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    shared_with_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    access_level = Column(SQLEnum(AccessLevel), default=AccessLevel.view)
+    note = Column(String(500), nullable=True)  # Optional note about sharing
+    expires_at = Column(DateTime, nullable=True)  # Optional expiration
+    created_at = Column(DateTime, default=func.now())
+
+    shared_by = relationship("User", foreign_keys=[shared_by_id])
+    shared_with = relationship("User", foreign_keys=[shared_with_id])

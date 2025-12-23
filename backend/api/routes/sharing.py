@@ -1,0 +1,408 @@
+"""API routes for sharing resources between users"""
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select, and_, or_
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional, List
+from datetime import datetime
+from pydantic import BaseModel
+
+from ..database import get_db
+from ..models.database import (
+    User, UserRole, SharedAccess, ResourceType, AccessLevel,
+    Chat, Entity, CallRecording, OrgMember
+)
+from ..services.auth import get_current_user, get_user_org
+
+router = APIRouter()
+
+
+# === Pydantic Schemas ===
+
+class ShareRequest(BaseModel):
+    resource_type: ResourceType
+    resource_id: int
+    shared_with_id: int
+    access_level: AccessLevel = AccessLevel.view
+    note: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+
+class ShareResponse(BaseModel):
+    id: int
+    resource_type: ResourceType
+    resource_id: int
+    resource_name: Optional[str] = None
+    shared_by_id: int
+    shared_by_name: str
+    shared_with_id: int
+    shared_with_name: str
+    access_level: AccessLevel
+    note: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class UserSimple(BaseModel):
+    id: int
+    name: str
+    email: str
+
+    class Config:
+        from_attributes = True
+
+
+# === Helper functions ===
+
+async def can_share_resource(user: User, resource_type: ResourceType, resource_id: int, db: AsyncSession) -> bool:
+    """Check if user can share a resource (must own it or have full access)"""
+    if user.role == UserRole.SUPERADMIN:
+        return True
+
+    # Check ownership
+    if resource_type == ResourceType.chat:
+        result = await db.execute(select(Chat).where(Chat.id == resource_id))
+        resource = result.scalar_one_or_none()
+        if resource and resource.owner_id == user.id:
+            return True
+    elif resource_type == ResourceType.entity:
+        result = await db.execute(select(Entity).where(Entity.id == resource_id))
+        resource = result.scalar_one_or_none()
+        if resource and resource.created_by == user.id:
+            return True
+    elif resource_type == ResourceType.call:
+        result = await db.execute(select(CallRecording).where(CallRecording.id == resource_id))
+        resource = result.scalar_one_or_none()
+        if resource and resource.owner_id == user.id:
+            return True
+
+    # Check if user has full access via sharing
+    result = await db.execute(
+        select(SharedAccess).where(
+            SharedAccess.resource_type == resource_type,
+            SharedAccess.resource_id == resource_id,
+            SharedAccess.shared_with_id == user.id,
+            SharedAccess.access_level == AccessLevel.full,
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def has_access_to_resource(user: User, resource_type: ResourceType, resource_id: int, db: AsyncSession) -> bool:
+    """Check if user has any access to a resource"""
+    if user.role == UserRole.SUPERADMIN:
+        return True
+
+    # Check ownership
+    if resource_type == ResourceType.chat:
+        result = await db.execute(select(Chat).where(Chat.id == resource_id))
+        resource = result.scalar_one_or_none()
+        if resource and resource.owner_id == user.id:
+            return True
+    elif resource_type == ResourceType.entity:
+        result = await db.execute(select(Entity).where(Entity.id == resource_id))
+        resource = result.scalar_one_or_none()
+        if resource and resource.created_by == user.id:
+            return True
+    elif resource_type == ResourceType.call:
+        result = await db.execute(select(CallRecording).where(CallRecording.id == resource_id))
+        resource = result.scalar_one_or_none()
+        if resource and resource.owner_id == user.id:
+            return True
+
+    # Check shared access
+    result = await db.execute(
+        select(SharedAccess).where(
+            SharedAccess.resource_type == resource_type,
+            SharedAccess.resource_id == resource_id,
+            SharedAccess.shared_with_id == user.id,
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def get_resource_name(resource_type: ResourceType, resource_id: int, db: AsyncSession) -> Optional[str]:
+    """Get human-readable name for a resource"""
+    if resource_type == ResourceType.chat:
+        result = await db.execute(select(Chat).where(Chat.id == resource_id))
+        resource = result.scalar_one_or_none()
+        return resource.custom_name or resource.title if resource else None
+    elif resource_type == ResourceType.entity:
+        result = await db.execute(select(Entity).where(Entity.id == resource_id))
+        resource = result.scalar_one_or_none()
+        return resource.name if resource else None
+    elif resource_type == ResourceType.call:
+        result = await db.execute(select(CallRecording).where(CallRecording.id == resource_id))
+        resource = result.scalar_one_or_none()
+        return resource.title or f"Звонок #{resource_id}" if resource else None
+    return None
+
+
+# === Routes ===
+
+@router.post("", response_model=ShareResponse)
+async def share_resource(
+    data: ShareRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Share a resource with another user"""
+    current_user = await db.merge(current_user)
+
+    # Check if user can share this resource
+    if not await can_share_resource(current_user, data.resource_type, data.resource_id, db):
+        raise HTTPException(status_code=403, detail="You don't have permission to share this resource")
+
+    # Check if target user exists and is in same org
+    result = await db.execute(select(User).where(User.id == data.shared_with_id))
+    target_user = result.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check if already shared
+    result = await db.execute(
+        select(SharedAccess).where(
+            SharedAccess.resource_type == data.resource_type,
+            SharedAccess.resource_id == data.resource_id,
+            SharedAccess.shared_with_id == data.shared_with_id
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        # Update existing share
+        existing.access_level = data.access_level
+        existing.note = data.note
+        existing.expires_at = data.expires_at
+        await db.commit()
+        await db.refresh(existing)
+        share = existing
+    else:
+        # Create new share
+        share = SharedAccess(
+            resource_type=data.resource_type,
+            resource_id=data.resource_id,
+            shared_by_id=current_user.id,
+            shared_with_id=data.shared_with_id,
+            access_level=data.access_level,
+            note=data.note,
+            expires_at=data.expires_at
+        )
+        db.add(share)
+        await db.commit()
+        await db.refresh(share)
+
+    resource_name = await get_resource_name(data.resource_type, data.resource_id, db)
+
+    return ShareResponse(
+        id=share.id,
+        resource_type=share.resource_type,
+        resource_id=share.resource_id,
+        resource_name=resource_name,
+        shared_by_id=current_user.id,
+        shared_by_name=current_user.name,
+        shared_with_id=target_user.id,
+        shared_with_name=target_user.name,
+        access_level=share.access_level,
+        note=share.note,
+        expires_at=share.expires_at,
+        created_at=share.created_at
+    )
+
+
+@router.delete("/{share_id}")
+async def revoke_share(
+    share_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Revoke a share"""
+    current_user = await db.merge(current_user)
+
+    result = await db.execute(select(SharedAccess).where(SharedAccess.id == share_id))
+    share = result.scalar_one_or_none()
+
+    if not share:
+        raise HTTPException(status_code=404, detail="Share not found")
+
+    # Only the person who shared or superadmin can revoke
+    if share.shared_by_id != current_user.id and current_user.role != UserRole.SUPERADMIN:
+        raise HTTPException(status_code=403, detail="You can only revoke shares you created")
+
+    await db.delete(share)
+    await db.commit()
+
+    return {"success": True}
+
+
+@router.get("/my-shares", response_model=List[ShareResponse])
+async def get_my_shares(
+    resource_type: Optional[ResourceType] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get resources I've shared with others"""
+    current_user = await db.merge(current_user)
+
+    query = select(SharedAccess).where(SharedAccess.shared_by_id == current_user.id)
+    if resource_type:
+        query = query.where(SharedAccess.resource_type == resource_type)
+    query = query.order_by(SharedAccess.created_at.desc())
+
+    result = await db.execute(query)
+    shares = result.scalars().all()
+
+    response = []
+    for share in shares:
+        # Get user names
+        by_result = await db.execute(select(User).where(User.id == share.shared_by_id))
+        by_user = by_result.scalar_one_or_none()
+        with_result = await db.execute(select(User).where(User.id == share.shared_with_id))
+        with_user = with_result.scalar_one_or_none()
+
+        resource_name = await get_resource_name(share.resource_type, share.resource_id, db)
+
+        response.append(ShareResponse(
+            id=share.id,
+            resource_type=share.resource_type,
+            resource_id=share.resource_id,
+            resource_name=resource_name,
+            shared_by_id=share.shared_by_id,
+            shared_by_name=by_user.name if by_user else "Unknown",
+            shared_with_id=share.shared_with_id,
+            shared_with_name=with_user.name if with_user else "Unknown",
+            access_level=share.access_level,
+            note=share.note,
+            expires_at=share.expires_at,
+            created_at=share.created_at
+        ))
+
+    return response
+
+
+@router.get("/shared-with-me", response_model=List[ShareResponse])
+async def get_shared_with_me(
+    resource_type: Optional[ResourceType] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get resources shared with me"""
+    current_user = await db.merge(current_user)
+
+    query = select(SharedAccess).where(
+        SharedAccess.shared_with_id == current_user.id,
+        or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+    )
+    if resource_type:
+        query = query.where(SharedAccess.resource_type == resource_type)
+    query = query.order_by(SharedAccess.created_at.desc())
+
+    result = await db.execute(query)
+    shares = result.scalars().all()
+
+    response = []
+    for share in shares:
+        # Get user names
+        by_result = await db.execute(select(User).where(User.id == share.shared_by_id))
+        by_user = by_result.scalar_one_or_none()
+        with_result = await db.execute(select(User).where(User.id == share.shared_with_id))
+        with_user = with_result.scalar_one_or_none()
+
+        resource_name = await get_resource_name(share.resource_type, share.resource_id, db)
+
+        response.append(ShareResponse(
+            id=share.id,
+            resource_type=share.resource_type,
+            resource_id=share.resource_id,
+            resource_name=resource_name,
+            shared_by_id=share.shared_by_id,
+            shared_by_name=by_user.name if by_user else "Unknown",
+            shared_with_id=share.shared_with_id,
+            shared_with_name=with_user.name if with_user else "Unknown",
+            access_level=share.access_level,
+            note=share.note,
+            expires_at=share.expires_at,
+            created_at=share.created_at
+        ))
+
+    return response
+
+
+@router.get("/resource/{resource_type}/{resource_id}", response_model=List[ShareResponse])
+async def get_resource_shares(
+    resource_type: ResourceType,
+    resource_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all shares for a specific resource"""
+    current_user = await db.merge(current_user)
+
+    # Check if user has access to this resource
+    if not await has_access_to_resource(current_user, resource_type, resource_id, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    query = select(SharedAccess).where(
+        SharedAccess.resource_type == resource_type,
+        SharedAccess.resource_id == resource_id
+    ).order_by(SharedAccess.created_at.desc())
+
+    result = await db.execute(query)
+    shares = result.scalars().all()
+
+    response = []
+    for share in shares:
+        by_result = await db.execute(select(User).where(User.id == share.shared_by_id))
+        by_user = by_result.scalar_one_or_none()
+        with_result = await db.execute(select(User).where(User.id == share.shared_with_id))
+        with_user = with_result.scalar_one_or_none()
+
+        resource_name = await get_resource_name(share.resource_type, share.resource_id, db)
+
+        response.append(ShareResponse(
+            id=share.id,
+            resource_type=share.resource_type,
+            resource_id=share.resource_id,
+            resource_name=resource_name,
+            shared_by_id=share.shared_by_id,
+            shared_by_name=by_user.name if by_user else "Unknown",
+            shared_with_id=share.shared_with_id,
+            shared_with_name=with_user.name if with_user else "Unknown",
+            access_level=share.access_level,
+            note=share.note,
+            expires_at=share.expires_at,
+            created_at=share.created_at
+        ))
+
+    return response
+
+
+@router.get("/users", response_model=List[UserSimple])
+async def get_sharable_users(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get list of users that can be shared with (same organization)"""
+    current_user = await db.merge(current_user)
+
+    org = await get_user_org(current_user, db)
+    if not org:
+        return []
+
+    # Get all users in the same organization
+    result = await db.execute(
+        select(User)
+        .join(OrgMember, OrgMember.user_id == User.id)
+        .where(
+            OrgMember.org_id == org.id,
+            User.id != current_user.id,
+            User.is_active == True
+        )
+        .order_by(User.name)
+    )
+    users = result.scalars().all()
+
+    return [UserSimple(id=u.id, name=u.name, email=u.email) for u in users]

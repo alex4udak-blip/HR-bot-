@@ -616,4 +616,72 @@ export const updateCall = async (
   return result;
 };
 
+
+// === SHARING ===
+
+export type ResourceType = 'chat' | 'entity' | 'call';
+export type AccessLevel = 'view' | 'edit' | 'full';
+
+export interface ShareRequest {
+  resource_type: ResourceType;
+  resource_id: number;
+  shared_with_id: number;
+  access_level?: AccessLevel;
+  note?: string;
+  expires_at?: string;
+}
+
+export interface ShareResponse {
+  id: number;
+  resource_type: ResourceType;
+  resource_id: number;
+  resource_name?: string;
+  shared_by_id: number;
+  shared_by_name: string;
+  shared_with_id: number;
+  shared_with_name: string;
+  access_level: AccessLevel;
+  note?: string;
+  expires_at?: string;
+  created_at: string;
+}
+
+export interface UserSimple {
+  id: number;
+  name: string;
+  email: string;
+}
+
+export const shareResource = async (data: ShareRequest): Promise<ShareResponse> => {
+  const { data: result } = await api.post('/sharing', data);
+  return result;
+};
+
+export const revokeShare = async (shareId: number): Promise<{ success: boolean }> => {
+  const { data } = await api.delete(`/sharing/${shareId}`);
+  return data;
+};
+
+export const getMyShares = async (resourceType?: ResourceType): Promise<ShareResponse[]> => {
+  const params = resourceType ? `?resource_type=${resourceType}` : '';
+  const { data } = await api.get(`/sharing/my-shares${params}`);
+  return data;
+};
+
+export const getSharedWithMe = async (resourceType?: ResourceType): Promise<ShareResponse[]> => {
+  const params = resourceType ? `?resource_type=${resourceType}` : '';
+  const { data } = await api.get(`/sharing/shared-with-me${params}`);
+  return data;
+};
+
+export const getResourceShares = async (resourceType: ResourceType, resourceId: number): Promise<ShareResponse[]> => {
+  const { data } = await api.get(`/sharing/resource/${resourceType}/${resourceId}`);
+  return data;
+};
+
+export const getSharableUsers = async (): Promise<UserSimple[]> => {
+  const { data } = await api.get('/sharing/users');
+  return data;
+};
+
 export default api;
