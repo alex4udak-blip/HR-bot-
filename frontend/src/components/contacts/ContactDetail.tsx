@@ -27,9 +27,10 @@ import { useEntityStore } from '@/stores/entityStore';
 
 interface ContactDetailProps {
   entity: EntityWithRelations;
+  showAIInOverview?: boolean;
 }
 
-export default function ContactDetail({ entity }: ContactDetailProps) {
+export default function ContactDetail({ entity, showAIInOverview = true }: ContactDetailProps) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'overview' | 'chats' | 'calls' | 'history'>('overview');
   const [showLinkChatModal, setShowLinkChatModal] = useState(false);
@@ -219,10 +220,10 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
       <div className="space-y-4">
         {activeTab === 'overview' && (
           <>
-            {/* AI Assistant */}
-            <EntityAI entity={entity} />
+            {/* AI Assistant - only show if showAIInOverview is true */}
+            {showAIInOverview && <EntityAI entity={entity} />}
 
-            <div className="grid grid-cols-2 gap-6 mt-6">
+            <div className={clsx("grid grid-cols-2 gap-6", showAIInOverview && "mt-6")}>
             {/* Recent Chats */}
             <div className="bg-white/5 rounded-xl p-4">
               <div className="flex items-center justify-between mb-4">
