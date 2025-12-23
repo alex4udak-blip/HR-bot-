@@ -17,7 +17,8 @@ import {
   Edit,
   Trash2,
   Bot,
-  X
+  X,
+  Share2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -28,6 +29,7 @@ import ContactForm from '@/components/contacts/ContactForm';
 import TransferModal from '@/components/contacts/TransferModal';
 import ContactDetail from '@/components/contacts/ContactDetail';
 import EntityAI from '@/components/contacts/EntityAI';
+import ShareModal from '@/components/common/ShareModal';
 
 // Entity type filter options
 const ENTITY_TYPE_FILTERS: { id: EntityType | 'all'; name: string; icon: typeof Users }[] = [
@@ -50,6 +52,7 @@ export default function ContactsPage() {
   const [typeFilter, setTypeFilter] = useState<EntityType | 'all'>(initialType || 'all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [showAIPanel, setShowAIPanel] = useState(false);
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [selectedEntityForTransfer, setSelectedEntityForTransfer] = useState<Entity | null>(null);
@@ -368,6 +371,13 @@ export default function ContactsPage() {
                   AI
                 </button>
                 <button
+                  onClick={() => setShowShareModal(true)}
+                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
+                >
+                  <Share2 size={16} />
+                  Share
+                </button>
+                <button
                   onClick={() => handleTransfer(currentEntity as Entity)}
                   className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
                 >
@@ -489,6 +499,17 @@ export default function ContactsPage() {
           />
         )}
       </AnimatePresence>
+
+      {/* Share Modal */}
+      {currentEntity && (
+        <ShareModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          resourceType="entity"
+          resourceId={currentEntity.id}
+          resourceName={currentEntity.name}
+        />
+      )}
     </div>
   );
 }

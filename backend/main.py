@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations
+from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing
 
 # Configure logging - show important messages
 logging.basicConfig(
@@ -312,6 +312,7 @@ app.include_router(entities.router, prefix="/api/entities", tags=["entities"])
 app.include_router(calls.router, prefix="/api/calls", tags=["calls"])
 app.include_router(entity_ai.router, prefix="/api", tags=["entity-ai"])
 app.include_router(organizations.router, prefix="/api/organizations", tags=["organizations"])
+app.include_router(sharing.router, prefix="/api/sharing", tags=["sharing"])
 
 
 @app.get("/health")
