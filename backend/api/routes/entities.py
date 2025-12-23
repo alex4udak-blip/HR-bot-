@@ -9,7 +9,8 @@ from ..database import get_db
 from ..models.database import (
     Entity, EntityType, EntityStatus, EntityTransfer,
     Chat, CallRecording, AnalysisHistory, User, Organization,
-    SharedAccess, ResourceType, UserRole
+    SharedAccess, ResourceType, UserRole,
+    Department, DepartmentMember, DeptRole
 )
 from ..services.auth import get_current_user, get_user_org
 
@@ -32,6 +33,7 @@ class EntityCreate(BaseModel):
     position: Optional[str] = None
     tags: Optional[List[str]] = []
     extra_data: Optional[dict] = {}
+    department_id: Optional[int] = None
 
 
 class EntityUpdate(BaseModel):
@@ -43,11 +45,12 @@ class EntityUpdate(BaseModel):
     position: Optional[str] = None
     tags: Optional[List[str]] = None
     extra_data: Optional[dict] = None
+    department_id: Optional[int] = None
 
 
 class TransferCreate(BaseModel):
     to_user_id: int
-    to_department: Optional[str] = None
+    to_department_id: Optional[int] = None
     comment: Optional[str] = None
 
 
@@ -64,6 +67,8 @@ class EntityResponse(BaseModel):
     tags: List[str] = []
     extra_data: dict = {}
     created_by: Optional[int] = None
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     chats_count: int = 0
@@ -78,8 +83,10 @@ class TransferResponse(BaseModel):
     entity_id: int
     from_user_id: Optional[int] = None
     to_user_id: Optional[int] = None
-    from_department: Optional[str] = None
-    to_department: Optional[str] = None
+    from_department_id: Optional[int] = None
+    to_department_id: Optional[int] = None
+    from_department_name: Optional[str] = None
+    to_department_name: Optional[str] = None
     comment: Optional[str] = None
     created_at: datetime
     from_user_name: Optional[str] = None
@@ -98,16 +105,32 @@ async def list_entities(
     search: Optional[str] = None,
     tags: Optional[str] = None,  # comma-separated
     ownership: Optional[OwnershipFilter] = None,  # mine, shared, all
+    department_id: Optional[int] = None,  # filter by department
     limit: int = Query(50, le=200),
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List contacts with filters (filtered by user's organization)"""
+    """List contacts with filters (filtered by user's organization and departments)"""
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org:
         return []
+
+    # Get user's department memberships for access control
+    dept_memberships_result = await db.execute(
+        select(DepartmentMember).where(DepartmentMember.user_id == current_user.id)
+    )
+    dept_memberships = list(dept_memberships_result.scalars().all())
+    user_dept_ids = [dm.department_id for dm in dept_memberships]
+    lead_dept_ids = [dm.department_id for dm in dept_memberships if dm.role == DeptRole.lead]
+
+    # Shared entities query
+    shared_ids_query = select(SharedAccess.resource_id).where(
+        SharedAccess.resource_type == ResourceType.entity,
+        SharedAccess.shared_with_id == current_user.id,
+        or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+    )
 
     # Determine base query based on ownership filter
     if ownership == "mine":
@@ -118,33 +141,28 @@ async def list_entities(
         )
     elif ownership == "shared":
         # Only entities shared with current user (not owned by them)
-        shared_ids_query = select(SharedAccess.resource_id).where(
-            SharedAccess.resource_type == ResourceType.entity,
-            SharedAccess.shared_with_id == current_user.id,
-            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
-        )
         query = select(Entity).where(
             Entity.org_id == org.id,
             Entity.id.in_(shared_ids_query),
-            Entity.created_by != current_user.id  # Exclude own entities
+            Entity.created_by != current_user.id
         )
     else:
-        # All entities in organization (for superadmin) or own + shared (for others)
+        # All entities user can see: own + shared + department (if lead)
         if current_user.role == UserRole.SUPERADMIN:
             query = select(Entity).where(Entity.org_id == org.id)
         else:
-            # Own entities + shared with me
-            shared_ids_query = select(SharedAccess.resource_id).where(
-                SharedAccess.resource_type == ResourceType.entity,
-                SharedAccess.shared_with_id == current_user.id,
-                or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
-            )
+            # Own entities + shared with me + department entities (if lead)
+            conditions = [
+                Entity.created_by == current_user.id,
+                Entity.id.in_(shared_ids_query)
+            ]
+            # Department leads see all entities in their departments
+            if lead_dept_ids:
+                conditions.append(Entity.department_id.in_(lead_dept_ids))
+
             query = select(Entity).where(
                 Entity.org_id == org.id,
-                or_(
-                    Entity.created_by == current_user.id,
-                    Entity.id.in_(shared_ids_query)
-                )
+                or_(*conditions)
             )
 
     if type:
@@ -165,6 +183,8 @@ async def list_entities(
         tag_list = [t.strip() for t in tags.split(",")]
         for tag in tag_list:
             query = query.where(Entity.tags.contains([tag]))
+    if department_id:
+        query = query.where(Entity.department_id == department_id)
 
     query = query.order_by(Entity.updated_at.desc())
     query = query.offset(offset).limit(limit)
@@ -189,6 +209,14 @@ async def list_entities(
         owners_result = await db.execute(select(User).where(User.id.in_(creator_ids)))
         for owner in owners_result.scalars().all():
             owner_names[owner.id] = owner.name
+
+    # Pre-fetch department names
+    dept_ids = list(set(e.department_id for e in entities if e.department_id))
+    dept_names = {}
+    if dept_ids:
+        depts_result = await db.execute(select(Department).where(Department.id.in_(dept_ids)))
+        for dept in depts_result.scalars().all():
+            dept_names[dept.id] = dept.name
 
     # Count related data
     response = []
@@ -217,6 +245,8 @@ async def list_entities(
             "extra_data": entity.extra_data or {},
             "created_by": entity.created_by,
             "owner_name": owner_names.get(entity.created_by, "Unknown"),
+            "department_id": entity.department_id,
+            "department_name": dept_names.get(entity.department_id) if entity.department_id else None,
             "is_mine": is_mine,
             "is_shared": is_shared,
             "created_at": entity.created_at,
@@ -240,6 +270,17 @@ async def create_entity(
     if not org:
         raise HTTPException(403, "No organization access")
 
+    # Validate department_id if provided
+    department_name = None
+    if data.department_id:
+        dept_result = await db.execute(
+            select(Department).where(Department.id == data.department_id, Department.org_id == org.id)
+        )
+        dept = dept_result.scalar_one_or_none()
+        if not dept:
+            raise HTTPException(400, "Invalid department")
+        department_name = dept.name
+
     entity = Entity(
         org_id=org.id,
         type=data.type,
@@ -252,7 +293,8 @@ async def create_entity(
         position=data.position,
         tags=data.tags or [],
         extra_data=data.extra_data or {},
-        created_by=current_user.id
+        created_by=current_user.id,
+        department_id=data.department_id
     )
     db.add(entity)
     await db.commit()
@@ -271,6 +313,8 @@ async def create_entity(
         "tags": entity.tags or [],
         "extra_data": entity.extra_data or {},
         "created_by": entity.created_by,
+        "department_id": entity.department_id,
+        "department_name": department_name,
         "created_at": entity.created_at,
         "updated_at": entity.updated_at,
         "chats_count": 0,
@@ -317,11 +361,22 @@ async def get_entity(
     transfers = transfers_result.scalars().all()
     analyses = analyses_result.scalars().all()
 
-    # Get user names for transfers
+    # Get department info for entity
+    department_name = None
+    if entity.department_id:
+        dept_result = await db.execute(select(Department).where(Department.id == entity.department_id))
+        dept = dept_result.scalar_one_or_none()
+        if dept:
+            department_name = dept.name
+
+    # Get user names and department names for transfers
     transfer_data = []
     for t in transfers:
         from_user_name = None
         to_user_name = None
+        from_dept_name = None
+        to_dept_name = None
+
         if t.from_user_id:
             from_user = await db.execute(select(User.name).where(User.id == t.from_user_id))
             from_user_name = from_user.scalar()
@@ -329,13 +384,28 @@ async def get_entity(
             to_user = await db.execute(select(User.name).where(User.id == t.to_user_id))
             to_user_name = to_user.scalar()
 
+        # Get department names (use new fields if available, fallback to old strings)
+        if hasattr(t, 'from_department_id') and t.from_department_id:
+            from_dept = await db.execute(select(Department.name).where(Department.id == t.from_department_id))
+            from_dept_name = from_dept.scalar()
+        elif hasattr(t, 'from_department') and t.from_department:
+            from_dept_name = t.from_department
+
+        if hasattr(t, 'to_department_id') and t.to_department_id:
+            to_dept = await db.execute(select(Department.name).where(Department.id == t.to_department_id))
+            to_dept_name = to_dept.scalar()
+        elif hasattr(t, 'to_department') and t.to_department:
+            to_dept_name = t.to_department
+
         transfer_data.append({
             "id": t.id,
             "entity_id": t.entity_id,
             "from_user_id": t.from_user_id,
             "to_user_id": t.to_user_id,
-            "from_department": t.from_department,
-            "to_department": t.to_department,
+            "from_department_id": getattr(t, 'from_department_id', None),
+            "to_department_id": getattr(t, 'to_department_id', None),
+            "from_department_name": from_dept_name,
+            "to_department_name": to_dept_name,
             "comment": t.comment,
             "created_at": t.created_at,
             "from_user_name": from_user_name,
@@ -355,6 +425,8 @@ async def get_entity(
         "tags": entity.tags or [],
         "extra_data": entity.extra_data or {},
         "created_by": entity.created_by,
+        "department_id": entity.department_id,
+        "department_name": department_name,
         "created_at": entity.created_at,
         "updated_at": entity.updated_at,
         "chats": [
@@ -411,6 +483,15 @@ async def update_entity(
     if not entity:
         raise HTTPException(404, "Entity not found")
 
+    # Validate department_id if provided
+    if data.department_id is not None:
+        if data.department_id:
+            dept_result = await db.execute(
+                select(Department).where(Department.id == data.department_id, Department.org_id == org.id)
+            )
+            if not dept_result.scalar_one_or_none():
+                raise HTTPException(400, "Invalid department")
+
     update_data = data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(entity, key, value)
@@ -418,6 +499,12 @@ async def update_entity(
     entity.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(entity)
+
+    # Get department name
+    department_name = None
+    if entity.department_id:
+        dept_result = await db.execute(select(Department.name).where(Department.id == entity.department_id))
+        department_name = dept_result.scalar()
 
     return {
         "id": entity.id,
@@ -432,6 +519,8 @@ async def update_entity(
         "tags": entity.tags or [],
         "extra_data": entity.extra_data or {},
         "created_by": entity.created_by,
+        "department_id": entity.department_id,
+        "department_name": department_name,
         "created_at": entity.created_at,
         "updated_at": entity.updated_at
     }
@@ -469,7 +558,7 @@ async def transfer_entity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Transfer contact to another HR"""
+    """Transfer contact to another user/department"""
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org:
@@ -483,16 +572,39 @@ async def transfer_entity(
     if not entity:
         raise HTTPException(404, "Entity not found")
 
+    # Get current user's department (first one if multiple)
+    from_dept_id = None
+    user_dept_result = await db.execute(
+        select(DepartmentMember.department_id).where(DepartmentMember.user_id == current_user.id).limit(1)
+    )
+    from_dept_row = user_dept_result.scalar_one_or_none()
+    if from_dept_row:
+        from_dept_id = from_dept_row
+
+    # Validate to_department_id if provided
+    if data.to_department_id:
+        dept_result = await db.execute(
+            select(Department).where(Department.id == data.to_department_id, Department.org_id == org.id)
+        )
+        if not dept_result.scalar_one_or_none():
+            raise HTTPException(400, "Invalid target department")
+
     # Create transfer record
     transfer = EntityTransfer(
         entity_id=entity_id,
         from_user_id=current_user.id,
         to_user_id=data.to_user_id,
-        from_department=current_user.name,
-        to_department=data.to_department,
+        from_department_id=from_dept_id,
+        to_department_id=data.to_department_id,
         comment=data.comment
     )
     db.add(transfer)
+
+    # Update entity ownership and department
+    entity.created_by = data.to_user_id
+    if data.to_department_id:
+        entity.department_id = data.to_department_id
+
     await db.commit()
 
     # TODO: Send notification to recipient via Telegram

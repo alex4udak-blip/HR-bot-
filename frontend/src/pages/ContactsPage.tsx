@@ -28,7 +28,8 @@ import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
 import type { EntityType, Entity } from '@/types';
 import { ENTITY_TYPES, STATUS_LABELS, STATUS_COLORS } from '@/types';
-import type { OwnershipFilter } from '@/services/api';
+import type { OwnershipFilter, Department } from '@/services/api';
+import { getDepartments } from '@/services/api';
 import ContactForm from '@/components/contacts/ContactForm';
 import TransferModal from '@/components/contacts/TransferModal';
 import ContactDetail from '@/components/contacts/ContactDetail';
@@ -62,6 +63,8 @@ export default function ContactsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<EntityType | 'all'>(initialType || 'all');
   const [ownershipFilter, setOwnershipFilter] = useState<OwnershipFilter>('all');
+  const [departmentFilter, setDepartmentFilter] = useState<number | 'all'>('all');
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -79,16 +82,22 @@ export default function ContactsPage() {
     clearCurrentEntity
   } = useEntityStore();
 
+  // Load departments on mount
+  useEffect(() => {
+    getDepartments().then(setDepartments).catch(console.error);
+  }, []);
+
   // Load entities on mount and when any filter changes - single unified effect
   useEffect(() => {
     // Build complete filter object to avoid race conditions
     const newFilters = {
       type: typeFilter === 'all' ? undefined : typeFilter,
       ownership: ownershipFilter,
+      department_id: departmentFilter === 'all' ? undefined : departmentFilter,
       search: searchQuery || undefined
     };
     setFilters(newFilters);
-  }, [typeFilter, ownershipFilter, setFilters]);
+  }, [typeFilter, ownershipFilter, departmentFilter, setFilters]);
 
   // Debounced search - only updates when searchQuery changes
   useEffect(() => {
@@ -230,6 +239,24 @@ export default function ContactsPage() {
               );
             })}
           </div>
+
+          {/* Department Filter */}
+          {departments.length > 0 && (
+            <div className="mb-3">
+              <select
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50"
+              >
+                <option value="all">Все департаменты</option>
+                {departments.map((dept) => (
+                  <option key={dept.id} value={dept.id}>
+                    {dept.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Type Filters */}
           <div className="flex flex-wrap gap-2">

@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing
+from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments
 
 # Configure logging - show important messages
 logging.basicConfig(
@@ -218,6 +218,55 @@ async def init_database():
 
     logger.info("=== MULTI-TENANCY TABLES READY ===")
 
+    # Step 8: Departments
+    logger.info("=== SETTING UP DEPARTMENTS ===")
+
+    # Create deptrole enum
+    await run_migration(engine, "CREATE TYPE deptrole AS ENUM ('lead', 'member')", "Create deptrole enum")
+
+    # Create departments table
+    create_departments = """
+        CREATE TABLE IF NOT EXISTS departments (
+            id SERIAL PRIMARY KEY,
+            org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            color VARCHAR(20),
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """
+    await run_migration(engine, create_departments, "Create departments table")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_departments_org_id ON departments(org_id)", "Index departments.org_id")
+
+    # Create department_members table
+    create_department_members = """
+        CREATE TABLE IF NOT EXISTS department_members (
+            id SERIAL PRIMARY KEY,
+            department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role deptrole DEFAULT 'member',
+            created_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(department_id, user_id)
+        )
+    """
+    await run_migration(engine, create_department_members, "Create department_members table")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_department_members_department_id ON department_members(department_id)", "Index department_members.department_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_department_members_user_id ON department_members(user_id)", "Index department_members.user_id")
+
+    # Add department_id to entities
+    await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL", "Add department_id to entities")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entities_department_id ON entities(department_id)", "Index entities.department_id")
+
+    # Update entity_transfers to use department_id instead of string
+    await run_migration(engine, "ALTER TABLE entity_transfers ADD COLUMN IF NOT EXISTS from_department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL", "Add from_department_id to entity_transfers")
+    await run_migration(engine, "ALTER TABLE entity_transfers ADD COLUMN IF NOT EXISTS to_department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL", "Add to_department_id to entity_transfers")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entity_transfers_from_department_id ON entity_transfers(from_department_id)", "Index entity_transfers.from_department_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entity_transfers_to_department_id ON entity_transfers(to_department_id)", "Index entity_transfers.to_department_id")
+
+    logger.info("=== DEPARTMENTS TABLES READY ===")
+
     # Step 7: Create superadmin and default organization
     try:
         async with AsyncSessionLocal() as db:
@@ -313,6 +362,7 @@ app.include_router(calls.router, prefix="/api/calls", tags=["calls"])
 app.include_router(entity_ai.router, prefix="/api", tags=["entity-ai"])
 app.include_router(organizations.router, prefix="/api/organizations", tags=["organizations"])
 app.include_router(sharing.router, prefix="/api/sharing", tags=["sharing"])
+app.include_router(departments.router, prefix="/api/departments", tags=["departments"])
 
 
 @app.get("/health")
