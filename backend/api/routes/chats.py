@@ -37,9 +37,19 @@ from ..services.documents import document_parser
 router = APIRouter()
 
 
-def can_access_chat(user: User, chat: Chat) -> bool:
+def can_access_chat(user: User, chat: Chat, user_org_id: int = None) -> bool:
+    """Check if user can access this chat.
+
+    Args:
+        user: Current user
+        chat: Chat to check access for
+        user_org_id: User's organization ID (required for org-based access)
+    """
     if user.role == UserRole.SUPERADMIN:
         return True
+    # Check org membership if org_id is provided
+    if user_org_id and chat.org_id != user_org_id:
+        return False
     return chat.owner_id == user.id
 
 
@@ -139,16 +149,22 @@ async def get_chat(
 ):
     user = await db.merge(user)
 
+    # Get user's organization
+    org = await get_user_org(user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
     result = await db.execute(
         select(Chat).options(selectinload(Chat.owner), selectinload(Chat.entity)).where(
             Chat.id == chat_id,
+            Chat.org_id == org.id,
             Chat.deleted_at.is_(None)
         )
     )
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    if not can_access_chat(user, chat, org.id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     msg_count = await db.execute(
@@ -192,13 +208,21 @@ async def update_chat(
     from ..models.database import ChatType
     user = await db.merge(user)
 
+    # Get user's organization
+    org = await get_user_org(user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
     result = await db.execute(
-        select(Chat).options(selectinload(Chat.owner), selectinload(Chat.entity)).where(Chat.id == chat_id)
+        select(Chat).options(selectinload(Chat.owner), selectinload(Chat.entity)).where(
+            Chat.id == chat_id,
+            Chat.org_id == org.id
+        )
     )
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    if not can_access_chat(user, chat, org.id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     if data.custom_name is not None:
@@ -260,11 +284,16 @@ async def clear_messages(
 ):
     user = await db.merge(user)
 
-    result = await db.execute(select(Chat).where(Chat.id == chat_id))
+    # Get user's organization
+    org = await get_user_org(user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.org_id == org.id))
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    if not can_access_chat(user, chat, org.id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     await db.execute(Message.__table__.delete().where(Message.chat_id == chat_id))
@@ -280,11 +309,20 @@ async def delete_chat(
     """Soft delete a chat (moves to trash for 30 days)."""
     user = await db.merge(user)
 
-    result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.deleted_at.is_(None)))
+    # Get user's organization
+    org = await get_user_org(user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    result = await db.execute(select(Chat).where(
+        Chat.id == chat_id,
+        Chat.org_id == org.id,
+        Chat.deleted_at.is_(None)
+    ))
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    if not can_access_chat(user, chat, org.id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Soft delete - just set deleted_at timestamp
@@ -300,7 +338,15 @@ async def get_deleted_chats(
     """Get list of deleted chats (trash)."""
     user = await db.merge(user)
 
-    query = select(Chat).options(selectinload(Chat.owner)).where(Chat.deleted_at.isnot(None))
+    # Get user's organization
+    org = await get_user_org(user, db)
+    if not org:
+        return []
+
+    query = select(Chat).options(selectinload(Chat.owner)).where(
+        Chat.deleted_at.isnot(None),
+        Chat.org_id == org.id
+    )
     if user.role != UserRole.SUPERADMIN:
         query = query.where(Chat.owner_id == user.id)
     query = query.order_by(Chat.deleted_at.desc())
@@ -347,11 +393,20 @@ async def restore_chat(
     """Restore a deleted chat from trash."""
     user = await db.merge(user)
 
-    result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.deleted_at.isnot(None)))
+    # Get user's organization
+    org = await get_user_org(user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Deleted chat not found")
+
+    result = await db.execute(select(Chat).where(
+        Chat.id == chat_id,
+        Chat.org_id == org.id,
+        Chat.deleted_at.isnot(None)
+    ))
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Deleted chat not found")
-    if not can_access_chat(user, chat):
+    if not can_access_chat(user, chat, org.id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     chat.deleted_at = None
@@ -368,11 +423,16 @@ async def permanent_delete_chat(
     """Permanently delete a chat (no recovery)."""
     user = await db.merge(user)
 
-    result = await db.execute(select(Chat).where(Chat.id == chat_id))
+    # Get user's organization
+    org = await get_user_org(user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.org_id == org.id))
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    if not can_access_chat(user, chat, org.id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Delete all related data
@@ -892,12 +952,21 @@ async def import_telegram_history(
 
     user = await db.merge(user)
 
+    # Get user's organization
+    org = await get_user_org(user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
     # Check chat exists and user has access
-    result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.deleted_at.is_(None)))
+    result = await db.execute(select(Chat).where(
+        Chat.id == chat_id,
+        Chat.org_id == org.id,
+        Chat.deleted_at.is_(None)
+    ))
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    if not can_access_chat(user, chat, org.id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Read file content
@@ -1307,11 +1376,20 @@ async def repair_video_notes(
 
     user = await db.merge(user)
 
-    result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.deleted_at.is_(None)))
+    # Get user's organization
+    org = await get_user_org(user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    result = await db.execute(select(Chat).where(
+        Chat.id == chat_id,
+        Chat.org_id == org.id,
+        Chat.deleted_at.is_(None)
+    ))
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    if not can_access_chat(user, chat, org.id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Read the ZIP file
@@ -1401,11 +1479,20 @@ async def cleanup_bad_import(
     """
     user = await db.merge(user)
 
-    result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.deleted_at.is_(None)))
+    # Get user's organization
+    org = await get_user_org(user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    result = await db.execute(select(Chat).where(
+        Chat.id == chat_id,
+        Chat.org_id == org.id,
+        Chat.deleted_at.is_(None)
+    ))
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    if not can_access_chat(user, chat, org.id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     deleted_count = 0

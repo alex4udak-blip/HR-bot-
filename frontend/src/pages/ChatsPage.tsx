@@ -80,7 +80,7 @@ export default function ChatsPage() {
     if (chatId) {
       setSelectedChatId(parseInt(chatId));
     }
-  }, [chatId]);
+  }, [chatId, setSelectedChatId]);
 
   const filteredChats = chats.filter((chat) => {
     const matchesSearch = (chat.custom_name || chat.title).toLowerCase().includes(searchQuery.toLowerCase());

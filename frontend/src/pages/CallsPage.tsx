@@ -37,33 +37,35 @@ export default function CallsPage() {
     reprocessCall,
     stopRecording,
     clearActiveRecording,
-    pollStatus
+    pollStatus,
+    stopPolling
   } = useCallStore();
 
+  // Fetch calls on mount
   useEffect(() => {
     fetchCalls();
-  }, []);
+  }, [fetchCalls]);
 
+  // Fetch specific call when URL changes
   useEffect(() => {
     if (callId) {
       fetchCall(parseInt(callId));
     }
-  }, [callId]);
+  }, [callId, fetchCall]);
 
   // Auto-refresh currentCall when activeRecording status changes
   useEffect(() => {
     if (activeRecording && callId && activeRecording.id === parseInt(callId)) {
-      // Refetch current call to get updated status
       fetchCall(parseInt(callId));
     }
-  }, [activeRecording?.status]);
+  }, [activeRecording?.status, activeRecording?.id, callId, fetchCall]);
 
-  // Also refresh the calls list when activeRecording updates
+  // Also refresh the calls list when activeRecording completes
   useEffect(() => {
     if (activeRecording && (activeRecording.status === 'done' || activeRecording.status === 'failed')) {
       fetchCalls();
     }
-  }, [activeRecording?.status]);
+  }, [activeRecording?.status, fetchCalls]);
 
   // Start polling if currentCall is in an active state (for page refreshes)
   useEffect(() => {
@@ -73,11 +75,11 @@ export default function CallsPage() {
         pollStatus(currentCall.id);
       }
     }
+    // Cleanup polling when component unmounts or callId changes
     return () => {
-      // Don't stop polling on unmount if there's an active recording
-      // (it should continue in background)
+      stopPolling();
     };
-  }, [currentCall?.id, currentCall?.status]);
+  }, [currentCall?.id, currentCall?.status, activeRecording, pollStatus, stopPolling]);
 
   const handleSelectCall = (id: number) => {
     navigate(`/calls/${id}`);
