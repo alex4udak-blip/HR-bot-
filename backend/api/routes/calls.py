@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Request
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel
@@ -12,9 +13,10 @@ import re
 
 from ..database import get_db
 from ..models.database import (
-    CallRecording, CallSource, CallStatus, Entity, User
+    CallRecording, CallSource, CallStatus, Entity, User, OrgRole, UserRole,
+    DepartmentMember
 )
-from ..services.auth import get_current_user, get_user_org
+from ..services.auth import get_current_user, get_user_org, get_user_org_role
 
 router = APIRouter()
 logger = logging.getLogger("hr-analyzer.calls")
@@ -82,13 +84,51 @@ async def list_calls(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List call recordings (filtered by organization)"""
+    """List call recordings (filtered by organization and role)"""
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org:
         return []
 
     query = select(CallRecording).where(CallRecording.org_id == org.id)
+
+    # Role-based filtering:
+    # - superadmin/owner: see all in organization
+    # - admin: see own + recordings linked to entities in their departments
+    # - member: see only own recordings
+    if current_user.role != UserRole.SUPERADMIN:
+        user_role = await get_user_org_role(current_user, org.id, db)
+
+        if user_role == OrgRole.member:
+            # Members see only their own
+            query = query.where(CallRecording.owner_id == current_user.id)
+        elif user_role == OrgRole.admin:
+            # Admins see own + department entities
+            dept_result = await db.execute(
+                select(DepartmentMember.department_id).where(
+                    DepartmentMember.user_id == current_user.id
+                )
+            )
+            admin_dept_ids = [r for r in dept_result.scalars().all()]
+
+            if admin_dept_ids:
+                # Get entity IDs in admin's departments
+                entity_result = await db.execute(
+                    select(Entity.id).where(Entity.department_id.in_(admin_dept_ids))
+                )
+                dept_entity_ids = [r for r in entity_result.scalars().all()]
+
+                # Own recordings OR recordings linked to department entities
+                query = query.where(
+                    or_(
+                        CallRecording.owner_id == current_user.id,
+                        CallRecording.entity_id.in_(dept_entity_ids) if dept_entity_ids else False
+                    )
+                )
+            else:
+                # Admin without departments - only own recordings
+                query = query.where(CallRecording.owner_id == current_user.id)
+        # owner sees all (no additional filter)
 
     if entity_id:
         query = query.where(CallRecording.entity_id == entity_id)
