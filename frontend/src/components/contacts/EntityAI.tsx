@@ -202,27 +202,10 @@ export default function EntityAI({ entity }: EntityAIProps) {
   const hasData = (entity.chats && entity.chats.length > 0) || (entity.calls && entity.calls.length > 0);
 
   return (
-    <div className="bg-white/5 rounded-xl p-4">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-          <Bot size={20} className="text-cyan-400" />
-          AI Ассистент
-        </h3>
-        {messages.length > 0 && (
-          <button
-            onClick={clearHistory}
-            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/60 transition-colors"
-            title="Очистить историю"
-          >
-            <Trash2 size={16} />
-          </button>
-        )}
-      </div>
-
+    <div className="h-full flex flex-col p-4">
       {/* No data warning */}
       {!hasData && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 mb-4">
+        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 mb-4 flex-shrink-0">
           <p className="text-sm text-yellow-400/80">
             К контакту не привязаны чаты или звонки. Привяжите данные для полноценного анализа.
           </p>
@@ -230,7 +213,7 @@ export default function EntityAI({ entity }: EntityAIProps) {
       )}
 
       {/* Quick Actions */}
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-4 flex-shrink-0">
         {QUICK_ACTIONS.map(action => {
           const Icon = action.icon;
           return (
@@ -250,10 +233,21 @@ export default function EntityAI({ entity }: EntityAIProps) {
             </button>
           );
         })}
+        {messages.length > 0 && (
+          <button
+            onClick={clearHistory}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-red-500/10 hover:bg-red-500/20 text-red-400/80 hover:text-red-400 transition-colors ml-auto"
+            title="Очистить историю"
+          >
+            <Trash2 size={14} />
+            Очистить
+          </button>
+        )}
       </div>
 
-      {/* Messages */}
-      <div className="space-y-3 max-h-[400px] overflow-y-auto mb-4 pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+      {/* Messages - flexible height */}
+      <div className="flex-1 min-h-0 overflow-y-auto mb-4 pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+        <div className="space-y-3">
         {messages.length === 0 && !loading && (
           <div className="text-center py-8 text-white/40">
             <Bot size={40} className="mx-auto mb-2 opacity-50" />
@@ -295,11 +289,12 @@ export default function EntityAI({ entity }: EntityAIProps) {
           </div>
         )}
 
-        <div ref={messagesEndRef} />
+          <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Input */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-shrink-0">
         <input
           value={input}
           onChange={e => setInput(e.target.value)}

@@ -79,13 +79,30 @@ export default function ContactsPage() {
     clearCurrentEntity
   } = useEntityStore();
 
-  // Load entities on mount and when filters change
+  // Load entities on mount and when any filter changes - single unified effect
   useEffect(() => {
-    setFilters({
+    // Build complete filter object to avoid race conditions
+    const newFilters = {
       type: typeFilter === 'all' ? undefined : typeFilter,
-      ownership: ownershipFilter
-    });
+      ownership: ownershipFilter,
+      search: searchQuery || undefined
+    };
+    setFilters(newFilters);
   }, [typeFilter, ownershipFilter, setFilters]);
+
+  // Debounced search - only updates when searchQuery changes
+  useEffect(() => {
+    if (searchQuery === '') {
+      // If search is cleared, immediately update
+      setFilters({ search: undefined });
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setFilters({ search: searchQuery });
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [searchQuery, setFilters]);
 
   // Load specific entity when URL changes
   useEffect(() => {
@@ -95,14 +112,6 @@ export default function ContactsPage() {
       clearCurrentEntity();
     }
   }, [entityId, fetchEntity, clearCurrentEntity]);
-
-  // Handle search with debounce
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      setFilters({ search: searchQuery || undefined });
-    }, 300);
-    return () => clearTimeout(timeout);
-  }, [searchQuery, setFilters]);
 
   // Update type filter from URL
   useEffect(() => {
@@ -451,9 +460,9 @@ export default function ContactsPage() {
             animate={{ width: 420, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="hidden xl:flex flex-col border-l border-white/5 bg-black/20 overflow-hidden"
+            className="hidden xl:flex flex-col h-full border-l border-white/5 bg-black/20 overflow-hidden flex-shrink-0"
           >
-            <div className="p-4 border-b border-white/5 flex items-center justify-between">
+            <div className="p-4 border-b border-white/5 flex items-center justify-between flex-shrink-0">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                 <Bot size={20} className="text-cyan-400" />
                 AI Ассистент
@@ -465,7 +474,7 @@ export default function ContactsPage() {
                 <X size={18} />
               </button>
             </div>
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-hidden min-h-0">
               <EntityAI entity={currentEntity} />
             </div>
           </motion.div>
