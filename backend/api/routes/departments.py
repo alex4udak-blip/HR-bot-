@@ -22,6 +22,7 @@ class DepartmentCreate(BaseModel):
     name: str
     description: Optional[str] = None
     color: Optional[str] = None
+    parent_id: Optional[int] = None  # For sub-departments
 
 
 class DepartmentUpdate(BaseModel):
@@ -46,8 +47,11 @@ class DepartmentResponse(BaseModel):
     description: Optional[str] = None
     color: Optional[str] = None
     is_active: bool
+    parent_id: Optional[int] = None
+    parent_name: Optional[str] = None
     members_count: int = 0
     entities_count: int = 0
+    children_count: int = 0
     created_at: datetime
 
     class Config:
@@ -113,21 +117,43 @@ async def get_user_departments(user: User, org: Organization, db: AsyncSession) 
 
 @router.get("", response_model=List[DepartmentResponse])
 async def list_departments(
+    parent_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List all departments in organization"""
+    """List all departments in organization.
+
+    Args:
+        parent_id: Filter by parent department. None = top-level departments only.
+                   Use parent_id=-1 to get all departments.
+    """
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org:
         return []
 
-    result = await db.execute(
-        select(Department)
-        .where(Department.org_id == org.id)
-        .order_by(Department.name)
-    )
+    # Build query
+    query = select(Department).where(Department.org_id == org.id)
+
+    # Filter by parent_id (-1 means all departments)
+    if parent_id is None:
+        query = query.where(Department.parent_id.is_(None))
+    elif parent_id != -1:
+        query = query.where(Department.parent_id == parent_id)
+
+    query = query.order_by(Department.name)
+    result = await db.execute(query)
     departments = result.scalars().all()
+
+    # Pre-fetch all parent names
+    parent_ids = [d.parent_id for d in departments if d.parent_id]
+    parent_names = {}
+    if parent_ids:
+        parents_result = await db.execute(
+            select(Department).where(Department.id.in_(parent_ids))
+        )
+        for p in parents_result.scalars().all():
+            parent_names[p.id] = p.name
 
     response = []
     for dept in departments:
@@ -144,14 +170,23 @@ async def list_departments(
         )
         entities_count = len(list(entities_result.scalars().all()))
 
+        # Count children
+        children_result = await db.execute(
+            select(Department).where(Department.parent_id == dept.id)
+        )
+        children_count = len(list(children_result.scalars().all()))
+
         response.append(DepartmentResponse(
             id=dept.id,
             name=dept.name,
             description=dept.description,
             color=dept.color,
             is_active=dept.is_active,
+            parent_id=dept.parent_id,
+            parent_name=parent_names.get(dept.parent_id) if dept.parent_id else None,
             members_count=members_count,
             entities_count=entities_count,
+            children_count=children_count,
             created_at=dept.created_at
         ))
 
@@ -164,17 +199,46 @@ async def create_department(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new department (org admin only)"""
+    """Create a new department.
+
+    - Org admins/owners can create top-level departments
+    - Department leads can create sub-departments under their department
+    """
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(status_code=403, detail="No organization access")
 
-    if not await is_org_admin_or_owner(current_user, org, db):
-        raise HTTPException(status_code=403, detail="Only admins can create departments")
+    is_admin = await is_org_admin_or_owner(current_user, org, db)
+
+    # Check permissions based on whether it's a sub-department
+    if data.parent_id:
+        # Creating sub-department - verify parent exists and user is lead of parent
+        result = await db.execute(
+            select(Department).where(
+                Department.id == data.parent_id,
+                Department.org_id == org.id
+            )
+        )
+        parent_dept = result.scalar_one_or_none()
+        if not parent_dept:
+            raise HTTPException(status_code=404, detail="Parent department not found")
+
+        # Check if user is lead of parent department or org admin
+        is_parent_lead = await is_dept_lead(current_user, data.parent_id, db)
+        if not is_admin and not is_parent_lead:
+            raise HTTPException(
+                status_code=403,
+                detail="Only org admins or department leads can create sub-departments"
+            )
+    else:
+        # Creating top-level department - only org admins
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Only admins can create top-level departments")
 
     department = Department(
         org_id=org.id,
+        parent_id=data.parent_id,
         name=data.name,
         description=data.description,
         color=data.color
@@ -183,14 +247,37 @@ async def create_department(
     await db.commit()
     await db.refresh(department)
 
+    # If a lead creates sub-department, automatically make them lead of the new department
+    if data.parent_id and not is_admin:
+        new_membership = DepartmentMember(
+            department_id=department.id,
+            user_id=current_user.id,
+            role=DeptRole.lead
+        )
+        db.add(new_membership)
+        await db.commit()
+
+    # Get parent name if exists
+    parent_name = None
+    if data.parent_id:
+        result = await db.execute(
+            select(Department).where(Department.id == data.parent_id)
+        )
+        parent = result.scalar_one_or_none()
+        if parent:
+            parent_name = parent.name
+
     return DepartmentResponse(
         id=department.id,
         name=department.name,
         description=department.description,
         color=department.color,
         is_active=department.is_active,
-        members_count=0,
+        parent_id=department.parent_id,
+        parent_name=parent_name,
+        members_count=1 if data.parent_id and not is_admin else 0,
         entities_count=0,
+        children_count=0,
         created_at=department.created_at
     )
 
@@ -227,14 +314,33 @@ async def get_department(
     )
     entities_count = len(list(entities_result.scalars().all()))
 
+    # Count children
+    children_result = await db.execute(
+        select(Department).where(Department.parent_id == dept.id)
+    )
+    children_count = len(list(children_result.scalars().all()))
+
+    # Get parent name
+    parent_name = None
+    if dept.parent_id:
+        parent_result = await db.execute(
+            select(Department).where(Department.id == dept.parent_id)
+        )
+        parent = parent_result.scalar_one_or_none()
+        if parent:
+            parent_name = parent.name
+
     return DepartmentResponse(
         id=dept.id,
         name=dept.name,
         description=dept.description,
         color=dept.color,
         is_active=dept.is_active,
+        parent_id=dept.parent_id,
+        parent_name=parent_name,
         members_count=members_count,
         entities_count=entities_count,
+        children_count=children_count,
         created_at=dept.created_at
     )
 
@@ -543,6 +649,16 @@ async def get_my_departments(
 
     departments = await get_user_departments(current_user, org, db)
 
+    # Pre-fetch parent names
+    parent_ids = [d.parent_id for d in departments if d.parent_id]
+    parent_names = {}
+    if parent_ids:
+        parents_result = await db.execute(
+            select(Department).where(Department.id.in_(parent_ids))
+        )
+        for p in parents_result.scalars().all():
+            parent_names[p.id] = p.name
+
     response = []
     for dept in departments:
         members_result = await db.execute(
@@ -556,14 +672,23 @@ async def get_my_departments(
         )
         entities_count = len(list(entities_result.scalars().all()))
 
+        # Count children
+        children_result = await db.execute(
+            select(Department).where(Department.parent_id == dept.id)
+        )
+        children_count = len(list(children_result.scalars().all()))
+
         response.append(DepartmentResponse(
             id=dept.id,
             name=dept.name,
             description=dept.description,
             color=dept.color,
             is_active=dept.is_active,
+            parent_id=dept.parent_id,
+            parent_name=parent_names.get(dept.parent_id) if dept.parent_id else None,
             members_count=members_count,
             entities_count=entities_count,
+            children_count=children_count,
             created_at=dept.created_at
         ))
 

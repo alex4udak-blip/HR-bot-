@@ -143,6 +143,7 @@ class Department(Base):
 
     id = Column(Integer, primary_key=True)
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     color = Column(String(20), nullable=True)  # For UI display (e.g., "#3B82F6")
@@ -151,6 +152,8 @@ class Department(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     organization = relationship("Organization", back_populates="departments")
+    parent = relationship("Department", remote_side=[id], back_populates="children")
+    children = relationship("Department", back_populates="parent", cascade="all, delete-orphan")
     members = relationship("DepartmentMember", back_populates="department", cascade="all, delete-orphan")
     entities = relationship("Entity", back_populates="department")
 
