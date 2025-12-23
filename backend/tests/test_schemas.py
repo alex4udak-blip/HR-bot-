@@ -7,16 +7,14 @@ from pydantic import ValidationError
 from api.models.schemas import (
     LoginRequest,
     UserResponse,
-    EntityCreate,
-    EntityUpdate,
     ChatUpdate,
     CriterionItem,
     AnalyzeRequest,
-    InviteMemberRequest,
-    OrganizationUpdate,
-    DepartmentCreate,
-    ShareRequest,
 )
+from api.routes.entities import EntityCreate, EntityUpdate
+from api.routes.organizations import InviteMemberRequest, OrganizationUpdate
+from api.routes.departments import DepartmentCreate
+from api.routes.sharing import ShareRequest
 
 
 class TestLoginRequestSchema:
@@ -54,23 +52,24 @@ class TestUserResponseSchema:
     """Test UserResponse schema."""
 
     def test_valid_user_response(self):
-        """Test valid user response."""
+        """Test valid user response with all required fields."""
+        from datetime import datetime
         data = UserResponse(
             id=1,
             email="test@test.com",
             name="Test User",
             role="user",
-            is_active=True
+            is_active=True,
+            telegram_id=None,
+            telegram_username=None,
+            created_at=datetime.now()
         )
         assert data.id == 1
         assert data.email == "test@test.com"
 
     def test_telegram_id_large_value(self):
-        """
-        BUG TEST: telegram_id is BigInteger in DB but int in schema.
-        Large Telegram IDs (> 2^31) might cause issues.
-        """
-        # Telegram IDs can be very large
+        """Test that large Telegram IDs (> 2^31) work correctly."""
+        from datetime import datetime
         large_telegram_id = 5000000000  # 5 billion
 
         data = UserResponse(
@@ -79,10 +78,12 @@ class TestUserResponseSchema:
             name="Test User",
             role="user",
             is_active=True,
-            telegram_id=large_telegram_id
+            telegram_id=large_telegram_id,
+            telegram_username="testuser",
+            created_at=datetime.now()
         )
 
-        # Python int can handle this, but frontend/JSON might have issues
+        # Python int can handle this
         assert data.telegram_id == large_telegram_id
 
 
@@ -158,40 +159,31 @@ class TestCriterionItemSchema:
         assert data.weight == 5  # Default
 
     def test_weight_out_of_range_low(self):
-        """
-        BUG TEST: Weight should be validated to 1-10 range.
-        Currently no validation exists.
-        """
-        # This should raise ValidationError after fix
-        data = CriterionItem(
-            name="Test",
-            description="Test",
-            weight=0  # Below minimum
-        )
-        # Bug: No validation
-        assert data.weight == 0
+        """Weight below 1 should raise ValidationError."""
+        with pytest.raises(ValidationError):
+            CriterionItem(
+                name="Test",
+                description="Test",
+                weight=0  # Below minimum
+            )
 
     def test_weight_out_of_range_high(self):
-        """
-        BUG TEST: Weight should be validated to 1-10 range.
-        """
-        data = CriterionItem(
-            name="Test",
-            description="Test",
-            weight=100  # Above maximum
-        )
-        # Bug: No validation
-        assert data.weight == 100
+        """Weight above 10 should raise ValidationError."""
+        with pytest.raises(ValidationError):
+            CriterionItem(
+                name="Test",
+                description="Test",
+                weight=100  # Above maximum
+            )
 
     def test_negative_weight(self):
-        """Test negative weight (should be invalid)."""
-        data = CriterionItem(
-            name="Test",
-            description="Test",
-            weight=-5
-        )
-        # Bug: No validation
-        assert data.weight == -5
+        """Negative weight should raise ValidationError."""
+        with pytest.raises(ValidationError):
+            CriterionItem(
+                name="Test",
+                description="Test",
+                weight=-5
+            )
 
 
 class TestAnalyzeRequestSchema:
@@ -199,68 +191,53 @@ class TestAnalyzeRequestSchema:
 
     def test_valid_analyze_request(self):
         """Test valid analyze request."""
-        data = AnalyzeRequest(
-            criteria=[
-                {"name": "Test", "description": "Test", "weight": 5}
-            ]
-        )
-        assert len(data.criteria) == 1
+        data = AnalyzeRequest(report_type="detailed")
+        assert data.report_type == "detailed"
+        assert data.include_quotes is True
 
     def test_default_report_type(self):
         """Test default report type."""
-        data = AnalyzeRequest(criteria=[])
+        data = AnalyzeRequest()
         assert data.report_type == "standard"
 
     def test_invalid_report_type(self):
-        """
-        BUG TEST: report_type should be Enum, not arbitrary string.
-        """
-        # Currently accepts any string
-        data = AnalyzeRequest(
-            criteria=[],
-            report_type="invalid_type"
-        )
-        # Bug: No validation - accepts any string
-        assert data.report_type == "invalid_type"
+        """Invalid report_type should raise ValidationError."""
+        with pytest.raises(ValidationError):
+            AnalyzeRequest(report_type="invalid_type")
 
 
 class TestInviteMemberRequestSchema:
     """Test InviteMemberRequest schema validation."""
 
     def test_valid_invite(self):
-        """Test valid invite request."""
+        """Test valid invite request with 8+ character password."""
         data = InviteMemberRequest(
             email="new@test.com",
             name="New User",
-            password="password123",
+            password="password123",  # 11 chars, valid
             role="member"
         )
         assert data.email == "new@test.com"
 
-    def test_weak_password_accepted(self):
-        """
-        BUG TEST: Password should have minimum requirements.
-        Currently accepts any password.
-        """
-        data = InviteMemberRequest(
-            email="new@test.com",
-            name="New User",
-            password="123",  # Very weak password
-            role="member"
-        )
-        # Bug: No password validation
-        assert data.password == "123"
+    def test_weak_password_rejected(self):
+        """Password less than 8 characters should raise ValidationError."""
+        with pytest.raises(ValidationError):
+            InviteMemberRequest(
+                email="new@test.com",
+                name="New User",
+                password="123",  # Too short
+                role="member"
+            )
 
-    def test_empty_password(self):
-        """Test empty password."""
-        data = InviteMemberRequest(
-            email="new@test.com",
-            name="New User",
-            password="",  # Empty password
-            role="member"
-        )
-        # Bug: No validation
-        assert data.password == ""
+    def test_empty_password_rejected(self):
+        """Empty password should raise ValidationError."""
+        with pytest.raises(ValidationError):
+            InviteMemberRequest(
+                email="new@test.com",
+                name="New User",
+                password="",  # Empty
+                role="member"
+            )
 
 
 class TestOrganizationUpdateSchema:
@@ -271,20 +248,16 @@ class TestOrganizationUpdateSchema:
         data = OrganizationUpdate(name="New Org Name")
         assert data.name == "New Org Name"
 
-    def test_empty_name(self):
-        """
-        BUG TEST: Name should not be empty string.
-        """
-        data = OrganizationUpdate(name="")
-        # Bug: No validation for empty string
-        assert data.name == ""
+    def test_empty_name_rejected(self):
+        """Empty name should raise ValidationError."""
+        with pytest.raises(ValidationError):
+            OrganizationUpdate(name="")
 
-    def test_very_long_name(self):
-        """Test very long name."""
+    def test_very_long_name_rejected(self):
+        """Name longer than 255 characters should raise ValidationError."""
         long_name = "A" * 1000
-        data = OrganizationUpdate(name=long_name)
-        # No max_length validation
-        assert len(data.name) == 1000
+        with pytest.raises(ValidationError):
+            OrganizationUpdate(name=long_name)
 
 
 class TestDepartmentCreateSchema:
@@ -300,11 +273,10 @@ class TestDepartmentCreateSchema:
         data = DepartmentCreate(name="Sub Department", parent_id=1)
         assert data.parent_id == 1
 
-    def test_empty_name(self):
-        """Test empty department name."""
-        # Should probably fail but might not have validation
-        data = DepartmentCreate(name="")
-        assert data.name == ""
+    def test_empty_name_rejected(self):
+        """Empty department name should raise ValidationError."""
+        with pytest.raises(ValidationError):
+            DepartmentCreate(name="")
 
 
 class TestShareRequestSchema:
@@ -360,13 +332,10 @@ class TestChatUpdateSchema:
         data = ChatUpdate(custom_name="New Name")
         assert data.custom_name == "New Name"
 
-    def test_chat_type_as_string(self):
-        """
-        BUG TEST: chat_type should be Enum, not arbitrary string.
-        """
-        data = ChatUpdate(chat_type="invalid_type")
-        # Bug: No validation - accepts any string
-        assert data.chat_type == "invalid_type"
+    def test_invalid_chat_type_rejected(self):
+        """Invalid chat_type should raise ValidationError."""
+        with pytest.raises(ValidationError):
+            ChatUpdate(chat_type="invalid_type")
 
 
 class TestEmailValidation:
