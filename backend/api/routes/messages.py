@@ -225,8 +225,8 @@ async def get_local_file(
         file_path = file_path.resolve()
         if not str(file_path).startswith(str(UPLOADS_DIR.resolve())):
             raise HTTPException(status_code=403, detail="Access denied")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid path")
+    except (OSError, ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid path: {str(e)}")
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")

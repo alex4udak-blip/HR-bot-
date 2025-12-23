@@ -163,6 +163,20 @@ async def share_resource(
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Verify both users are in the same organization
+    current_user_org = await get_user_org(current_user, db)
+    if not current_user_org:
+        raise HTTPException(status_code=403, detail="You don't belong to an organization")
+
+    target_user_org_result = await db.execute(
+        select(OrgMember).where(
+            OrgMember.user_id == data.shared_with_id,
+            OrgMember.org_id == current_user_org.id
+        )
+    )
+    if not target_user_org_result.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="Cannot share with users outside your organization")
+
     # Check if already shared
     result = await db.execute(
         select(SharedAccess).where(

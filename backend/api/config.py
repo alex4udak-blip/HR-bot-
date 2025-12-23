@@ -13,7 +13,6 @@ class Settings(BaseSettings):
 
     # JWT Settings - Railway uses SECRET_KEY
     jwt_secret: str = Field(
-        default="change-me-in-production",
         alias="SECRET_KEY"
     )
     jwt_algorithm: str = "HS256"
@@ -53,7 +52,6 @@ class Settings(BaseSettings):
         alias="SUPERADMIN_EMAIL"
     )
     superadmin_password: str = Field(
-        default="changeme",
         alias="SUPERADMIN_PASSWORD"
     )
 
@@ -62,9 +60,18 @@ class Settings(BaseSettings):
         extra = "ignore"
         populate_by_name = True  # Allow both alias and field name
 
+    def validate_required_secrets(self) -> None:
+        """Validate that required secrets are set (no default fallback)"""
+        if not self.jwt_secret or self.jwt_secret == "":
+            raise ValueError("SECRET_KEY environment variable must be set")
+        if not self.superadmin_password or self.superadmin_password == "":
+            raise ValueError("SUPERADMIN_PASSWORD environment variable must be set")
+
 
 # Global settings instance (for bot.py compatibility)
 settings = Settings()
+# Validate required secrets at startup
+settings.validate_required_secrets()
 
 
 @lru_cache()

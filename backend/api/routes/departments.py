@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..database import get_db
 from ..models.database import (
@@ -19,7 +19,7 @@ router = APIRouter()
 # === Pydantic Schemas ===
 
 class DepartmentCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=255)
     description: Optional[str] = None
     color: Optional[str] = None
     parent_id: Optional[int] = None  # For sub-departments
@@ -290,7 +290,7 @@ async def create_department(
         is_active=department.is_active,
         parent_id=department.parent_id,
         parent_name=parent_name,
-        members_count=1 if data.parent_id and not is_admin else 0,
+        members_count=1 if data.parent_id and not is_owner else 0,
         entities_count=0,
         children_count=0,
         created_at=department.created_at

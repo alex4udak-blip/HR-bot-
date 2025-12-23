@@ -38,6 +38,12 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_access_token(data: dict) -> str:
+    """Create JWT access token.
+
+    SECURITY NOTE: Tokens are currently stored in localStorage on the frontend,
+    which is vulnerable to XSS attacks. Future implementation should use httpOnly
+    cookies with CSRF tokens for better security.
+    """
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=settings.jwt_expire_minutes)
     to_encode.update({"exp": expire})

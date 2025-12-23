@@ -37,20 +37,36 @@ from ..services.documents import document_parser
 router = APIRouter()
 
 
-def can_access_chat(user: User, chat: Chat, user_org_id: int = None) -> bool:
+async def can_access_chat(user: User, chat: Chat, user_org_id: int = None, db: AsyncSession = None) -> bool:
     """Check if user can access this chat.
 
     Args:
         user: Current user
         chat: Chat to check access for
         user_org_id: User's organization ID (required for org-based access)
+        db: Database session (required for SharedAccess check)
     """
     if user.role == UserRole.SUPERADMIN:
         return True
     # Check org membership if org_id is provided
     if user_org_id and chat.org_id != user_org_id:
         return False
-    return chat.owner_id == user.id
+    # Check ownership
+    if chat.owner_id == user.id:
+        return True
+    # Check SharedAccess if db provided
+    if db:
+        shared_result = await db.execute(
+            select(SharedAccess).where(
+                SharedAccess.resource_type == ResourceType.chat,
+                SharedAccess.resource_id == chat.id,
+                SharedAccess.shared_with_id == user.id,
+                or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+            )
+        )
+        if shared_result.scalar_one_or_none():
+            return True
+    return False
 
 
 @router.get("/types", response_model=List[Dict[str, Any]])
@@ -83,6 +99,8 @@ async def get_chats(
     user: User = Depends(get_current_user),
     search: str = Query(None),
     chat_type: str = Query(None, description="Filter by chat type"),
+    limit: int = Query(100, le=200),
+    offset: int = Query(0, ge=0),
 ):
     # Merge detached user into current session
     user = await db.merge(user)
@@ -152,6 +170,7 @@ async def get_chats(
     if chat_type:
         query = query.where(Chat.chat_type == chat_type)
     query = query.order_by(Chat.last_activity.desc())
+    query = query.offset(offset).limit(limit)
 
     result = await db.execute(query)
     chats = result.scalars().all()
@@ -214,7 +233,7 @@ async def get_chat(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat, org.id):
+    if not await can_access_chat(user, chat, org.id, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     msg_count = await db.execute(
@@ -272,7 +291,7 @@ async def update_chat(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat, org.id):
+    if not await can_access_chat(user, chat, org.id, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     if data.custom_name is not None:
@@ -343,7 +362,7 @@ async def clear_messages(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat, org.id):
+    if not await can_access_chat(user, chat, org.id, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     await db.execute(Message.__table__.delete().where(Message.chat_id == chat_id))
@@ -372,8 +391,35 @@ async def delete_chat(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat, org.id):
+    if not await can_access_chat(user, chat, org.id, db):
         raise HTTPException(status_code=403, detail="Access denied")
+
+    # Check delete permissions (require ownership or full access)
+    can_delete = False
+    if user.role == UserRole.SUPERADMIN:
+        can_delete = True
+    else:
+        user_role = await get_user_org_role(user, org.id, db)
+        if user_role == OrgRole.owner:
+            can_delete = True
+        elif chat.owner_id == user.id:
+            can_delete = True  # Owner of chat
+        else:
+            # Check if shared with full access
+            shared_result = await db.execute(
+                select(SharedAccess).where(
+                    SharedAccess.resource_type == ResourceType.chat,
+                    SharedAccess.resource_id == chat_id,
+                    SharedAccess.shared_with_id == user.id,
+                    SharedAccess.access_level == AccessLevel.full,
+                    or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+                )
+            )
+            if shared_result.scalar_one_or_none():
+                can_delete = True
+
+    if not can_delete:
+        raise HTTPException(status_code=403, detail="No delete permission for this chat")
 
     # Soft delete - just set deleted_at timestamp
     chat.deleted_at = datetime.utcnow()
@@ -456,7 +502,7 @@ async def restore_chat(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Deleted chat not found")
-    if not can_access_chat(user, chat, org.id):
+    if not await can_access_chat(user, chat, org.id, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     chat.deleted_at = None
@@ -482,7 +528,7 @@ async def permanent_delete_chat(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat, org.id):
+    if not await can_access_chat(user, chat, org.id, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Delete all related data
@@ -863,7 +909,7 @@ def parse_html_export(html_content: str) -> List[dict]:
     parser = TelegramHTMLParser()
     try:
         parser.feed(html_content)
-    except Exception as e:
+    except (ValueError, AssertionError, MemoryError) as e:
         logger.error(f"HTML parse error: {e}")
         return []
 
@@ -1016,7 +1062,7 @@ async def import_telegram_history(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat, org.id):
+    if not await can_access_chat(user, chat, org.id, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Read file content
@@ -1103,7 +1149,7 @@ async def import_telegram_history(
         raise HTTPException(status_code=400, detail=f"Неверный формат JSON: {str(e)}")
     except HTTPException:
         raise
-    except Exception as e:
+    except (UnicodeDecodeError, OSError, KeyError, ValueError) as e:
         logger.error(f"File read error: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"Ошибка чтения файла: {str(e)}")
 
@@ -1265,7 +1311,7 @@ async def import_telegram_history(
                                     logger.error(f"Auto-parse error: {e}")
                                     parse_status = "failed"
                                     parse_error = str(e)
-                    except Exception as e:
+                    except (KeyError, OSError, RuntimeError, zipfile.BadZipFile) as e:
                         logger.error(f"Error extracting media {media_file}: {e}")
             else:
                 # JSON format - use original extract functions
@@ -1354,8 +1400,8 @@ async def import_telegram_history(
     if zip_file:
         try:
             zip_file.close()
-        except Exception:
-            pass
+        except (OSError, RuntimeError):
+            pass  # Ignore errors when closing ZIP file
 
     # Update chat's last_activity if we imported newer messages
     if imported_count > 0:
@@ -1439,7 +1485,7 @@ async def repair_video_notes(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat, org.id):
+    if not await can_access_chat(user, chat, org.id, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Read the ZIP file
@@ -1542,7 +1588,7 @@ async def cleanup_bad_import(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat, org.id):
+    if not await can_access_chat(user, chat, org.id, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     deleted_count = 0
