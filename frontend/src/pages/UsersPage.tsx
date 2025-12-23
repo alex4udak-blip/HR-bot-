@@ -11,8 +11,6 @@ import {
   X,
   Crown,
   Building2,
-  Eye,
-  EyeOff,
   Loader2,
   Link as LinkIcon,
   Copy,
@@ -20,7 +18,7 @@ import {
   Clock,
   Send
 } from 'lucide-react';
-import { getUsers, createUser, deleteUser, getOrgMembers, inviteMember, removeMember, updateMemberRole, getCurrentOrganization, getMyOrgRole, getDepartments, createInvitation, getInvitations, revokeInvitation, type Department, type DeptRole, type Invitation } from '@/services/api';
+import { getUsers, createUser, deleteUser, getOrgMembers, removeMember, updateMemberRole, getCurrentOrganization, getMyOrgRole, getDepartments, createInvitation, getInvitations, revokeInvitation, type Department, type DeptRole, type Invitation } from '@/services/api';
 import type { OrgMember, OrgRole, Organization } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';

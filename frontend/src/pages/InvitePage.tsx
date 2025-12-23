@@ -4,28 +4,18 @@ import { motion } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, User, Sparkles, CheckCircle, XCircle, Send, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
-import { validateInvitation, acceptInvitation } from '@/services/api';
+import { validateInvitation, acceptInvitation, type InvitationValidation } from '@/services/api';
 import BackgroundEffects from '@/components/BackgroundEffects';
-
-interface InvitationData {
-  valid: boolean;
-  expired: boolean;
-  used: boolean;
-  email: string | null;
-  name: string | null;
-  org_name: string | null;
-  org_role: string;
-}
 
 export default function InvitePage() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
-  const { setToken, setUser } = useAuthStore();
+  const { setToken } = useAuthStore();
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [invitation, setInvitation] = useState<InvitationData | null>(null);
+  const [invitation, setInvitation] = useState<InvitationValidation | null>(null);
   const [telegramBindUrl, setTelegramBindUrl] = useState<string | null>(null);
   const [registrationComplete, setRegistrationComplete] = useState(false);
 
@@ -41,11 +31,11 @@ export default function InvitePage() {
       validateInvitation(token)
         .then(data => {
           setInvitation(data);
-          if (data.email) setForm(f => ({ ...f, email: data.email }));
-          if (data.name) setForm(f => ({ ...f, name: data.name }));
+          if (data.email) setForm(f => ({ ...f, email: data.email || '' }));
+          if (data.name) setForm(f => ({ ...f, name: data.name || '' }));
         })
         .catch(() => {
-          setInvitation({ valid: false, expired: false, used: false, email: null, name: null, org_name: null, org_role: 'member' });
+          setInvitation({ valid: false, expired: false, used: false, org_role: 'member' });
         })
         .finally(() => setLoading(false));
     }
@@ -73,7 +63,7 @@ export default function InvitePage() {
         password: form.password
       });
 
-      setTelegramBindUrl(response.telegram_bind_url);
+      setTelegramBindUrl(response.telegram_bind_url || null);
       setRegistrationComplete(true);
       toast.success('Регистрация завершена!');
 
