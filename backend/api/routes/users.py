@@ -4,7 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
 
 from ..database import get_db
-from ..models.database import User, UserRole, Chat, DepartmentMember, OrgMember, SharedAccess
+from ..models.database import (
+    User, UserRole, Chat, DepartmentMember, OrgMember, SharedAccess,
+    Message, ChatCriteria, AnalysisHistory, AIConversation, Entity,
+    EntityTransfer, CallRecording, Invitation
+)
 from ..models.schemas import UserCreate, UserUpdate, UserResponse
 from ..services.auth import get_superadmin, hash_password
 
@@ -129,11 +133,27 @@ async def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Delete related records first (cascade doesn't work well with async SQLAlchemy)
+    # Delete/nullify all related records first
+    from sqlalchemy import update
+
+    # Delete records where user is required (NOT NULL)
     await db.execute(delete(DepartmentMember).where(DepartmentMember.user_id == user_id))
     await db.execute(delete(OrgMember).where(OrgMember.user_id == user_id))
     await db.execute(delete(SharedAccess).where(SharedAccess.shared_with_id == user_id))
     await db.execute(delete(SharedAccess).where(SharedAccess.shared_by_id == user_id))
+    await db.execute(delete(ChatCriteria).where(ChatCriteria.user_id == user_id))
+    await db.execute(delete(AnalysisHistory).where(AnalysisHistory.user_id == user_id))
+    await db.execute(delete(AIConversation).where(AIConversation.user_id == user_id))
+
+    # Nullify optional foreign keys
+    await db.execute(update(Chat).where(Chat.owner_id == user_id).values(owner_id=None))
+    await db.execute(update(CallRecording).where(CallRecording.owner_id == user_id).values(owner_id=None))
+    await db.execute(update(Entity).where(Entity.created_by == user_id).values(created_by=None))
+    await db.execute(update(EntityTransfer).where(EntityTransfer.from_user_id == user_id).values(from_user_id=None))
+    await db.execute(update(EntityTransfer).where(EntityTransfer.to_user_id == user_id).values(to_user_id=None))
+    await db.execute(update(OrgMember).where(OrgMember.invited_by == user_id).values(invited_by=None))
+    await db.execute(update(Invitation).where(Invitation.invited_by_id == user_id).values(invited_by_id=None))
+    await db.execute(update(Invitation).where(Invitation.used_by_id == user_id).values(used_by_id=None))
 
     await db.delete(user)
     await db.commit()
