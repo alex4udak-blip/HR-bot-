@@ -20,8 +20,8 @@ from pydantic import BaseModel, EmailStr
 from ..database import get_db
 from ..models.database import (
     User, UserRole, Organization, OrgMember, OrgRole,
-    Entity, Chat, CallRecording, ChatCriteria, AnalysisHistory,
-    AIConversation, EntityTransfer, Invitation,
+    Entity, Chat, CallRecording, AnalysisHistory,
+    AIConversation, EntityTransfer, Invitation, CriteriaPreset,
     Department, DepartmentMember, DeptRole, SharedAccess
 )
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, hash_password
@@ -408,7 +408,6 @@ async def remove_member(
         await db.execute(delete(DepartmentMember).where(DepartmentMember.user_id == user_id))
         await db.execute(delete(SharedAccess).where(SharedAccess.shared_with_id == user_id))
         await db.execute(delete(SharedAccess).where(SharedAccess.shared_by_id == user_id))
-        await db.execute(delete(ChatCriteria).where(ChatCriteria.user_id == user_id))
         await db.execute(delete(AnalysisHistory).where(AnalysisHistory.user_id == user_id))
         await db.execute(delete(AIConversation).where(AIConversation.user_id == user_id))
 
@@ -421,6 +420,7 @@ async def remove_member(
         await db.execute(update(OrgMember).where(OrgMember.invited_by == user_id).values(invited_by=None))
         await db.execute(update(Invitation).where(Invitation.invited_by_id == user_id).values(invited_by_id=None))
         await db.execute(update(Invitation).where(Invitation.used_by_id == user_id).values(used_by_id=None))
+        await db.execute(update(CriteriaPreset).where(CriteriaPreset.created_by == user_id).values(created_by=None))
 
         await db.delete(target_user)
 
