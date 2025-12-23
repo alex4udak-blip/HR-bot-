@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
 from sqlalchemy.orm import selectinload
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 from ..database import get_db
 from ..models.database import (
@@ -48,7 +48,7 @@ class OrganizationResponse(BaseModel):
 
 
 class OrganizationUpdate(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     settings: Optional[dict] = None
 
 
@@ -68,7 +68,7 @@ class OrgMemberResponse(BaseModel):
 class InviteMemberRequest(BaseModel):
     email: EmailStr
     name: str
-    password: str
+    password: str = Field(min_length=8)
     role: str = "member"  # owner, admin, member
     department_ids: Optional[List[int]] = None  # Departments to add user to
     department_role: str = "member"  # Role in departments: lead, member
@@ -391,17 +391,18 @@ async def remove_member(
 
     target_user = membership.user
 
-    # Remove membership
-    await db.delete(membership)
-
-    # Check if user is member of any other orgs
+    # Check if user is member of any other orgs BEFORE deleting
+    # This prevents race condition where count happens after delete
     result = await db.execute(
         select(func.count(OrgMember.id)).where(OrgMember.user_id == user_id)
     )
     other_memberships = result.scalar()
 
-    # If no other memberships and not superadmin, delete user entirely
-    if other_memberships == 0 and target_user.role != UserRole.SUPERADMIN:
+    # Remove membership
+    await db.delete(membership)
+
+    # If no other memberships (count was 1, just this membership) and not superadmin, delete user entirely
+    if other_memberships <= 1 and target_user.role != UserRole.SUPERADMIN:
         from sqlalchemy import update
 
         # Delete records where user is required (NOT NULL)
@@ -426,7 +427,7 @@ async def remove_member(
 
     await db.commit()
 
-    return {"success": True, "user_deleted": other_memberships == 0}
+    return {"success": True, "user_deleted": other_memberships <= 1}
 
 
 @router.get("/current/my-role")

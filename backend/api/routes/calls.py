@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Request, Query
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -80,8 +80,8 @@ class CallResponse(BaseModel):
 async def list_calls(
     entity_id: Optional[int] = None,
     status: Optional[CallStatus] = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, le=100),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -474,11 +474,38 @@ async def delete_call(
     if not call:
         raise HTTPException(404, "Call not found")
 
+    # Check delete permissions
+    can_delete = False
+    if current_user.role == UserRole.SUPERADMIN:
+        can_delete = True
+    else:
+        user_role = await get_user_org_role(current_user, org.id, db)
+        if user_role == OrgRole.owner:
+            can_delete = True
+        elif call.owner_id == current_user.id:
+            can_delete = True  # Owner of record
+        else:
+            # Check if shared with full access
+            shared_result = await db.execute(
+                select(SharedAccess).where(
+                    SharedAccess.resource_type == ResourceType.call,
+                    SharedAccess.resource_id == call_id,
+                    SharedAccess.shared_with_id == current_user.id,
+                    SharedAccess.access_level == AccessLevel.full,
+                    or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+                )
+            )
+            if shared_result.scalar_one_or_none():
+                can_delete = True
+
+    if not can_delete:
+        raise HTTPException(403, "No delete permission for this call")
+
     # Delete the audio file if it exists
     if call.audio_file_path and os.path.exists(call.audio_file_path):
         try:
             os.remove(call.audio_file_path)
-        except Exception as e:
+        except OSError as e:
             logger.warning(f"Failed to delete audio file: {e}")
 
     await db.delete(call)
@@ -631,6 +658,33 @@ async def update_call(
 
     if not call:
         raise HTTPException(404, "Call not found")
+
+    # Check edit permissions (owner or edit/full access via SharedAccess)
+    can_edit = False
+    if current_user.role == UserRole.SUPERADMIN:
+        can_edit = True
+    else:
+        user_role = await get_user_org_role(current_user, org.id, db)
+        if user_role == OrgRole.owner:
+            can_edit = True
+        elif call.owner_id == current_user.id:
+            can_edit = True  # Owner of record
+        else:
+            # Check if shared with edit or full access
+            shared_result = await db.execute(
+                select(SharedAccess).where(
+                    SharedAccess.resource_type == ResourceType.call,
+                    SharedAccess.resource_id == call_id,
+                    SharedAccess.shared_with_id == current_user.id,
+                    SharedAccess.access_level.in_([AccessLevel.edit, AccessLevel.full]),
+                    or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+                )
+            )
+            if shared_result.scalar_one_or_none():
+                can_edit = True
+
+    if not can_edit:
+        raise HTTPException(403, "No edit permission for this call")
 
     # Update title if provided
     if data.title is not None:

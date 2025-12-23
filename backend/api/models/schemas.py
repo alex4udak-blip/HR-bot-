@@ -1,6 +1,7 @@
 from datetime import datetime
-from typing import Optional, List, Any
-from pydantic import BaseModel, EmailStr
+from typing import Optional, List, Any, Literal
+from pydantic import BaseModel, EmailStr, Field
+from .database import ChatType
 
 
 # Auth
@@ -109,7 +110,7 @@ class ChatResponse(BaseModel):
 
 class ChatUpdate(BaseModel):
     custom_name: Optional[str] = None
-    chat_type: Optional[str] = None
+    chat_type: Optional[ChatType] = None
     custom_type_name: Optional[str] = None
     custom_type_description: Optional[str] = None
     owner_id: Optional[int] = None
@@ -149,7 +150,7 @@ class ParticipantResponse(BaseModel):
 # Criteria
 class CriterionItem(BaseModel):
     name: str
-    weight: int = 5  # 1-10
+    weight: int = Field(default=5, ge=1, le=10)  # 1-10
     description: Optional[str] = None
     category: Optional[str] = None  # basic, red_flag, green_flag
 
@@ -215,7 +216,7 @@ class AIConversationResponse(BaseModel):
 
 # Analysis & Reports
 class AnalyzeRequest(BaseModel):
-    report_type: str = "standard"  # quick, standard, detailed
+    report_type: Literal["standard", "detailed", "summary"] = "standard"
     include_quotes: bool = True
     include_scores: bool = True
     include_red_flags: bool = True

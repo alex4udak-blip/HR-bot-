@@ -578,6 +578,33 @@ async def delete_entity(
     if not entity:
         raise HTTPException(404, "Entity not found")
 
+    # Check delete permissions
+    can_delete = False
+    if current_user.role == UserRole.SUPERADMIN:
+        can_delete = True
+    else:
+        user_role = await get_user_org_role(current_user, org.id, db)
+        if user_role == OrgRole.owner:
+            can_delete = True
+        elif entity.created_by == current_user.id:
+            can_delete = True  # Owner of record
+        else:
+            # Check if shared with full access
+            shared_result = await db.execute(
+                select(SharedAccess).where(
+                    SharedAccess.resource_type == ResourceType.entity,
+                    SharedAccess.resource_id == entity_id,
+                    SharedAccess.shared_with_id == current_user.id,
+                    SharedAccess.access_level == AccessLevel.full,
+                    or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+                )
+            )
+            if shared_result.scalar_one_or_none():
+                can_delete = True
+
+    if not can_delete:
+        raise HTTPException(403, "No delete permission for this entity")
+
     await db.delete(entity)
     await db.commit()
     return {"success": True}
