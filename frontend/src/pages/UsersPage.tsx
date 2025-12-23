@@ -262,13 +262,21 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
                     </span>
                   )}
 
-                  {canManageUsers && !isMe && member.role !== 'owner' && (
-                    <button
-                      onClick={() => handleRemoveMember(member)}
-                      className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                  {canManageUsers && !isMe && (
+                    // Owner can delete admins/members, admin can only delete members
+                    // Superadmin can delete anyone
+                    (currentUser?.role === 'superadmin' ||
+                     (myRole === 'owner' && member.role !== 'owner') ||
+                     (myRole === 'admin' && member.role === 'member')
+                    ) && (
+                      <button
+                        onClick={() => handleRemoveMember(member)}
+                        className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors"
+                        title={`Удалить ${member.user_name}`}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )
                   )}
                 </div>
               </div>
