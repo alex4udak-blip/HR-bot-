@@ -85,6 +85,18 @@ async def get_current_org(
 ) -> Organization:
     """Get current user's organization or raise 403."""
     user = await db.merge(user)
+
+    # Superadmin can access any organization
+    if user.role == UserRole.SUPERADMIN:
+        # Return first available organization for superadmin
+        result = await db.execute(
+            select(Organization).order_by(Organization.created_at).limit(1)
+        )
+        org = result.scalar_one_or_none()
+        if not org:
+            raise HTTPException(status_code=404, detail="No organizations exist")
+        return org
+
     org = await get_user_org(user, db)
     if not org:
         raise HTTPException(status_code=403, detail="No organization access")
@@ -156,10 +168,10 @@ async def get_current_organization(
 async def update_organization(
     data: OrganizationUpdate,
     db: AsyncSession = Depends(get_db),
-    auth: tuple = Depends(require_org_admin)
+    auth: tuple = Depends(require_org_owner)
 ):
-    """Update organization settings (admin/owner only)."""
-    user, org, role = auth
+    """Update organization settings (owner only)."""
+    user, org = auth
 
     if data.name:
         org.name = data.name

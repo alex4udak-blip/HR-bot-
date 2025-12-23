@@ -45,6 +45,12 @@ class ShareResponse(BaseModel):
         from_attributes = True
 
 
+class UpdateShareRequest(BaseModel):
+    access_level: AccessLevel
+    note: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+
 class UserSimple(BaseModel):
     id: int
     name: str
@@ -55,6 +61,20 @@ class UserSimple(BaseModel):
 
 
 # === Helper functions ===
+
+async def resource_exists(resource_type: ResourceType, resource_id: int, db: AsyncSession) -> bool:
+    """Check if a resource exists"""
+    if resource_type == ResourceType.chat:
+        result = await db.execute(select(Chat).where(Chat.id == resource_id))
+        return result.scalar_one_or_none() is not None
+    elif resource_type == ResourceType.entity:
+        result = await db.execute(select(Entity).where(Entity.id == resource_id))
+        return result.scalar_one_or_none() is not None
+    elif resource_type == ResourceType.call:
+        result = await db.execute(select(CallRecording).where(CallRecording.id == resource_id))
+        return result.scalar_one_or_none() is not None
+    return False
+
 
 async def can_share_resource(user: User, resource_type: ResourceType, resource_id: int, db: AsyncSession) -> bool:
     """Check if user can share a resource (must own it or have full access)"""
@@ -153,31 +173,21 @@ async def share_resource(
     """Share a resource with another user"""
     current_user = await db.merge(current_user)
 
+    # Check if resource exists first (before permission check)
+    if not await resource_exists(data.resource_type, data.resource_id, db):
+        raise HTTPException(status_code=404, detail="Resource not found")
+
     # Check if user can share this resource
     if not await can_share_resource(current_user, data.resource_type, data.resource_id, db):
         raise HTTPException(status_code=403, detail="You don't have permission to share this resource")
 
-    # Check if target user exists and is in same org
+    # Check if target user exists
     result = await db.execute(select(User).where(User.id == data.shared_with_id))
     target_user = result.scalar_one_or_none()
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Verify both users are in the same organization
-    current_user_org = await get_user_org(current_user, db)
-    if not current_user_org:
-        raise HTTPException(status_code=403, detail="You don't belong to an organization")
-
-    target_user_org_result = await db.execute(
-        select(OrgMember).where(
-            OrgMember.user_id == data.shared_with_id,
-            OrgMember.org_id == current_user_org.id
-        )
-    )
-    if not target_user_org_result.scalar_one_or_none():
-        raise HTTPException(status_code=403, detail="Cannot share with users outside your organization")
-
-    # Check if already shared
+    # Check if already shared (before org check to allow updates)
     result = await db.execute(
         select(SharedAccess).where(
             SharedAccess.resource_type == data.resource_type,
@@ -195,6 +205,20 @@ async def share_resource(
         await db.refresh(existing)
         share = existing
     else:
+        # Verify both users are in the same organization (only for new shares)
+        current_user_org = await get_user_org(current_user, db)
+        if not current_user_org:
+            raise HTTPException(status_code=403, detail="You don't belong to an organization")
+
+        target_user_org_result = await db.execute(
+            select(OrgMember).where(
+                OrgMember.user_id == data.shared_with_id,
+                OrgMember.org_id == current_user_org.id
+            )
+        )
+        if not target_user_org_result.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Cannot share with users outside your organization")
+
         # Create new share
         share = SharedAccess(
             resource_type=data.resource_type,
@@ -220,6 +244,60 @@ async def share_resource(
         shared_by_name=current_user.name,
         shared_with_id=target_user.id,
         shared_with_name=target_user.name,
+        access_level=share.access_level,
+        note=share.note,
+        expires_at=share.expires_at,
+        created_at=share.created_at
+    )
+
+
+@router.patch("/{share_id}", response_model=ShareResponse)
+async def update_share(
+    share_id: int,
+    data: UpdateShareRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a share's access level and other properties"""
+    current_user = await db.merge(current_user)
+
+    result = await db.execute(select(SharedAccess).where(SharedAccess.id == share_id))
+    share = result.scalar_one_or_none()
+
+    if not share:
+        raise HTTPException(status_code=404, detail="Share not found")
+
+    # Only the person who shared or superadmin can update
+    if share.shared_by_id != current_user.id and current_user.role != UserRole.SUPERADMIN:
+        raise HTTPException(status_code=403, detail="You can only update shares you created")
+
+    # Update the share
+    share.access_level = data.access_level
+    if data.note is not None:
+        share.note = data.note
+    if data.expires_at is not None:
+        share.expires_at = data.expires_at
+
+    await db.commit()
+    await db.refresh(share)
+
+    # Get user details for response
+    by_result = await db.execute(select(User).where(User.id == share.shared_by_id))
+    by_user = by_result.scalar_one_or_none()
+    with_result = await db.execute(select(User).where(User.id == share.shared_with_id))
+    with_user = with_result.scalar_one_or_none()
+
+    resource_name = await get_resource_name(share.resource_type, share.resource_id, db)
+
+    return ShareResponse(
+        id=share.id,
+        resource_type=share.resource_type,
+        resource_id=share.resource_id,
+        resource_name=resource_name,
+        shared_by_id=share.shared_by_id,
+        shared_by_name=by_user.name if by_user else "Unknown",
+        shared_with_id=share.shared_with_id,
+        shared_with_name=with_user.name if with_user else "Unknown",
         access_level=share.access_level,
         note=share.note,
         expires_at=share.expires_at,

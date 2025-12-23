@@ -102,6 +102,20 @@ async def create_invitation(
     if org_role in (OrgRole.owner, OrgRole.admin) and role != OrgRole.owner:
         raise HTTPException(status_code=403, detail="Only owner can create owner/admin invitations")
 
+    # Check if email is already a member of the organization
+    if data.email:
+        result = await db.execute(select(User).where(User.email == data.email))
+        existing_user = result.scalar_one_or_none()
+        if existing_user:
+            result = await db.execute(
+                select(OrgMember).where(
+                    OrgMember.org_id == org.id,
+                    OrgMember.user_id == existing_user.id
+                )
+            )
+            if result.scalar_one_or_none():
+                raise HTTPException(status_code=400, detail="User is already a member of this organization")
+
     # Get user's department IDs (for admin restriction)
     user_dept_result = await db.execute(
         select(DepartmentMember.department_id).where(

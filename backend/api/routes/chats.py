@@ -69,6 +69,61 @@ async def can_access_chat(user: User, chat: Chat, user_org_id: int = None, db: A
     return False
 
 
+async def check_chat_modification_access(
+    user: User,
+    chat: Chat,
+    user_org_id: int,
+    db: AsyncSession,
+    require_full: bool = False
+) -> bool:
+    """Check if user has permission to modify this chat.
+
+    Args:
+        user: Current user
+        chat: Chat to check access for
+        user_org_id: User's organization ID
+        db: Database session
+        require_full: If True, require 'full' access level. If False, 'edit' or 'full' is enough.
+
+    Returns:
+        True if user has required access level, False otherwise
+    """
+    # Superadmin can do anything
+    if user.role == UserRole.SUPERADMIN:
+        return True
+
+    # Org owner can do anything in their org
+    user_role = await get_user_org_role(user, user_org_id, db)
+    if user_role == OrgRole.owner:
+        return True
+
+    # Chat owner can do anything
+    if chat.owner_id == user.id:
+        return True
+
+    # Check SharedAccess
+    shared_result = await db.execute(
+        select(SharedAccess).where(
+            SharedAccess.resource_type == ResourceType.chat,
+            SharedAccess.resource_id == chat.id,
+            SharedAccess.shared_with_id == user.id,
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+        )
+    )
+    shared_access = shared_result.scalar_one_or_none()
+
+    if not shared_access:
+        return False
+
+    # Check access level
+    if require_full:
+        # Only 'full' access allowed
+        return shared_access.access_level == AccessLevel.full
+    else:
+        # 'edit' or 'full' access allowed
+        return shared_access.access_level in (AccessLevel.edit, AccessLevel.full)
+
+
 @router.get("/types", response_model=List[Dict[str, Any]])
 async def get_chat_types():
     """Get all available chat types."""
@@ -291,7 +346,8 @@ async def update_chat(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not await can_access_chat(user, chat, org.id, db):
+    # Check if user has edit or full access
+    if not await check_chat_modification_access(user, chat, org.id, db, require_full=False):
         raise HTTPException(status_code=403, detail="Access denied")
 
     if data.custom_name is not None:
@@ -362,7 +418,8 @@ async def clear_messages(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not await can_access_chat(user, chat, org.id, db):
+    # Check if user has full access (destructive operation)
+    if not await check_chat_modification_access(user, chat, org.id, db, require_full=True):
         raise HTTPException(status_code=403, detail="Access denied")
 
     await db.execute(Message.__table__.delete().where(Message.chat_id == chat_id))
@@ -502,7 +559,8 @@ async def restore_chat(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Deleted chat not found")
-    if not await can_access_chat(user, chat, org.id, db):
+    # Check if user has edit or full access
+    if not await check_chat_modification_access(user, chat, org.id, db, require_full=False):
         raise HTTPException(status_code=403, detail="Access denied")
 
     chat.deleted_at = None
@@ -528,7 +586,8 @@ async def permanent_delete_chat(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not await can_access_chat(user, chat, org.id, db):
+    # Check if user has full access (destructive operation)
+    if not await check_chat_modification_access(user, chat, org.id, db, require_full=True):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Delete all related data

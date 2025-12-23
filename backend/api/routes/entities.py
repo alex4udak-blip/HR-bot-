@@ -96,6 +96,83 @@ class TransferResponse(BaseModel):
         from_attributes = True
 
 
+# === Helper Functions ===
+
+async def check_entity_access(
+    entity: Entity,
+    user: User,
+    org_id: int,
+    db: AsyncSession,
+    required_level: Optional[AccessLevel] = None
+) -> bool:
+    """
+    Check if user has access to entity.
+
+    Args:
+        entity: Entity to check access for
+        user: Current user
+        org_id: Organization ID
+        db: Database session
+        required_level: Minimum access level required (None for read, edit for update, full for delete/transfer)
+
+    Returns:
+        True if user has required access, False otherwise
+    """
+    # Superadmin has access to everything
+    if user.role == UserRole.SUPERADMIN:
+        return True
+
+    # Org owner has full access
+    user_role = await get_user_org_role(user, org_id, db)
+    if user_role == OrgRole.owner:
+        return True
+
+    # Entity owner has full access
+    if entity.created_by == user.id:
+        return True
+
+    # Check department membership - members can view entities in their department
+    # but cannot edit/delete/transfer unless they have explicit ownership or shared access
+    if entity.department_id:
+        dept_membership_result = await db.execute(
+            select(DepartmentMember).where(
+                DepartmentMember.user_id == user.id,
+                DepartmentMember.department_id == entity.department_id
+            )
+        )
+        if dept_membership_result.scalar_one_or_none():
+            # Department members can only view, not edit/delete/transfer
+            if required_level is None:
+                return True
+
+    # Check SharedAccess
+    shared_result = await db.execute(
+        select(SharedAccess).where(
+            SharedAccess.resource_type == ResourceType.entity,
+            SharedAccess.resource_id == entity.id,
+            SharedAccess.shared_with_id == user.id,
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+        )
+    )
+    shared_access = shared_result.scalar_one_or_none()
+
+    if not shared_access:
+        return False
+
+    # Check access level
+    if required_level is None:
+        # Any access level allows read
+        return True
+    elif required_level == AccessLevel.edit:
+        # Edit requires edit or full
+        return shared_access.access_level in [AccessLevel.edit, AccessLevel.full]
+    elif required_level == AccessLevel.full:
+        # Full operations require full access
+        return shared_access.access_level == AccessLevel.full
+
+    return False
+
+
 # === Routes ===
 
 @router.get("")
@@ -161,7 +238,7 @@ async def list_entities(
                     Entity.created_by == current_user.id,
                     Entity.id.in_(shared_ids_query)
                 ]
-                # Admin/member see entities in their departments
+                # Department members can view all entities in their departments
                 if user_dept_ids:
                     conditions.append(Entity.department_id.in_(user_dept_ids))
 
@@ -345,6 +422,11 @@ async def get_entity(
     entity = result.scalar_one_or_none()
 
     if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check if user has access to view this entity
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
         raise HTTPException(404, "Entity not found")
 
     # Load related data
@@ -631,6 +713,11 @@ async def transfer_entity(
     if not entity:
         raise HTTPException(404, "Entity not found")
 
+    # Check transfer permissions - requires full access or ownership
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=AccessLevel.full)
+    if not has_access:
+        raise HTTPException(403, "No transfer permission for this entity")
+
     # Get current user's department (first one if multiple)
     from_dept_id = None
     user_dept_result = await db.execute(
@@ -692,6 +779,11 @@ async def link_chat_to_entity(
     if not entity:
         raise HTTPException(404, "Entity not found")
 
+    # Check edit permissions - requires edit or full access
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=AccessLevel.edit)
+    if not has_access:
+        raise HTTPException(403, "No edit permission for this entity")
+
     # Get and update chat (must belong to same org)
     chat_result = await db.execute(
         select(Chat).where(Chat.id == chat_id, Chat.org_id == org.id)
@@ -718,6 +810,19 @@ async def unlink_chat_from_entity(
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(403, "No organization access")
+
+    # Verify entity exists and user has edit access
+    entity_result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = entity_result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check edit permissions - requires edit or full access
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=AccessLevel.edit)
+    if not has_access:
+        raise HTTPException(403, "No edit permission for this entity")
 
     chat_result = await db.execute(
         select(Chat).where(
