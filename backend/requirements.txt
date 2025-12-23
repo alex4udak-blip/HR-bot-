@@ -48,5 +48,8 @@ email-validator>=2.1.0
 aiofiles>=23.2.1
 httpx>=0.26.0
 
+# Security
+slowapi>=0.1.9
+
 # Redis (for call recording queue)
 redis>=5.0.0
