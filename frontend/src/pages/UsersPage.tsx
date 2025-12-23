@@ -27,6 +27,7 @@ export default function UsersPage() {
     queryKey: ['users'],
     queryFn: getUsers,
     enabled: currentUser?.role === 'superadmin',
+    refetchOnMount: 'always',
   });
 
   const createMutation = useMutation({

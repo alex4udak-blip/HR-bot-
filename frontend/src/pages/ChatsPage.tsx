@@ -68,14 +68,13 @@ export default function ChatsPage() {
     queryKey: ['chats'],
     queryFn: getChats,
     refetchInterval: 30000, // Auto-refresh every 30 seconds
+    refetchOnMount: 'always', // Always fetch fresh data when navigating to this page
   });
 
-  // Sync chats to store only when data changes (compare by length to avoid infinite loop)
+  // Sync chats to store when data changes (use dataUpdatedAt to trigger on any update)
   useEffect(() => {
-    if (chats.length > 0) {
-      setChats(chats);
-    }
-  }, [chats.length, setChats]);
+    setChats(chats);
+  }, [dataUpdatedAt, setChats]);
 
   useEffect(() => {
     if (chatId) {

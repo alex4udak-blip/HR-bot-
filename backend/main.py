@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai
+from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations
 
 # Configure logging - show important messages
 logging.basicConfig(
@@ -167,7 +167,58 @@ async def init_database():
     await run_migration(engine, create_entity_analyses, "Create entity_analyses table")
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entity_analyses_entity_id ON entity_analyses(entity_id)", "Index entity_analyses.entity_id")
 
-    # Step 6: Create superadmin
+    # Step 6: Multi-tenancy - Organizations
+    logger.info("=== SETTING UP MULTI-TENANCY ===")
+
+    # Create enums for organizations
+    await run_migration(engine, "CREATE TYPE orgrole AS ENUM ('owner', 'admin', 'member')", "Create orgrole enum")
+    await run_migration(engine, "CREATE TYPE subscriptionplan AS ENUM ('free', 'pro', 'enterprise')", "Create subscriptionplan enum")
+
+    # Create organizations table
+    create_organizations = """
+        CREATE TABLE IF NOT EXISTS organizations (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            slug VARCHAR(100) UNIQUE NOT NULL,
+            subscription_plan subscriptionplan DEFAULT 'free',
+            settings JSONB DEFAULT '{}'::jsonb,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """
+    await run_migration(engine, create_organizations, "Create organizations table")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_organizations_slug ON organizations(slug)", "Index organizations.slug")
+
+    # Create org_members table
+    create_org_members = """
+        CREATE TABLE IF NOT EXISTS org_members (
+            id SERIAL PRIMARY KEY,
+            org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role orgrole DEFAULT 'member',
+            invited_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(org_id, user_id)
+        )
+    """
+    await run_migration(engine, create_org_members, "Create org_members table")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_org_members_org_id ON org_members(org_id)", "Index org_members.org_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_org_members_user_id ON org_members(user_id)", "Index org_members.user_id")
+
+    # Add org_id to existing tables
+    await run_migration(engine, "ALTER TABLE chats ADD COLUMN IF NOT EXISTS org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE", "Add org_id to chats")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_chats_org_id ON chats(org_id)", "Index chats.org_id")
+
+    await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE", "Add org_id to entities")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entities_org_id ON entities(org_id)", "Index entities.org_id")
+
+    await run_migration(engine, "ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE", "Add org_id to call_recordings")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_org_id ON call_recordings(org_id)", "Index call_recordings.org_id")
+
+    logger.info("=== MULTI-TENANCY TABLES READY ===")
+
+    # Step 7: Create superadmin and default organization
     try:
         async with AsyncSessionLocal() as db:
             await create_superadmin_if_not_exists(db)
@@ -260,6 +311,7 @@ app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(entities.router, prefix="/api/entities", tags=["entities"])
 app.include_router(calls.router, prefix="/api/calls", tags=["calls"])
 app.include_router(entity_ai.router, prefix="/api", tags=["entity-ai"])
+app.include_router(organizations.router, prefix="/api/organizations", tags=["organizations"])
 
 
 @app.get("/health")

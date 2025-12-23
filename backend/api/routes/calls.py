@@ -14,7 +14,7 @@ from ..database import get_db
 from ..models.database import (
     CallRecording, CallSource, CallStatus, Entity, User
 )
-from ..services.auth import get_current_user
+from ..services.auth import get_current_user, get_user_org
 
 router = APIRouter()
 logger = logging.getLogger("hr-analyzer.calls")
@@ -82,8 +82,13 @@ async def list_calls(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List call recordings"""
-    query = select(CallRecording)
+    """List call recordings (filtered by organization)"""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        return []
+
+    query = select(CallRecording).where(CallRecording.org_id == org.id)
 
     if entity_id:
         query = query.where(CallRecording.entity_id == entity_id)

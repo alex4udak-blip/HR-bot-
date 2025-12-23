@@ -26,7 +26,7 @@ from sqlalchemy.orm import selectinload
 from ..database import get_db
 from ..models.database import User, UserRole, Chat, Message, ChatCriteria, AIConversation, AnalysisHistory, Entity
 from ..models.schemas import ChatResponse, ChatUpdate, ChatTypeConfig
-from ..services.auth import get_current_user
+from ..services.auth import get_current_user, get_user_org
 from ..services.chat_types import (
     get_all_chat_types, get_chat_type_config, get_quick_actions,
     get_suggested_questions, get_default_criteria
@@ -77,9 +77,16 @@ async def get_chats(
     # Merge detached user into current session
     user = await db.merge(user)
 
-    query = select(Chat).options(selectinload(Chat.owner), selectinload(Chat.entity)).where(Chat.deleted_at.is_(None))
-    if user.role != UserRole.SUPERADMIN:
-        query = query.where(Chat.owner_id == user.id)
+    # Get user's organization
+    org = await get_user_org(user, db)
+    if not org:
+        return []
+
+    # Filter by org_id
+    query = select(Chat).options(selectinload(Chat.owner), selectinload(Chat.entity)).where(
+        Chat.deleted_at.is_(None),
+        Chat.org_id == org.id
+    )
     if search:
         query = query.where(Chat.title.ilike(f"%{search}%"))
     if chat_type:

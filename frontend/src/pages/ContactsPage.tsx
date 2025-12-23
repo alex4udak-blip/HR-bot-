@@ -54,13 +54,19 @@ export default function ContactsPage() {
     entities,
     currentEntity,
     loading,
+    fetchEntities,
     fetchEntity,
     deleteEntity,
     setFilters,
     clearCurrentEntity
   } = useEntityStore();
 
-  // Load entities on mount and when filter changes
+  // Load entities on mount (always fetch fresh data)
+  useEffect(() => {
+    fetchEntities();
+  }, []);
+
+  // Load entities when filter changes
   useEffect(() => {
     setFilters({
       type: typeFilter === 'all' ? undefined : typeFilter,

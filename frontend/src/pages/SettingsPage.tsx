@@ -46,6 +46,7 @@ export default function SettingsPage() {
   const { data: presets = [], isLoading } = useQuery({
     queryKey: ['criteria-presets'],
     queryFn: getCriteriaPresets,
+    refetchOnMount: 'always',
   });
 
   const createMutation = useMutation({
