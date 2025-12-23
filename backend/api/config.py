@@ -55,6 +55,16 @@ class Settings(BaseSettings):
         alias="SUPERADMIN_PASSWORD"
     )
 
+    # CORS allowed origins - comma-separated list
+    allowed_origins: str = Field(
+        default="http://localhost:3000,http://localhost:5173",
+        alias="ALLOWED_ORIGINS"
+    )
+
+    def get_allowed_origins_list(self) -> list[str]:
+        """Parse comma-separated origins into a list"""
+        return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
+
     class Config:
         env_file = ".env"
         extra = "ignore"

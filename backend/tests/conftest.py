@@ -8,6 +8,7 @@ from typing import AsyncGenerator, Generator
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
@@ -49,6 +50,8 @@ async def async_engine():
     )
 
     async with engine.begin() as conn:
+        # Enable foreign key constraints in SQLite
+        await conn.execute(text("PRAGMA foreign_keys=ON"))
         await conn.run_sync(Base.metadata.create_all)
 
     yield engine
@@ -434,6 +437,7 @@ async def entity_share_view(
     share = SharedAccess(
         resource_type=ResourceType.entity,
         resource_id=entity.id,
+        entity_id=entity.id,  # Populate proper foreign key
         shared_by_id=admin_user.id,
         shared_with_id=second_user.id,
         access_level=AccessLevel.view,
@@ -456,6 +460,7 @@ async def entity_share_edit(
     share = SharedAccess(
         resource_type=ResourceType.entity,
         resource_id=entity.id,
+        entity_id=entity.id,  # Populate proper foreign key
         shared_by_id=admin_user.id,
         shared_with_id=second_user.id,
         access_level=AccessLevel.edit,
@@ -478,6 +483,7 @@ async def chat_share_view(
     share = SharedAccess(
         resource_type=ResourceType.chat,
         resource_id=chat.id,
+        chat_id=chat.id,  # Populate proper foreign key
         shared_by_id=admin_user.id,
         shared_with_id=second_user.id,
         access_level=AccessLevel.view,
@@ -500,6 +506,7 @@ async def call_share_view(
     share = SharedAccess(
         resource_type=ResourceType.call,
         resource_id=call_recording.id,
+        call_id=call_recording.id,  # Populate proper foreign key
         shared_by_id=admin_user.id,
         shared_with_id=second_user.id,
         access_level=AccessLevel.view,
@@ -522,6 +529,7 @@ async def expired_share(
     share = SharedAccess(
         resource_type=ResourceType.entity,
         resource_id=entity.id,
+        entity_id=entity.id,  # Populate proper foreign key
         shared_by_id=admin_user.id,
         shared_with_id=second_user.id,
         access_level=AccessLevel.edit,

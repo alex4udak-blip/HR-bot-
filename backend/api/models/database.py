@@ -2,7 +2,7 @@ from datetime import datetime, time
 from typing import Optional
 from sqlalchemy import (
     BigInteger, Boolean, Column, DateTime, Enum as SQLEnum,
-    ForeignKey, Integer, String, Text, JSON, Time, func
+    ForeignKey, Integer, String, Text, JSON, Time, func, UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 import enum
@@ -106,7 +106,7 @@ class Organization(Base):
     __tablename__ = "organizations"
 
     id = Column(Integer, primary_key=True)
-    name = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False, index=True)
     slug = Column(String(100), unique=True, nullable=False, index=True)
     subscription_plan = Column(SQLEnum(SubscriptionPlan), default=SubscriptionPlan.free)
     settings = Column(JSON, default=dict)  # {max_users, max_chats, features, etc}
@@ -116,7 +116,7 @@ class Organization(Base):
 
     members = relationship("OrgMember", back_populates="organization", cascade="all, delete-orphan")
     departments = relationship("Department", back_populates="organization", cascade="all, delete-orphan")
-    entities = relationship("Entity", back_populates="organization")
+    entities = relationship("Entity", back_populates="organization", cascade="all, delete-orphan")
     chats = relationship("Chat", back_populates="organization")
     calls = relationship("CallRecording", back_populates="organization")
 
@@ -132,6 +132,10 @@ class OrgMember(Base):
     invited_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=func.now())
 
+    __table_args__ = (
+        UniqueConstraint('user_id', 'org_id', name='uq_org_member_user_org'),
+    )
+
     organization = relationship("Organization", back_populates="members")
     user = relationship("User", foreign_keys=[user_id], back_populates="org_memberships")
     inviter = relationship("User", foreign_keys=[invited_by])
@@ -144,7 +148,7 @@ class Department(Base):
     id = Column(Integer, primary_key=True)
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     parent_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), nullable=True, index=True)
-    name = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
     color = Column(String(20), nullable=True)  # For UI display (e.g., "#3B82F6")
     is_active = Column(Boolean, default=True)
@@ -168,6 +172,10 @@ class DepartmentMember(Base):
     role = Column(SQLEnum(DeptRole), default=DeptRole.member)
     created_at = Column(DateTime, default=func.now())
 
+    __table_args__ = (
+        UniqueConstraint('user_id', 'department_id', name='uq_dept_member_user_dept'),
+    )
+
     department = relationship("Department", back_populates="members")
     user = relationship("User", back_populates="department_memberships")
 
@@ -178,7 +186,7 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
-    name = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False, index=True)
     role = Column(SQLEnum(UserRole), default=UserRole.ADMIN)
     telegram_id = Column(BigInteger, unique=True, nullable=True, index=True)
     telegram_username = Column(String(255), nullable=True)
@@ -189,8 +197,8 @@ class User(Base):
     criteria_presets = relationship("CriteriaPreset", back_populates="created_by_user")
     ai_conversations = relationship("AIConversation", back_populates="user")
     analyses = relationship("AnalysisHistory", back_populates="user")
-    org_memberships = relationship("OrgMember", foreign_keys="OrgMember.user_id", back_populates="user")
-    department_memberships = relationship("DepartmentMember", back_populates="user")
+    org_memberships = relationship("OrgMember", foreign_keys="OrgMember.user_id", back_populates="user", cascade="all, delete-orphan")
+    department_memberships = relationship("DepartmentMember", back_populates="user", cascade="all, delete-orphan")
 
 
 class Chat(Base):
@@ -231,7 +239,7 @@ class Message(Base):
     first_name = Column(String(255), nullable=True)
     last_name = Column(String(255), nullable=True)
     content = Column(Text, nullable=False)
-    content_type = Column(String(50), nullable=False)  # text, voice, video_note, document, photo, etc
+    content_type = Column(String(50), nullable=False, index=True)  # text, voice, video_note, document, photo, etc
     file_id = Column(String(255), nullable=True)  # Telegram Bot API file_id
     file_path = Column(String(512), nullable=True)  # Local file path for imported media
     file_name = Column(String(255), nullable=True)
@@ -312,10 +320,10 @@ class Entity(Base):
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
     type = Column(SQLEnum(EntityType), nullable=False, index=True)
-    name = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False, index=True)
     status = Column(SQLEnum(EntityStatus), default=EntityStatus.new, index=True)
     phone = Column(String(50), nullable=True)
-    email = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True, index=True)
     telegram_user_id = Column(BigInteger, nullable=True, index=True)
     company = Column(String(255), nullable=True)
     position = Column(String(255), nullable=True)
@@ -453,6 +461,10 @@ class SharedAccess(Base):
     id = Column(Integer, primary_key=True)
     resource_type = Column(SQLEnum(ResourceType), nullable=False, index=True)
     resource_id = Column(Integer, nullable=False, index=True)  # ID of chat/entity/call
+    # Proper foreign keys for cascade delete - only one should be set based on resource_type
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=True, index=True)
+    chat_id = Column(Integer, ForeignKey("chats.id", ondelete="CASCADE"), nullable=True, index=True)
+    call_id = Column(Integer, ForeignKey("call_recordings.id", ondelete="CASCADE"), nullable=True, index=True)
     shared_by_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     shared_with_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     access_level = Column(SQLEnum(AccessLevel), default=AccessLevel.view)
@@ -460,8 +472,15 @@ class SharedAccess(Base):
     expires_at = Column(DateTime, nullable=True)  # Optional expiration
     created_at = Column(DateTime, default=func.now())
 
+    __table_args__ = (
+        UniqueConstraint('resource_type', 'resource_id', 'shared_with_id', name='uq_shared_access_resource_user'),
+    )
+
     shared_by = relationship("User", foreign_keys=[shared_by_id])
     shared_with = relationship("User", foreign_keys=[shared_with_id])
+    entity = relationship("Entity", foreign_keys=[entity_id])
+    chat = relationship("Chat", foreign_keys=[chat_id])
+    call = relationship("CallRecording", foreign_keys=[call_id])
 
 
 class Invitation(Base):

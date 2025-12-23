@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel
@@ -162,6 +163,47 @@ async def get_resource_name(resource_type: ResourceType, resource_id: int, db: A
     return None
 
 
+async def batch_get_resource_names(shares: List[SharedAccess], db: AsyncSession) -> dict:
+    """Batch load resource names for multiple shares"""
+    resource_names = {}
+
+    # Group shares by resource type
+    chat_ids = []
+    entity_ids = []
+    call_ids = []
+
+    for share in shares:
+        if share.resource_type == ResourceType.chat:
+            chat_ids.append(share.resource_id)
+        elif share.resource_type == ResourceType.entity:
+            entity_ids.append(share.resource_id)
+        elif share.resource_type == ResourceType.call:
+            call_ids.append(share.resource_id)
+
+    # Batch load chats
+    if chat_ids:
+        result = await db.execute(select(Chat).where(Chat.id.in_(chat_ids)))
+        for chat in result.scalars().all():
+            key = (ResourceType.chat, chat.id)
+            resource_names[key] = chat.custom_name or chat.title
+
+    # Batch load entities
+    if entity_ids:
+        result = await db.execute(select(Entity).where(Entity.id.in_(entity_ids)))
+        for entity in result.scalars().all():
+            key = (ResourceType.entity, entity.id)
+            resource_names[key] = entity.name
+
+    # Batch load calls
+    if call_ids:
+        result = await db.execute(select(CallRecording).where(CallRecording.id.in_(call_ids)))
+        for call in result.scalars().all():
+            key = (ResourceType.call, call.id)
+            resource_names[key] = call.title or f"Звонок #{call.id}"
+
+    return resource_names
+
+
 # === Routes ===
 
 @router.post("", response_model=ShareResponse)
@@ -223,6 +265,9 @@ async def share_resource(
         share = SharedAccess(
             resource_type=data.resource_type,
             resource_id=data.resource_id,
+            entity_id=data.resource_id if data.resource_type == ResourceType.entity else None,
+            chat_id=data.resource_id if data.resource_type == ResourceType.chat else None,
+            call_id=data.resource_id if data.resource_type == ResourceType.call else None,
             shared_by_id=current_user.id,
             shared_with_id=data.shared_with_id,
             access_level=data.access_level,
@@ -339,7 +384,10 @@ async def get_my_shares(
     """Get resources I've shared with others"""
     current_user = await db.merge(current_user)
 
-    query = select(SharedAccess).where(SharedAccess.shared_by_id == current_user.id)
+    query = select(SharedAccess).options(
+        selectinload(SharedAccess.shared_by),
+        selectinload(SharedAccess.shared_with)
+    ).where(SharedAccess.shared_by_id == current_user.id)
     if resource_type:
         query = query.where(SharedAccess.resource_type == resource_type)
     query = query.order_by(SharedAccess.created_at.desc())
@@ -347,15 +395,13 @@ async def get_my_shares(
     result = await db.execute(query)
     shares = result.scalars().all()
 
+    # Batch load resource names
+    resource_names = await batch_get_resource_names(shares, db)
+
+    # Build response using pre-fetched data
     response = []
     for share in shares:
-        # Get user names
-        by_result = await db.execute(select(User).where(User.id == share.shared_by_id))
-        by_user = by_result.scalar_one_or_none()
-        with_result = await db.execute(select(User).where(User.id == share.shared_with_id))
-        with_user = with_result.scalar_one_or_none()
-
-        resource_name = await get_resource_name(share.resource_type, share.resource_id, db)
+        resource_name = resource_names.get((share.resource_type, share.resource_id))
 
         response.append(ShareResponse(
             id=share.id,
@@ -363,9 +409,9 @@ async def get_my_shares(
             resource_id=share.resource_id,
             resource_name=resource_name,
             shared_by_id=share.shared_by_id,
-            shared_by_name=by_user.name if by_user else "Unknown",
+            shared_by_name=share.shared_by.name if share.shared_by else "Unknown",
             shared_with_id=share.shared_with_id,
-            shared_with_name=with_user.name if with_user else "Unknown",
+            shared_with_name=share.shared_with.name if share.shared_with else "Unknown",
             access_level=share.access_level,
             note=share.note,
             expires_at=share.expires_at,
@@ -384,7 +430,10 @@ async def get_shared_with_me(
     """Get resources shared with me"""
     current_user = await db.merge(current_user)
 
-    query = select(SharedAccess).where(
+    query = select(SharedAccess).options(
+        selectinload(SharedAccess.shared_by),
+        selectinload(SharedAccess.shared_with)
+    ).where(
         SharedAccess.shared_with_id == current_user.id,
         or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
     )
@@ -395,15 +444,13 @@ async def get_shared_with_me(
     result = await db.execute(query)
     shares = result.scalars().all()
 
+    # Batch load resource names
+    resource_names = await batch_get_resource_names(shares, db)
+
+    # Build response using pre-fetched data
     response = []
     for share in shares:
-        # Get user names
-        by_result = await db.execute(select(User).where(User.id == share.shared_by_id))
-        by_user = by_result.scalar_one_or_none()
-        with_result = await db.execute(select(User).where(User.id == share.shared_with_id))
-        with_user = with_result.scalar_one_or_none()
-
-        resource_name = await get_resource_name(share.resource_type, share.resource_id, db)
+        resource_name = resource_names.get((share.resource_type, share.resource_id))
 
         response.append(ShareResponse(
             id=share.id,
@@ -411,9 +458,9 @@ async def get_shared_with_me(
             resource_id=share.resource_id,
             resource_name=resource_name,
             shared_by_id=share.shared_by_id,
-            shared_by_name=by_user.name if by_user else "Unknown",
+            shared_by_name=share.shared_by.name if share.shared_by else "Unknown",
             shared_with_id=share.shared_with_id,
-            shared_with_name=with_user.name if with_user else "Unknown",
+            shared_with_name=share.shared_with.name if share.shared_with else "Unknown",
             access_level=share.access_level,
             note=share.note,
             expires_at=share.expires_at,
