@@ -24,7 +24,7 @@ from sqlalchemy import select, func, distinct, delete, and_, or_
 from sqlalchemy.orm import selectinload
 
 from ..database import get_db
-from ..models.database import User, UserRole, Chat, Message, ChatCriteria, AIConversation, AnalysisHistory, Entity, OrgRole
+from ..models.database import User, UserRole, Chat, Message, ChatCriteria, AIConversation, AnalysisHistory, Entity, OrgRole, DepartmentMember
 from ..models.schemas import ChatResponse, ChatUpdate, ChatTypeConfig
 from ..services.auth import get_current_user, get_user_org, get_user_org_role
 from ..services.chat_types import (
@@ -98,11 +98,43 @@ async def get_chats(
         Chat.org_id == org.id
     )
 
-    # Members can only see their own chats, admins/owners see all
+    # Role-based filtering:
+    # - superadmin/owner: see all in organization
+    # - admin: see own + chats linked to entities in their departments
+    # - member: see only own chats
     if user.role != UserRole.SUPERADMIN:
         user_role = await get_user_org_role(user, org.id, db)
+
         if user_role == OrgRole.member:
+            # Members see only their own
             query = query.where(Chat.owner_id == user.id)
+        elif user_role == OrgRole.admin:
+            # Admins see own + department entities
+            dept_result = await db.execute(
+                select(DepartmentMember.department_id).where(
+                    DepartmentMember.user_id == user.id
+                )
+            )
+            admin_dept_ids = [r for r in dept_result.scalars().all()]
+
+            if admin_dept_ids:
+                # Get entity IDs in admin's departments
+                entity_result = await db.execute(
+                    select(Entity.id).where(Entity.department_id.in_(admin_dept_ids))
+                )
+                dept_entity_ids = [r for r in entity_result.scalars().all()]
+
+                # Own chats OR chats linked to department entities
+                query = query.where(
+                    or_(
+                        Chat.owner_id == user.id,
+                        Chat.entity_id.in_(dept_entity_ids) if dept_entity_ids else False
+                    )
+                )
+            else:
+                # Admin without departments - only own chats
+                query = query.where(Chat.owner_id == user.id)
+        # owner sees all (no additional filter)
 
     if search:
         query = query.where(Chat.title.ilike(f"%{search}%"))
