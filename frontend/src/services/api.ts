@@ -617,6 +617,66 @@ export const updateCall = async (
 };
 
 
+// === ORGANIZATIONS ===
+
+export type OrgRole = 'owner' | 'admin' | 'member';
+
+export interface Organization {
+  id: number;
+  name: string;
+  slug: string;
+  members_count: number;
+  my_role?: OrgRole;
+}
+
+export interface OrgMember {
+  id: number;
+  user_id: number;
+  user_name: string;
+  user_email: string;
+  role: OrgRole;
+  invited_by_name?: string;
+  created_at: string;
+}
+
+export interface InviteMemberRequest {
+  email: string;
+  name: string;
+  password: string;
+  role?: OrgRole;
+}
+
+export const getCurrentOrganization = async (): Promise<Organization> => {
+  const { data } = await api.get('/organizations/current');
+  return data;
+};
+
+export const getOrgMembers = async (): Promise<OrgMember[]> => {
+  const { data } = await api.get('/organizations/current/members');
+  return data;
+};
+
+export const inviteMember = async (data: InviteMemberRequest): Promise<OrgMember> => {
+  const { data: result } = await api.post('/organizations/current/members', data);
+  return result;
+};
+
+export const updateMemberRole = async (userId: number, role: OrgRole): Promise<{ success: boolean }> => {
+  const { data } = await api.patch(`/organizations/current/members/${userId}/role`, { role });
+  return data;
+};
+
+export const removeMember = async (userId: number): Promise<{ success: boolean }> => {
+  const { data } = await api.delete(`/organizations/current/members/${userId}`);
+  return data;
+};
+
+export const getMyOrgRole = async (): Promise<{ role: OrgRole }> => {
+  const { data } = await api.get('/organizations/current/my-role');
+  return data;
+};
+
+
 // === SHARING ===
 
 export type ResourceType = 'chat' | 'entity' | 'call';
