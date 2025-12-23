@@ -1,10 +1,10 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 
 from ..database import get_db
-from ..models.database import User, UserRole, Chat
+from ..models.database import User, UserRole, Chat, DepartmentMember, OrgMember, SharedAccess
 from ..models.schemas import UserCreate, UserUpdate, UserResponse
 from ..services.auth import get_superadmin, hash_password
 
@@ -128,6 +128,12 @@ async def delete_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # Delete related records first (cascade doesn't work well with async SQLAlchemy)
+    await db.execute(delete(DepartmentMember).where(DepartmentMember.user_id == user_id))
+    await db.execute(delete(OrgMember).where(OrgMember.user_id == user_id))
+    await db.execute(delete(SharedAccess).where(SharedAccess.shared_with_id == user_id))
+    await db.execute(delete(SharedAccess).where(SharedAccess.shared_by_id == user_id))
 
     await db.delete(user)
     await db.commit()
