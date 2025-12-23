@@ -240,14 +240,14 @@ class TestProtectedEndpoints:
     @pytest.mark.asyncio
     async def test_protected_endpoint_without_token(self, client):
         """Test accessing protected endpoint without token."""
-        response = await client.get("/api/users/me")
+        response = await client.get("/api/auth/me")
 
         assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_protected_endpoint_with_invalid_token(self, client):
         """Test accessing protected endpoint with invalid token."""
-        response = await client.get("/api/users/me", headers={
+        response = await client.get("/api/auth/me", headers={
             "Authorization": "Bearer invalid.token.here"
         })
 
@@ -256,7 +256,7 @@ class TestProtectedEndpoints:
     @pytest.mark.asyncio
     async def test_protected_endpoint_with_valid_token(self, client, admin_user, admin_token, get_auth_headers):
         """Test accessing protected endpoint with valid token."""
-        response = await client.get("/api/users/me", headers=get_auth_headers(admin_token))
+        response = await client.get("/api/auth/me", headers=get_auth_headers(admin_token))
 
         assert response.status_code == 200
         data = response.json()
@@ -270,7 +270,7 @@ class TestProtectedEndpoints:
             expires_delta=timedelta(seconds=-1)
         )
 
-        response = await client.get("/api/users/me", headers={
+        response = await client.get("/api/auth/me", headers={
             "Authorization": f"Bearer {token}"
         })
 

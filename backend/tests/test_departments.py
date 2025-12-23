@@ -245,9 +245,9 @@ class TestDepartmentHierarchy:
             name="Child Department",
             org_id=organization.id,
             parent_id=department.id,
-            members_count=0,
-            entities_count=0,
-            children_count=0,
+            
+            
+            
             created_at=datetime.utcnow()
         )
         db_session.add(child)
@@ -357,7 +357,7 @@ class TestDepartmentMemberRoles:
             department_id=department.id,
             user_id=regular_user.id,
             role=DeptRole.lead,
-            added_at=datetime.utcnow()
+            created_at=datetime.utcnow()
         )
         db_session.add(lead_member)
         await db_session.commit()
@@ -387,9 +387,9 @@ class TestCrossOrgDepartments:
         other_dept = Department(
             name="Other Org Department",
             org_id=second_organization.id,
-            members_count=0,
-            entities_count=0,
-            children_count=0,
+            
+            
+            
             created_at=datetime.utcnow()
         )
         db_session.add(other_dept)

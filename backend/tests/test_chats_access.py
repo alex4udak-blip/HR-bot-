@@ -356,6 +356,7 @@ class TestChatCrossOrganization:
             org_id=second_organization.id,
             owner_id=1,
             telegram_chat_id=111222333,
+            title="Other Org Chat",
             chat_type="hr",
             is_active=True,
             created_at=datetime.utcnow()

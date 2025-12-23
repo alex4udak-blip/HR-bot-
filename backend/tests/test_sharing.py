@@ -16,7 +16,7 @@ class TestCreateShare:
     ):
         """Test that entity owner can share it."""
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "entity",
                 "resource_id": entity.id,
@@ -36,7 +36,7 @@ class TestCreateShare:
     ):
         """Test that chat owner can share it."""
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "chat",
                 "resource_id": chat.id,
@@ -54,7 +54,7 @@ class TestCreateShare:
     ):
         """Test that call owner can share it."""
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "call",
                 "resource_id": call_recording.id,
@@ -72,7 +72,7 @@ class TestCreateShare:
     ):
         """Test that sharing nonexistent resource fails."""
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "entity",
                 "resource_id": 99999,
@@ -90,7 +90,7 @@ class TestCreateShare:
     ):
         """Test that sharing with nonexistent user fails."""
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "entity",
                 "resource_id": entity.id,
@@ -112,7 +112,7 @@ class TestSharePermissions:
     ):
         """Test that non-owner cannot share resource."""
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "entity",
                 "resource_id": entity.id,
@@ -131,7 +131,7 @@ class TestSharePermissions:
     ):
         """Test that user with view access cannot reshare."""
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "entity",
                 "resource_id": entity.id,
@@ -162,7 +162,7 @@ class TestSharePermissions:
         await db_session.commit()
 
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "entity",
                 "resource_id": entity.id,
@@ -213,7 +213,7 @@ class TestCrossOrgSharing:
         await db_session.commit()
 
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "entity",
                 "resource_id": entity.id,
@@ -240,7 +240,7 @@ class TestShareExpiration:
         expires_at = (datetime.utcnow() + timedelta(days=7)).isoformat()
 
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "entity",
                 "resource_id": entity.id,
@@ -293,7 +293,7 @@ class TestListShares:
     ):
         """Test that owner can list shares of their resource."""
         response = await client.get(
-            f"/api/sharing/entity/{entity.id}",
+            f"/api/sharing/resource/entity/{entity.id}",
             headers=get_auth_headers(admin_token)
         )
 
@@ -326,7 +326,7 @@ class TestShareAccessLevels:
     ):
         """Test creating view access share."""
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "entity",
                 "resource_id": entity.id,
@@ -346,7 +346,7 @@ class TestShareAccessLevels:
     ):
         """Test creating edit access share."""
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "entity",
                 "resource_id": entity.id,
@@ -366,7 +366,7 @@ class TestShareAccessLevels:
     ):
         """Test creating full access share."""
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "entity",
                 "resource_id": entity.id,
@@ -386,7 +386,7 @@ class TestShareAccessLevels:
     ):
         """Test that invalid access level is rejected."""
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "entity",
                 "resource_id": entity.id,
@@ -437,7 +437,7 @@ class TestUpdateShare:
 
         # Try to share with full access (higher than edit)
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "entity",
                 "resource_id": entity.id,
@@ -460,7 +460,7 @@ class TestDuplicateShares:
     ):
         """Test that duplicate shares are not created."""
         response = await client.post(
-            "/api/sharing/share",
+            "/api/sharing",
             json={
                 "resource_type": "entity",
                 "resource_id": entity.id,
