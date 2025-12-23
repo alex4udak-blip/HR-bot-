@@ -198,8 +198,8 @@ export default function EntityAI({ entity }: EntityAIProps) {
     }
   };
 
-  // Check if entity has any data
-  const hasData = (entity.chats_count || 0) > 0 || (entity.calls_count || 0) > 0;
+  // Check if entity has any data (use actual arrays for EntityWithRelations)
+  const hasData = (entity.chats && entity.chats.length > 0) || (entity.calls && entity.calls.length > 0);
 
   return (
     <div className="bg-white/5 rounded-xl p-4">

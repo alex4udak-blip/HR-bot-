@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Phone,
   Mail,
@@ -12,12 +12,18 @@ import {
   FileText,
   ChevronRight,
   Tag,
-  User
+  User,
+  Link2,
+  X,
+  Loader2
 } from 'lucide-react';
 import clsx from 'clsx';
-import type { EntityWithRelations } from '@/types';
+import toast from 'react-hot-toast';
+import type { EntityWithRelations, Chat, CallRecording } from '@/types';
 import { STATUS_LABELS, STATUS_COLORS, CALL_STATUS_LABELS, CALL_STATUS_COLORS } from '@/types';
 import EntityAI from './EntityAI';
+import * as api from '@/services/api';
+import { useEntityStore } from '@/stores/entityStore';
 
 interface ContactDetailProps {
   entity: EntityWithRelations;
@@ -26,6 +32,79 @@ interface ContactDetailProps {
 export default function ContactDetail({ entity }: ContactDetailProps) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'overview' | 'chats' | 'calls' | 'history'>('overview');
+  const [showLinkChatModal, setShowLinkChatModal] = useState(false);
+  const [showLinkCallModal, setShowLinkCallModal] = useState(false);
+  const [unlinkedChats, setUnlinkedChats] = useState<Chat[]>([]);
+  const [unlinkedCalls, setUnlinkedCalls] = useState<CallRecording[]>([]);
+  const [loadingLink, setLoadingLink] = useState(false);
+  const [loadingData, setLoadingData] = useState(false);
+  const { fetchEntity } = useEntityStore();
+
+  // Load unlinked chats when modal opens
+  useEffect(() => {
+    if (showLinkChatModal) {
+      loadUnlinkedChats();
+    }
+  }, [showLinkChatModal]);
+
+  // Load unlinked calls when modal opens
+  useEffect(() => {
+    if (showLinkCallModal) {
+      loadUnlinkedCalls();
+    }
+  }, [showLinkCallModal]);
+
+  const loadUnlinkedChats = async () => {
+    setLoadingData(true);
+    try {
+      const allChats = await api.getChats();
+      setUnlinkedChats(allChats.filter(c => !c.entity_id));
+    } catch (e) {
+      console.error('Failed to load chats:', e);
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
+  const loadUnlinkedCalls = async () => {
+    setLoadingData(true);
+    try {
+      const allCalls = await api.getCalls({});
+      setUnlinkedCalls(allCalls.filter(c => !c.entity_id));
+    } catch (e) {
+      console.error('Failed to load calls:', e);
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
+  const handleLinkChat = async (chatId: number) => {
+    setLoadingLink(true);
+    try {
+      await api.linkChatToEntity(entity.id, chatId);
+      toast.success('Чат привязан к контакту');
+      setShowLinkChatModal(false);
+      fetchEntity(entity.id);
+    } catch (e) {
+      toast.error('Не удалось привязать чат');
+    } finally {
+      setLoadingLink(false);
+    }
+  };
+
+  const handleLinkCall = async (callId: number) => {
+    setLoadingLink(true);
+    try {
+      await api.linkCallToEntity(callId, entity.id);
+      toast.success('Звонок привязан к контакту');
+      setShowLinkCallModal(false);
+      fetchEntity(entity.id);
+    } catch (e) {
+      toast.error('Не удалось привязать звонок');
+    } finally {
+      setLoadingLink(false);
+    }
+  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -146,10 +225,19 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
             <div className="grid grid-cols-2 gap-6 mt-6">
             {/* Recent Chats */}
             <div className="bg-white/5 rounded-xl p-4">
-              <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                <MessageSquare size={20} className="text-cyan-400" />
-                Последние чаты
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <MessageSquare size={20} className="text-cyan-400" />
+                  Последние чаты
+                </h3>
+                <button
+                  onClick={() => setShowLinkChatModal(true)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors"
+                >
+                  <Link2 size={14} />
+                  Привязать
+                </button>
+              </div>
               {entity.chats && entity.chats.length > 0 ? (
                 <div className="space-y-2">
                   {entity.chats.slice(0, 3).map((chat) => (
@@ -173,10 +261,19 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
 
             {/* Recent Calls */}
             <div className="bg-white/5 rounded-xl p-4">
-              <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                <Phone size={20} className="text-green-400" />
-                Последние звонки
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Phone size={20} className="text-green-400" />
+                  Последние звонки
+                </h3>
+                <button
+                  onClick={() => setShowLinkCallModal(true)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors"
+                >
+                  <Link2 size={14} />
+                  Привязать
+                </button>
+              </div>
               {entity.calls && entity.calls.length > 0 ? (
                 <div className="space-y-2">
                   {entity.calls.slice(0, 3).map((call) => (
@@ -376,6 +473,141 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
           </div>
         )}
       </div>
+
+      {/* Link Chat Modal */}
+      <AnimatePresence>
+        {showLinkChatModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+            onClick={() => setShowLinkChatModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white">Привязать чат</h3>
+                <button
+                  onClick={() => setShowLinkChatModal(false)}
+                  className="p-1 rounded-lg hover:bg-white/10"
+                >
+                  <X size={20} className="text-white/60" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-2">
+                {loadingData ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
+                  </div>
+                ) : unlinkedChats.length === 0 ? (
+                  <div className="text-center py-8 text-white/40">
+                    <MessageSquare className="mx-auto mb-2" size={40} />
+                    <p>Нет доступных чатов для привязки</p>
+                    <p className="text-sm mt-1">Все чаты уже привязаны к контактам</p>
+                  </div>
+                ) : (
+                  unlinkedChats.map((chat) => (
+                    <button
+                      key={chat.id}
+                      onClick={() => handleLinkChat(chat.id)}
+                      disabled={loadingLink}
+                      className="w-full p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors text-left flex items-center justify-between disabled:opacity-50"
+                    >
+                      <div>
+                        <p className="text-white font-medium">{chat.title}</p>
+                        <p className="text-xs text-white/40">{chat.chat_type} • {formatDate(chat.created_at)}</p>
+                      </div>
+                      {loadingLink ? (
+                        <Loader2 size={16} className="text-cyan-400 animate-spin" />
+                      ) : (
+                        <Link2 size={16} className="text-cyan-400" />
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Link Call Modal */}
+      <AnimatePresence>
+        {showLinkCallModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+            onClick={() => setShowLinkCallModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white">Привязать звонок</h3>
+                <button
+                  onClick={() => setShowLinkCallModal(false)}
+                  className="p-1 rounded-lg hover:bg-white/10"
+                >
+                  <X size={20} className="text-white/60" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-2">
+                {loadingData ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 text-green-400 animate-spin" />
+                  </div>
+                ) : unlinkedCalls.length === 0 ? (
+                  <div className="text-center py-8 text-white/40">
+                    <Phone className="mx-auto mb-2" size={40} />
+                    <p>Нет доступных звонков для привязки</p>
+                    <p className="text-sm mt-1">Все звонки уже привязаны к контактам</p>
+                  </div>
+                ) : (
+                  unlinkedCalls.map((call) => (
+                    <button
+                      key={call.id}
+                      onClick={() => handleLinkCall(call.id)}
+                      disabled={loadingLink}
+                      className="w-full p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors text-left flex items-center justify-between disabled:opacity-50"
+                    >
+                      <div>
+                        <p className="text-white font-medium">
+                          Звонок {call.source_type?.toUpperCase() || 'N/A'}
+                        </p>
+                        <p className="text-xs text-white/40">
+                          {formatDuration(call.duration_seconds)} • {formatDate(call.created_at)}
+                        </p>
+                        <span className={clsx('text-xs px-2 py-0.5 rounded-full mt-1 inline-block', CALL_STATUS_COLORS[call.status])}>
+                          {CALL_STATUS_LABELS[call.status]}
+                        </span>
+                      </div>
+                      {loadingLink ? (
+                        <Loader2 size={16} className="text-green-400 animate-spin" />
+                      ) : (
+                        <Link2 size={16} className="text-green-400" />
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
