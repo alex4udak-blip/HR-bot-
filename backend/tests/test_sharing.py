@@ -188,14 +188,14 @@ class TestCrossOrgSharing:
         This is the cross-org sharing security bug.
         """
         # Create user in different organization
-        from api.models.database import User, OrgMember, OrgRole
-        from api.services.auth import get_password_hash
+        from api.models.database import User, OrgMember, OrgRole, UserRole
+        from api.services.auth import hash_password
 
         other_user = User(
             email="other@other.com",
-            password_hash=get_password_hash("password"),
+            password_hash=hash_password("password"),
             name="Other Org User",
-            role="user",
+            role=UserRole.ADMIN,
             is_active=True
         )
         db_session.add(other_user)
@@ -207,7 +207,7 @@ class TestCrossOrgSharing:
             org_id=second_organization.id,
             user_id=other_user.id,
             role=OrgRole.member,
-            joined_at=datetime.utcnow()
+            created_at=datetime.utcnow()
         )
         db_session.add(other_member)
         await db_session.commit()
@@ -500,15 +500,15 @@ class TestSharableUsers:
         self, db_session, client, admin_user, admin_token, second_organization, get_auth_headers, org_owner
     ):
         """Test that sharable users list excludes users from other organizations."""
-        from api.models.database import User, OrgMember, OrgRole
-        from api.services.auth import get_password_hash
+        from api.models.database import User, OrgMember, OrgRole, UserRole
+        from api.services.auth import hash_password
 
         # Create user in different organization
         other_user = User(
             email="other2@other.com",
-            password_hash=get_password_hash("password"),
+            password_hash=hash_password("password"),
             name="Other Org User 2",
-            role="user",
+            role=UserRole.ADMIN,
             is_active=True
         )
         db_session.add(other_user)
@@ -519,7 +519,7 @@ class TestSharableUsers:
             org_id=second_organization.id,
             user_id=other_user.id,
             role=OrgRole.member,
-            joined_at=datetime.utcnow()
+            created_at=datetime.utcnow()
         )
         db_session.add(other_member)
         await db_session.commit()

@@ -22,7 +22,7 @@ from api.models.database import Entity, Chat, Message, CallRecording, SharedAcce
 from api.models.database import UserRole, OrgRole, DeptRole, AccessLevel, ResourceType
 from api.models.database import EntityType, EntityStatus, ChatType, CallStatus, CallSource
 from api.database import get_db
-from api.services.auth import get_password_hash, create_access_token
+from api.services.auth import hash_password, create_access_token
 from main import app
 
 
@@ -98,7 +98,7 @@ async def superadmin_user(db_session: AsyncSession) -> User:
     """Create a superadmin user."""
     user = User(
         email="superadmin@test.com",
-        password_hash=get_password_hash("superadmin123"),
+        password_hash=hash_password("superadmin123"),
         name="Super Admin",
         role=UserRole.SUPERADMIN,
         is_active=True
@@ -114,7 +114,7 @@ async def admin_user(db_session: AsyncSession) -> User:
     """Create an admin user."""
     user = User(
         email="admin@test.com",
-        password_hash=get_password_hash("admin123"),
+        password_hash=hash_password("admin123"),
         name="Admin User",
         role=UserRole.ADMIN,
         is_active=True
@@ -130,9 +130,9 @@ async def regular_user(db_session: AsyncSession) -> User:
     """Create a regular user."""
     user = User(
         email="user@test.com",
-        password_hash=get_password_hash("user123"),
+        password_hash=hash_password("user123"),
         name="Regular User",
-        role=UserRole.USER,
+        role=UserRole.ADMIN,
         is_active=True
     )
     db_session.add(user)
@@ -146,9 +146,9 @@ async def second_user(db_session: AsyncSession) -> User:
     """Create a second regular user for sharing tests."""
     user = User(
         email="user2@test.com",
-        password_hash=get_password_hash("user123"),
+        password_hash=hash_password("user123"),
         name="Second User",
-        role=UserRole.USER,
+        role=UserRole.ADMIN,
         is_active=True
     )
     db_session.add(user)
@@ -166,6 +166,7 @@ async def organization(db_session: AsyncSession) -> Organization:
     """Create a test organization."""
     org = Organization(
         name="Test Organization",
+        slug="test-organization",
         created_at=datetime.utcnow()
     )
     db_session.add(org)
@@ -179,6 +180,7 @@ async def second_organization(db_session: AsyncSession) -> Organization:
     """Create a second test organization for cross-org tests."""
     org = Organization(
         name="Second Organization",
+        slug="second-organization",
         created_at=datetime.utcnow()
     )
     db_session.add(org)
@@ -194,7 +196,7 @@ async def org_owner(db_session: AsyncSession, organization: Organization, admin_
         org_id=organization.id,
         user_id=admin_user.id,
         role=OrgRole.owner,
-        joined_at=datetime.utcnow()
+        created_at=datetime.utcnow()
     )
     db_session.add(member)
     await db_session.commit()
@@ -209,7 +211,7 @@ async def org_admin(db_session: AsyncSession, organization: Organization, regula
         org_id=organization.id,
         user_id=regular_user.id,
         role=OrgRole.admin,
-        joined_at=datetime.utcnow()
+        created_at=datetime.utcnow()
     )
     db_session.add(member)
     await db_session.commit()
@@ -224,7 +226,7 @@ async def org_member(db_session: AsyncSession, organization: Organization, secon
         org_id=organization.id,
         user_id=second_user.id,
         role=OrgRole.member,
-        joined_at=datetime.utcnow()
+        created_at=datetime.utcnow()
     )
     db_session.add(member)
     await db_session.commit()
@@ -242,9 +244,6 @@ async def department(db_session: AsyncSession, organization: Organization) -> De
     dept = Department(
         name="Test Department",
         org_id=organization.id,
-        members_count=0,
-        entities_count=0,
-        children_count=0,
         created_at=datetime.utcnow()
     )
     db_session.add(dept)
@@ -259,9 +258,6 @@ async def second_department(db_session: AsyncSession, organization: Organization
     dept = Department(
         name="Second Department",
         org_id=organization.id,
-        members_count=0,
-        entities_count=0,
-        children_count=0,
         created_at=datetime.utcnow()
     )
     db_session.add(dept)
@@ -277,7 +273,7 @@ async def dept_lead(db_session: AsyncSession, department: Department, admin_user
         department_id=department.id,
         user_id=admin_user.id,
         role=DeptRole.lead,
-        added_at=datetime.utcnow()
+        created_at=datetime.utcnow()
     )
     db_session.add(member)
     await db_session.commit()
@@ -292,7 +288,7 @@ async def dept_member(db_session: AsyncSession, department: Department, regular_
         department_id=department.id,
         user_id=regular_user.id,
         role=DeptRole.member,
-        added_at=datetime.utcnow()
+        created_at=datetime.utcnow()
     )
     db_session.add(member)
     await db_session.commit()
@@ -354,6 +350,7 @@ async def chat(db_session: AsyncSession, organization: Organization, admin_user:
         org_id=organization.id,
         owner_id=admin_user.id,
         telegram_chat_id=123456789,
+        title="Test Chat",
         chat_type=ChatType.hr,
         is_active=True,
         created_at=datetime.utcnow()
@@ -371,6 +368,7 @@ async def second_chat(db_session: AsyncSession, organization: Organization, regu
         org_id=organization.id,
         owner_id=regular_user.id,
         telegram_chat_id=987654321,
+        title="Second Chat",
         chat_type=ChatType.sales,
         is_active=True,
         created_at=datetime.utcnow()
@@ -394,7 +392,7 @@ async def call_recording(db_session: AsyncSession, organization: Organization, a
         title="Test Call",
         source_type=CallSource.upload,
         status=CallStatus.done,
-        duration=300,
+        duration_seconds=300,
         created_at=datetime.utcnow()
     )
     db_session.add(call)
@@ -412,7 +410,7 @@ async def second_call(db_session: AsyncSession, organization: Organization, regu
         title="Second Call",
         source_type=CallSource.meet,
         status=CallStatus.done,
-        duration=600,
+        duration_seconds=600,
         created_at=datetime.utcnow()
     )
     db_session.add(call)

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from jose import jwt
 
 from api.services.auth import (
-    get_password_hash,
+    hash_password,
     verify_password,
     create_access_token,
     authenticate_user
@@ -21,7 +21,7 @@ class TestPasswordHashing:
     def test_hash_password_creates_hash(self):
         """Test that password hash is created."""
         password = "testpassword123"
-        hashed = get_password_hash(password)
+        hashed = hash_password(password)
 
         assert hashed is not None
         assert hashed != password
@@ -30,35 +30,35 @@ class TestPasswordHashing:
     def test_hash_password_different_each_time(self):
         """Test that same password creates different hashes (salt)."""
         password = "testpassword123"
-        hash1 = get_password_hash(password)
-        hash2 = get_password_hash(password)
+        hash1 = hash_password(password)
+        hash2 = hash_password(password)
 
         assert hash1 != hash2
 
     def test_verify_password_correct(self):
         """Test password verification with correct password."""
         password = "testpassword123"
-        hashed = get_password_hash(password)
+        hashed = hash_password(password)
 
         assert verify_password(password, hashed) is True
 
     def test_verify_password_incorrect(self):
         """Test password verification with incorrect password."""
         password = "testpassword123"
-        hashed = get_password_hash(password)
+        hashed = hash_password(password)
 
         assert verify_password("wrongpassword", hashed) is False
 
     def test_verify_password_empty(self):
         """Test password verification with empty password."""
         password = "testpassword123"
-        hashed = get_password_hash(password)
+        hashed = hash_password(password)
 
         assert verify_password("", hashed) is False
 
     def test_hash_empty_password(self):
         """Test hashing empty password (should work but not recommended)."""
-        hashed = get_password_hash("")
+        hashed = hash_password("")
         assert hashed is not None
         assert verify_password("", hashed) is True
 
