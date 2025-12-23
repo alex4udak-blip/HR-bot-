@@ -15,7 +15,9 @@ import {
   ArrowRightLeft,
   ChevronLeft,
   Edit,
-  Trash2
+  Trash2,
+  Bot,
+  X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -25,6 +27,7 @@ import { ENTITY_TYPES, STATUS_LABELS, STATUS_COLORS } from '@/types';
 import ContactForm from '@/components/contacts/ContactForm';
 import TransferModal from '@/components/contacts/TransferModal';
 import ContactDetail from '@/components/contacts/ContactDetail';
+import EntityAI from '@/components/contacts/EntityAI';
 
 // Entity type filter options
 const ENTITY_TYPE_FILTERS: { id: EntityType | 'all'; name: string; icon: typeof Users }[] = [
@@ -47,6 +50,7 @@ export default function ContactsPage() {
   const [typeFilter, setTypeFilter] = useState<EntityType | 'all'>(initialType || 'all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showAIPanel, setShowAIPanel] = useState(false);
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [selectedEntityForTransfer, setSelectedEntityForTransfer] = useState<Entity | null>(null);
 
@@ -352,6 +356,18 @@ export default function ContactsPage() {
               </div>
               <div className="flex gap-2">
                 <button
+                  onClick={() => setShowAIPanel(!showAIPanel)}
+                  className={clsx(
+                    'px-3 py-2 rounded-lg flex items-center gap-2 transition-colors',
+                    showAIPanel
+                      ? 'bg-cyan-500/20 text-cyan-400'
+                      : 'bg-white/5 hover:bg-white/10 text-white/60'
+                  )}
+                >
+                  <Bot size={16} />
+                  AI
+                </button>
+                <button
                   onClick={() => handleTransfer(currentEntity as Entity)}
                   className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
                 >
@@ -370,7 +386,65 @@ export default function ContactsPage() {
 
             {/* Detail Content */}
             <div className="flex-1 overflow-y-auto">
-              <ContactDetail entity={currentEntity} />
+              <ContactDetail entity={currentEntity} showAIInOverview={false} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* AI Panel - Right Column */}
+      <AnimatePresence>
+        {currentEntity && showAIPanel && (
+          <motion.div
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 420, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="hidden xl:flex flex-col border-l border-white/5 bg-black/20 overflow-hidden"
+          >
+            <div className="p-4 border-b border-white/5 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Bot size={20} className="text-cyan-400" />
+                AI Ассистент
+              </h3>
+              <button
+                onClick={() => setShowAIPanel(false)}
+                className="p-1.5 rounded-lg hover:bg-white/10 text-white/60"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <EntityAI entity={currentEntity} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Mobile AI Panel */}
+      <AnimatePresence>
+        {currentEntity && showAIPanel && (
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ duration: 0.2 }}
+            className="xl:hidden fixed inset-0 z-50 bg-gray-900/95 flex flex-col"
+          >
+            <div className="p-4 border-b border-white/5 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Bot size={20} className="text-cyan-400" />
+                AI Ассистент - {currentEntity.name}
+              </h3>
+              <button
+                onClick={() => setShowAIPanel(false)}
+                className="p-2 rounded-lg hover:bg-white/10 text-white/60"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <EntityAI entity={currentEntity} />
             </div>
           </motion.div>
         )}
