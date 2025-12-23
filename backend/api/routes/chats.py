@@ -24,9 +24,9 @@ from sqlalchemy import select, func, distinct, delete, and_, or_
 from sqlalchemy.orm import selectinload
 
 from ..database import get_db
-from ..models.database import User, UserRole, Chat, Message, ChatCriteria, AIConversation, AnalysisHistory, Entity
+from ..models.database import User, UserRole, Chat, Message, ChatCriteria, AIConversation, AnalysisHistory, Entity, OrgRole
 from ..models.schemas import ChatResponse, ChatUpdate, ChatTypeConfig
-from ..services.auth import get_current_user, get_user_org
+from ..services.auth import get_current_user, get_user_org, get_user_org_role
 from ..services.chat_types import (
     get_all_chat_types, get_chat_type_config, get_quick_actions,
     get_suggested_questions, get_default_criteria
@@ -97,6 +97,13 @@ async def get_chats(
         Chat.deleted_at.is_(None),
         Chat.org_id == org.id
     )
+
+    # Members can only see their own chats, admins/owners see all
+    if user.role != UserRole.SUPERADMIN:
+        user_role = await get_user_org_role(user, org.id, db)
+        if user_role == OrgRole.member:
+            query = query.where(Chat.owner_id == user.id)
+
     if search:
         query = query.where(Chat.title.ilike(f"%{search}%"))
     if chat_type:

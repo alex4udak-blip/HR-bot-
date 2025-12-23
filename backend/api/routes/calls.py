@@ -12,9 +12,9 @@ import re
 
 from ..database import get_db
 from ..models.database import (
-    CallRecording, CallSource, CallStatus, Entity, User
+    CallRecording, CallSource, CallStatus, Entity, User, OrgRole, UserRole
 )
-from ..services.auth import get_current_user, get_user_org
+from ..services.auth import get_current_user, get_user_org, get_user_org_role
 
 router = APIRouter()
 logger = logging.getLogger("hr-analyzer.calls")
@@ -82,13 +82,19 @@ async def list_calls(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List call recordings (filtered by organization)"""
+    """List call recordings (filtered by organization and role)"""
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org:
         return []
 
     query = select(CallRecording).where(CallRecording.org_id == org.id)
+
+    # Members can only see their own recordings, admins/owners see all
+    if current_user.role != UserRole.SUPERADMIN:
+        user_role = await get_user_org_role(current_user, org.id, db)
+        if user_role == OrgRole.member:
+            query = query.where(CallRecording.owner_id == current_user.id)
 
     if entity_id:
         query = query.where(CallRecording.entity_id == entity_id)
