@@ -541,25 +541,25 @@ async def expired_share(
 @pytest.fixture
 def superadmin_token(superadmin_user: User) -> str:
     """Generate JWT token for superadmin."""
-    return create_access_token(data={"sub": superadmin_user.email, "user_id": superadmin_user.id})
+    return create_access_token(data={"sub": str(superadmin_user.id)})
 
 
 @pytest.fixture
 def admin_token(admin_user: User) -> str:
     """Generate JWT token for admin."""
-    return create_access_token(data={"sub": admin_user.email, "user_id": admin_user.id})
+    return create_access_token(data={"sub": str(admin_user.id)})
 
 
 @pytest.fixture
 def user_token(regular_user: User) -> str:
     """Generate JWT token for regular user."""
-    return create_access_token(data={"sub": regular_user.email, "user_id": regular_user.id})
+    return create_access_token(data={"sub": str(regular_user.id)})
 
 
 @pytest.fixture
 def second_user_token(second_user: User) -> str:
     """Generate JWT token for second user."""
-    return create_access_token(data={"sub": second_user.email, "user_id": second_user.id})
+    return create_access_token(data={"sub": str(second_user.id)})
 
 
 # ============================================================================
