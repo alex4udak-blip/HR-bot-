@@ -18,18 +18,29 @@ import {
   Trash2,
   Bot,
   X,
-  Share2
+  Share2,
+  FolderOpen,
+  Share,
+  Globe
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
 import type { EntityType, Entity } from '@/types';
 import { ENTITY_TYPES, STATUS_LABELS, STATUS_COLORS } from '@/types';
+import type { OwnershipFilter } from '@/services/api';
 import ContactForm from '@/components/contacts/ContactForm';
 import TransferModal from '@/components/contacts/TransferModal';
 import ContactDetail from '@/components/contacts/ContactDetail';
 import EntityAI from '@/components/contacts/EntityAI';
 import ShareModal from '@/components/common/ShareModal';
+
+// Ownership filter options
+const OWNERSHIP_FILTERS: { id: OwnershipFilter; name: string; icon: typeof FolderOpen; description: string }[] = [
+  { id: 'all', name: 'Все', icon: Globe, description: 'Все доступные контакты' },
+  { id: 'mine', name: 'Мои', icon: FolderOpen, description: 'Созданные мной' },
+  { id: 'shared', name: 'Расшаренные', icon: Share, description: 'Расшаренные мне другими' },
+];
 
 // Entity type filter options
 const ENTITY_TYPE_FILTERS: { id: EntityType | 'all'; name: string; icon: typeof Users }[] = [
@@ -50,6 +61,7 @@ export default function ContactsPage() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<EntityType | 'all'>(initialType || 'all');
+  const [ownershipFilter, setOwnershipFilter] = useState<OwnershipFilter>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -67,13 +79,13 @@ export default function ContactsPage() {
     clearCurrentEntity
   } = useEntityStore();
 
-  // Load entities on mount and when type filter changes
+  // Load entities on mount and when filters change
   useEffect(() => {
-    // Set type filter and fetch - this ensures filters are properly set on mount
     setFilters({
-      type: typeFilter === 'all' ? undefined : typeFilter
+      type: typeFilter === 'all' ? undefined : typeFilter,
+      ownership: ownershipFilter
     });
-  }, [typeFilter, setFilters]);
+  }, [typeFilter, ownershipFilter, setFilters]);
 
   // Load specific entity when URL changes
   useEffect(() => {
@@ -187,6 +199,29 @@ export default function ContactsPage() {
             />
           </div>
 
+          {/* Ownership Filters */}
+          <div className="flex gap-1 mb-3 p-1 bg-white/5 rounded-lg">
+            {OWNERSHIP_FILTERS.map((filter) => {
+              const Icon = filter.icon;
+              return (
+                <button
+                  key={filter.id}
+                  onClick={() => setOwnershipFilter(filter.id)}
+                  className={clsx(
+                    'flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm transition-colors',
+                    ownershipFilter === filter.id
+                      ? 'bg-cyan-500 text-white shadow-lg'
+                      : 'text-white/60 hover:text-white hover:bg-white/5'
+                  )}
+                  title={filter.description}
+                >
+                  <Icon size={14} />
+                  <span>{filter.name}</span>
+                </button>
+              );
+            })}
+          </div>
+
           {/* Type Filters */}
           <div className="flex flex-wrap gap-2">
             {ENTITY_TYPE_FILTERS.map((filter) => {
@@ -276,6 +311,12 @@ export default function ContactsPage() {
                       )}
 
                       <div className="flex items-center gap-4 mt-2 text-xs text-white/40">
+                        {entity.is_shared && entity.owner_name && (
+                          <span className="flex items-center gap-1 text-purple-400">
+                            <Share size={12} />
+                            от {entity.owner_name}
+                          </span>
+                        )}
                         {entity.chats_count !== undefined && entity.chats_count > 0 && (
                           <span className="flex items-center gap-1">
                             <MessageSquare size={12} />

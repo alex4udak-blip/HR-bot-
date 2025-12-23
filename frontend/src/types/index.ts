@@ -191,6 +191,9 @@ export interface Entity {
   tags: string[];
   extra_data: Record<string, unknown>;
   created_by?: number;
+  owner_name?: string;
+  is_mine?: boolean;
+  is_shared?: boolean;
   created_at: string;
   updated_at: string;
   chats_count?: number;
