@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { getCurrentUser } from '@/services/api';
 import LoginPage from '@/pages/LoginPage';
+import InvitePage from '@/pages/InvitePage';
 import DashboardPage from '@/pages/DashboardPage';
 import ChatsPage from '@/pages/ChatsPage';
 import ContactsPage from '@/pages/ContactsPage';
@@ -56,6 +57,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/invite/:token" element={<InvitePage />} />
       <Route
         path="/"
         element={

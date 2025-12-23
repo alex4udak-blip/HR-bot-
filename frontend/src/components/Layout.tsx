@@ -57,16 +57,14 @@ export default function Layout() {
               end={item.path.includes('?')}
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center gap-3 py-2.5 rounded-xl transition-all duration-200',
-                  'indent' in item && item.indent ? 'pl-8 pr-4' : 'px-4',
+                  'flex items-center gap-3 py-2.5 px-4 rounded-xl transition-all duration-200',
                   isActive
                     ? 'bg-accent-500/20 text-accent-400'
-                    : 'text-dark-300 hover:text-dark-100 hover:bg-white/5',
-                  'indent' in item && item.indent && 'text-sm'
+                    : 'text-dark-300 hover:text-dark-100 hover:bg-white/5'
                 )
               }
             >
-              <item.icon className={clsx('indent' in item && item.indent ? 'w-4 h-4' : 'w-5 h-5')} />
+              <item.icon className="w-5 h-5" />
               <span className="font-medium">{item.label}</span>
             </NavLink>
           ))}
