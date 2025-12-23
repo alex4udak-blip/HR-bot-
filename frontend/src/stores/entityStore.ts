@@ -1,12 +1,14 @@
 import { create } from 'zustand';
 import type { Entity, EntityType, EntityStatus, EntityWithRelations } from '@/types';
 import * as api from '@/services/api';
+import type { OwnershipFilter } from '@/services/api';
 
 interface EntityFilters {
   type?: EntityType;
   status?: EntityStatus;
   search?: string;
   tags?: string;
+  ownership?: OwnershipFilter;
 }
 
 interface EntityState {

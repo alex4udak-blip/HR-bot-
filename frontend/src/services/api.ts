@@ -438,11 +438,14 @@ export const repairVideoNotes = async (chatId: number, file: File): Promise<Repa
 
 // === ENTITIES ===
 
+export type OwnershipFilter = 'all' | 'mine' | 'shared';
+
 export const getEntities = async (params?: {
   type?: EntityType;
   status?: EntityStatus;
   search?: string;
   tags?: string;
+  ownership?: OwnershipFilter;
   limit?: number;
   offset?: number;
 }): Promise<Entity[]> => {

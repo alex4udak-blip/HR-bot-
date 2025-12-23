@@ -1,16 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime
 from pydantic import BaseModel
 
 from ..database import get_db
 from ..models.database import (
     Entity, EntityType, EntityStatus, EntityTransfer,
-    Chat, CallRecording, AnalysisHistory, User, Organization
+    Chat, CallRecording, AnalysisHistory, User, Organization,
+    SharedAccess, ResourceType, UserRole
 )
 from ..services.auth import get_current_user, get_user_org
+
+# Ownership filter type
+OwnershipFilter = Literal["all", "mine", "shared"]
 
 router = APIRouter()
 
@@ -93,6 +97,7 @@ async def list_entities(
     status: Optional[EntityStatus] = None,
     search: Optional[str] = None,
     tags: Optional[str] = None,  # comma-separated
+    ownership: Optional[OwnershipFilter] = None,  # mine, shared, all
     limit: int = Query(50, le=200),
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
@@ -104,7 +109,43 @@ async def list_entities(
     if not org:
         return []
 
-    query = select(Entity).where(Entity.org_id == org.id)
+    # Determine base query based on ownership filter
+    if ownership == "mine":
+        # Only entities created by current user
+        query = select(Entity).where(
+            Entity.org_id == org.id,
+            Entity.created_by == current_user.id
+        )
+    elif ownership == "shared":
+        # Only entities shared with current user (not owned by them)
+        shared_ids_query = select(SharedAccess.resource_id).where(
+            SharedAccess.resource_type == ResourceType.entity,
+            SharedAccess.shared_with_id == current_user.id,
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+        )
+        query = select(Entity).where(
+            Entity.org_id == org.id,
+            Entity.id.in_(shared_ids_query),
+            Entity.created_by != current_user.id  # Exclude own entities
+        )
+    else:
+        # All entities in organization (for superadmin) or own + shared (for others)
+        if current_user.role == UserRole.SUPERADMIN:
+            query = select(Entity).where(Entity.org_id == org.id)
+        else:
+            # Own entities + shared with me
+            shared_ids_query = select(SharedAccess.resource_id).where(
+                SharedAccess.resource_type == ResourceType.entity,
+                SharedAccess.shared_with_id == current_user.id,
+                or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+            )
+            query = select(Entity).where(
+                Entity.org_id == org.id,
+                or_(
+                    Entity.created_by == current_user.id,
+                    Entity.id.in_(shared_ids_query)
+                )
+            )
 
     if type:
         query = query.where(Entity.type == type)
@@ -131,6 +172,24 @@ async def list_entities(
     result = await db.execute(query)
     entities = result.scalars().all()
 
+    # Pre-fetch shared entity IDs for current user
+    shared_with_me_result = await db.execute(
+        select(SharedAccess.resource_id).where(
+            SharedAccess.resource_type == ResourceType.entity,
+            SharedAccess.shared_with_id == current_user.id,
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+        )
+    )
+    shared_with_me_ids = set(shared_with_me_result.scalars().all())
+
+    # Pre-fetch owner names
+    creator_ids = list(set(e.created_by for e in entities if e.created_by))
+    owner_names = {}
+    if creator_ids:
+        owners_result = await db.execute(select(User).where(User.id.in_(creator_ids)))
+        for owner in owners_result.scalars().all():
+            owner_names[owner.id] = owner.name
+
     # Count related data
     response = []
     for entity in entities:
@@ -140,6 +199,9 @@ async def list_entities(
         calls_count = await db.execute(
             select(func.count(CallRecording.id)).where(CallRecording.entity_id == entity.id)
         )
+
+        is_mine = entity.created_by == current_user.id
+        is_shared = entity.id in shared_with_me_ids and not is_mine
 
         response.append({
             "id": entity.id,
@@ -154,6 +216,9 @@ async def list_entities(
             "tags": entity.tags or [],
             "extra_data": entity.extra_data or {},
             "created_by": entity.created_by,
+            "owner_name": owner_names.get(entity.created_by, "Unknown"),
+            "is_mine": is_mine,
+            "is_shared": is_shared,
             "created_at": entity.created_at,
             "updated_at": entity.updated_at,
             "chats_count": chats_count.scalar() or 0,
