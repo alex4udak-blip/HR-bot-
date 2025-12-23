@@ -144,6 +144,13 @@ async def upload_call(
     current_user: User = Depends(get_current_user)
 ):
     """Upload audio/video file for processing"""
+    current_user = await db.merge(current_user)
+
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
     # Check format
     allowed_extensions = {'.mp3', '.mp4', '.wav', '.m4a', '.webm', '.ogg', '.mpeg'}
     ext = os.path.splitext(file.filename or "")[1].lower()
@@ -160,6 +167,7 @@ async def upload_call(
 
     # Create record
     call = CallRecording(
+        org_id=org.id,
         entity_id=entity_id,
         owner_id=current_user.id,
         source_type=CallSource.upload,
@@ -187,6 +195,13 @@ async def start_bot(
     current_user: User = Depends(get_current_user)
 ):
     """Start a bot to record a Meet/Zoom call"""
+    current_user = await db.merge(current_user)
+
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
     # Determine source type by URL
     source_type = CallSource.meet
     url_lower = data.source_url.lower()
@@ -199,6 +214,7 @@ async def start_bot(
 
     # Create record
     call = CallRecording(
+        org_id=org.id,
         entity_id=data.entity_id,
         owner_id=current_user.id,
         source_type=source_type,
@@ -255,8 +271,18 @@ async def get_call(
     current_user: User = Depends(get_current_user)
 ):
     """Get call recording details"""
+    current_user = await db.merge(current_user)
+
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Call not found")
+
     result = await db.execute(
-        select(CallRecording).where(CallRecording.id == call_id)
+        select(CallRecording).where(
+            CallRecording.id == call_id,
+            CallRecording.org_id == org.id
+        )
     )
     call = result.scalar_one_or_none()
 
@@ -302,12 +328,22 @@ async def get_call_status(
     current_user: User = Depends(get_current_user)
 ):
     """Get call status (for polling)"""
+    current_user = await db.merge(current_user)
+
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Call not found")
+
     result = await db.execute(
         select(
             CallRecording.status,
             CallRecording.duration_seconds,
             CallRecording.error_message
-        ).where(CallRecording.id == call_id)
+        ).where(
+            CallRecording.id == call_id,
+            CallRecording.org_id == org.id
+        )
     )
     row = result.one_or_none()
 
@@ -328,8 +364,18 @@ async def stop_recording(
     current_user: User = Depends(get_current_user)
 ):
     """Stop a recording"""
+    current_user = await db.merge(current_user)
+
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Call not found")
+
     result = await db.execute(
-        select(CallRecording).where(CallRecording.id == call_id)
+        select(CallRecording).where(
+            CallRecording.id == call_id,
+            CallRecording.org_id == org.id
+        )
     )
     call = result.scalar_one_or_none()
 
@@ -358,8 +404,18 @@ async def delete_call(
     current_user: User = Depends(get_current_user)
 ):
     """Delete a call recording"""
+    current_user = await db.merge(current_user)
+
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Call not found")
+
     result = await db.execute(
-        select(CallRecording).where(CallRecording.id == call_id)
+        select(CallRecording).where(
+            CallRecording.id == call_id,
+            CallRecording.org_id == org.id
+        )
     )
     call = result.scalar_one_or_none()
 
@@ -386,14 +442,28 @@ async def link_call_to_entity(
     current_user: User = Depends(get_current_user)
 ):
     """Link a call recording to an entity"""
-    # Verify entity exists
-    entity_result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    current_user = await db.merge(current_user)
+
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Call not found")
+
+    # Verify entity exists and belongs to same org
+    entity_result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
     entity = entity_result.scalar_one_or_none()
     if not entity:
         raise HTTPException(404, "Entity not found")
 
-    # Get and update call
-    call_result = await db.execute(select(CallRecording).where(CallRecording.id == call_id))
+    # Get and update call (must belong to same org)
+    call_result = await db.execute(
+        select(CallRecording).where(
+            CallRecording.id == call_id,
+            CallRecording.org_id == org.id
+        )
+    )
     call = call_result.scalar_one_or_none()
 
     if not call:
@@ -412,8 +482,18 @@ async def reprocess_call(
     current_user: User = Depends(get_current_user)
 ):
     """Re-process a call recording - works for both audio files and Fireflies transcripts"""
+    current_user = await db.merge(current_user)
+
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Call not found")
+
     result = await db.execute(
-        select(CallRecording).where(CallRecording.id == call_id)
+        select(CallRecording).where(
+            CallRecording.id == call_id,
+            CallRecording.org_id == org.id
+        )
     )
     call = result.scalar_one_or_none()
 
@@ -482,8 +562,18 @@ async def update_call(
     current_user: User = Depends(get_current_user)
 ):
     """Update call recording (title, entity link)"""
+    current_user = await db.merge(current_user)
+
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Call not found")
+
     result = await db.execute(
-        select(CallRecording).where(CallRecording.id == call_id)
+        select(CallRecording).where(
+            CallRecording.id == call_id,
+            CallRecording.org_id == org.id
+        )
     )
     call = result.scalar_one_or_none()
 
@@ -500,9 +590,9 @@ async def update_call(
             # Unlink entity
             call.entity_id = None
         else:
-            # Verify entity exists
+            # Verify entity exists and belongs to same org
             entity_result = await db.execute(
-                select(Entity).where(Entity.id == data.entity_id)
+                select(Entity).where(Entity.id == data.entity_id, Entity.org_id == org.id)
             )
             entity = entity_result.scalar_one_or_none()
             if not entity:

@@ -405,8 +405,13 @@ async def transfer_entity(
     current_user: User = Depends(get_current_user)
 ):
     """Transfer contact to another HR"""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
     result = await db.execute(
-        select(Entity).where(Entity.id == entity_id)
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
     )
     entity = result.scalar_one_or_none()
 
@@ -438,14 +443,23 @@ async def link_chat_to_entity(
     current_user: User = Depends(get_current_user)
 ):
     """Link a chat to a contact"""
-    # Verify entity exists
-    entity_result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Verify entity exists and belongs to same org
+    entity_result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
     entity = entity_result.scalar_one_or_none()
     if not entity:
         raise HTTPException(404, "Entity not found")
 
-    # Get and update chat
-    chat_result = await db.execute(select(Chat).where(Chat.id == chat_id))
+    # Get and update chat (must belong to same org)
+    chat_result = await db.execute(
+        select(Chat).where(Chat.id == chat_id, Chat.org_id == org.id)
+    )
     chat = chat_result.scalar_one_or_none()
 
     if not chat:
@@ -464,7 +478,18 @@ async def unlink_chat_from_entity(
     current_user: User = Depends(get_current_user)
 ):
     """Unlink a chat from a contact"""
-    chat_result = await db.execute(select(Chat).where(Chat.id == chat_id, Chat.entity_id == entity_id))
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    chat_result = await db.execute(
+        select(Chat).where(
+            Chat.id == chat_id,
+            Chat.entity_id == entity_id,
+            Chat.org_id == org.id
+        )
+    )
     chat = chat_result.scalar_one_or_none()
 
     if not chat:

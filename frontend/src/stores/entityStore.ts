@@ -15,6 +15,7 @@ interface EntityState {
   loading: boolean;
   error: string | null;
   filters: EntityFilters;
+  fetchVersion: number; // Track request version to discard stale responses
 
   // Actions
   fetchEntities: () => Promise<void>;
@@ -35,15 +36,24 @@ export const useEntityStore = create<EntityState>((set, get) => ({
   loading: false,
   error: null,
   filters: {},
+  fetchVersion: 0,
 
   fetchEntities: async () => {
-    set({ loading: true, error: null });
+    // Increment version to track this request
+    const version = get().fetchVersion + 1;
+    set({ loading: true, error: null, fetchVersion: version });
     try {
       const entities = await api.getEntities(get().filters);
-      set({ entities, loading: false });
+      // Only update if this is still the latest request
+      if (get().fetchVersion === version) {
+        set({ entities, loading: false });
+      }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch entities';
-      set({ error: message, loading: false });
+      // Only update error if this is still the latest request
+      if (get().fetchVersion === version) {
+        const message = err instanceof Error ? err.message : 'Failed to fetch entities';
+        set({ error: message, loading: false });
+      }
     }
   },
 
@@ -113,8 +123,9 @@ export const useEntityStore = create<EntityState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       await api.transferEntity(entityId, { to_user_id: toUserId, comment });
-      // Refresh entity to get updated transfers
+      // Refresh entity to get updated transfers (fetchEntity sets loading: false)
       await get().fetchEntity(entityId);
+      set({ loading: false });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to transfer entity';
       set({ error: message, loading: false });

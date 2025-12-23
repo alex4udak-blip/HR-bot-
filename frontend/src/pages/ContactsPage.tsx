@@ -64,15 +64,14 @@ export default function ContactsPage() {
   // Load entities on mount (always fetch fresh data)
   useEffect(() => {
     fetchEntities();
-  }, []);
+  }, [fetchEntities]);
 
-  // Load entities when filter changes
+  // Load entities when type filter changes
   useEffect(() => {
     setFilters({
-      type: typeFilter === 'all' ? undefined : typeFilter,
-      search: searchQuery || undefined
+      type: typeFilter === 'all' ? undefined : typeFilter
     });
-  }, [typeFilter]);
+  }, [typeFilter, setFilters]);
 
   // Load specific entity when URL changes
   useEffect(() => {
@@ -81,19 +80,15 @@ export default function ContactsPage() {
     } else {
       clearCurrentEntity();
     }
-  }, [entityId]);
+  }, [entityId, fetchEntity, clearCurrentEntity]);
 
   // Handle search with debounce
   useEffect(() => {
     const timeout = setTimeout(() => {
-      if (searchQuery) {
-        setFilters({ search: searchQuery });
-      } else {
-        setFilters({ search: undefined });
-      }
+      setFilters({ search: searchQuery || undefined });
     }, 300);
     return () => clearTimeout(timeout);
-  }, [searchQuery]);
+  }, [searchQuery, setFilters]);
 
   // Update type filter from URL
   useEffect(() => {
