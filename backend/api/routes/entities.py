@@ -147,7 +147,7 @@ async def list_entities(
             Entity.created_by != current_user.id
         )
     else:
-        # All entities user can see: own + shared + department (if lead)
+        # All entities user can see: own + shared + department entities
         # Superadmin and org owner see all
         if current_user.role == UserRole.SUPERADMIN:
             query = select(Entity).where(Entity.org_id == org.id)
@@ -156,22 +156,14 @@ async def list_entities(
             if user_role == OrgRole.owner:
                 query = select(Entity).where(Entity.org_id == org.id)
             else:
-                # Own entities + shared with me + department members' entities (if lead)
+                # Own entities + shared with me + entities in user's departments
                 conditions = [
                     Entity.created_by == current_user.id,
                     Entity.id.in_(shared_ids_query)
                 ]
-                # Department leads see entities from dept members
-                if lead_dept_ids:
-                    # Get user IDs in departments where current user is lead
-                    dept_members_result = await db.execute(
-                        select(DepartmentMember.user_id).where(
-                            DepartmentMember.department_id.in_(lead_dept_ids)
-                        )
-                    )
-                    dept_member_ids = [r for r in dept_members_result.scalars().all()]
-                    if dept_member_ids:
-                        conditions.append(Entity.created_by.in_(dept_member_ids))
+                # Admin/member see entities in their departments
+                if user_dept_ids:
+                    conditions.append(Entity.department_id.in_(user_dept_ids))
 
                 query = select(Entity).where(
                     Entity.org_id == org.id,
