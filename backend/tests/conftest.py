@@ -321,12 +321,12 @@ async def entity(db_session: AsyncSession, organization: Organization, departmen
 
 
 @pytest_asyncio.fixture
-async def second_entity(db_session: AsyncSession, organization: Organization, department: Department, regular_user: User) -> Entity:
-    """Create a second test entity owned by regular user."""
+async def second_entity(db_session: AsyncSession, organization: Organization, department: Department, second_user: User) -> Entity:
+    """Create a second test entity owned by second user."""
     entity = Entity(
         org_id=organization.id,
         department_id=department.id,
-        created_by=regular_user.id,
+        created_by=second_user.id,
         name="Second Contact",
         email="contact2@test.com",
         type=EntityType.client,
@@ -362,11 +362,11 @@ async def chat(db_session: AsyncSession, organization: Organization, admin_user:
 
 
 @pytest_asyncio.fixture
-async def second_chat(db_session: AsyncSession, organization: Organization, regular_user: User) -> Chat:
-    """Create a second test chat owned by regular user."""
+async def second_chat(db_session: AsyncSession, organization: Organization, second_user: User) -> Chat:
+    """Create a second test chat owned by second user."""
     chat = Chat(
         org_id=organization.id,
-        owner_id=regular_user.id,
+        owner_id=second_user.id,
         telegram_chat_id=987654321,
         title="Second Chat",
         chat_type=ChatType.sales,
@@ -402,11 +402,11 @@ async def call_recording(db_session: AsyncSession, organization: Organization, a
 
 
 @pytest_asyncio.fixture
-async def second_call(db_session: AsyncSession, organization: Organization, regular_user: User) -> CallRecording:
-    """Create a second test call owned by regular user."""
+async def second_call(db_session: AsyncSession, organization: Organization, second_user: User) -> CallRecording:
+    """Create a second test call owned by second user."""
     call = CallRecording(
         org_id=organization.id,
-        owner_id=regular_user.id,
+        owner_id=second_user.id,
         title="Second Call",
         source_type=CallSource.meet,
         status=CallStatus.done,

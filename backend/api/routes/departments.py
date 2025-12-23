@@ -360,6 +360,73 @@ async def get_department(
     )
 
 
+@router.get("/{department_id}/children", response_model=List[DepartmentResponse])
+async def get_department_children(
+    department_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get child departments of a department"""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=403, detail="No organization access")
+
+    # Verify parent department exists and belongs to org
+    result = await db.execute(
+        select(Department).where(Department.id == department_id, Department.org_id == org.id)
+    )
+    parent_dept = result.scalar_one_or_none()
+    if not parent_dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+
+    # Get children
+    result = await db.execute(
+        select(Department).where(
+            Department.parent_id == department_id,
+            Department.org_id == org.id
+        ).order_by(Department.name)
+    )
+    children = result.scalars().all()
+
+    response = []
+    for dept in children:
+        # Count members
+        members_result = await db.execute(
+            select(DepartmentMember).where(DepartmentMember.department_id == dept.id)
+        )
+        members_count = len(list(members_result.scalars().all()))
+
+        # Count entities
+        from ..models.database import Entity
+        entities_result = await db.execute(
+            select(Entity).where(Entity.department_id == dept.id)
+        )
+        entities_count = len(list(entities_result.scalars().all()))
+
+        # Count children
+        children_result = await db.execute(
+            select(Department).where(Department.parent_id == dept.id)
+        )
+        children_count = len(list(children_result.scalars().all()))
+
+        response.append(DepartmentResponse(
+            id=dept.id,
+            name=dept.name,
+            description=dept.description,
+            color=dept.color,
+            is_active=dept.is_active,
+            parent_id=dept.parent_id,
+            parent_name=parent_dept.name,
+            members_count=members_count,
+            entities_count=entities_count,
+            children_count=children_count,
+            created_at=dept.created_at
+        ))
+
+    return response
+
+
 @router.patch("/{department_id}", response_model=DepartmentResponse)
 async def update_department(
     department_id: int,
@@ -380,10 +447,10 @@ async def update_department(
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
 
-    # Check permissions (org admin or dept lead)
-    is_admin = await is_org_admin_or_owner(current_user, org, db)
+    # Check permissions (org owner or dept lead only)
+    is_owner = await is_org_owner(current_user, org, db)
     is_lead = await is_dept_lead(current_user, department_id, db)
-    if not is_admin and not is_lead:
+    if not is_owner and not is_lead:
         raise HTTPException(status_code=403, detail="Permission denied")
 
     if data.name is not None:
@@ -392,7 +459,7 @@ async def update_department(
         dept.description = data.description
     if data.color is not None:
         dept.color = data.color
-    if data.is_active is not None and is_admin:  # Only admin can deactivate
+    if data.is_active is not None and is_owner:  # Only owner can deactivate
         dept.is_active = data.is_active
 
     await db.commit()
@@ -422,6 +489,29 @@ async def delete_department(
     dept = result.scalar_one_or_none()
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
+
+    # Check if department has members
+    members_result = await db.execute(
+        select(DepartmentMember).where(DepartmentMember.department_id == department_id)
+    )
+    members_count = len(list(members_result.scalars().all()))
+    if members_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete department with {members_count} member(s). Remove members first."
+        )
+
+    # Check if department has entities
+    from ..models.database import Entity
+    entities_result = await db.execute(
+        select(Entity).where(Entity.department_id == department_id)
+    )
+    entities_count = len(list(entities_result.scalars().all()))
+    if entities_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete department with {entities_count} entity/entities. Reassign entities first."
+        )
 
     await db.delete(dept)
     await db.commit()
