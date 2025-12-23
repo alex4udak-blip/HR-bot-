@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { loginWithMocks, setupMocks } from '../../mocks/api';
 
 /**
  * Comprehensive CSS/Layout Tests for Entities/Contacts Component
@@ -27,14 +28,10 @@ const VIEWPORTS = {
 };
 
 // Helper function to login and navigate to contacts page
-async function loginAndNavigate(page: Page) {
-  await page.goto('/login');
-  await page.fill('input[type="email"]', 'test@example.com');
-  await page.fill('input[type="password"]', 'password');
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/\/(dashboard|contacts)/);
-  await page.goto('/contacts');
-  await page.waitForTimeout(500); // Wait for animations
+async function loginAndNavigate(page: Page, route = '/contacts') {
+  await loginWithMocks(page);
+  await page.goto(route);
+  await page.waitForLoadState('networkidle');
 }
 
 // Helper to create mock entity data via API if needed
@@ -47,6 +44,10 @@ async function ensureEntitiesExist(page: Page) {
 }
 
 test.describe('Entity List/Grid - Layout Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_entity_cards_uniform_size', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
@@ -231,6 +232,10 @@ test.describe('Entity List/Grid - Layout Tests', () => {
 });
 
 test.describe('Entity Detail Panel - Layout Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_detail_panel_layout_stable', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
@@ -429,6 +434,10 @@ test.describe('Entity Detail Panel - Layout Tests', () => {
 });
 
 test.describe('Entity Tabs - Layout Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_tabs_dont_overflow', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.mobile);
     await loginAndNavigate(page);
@@ -589,6 +598,10 @@ test.describe('Entity Tabs - Layout Tests', () => {
 });
 
 test.describe('Search/Filter - Layout Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_search_input_full_width', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.mobile);
     await loginAndNavigate(page);
@@ -739,6 +752,10 @@ test.describe('Search/Filter - Layout Tests', () => {
 });
 
 test.describe('Actions/Buttons - Layout Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_action_buttons_grouped_properly', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
@@ -901,6 +918,10 @@ test.describe('Actions/Buttons - Layout Tests', () => {
 });
 
 test.describe('Transfer Entity Modal - Layout Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_transfer_modal_fits_screen', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.mobile);
     await loginAndNavigate(page);
@@ -1140,6 +1161,10 @@ test.describe('Transfer Entity Modal - Layout Tests', () => {
 });
 
 test.describe('Contact Form Modal - Layout Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_contact_form_modal_centered', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
@@ -1269,6 +1294,10 @@ test.describe('Contact Form Modal - Layout Tests', () => {
 });
 
 test.describe('AI Panel - Layout Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_ai_panel_positioned_correctly', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.largeDesktop);
     await loginAndNavigate(page);
@@ -1413,6 +1442,10 @@ test.describe('AI Panel - Layout Tests', () => {
 });
 
 test.describe('Responsive Entity Layout - Mobile', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_mobile_entity_list_full_width', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.mobile);
     await loginAndNavigate(page);

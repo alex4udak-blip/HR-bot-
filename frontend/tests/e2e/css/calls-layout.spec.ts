@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { loginWithMocks, setupMocks } from '../../mocks/api';
 
 /**
  * Comprehensive CSS/Layout Tests for Calls (Созвоны) Component
@@ -28,18 +29,9 @@ const VIEWPORTS = {
 
 // Helper function to login and navigate
 async function loginAndNavigate(page: Page, route = '/calls') {
-  await page.goto('/login');
-  await page.fill('input[type="email"]', 'test@example.com');
-  await page.fill('input[type="password"]', 'password');
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/\/(dashboard|chats|contacts|calls)/);
-
-  if (route !== '/dashboard') {
-    await page.goto(route);
-  }
-
-  // Wait for calls to load
-  await page.waitForTimeout(1000);
+  await loginWithMocks(page);
+  await page.goto(route);
+  await page.waitForLoadState('networkidle');
 }
 
 // Helper to create a test call with long text content
@@ -56,6 +48,10 @@ async function createTestCall(page: Page) {
 }
 
 test.describe('Calls Layout - Call List Layout', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_call_cards_dont_overflow_container', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
@@ -263,6 +259,10 @@ test.describe('Calls Layout - Call List Layout', () => {
 });
 
 test.describe('Calls Layout - Call Detail Panel', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_detail_panel_fits_viewport', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
@@ -500,6 +500,10 @@ test.describe('Calls Layout - Call Detail Panel', () => {
 });
 
 test.describe('Calls Layout - Content Overflow', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_summary_text_wraps_properly', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
@@ -742,6 +746,10 @@ test.describe('Calls Layout - Content Overflow', () => {
 });
 
 test.describe('Calls Layout - Buttons and Actions', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_action_buttons_stay_in_place', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
@@ -895,6 +903,10 @@ test.describe('Calls Layout - Buttons and Actions', () => {
 });
 
 test.describe('Calls Layout - Edit Panel', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_edit_panel_expands_without_breaking_layout', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
@@ -977,6 +989,10 @@ test.describe('Calls Layout - Edit Panel', () => {
 });
 
 test.describe('Calls Layout - Status Banners', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_status_banner_fits_container', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
@@ -1039,6 +1055,10 @@ test.describe('Calls Layout - Status Banners', () => {
 });
 
 test.describe('Calls Layout - Mobile Responsiveness', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_call_list_fits_mobile_viewport', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.mobile);
     await loginAndNavigate(page);
@@ -1180,6 +1200,10 @@ test.describe('Calls Layout - Mobile Responsiveness', () => {
 });
 
 test.describe('Calls Layout - CallRecorderModal', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_recorder_modal_fits_viewport', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
@@ -1326,6 +1350,10 @@ test.describe('Calls Layout - CallRecorderModal', () => {
 });
 
 test.describe('Calls Layout - Empty States', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_empty_calls_list_centered', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
@@ -1372,6 +1400,10 @@ test.describe('Calls Layout - Empty States', () => {
 });
 
 test.describe('Calls Layout - CSS Property Validation', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_flex_shrink_applied_to_sidebar', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
