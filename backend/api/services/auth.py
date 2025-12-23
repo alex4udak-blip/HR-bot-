@@ -41,13 +41,15 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     """Create JWT access token.
 
     Args:
-        data: Dictionary containing token data (sub, user_id, etc.)
+        data: Dictionary containing token data (sub, user_id, token_version, etc.)
         expires_delta: Optional custom expiration time. If not provided,
                       uses the default from settings.
 
     SECURITY NOTE: Tokens are currently stored in localStorage on the frontend,
     which is vulnerable to XSS attacks. Future implementation should use httpOnly
     cookies with CSRF tokens for better security.
+
+    SECURITY: Token includes token_version to invalidate old tokens on password change.
     """
     to_encode = data.copy()
     if expires_delta:
@@ -67,6 +69,7 @@ async def get_current_user(
             credentials.credentials, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
         )
         user_id = payload.get("sub")
+        token_version = payload.get("token_version", 0)  # Default to 0 for old tokens
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
     except JWTError:
@@ -77,6 +80,10 @@ async def get_current_user(
 
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    # Verify token version matches - invalidates old tokens on password change
+    if user.token_version != token_version:
+        raise HTTPException(status_code=401, detail="Token has been invalidated")
 
     return user
 
@@ -103,6 +110,7 @@ async def get_current_user_optional(
             credentials.credentials, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
         )
         user_id = payload.get("sub")
+        token_version = payload.get("token_version", 0)  # Default to 0 for old tokens
         if not user_id:
             return None
     except JWTError:
@@ -112,6 +120,10 @@ async def get_current_user_optional(
     user = result.scalar_one_or_none()
 
     if not user or not user.is_active:
+        return None
+
+    # Verify token version matches - invalidates old tokens on password change
+    if user.token_version != token_version:
         return None
 
     return user
@@ -124,6 +136,7 @@ async def get_user_from_token(token: str, db: AsyncSession) -> Optional[User]:
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
         user_id = payload.get("sub")
+        token_version = payload.get("token_version", 0)  # Default to 0 for old tokens
         if not user_id:
             return None
     except JWTError:
@@ -135,14 +148,28 @@ async def get_user_from_token(token: str, db: AsyncSession) -> Optional[User]:
     if not user or not user.is_active:
         return None
 
+    # Verify token version matches - invalidates old tokens on password change
+    if user.token_version != token_version:
+        return None
+
     return user
 
 
 async def authenticate_user(db: AsyncSession, email: str, password: str) -> Optional[User]:
+    """Authenticate user with constant-time comparison to prevent timing attacks."""
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
-    if user and verify_password(password, user.password_hash):
-        return user
+
+    if user:
+        # User exists - verify actual password
+        if verify_password(password, user.password_hash):
+            return user
+    else:
+        # User doesn't exist - perform dummy hash to maintain constant time
+        # This prevents timing attacks that could enumerate valid email addresses
+        dummy_hash = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYqVr/1fXem"
+        verify_password(password, dummy_hash)
+
     return None
 
 

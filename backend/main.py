@@ -3,11 +3,15 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
+from api.limiter import limiter
 from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations
 from api.config import settings
 
@@ -33,6 +37,18 @@ logger.setLevel(logging.INFO)
 
 # Static files directory (built frontend)
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Middleware to add security headers to all responses."""
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        return response
 
 
 async def run_migration(engine, sql: str, description: str):
@@ -369,6 +385,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # CORS - use allowed origins from settings (not wildcard)
 app.add_middleware(
     CORSMiddleware,
@@ -377,6 +397,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Routes
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])

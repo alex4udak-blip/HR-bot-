@@ -11,6 +11,7 @@ from ..models.database import (
 )
 from ..models.schemas import UserCreate, UserUpdate, UserResponse
 from ..services.auth import get_superadmin, hash_password
+from ..services.password_policy import validate_password
 
 router = APIRouter()
 
@@ -56,6 +57,11 @@ async def create_user(
         result = await db.execute(select(User).where(User.telegram_id == data.telegram_id))
         if result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Telegram ID exists")
+
+    # Validate password
+    is_valid, error_message = validate_password(data.password, data.email)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_message)
 
     user = User(
         email=data.email,

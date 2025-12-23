@@ -191,6 +191,10 @@ class User(Base):
     telegram_id = Column(BigInteger, unique=True, nullable=True, index=True)
     telegram_username = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True)
+    token_version = Column(Integer, default=0, nullable=False)  # Increment on password change
+    # Brute force protection
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=func.now())
 
     chats = relationship("Chat", back_populates="owner")
