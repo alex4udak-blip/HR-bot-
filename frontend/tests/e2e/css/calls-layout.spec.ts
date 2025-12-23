@@ -52,7 +52,8 @@ test.describe('Calls Layout - Call List Layout', () => {
     await setupMocks(page);
   });
 
-  test.skip('test_call_cards_dont_overflow_container', async // Skip: Selector specificity issues ({ page }) => {
+  // Skip: Selector specificity issues
+  test.skip('test_call_cards_dont_overflow_container', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
 
@@ -114,7 +115,8 @@ test.describe('Calls Layout - Call List Layout', () => {
     }
   });
 
-  test.skip('test_call_card_description_truncates_with_line_clamp', async // Skip: Selector specificity issues ({ page }) => {
+  // Skip: Selector specificity issues
+  test.skip('test_call_card_description_truncates_with_line_clamp', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
 
