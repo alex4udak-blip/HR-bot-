@@ -1,6 +1,10 @@
 """
 Pytest configuration and fixtures for HR-Bot backend tests.
 """
+import os
+# Set TESTING mode BEFORE any imports to disable rate limiting
+os.environ["TESTING"] = "1"
+
 import asyncio
 import pytest
 import pytest_asyncio
