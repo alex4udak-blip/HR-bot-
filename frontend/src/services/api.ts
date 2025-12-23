@@ -650,6 +650,8 @@ export interface InviteMemberRequest {
   name: string;
   password: string;
   role?: OrgRole;
+  department_ids?: number[];
+  department_role?: DeptRole;
 }
 
 export const getCurrentOrganization = async (): Promise<Organization> => {

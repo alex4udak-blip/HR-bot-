@@ -740,11 +740,24 @@ async def process_fireflies_transcript(call_id: int, transcript: dict):
             formatted_lines = []
             speaker_segments = []
 
+            # Find the first timestamp to normalize all times
+            # This makes the transcript always start from 0:00
+            first_timestamp = 0.0
+            for sentence in sentences:
+                text = sentence.get("text") or sentence.get("raw_text") or ""
+                if text.strip():  # First non-empty sentence
+                    first_timestamp = float(sentence.get("start_time") or 0)
+                    break
+
             for sentence in sentences:
                 speaker_name = sentence.get("speaker_name") or f"Speaker {sentence.get('speaker_id', '?')}"
                 text = sentence.get("text") or sentence.get("raw_text") or ""
-                start_time = float(sentence.get("start_time") or 0)
-                end_time = float(sentence.get("end_time") or 0)
+                raw_start_time = float(sentence.get("start_time") or 0)
+                raw_end_time = float(sentence.get("end_time") or 0)
+
+                # Normalize timestamps to start from 0
+                start_time = max(0, raw_start_time - first_timestamp)
+                end_time = max(0, raw_end_time - first_timestamp)
 
                 # Skip empty sentences
                 if not text.strip():

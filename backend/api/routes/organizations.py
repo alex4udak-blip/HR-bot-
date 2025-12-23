@@ -20,7 +20,8 @@ from pydantic import BaseModel, EmailStr
 from ..database import get_db
 from ..models.database import (
     User, UserRole, Organization, OrgMember, OrgRole,
-    Entity, Chat, CallRecording
+    Entity, Chat, CallRecording,
+    Department, DepartmentMember, DeptRole
 )
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, hash_password
 
@@ -68,6 +69,8 @@ class InviteMemberRequest(BaseModel):
     name: str
     password: str
     role: str = "member"  # owner, admin, member
+    department_ids: Optional[List[int]] = None  # Departments to add user to
+    department_role: str = "member"  # Role in departments: lead, member
 
 
 class UpdateMemberRoleRequest(BaseModel):
@@ -259,6 +262,38 @@ async def invite_member(
         invited_by=user.id
     )
     db.add(membership)
+    await db.flush()
+
+    # Add to departments if specified
+    if data.department_ids:
+        # Validate department role
+        try:
+            dept_role = DeptRole(data.department_role)
+        except ValueError:
+            dept_role = DeptRole.member
+
+        # Only org admins/owners can set lead role
+        if dept_role == DeptRole.lead and role not in (OrgRole.owner, OrgRole.admin):
+            dept_role = DeptRole.member
+
+        for dept_id in data.department_ids:
+            # Verify department belongs to org
+            result = await db.execute(
+                select(Department).where(
+                    Department.id == dept_id,
+                    Department.org_id == org.id
+                )
+            )
+            dept = result.scalar_one_or_none()
+            if dept:
+                # Create department membership
+                dept_membership = DepartmentMember(
+                    department_id=dept_id,
+                    user_id=new_user.id,
+                    role=dept_role
+                )
+                db.add(dept_membership)
+
     await db.commit()
 
     return OrgMemberResponse(

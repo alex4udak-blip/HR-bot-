@@ -15,7 +15,7 @@ import {
   EyeOff,
   Loader2
 } from 'lucide-react';
-import { getUsers, createUser, deleteUser, getOrgMembers, inviteMember, removeMember, updateMemberRole, getCurrentOrganization, getMyOrgRole } from '@/services/api';
+import { getUsers, createUser, deleteUser, getOrgMembers, inviteMember, removeMember, updateMemberRole, getCurrentOrganization, getMyOrgRole, getDepartments, type Department, type DeptRole } from '@/services/api';
 import type { OrgMember, OrgRole, Organization } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
@@ -324,6 +324,30 @@ function InviteMemberModal({
   const [role, setRole] = useState<OrgRole>('member');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [selectedDepartments, setSelectedDepartments] = useState<number[]>([]);
+  const [departmentRole, setDepartmentRole] = useState<DeptRole>('member');
+
+  // Load departments on mount
+  useEffect(() => {
+    const loadDepartments = async () => {
+      try {
+        const depts = await getDepartments(-1); // Get all departments
+        setDepartments(depts);
+      } catch (e) {
+        console.error('Failed to load departments:', e);
+      }
+    };
+    loadDepartments();
+  }, []);
+
+  const toggleDepartment = (deptId: number) => {
+    setSelectedDepartments(prev =>
+      prev.includes(deptId)
+        ? prev.filter(id => id !== deptId)
+        : [...prev, deptId]
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -340,7 +364,14 @@ function InviteMemberModal({
 
     setLoading(true);
     try {
-      await inviteMember({ name, email, password, role });
+      await inviteMember({
+        name,
+        email,
+        password,
+        role,
+        department_ids: selectedDepartments.length > 0 ? selectedDepartments : undefined,
+        department_role: selectedDepartments.length > 0 ? departmentRole : undefined
+      });
       toast.success('Пользователь добавлен');
       onSuccess();
     } catch (e: any) {
@@ -446,6 +477,54 @@ function InviteMemberModal({
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* Department Selection */}
+          {departments.length > 0 && (
+            <div>
+              <label className="block text-sm text-white/60 mb-2">Департаменты</label>
+              <div className="max-h-40 overflow-y-auto space-y-1.5 mb-2">
+                {departments.map((dept) => (
+                  <label
+                    key={dept.id}
+                    className={clsx(
+                      'flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors',
+                      selectedDepartments.includes(dept.id)
+                        ? 'bg-cyan-500/20 border border-cyan-500/50'
+                        : 'bg-white/5 border border-transparent hover:bg-white/10'
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedDepartments.includes(dept.id)}
+                      onChange={() => toggleDepartment(dept.id)}
+                      className="w-4 h-4 rounded border-white/20 bg-white/5 text-cyan-500 focus:ring-cyan-500"
+                    />
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: dept.color || '#06b6d4' }}
+                    />
+                    <span className="text-white text-sm">{dept.name}</span>
+                    {dept.parent_name && (
+                      <span className="text-xs text-white/30">в {dept.parent_name}</span>
+                    )}
+                  </label>
+                ))}
+              </div>
+              {selectedDepartments.length > 0 && canSetRole && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-white/40">Роль в департаментах:</span>
+                  <select
+                    value={departmentRole}
+                    onChange={(e) => setDepartmentRole(e.target.value as DeptRole)}
+                    className="px-2 py-1 bg-white/5 border border-white/10 rounded text-white text-sm"
+                  >
+                    <option value="member">Участник</option>
+                    <option value="lead">Руководитель</option>
+                  </select>
+                </div>
+              )}
             </div>
           )}
 
