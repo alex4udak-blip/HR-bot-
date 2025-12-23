@@ -98,9 +98,27 @@ async def create_invitation(
     except ValueError:
         org_role = OrgRole.member
 
-    # Only owner can create owner invites
-    if org_role == OrgRole.owner and role != OrgRole.owner:
-        raise HTTPException(status_code=403, detail="Only owner can create owner invitations")
+    # Only owner can create owner/admin invites
+    if org_role in (OrgRole.owner, OrgRole.admin) and role != OrgRole.owner:
+        raise HTTPException(status_code=403, detail="Only owner can create owner/admin invitations")
+
+    # Get user's department IDs (for admin restriction)
+    user_dept_result = await db.execute(
+        select(DepartmentMember.department_id).where(
+            DepartmentMember.user_id == user.id
+        )
+    )
+    user_dept_ids = set(r for r in user_dept_result.scalars().all())
+
+    # Admin can only invite to their own departments
+    if role != OrgRole.owner and data.department_ids:
+        for dept_info in data.department_ids:
+            dept_id = dept_info.get("id")
+            if dept_id and dept_id not in user_dept_ids:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"You can only invite to departments you belong to"
+                )
 
     # Generate token
     token = generate_token()
@@ -146,12 +164,20 @@ async def create_invitation(
 @router.get("", response_model=List[InvitationResponse])
 async def list_invitations(
     include_used: bool = False,
-    org: Organization = Depends(get_current_org),
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user)
+    auth: tuple = Depends(require_org_admin)
 ):
-    """List all invitations for current organization."""
+    """List invitations for current organization.
+
+    Owner sees all, admin sees only their own invitations.
+    """
+    user, org, role = auth
+
     query = select(Invitation).where(Invitation.org_id == org.id)
+
+    # Admin can only see invitations they created
+    if role != OrgRole.owner:
+        query = query.where(Invitation.invited_by_id == user.id)
 
     if not include_used:
         query = query.where(Invitation.used_at.is_(None))
@@ -352,7 +378,10 @@ async def revoke_invitation(
     db: AsyncSession = Depends(get_db),
     auth: tuple = Depends(require_org_admin)
 ):
-    """Revoke/delete an invitation."""
+    """Revoke/delete an invitation.
+
+    Owner can revoke any, admin can only revoke their own invitations.
+    """
     user, org, role = auth
 
     result = await db.execute(
@@ -365,6 +394,10 @@ async def revoke_invitation(
 
     if not invitation:
         raise HTTPException(status_code=404, detail="Invitation not found")
+
+    # Admin can only revoke their own invitations
+    if role != OrgRole.owner and invitation.invited_by_id != user.id:
+        raise HTTPException(status_code=403, detail="You can only revoke your own invitations")
 
     await db.delete(invitation)
     await db.commit()
