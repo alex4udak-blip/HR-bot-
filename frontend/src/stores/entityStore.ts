@@ -9,6 +9,7 @@ interface EntityFilters {
   search?: string;
   tags?: string;
   ownership?: OwnershipFilter;
+  department_id?: number;
 }
 
 interface EntityState {

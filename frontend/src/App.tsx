@@ -9,6 +9,7 @@ import ContactsPage from '@/pages/ContactsPage';
 import CallsPage from '@/pages/CallsPage';
 import TrashPage from '@/pages/TrashPage';
 import UsersPage from '@/pages/UsersPage';
+import DepartmentsPage from '@/pages/DepartmentsPage';
 import SettingsPage from '@/pages/SettingsPage';
 import Layout from '@/components/Layout';
 
@@ -73,6 +74,7 @@ export default function App() {
         <Route path="calls/:callId" element={<CallsPage />} />
         <Route path="trash" element={<TrashPage />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="departments" element={<DepartmentsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>

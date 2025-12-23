@@ -90,6 +90,11 @@ class OrgRole(str, enum.Enum):
     member = "member"    # Read/write own data only
 
 
+class DeptRole(str, enum.Enum):
+    lead = "lead"        # Department lead - sees all dept data
+    member = "member"    # Regular member - sees own data + shared
+
+
 class SubscriptionPlan(str, enum.Enum):
     free = "free"
     pro = "pro"
@@ -110,6 +115,7 @@ class Organization(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     members = relationship("OrgMember", back_populates="organization", cascade="all, delete-orphan")
+    departments = relationship("Department", back_populates="organization", cascade="all, delete-orphan")
     entities = relationship("Entity", back_populates="organization")
     chats = relationship("Chat", back_populates="organization")
     calls = relationship("CallRecording", back_populates="organization")
@@ -131,6 +137,38 @@ class OrgMember(Base):
     inviter = relationship("User", foreign_keys=[invited_by])
 
 
+class Department(Base):
+    """Department within an organization"""
+    __tablename__ = "departments"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    color = Column(String(20), nullable=True)  # For UI display (e.g., "#3B82F6")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    organization = relationship("Organization", back_populates="departments")
+    members = relationship("DepartmentMember", back_populates="department", cascade="all, delete-orphan")
+    entities = relationship("Entity", back_populates="department")
+
+
+class DepartmentMember(Base):
+    """Department membership - links users to departments"""
+    __tablename__ = "department_members"
+
+    id = Column(Integer, primary_key=True)
+    department_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(SQLEnum(DeptRole), default=DeptRole.member)
+    created_at = Column(DateTime, default=func.now())
+
+    department = relationship("Department", back_populates="members")
+    user = relationship("User", back_populates="department_memberships")
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -149,6 +187,7 @@ class User(Base):
     ai_conversations = relationship("AIConversation", back_populates="user")
     analyses = relationship("AnalysisHistory", back_populates="user")
     org_memberships = relationship("OrgMember", foreign_keys="OrgMember.user_id", back_populates="user")
+    department_memberships = relationship("DepartmentMember", back_populates="user")
 
 
 class Chat(Base):
@@ -268,6 +307,7 @@ class Entity(Base):
 
     id = Column(Integer, primary_key=True)
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
     type = Column(SQLEnum(EntityType), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     status = Column(SQLEnum(EntityStatus), default=EntityStatus.new, index=True)
@@ -283,6 +323,7 @@ class Entity(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     organization = relationship("Organization", back_populates="entities")
+    department = relationship("Department", back_populates="entities")
     creator = relationship("User", foreign_keys=[created_by])
     chats = relationship("Chat", back_populates="entity")
     calls = relationship("CallRecording", back_populates="entity")
@@ -299,14 +340,16 @@ class EntityTransfer(Base):
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
     from_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     to_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    from_department = Column(String(100), nullable=True)
-    to_department = Column(String(100), nullable=True)
+    from_department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
+    to_department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
     comment = Column(Text, nullable=True)
     created_at = Column(DateTime, default=func.now())
 
     entity = relationship("Entity", back_populates="transfers")
     from_user = relationship("User", foreign_keys=[from_user_id])
     to_user = relationship("User", foreign_keys=[to_user_id])
+    from_department = relationship("Department", foreign_keys=[from_department_id])
+    to_department = relationship("Department", foreign_keys=[to_department_id])
 
 
 class CallRecording(Base):

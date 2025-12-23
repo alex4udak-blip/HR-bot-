@@ -29,6 +29,7 @@ const navItems = [
   { path: '/contacts?type=contractor', icon: Wrench, label: 'Подрядчики', indent: true },
   { path: '/trash', icon: Trash2, label: 'Корзина' },
   { path: '/users', icon: Users, label: 'Пользователи' },
+  { path: '/departments', icon: Building2, label: 'Департаменты' },
   { path: '/settings', icon: Settings, label: 'Настройки' },
 ];
 

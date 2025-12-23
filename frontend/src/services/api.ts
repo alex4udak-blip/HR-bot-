@@ -446,6 +446,7 @@ export const getEntities = async (params?: {
   search?: string;
   tags?: string;
   ownership?: OwnershipFilter;
+  department_id?: number;
   limit?: number;
   offset?: number;
 }): Promise<Entity[]> => {
@@ -475,6 +476,7 @@ export const createEntity = async (entityData: {
   position?: string;
   tags?: string[];
   extra_data?: Record<string, unknown>;
+  department_id?: number;
 }): Promise<Entity> => {
   const { data } = await api.post('/entities', entityData);
   return data;
@@ -489,6 +491,7 @@ export const updateEntity = async (id: number, updates: {
   position?: string;
   tags?: string[];
   extra_data?: Record<string, unknown>;
+  department_id?: number | null;
 }): Promise<Entity> => {
   const { data } = await api.put(`/entities/${id}`, updates);
   return data;
@@ -500,7 +503,7 @@ export const deleteEntity = async (id: number): Promise<void> => {
 
 export const transferEntity = async (entityId: number, data: {
   to_user_id: number;
-  to_department?: string;
+  to_department_id?: number;
   comment?: string;
 }): Promise<{ success: boolean; transfer_id: number }> => {
   const response = await api.post(`/entities/${entityId}/transfer`, data);
@@ -744,6 +747,90 @@ export const getResourceShares = async (resourceType: ResourceType, resourceId: 
 
 export const getSharableUsers = async (): Promise<UserSimple[]> => {
   const { data } = await api.get('/sharing/users');
+  return data;
+};
+
+// === DEPARTMENTS ===
+
+export type DeptRole = 'lead' | 'member';
+
+export interface Department {
+  id: number;
+  name: string;
+  description?: string;
+  color?: string;
+  is_active: boolean;
+  members_count: number;
+  entities_count: number;
+  created_at: string;
+}
+
+export interface DepartmentMember {
+  id: number;
+  user_id: number;
+  user_name: string;
+  user_email: string;
+  role: DeptRole;
+  created_at: string;
+}
+
+export const getDepartments = async (): Promise<Department[]> => {
+  const { data } = await api.get('/departments');
+  return data;
+};
+
+export const getDepartment = async (id: number): Promise<Department> => {
+  const { data } = await api.get(`/departments/${id}`);
+  return data;
+};
+
+export const createDepartment = async (dept: {
+  name: string;
+  description?: string;
+  color?: string;
+}): Promise<Department> => {
+  const { data } = await api.post('/departments', dept);
+  return data;
+};
+
+export const updateDepartment = async (id: number, updates: {
+  name?: string;
+  description?: string;
+  color?: string;
+  is_active?: boolean;
+}): Promise<Department> => {
+  const { data } = await api.patch(`/departments/${id}`, updates);
+  return data;
+};
+
+export const deleteDepartment = async (id: number): Promise<void> => {
+  await api.delete(`/departments/${id}`);
+};
+
+export const getDepartmentMembers = async (departmentId: number): Promise<DepartmentMember[]> => {
+  const { data } = await api.get(`/departments/${departmentId}/members`);
+  return data;
+};
+
+export const addDepartmentMember = async (departmentId: number, data: {
+  user_id: number;
+  role?: DeptRole;
+}): Promise<DepartmentMember> => {
+  const { data: result } = await api.post(`/departments/${departmentId}/members`, data);
+  return result;
+};
+
+export const updateDepartmentMember = async (departmentId: number, userId: number, role: DeptRole): Promise<DepartmentMember> => {
+  const { data } = await api.patch(`/departments/${departmentId}/members/${userId}`, { role });
+  return data;
+};
+
+export const removeDepartmentMember = async (departmentId: number, userId: number): Promise<void> => {
+  await api.delete(`/departments/${departmentId}/members/${userId}`);
+};
+
+export const getMyDepartments = async (): Promise<Department[]> => {
+  const { data } = await api.get('/departments/my/departments');
   return data;
 };
 
