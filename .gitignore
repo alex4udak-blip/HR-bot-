@@ -73,3 +73,13 @@ Thumbs.db
 
 # Build outputs
 frontend/dist/
+
+# Playwright test artifacts
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright/.cache/
+**/test-results/
+**/playwright-report/
+
+# Visual regression snapshots (optional - remove if you want to track them)
+**/*.spec.ts-snapshots/
