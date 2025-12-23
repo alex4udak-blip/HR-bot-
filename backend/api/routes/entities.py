@@ -9,10 +9,10 @@ from ..database import get_db
 from ..models.database import (
     Entity, EntityType, EntityStatus, EntityTransfer,
     Chat, CallRecording, AnalysisHistory, User, Organization,
-    SharedAccess, ResourceType, UserRole,
+    SharedAccess, ResourceType, UserRole, AccessLevel, OrgRole,
     Department, DepartmentMember, DeptRole
 )
-from ..services.auth import get_current_user, get_user_org
+from ..services.auth import get_current_user, get_user_org, get_user_org_role
 
 # Ownership filter type
 OwnershipFilter = Literal["all", "mine", "shared"]
@@ -148,22 +148,35 @@ async def list_entities(
         )
     else:
         # All entities user can see: own + shared + department (if lead)
+        # Superadmin and org owner see all
         if current_user.role == UserRole.SUPERADMIN:
             query = select(Entity).where(Entity.org_id == org.id)
         else:
-            # Own entities + shared with me + department entities (if lead)
-            conditions = [
-                Entity.created_by == current_user.id,
-                Entity.id.in_(shared_ids_query)
-            ]
-            # Department leads see all entities in their departments
-            if lead_dept_ids:
-                conditions.append(Entity.department_id.in_(lead_dept_ids))
+            user_role = await get_user_org_role(current_user, org.id, db)
+            if user_role == OrgRole.owner:
+                query = select(Entity).where(Entity.org_id == org.id)
+            else:
+                # Own entities + shared with me + department members' entities (if lead)
+                conditions = [
+                    Entity.created_by == current_user.id,
+                    Entity.id.in_(shared_ids_query)
+                ]
+                # Department leads see entities from dept members
+                if lead_dept_ids:
+                    # Get user IDs in departments where current user is lead
+                    dept_members_result = await db.execute(
+                        select(DepartmentMember.user_id).where(
+                            DepartmentMember.department_id.in_(lead_dept_ids)
+                        )
+                    )
+                    dept_member_ids = [r for r in dept_members_result.scalars().all()]
+                    if dept_member_ids:
+                        conditions.append(Entity.created_by.in_(dept_member_ids))
 
-            query = select(Entity).where(
-                Entity.org_id == org.id,
-                or_(*conditions)
-            )
+                query = select(Entity).where(
+                    Entity.org_id == org.id,
+                    or_(*conditions)
+                )
 
     if type:
         query = query.where(Entity.type == type)
@@ -482,6 +495,33 @@ async def update_entity(
 
     if not entity:
         raise HTTPException(404, "Entity not found")
+
+    # Check edit permissions (Salesforce-style)
+    can_edit = False
+    if current_user.role == UserRole.SUPERADMIN:
+        can_edit = True
+    else:
+        user_role = await get_user_org_role(current_user, org.id, db)
+        if user_role == OrgRole.owner:
+            can_edit = True
+        elif entity.created_by == current_user.id:
+            can_edit = True  # Owner of record
+        else:
+            # Check if shared with edit/full access
+            shared_result = await db.execute(
+                select(SharedAccess).where(
+                    SharedAccess.resource_type == ResourceType.entity,
+                    SharedAccess.resource_id == entity_id,
+                    SharedAccess.shared_with_id == current_user.id,
+                    SharedAccess.access_level.in_([AccessLevel.edit, AccessLevel.full]),
+                    or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+                )
+            )
+            if shared_result.scalar_one_or_none():
+                can_edit = True
+
+    if not can_edit:
+        raise HTTPException(403, "No edit permission for this entity")
 
     # Validate department_id if provided
     if data.department_id is not None:

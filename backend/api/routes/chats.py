@@ -24,7 +24,7 @@ from sqlalchemy import select, func, distinct, delete, and_, or_
 from sqlalchemy.orm import selectinload
 
 from ..database import get_db
-from ..models.database import User, UserRole, Chat, Message, ChatCriteria, AIConversation, AnalysisHistory, Entity, OrgRole, DepartmentMember
+from ..models.database import User, UserRole, Chat, Message, ChatCriteria, AIConversation, AnalysisHistory, Entity, OrgRole, DepartmentMember, DeptRole, SharedAccess, ResourceType, AccessLevel
 from ..models.schemas import ChatResponse, ChatUpdate, ChatTypeConfig
 from ..services.auth import get_current_user, get_user_org, get_user_org_role
 from ..services.chat_types import (
@@ -98,43 +98,54 @@ async def get_chats(
         Chat.org_id == org.id
     )
 
-    # Role-based filtering:
-    # - superadmin/owner: see all in organization
-    # - admin: see own + chats linked to entities in their departments
-    # - member: see only own chats
+    # Salesforce-style access control:
+    # - Superadmin: see all everywhere
+    # - Org Owner: see all in organization
+    # - Others: own + shared + dept lead sees dept members' records
     if user.role != UserRole.SUPERADMIN:
         user_role = await get_user_org_role(user, org.id, db)
 
-        if user_role == OrgRole.member:
-            # Members see only their own
-            query = query.where(Chat.owner_id == user.id)
-        elif user_role == OrgRole.admin:
-            # Admins see own + department entities
-            dept_result = await db.execute(
-                select(DepartmentMember.department_id).where(
-                    DepartmentMember.user_id == user.id
+        if user_role != OrgRole.owner:
+            # Get IDs of chats shared with current user
+            shared_result = await db.execute(
+                select(SharedAccess.resource_id).where(
+                    SharedAccess.resource_type == ResourceType.chat,
+                    SharedAccess.shared_with_id == user.id,
+                    or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
                 )
             )
-            admin_dept_ids = [r for r in dept_result.scalars().all()]
+            shared_chat_ids = [r for r in shared_result.scalars().all()]
 
-            if admin_dept_ids:
-                # Get entity IDs in admin's departments
-                entity_result = await db.execute(
-                    select(Entity.id).where(Entity.department_id.in_(admin_dept_ids))
+            # Get departments where user is lead
+            lead_dept_result = await db.execute(
+                select(DepartmentMember.department_id).where(
+                    DepartmentMember.user_id == user.id,
+                    DepartmentMember.role == DeptRole.lead
                 )
-                dept_entity_ids = [r for r in entity_result.scalars().all()]
+            )
+            lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
 
-                # Own chats OR chats linked to department entities
-                query = query.where(
-                    or_(
-                        Chat.owner_id == user.id,
-                        Chat.entity_id.in_(dept_entity_ids) if dept_entity_ids else False
+            # Get user IDs in departments where current user is lead
+            dept_member_ids = []
+            if lead_dept_ids:
+                dept_members_result = await db.execute(
+                    select(DepartmentMember.user_id).where(
+                        DepartmentMember.department_id.in_(lead_dept_ids)
                     )
                 )
-            else:
-                # Admin without departments - only own chats
-                query = query.where(Chat.owner_id == user.id)
-        # owner sees all (no additional filter)
+                dept_member_ids = [r for r in dept_members_result.scalars().all()]
+
+            # Build access conditions
+            conditions = [Chat.owner_id == user.id]  # Own records
+
+            if shared_chat_ids:
+                conditions.append(Chat.id.in_(shared_chat_ids))  # Shared with me
+
+            if dept_member_ids:
+                conditions.append(Chat.owner_id.in_(dept_member_ids))  # Dept members' records
+
+            query = query.where(or_(*conditions))
+        # org owner sees all in org (no additional filter)
 
     if search:
         query = query.where(Chat.title.ilike(f"%{search}%"))
