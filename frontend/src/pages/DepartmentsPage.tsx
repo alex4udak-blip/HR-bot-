@@ -147,11 +147,21 @@ export default function DepartmentsPage() {
     }
   };
 
+  // Owner-only actions: create top-level depts, delete depts, set lead role
+  const isOwner = myRole === 'owner' || currentUser?.role === 'superadmin';
+  // Admin can edit their departments, but not create top-level or delete
   const canManage = myRole === 'owner' || myRole === 'admin' || currentUser?.role === 'superadmin';
 
   // Check if user can create sub-department for a given department
+  // Owner can create anywhere, lead can create in their department
   const canCreateSubDept = (deptId: number) => {
-    return canManage || myLeadDeptIds.includes(deptId);
+    return isOwner || myLeadDeptIds.includes(deptId);
+  };
+
+  // Check if user can edit a specific department
+  // Owner can edit all, admin can edit depts they belong to
+  const canEditDept = (deptId: number) => {
+    return isOwner || myLeadDeptIds.includes(deptId);
   };
 
   // Render a department with its children
@@ -245,7 +255,7 @@ export default function DepartmentsPage() {
           </div>
 
           <div className="flex gap-2 mt-3 pt-3 border-t border-white/5 ml-10">
-            {/* Add sub-department button for leads */}
+            {/* Add sub-department button for leads/owners */}
             {canCreateSubDept(dept.id) && (
               <button
                 onClick={(e) => {
@@ -259,29 +269,31 @@ export default function DepartmentsPage() {
                 Под-департамент
               </button>
             )}
-            {canManage && (
-              <>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedDept(dept);
-                    setShowEditModal(true);
-                  }}
-                  className="flex-1 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-sm flex items-center justify-center gap-1"
-                >
-                  <Edit3 size={14} />
-                  Изменить
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(dept);
-                  }}
-                  className="py-1.5 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm flex items-center gap-1"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </>
+            {/* Edit button - owner can edit all, lead can edit their dept */}
+            {canEditDept(dept.id) && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedDept(dept);
+                  setShowEditModal(true);
+                }}
+                className="flex-1 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-sm flex items-center justify-center gap-1"
+              >
+                <Edit3 size={14} />
+                Изменить
+              </button>
+            )}
+            {/* Delete button - only owner */}
+            {isOwner && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDelete(dept);
+                }}
+                className="py-1.5 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm flex items-center gap-1"
+              >
+                <Trash2 size={14} />
+              </button>
             )}
           </div>
         </motion.div>
@@ -320,7 +332,8 @@ export default function DepartmentsPage() {
               Управление структурой организации
             </p>
           </div>
-          {canManage && (
+          {/* Only owner can create top-level departments */}
+          {isOwner && (
             <button
               onClick={() => {
                 setCreateParentId(undefined);
@@ -340,7 +353,7 @@ export default function DepartmentsPage() {
             <FolderOpen className="w-16 h-16 mx-auto text-white/20 mb-4" />
             <h2 className="text-xl font-semibold mb-2 text-white/60">Нет департаментов</h2>
             <p className="text-white/40 mb-4">Создайте первый департамент для организации работы</p>
-            {canManage && (
+            {isOwner && (
               <button
                 onClick={() => {
                   setCreateParentId(undefined);
@@ -395,7 +408,8 @@ export default function DepartmentsPage() {
           <DepartmentMembersModal
             department={selectedDept}
             orgMembers={orgMembers}
-            canManage={canManage}
+            canManage={canManage || myLeadDeptIds.includes(selectedDept.id)}
+            canSetLeadRole={isOwner}
             onClose={() => {
               setShowMembersModal(false);
               setSelectedDept(null);
@@ -663,12 +677,14 @@ function DepartmentMembersModal({
   department,
   orgMembers,
   canManage,
+  canSetLeadRole,
   onClose,
   onUpdate
 }: {
   department: Department;
   orgMembers: OrgMember[];
   canManage: boolean;
+  canSetLeadRole: boolean;
   onClose: () => void;
   onUpdate: () => void;
 }) {
@@ -780,6 +796,7 @@ function DepartmentMembersModal({
         {showAddMember && (
           <AddMemberForm
             availableMembers={availableMembers}
+            canSetLeadRole={canSetLeadRole}
             onAdd={handleAddMember}
             onCancel={() => setShowAddMember(false)}
           />
@@ -819,14 +836,20 @@ function DepartmentMembersModal({
 
                     {canManage && (
                       <div className="flex items-center gap-2">
-                        <select
-                          value={member.role}
-                          onChange={(e) => handleRoleChange(member.user_id, e.target.value as DeptRole)}
-                          className="px-2 py-1 bg-white/5 border border-white/10 rounded text-white text-sm"
-                        >
-                          <option value="lead">Руководитель</option>
-                          <option value="member">Участник</option>
-                        </select>
+                        {canSetLeadRole ? (
+                          <select
+                            value={member.role}
+                            onChange={(e) => handleRoleChange(member.user_id, e.target.value as DeptRole)}
+                            className="px-2 py-1 bg-white/5 border border-white/10 rounded text-white text-sm"
+                          >
+                            <option value="lead">Руководитель</option>
+                            <option value="member">Участник</option>
+                          </select>
+                        ) : (
+                          <span className={clsx('text-xs px-2 py-1 rounded-lg', roleConfig.color)}>
+                            {roleConfig.label}
+                          </span>
+                        )}
                         <button
                           onClick={() => handleRemoveMember(member)}
                           className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400"
@@ -855,10 +878,12 @@ function DepartmentMembersModal({
 // Add Member Form
 function AddMemberForm({
   availableMembers,
+  canSetLeadRole,
   onAdd,
   onCancel
 }: {
   availableMembers: OrgMember[];
+  canSetLeadRole: boolean;
   onAdd: (userId: number, role: DeptRole) => void;
   onCancel: () => void;
 }) {
@@ -880,14 +905,20 @@ function AddMemberForm({
             </option>
           ))}
         </select>
-        <select
-          value={role}
-          onChange={(e) => setRole(e.target.value as DeptRole)}
-          className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm"
-        >
-          <option value="lead">Руководитель</option>
-          <option value="member">Участник</option>
-        </select>
+        {canSetLeadRole ? (
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value as DeptRole)}
+            className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm"
+          >
+            <option value="lead">Руководитель</option>
+            <option value="member">Участник</option>
+          </select>
+        ) : (
+          <span className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white/60 text-sm">
+            Участник
+          </span>
+        )}
       </div>
       <div className="flex gap-2">
         <button

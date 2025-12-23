@@ -18,7 +18,7 @@ import {
   Clock,
   Send
 } from 'lucide-react';
-import { getUsers, createUser, deleteUser, getOrgMembers, removeMember, updateMemberRole, getCurrentOrganization, getMyOrgRole, getDepartments, createInvitation, getInvitations, revokeInvitation, type Department, type DeptRole, type Invitation } from '@/services/api';
+import { getUsers, createUser, deleteUser, getOrgMembers, removeMember, updateMemberRole, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, createInvitation, getInvitations, revokeInvitation, type Department, type DeptRole, type Invitation } from '@/services/api';
 import type { OrgMember, OrgRole, Organization } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
@@ -99,6 +99,7 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [myRole, setMyRole] = useState<OrgRole | null>(null);
+  const [myDepartmentIds, setMyDepartmentIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showInvitationsTab, setShowInvitationsTab] = useState(false);
@@ -110,16 +111,18 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [orgData, membersData, roleData, invitationsData] = await Promise.all([
+      const [orgData, membersData, roleData, invitationsData, myDepts] = await Promise.all([
         getCurrentOrganization(),
         getOrgMembers(),
         getMyOrgRole(),
-        getInvitations()
+        getInvitations(),
+        getMyDepartments()
       ]);
       setOrganization(orgData);
       setMembers(membersData);
       setMyRole(roleData.role);
       setInvitations(invitationsData);
+      setMyDepartmentIds(myDepts.map(d => d.id));
     } catch (e) {
       console.error('Failed to load organization data:', e);
     } finally {
@@ -374,6 +377,8 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
               loadData();
             }}
             canSetRole={canChangeRoles}
+            myDepartmentIds={myDepartmentIds}
+            isOwner={myRole === 'owner' || currentUser?.role === 'superadmin'}
           />
         )}
       </AnimatePresence>
@@ -477,11 +482,15 @@ function InvitationCard({ invitation, onRevoke }: { invitation: Invitation; onRe
 function InviteMemberModal({
   onClose,
   onSuccess,
-  canSetRole
+  canSetRole,
+  myDepartmentIds,
+  isOwner
 }: {
   onClose: () => void;
   onSuccess: () => void;
   canSetRole: boolean;
+  myDepartmentIds: number[];
+  isOwner: boolean;
 }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -493,18 +502,23 @@ function InviteMemberModal({
   const [departments, setDepartments] = useState<Department[]>([]);
   const [selectedDepartments, setSelectedDepartments] = useState<{ id: number; role: DeptRole }[]>([]);
 
-  // Load departments on mount
+  // Load departments on mount - filter for non-owners
   useEffect(() => {
     const loadDepartments = async () => {
       try {
         const depts = await getDepartments(-1); // Get all departments
-        setDepartments(depts);
+        // Owner sees all, admin sees only their departments
+        if (isOwner) {
+          setDepartments(depts);
+        } else {
+          setDepartments(depts.filter(d => myDepartmentIds.includes(d.id)));
+        }
       } catch (e) {
         console.error('Failed to load departments:', e);
       }
     };
     loadDepartments();
-  }, []);
+  }, [isOwner, myDepartmentIds]);
 
   const toggleDepartment = (deptId: number) => {
     setSelectedDepartments(prev => {
@@ -742,7 +756,8 @@ function InviteMemberModal({
                         style={{ backgroundColor: dept.color || '#06b6d4' }}
                       />
                       <span className="text-white text-sm flex-1">{dept.name}</span>
-                      {selected && canSetRole && (
+                      {/* Only owner can set lead role in departments */}
+                      {selected && isOwner && (
                         <select
                           value={selected.role}
                           onChange={(e) => setDepartmentRole(dept.id, e.target.value as DeptRole)}

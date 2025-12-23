@@ -72,6 +72,21 @@ class DepartmentMemberResponse(BaseModel):
 
 # === Helper Functions ===
 
+async def is_org_owner(user: User, org: Organization, db: AsyncSession) -> bool:
+    """Check if user is owner of organization (not admin)"""
+    if user.role == UserRole.SUPERADMIN:
+        return True
+
+    result = await db.execute(
+        select(OrgMember).where(
+            OrgMember.org_id == org.id,
+            OrgMember.user_id == user.id,
+            OrgMember.role == OrgRole.owner
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def is_org_admin_or_owner(user: User, org: Organization, db: AsyncSession) -> bool:
     """Check if user is admin or owner of organization"""
     if user.role == UserRole.SUPERADMIN:
@@ -201,7 +216,7 @@ async def create_department(
 ):
     """Create a new department.
 
-    - Org admins/owners can create top-level departments
+    - Only org owners can create top-level departments
     - Department leads can create sub-departments under their department
     """
     current_user = await db.merge(current_user)
@@ -209,7 +224,7 @@ async def create_department(
     if not org:
         raise HTTPException(status_code=403, detail="No organization access")
 
-    is_admin = await is_org_admin_or_owner(current_user, org, db)
+    is_owner = await is_org_owner(current_user, org, db)
 
     # Check permissions based on whether it's a sub-department
     if data.parent_id:
@@ -224,17 +239,17 @@ async def create_department(
         if not parent_dept:
             raise HTTPException(status_code=404, detail="Parent department not found")
 
-        # Check if user is lead of parent department or org admin
+        # Check if user is lead of parent department or org owner
         is_parent_lead = await is_dept_lead(current_user, data.parent_id, db)
-        if not is_admin and not is_parent_lead:
+        if not is_owner and not is_parent_lead:
             raise HTTPException(
                 status_code=403,
-                detail="Only org admins or department leads can create sub-departments"
+                detail="Only org owners or department leads can create sub-departments"
             )
     else:
-        # Creating top-level department - only org admins
-        if not is_admin:
-            raise HTTPException(status_code=403, detail="Only admins can create top-level departments")
+        # Creating top-level department - only org owners
+        if not is_owner:
+            raise HTTPException(status_code=403, detail="Only owners can create top-level departments")
 
     department = Department(
         org_id=org.id,
@@ -248,7 +263,7 @@ async def create_department(
     await db.refresh(department)
 
     # If a lead creates sub-department, automatically make them lead of the new department
-    if data.parent_id and not is_admin:
+    if data.parent_id and not is_owner:
         new_membership = DepartmentMember(
             department_id=department.id,
             user_id=current_user.id,
@@ -392,14 +407,14 @@ async def delete_department(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete department (org admin only)"""
+    """Delete department (org owner only)"""
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(status_code=403, detail="No organization access")
 
-    if not await is_org_admin_or_owner(current_user, org, db):
-        raise HTTPException(status_code=403, detail="Only admins can delete departments")
+    if not await is_org_owner(current_user, org, db):
+        raise HTTPException(status_code=403, detail="Only owners can delete departments")
 
     result = await db.execute(
         select(Department).where(Department.id == department_id, Department.org_id == org.id)
@@ -482,15 +497,15 @@ async def add_department_member(
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
 
-    # Check permissions
-    is_admin = await is_org_admin_or_owner(current_user, org, db)
+    # Check permissions - only owner or lead of THIS department
+    is_owner = await is_org_owner(current_user, org, db)
     is_lead = await is_dept_lead(current_user, department_id, db)
-    if not is_admin and not is_lead:
+    if not is_owner and not is_lead:
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    # Only org admin can add leads
-    if data.role == DeptRole.lead and not is_admin:
-        raise HTTPException(status_code=403, detail="Only org admins can add department leads")
+    # Only org owner can add leads
+    if data.role == DeptRole.lead and not is_owner:
+        raise HTTPException(status_code=403, detail="Only org owners can add department leads")
 
     # Verify user exists and is in org
     result = await db.execute(
@@ -544,21 +559,21 @@ async def update_department_member(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update member role in department (org admin only for lead role)"""
+    """Update member role in department (org owner only for lead role)"""
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(status_code=403, detail="No organization access")
 
-    is_admin = await is_org_admin_or_owner(current_user, org, db)
+    is_owner = await is_org_owner(current_user, org, db)
     is_lead = await is_dept_lead(current_user, department_id, db)
 
-    if not is_admin and not is_lead:
+    if not is_owner and not is_lead:
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    # Only org admin can set lead role
-    if data.role == DeptRole.lead and not is_admin:
-        raise HTTPException(status_code=403, detail="Only org admins can set lead role")
+    # Only org owner can set lead role
+    if data.role == DeptRole.lead and not is_owner:
+        raise HTTPException(status_code=403, detail="Only org owners can set lead role")
 
     result = await db.execute(
         select(DepartmentMember).where(
@@ -600,10 +615,10 @@ async def remove_department_member(
     if not org:
         raise HTTPException(status_code=403, detail="No organization access")
 
-    is_admin = await is_org_admin_or_owner(current_user, org, db)
+    is_owner = await is_org_owner(current_user, org, db)
     is_lead = await is_dept_lead(current_user, department_id, db)
 
-    if not is_admin and not is_lead:
+    if not is_owner and not is_lead:
         raise HTTPException(status_code=403, detail="Permission denied")
 
     result = await db.execute(
