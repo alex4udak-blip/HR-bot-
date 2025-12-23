@@ -760,8 +760,11 @@ export interface Department {
   description?: string;
   color?: string;
   is_active: boolean;
+  parent_id?: number;
+  parent_name?: string;
   members_count: number;
   entities_count: number;
+  children_count: number;
   created_at: string;
 }
 
@@ -774,8 +777,16 @@ export interface DepartmentMember {
   created_at: string;
 }
 
-export const getDepartments = async (): Promise<Department[]> => {
-  const { data } = await api.get('/departments');
+export const getDepartments = async (parentId?: number | null): Promise<Department[]> => {
+  const params: Record<string, string> = {};
+  // parentId = undefined -> get top-level (default)
+  // parentId = null -> same as undefined
+  // parentId = -1 -> get all departments
+  // parentId = number -> get children of that department
+  if (parentId !== undefined && parentId !== null) {
+    params.parent_id = String(parentId);
+  }
+  const { data } = await api.get('/departments', { params });
   return data;
 };
 
@@ -788,6 +799,7 @@ export const createDepartment = async (dept: {
   name: string;
   description?: string;
   color?: string;
+  parent_id?: number;
 }): Promise<Department> => {
   const { data } = await api.post('/departments', dept);
   return data;
