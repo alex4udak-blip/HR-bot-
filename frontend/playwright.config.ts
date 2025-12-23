@@ -32,7 +32,8 @@ export default defineConfig({
   // Shared settings for all the projects below
   use: {
     // Base URL to use in actions like `await page.goto('/')`
-    baseURL: 'http://localhost:5173',
+    // Use port 5174 for test server (no API proxy)
+    baseURL: 'http://localhost:5174',
 
     // Collect trace when retrying the failed test
     trace: 'on-first-retry',
@@ -80,9 +81,10 @@ export default defineConfig({
   ],
 
   // Run your local dev server before starting the tests
+  // Uses vite.config.test.ts which has NO API proxy - allows Playwright to mock /api routes
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:5173',
+    command: 'npx vite --config vite.config.test.ts',
+    url: 'http://localhost:5174',
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
   },

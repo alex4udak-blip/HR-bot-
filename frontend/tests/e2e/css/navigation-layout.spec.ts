@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { loginWithMocks, setupMocks } from '../../mocks/api';
 
 /**
  * Comprehensive CSS and Layout Tests for Navigation Components
@@ -32,15 +33,9 @@ const VIEWPORTS = {
 
 // Helper function to login and navigate to dashboard
 async function loginAndNavigate(page: Page, route = '/dashboard') {
-  await page.goto('/login');
-  await page.fill('input[type="email"]', 'test@example.com');
-  await page.fill('input[type="password"]', 'password');
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/\/(dashboard|chats|contacts|calls)/);
-
-  if (route !== '/dashboard') {
-    await page.goto(route);
-  }
+  await loginWithMocks(page);
+  await page.goto(route);
+  await page.waitForLoadState('networkidle');
 }
 
 // Helper to get computed styles
@@ -57,6 +52,7 @@ async function getComputedStyles(element: any, properties: string[]) {
 
 test.describe('Sidebar - Desktop Layout and Dimensions', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
   });
@@ -247,6 +243,10 @@ test.describe('Sidebar - Desktop Layout and Dimensions', () => {
 });
 
 test.describe('Sidebar - Collapse/Expand Behavior', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_sidebar_hidden_on_mobile', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.mobile);
     await loginAndNavigate(page);
@@ -301,6 +301,7 @@ test.describe('Sidebar - Collapse/Expand Behavior', () => {
 
 test.describe('Header - Mobile Layout', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.mobile);
     await loginAndNavigate(page);
   });
@@ -406,6 +407,7 @@ test.describe('Header - Mobile Layout', () => {
 
 test.describe('Mobile Menu Overlay', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.mobile);
     await loginAndNavigate(page);
   });
@@ -511,6 +513,7 @@ test.describe('Mobile Menu Overlay', () => {
 
 test.describe('Bottom Navigation - Mobile', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.mobile);
     await loginAndNavigate(page);
   });
@@ -665,6 +668,7 @@ test.describe('Bottom Navigation - Mobile', () => {
 
 test.describe('User Profile Section', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
   });
@@ -786,6 +790,7 @@ test.describe('User Profile Section', () => {
 
 test.describe('Navigation Items - Layout and Spacing', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
   });
@@ -907,6 +912,10 @@ test.describe('Navigation Items - Layout and Spacing', () => {
 });
 
 test.describe('Responsive Navigation Transitions', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_sidebar_visibility_toggle_on_resize', async ({ page }) => {
     // Start at desktop
     await page.setViewportSize(VIEWPORTS.desktop);
@@ -968,6 +977,10 @@ test.describe('Responsive Navigation Transitions', () => {
 });
 
 test.describe('Z-Index and Stacking Context', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_mobile_menu_above_content', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.mobile);
     await loginAndNavigate(page);
@@ -1009,6 +1022,7 @@ test.describe('Z-Index and Stacking Context', () => {
 
 test.describe('Navigation Accessibility - Focus and Keyboard', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
   });
@@ -1059,6 +1073,10 @@ test.describe('Navigation Accessibility - Focus and Keyboard', () => {
 });
 
 test.describe('Layout Container and Main Content', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_root_container_full_height', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);

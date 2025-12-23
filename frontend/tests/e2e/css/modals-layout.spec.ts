@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { loginWithMocks, setupMocks } from '../../mocks/api';
 
 /**
  * Comprehensive Modal CSS/Layout Tests for HR-bot Frontend
@@ -32,12 +33,10 @@ const VIEWPORTS = {
 };
 
 // Helper function to login
-async function login(page: Page) {
-  await page.goto('/login');
-  await page.fill('input[type="email"]', 'test@example.com');
-  await page.fill('input[type="password"]', 'password');
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/\/(dashboard|chats|contacts|calls)/);
+async function loginAndNavigate(page: Page, route = '/') {
+  await loginWithMocks(page);
+  await page.goto(route);
+  await page.waitForLoadState('networkidle');
 }
 
 // Helper to open ShareModal from contacts page
@@ -113,8 +112,9 @@ async function openTransferModal(page: Page) {
 
 test.describe('Modal Layout - Share Modal (Critical)', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.desktop);
-    await login(page);
+    await loginAndNavigate(page);
   });
 
   test('test_share_modal_centered', async ({ page }) => {
@@ -264,8 +264,9 @@ test.describe('Modal Layout - Share Modal (Critical)', () => {
 
 test.describe('Modal Layout - Call Recorder Modal', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.desktop);
-    await login(page);
+    await loginAndNavigate(page);
   });
 
   test('test_call_recorder_modal_centered', async ({ page }) => {
@@ -387,8 +388,9 @@ test.describe('Modal Layout - Call Recorder Modal', () => {
 
 test.describe('Modal Layout - Import History Modal', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.desktop);
-    await login(page);
+    await loginAndNavigate(page);
   });
 
   test('test_import_modal_max_height_with_scroll', async ({ page }) => {
@@ -490,8 +492,9 @@ test.describe('Modal Layout - Import History Modal', () => {
 
 test.describe('Modal Layout - Transfer Modal', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.desktop);
-    await login(page);
+    await loginAndNavigate(page);
   });
 
   test('test_transfer_modal_centered', async ({ page }) => {
@@ -559,8 +562,9 @@ test.describe('Modal Layout - Transfer Modal', () => {
 
 test.describe('Modal Backdrop - Universal Tests', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.desktop);
-    await login(page);
+    await loginAndNavigate(page);
   });
 
   test('test_backdrop_covers_full_screen', async ({ page }) => {
@@ -655,8 +659,9 @@ test.describe('Modal Backdrop - Universal Tests', () => {
 
 test.describe('Modal Layout - Mobile Behavior', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.mobile);
-    await login(page);
+    await loginAndNavigate(page);
   });
 
   test('test_modal_full_width_on_mobile', async ({ page }) => {
@@ -790,8 +795,9 @@ test.describe('Modal Layout - Mobile Behavior', () => {
 
 test.describe('Modal Layout - CSS Issues Prevention', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.desktop);
-    await login(page);
+    await loginAndNavigate(page);
   });
 
   test('test_modal_position_fixed_working', async ({ page }) => {
@@ -943,8 +949,9 @@ test.describe('Modal Layout - CSS Issues Prevention', () => {
 
 test.describe('Modal Layout - Animation and Transitions', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.desktop);
-    await login(page);
+    await loginAndNavigate(page);
   });
 
   test('test_modal_animates_on_open', async ({ page }) => {
@@ -988,8 +995,9 @@ test.describe('Modal Layout - Animation and Transitions', () => {
 
 test.describe('Modal Layout - Accessibility', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.desktop);
-    await login(page);
+    await loginAndNavigate(page);
   });
 
   test('test_modal_has_proper_focus_trap', async ({ page }) => {
@@ -1046,8 +1054,9 @@ test.describe('Modal Layout - Accessibility', () => {
 
 test.describe('Modal Layout - Performance', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.desktop);
-    await login(page);
+    await loginAndNavigate(page);
   });
 
   test('test_modal_renders_quickly', async ({ page }) => {
@@ -1086,8 +1095,9 @@ test.describe('Modal Layout - Performance', () => {
 
 test.describe('Modal Layout - Edge Cases', () => {
   test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
     await page.setViewportSize(VIEWPORTS.desktop);
-    await login(page);
+    await loginAndNavigate(page);
   });
 
   test('test_multiple_modals_stacking', async ({ page }) => {

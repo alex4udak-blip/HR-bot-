@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { loginWithMocks, setupMocks } from '../../mocks/api';
 
 /**
  * Comprehensive CSS/Layout Tests for Chats Component (Чаты)
@@ -24,13 +25,9 @@ const VIEWPORTS = {
 
 // Helper function to login and navigate to chats page
 async function loginAndNavigateToChats(page: Page) {
-  await page.goto('/login');
-  await page.fill('input[type="email"]', 'test@example.com');
-  await page.fill('input[type="password"]', 'password');
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/\/(dashboard|chats|contacts|calls)/);
+  await loginWithMocks(page);
   await page.goto('/chats');
-  await page.waitForTimeout(1000); // Wait for data to load
+  await page.waitForLoadState('networkidle');
 }
 
 // Helper to select first chat
@@ -44,6 +41,10 @@ async function selectFirstChat(page: Page) {
 }
 
 test.describe('Chats Layout - Chat List', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_chat_cards_consistent_height', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigateToChats(page);
@@ -264,6 +265,10 @@ test.describe('Chats Layout - Chat List', () => {
 });
 
 test.describe('Chats Layout - Chat Detail/Messages', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_messages_container_scrollable', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigateToChats(page);
@@ -497,6 +502,10 @@ test.describe('Chats Layout - Chat Detail/Messages', () => {
 });
 
 test.describe('Chats Layout - Input Area', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_input_field_expands_properly', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigateToChats(page);
@@ -590,6 +599,10 @@ test.describe('Chats Layout - Input Area', () => {
 });
 
 test.describe('Chats Layout - Criteria Panel', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_criteria_tags_wrap_properly', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigateToChats(page);
@@ -724,6 +737,10 @@ test.describe('Chats Layout - Criteria Panel', () => {
 });
 
 test.describe('Chats Layout - AI Panel', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_quick_action_buttons_wrap', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigateToChats(page);
@@ -887,6 +904,10 @@ test.describe('Chats Layout - AI Panel', () => {
 });
 
 test.describe('Chats Layout - Sharing/Actions Modals', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_add_chat_modal_fits_screen', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.mobile);
     await loginAndNavigateToChats(page);
@@ -1036,6 +1057,10 @@ test.describe('Chats Layout - Sharing/Actions Modals', () => {
 });
 
 test.describe('Chats Layout - Responsive Behavior', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_three_column_layout_desktop', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.largeDesktop);
     await loginAndNavigateToChats(page);
@@ -1181,6 +1206,10 @@ test.describe('Chats Layout - Responsive Behavior', () => {
 });
 
 test.describe('Chats Layout - Z-Index Layering', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_modal_overlay_above_content', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigateToChats(page);
@@ -1253,6 +1282,10 @@ test.describe('Chats Layout - Z-Index Layering', () => {
 });
 
 test.describe('Chats Layout - Tabs Navigation', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_tabs_border_indicator', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigateToChats(page);

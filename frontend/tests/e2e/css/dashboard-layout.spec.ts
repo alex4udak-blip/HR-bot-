@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { loginWithMocks, setupMocks } from '../../mocks/api';
 
 /**
  * Comprehensive CSS/Layout Tests for Dashboard and Main Layout Components
@@ -22,18 +23,9 @@ const VIEWPORTS = {
 
 // Helper function to login and navigate
 async function loginAndNavigate(page: Page, route = '/dashboard') {
-  await page.goto('/login');
-  await page.fill('input[type="email"]', 'test@example.com');
-  await page.fill('input[type="password"]', 'password');
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/\/(dashboard|chats|contacts|calls)/);
-
-  if (route !== '/dashboard') {
-    await page.goto(route);
-  }
-
-  // Wait for initial layout to stabilize
-  await page.waitForTimeout(500);
+  await loginWithMocks(page);
+  await page.goto(route);
+  await page.waitForLoadState('networkidle');
 }
 
 // Helper to get computed style property
@@ -53,6 +45,10 @@ async function hasHorizontalOverflow(page: Page): Promise<boolean> {
 }
 
 test.describe('Main Layout Structure', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_layout_no_horizontal_scroll', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page);
@@ -180,6 +176,10 @@ test.describe('Main Layout Structure', () => {
 });
 
 test.describe('Dashboard Grid', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_dashboard_cards_grid_layout', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page, '/dashboard');
@@ -319,6 +319,10 @@ test.describe('Dashboard Grid', () => {
 });
 
 test.describe('Statistics/Metrics Cards', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_stat_numbers_fit_container', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.mobile);
     await loginAndNavigate(page, '/dashboard');
@@ -432,6 +436,10 @@ test.describe('Statistics/Metrics Cards', () => {
 });
 
 test.describe('Charts/Graphs', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_charts_responsive_width', async ({ page }) => {
     await loginAndNavigate(page, '/dashboard');
     await page.waitForSelector('h1:has-text("Панель управления")');
@@ -562,6 +570,10 @@ test.describe('Charts/Graphs', () => {
 });
 
 test.describe('Recent Activity Section', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_top_chats_list_layout', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page, '/dashboard');
@@ -695,6 +707,10 @@ test.describe('Recent Activity Section', () => {
 });
 
 test.describe('Page Transitions', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_page_content_stable_during_navigation', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page, '/dashboard');
@@ -766,6 +782,10 @@ test.describe('Page Transitions', () => {
 });
 
 test.describe('Loading States', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_loading_spinner_centered', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
 
@@ -856,6 +876,10 @@ test.describe('Loading States', () => {
 });
 
 test.describe('Empty States', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_empty_state_centered', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page, '/dashboard');
@@ -941,6 +965,10 @@ test.describe('Empty States', () => {
 });
 
 test.describe('CSS Grid and Flexbox Edge Cases', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_grid_items_dont_break_layout', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page, '/dashboard');
@@ -1053,6 +1081,10 @@ test.describe('CSS Grid and Flexbox Edge Cases', () => {
 });
 
 test.describe('Overflow Management', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_nested_scrollable_areas', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await loginAndNavigate(page, '/dashboard');
@@ -1131,6 +1163,10 @@ test.describe('Overflow Management', () => {
 });
 
 test.describe('Z-Index and Stacking Context', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
   test('test_mobile_menu_above_content', async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.mobile);
     await loginAndNavigate(page, '/dashboard');
