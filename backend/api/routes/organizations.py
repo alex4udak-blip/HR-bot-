@@ -56,6 +56,7 @@ class OrgMemberResponse(BaseModel):
     user_email: str
     user_name: str
     role: str
+    invited_by_name: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -181,6 +182,14 @@ async def list_organization_members(
     )
     members = result.scalars().all()
 
+    # Pre-fetch invited_by names
+    invited_by_ids = [m.invited_by for m in members if m.invited_by]
+    inviter_names = {}
+    if invited_by_ids:
+        inviters_result = await db.execute(select(User).where(User.id.in_(invited_by_ids)))
+        for inviter in inviters_result.scalars().all():
+            inviter_names[inviter.id] = inviter.name
+
     return [
         OrgMemberResponse(
             id=m.id,
@@ -188,6 +197,7 @@ async def list_organization_members(
             user_email=m.user.email,
             user_name=m.user.name,
             role=m.role.value,
+            invited_by_name=inviter_names.get(m.invited_by) if m.invited_by else None,
             created_at=m.created_at
         )
         for m in members
@@ -328,9 +338,20 @@ async def remove_member(
     if not membership:
         raise HTTPException(status_code=404, detail="Member not found")
 
-    # Only owner can remove owners
-    if membership.role == OrgRole.owner and current_role != OrgRole.owner:
-        raise HTTPException(status_code=403, detail="Only owner can remove owners")
+    # Permission checks based on roles
+    # Superadmin can remove anyone
+    if current_user.role == UserRole.SUPERADMIN:
+        pass  # No restrictions for superadmin
+    # Owner can remove admins and members, but not other owners
+    elif current_role == OrgRole.owner:
+        if membership.role == OrgRole.owner:
+            raise HTTPException(status_code=403, detail="Cannot remove other owners")
+    # Admin can only remove members (not other admins or owners)
+    elif current_role == OrgRole.admin:
+        if membership.role in (OrgRole.owner, OrgRole.admin):
+            raise HTTPException(status_code=403, detail="Admins can only remove members")
+    else:
+        raise HTTPException(status_code=403, detail="No permission to remove members")
 
     target_user = membership.user
 
