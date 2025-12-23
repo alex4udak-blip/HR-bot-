@@ -255,6 +255,10 @@ async def init_database():
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_department_members_department_id ON department_members(department_id)", "Index department_members.department_id")
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_department_members_user_id ON department_members(user_id)", "Index department_members.user_id")
 
+    # Add parent_id to departments for sub-departments support
+    await run_migration(engine, "ALTER TABLE departments ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES departments(id) ON DELETE CASCADE", "Add parent_id to departments")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_departments_parent_id ON departments(parent_id)", "Index departments.parent_id")
+
     # Add department_id to entities
     await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL", "Add department_id to entities")
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entities_department_id ON entities(department_id)", "Index entities.department_id")

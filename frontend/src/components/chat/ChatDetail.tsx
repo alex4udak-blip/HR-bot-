@@ -60,7 +60,9 @@ const getLocalFileUrl = (filePath: string) => {
   if (parts.length >= 2) {
     const chatId = parts[0];
     const filename = parts.slice(1).join('/');
-    return `/api/chats/local/${chatId}/${filename}${token ? `?token=${token}` : ''}`;
+    // URL-encode the filename to handle special characters like @, spaces, etc.
+    const encodedFilename = encodeURIComponent(filename);
+    return `/api/chats/local/${chatId}/${encodedFilename}${token ? `?token=${token}` : ''}`;
   }
   return '';
 };
@@ -695,12 +697,21 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                             className="w-32 h-32 rounded-full object-cover cursor-pointer"
                             controls
                             preload="metadata"
+                            onError={(e) => {
+                              // Show placeholder on load error
+                              const video = e.target as HTMLVideoElement;
+                              video.style.display = 'none';
+                              const placeholder = video.parentElement?.querySelector('.video-placeholder');
+                              if (placeholder) (placeholder as HTMLElement).style.display = 'flex';
+                            }}
                           />
-                        ) : (
-                          <div className="w-32 h-32 rounded-full bg-dark-700 flex items-center justify-center text-dark-400">
-                            <span className="text-xs">Видео</span>
-                          </div>
-                        )}
+                        ) : null}
+                        <div
+                          className="video-placeholder w-32 h-32 rounded-full bg-dark-700 flex items-center justify-center text-dark-400"
+                          style={{ display: (message.file_id || message.file_path) ? 'none' : 'flex' }}
+                        >
+                          <span className="text-xs">Видео</span>
+                        </div>
                         {message.content && !message.content.startsWith('[Video') && !message.content.startsWith('[Видео') && !message.content.includes('transcription failed') ? (
                           <p className="text-sm text-dark-300">{message.content}</p>
                         ) : (message.file_path || message.file_id) && (
@@ -746,15 +757,24 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                             controls
                             preload="metadata"
                             className="w-full max-w-xs"
+                            onError={(e) => {
+                              // Show placeholder on load error
+                              const audio = e.target as HTMLAudioElement;
+                              audio.style.display = 'none';
+                              const placeholder = audio.parentElement?.querySelector('.audio-error-placeholder');
+                              if (placeholder) (placeholder as HTMLElement).style.display = 'flex';
+                            }}
                           />
-                        ) : (
-                          <div className="flex items-center gap-2 text-dark-400">
-                            <span className="text-sm">[Голосовое сообщение недоступно]</span>
-                          </div>
-                        )}
+                        ) : null}
+                        <div
+                          className="audio-error-placeholder flex items-center gap-2 text-dark-400"
+                          style={{ display: (message.file_id || message.file_path) ? 'none' : 'flex' }}
+                        >
+                          <span className="text-sm">[Голосовое сообщение недоступно]</span>
+                        </div>
                         {message.content && !message.content.startsWith('[Голосов') && !message.content.startsWith('[Voice') ? (
                           <p className="text-sm text-dark-300">{message.content}</p>
-                        ) : message.file_path && (
+                        ) : (message.file_path || message.file_id) && (
                           <button
                             onClick={() => handleTranscribe(message.id)}
                             disabled={transcribingMessageId === message.id}
@@ -777,15 +797,24 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                             className="max-w-xs rounded-lg"
                             controls
                             preload="metadata"
+                            onError={(e) => {
+                              // Show placeholder on load error
+                              const video = e.target as HTMLVideoElement;
+                              video.style.display = 'none';
+                              const placeholder = video.parentElement?.querySelector('.video-error-placeholder');
+                              if (placeholder) (placeholder as HTMLElement).style.display = 'flex';
+                            }}
                           />
-                        ) : (
-                          <div className="flex items-center gap-2 text-dark-400">
-                            <span className="text-sm">[Видео недоступно]</span>
-                          </div>
-                        )}
+                        ) : null}
+                        <div
+                          className="video-error-placeholder flex items-center gap-2 text-dark-400"
+                          style={{ display: (message.file_id || message.file_path) ? 'none' : 'flex' }}
+                        >
+                          <span className="text-sm">[Видео недоступно]</span>
+                        </div>
                         {message.content && !message.content.startsWith('[Видео') && !message.content.startsWith('[Video') ? (
                           <p className="text-sm text-dark-300">{message.content}</p>
-                        ) : message.file_path && (
+                        ) : (message.file_path || message.file_id) && (
                           <button
                             onClick={() => handleTranscribe(message.id)}
                             disabled={transcribingMessageId === message.id}
