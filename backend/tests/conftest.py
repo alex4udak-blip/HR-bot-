@@ -588,3 +588,248 @@ def auth_headers(token: str) -> dict:
 def get_auth_headers():
     """Return auth_headers function for use in tests."""
     return auth_headers
+
+
+# ============================================================================
+# EXTERNAL SERVICE MOCKS (Auto-applied to all tests)
+# ============================================================================
+
+@pytest.fixture(autouse=True)
+def mock_fireflies_client(monkeypatch):
+    """Mock Fireflies API client for all tests."""
+    mock_client = MagicMock()
+    mock_client.start_bot = AsyncMock(return_value={"id": "test-bot-123", "status": "started"})
+    mock_client.stop_bot = AsyncMock(return_value={"status": "stopped"})
+    mock_client.get_transcript = AsyncMock(return_value={
+        "id": "test-transcript-123",
+        "title": "Test Call",
+        "sentences": [
+            {"text": "Hello, how are you?", "speaker_name": "Speaker 1", "start_time": 0},
+            {"text": "I'm doing great, thanks!", "speaker_name": "Speaker 2", "start_time": 2}
+        ],
+        "summary": {"overview": "Test call summary"},
+        "duration": 300
+    })
+    mock_client.list_transcripts = AsyncMock(return_value=[])
+
+    # Patch the fireflies client import
+    monkeypatch.setattr("api.services.fireflies_client.FirefliesClient", lambda *args, **kwargs: mock_client)
+
+    return mock_client
+
+
+@pytest.fixture(autouse=True)
+def mock_anthropic_client(monkeypatch):
+    """Mock Anthropic Claude API for all tests."""
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(text="This is a mock AI response for testing.")]
+    mock_response.stop_reason = "end_turn"
+    mock_response.usage = MagicMock(input_tokens=100, output_tokens=50)
+
+    mock_client = MagicMock()
+    mock_client.messages.create = MagicMock(return_value=mock_response)
+
+    # For streaming
+    mock_stream_chunk = MagicMock()
+    mock_stream_chunk.type = "content_block_delta"
+    mock_stream_chunk.delta = MagicMock(text="Mock streamed response")
+
+    mock_stream = MagicMock()
+    mock_stream.__iter__ = lambda self: iter([mock_stream_chunk])
+    mock_stream.__enter__ = lambda self: self
+    mock_stream.__exit__ = lambda self, *args: None
+    mock_client.messages.stream = MagicMock(return_value=mock_stream)
+
+    monkeypatch.setattr("anthropic.Anthropic", lambda *args, **kwargs: mock_client)
+
+    return mock_client
+
+
+@pytest.fixture(autouse=True)
+def mock_openai_client(monkeypatch):
+    """Mock OpenAI Whisper API for transcription tests."""
+    mock_transcription = MagicMock()
+    mock_transcription.text = "This is a mock transcription of the audio file."
+
+    mock_audio = MagicMock()
+    mock_audio.transcriptions.create = MagicMock(return_value=mock_transcription)
+
+    mock_client = MagicMock()
+    mock_client.audio = mock_audio
+
+    monkeypatch.setattr("openai.OpenAI", lambda *args, **kwargs: mock_client)
+
+    return mock_client
+
+
+@pytest.fixture(autouse=True)
+def mock_file_operations(monkeypatch, tmp_path):
+    """Mock file system operations for tests."""
+    import tempfile
+    import shutil
+
+    # Create a mock uploads directory
+    uploads_dir = tmp_path / "uploads"
+    uploads_dir.mkdir(exist_ok=True)
+
+    # Mock the UPLOAD_DIR and related paths
+    monkeypatch.setenv("UPLOAD_DIR", str(uploads_dir))
+
+    # Create mock audio file
+    mock_audio = uploads_dir / "test_audio.mp3"
+    mock_audio.write_bytes(b"mock audio content")
+
+    return uploads_dir
+
+
+@pytest.fixture(autouse=True)
+def mock_subprocess(monkeypatch):
+    """Mock subprocess calls (ffmpeg, etc.)."""
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = b""
+    mock_result.stderr = b""
+
+    async def mock_create_subprocess(*args, **kwargs):
+        process = MagicMock()
+        process.returncode = 0
+        process.communicate = AsyncMock(return_value=(b"", b""))
+        process.wait = AsyncMock(return_value=0)
+        return process
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", mock_create_subprocess)
+    monkeypatch.setattr("asyncio.create_subprocess_shell", mock_create_subprocess)
+
+    return mock_result
+
+
+@pytest.fixture(autouse=True)
+def mock_aiofiles(monkeypatch):
+    """Mock aiofiles for async file operations."""
+    mock_file = MagicMock()
+    mock_file.read = AsyncMock(return_value=b"mock file content")
+    mock_file.write = AsyncMock()
+    mock_file.__aenter__ = AsyncMock(return_value=mock_file)
+    mock_file.__aexit__ = AsyncMock()
+
+    mock_open = MagicMock(return_value=mock_file)
+
+    try:
+        monkeypatch.setattr("aiofiles.open", mock_open)
+    except AttributeError:
+        pass  # aiofiles not imported in all modules
+
+    return mock_file
+
+
+@pytest.fixture(autouse=True)
+def mock_httpx_async(monkeypatch):
+    """Mock httpx async client for external API calls."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json = MagicMock(return_value={"status": "ok"})
+    mock_response.text = "OK"
+    mock_response.content = b"OK"
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    mock_client.post = AsyncMock(return_value=mock_response)
+    mock_client.put = AsyncMock(return_value=mock_response)
+    mock_client.delete = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock()
+
+    return mock_client
+
+
+@pytest.fixture(autouse=True)
+def mock_reportlab(monkeypatch):
+    """Mock ReportLab for PDF generation tests."""
+    mock_canvas = MagicMock()
+    mock_canvas.drawString = MagicMock()
+    mock_canvas.save = MagicMock()
+    mock_canvas.showPage = MagicMock()
+
+    mock_doc = MagicMock()
+    mock_doc.build = MagicMock()
+
+    try:
+        monkeypatch.setattr("reportlab.pdfgen.canvas.Canvas", lambda *args, **kwargs: mock_canvas)
+        monkeypatch.setattr("reportlab.platypus.SimpleDocTemplate", lambda *args, **kwargs: mock_doc)
+    except AttributeError:
+        pass
+
+    return mock_canvas
+
+
+@pytest.fixture(autouse=True)
+def mock_pillow(monkeypatch):
+    """Mock Pillow for image processing tests."""
+    mock_image = MagicMock()
+    mock_image.size = (100, 100)
+    mock_image.mode = "RGB"
+    mock_image.save = MagicMock()
+    mock_image.convert = MagicMock(return_value=mock_image)
+
+    mock_image_open = MagicMock(return_value=mock_image)
+
+    try:
+        monkeypatch.setattr("PIL.Image.open", mock_image_open)
+    except AttributeError:
+        pass
+
+    return mock_image
+
+
+@pytest.fixture(autouse=True)
+def mock_websocket_broadcast(monkeypatch):
+    """Mock WebSocket broadcast functions."""
+    mock_broadcast = AsyncMock()
+
+    try:
+        monkeypatch.setattr("api.routes.realtime.broadcast_to_user", mock_broadcast)
+        monkeypatch.setattr("api.routes.realtime.broadcast_to_org", mock_broadcast)
+    except AttributeError:
+        pass
+
+    return mock_broadcast
+
+
+# ============================================================================
+# PARALLEL TEST SUPPORT
+# ============================================================================
+
+def pytest_configure(config):
+    """Configure pytest for parallel execution."""
+    # Add markers
+    config.addinivalue_line("markers", "slow: marks tests as slow")
+    config.addinivalue_line("markers", "integration: marks tests as integration tests")
+
+
+# ============================================================================
+# ADDITIONAL TEST HELPERS
+# ============================================================================
+
+@pytest.fixture
+def mock_file_upload(tmp_path):
+    """Create a mock file upload."""
+    from io import BytesIO
+
+    def _create_upload(filename="test.txt", content=b"test content", content_type="text/plain"):
+        file_obj = BytesIO(content)
+        file_obj.name = filename
+        return {
+            "file": (filename, file_obj, content_type)
+        }
+
+    return _create_upload
+
+
+@pytest.fixture
+def mock_audio_file(tmp_path):
+    """Create a mock audio file for upload tests."""
+    audio_path = tmp_path / "test_audio.mp3"
+    # Write minimal MP3 header
+    audio_path.write_bytes(b'\xff\xfb\x90\x00' + b'\x00' * 100)
+    return audio_path

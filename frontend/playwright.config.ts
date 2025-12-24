@@ -7,8 +7,8 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests',
 
-  // Maximum time one test can run for
-  timeout: 30 * 1000,
+  // Maximum time one test can run for (reduced from 30s)
+  timeout: 15 * 1000,
 
   // Run tests in files in parallel
   fullyParallel: true,
@@ -17,10 +17,10 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
 
   // Retry on CI only
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI ? 1 : 0,
 
-  // Opt out of parallel tests on CI
-  workers: process.env.CI ? 1 : undefined,
+  // Run 4 workers in parallel (optimized for browser tests)
+  workers: process.env.CI ? 4 : 8,
 
   // Reporter to use
   reporter: [
@@ -46,30 +46,18 @@ export default defineConfig({
   },
 
   // Configure projects for major browsers and devices
-  projects: [
-    // Desktop browsers
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
-
-    // Mobile viewports
-    {
-      name: 'Mobile Chrome',
-      use: { ...devices['Pixel 5'] },
-    },
-    {
-      name: 'Mobile Safari',
-      use: { ...devices['iPhone 12'] },
-    },
+  // Use PLAYWRIGHT_PROJECT env var to run specific project, or 'all' for all
+  projects: process.env.PLAYWRIGHT_PROJECT === 'all' ? [
+    // All browsers for full compatibility testing
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+    { name: 'Mobile Chrome', use: { ...devices['Pixel 5'] } },
+    { name: 'Mobile Safari', use: { ...devices['iPhone 12'] } },
+  ] : [
+    // Fast mode: Chrome + one mobile only (default)
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'Mobile Chrome', use: { ...devices['Pixel 5'] } },
   ],
 
   // Run your local dev server before starting the tests
