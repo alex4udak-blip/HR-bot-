@@ -623,6 +623,59 @@ export const updateCall = async (
 };
 
 
+// === EXTERNAL LINKS ===
+
+export type ExternalLinkType = 'google_doc' | 'google_drive' | 'direct_media' | 'unknown';
+
+export interface DetectLinkTypeResponse {
+  url: string;
+  link_type: ExternalLinkType;
+  can_process: boolean;
+  message?: string;
+}
+
+export interface ProcessURLResponse {
+  call_id: number;
+  status: string;
+  message: string;
+}
+
+export const detectExternalLinkType = async (url: string): Promise<DetectLinkTypeResponse> => {
+  const { data } = await api.get(`/external/detect-type?url=${encodeURIComponent(url)}`);
+  return data;
+};
+
+export const processExternalURL = async (data: {
+  url: string;
+  title?: string;
+  entity_id?: number;
+}): Promise<ProcessURLResponse> => {
+  const { data: result } = await api.post('/external/process-url', data);
+  return result;
+};
+
+export const getExternalProcessingStatus = async (callId: number): Promise<{
+  call_id: number;
+  status: string;
+  progress?: number;
+  error_message?: string;
+}> => {
+  const { data } = await api.get(`/external/status/${callId}`);
+  return data;
+};
+
+export const getSupportedExternalTypes = async (): Promise<{
+  supported_types: Array<{
+    type: string;
+    description: string;
+    examples: string[];
+  }>;
+}> => {
+  const { data } = await api.get('/external/supported-types');
+  return data;
+};
+
+
 // === ORGANIZATIONS ===
 
 export type OrgRole = 'owner' | 'admin' | 'member';

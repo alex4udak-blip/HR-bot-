@@ -11,7 +11,8 @@ import {
   Trash2,
   CheckCircle,
   XCircle,
-  Loader2
+  Loader2,
+  Link2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -21,11 +22,13 @@ import type { CallStatus, CallRecording } from '@/types';
 import { CALL_STATUS_LABELS, CALL_STATUS_COLORS } from '@/types';
 import CallRecorderModal from '@/components/calls/CallRecorderModal';
 import CallDetail from '@/components/calls/CallDetail';
+import ExternalLinksModal from '@/components/calls/ExternalLinksModal';
 
 export default function CallsPage() {
   const { callId } = useParams();
   const navigate = useNavigate();
   const [showRecorderModal, setShowRecorderModal] = useState(false);
+  const [showExternalLinksModal, setShowExternalLinksModal] = useState(false);
 
   const {
     user,
@@ -180,13 +183,23 @@ export default function CallsPage() {
         <div className="p-4 border-b border-white/5">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-xl font-semibold text-white">Записи звонков</h1>
-            <button
-              onClick={() => setShowRecorderModal(true)}
-              className="px-4 py-2 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors flex items-center gap-2"
-            >
-              <Phone size={18} />
-              Новая запись
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowExternalLinksModal(true)}
+                className="px-4 py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors flex items-center gap-2"
+                title="Добавить внешнюю ссылку (Google Docs, Drive, медиа)"
+              >
+                <Link2 size={18} />
+                Внешняя ссылка
+              </button>
+              <button
+                onClick={() => setShowRecorderModal(true)}
+                className="px-4 py-2 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors flex items-center gap-2"
+              >
+                <Phone size={18} />
+                Новая запись
+              </button>
+            </div>
           </div>
 
           {/* Active Recording Status */}
@@ -400,6 +413,18 @@ export default function CallsPage() {
           />
         )}
       </AnimatePresence>
+
+      {/* External Links Modal */}
+      <ExternalLinksModal
+        isOpen={showExternalLinksModal}
+        onClose={() => setShowExternalLinksModal(false)}
+        onSuccess={(callId) => {
+          setShowExternalLinksModal(false);
+          toast.success('Ссылка обработана');
+          fetchCalls();
+          navigate(`/calls/${callId}`);
+        }}
+      />
     </div>
   );
 }
