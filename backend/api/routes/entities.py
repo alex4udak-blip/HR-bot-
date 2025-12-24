@@ -13,6 +13,7 @@ from ..models.database import (
     Department, DepartmentMember, DeptRole
 )
 from ..services.auth import get_current_user, get_user_org, get_user_org_role
+from .realtime import broadcast_entity_created, broadcast_entity_updated, broadcast_entity_deleted
 
 # Ownership filter type
 OwnershipFilter = Literal["all", "mine", "shared"]
@@ -274,6 +275,12 @@ async def list_entities(
     result = await db.execute(query)
     entities = result.scalars().all()
 
+    if not entities:
+        return []
+
+    # Get all entity IDs for batch queries
+    entity_ids = [entity.id for entity in entities]
+
     # Pre-fetch shared entity IDs for current user
     shared_with_me_result = await db.execute(
         select(SharedAccess.resource_id).where(
@@ -300,16 +307,25 @@ async def list_entities(
         for dept in depts_result.scalars().all():
             dept_names[dept.id] = dept.name
 
-    # Count related data
+    # Batch query: Get chat counts for all entities
+    chats_counts_result = await db.execute(
+        select(Chat.entity_id, func.count(Chat.id))
+        .where(Chat.entity_id.in_(entity_ids))
+        .group_by(Chat.entity_id)
+    )
+    chats_counts = {row[0]: row[1] for row in chats_counts_result.fetchall()}
+
+    # Batch query: Get call counts for all entities
+    calls_counts_result = await db.execute(
+        select(CallRecording.entity_id, func.count(CallRecording.id))
+        .where(CallRecording.entity_id.in_(entity_ids))
+        .group_by(CallRecording.entity_id)
+    )
+    calls_counts = {row[0]: row[1] for row in calls_counts_result.fetchall()}
+
+    # Build response using pre-fetched data
     response = []
     for entity in entities:
-        chats_count = await db.execute(
-            select(func.count(Chat.id)).where(Chat.entity_id == entity.id)
-        )
-        calls_count = await db.execute(
-            select(func.count(CallRecording.id)).where(CallRecording.entity_id == entity.id)
-        )
-
         is_mine = entity.created_by == current_user.id
         is_shared = entity.id in shared_with_me_ids and not is_mine
 
@@ -331,10 +347,10 @@ async def list_entities(
             "department_name": dept_names.get(entity.department_id) if entity.department_id else None,
             "is_mine": is_mine,
             "is_shared": is_shared,
-            "created_at": entity.created_at,
-            "updated_at": entity.updated_at,
-            "chats_count": chats_count.scalar() or 0,
-            "calls_count": calls_count.scalar() or 0
+            "created_at": entity.created_at.isoformat() if entity.created_at else None,
+            "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
+            "chats_count": chats_counts.get(entity.id, 0),
+            "calls_count": calls_counts.get(entity.id, 0)
         })
 
     return response
@@ -382,7 +398,7 @@ async def create_entity(
     await db.commit()
     await db.refresh(entity)
 
-    return {
+    response_data = {
         "id": entity.id,
         "type": entity.type,
         "name": entity.name,
@@ -397,11 +413,16 @@ async def create_entity(
         "created_by": entity.created_by,
         "department_id": entity.department_id,
         "department_name": department_name,
-        "created_at": entity.created_at,
-        "updated_at": entity.updated_at,
+        "created_at": entity.created_at.isoformat() if entity.created_at else None,
+        "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
         "chats_count": 0,
         "calls_count": 0
     }
+
+    # Broadcast entity.created event
+    await broadcast_entity_created(org.id, response_data)
+
+    return response_data
 
 
 @router.get("/{entity_id}")
@@ -456,31 +477,49 @@ async def get_entity(
         if dept:
             department_name = dept.name
 
-    # Get user names and department names for transfers
+    # Pre-fetch user names and department names for transfers (batch queries to avoid N+1)
+    user_ids = set()
+    dept_ids = set()
+    for t in transfers:
+        if t.from_user_id:
+            user_ids.add(t.from_user_id)
+        if t.to_user_id:
+            user_ids.add(t.to_user_id)
+        if hasattr(t, 'from_department_id') and t.from_department_id:
+            dept_ids.add(t.from_department_id)
+        if hasattr(t, 'to_department_id') and t.to_department_id:
+            dept_ids.add(t.to_department_id)
+
+    # Batch fetch user names
+    user_names = {}
+    if user_ids:
+        users_result = await db.execute(select(User).where(User.id.in_(user_ids)))
+        for user in users_result.scalars().all():
+            user_names[user.id] = user.name
+
+    # Batch fetch department names
+    dept_names = {}
+    if dept_ids:
+        depts_result = await db.execute(select(Department).where(Department.id.in_(dept_ids)))
+        for dept in depts_result.scalars().all():
+            dept_names[dept.id] = dept.name
+
+    # Build transfer data using pre-fetched names
     transfer_data = []
     for t in transfers:
-        from_user_name = None
-        to_user_name = None
+        from_user_name = user_names.get(t.from_user_id) if t.from_user_id else None
+        to_user_name = user_names.get(t.to_user_id) if t.to_user_id else None
         from_dept_name = None
         to_dept_name = None
 
-        if t.from_user_id:
-            from_user = await db.execute(select(User.name).where(User.id == t.from_user_id))
-            from_user_name = from_user.scalar()
-        if t.to_user_id:
-            to_user = await db.execute(select(User.name).where(User.id == t.to_user_id))
-            to_user_name = to_user.scalar()
-
         # Get department names (use new fields if available, fallback to old strings)
         if hasattr(t, 'from_department_id') and t.from_department_id:
-            from_dept = await db.execute(select(Department.name).where(Department.id == t.from_department_id))
-            from_dept_name = from_dept.scalar()
+            from_dept_name = dept_names.get(t.from_department_id)
         elif hasattr(t, 'from_department') and t.from_department:
             from_dept_name = t.from_department
 
         if hasattr(t, 'to_department_id') and t.to_department_id:
-            to_dept = await db.execute(select(Department.name).where(Department.id == t.to_department_id))
-            to_dept_name = to_dept.scalar()
+            to_dept_name = dept_names.get(t.to_department_id)
         elif hasattr(t, 'to_department') and t.to_department:
             to_dept_name = t.to_department
 
@@ -494,7 +533,7 @@ async def get_entity(
             "from_department_name": from_dept_name,
             "to_department_name": to_dept_name,
             "comment": t.comment,
-            "created_at": t.created_at,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
             "from_user_name": from_user_name,
             "to_user_name": to_user_name
         })
@@ -514,14 +553,14 @@ async def get_entity(
         "created_by": entity.created_by,
         "department_id": entity.department_id,
         "department_name": department_name,
-        "created_at": entity.created_at,
-        "updated_at": entity.updated_at,
+        "created_at": entity.created_at.isoformat() if entity.created_at else None,
+        "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
         "chats": [
             {
                 "id": c.id,
                 "title": c.custom_name or c.title,
                 "chat_type": c.chat_type,
-                "created_at": c.created_at
+                "created_at": c.created_at.isoformat() if c.created_at else None
             }
             for c in chats
         ],
@@ -532,7 +571,7 @@ async def get_entity(
                 "status": c.status,
                 "duration_seconds": c.duration_seconds,
                 "summary": c.summary,
-                "created_at": c.created_at
+                "created_at": c.created_at.isoformat() if c.created_at else None
             }
             for c in calls
         ],
@@ -542,7 +581,7 @@ async def get_entity(
                 "id": a.id,
                 "report_type": a.report_type,
                 "result": a.result[:500] if a.result else None,
-                "created_at": a.created_at
+                "created_at": a.created_at.isoformat() if a.created_at else None
             }
             for a in analyses
         ]
@@ -620,7 +659,7 @@ async def update_entity(
         dept_result = await db.execute(select(Department.name).where(Department.id == entity.department_id))
         department_name = dept_result.scalar()
 
-    return {
+    response_data = {
         "id": entity.id,
         "type": entity.type,
         "name": entity.name,
@@ -635,9 +674,14 @@ async def update_entity(
         "created_by": entity.created_by,
         "department_id": entity.department_id,
         "department_name": department_name,
-        "created_at": entity.created_at,
-        "updated_at": entity.updated_at
+        "created_at": entity.created_at.isoformat() if entity.created_at else None,
+        "updated_at": entity.updated_at.isoformat() if entity.updated_at else None
     }
+
+    # Broadcast entity.updated event
+    await broadcast_entity_updated(org.id, response_data)
+
+    return response_data
 
 
 @router.delete("/{entity_id}")
@@ -687,8 +731,16 @@ async def delete_entity(
     if not can_delete:
         raise HTTPException(403, "No delete permission for this entity")
 
+    # Store entity_id and org_id before deletion
+    deleted_entity_id = entity.id
+    deleted_org_id = entity.org_id
+
     await db.delete(entity)
     await db.commit()
+
+    # Broadcast entity.deleted event
+    await broadcast_entity_deleted(deleted_org_id, deleted_entity_id)
+
     return {"success": True}
 
 

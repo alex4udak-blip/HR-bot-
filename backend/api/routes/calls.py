@@ -244,17 +244,16 @@ async def list_calls(
     query = query.order_by(CallRecording.created_at.desc())
     query = query.offset(offset).limit(limit)
 
+    # Add eager loading for entity relationship
+    from sqlalchemy.orm import joinedload
+    query = query.options(joinedload(CallRecording.entity))
+
     result = await db.execute(query)
-    calls = result.scalars().all()
+    calls = result.unique().scalars().all()
 
     response = []
     for call in calls:
-        entity_name = None
-        if call.entity_id:
-            entity_result = await db.execute(
-                select(Entity.name).where(Entity.id == call.entity_id)
-            )
-            entity_name = entity_result.scalar()
+        entity_name = call.entity.name if call.entity else None
 
         response.append({
             "id": call.id,

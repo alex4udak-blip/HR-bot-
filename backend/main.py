@@ -12,7 +12,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
-from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations
+from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime
 from api.config import settings
 
 # Configure logging - show important messages
@@ -47,7 +47,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data: blob:; "
+            "connect-src 'self' ws: wss:; "
+            "script-src 'self' 'unsafe-inline'"
+        )
         return response
 
 
@@ -154,6 +161,11 @@ async def init_database():
     await run_migration(engine, "ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_path VARCHAR(512)", "Add file_path to messages")
     await run_migration(engine, "ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_imported BOOLEAN DEFAULT FALSE", "Add is_imported to messages")
     await run_migration(engine, "ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL", "Add entity_id to analysis_history")
+
+    # User security columns (for token invalidation and brute-force protection)
+    await run_migration(engine, "ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER DEFAULT 0", "Add token_version to users")
+    await run_migration(engine, "ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER DEFAULT 0", "Add failed_login_attempts to users")
+    await run_migration(engine, "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP", "Add locked_until to users")
 
     # Entity AI tables
     create_entity_ai_conversations = """
@@ -416,6 +428,7 @@ app.include_router(organizations.router, prefix="/api/organizations", tags=["org
 app.include_router(sharing.router, prefix="/api/sharing", tags=["sharing"])
 app.include_router(departments.router, prefix="/api/departments", tags=["departments"])
 app.include_router(invitations.router, prefix="/api/invitations", tags=["invitations"])
+app.include_router(realtime.router, tags=["realtime"])
 
 
 @app.get("/health")
