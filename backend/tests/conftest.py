@@ -630,8 +630,9 @@ def mock_fireflies_client(monkeypatch):
     })
     mock_client.list_transcripts = AsyncMock(return_value=[])
 
-    # Patch the fireflies client import
+    # Patch both the class and the singleton instance at source
     monkeypatch.setattr("api.services.fireflies_client.FirefliesClient", lambda *args, **kwargs: mock_client)
+    monkeypatch.setattr("api.services.fireflies_client.fireflies_client", mock_client)
 
     return mock_client
 

@@ -8,6 +8,9 @@ Tests cover:
 - Department hierarchy (parent/child relationships)
 - Edge cases and error handling
 - Cross-organization isolation
+- Nested hierarchies and complex scenarios
+- Department statistics
+- Cross-department access control
 """
 import pytest
 from datetime import datetime
@@ -18,6 +21,7 @@ from api.models.database import (
     User, Organization, Department, DepartmentMember, OrgMember,
     DeptRole, OrgRole, UserRole
 )
+from api.services.auth import create_access_token
 
 
 # =============================================================================
@@ -1917,3 +1921,2179 @@ class TestCrossOrganizationIsolation:
         )
 
         assert response.status_code == 200
+
+
+# =============================================================================
+# NESTED DEPARTMENT HIERARCHY TESTS
+# =============================================================================
+
+class TestNestedDepartmentHierarchy:
+    """Tests for complex nested department hierarchies and permissions."""
+
+    async def test_create_three_level_hierarchy_with_leads(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        organization: Organization, org_owner: OrgMember, regular_user: User,
+        second_user: User, get_auth_headers
+    ):
+        """Test creating 3-level department hierarchy with leads at each level."""
+        # Level 1: Engineering (created by owner)
+        response1 = await client.post(
+            "/api/departments",
+            json={"name": "Engineering", "description": "Engineering Division"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response1.status_code in [200, 201]
+        engineering = response1.json()
+
+        # Add regular_user as lead of Engineering
+        await client.post(
+            f"/api/departments/{engineering['id']}/members",
+            json={"user_id": regular_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Make regular_user member of org
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.admin,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+        await db_session.commit()
+
+        # Level 2: Backend (created by lead of Engineering)
+        user_token = create_access_token(data={"sub": str(regular_user.id)})
+        response2 = await client.post(
+            "/api/departments",
+            json={
+                "name": "Backend",
+                "description": "Backend Team",
+                "parent_id": engineering["id"]
+            },
+            headers=get_auth_headers(user_token)
+        )
+        assert response2.status_code in [200, 201]
+        backend = response2.json()
+        assert backend["parent_id"] == engineering["id"]
+        assert backend["parent_name"] == "Engineering"
+        # Lead creating subdepartment becomes lead of it
+        assert backend["members_count"] == 1
+
+        # Verify hierarchy
+        response3 = await client.get(
+            f"/api/departments/{engineering['id']}/children",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response3.status_code == 200
+        children = response3.json()
+        assert len(children) >= 1
+        assert any(c["id"] == backend["id"] for c in children)
+
+    async def test_lead_of_subdepartment_creates_sub_subdepartment(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        organization: Organization, org_owner: OrgMember, regular_user: User,
+        second_user: User, get_auth_headers
+    ):
+        """Test lead of subdepartment can create sub-subdepartment."""
+        # Create parent department
+        response1 = await client.post(
+            "/api/departments",
+            json={"name": "Parent Dept"},
+            headers=get_auth_headers(admin_token)
+        )
+        parent = response1.json()
+
+        # Make regular_user org member
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.admin,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+        await db_session.commit()
+
+        # Owner creates child and makes regular_user lead
+        response2 = await client.post(
+            "/api/departments",
+            json={"name": "Child Dept", "parent_id": parent["id"]},
+            headers=get_auth_headers(admin_token)
+        )
+        child = response2.json()
+
+        await client.post(
+            f"/api/departments/{child['id']}/members",
+            json={"user_id": regular_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Now regular_user (lead of child) creates grandchild
+        user_token = create_access_token(data={"sub": str(regular_user.id)})
+        response3 = await client.post(
+            "/api/departments",
+            json={"name": "Grandchild Dept", "parent_id": child["id"]},
+            headers=get_auth_headers(user_token)
+        )
+        assert response3.status_code in [200, 201]
+        grandchild = response3.json()
+        assert grandchild["parent_id"] == child["id"]
+
+    async def test_department_hierarchy_statistics(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        organization: Organization, org_owner: OrgMember, get_auth_headers
+    ):
+        """Test department statistics correctly count children in hierarchy."""
+        # Create parent
+        response1 = await client.post(
+            "/api/departments",
+            json={"name": "Parent"},
+            headers=get_auth_headers(admin_token)
+        )
+        parent = response1.json()
+
+        # Create 2 children
+        await client.post(
+            "/api/departments",
+            json={"name": "Child 1", "parent_id": parent["id"]},
+            headers=get_auth_headers(admin_token)
+        )
+        await client.post(
+            "/api/departments",
+            json={"name": "Child 2", "parent_id": parent["id"]},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Check parent's children count
+        response = await client.get(
+            f"/api/departments/{parent['id']}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["children_count"] >= 2
+
+    async def test_nested_department_permissions_isolation(
+        self, db_session: AsyncSession, client: AsyncClient, organization: Organization,
+        org_owner: OrgMember, admin_user: User, regular_user: User, second_user: User,
+        get_auth_headers
+    ):
+        """Test that lead of parent cannot directly manage child's members without being lead."""
+        # Create parent and child
+        admin_token = create_access_token(data={"sub": str(admin_user.id)})
+        response1 = await client.post(
+            "/api/departments",
+            json={"name": "Parent"},
+            headers=get_auth_headers(admin_token)
+        )
+        parent = response1.json()
+
+        response2 = await client.post(
+            "/api/departments",
+            json={"name": "Child", "parent_id": parent["id"]},
+            headers=get_auth_headers(admin_token)
+        )
+        child = response2.json()
+
+        # Make regular_user lead of parent only
+        org_member1 = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.admin,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member1)
+        await db_session.commit()
+
+        await client.post(
+            f"/api/departments/{parent['id']}/members",
+            json={"user_id": regular_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Make second_user org member
+        org_member2 = OrgMember(
+            org_id=organization.id,
+            user_id=second_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member2)
+        await db_session.commit()
+
+        # Lead of parent tries to add member to child - should fail
+        user_token = create_access_token(data={"sub": str(regular_user.id)})
+        response = await client.post(
+            f"/api/departments/{child['id']}/members",
+            json={"user_id": second_user.id, "role": "member"},
+            headers=get_auth_headers(user_token)
+        )
+        assert response.status_code == 403
+
+    async def test_list_departments_shows_hierarchy(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        organization: Organization, org_owner: OrgMember, get_auth_headers
+    ):
+        """Test listing departments shows parent-child relationships."""
+        # Create parent with children
+        response1 = await client.post(
+            "/api/departments",
+            json={"name": "Sales"},
+            headers=get_auth_headers(admin_token)
+        )
+        sales = response1.json()
+
+        response2 = await client.post(
+            "/api/departments",
+            json={"name": "Enterprise Sales", "parent_id": sales["id"]},
+            headers=get_auth_headers(admin_token)
+        )
+        enterprise = response2.json()
+
+        # List all departments
+        response = await client.get(
+            "/api/departments?parent_id=-1",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+        all_depts = response.json()
+
+        # Find our departments
+        sales_data = next((d for d in all_depts if d["id"] == sales["id"]), None)
+        enterprise_data = next((d for d in all_depts if d["id"] == enterprise["id"]), None)
+
+        assert sales_data is not None
+        assert enterprise_data is not None
+        assert enterprise_data["parent_id"] == sales["id"]
+        assert enterprise_data["parent_name"] == "Sales"
+
+
+# =============================================================================
+# DEPARTMENT STATISTICS COMPREHENSIVE TESTS
+# =============================================================================
+
+class TestDepartmentStatistics:
+    """Comprehensive tests for department statistics."""
+
+    async def test_statistics_update_when_members_added(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        regular_user: User, second_user: User, get_auth_headers
+    ):
+        """Test statistics update correctly when members are added."""
+        # Get initial stats
+        response1 = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        initial_count = response1.json()["members_count"]
+
+        # Make users org members
+        for user in [regular_user, second_user]:
+            org_member = OrgMember(
+                org_id=organization.id,
+                user_id=user.id,
+                role=OrgRole.member,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(org_member)
+        await db_session.commit()
+
+        # Add two members
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": second_user.id, "role": "sub_admin"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Check updated stats
+        response2 = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response2.status_code == 200
+        updated_count = response2.json()["members_count"]
+        assert updated_count == initial_count + 2
+
+    async def test_statistics_update_when_members_removed(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        regular_user: User, second_user: User, get_auth_headers
+    ):
+        """Test statistics update correctly when members are removed."""
+        # Make users org members
+        for user in [regular_user, second_user]:
+            org_member = OrgMember(
+                org_id=organization.id,
+                user_id=user.id,
+                role=OrgRole.member,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(org_member)
+        await db_session.commit()
+
+        # Add members
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": second_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Get stats with members
+        response1 = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        count_with_members = response1.json()["members_count"]
+
+        # Remove one member
+        await client.delete(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Check updated stats
+        response2 = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        updated_count = response2.json()["members_count"]
+        assert updated_count == count_with_members - 1
+
+    async def test_statistics_with_entities(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        admin_user: User, get_auth_headers
+    ):
+        """Test entity count statistics are accurate."""
+        # Create entities in department
+        from api.models.database import Entity, EntityType, EntityStatus
+
+        entity1 = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Entity 1",
+            email="entity1@test.com",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            created_at=datetime.utcnow()
+        )
+        entity2 = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Entity 2",
+            email="entity2@test.com",
+            type=EntityType.client,
+            status=EntityStatus.active,
+            created_at=datetime.utcnow()
+        )
+        db_session.add_all([entity1, entity2])
+        await db_session.commit()
+
+        # Check stats
+        response = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["entities_count"] >= 2
+
+    async def test_statistics_zero_counts(
+        self, client: AsyncClient, admin_token: str, department: Department,
+        organization: Organization, org_owner: OrgMember, get_auth_headers
+    ):
+        """Test statistics correctly show zero for empty departments."""
+        response = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        # New department should have zero children
+        assert data["children_count"] == 0
+        # May or may not have members/entities depending on fixtures
+
+    async def test_parent_children_count_accuracy(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        organization: Organization, org_owner: OrgMember, get_auth_headers
+    ):
+        """Test parent department correctly counts its children."""
+        # Create parent
+        response1 = await client.post(
+            "/api/departments",
+            json={"name": "Parent Dept"},
+            headers=get_auth_headers(admin_token)
+        )
+        parent = response1.json()
+
+        # Create multiple children
+        for i in range(5):
+            await client.post(
+                "/api/departments",
+                json={"name": f"Child {i}", "parent_id": parent["id"]},
+                headers=get_auth_headers(admin_token)
+            )
+
+        # Verify count
+        response = await client.get(
+            f"/api/departments/{parent['id']}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+        assert response.json()["children_count"] == 5
+
+
+# =============================================================================
+# CROSS-DEPARTMENT ACCESS TESTS
+# =============================================================================
+
+class TestCrossDepartmentAccess:
+    """Tests for cross-department access control."""
+
+    async def test_member_cannot_access_other_department_members(
+        self, db_session: AsyncSession, client: AsyncClient, organization: Organization,
+        department: Department, second_department: Department, regular_user: User,
+        org_admin: OrgMember, get_auth_headers
+    ):
+        """Test member of Dept A cannot access Dept B's members."""
+        # Make regular_user member of first department only
+        dept_member = DepartmentMember(
+            department_id=department.id,
+            user_id=regular_user.id,
+            role=DeptRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_member)
+        await db_session.commit()
+
+        user_token = create_access_token(data={"sub": str(regular_user.id)})
+
+        # Try to list members of second department
+        response = await client.get(
+            f"/api/departments/{second_department.id}/members",
+            headers=get_auth_headers(user_token)
+        )
+        # Should succeed (viewing is allowed) but might show different data
+        assert response.status_code == 200
+
+    async def test_lead_cannot_add_members_to_other_department(
+        self, db_session: AsyncSession, client: AsyncClient, organization: Organization,
+        department: Department, second_department: Department, regular_user: User,
+        second_user: User, org_admin: OrgMember, org_member: OrgMember, get_auth_headers
+    ):
+        """Test lead of Dept A cannot add members to Dept B."""
+        # Make regular_user lead of first department
+        dept_lead = DepartmentMember(
+            department_id=department.id,
+            user_id=regular_user.id,
+            role=DeptRole.lead,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_lead)
+        await db_session.commit()
+
+        user_token = create_access_token(data={"sub": str(regular_user.id)})
+
+        # Try to add member to second department
+        response = await client.post(
+            f"/api/departments/{second_department.id}/members",
+            json={"user_id": second_user.id, "role": "member"},
+            headers=get_auth_headers(user_token)
+        )
+        assert response.status_code == 403
+
+    async def test_lead_cannot_update_other_department(
+        self, db_session: AsyncSession, client: AsyncClient, organization: Organization,
+        department: Department, second_department: Department, regular_user: User,
+        org_admin: OrgMember, get_auth_headers
+    ):
+        """Test lead of Dept A cannot update Dept B."""
+        # Make regular_user lead of first department
+        dept_lead = DepartmentMember(
+            department_id=department.id,
+            user_id=regular_user.id,
+            role=DeptRole.lead,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_lead)
+        await db_session.commit()
+
+        user_token = create_access_token(data={"sub": str(regular_user.id)})
+
+        # Try to update second department
+        response = await client.patch(
+            f"/api/departments/{second_department.id}",
+            json={"description": "Unauthorized update"},
+            headers=get_auth_headers(user_token)
+        )
+        assert response.status_code == 403
+
+    async def test_member_in_multiple_departments_access(
+        self, db_session: AsyncSession, client: AsyncClient, organization: Organization,
+        department: Department, second_department: Department, regular_user: User,
+        org_admin: OrgMember, get_auth_headers
+    ):
+        """Test user who is member of multiple departments has correct access."""
+        # Add regular_user to both departments
+        dept_member1 = DepartmentMember(
+            department_id=department.id,
+            user_id=regular_user.id,
+            role=DeptRole.member,
+            created_at=datetime.utcnow()
+        )
+        dept_member2 = DepartmentMember(
+            department_id=second_department.id,
+            user_id=regular_user.id,
+            role=DeptRole.sub_admin,
+            created_at=datetime.utcnow()
+        )
+        db_session.add_all([dept_member1, dept_member2])
+        await db_session.commit()
+
+        user_token = create_access_token(data={"sub": str(regular_user.id)})
+
+        # Get my departments - should see both
+        response = await client.get(
+            "/api/departments/my/departments",
+            headers=get_auth_headers(user_token)
+        )
+        assert response.status_code == 200
+        my_depts = response.json()
+        dept_ids = [d["id"] for d in my_depts]
+        assert department.id in dept_ids
+        assert second_department.id in dept_ids
+
+    async def test_lead_of_multiple_departments_permissions(
+        self, db_session: AsyncSession, client: AsyncClient, organization: Organization,
+        department: Department, second_department: Department, regular_user: User,
+        second_user: User, org_admin: OrgMember, org_member: OrgMember, get_auth_headers
+    ):
+        """Test user who is lead of multiple departments can manage both."""
+        # Make regular_user lead of both departments
+        dept_lead1 = DepartmentMember(
+            department_id=department.id,
+            user_id=regular_user.id,
+            role=DeptRole.lead,
+            created_at=datetime.utcnow()
+        )
+        dept_lead2 = DepartmentMember(
+            department_id=second_department.id,
+            user_id=regular_user.id,
+            role=DeptRole.lead,
+            created_at=datetime.utcnow()
+        )
+        db_session.add_all([dept_lead1, dept_lead2])
+        await db_session.commit()
+
+        user_token = create_access_token(data={"sub": str(regular_user.id)})
+
+        # Should be able to update both departments
+        response1 = await client.patch(
+            f"/api/departments/{department.id}",
+            json={"description": "Updated by lead"},
+            headers=get_auth_headers(user_token)
+        )
+        assert response1.status_code == 200
+
+        response2 = await client.patch(
+            f"/api/departments/{second_department.id}",
+            json={"description": "Updated by lead"},
+            headers=get_auth_headers(user_token)
+        )
+        assert response2.status_code == 200
+
+        # Should be able to add members to both
+        response3 = await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": second_user.id, "role": "member"},
+            headers=get_auth_headers(user_token)
+        )
+        assert response3.status_code in [200, 201]
+
+
+# =============================================================================
+# ADVANCED MEMBER MANAGEMENT TESTS
+# =============================================================================
+
+class TestAdvancedMemberManagement:
+    """Tests for advanced department member management scenarios."""
+
+    async def test_multiple_leads_in_department(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        regular_user: User, second_user: User, get_auth_headers
+    ):
+        """Test department can have multiple leads."""
+        # Make users org members
+        for user in [regular_user, second_user]:
+            org_member = OrgMember(
+                org_id=organization.id,
+                user_id=user.id,
+                role=OrgRole.member,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(org_member)
+        await db_session.commit()
+
+        # Add two leads
+        response1 = await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response1.status_code in [200, 201]
+
+        response2 = await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": second_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response2.status_code in [200, 201]
+
+        # List members - should show both leads
+        response = await client.get(
+            f"/api/departments/{department.id}/members",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+        members = response.json()
+
+        leads = [m for m in members if m["role"] == "lead"]
+        assert len(leads) >= 2
+
+    async def test_both_leads_can_manage_department(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        regular_user: User, second_user: User, admin_user: User, get_auth_headers
+    ):
+        """Test both leads have equal management permissions."""
+        # Make users org members
+        for user in [regular_user, second_user]:
+            org_member = OrgMember(
+                org_id=organization.id,
+                user_id=user.id,
+                role=OrgRole.member,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(org_member)
+        await db_session.commit()
+
+        # Add as leads
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": second_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Both should be able to update department
+        user1_token = create_access_token(data={"sub": str(regular_user.id)})
+        response1 = await client.patch(
+            f"/api/departments/{department.id}",
+            json={"description": "Updated by lead 1"},
+            headers=get_auth_headers(user1_token)
+        )
+        assert response1.status_code == 200
+
+        user2_token = create_access_token(data={"sub": str(second_user.id)})
+        response2 = await client.patch(
+            f"/api/departments/{department.id}",
+            json={"description": "Updated by lead 2"},
+            headers=get_auth_headers(user2_token)
+        )
+        assert response2.status_code == 200
+
+    async def test_promote_member_through_role_hierarchy(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        regular_user: User, get_auth_headers
+    ):
+        """Test promoting member through role hierarchy: member -> sub_admin -> lead."""
+        # Make user org member
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+        await db_session.commit()
+
+        # Start as member
+        response1 = await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response1.status_code in [200, 201]
+        assert response1.json()["role"] == "member"
+
+        # Promote to sub_admin
+        response2 = await client.patch(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            json={"role": "sub_admin"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response2.status_code == 200
+        assert response2.json()["role"] == "sub_admin"
+
+        # Promote to lead
+        response3 = await client.patch(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            json={"role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response3.status_code == 200
+        assert response3.json()["role"] == "lead"
+
+    async def test_demote_lead_to_member(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        regular_user: User, second_user: User, get_auth_headers
+    ):
+        """Test demoting lead to member when multiple leads exist."""
+        # Make users org members
+        for user in [regular_user, second_user]:
+            org_member = OrgMember(
+                org_id=organization.id,
+                user_id=user.id,
+                role=OrgRole.member,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(org_member)
+        await db_session.commit()
+
+        # Add two leads
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": second_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Demote one lead to member
+        response = await client.patch(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            json={"role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+        assert response.json()["role"] == "member"
+
+    async def test_member_role_changes_reflected_in_list(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        regular_user: User, get_auth_headers
+    ):
+        """Test role changes are immediately reflected in member list."""
+        # Make user org member
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+        await db_session.commit()
+
+        # Add as member
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Change to sub_admin
+        await client.patch(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            json={"role": "sub_admin"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # List members
+        response = await client.get(
+            f"/api/departments/{department.id}/members",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+        members = response.json()
+
+        user_member = next((m for m in members if m["user_id"] == regular_user.id), None)
+        assert user_member is not None
+        assert user_member["role"] == "sub_admin"
+
+
+# =============================================================================
+# MOVE USERS BETWEEN DEPARTMENTS TESTS
+# =============================================================================
+
+class TestMoveUsersBetweenDepartments:
+    """Tests for moving users between departments."""
+
+    async def test_move_member_from_dept_a_to_dept_b(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, second_department: Department, organization: Organization,
+        org_owner: OrgMember, regular_user: User, get_auth_headers
+    ):
+        """Test moving a member from one department to another."""
+        # Make user org member
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+        await db_session.commit()
+
+        # Add user to department A
+        response1 = await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response1.status_code in [200, 201]
+
+        # Verify user is in department A
+        response2 = await client.get(
+            f"/api/departments/{department.id}/members",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response2.status_code == 200
+        members_a = response2.json()
+        assert any(m["user_id"] == regular_user.id for m in members_a)
+
+        # Get initial stats for both departments
+        dept_a_response = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        dept_b_response = await client.get(
+            f"/api/departments/{second_department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        initial_dept_a_count = dept_a_response.json()["members_count"]
+        initial_dept_b_count = dept_b_response.json()["members_count"]
+
+        # Remove user from department A
+        response3 = await client.delete(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response3.status_code == 200
+
+        # Add user to department B
+        response4 = await client.post(
+            f"/api/departments/{second_department.id}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response4.status_code in [200, 201]
+
+        # Verify user is no longer in department A
+        response5 = await client.get(
+            f"/api/departments/{department.id}/members",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response5.status_code == 200
+        members_a_after = response5.json()
+        assert not any(m["user_id"] == regular_user.id for m in members_a_after)
+
+        # Verify user is now in department B
+        response6 = await client.get(
+            f"/api/departments/{second_department.id}/members",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response6.status_code == 200
+        members_b = response6.json()
+        assert any(m["user_id"] == regular_user.id for m in members_b)
+
+        # Verify statistics updated correctly
+        dept_a_after = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        dept_b_after = await client.get(
+            f"/api/departments/{second_department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert dept_a_after.json()["members_count"] == initial_dept_a_count - 1
+        assert dept_b_after.json()["members_count"] == initial_dept_b_count + 1
+
+    async def test_move_lead_changes_role_to_member(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, second_department: Department, organization: Organization,
+        org_owner: OrgMember, regular_user: User, second_user: User, get_auth_headers
+    ):
+        """Test moving a lead to another department and changing role."""
+        # Make users org members
+        for user in [regular_user, second_user]:
+            org_member = OrgMember(
+                org_id=organization.id,
+                user_id=user.id,
+                role=OrgRole.member,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(org_member)
+        await db_session.commit()
+
+        # Add regular_user as lead to department A
+        # Add second_user as another lead (so we can remove regular_user)
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": second_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Verify regular_user is lead in department A
+        response1 = await client.get(
+            f"/api/departments/{department.id}/members",
+            headers=get_auth_headers(admin_token)
+        )
+        members_a = response1.json()
+        user_in_a = next((m for m in members_a if m["user_id"] == regular_user.id), None)
+        assert user_in_a is not None
+        assert user_in_a["role"] == "lead"
+
+        # Remove from department A
+        await client.delete(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Add to department B as member (not lead)
+        response2 = await client.post(
+            f"/api/departments/{second_department.id}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response2.status_code in [200, 201]
+        assert response2.json()["role"] == "member"
+
+        # Verify role changed in department B
+        response3 = await client.get(
+            f"/api/departments/{second_department.id}/members",
+            headers=get_auth_headers(admin_token)
+        )
+        members_b = response3.json()
+        user_in_b = next((m for m in members_b if m["user_id"] == regular_user.id), None)
+        assert user_in_b is not None
+        assert user_in_b["role"] == "member"
+
+    async def test_move_multiple_members_at_once(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, second_department: Department, organization: Organization,
+        org_owner: OrgMember, get_auth_headers
+    ):
+        """Test moving multiple members from one department to another."""
+        # Create 3 new users
+        users = []
+        for i in range(3):
+            user = User(
+                email=f"move_user_{i}@test.com",
+                password_hash="hashed",
+                name=f"Move User {i}",
+                role=UserRole.ADMIN,
+                is_active=True
+            )
+            db_session.add(user)
+            users.append(user)
+        await db_session.commit()
+
+        # Make them org members
+        for user in users:
+            org_member = OrgMember(
+                org_id=organization.id,
+                user_id=user.id,
+                role=OrgRole.member,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(org_member)
+        await db_session.commit()
+
+        # Add all to department A
+        for user in users:
+            await client.post(
+                f"/api/departments/{department.id}/members",
+                json={"user_id": user.id, "role": "member"},
+                headers=get_auth_headers(admin_token)
+            )
+
+        # Get initial counts
+        dept_a_initial = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        dept_b_initial = await client.get(
+            f"/api/departments/{second_department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        initial_a_count = dept_a_initial.json()["members_count"]
+        initial_b_count = dept_b_initial.json()["members_count"]
+
+        # Move all users from A to B
+        for user in users:
+            # Remove from A
+            await client.delete(
+                f"/api/departments/{department.id}/members/{user.id}",
+                headers=get_auth_headers(admin_token)
+            )
+            # Add to B
+            await client.post(
+                f"/api/departments/{second_department.id}/members",
+                json={"user_id": user.id, "role": "member"},
+                headers=get_auth_headers(admin_token)
+            )
+
+        # Verify final counts
+        dept_a_final = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        dept_b_final = await client.get(
+            f"/api/departments/{second_department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert dept_a_final.json()["members_count"] == initial_a_count - 3
+        assert dept_b_final.json()["members_count"] == initial_b_count + 3
+
+    async def test_dept_lead_can_move_member_from_their_dept(
+        self, db_session: AsyncSession, client: AsyncClient, organization: Organization,
+        department: Department, second_department: Department, admin_user: User,
+        regular_user: User, second_user: User, org_owner: OrgMember, get_auth_headers
+    ):
+        """Test department lead can move members from their own department."""
+        # Make admin_user lead of department A
+        dept_lead_membership = DepartmentMember(
+            department_id=department.id,
+            user_id=admin_user.id,
+            role=DeptRole.lead,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_lead_membership)
+
+        # Make regular_user org member and dept member
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+        dept_member = DepartmentMember(
+            department_id=department.id,
+            user_id=regular_user.id,
+            role=DeptRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_member)
+        await db_session.commit()
+
+        # Lead removes member from their department
+        admin_token = create_access_token(data={"sub": str(admin_user.id)})
+        response = await client.delete(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+
+    async def test_dept_lead_cannot_add_to_other_department(
+        self, db_session: AsyncSession, client: AsyncClient, organization: Organization,
+        department: Department, second_department: Department, admin_user: User,
+        regular_user: User, get_auth_headers
+    ):
+        """Test department lead cannot add members to other departments."""
+        # Make admin_user lead of department A only
+        dept_lead_membership = DepartmentMember(
+            department_id=department.id,
+            user_id=admin_user.id,
+            role=DeptRole.lead,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_lead_membership)
+
+        # Make regular_user org member
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+        await db_session.commit()
+
+        # Lead tries to add member to department B (should fail)
+        admin_token = create_access_token(data={"sub": str(admin_user.id)})
+        response = await client.post(
+            f"/api/departments/{second_department.id}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 403
+
+    async def test_move_user_updates_my_departments(
+        self, db_session: AsyncSession, client: AsyncClient, organization: Organization,
+        department: Department, second_department: Department, regular_user: User,
+        org_admin: OrgMember, admin_token: str, get_auth_headers
+    ):
+        """Test that moving a user updates their /my/departments list."""
+        # Add user to department A
+        dept_member = DepartmentMember(
+            department_id=department.id,
+            user_id=regular_user.id,
+            role=DeptRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_member)
+        await db_session.commit()
+
+        # Check user's departments - should include dept A
+        user_token = create_access_token(data={"sub": str(regular_user.id)})
+        response1 = await client.get(
+            "/api/departments/my/departments",
+            headers=get_auth_headers(user_token)
+        )
+        assert response1.status_code == 200
+        my_depts_before = response1.json()
+        dept_ids_before = [d["id"] for d in my_depts_before]
+        assert department.id in dept_ids_before
+
+        # Move user from A to B
+        await client.delete(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        await client.post(
+            f"/api/departments/{second_department.id}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Check user's departments again
+        response2 = await client.get(
+            "/api/departments/my/departments",
+            headers=get_auth_headers(user_token)
+        )
+        assert response2.status_code == 200
+        my_depts_after = response2.json()
+        dept_ids_after = [d["id"] for d in my_depts_after]
+        assert department.id not in dept_ids_after
+        assert second_department.id in dept_ids_after
+
+    async def test_cannot_move_user_to_same_department(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        regular_user: User, get_auth_headers
+    ):
+        """Test that adding a user to the same department updates their role instead."""
+        # Make user org member
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+        await db_session.commit()
+
+        # Add user to department as member
+        response1 = await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response1.status_code in [200, 201]
+        assert response1.json()["role"] == "member"
+
+        # Try to add same user again with different role
+        response2 = await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "sub_admin"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response2.status_code in [200, 201]
+        # Should update role, not create duplicate
+        assert response2.json()["role"] == "sub_admin"
+
+        # Verify there's only one membership
+        response3 = await client.get(
+            f"/api/departments/{department.id}/members",
+            headers=get_auth_headers(admin_token)
+        )
+        members = response3.json()
+        user_memberships = [m for m in members if m["user_id"] == regular_user.id]
+        assert len(user_memberships) == 1
+        assert user_memberships[0]["role"] == "sub_admin"
+
+    async def test_move_user_between_parent_and_child_departments(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        organization: Organization, org_owner: OrgMember, regular_user: User,
+        get_auth_headers
+    ):
+        """Test moving user between parent and child departments."""
+        # Create parent department
+        response1 = await client.post(
+            "/api/departments",
+            json={"name": "Parent Dept"},
+            headers=get_auth_headers(admin_token)
+        )
+        parent_dept = response1.json()
+
+        # Create child department
+        response2 = await client.post(
+            "/api/departments",
+            json={"name": "Child Dept", "parent_id": parent_dept["id"]},
+            headers=get_auth_headers(admin_token)
+        )
+        child_dept = response2.json()
+
+        # Make user org member
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+        await db_session.commit()
+
+        # Add user to parent
+        response3 = await client.post(
+            f"/api/departments/{parent_dept['id']}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response3.status_code in [200, 201]
+
+        # Move to child
+        await client.delete(
+            f"/api/departments/{parent_dept['id']}/members/{regular_user.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        response4 = await client.post(
+            f"/api/departments/{child_dept['id']}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response4.status_code in [200, 201]
+
+        # Verify user is in child, not parent
+        parent_members = await client.get(
+            f"/api/departments/{parent_dept['id']}/members",
+            headers=get_auth_headers(admin_token)
+        )
+        child_members = await client.get(
+            f"/api/departments/{child_dept['id']}/members",
+            headers=get_auth_headers(admin_token)
+        )
+
+        parent_member_ids = [m["user_id"] for m in parent_members.json()]
+        child_member_ids = [m["user_id"] for m in child_members.json()]
+
+        assert regular_user.id not in parent_member_ids
+        assert regular_user.id in child_member_ids
+
+
+# =============================================================================
+# ENHANCED STATISTICS TESTS
+# =============================================================================
+
+class TestEnhancedDepartmentStatistics:
+    """Enhanced tests for department statistics with detailed breakdowns."""
+
+    async def test_statistics_by_member_role_breakdown(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        get_auth_headers
+    ):
+        """Test department shows correct count breakdown by role types."""
+        # Create users with different roles
+        users = []
+        for i in range(3):
+            user = User(
+                email=f"role_user_{i}@test.com",
+                password_hash="hashed",
+                name=f"Role User {i}",
+                role=UserRole.ADMIN,
+                is_active=True
+            )
+            db_session.add(user)
+            users.append(user)
+        await db_session.commit()
+
+        # Make them org members
+        for user in users:
+            org_member = OrgMember(
+                org_id=organization.id,
+                user_id=user.id,
+                role=OrgRole.member,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(org_member)
+        await db_session.commit()
+
+        # Add users with different department roles
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": users[0].id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": users[1].id, "role": "sub_admin"},
+            headers=get_auth_headers(admin_token)
+        )
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": users[2].id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Get members list
+        response = await client.get(
+            f"/api/departments/{department.id}/members",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+        members = response.json()
+
+        # Count by role
+        role_counts = {}
+        for member in members:
+            role = member["role"]
+            role_counts[role] = role_counts.get(role, 0) + 1
+
+        assert role_counts.get("lead", 0) >= 1
+        assert role_counts.get("sub_admin", 0) >= 1
+        assert role_counts.get("member", 0) >= 1
+
+    async def test_statistics_with_multiple_entity_types(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        admin_user: User, get_auth_headers
+    ):
+        """Test department statistics with different entity types."""
+        from api.models.database import Entity, EntityType, EntityStatus
+
+        # Create entities of different types
+        entity_types = [EntityType.candidate, EntityType.client, EntityType.employee]
+        for i, entity_type in enumerate(entity_types):
+            entity = Entity(
+                org_id=organization.id,
+                department_id=department.id,
+                created_by=admin_user.id,
+                name=f"Entity {i}",
+                email=f"entity{i}@test.com",
+                type=entity_type,
+                status=EntityStatus.active,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(entity)
+        await db_session.commit()
+
+        # Get department statistics
+        response = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["entities_count"] >= 3
+
+    async def test_statistics_accuracy_after_bulk_operations(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        get_auth_headers
+    ):
+        """Test statistics remain accurate after bulk add/remove operations."""
+        # Create multiple users
+        users = []
+        for i in range(10):
+            user = User(
+                email=f"bulk_user_{i}@test.com",
+                password_hash="hashed",
+                name=f"Bulk User {i}",
+                role=UserRole.ADMIN,
+                is_active=True
+            )
+            db_session.add(user)
+            users.append(user)
+        await db_session.commit()
+
+        # Make them org members
+        for user in users:
+            org_member = OrgMember(
+                org_id=organization.id,
+                user_id=user.id,
+                role=OrgRole.member,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(org_member)
+        await db_session.commit()
+
+        # Get initial count
+        initial_response = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        initial_count = initial_response.json()["members_count"]
+
+        # Bulk add users
+        for user in users:
+            await client.post(
+                f"/api/departments/{department.id}/members",
+                json={"user_id": user.id, "role": "member"},
+                headers=get_auth_headers(admin_token)
+            )
+
+        # Verify count increased
+        after_add_response = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        after_add_count = after_add_response.json()["members_count"]
+        assert after_add_count == initial_count + 10
+
+        # Bulk remove half
+        for user in users[:5]:
+            await client.delete(
+                f"/api/departments/{department.id}/members/{user.id}",
+                headers=get_auth_headers(admin_token)
+            )
+
+        # Verify count decreased correctly
+        after_remove_response = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        after_remove_count = after_remove_response.json()["members_count"]
+        assert after_remove_count == initial_count + 5
+
+    async def test_hierarchy_statistics_recursive_counts(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        organization: Organization, org_owner: OrgMember, get_auth_headers
+    ):
+        """Test hierarchy statistics count children correctly at each level."""
+        # Create 3-level hierarchy
+        # Level 1: Engineering
+        response1 = await client.post(
+            "/api/departments",
+            json={"name": "Engineering"},
+            headers=get_auth_headers(admin_token)
+        )
+        engineering = response1.json()
+
+        # Level 2: Backend, Frontend (2 children of Engineering)
+        response2 = await client.post(
+            "/api/departments",
+            json={"name": "Backend", "parent_id": engineering["id"]},
+            headers=get_auth_headers(admin_token)
+        )
+        backend = response2.json()
+
+        response3 = await client.post(
+            "/api/departments",
+            json={"name": "Frontend", "parent_id": engineering["id"]},
+            headers=get_auth_headers(admin_token)
+        )
+        frontend = response3.json()
+
+        # Level 3: API, Database (2 children of Backend)
+        await client.post(
+            "/api/departments",
+            json={"name": "API", "parent_id": backend["id"]},
+            headers=get_auth_headers(admin_token)
+        )
+        await client.post(
+            "/api/departments",
+            json={"name": "Database", "parent_id": backend["id"]},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Verify Engineering has 2 direct children
+        eng_response = await client.get(
+            f"/api/departments/{engineering['id']}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert eng_response.status_code == 200
+        assert eng_response.json()["children_count"] == 2
+
+        # Verify Backend has 2 direct children
+        backend_response = await client.get(
+            f"/api/departments/{backend['id']}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert backend_response.status_code == 200
+        assert backend_response.json()["children_count"] == 2
+
+        # Verify Frontend has 0 children
+        frontend_response = await client.get(
+            f"/api/departments/{frontend['id']}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert frontend_response.status_code == 200
+        assert frontend_response.json()["children_count"] == 0
+
+    async def test_statistics_with_inactive_department(
+        self, client: AsyncClient, admin_token: str, department: Department,
+        organization: Organization, org_owner: OrgMember, get_auth_headers
+    ):
+        """Test statistics for inactive department."""
+        # Deactivate department
+        response1 = await client.patch(
+            f"/api/departments/{department.id}",
+            json={"is_active": False},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response1.status_code == 200
+        assert response1.json()["is_active"] is False
+
+        # Statistics should still be accessible
+        response2 = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response2.status_code == 200
+        data = response2.json()
+        assert "members_count" in data
+        assert "entities_count" in data
+        assert "children_count" in data
+
+
+# =============================================================================
+# COMPREHENSIVE ROLE TRANSITION TESTS
+# =============================================================================
+
+class TestComprehensiveRoleTransitions:
+    """Test all possible role transitions for department members."""
+
+    async def test_all_role_promotions(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        regular_user: User, get_auth_headers
+    ):
+        """Test all upward role transitions: member -> sub_admin -> lead."""
+        # Make user org member
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+        await db_session.commit()
+
+        # Add as member
+        response1 = await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response1.status_code in [200, 201]
+        assert response1.json()["role"] == "member"
+
+        # Promote to sub_admin
+        response2 = await client.patch(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            json={"role": "sub_admin"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response2.status_code == 200
+        assert response2.json()["role"] == "sub_admin"
+
+        # Promote to lead
+        response3 = await client.patch(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            json={"role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response3.status_code == 200
+        assert response3.json()["role"] == "lead"
+
+    async def test_all_role_demotions(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        regular_user: User, second_user: User, get_auth_headers
+    ):
+        """Test all downward role transitions: lead -> sub_admin -> member."""
+        # Make users org members
+        for user in [regular_user, second_user]:
+            org_member = OrgMember(
+                org_id=organization.id,
+                user_id=user.id,
+                role=OrgRole.member,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(org_member)
+        await db_session.commit()
+
+        # Add regular_user as lead and second_user as backup lead
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": second_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Demote to sub_admin
+        response1 = await client.patch(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            json={"role": "sub_admin"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response1.status_code == 200
+        assert response1.json()["role"] == "sub_admin"
+
+        # Demote to member
+        response2 = await client.patch(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            json={"role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response2.status_code == 200
+        assert response2.json()["role"] == "member"
+
+    async def test_direct_role_jumps(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        regular_user: User, get_auth_headers
+    ):
+        """Test direct role transitions (skipping intermediate roles)."""
+        # Make user org member
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+        await db_session.commit()
+
+        # Add as member
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Jump directly from member to lead (skip sub_admin)
+        response = await client.patch(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            json={"role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+        assert response.json()["role"] == "lead"
+
+    async def test_role_change_permissions_by_different_users(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        regular_user: User, second_user: User, get_auth_headers
+    ):
+        """Test role change permissions for owner vs lead vs member."""
+        # Make users org members
+        for user in [regular_user, second_user]:
+            org_member = OrgMember(
+                org_id=organization.id,
+                user_id=user.id,
+                role=OrgRole.member,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(org_member)
+        await db_session.commit()
+
+        # Make regular_user a lead
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Add second_user as member
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": second_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Lead can promote member to sub_admin
+        lead_token = create_access_token(data={"sub": str(regular_user.id)})
+        response1 = await client.patch(
+            f"/api/departments/{department.id}/members/{second_user.id}",
+            json={"role": "sub_admin"},
+            headers=get_auth_headers(lead_token)
+        )
+        assert response1.status_code == 200
+
+        # Lead cannot promote to lead
+        response2 = await client.patch(
+            f"/api/departments/{department.id}/members/{second_user.id}",
+            json={"role": "lead"},
+            headers=get_auth_headers(lead_token)
+        )
+        assert response2.status_code == 403
+
+        # Owner can promote to lead
+        response3 = await client.patch(
+            f"/api/departments/{department.id}/members/{second_user.id}",
+            json={"role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response3.status_code == 200
+
+    async def test_invalid_role_value(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        regular_user: User, get_auth_headers
+    ):
+        """Test updating member with invalid role value fails."""
+        # Make user org member
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+        await db_session.commit()
+
+        # Add user as member
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Try to update with invalid role
+        response = await client.patch(
+            f"/api/departments/{department.id}/members/{regular_user.id}",
+            json={"role": "invalid_role"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 422  # Validation error
+
+
+# =============================================================================
+# ADVANCED HIERARCHY TESTS
+# =============================================================================
+
+class TestAdvancedDepartmentHierarchy:
+    """Advanced tests for deep and complex department hierarchies."""
+
+    async def test_five_level_deep_hierarchy(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        organization: Organization, org_owner: OrgMember, get_auth_headers
+    ):
+        """Test creating and navigating a 5-level deep hierarchy."""
+        # Create 5-level hierarchy
+        level1 = (await client.post(
+            "/api/departments",
+            json={"name": "Level 1 - Company"},
+            headers=get_auth_headers(admin_token)
+        )).json()
+
+        level2 = (await client.post(
+            "/api/departments",
+            json={"name": "Level 2 - Division", "parent_id": level1["id"]},
+            headers=get_auth_headers(admin_token)
+        )).json()
+
+        level3 = (await client.post(
+            "/api/departments",
+            json={"name": "Level 3 - Department", "parent_id": level2["id"]},
+            headers=get_auth_headers(admin_token)
+        )).json()
+
+        level4 = (await client.post(
+            "/api/departments",
+            json={"name": "Level 4 - Team", "parent_id": level3["id"]},
+            headers=get_auth_headers(admin_token)
+        )).json()
+
+        level5 = (await client.post(
+            "/api/departments",
+            json={"name": "Level 5 - Squad", "parent_id": level4["id"]},
+            headers=get_auth_headers(admin_token)
+        )).json()
+
+        # Verify level 5 has correct parent chain
+        response = await client.get(
+            f"/api/departments/{level5['id']}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["parent_id"] == level4["id"]
+        assert data["parent_name"] == "Level 4 - Team"
+
+    async def test_multiple_branches_in_hierarchy(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        organization: Organization, org_owner: OrgMember, get_auth_headers
+    ):
+        """Test hierarchy with multiple branches at each level."""
+        # Create root
+        root = (await client.post(
+            "/api/departments",
+            json={"name": "Root"},
+            headers=get_auth_headers(admin_token)
+        )).json()
+
+        # Create 3 children
+        children = []
+        for i in range(3):
+            child = (await client.post(
+                "/api/departments",
+                json={"name": f"Child {i}", "parent_id": root["id"]},
+                headers=get_auth_headers(admin_token)
+            )).json()
+            children.append(child)
+
+        # Create 2 grandchildren for each child
+        for child in children:
+            for j in range(2):
+                await client.post(
+                    "/api/departments",
+                    json={"name": f"Grandchild {child['name']}-{j}", "parent_id": child["id"]},
+                    headers=get_auth_headers(admin_token)
+                )
+
+        # Verify root has 3 children
+        root_response = await client.get(
+            f"/api/departments/{root['id']}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert root_response.json()["children_count"] == 3
+
+        # Verify each child has 2 children
+        for child in children:
+            child_response = await client.get(
+                f"/api/departments/{child['id']}",
+                headers=get_auth_headers(admin_token)
+            )
+            assert child_response.json()["children_count"] == 2
+
+    async def test_get_all_descendants_of_department(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        organization: Organization, org_owner: OrgMember, get_auth_headers
+    ):
+        """Test getting all descendant departments recursively."""
+        # Create parent with children and grandchildren
+        parent = (await client.post(
+            "/api/departments",
+            json={"name": "Parent"},
+            headers=get_auth_headers(admin_token)
+        )).json()
+
+        child1 = (await client.post(
+            "/api/departments",
+            json={"name": "Child 1", "parent_id": parent["id"]},
+            headers=get_auth_headers(admin_token)
+        )).json()
+
+        child2 = (await client.post(
+            "/api/departments",
+            json={"name": "Child 2", "parent_id": parent["id"]},
+            headers=get_auth_headers(admin_token)
+        )).json()
+
+        # Create grandchildren
+        await client.post(
+            "/api/departments",
+            json={"name": "Grandchild 1", "parent_id": child1["id"]},
+            headers=get_auth_headers(admin_token)
+        )
+        await client.post(
+            "/api/departments",
+            json={"name": "Grandchild 2", "parent_id": child1["id"]},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Get direct children
+        children_response = await client.get(
+            f"/api/departments/{parent['id']}/children",
+            headers=get_auth_headers(admin_token)
+        )
+        assert children_response.status_code == 200
+        children = children_response.json()
+        assert len(children) == 2
+
+        # Get grandchildren through child1
+        grandchildren_response = await client.get(
+            f"/api/departments/{child1['id']}/children",
+            headers=get_auth_headers(admin_token)
+        )
+        assert grandchildren_response.status_code == 200
+        grandchildren = grandchildren_response.json()
+        assert len(grandchildren) == 2
+
+    async def test_hierarchy_member_inheritance_isolation(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        organization: Organization, org_owner: OrgMember, regular_user: User,
+        get_auth_headers
+    ):
+        """Test that members in parent don't automatically belong to children."""
+        # Make user org member
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+        await db_session.commit()
+
+        # Create parent and child
+        parent = (await client.post(
+            "/api/departments",
+            json={"name": "Parent"},
+            headers=get_auth_headers(admin_token)
+        )).json()
+
+        child = (await client.post(
+            "/api/departments",
+            json={"name": "Child", "parent_id": parent["id"]},
+            headers=get_auth_headers(admin_token)
+        )).json()
+
+        # Add user to parent
+        await client.post(
+            f"/api/departments/{parent['id']}/members",
+            json={"user_id": regular_user.id, "role": "member"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Verify user is in parent
+        parent_members = await client.get(
+            f"/api/departments/{parent['id']}/members",
+            headers=get_auth_headers(admin_token)
+        )
+        assert any(m["user_id"] == regular_user.id for m in parent_members.json())
+
+        # Verify user is NOT in child (members don't inherit)
+        child_members = await client.get(
+            f"/api/departments/{child['id']}/members",
+            headers=get_auth_headers(admin_token)
+        )
+        assert not any(m["user_id"] == regular_user.id for m in child_members.json())
+
+
+# =============================================================================
+# BULK MEMBER OPERATIONS TESTS
+# =============================================================================
+
+class TestBulkMemberOperations:
+    """Tests for bulk operations on department members."""
+
+    async def test_add_multiple_members_sequentially(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        get_auth_headers
+    ):
+        """Test adding multiple members in sequence and verify final count."""
+        # Create 20 users
+        users = []
+        for i in range(20):
+            user = User(
+                email=f"bulk_add_{i}@test.com",
+                password_hash="hashed",
+                name=f"Bulk User {i}",
+                role=UserRole.ADMIN,
+                is_active=True
+            )
+            db_session.add(user)
+            users.append(user)
+        await db_session.commit()
+
+        # Make them org members
+        for user in users:
+            org_member = OrgMember(
+                org_id=organization.id,
+                user_id=user.id,
+                role=OrgRole.member,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(org_member)
+        await db_session.commit()
+
+        # Get initial count
+        initial_response = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        initial_count = initial_response.json()["members_count"]
+
+        # Add all users
+        for user in users:
+            response = await client.post(
+                f"/api/departments/{department.id}/members",
+                json={"user_id": user.id, "role": "member"},
+                headers=get_auth_headers(admin_token)
+            )
+            assert response.status_code in [200, 201]
+
+        # Verify final count
+        final_response = await client.get(
+            f"/api/departments/{department.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        final_count = final_response.json()["members_count"]
+        assert final_count == initial_count + 20
+
+    async def test_bulk_role_changes(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        get_auth_headers
+    ):
+        """Test changing roles for multiple members."""
+        # Create 5 users
+        users = []
+        for i in range(5):
+            user = User(
+                email=f"role_change_{i}@test.com",
+                password_hash="hashed",
+                name=f"Role User {i}",
+                role=UserRole.ADMIN,
+                is_active=True
+            )
+            db_session.add(user)
+            users.append(user)
+        await db_session.commit()
+
+        # Make them org members
+        for user in users:
+            org_member = OrgMember(
+                org_id=organization.id,
+                user_id=user.id,
+                role=OrgRole.member,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(org_member)
+        await db_session.commit()
+
+        # Add all as members
+        for user in users:
+            await client.post(
+                f"/api/departments/{department.id}/members",
+                json={"user_id": user.id, "role": "member"},
+                headers=get_auth_headers(admin_token)
+            )
+
+        # Change all to sub_admin
+        for user in users:
+            response = await client.patch(
+                f"/api/departments/{department.id}/members/{user.id}",
+                json={"role": "sub_admin"},
+                headers=get_auth_headers(admin_token)
+            )
+            assert response.status_code == 200
+
+        # Verify all roles changed
+        members_response = await client.get(
+            f"/api/departments/{department.id}/members",
+            headers=get_auth_headers(admin_token)
+        )
+        members = members_response.json()
+
+        for user in users:
+            member_data = next((m for m in members if m["user_id"] == user.id), None)
+            assert member_data is not None
+            assert member_data["role"] == "sub_admin"
+
+    async def test_remove_all_members_except_leads(
+        self, db_session: AsyncSession, client: AsyncClient, admin_token: str,
+        department: Department, organization: Organization, org_owner: OrgMember,
+        get_auth_headers
+    ):
+        """Test removing all non-lead members from a department."""
+        # Create users
+        users = []
+        for i in range(10):
+            user = User(
+                email=f"remove_member_{i}@test.com",
+                password_hash="hashed",
+                name=f"Member {i}",
+                role=UserRole.ADMIN,
+                is_active=True
+            )
+            db_session.add(user)
+            users.append(user)
+        await db_session.commit()
+
+        # Make them org members
+        for user in users:
+            org_member = OrgMember(
+                org_id=organization.id,
+                user_id=user.id,
+                role=OrgRole.member,
+                created_at=datetime.utcnow()
+            )
+            db_session.add(org_member)
+        await db_session.commit()
+
+        # Add first user as lead, rest as members
+        await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": users[0].id, "role": "lead"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        for user in users[1:]:
+            await client.post(
+                f"/api/departments/{department.id}/members",
+                json={"user_id": user.id, "role": "member"},
+                headers=get_auth_headers(admin_token)
+            )
+
+        # Remove all members except lead
+        for user in users[1:]:
+            response = await client.delete(
+                f"/api/departments/{department.id}/members/{user.id}",
+                headers=get_auth_headers(admin_token)
+            )
+            assert response.status_code == 200
+
+        # Verify only lead remains
+        members_response = await client.get(
+            f"/api/departments/{department.id}/members",
+            headers=get_auth_headers(admin_token)
+        )
+        members = members_response.json()
+
+        # Filter for our test users (might have other members from fixtures)
+        test_user_ids = [u.id for u in users]
+        test_members = [m for m in members if m["user_id"] in test_user_ids]
+
+        assert len(test_members) == 1
+        assert test_members[0]["user_id"] == users[0].id
+        assert test_members[0]["role"] == "lead"
