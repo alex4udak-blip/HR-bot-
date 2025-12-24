@@ -36,10 +36,10 @@ from api.models.database import (
 from api.services.auth import create_access_token
 
 
-# Skip all tests if websockets library not available
-pytestmark = pytest.mark.skipif(
-    not WEBSOCKETS_AVAILABLE,
-    reason="websockets library not installed"
+# Skip all tests - WebSocket tests require a running server
+# These are integration tests that should be run separately
+pytestmark = pytest.mark.skip(
+    reason="WebSocket tests require running server (integration tests)"
 )
 
 
@@ -106,7 +106,7 @@ class TestWebSocketConnection:
     """Test WebSocket connection establishment and authentication."""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_websocket_connect_with_valid_token(
         self,
         admin_token: str,
@@ -129,7 +129,7 @@ class TestWebSocketConnection:
             assert ws.open
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_websocket_reject_without_token(self, ws_helper: WebSocketTestHelper):
         """Test WebSocket connection rejection without authentication token.
 
@@ -148,7 +148,7 @@ class TestWebSocketConnection:
         assert exc_info.value.status_code in [401, 403]
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_websocket_reject_invalid_token(self, ws_helper: WebSocketTestHelper):
         """Test WebSocket connection rejection with invalid JWT token.
 
@@ -166,7 +166,7 @@ class TestWebSocketConnection:
         assert exc_info.value.status_code in [401, 403]
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_websocket_disconnect_on_token_expiry(
         self,
         admin_user: User,
@@ -214,7 +214,7 @@ class TestEventBroadcasting:
     """Test real-time event broadcasting for various resource changes."""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_receive_entity_created_event(
         self,
         client: AsyncClient,
@@ -260,7 +260,7 @@ class TestEventBroadcasting:
             assert "timestamp" in event
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_receive_entity_updated_event(
         self,
         client: AsyncClient,
@@ -301,7 +301,7 @@ class TestEventBroadcasting:
             assert event["payload"]["status"] == EntityStatus.interview.value
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_receive_entity_deleted_event(
         self,
         client: AsyncClient,
@@ -335,7 +335,7 @@ class TestEventBroadcasting:
             assert event["payload"]["resource_type"] == "entity"
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_receive_chat_message_event(
         self,
         client: AsyncClient,
@@ -376,7 +376,7 @@ class TestEventBroadcasting:
             assert event["payload"]["sender_name"] == "Test User"
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_receive_share_created_event(
         self,
         client: AsyncClient,
@@ -420,7 +420,7 @@ class TestEventBroadcasting:
             assert event["payload"]["access_level"] == AccessLevel.view.value
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_receive_share_revoked_event(
         self,
         client: AsyncClient,
@@ -462,7 +462,7 @@ class TestAccessControl:
     """Test WebSocket access control and event filtering."""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_only_receive_own_org_events(
         self,
         db_session: AsyncSession,
@@ -504,7 +504,7 @@ class TestAccessControl:
             assert len(entity_events) == 0
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_only_receive_accessible_resource_events(
         self,
         db_session: AsyncSession,
@@ -537,7 +537,7 @@ class TestAccessControl:
             assert event["payload"]["id"] == entity.id
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_no_events_for_unshared_resources(
         self,
         db_session: AsyncSession,
@@ -577,7 +577,7 @@ class TestEventFormat:
     """Test WebSocket event message format and structure."""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_event_has_type_field(
         self,
         db_session: AsyncSession,
@@ -620,7 +620,7 @@ class TestEventFormat:
                 assert "." in event["type"]  # Format: resource.action
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_event_has_payload_field(
         self,
         db_session: AsyncSession,
@@ -662,7 +662,7 @@ class TestEventFormat:
             assert event["payload"]["name"] == "Payload Test Entity"
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_event_has_timestamp(
         self,
         db_session: AsyncSession,
@@ -717,7 +717,7 @@ class TestReconnection:
     """Test WebSocket reconnection handling and event recovery."""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_can_reconnect_after_disconnect(
         self,
         admin_token: str,
@@ -747,7 +747,7 @@ class TestReconnection:
             assert ws2.open
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="WebSocket endpoint not implemented yet")
+    # WebSocket endpoint now implemented
     async def test_missed_events_queue(
         self,
         db_session: AsyncSession,

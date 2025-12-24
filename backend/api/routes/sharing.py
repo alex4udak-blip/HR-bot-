@@ -13,6 +13,7 @@ from ..models.database import (
     Chat, Entity, CallRecording, OrgMember
 )
 from ..services.auth import get_current_user, get_user_org
+from .realtime import broadcast_share_created, broadcast_share_revoked
 
 router = APIRouter()
 
@@ -280,7 +281,7 @@ async def share_resource(
 
     resource_name = await get_resource_name(data.resource_type, data.resource_id, db)
 
-    return ShareResponse(
+    response_data = ShareResponse(
         id=share.id,
         resource_type=share.resource_type,
         resource_id=share.resource_id,
@@ -294,6 +295,22 @@ async def share_resource(
         expires_at=share.expires_at,
         created_at=share.created_at
     )
+
+    # Broadcast share.created event to the user who received the share
+    await broadcast_share_created(
+        target_user.id,
+        {
+            "share_id": share.id,
+            "resource_type": share.resource_type.value,
+            "resource_id": share.resource_id,
+            "resource_name": resource_name,
+            "access_level": share.access_level.value,
+            "shared_by": current_user.name,
+            "created_at": share.created_at.isoformat() if share.created_at else None
+        }
+    )
+
+    return response_data
 
 
 @router.patch("/{share_id}", response_model=ShareResponse)
@@ -369,8 +386,19 @@ async def revoke_share(
     if share.shared_by_id != current_user.id and current_user.role != UserRole.SUPERADMIN:
         raise HTTPException(status_code=403, detail="You can only revoke shares you created")
 
+    # Store share info before deletion
+    shared_with_id = share.shared_with_id
+    revoke_data = {
+        "share_id": share.id,
+        "resource_type": share.resource_type.value,
+        "resource_id": share.resource_id
+    }
+
     await db.delete(share)
     await db.commit()
+
+    # Broadcast share.revoked event to the user who had access
+    await broadcast_share_revoked(shared_with_id, revoke_data)
 
     return {"success": True}
 
