@@ -14,6 +14,10 @@ export interface User {
   telegram_id?: number;
   telegram_username?: string;
   created_at: string;
+  // Impersonation fields
+  is_impersonating?: boolean;
+  original_user_id?: number;
+  original_user_name?: string;
 }
 
 export type ChatTypeId = 'work' | 'hr' | 'project' | 'client' | 'contractor' | 'sales' | 'support' | 'custom';
