@@ -2,12 +2,17 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from pydantic import BaseModel
 
 from ..database import get_db
-from ..models.database import User, UserRole, OrgRole, DeptRole, Organization, OrgMember, Department, DepartmentMember, ImpersonationLog
-from ..services.auth import get_superadmin, get_current_user, create_access_token, create_impersonation_token
+from ..models.database import (
+    User, UserRole, OrgRole, DeptRole, Organization, OrgMember, Department,
+    DepartmentMember, ImpersonationLog, Entity, EntityType, EntityStatus,
+    Chat, ChatType, Message, CallRecording, CallSource, CallStatus,
+    SharedAccess, ResourceType, AccessLevel
+)
+from ..services.auth import get_superadmin, get_current_user, create_access_token, create_impersonation_token, hash_password
 from ..models.schemas import TokenResponse, UserResponse
 
 router = APIRouter()
@@ -86,6 +91,39 @@ class UserDetailResponse(BaseModel):
     token_version: int
     failed_login_attempts: int
     locked_until: Optional[datetime]
+
+
+class SandboxUserInfo(BaseModel):
+    """Information about a sandbox user"""
+    id: int
+    email: str
+    name: str
+    password: str
+    role: str
+    org_role: str
+    dept_role: str
+
+
+class SandboxCreateResponse(BaseModel):
+    """Response for sandbox creation"""
+    message: str
+    department_id: int
+    department_name: str
+    users: List[SandboxUserInfo]
+    entity_ids: List[int]
+    chat_ids: List[int]
+    call_ids: List[int]
+    created_at: datetime
+
+
+class SandboxStatusResponse(BaseModel):
+    """Response for sandbox status check"""
+    exists: bool
+    department_id: Optional[int] = None
+    users: List[Dict[str, Any]] = []
+    entity_count: int = 0
+    chat_count: int = 0
+    call_count: int = 0
 
 
 # ==================== Helper Functions ====================
@@ -692,4 +730,702 @@ async def get_user_details(
         token_version=user.token_version,
         failed_login_attempts=user.failed_login_attempts,
         locked_until=user.locked_until,
+    )
+
+
+# ==================== Sandbox Test Environment Endpoints ====================
+
+
+@router.post("/sandbox/create", response_model=SandboxCreateResponse)
+async def create_sandbox(
+    superadmin: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Create an isolated test environment for testing and development.
+
+    Creates:
+    - "QA Sandbox" department in superadmin's organization
+    - 4 test users with different roles:
+      - sandbox_owner@test.local (OrgRole.owner)
+      - sandbox_admin@test.local (DeptRole.lead)
+      - sandbox_subadmin@test.local (DeptRole.sub_admin)
+      - sandbox_member@test.local (DeptRole.member)
+    - 5 test entities (contacts) with different owners
+    - 3 test chats linked to entities
+    - 2 test call recordings
+    - Sharing relationships between users
+
+    All sandbox data is tagged with "sandbox" for easy identification.
+    All sandbox users have password: "sandbox123"
+
+    **Only SUPERADMIN can access this endpoint.**
+    """
+    superadmin = await db.merge(superadmin)
+
+    # Check if sandbox already exists
+    result = await db.execute(
+        select(Department)
+        .join(Organization)
+        .join(OrgMember)
+        .where(OrgMember.user_id == superadmin.id)
+        .where(Department.name == "QA Sandbox")
+    )
+    existing_dept = result.scalar_one_or_none()
+
+    if existing_dept:
+        raise HTTPException(
+            status_code=400,
+            detail="Sandbox already exists. Delete it first using DELETE /api/admin/sandbox/delete"
+        )
+
+    # Get superadmin's organization
+    org_result = await db.execute(
+        select(Organization)
+        .join(OrgMember)
+        .where(OrgMember.user_id == superadmin.id)
+    )
+    org = org_result.scalar_one_or_none()
+
+    if not org:
+        raise HTTPException(
+            status_code=400,
+            detail="Superadmin must be part of an organization"
+        )
+
+    # 1. Create QA Sandbox department
+    sandbox_dept = Department(
+        org_id=org.id,
+        name="QA Sandbox",
+        description="Automated test environment for QA and development",
+        color="#FF6B35",
+        is_active=True
+    )
+    db.add(sandbox_dept)
+    await db.flush()
+
+    # 2. Create 4 test users
+    password_hash_value = hash_password("sandbox123")
+
+    sandbox_users = [
+        {
+            "email": "sandbox_owner@test.local",
+            "name": "Sandbox Owner",
+            "role": UserRole.ADMIN,
+            "org_role": OrgRole.owner,
+            "dept_role": DeptRole.lead
+        },
+        {
+            "email": "sandbox_admin@test.local",
+            "name": "Sandbox Admin",
+            "role": UserRole.ADMIN,
+            "org_role": OrgRole.admin,
+            "dept_role": DeptRole.lead
+        },
+        {
+            "email": "sandbox_subadmin@test.local",
+            "name": "Sandbox SubAdmin",
+            "role": UserRole.SUB_ADMIN,
+            "org_role": OrgRole.member,
+            "dept_role": DeptRole.sub_admin
+        },
+        {
+            "email": "sandbox_member@test.local",
+            "name": "Sandbox Member",
+            "role": UserRole.ADMIN,
+            "org_role": OrgRole.member,
+            "dept_role": DeptRole.member
+        }
+    ]
+
+    created_users = []
+    user_objects = []
+
+    for user_data in sandbox_users:
+        # Create user
+        user = User(
+            email=user_data["email"],
+            name=user_data["name"],
+            password_hash=password_hash_value,
+            role=user_data["role"],
+            is_active=True
+        )
+        db.add(user)
+        await db.flush()
+
+        # Add to organization
+        org_member = OrgMember(
+            org_id=org.id,
+            user_id=user.id,
+            role=user_data["org_role"],
+            invited_by=superadmin.id
+        )
+        db.add(org_member)
+
+        # Add to sandbox department
+        dept_member = DepartmentMember(
+            department_id=sandbox_dept.id,
+            user_id=user.id,
+            role=user_data["dept_role"]
+        )
+        db.add(dept_member)
+
+        created_users.append(SandboxUserInfo(
+            id=user.id,
+            email=user.email,
+            name=user.name,
+            password="sandbox123",
+            role=user.role.value,
+            org_role=user_data["org_role"].value,
+            dept_role=user_data["dept_role"].value
+        ))
+        user_objects.append(user)
+
+    await db.flush()
+
+    # 3. Create 5 test entities (contacts)
+    entity_data = [
+        {
+            "name": "John Candidate",
+            "type": EntityType.candidate,
+            "status": EntityStatus.interview,
+            "email": "john.candidate@example.com",
+            "phone": "+1234567890",
+            "position": "Senior Developer",
+            "company": "Tech Corp",
+            "owner_idx": 0
+        },
+        {
+            "name": "Sarah Client",
+            "type": EntityType.client,
+            "status": EntityStatus.active,
+            "email": "sarah.client@example.com",
+            "phone": "+1234567891",
+            "company": "Client Corp",
+            "owner_idx": 1
+        },
+        {
+            "name": "Mike Contractor",
+            "type": EntityType.contractor,
+            "status": EntityStatus.negotiation,
+            "email": "mike.contractor@example.com",
+            "phone": "+1234567892",
+            "position": "QA Engineer",
+            "owner_idx": 1
+        },
+        {
+            "name": "Lisa Lead",
+            "type": EntityType.lead,
+            "status": EntityStatus.new,
+            "email": "lisa.lead@example.com",
+            "phone": "+1234567893",
+            "company": "Startup Inc",
+            "owner_idx": 2
+        },
+        {
+            "name": "Alex Partner",
+            "type": EntityType.partner,
+            "status": EntityStatus.active,
+            "email": "alex.partner@example.com",
+            "phone": "+1234567894",
+            "company": "Partner LLC",
+            "owner_idx": 3
+        }
+    ]
+
+    entity_ids = []
+    entity_objects = []
+
+    for entity_info in entity_data:
+        entity = Entity(
+            org_id=org.id,
+            department_id=sandbox_dept.id,
+            type=entity_info["type"],
+            name=entity_info["name"],
+            status=entity_info["status"],
+            email=entity_info["email"],
+            phone=entity_info["phone"],
+            position=entity_info.get("position"),
+            company=entity_info.get("company"),
+            tags=["sandbox"],
+            created_by=user_objects[entity_info["owner_idx"]].id
+        )
+        db.add(entity)
+        await db.flush()
+        entity_ids.append(entity.id)
+        entity_objects.append(entity)
+
+    # 4. Create 3 test chats linked to entities
+    chat_data = [
+        {
+            "title": "Interview with John Candidate",
+            "chat_type": ChatType.hr,
+            "entity_idx": 0,
+            "owner_idx": 0
+        },
+        {
+            "title": "Client Meeting - Sarah",
+            "chat_type": ChatType.client,
+            "entity_idx": 1,
+            "owner_idx": 1
+        },
+        {
+            "title": "Contractor Negotiation - Mike",
+            "chat_type": ChatType.contractor,
+            "entity_idx": 2,
+            "owner_idx": 1
+        }
+    ]
+
+    chat_ids = []
+    chat_objects = []
+
+    for idx, chat_info in enumerate(chat_data):
+        chat = Chat(
+            org_id=org.id,
+            telegram_chat_id=1000000 + idx,  # Fake telegram chat IDs
+            title=chat_info["title"],
+            custom_name=chat_info["title"],
+            chat_type=chat_info["chat_type"],
+            owner_id=user_objects[chat_info["owner_idx"]].id,
+            entity_id=entity_objects[chat_info["entity_idx"]].id,
+            is_active=True
+        )
+        db.add(chat)
+        await db.flush()
+        chat_ids.append(chat.id)
+        chat_objects.append(chat)
+
+        # Add some sample messages
+        for msg_idx in range(3):
+            message = Message(
+                chat_id=chat.id,
+                telegram_message_id=1000 + idx * 10 + msg_idx,
+                telegram_user_id=12345678 + idx,
+                username=f"test_user_{idx}",
+                first_name=user_objects[chat_info["owner_idx"]].name.split()[0],
+                last_name=user_objects[chat_info["owner_idx"]].name.split()[1] if len(user_objects[chat_info["owner_idx"]].name.split()) > 1 else "",
+                content=f"Test message {msg_idx + 1} in {chat_info['title']}",
+                content_type="text",
+                is_imported=False
+            )
+            db.add(message)
+
+    # 5. Create 2 test call recordings
+    call_data = [
+        {
+            "title": "Technical Interview Call",
+            "entity_idx": 0,
+            "owner_idx": 0,
+            "source_type": CallSource.meet,
+            "status": CallStatus.done,
+            "duration_seconds": 3600
+        },
+        {
+            "title": "Client Discovery Call",
+            "entity_idx": 1,
+            "owner_idx": 1,
+            "source_type": CallSource.zoom,
+            "status": CallStatus.done,
+            "duration_seconds": 2400
+        }
+    ]
+
+    call_ids = []
+    call_objects = []
+
+    for call_info in call_data:
+        call = CallRecording(
+            org_id=org.id,
+            title=call_info["title"],
+            entity_id=entity_objects[call_info["entity_idx"]].id,
+            owner_id=user_objects[call_info["owner_idx"]].id,
+            source_type=call_info["source_type"],
+            status=call_info["status"],
+            duration_seconds=call_info["duration_seconds"],
+            transcript=f"Sample transcript for {call_info['title']}",
+            summary=f"This is a test call recording for sandbox environment.",
+            started_at=datetime.utcnow() - timedelta(hours=2),
+            ended_at=datetime.utcnow() - timedelta(hours=1),
+            processed_at=datetime.utcnow()
+        )
+        db.add(call)
+        await db.flush()
+        call_ids.append(call.id)
+        call_objects.append(call)
+
+    # 6. Create sharing relationships
+    # Share entity 0 from owner to admin
+    share1 = SharedAccess(
+        resource_type=ResourceType.entity,
+        resource_id=entity_objects[0].id,
+        entity_id=entity_objects[0].id,
+        shared_by_id=user_objects[0].id,
+        shared_with_id=user_objects[1].id,
+        access_level=AccessLevel.edit,
+        note="Shared for collaboration"
+    )
+    db.add(share1)
+
+    # Share chat 0 from owner to subadmin
+    share2 = SharedAccess(
+        resource_type=ResourceType.chat,
+        resource_id=chat_objects[0].id,
+        chat_id=chat_objects[0].id,
+        shared_by_id=user_objects[0].id,
+        shared_with_id=user_objects[2].id,
+        access_level=AccessLevel.view,
+        note="View-only access"
+    )
+    db.add(share2)
+
+    # Share call 0 from owner to member
+    share3 = SharedAccess(
+        resource_type=ResourceType.call,
+        resource_id=call_objects[0].id,
+        call_id=call_objects[0].id,
+        shared_by_id=user_objects[0].id,
+        shared_with_id=user_objects[3].id,
+        access_level=AccessLevel.view,
+        note="Call recording access"
+    )
+    db.add(share3)
+
+    await db.commit()
+
+    return SandboxCreateResponse(
+        message="Sandbox environment created successfully",
+        department_id=sandbox_dept.id,
+        department_name=sandbox_dept.name,
+        users=created_users,
+        entity_ids=entity_ids,
+        chat_ids=chat_ids,
+        call_ids=call_ids,
+        created_at=datetime.utcnow()
+    )
+
+
+@router.delete("/sandbox/delete")
+async def delete_sandbox(
+    superadmin: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Delete all sandbox test data.
+
+    Removes:
+    - All sandbox users (sandbox_*@test.local)
+    - QA Sandbox department
+    - All associated entities, chats, calls
+    - All shared access records
+    - Cascade cleanup of all related data
+
+    **Only SUPERADMIN can access this endpoint.**
+    """
+    superadmin = await db.merge(superadmin)
+
+    # Get superadmin's organization
+    org_result = await db.execute(
+        select(Organization)
+        .join(OrgMember)
+        .where(OrgMember.user_id == superadmin.id)
+    )
+    org = org_result.scalar_one_or_none()
+
+    if not org:
+        raise HTTPException(
+            status_code=400,
+            detail="Superadmin must be part of an organization"
+        )
+
+    # Find sandbox department
+    result = await db.execute(
+        select(Department)
+        .where(Department.org_id == org.id)
+        .where(Department.name == "QA Sandbox")
+    )
+    sandbox_dept = result.scalar_one_or_none()
+
+    if not sandbox_dept:
+        raise HTTPException(
+            status_code=404,
+            detail="Sandbox does not exist"
+        )
+
+    # Find all sandbox users
+    sandbox_emails = [
+        "sandbox_owner@test.local",
+        "sandbox_admin@test.local",
+        "sandbox_subadmin@test.local",
+        "sandbox_member@test.local"
+    ]
+
+    sandbox_users_result = await db.execute(
+        select(User).where(User.email.in_(sandbox_emails))
+    )
+    sandbox_users = sandbox_users_result.scalars().all()
+
+    deleted_count = {
+        "users": 0,
+        "entities": 0,
+        "chats": 0,
+        "calls": 0,
+        "messages": 0,
+        "shared_access": 0
+    }
+
+    # Delete entities in sandbox department (cascade will handle chats, calls, shared access)
+    entities_result = await db.execute(
+        select(Entity).where(Entity.department_id == sandbox_dept.id)
+    )
+    entities = entities_result.scalars().all()
+    deleted_count["entities"] = len(entities)
+
+    for entity in entities:
+        await db.delete(entity)
+
+    # Delete chats owned by sandbox users
+    for user in sandbox_users:
+        chats_result = await db.execute(
+            select(Chat).where(Chat.owner_id == user.id)
+        )
+        chats = chats_result.scalars().all()
+        deleted_count["chats"] += len(chats)
+
+        for chat in chats:
+            # Count messages
+            messages_result = await db.execute(
+                select(Message).where(Message.chat_id == chat.id)
+            )
+            messages = messages_result.scalars().all()
+            deleted_count["messages"] += len(messages)
+
+    # Delete calls owned by sandbox users
+    for user in sandbox_users:
+        calls_result = await db.execute(
+            select(CallRecording).where(CallRecording.owner_id == user.id)
+        )
+        calls = calls_result.scalars().all()
+        deleted_count["calls"] += len(calls)
+
+    # Delete shared access records
+    for user in sandbox_users:
+        shared_result = await db.execute(
+            select(SharedAccess).where(
+                (SharedAccess.shared_by_id == user.id) | (SharedAccess.shared_with_id == user.id)
+            )
+        )
+        shared = shared_result.scalars().all()
+        deleted_count["shared_access"] += len(shared)
+
+    # Delete all sandbox users (cascade will handle org memberships, dept memberships)
+    for user in sandbox_users:
+        await db.delete(user)
+        deleted_count["users"] += 1
+
+    # Delete sandbox department (cascade will handle remaining references)
+    await db.delete(sandbox_dept)
+
+    await db.commit()
+
+    return {
+        "message": "Sandbox environment deleted successfully",
+        "deleted": deleted_count
+    }
+
+
+@router.get("/sandbox/status", response_model=SandboxStatusResponse)
+async def get_sandbox_status(
+    superadmin: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Check if sandbox test environment exists.
+
+    Returns:
+    - Whether sandbox exists
+    - Department ID if exists
+    - List of sandbox users
+    - Count of entities, chats, and calls
+
+    **Only SUPERADMIN can access this endpoint.**
+    """
+    superadmin = await db.merge(superadmin)
+
+    # Get superadmin's organization
+    org_result = await db.execute(
+        select(Organization)
+        .join(OrgMember)
+        .where(OrgMember.user_id == superadmin.id)
+    )
+    org = org_result.scalar_one_or_none()
+
+    if not org:
+        raise HTTPException(
+            status_code=400,
+            detail="Superadmin must be part of an organization"
+        )
+
+    # Find sandbox department
+    result = await db.execute(
+        select(Department)
+        .where(Department.org_id == org.id)
+        .where(Department.name == "QA Sandbox")
+    )
+    sandbox_dept = result.scalar_one_or_none()
+
+    if not sandbox_dept:
+        return SandboxStatusResponse(
+            exists=False,
+            department_id=None,
+            users=[],
+            entity_count=0,
+            chat_count=0,
+            call_count=0
+        )
+
+    # Find sandbox users
+    sandbox_emails = [
+        "sandbox_owner@test.local",
+        "sandbox_admin@test.local",
+        "sandbox_subadmin@test.local",
+        "sandbox_member@test.local"
+    ]
+
+    sandbox_users_result = await db.execute(
+        select(User).where(User.email.in_(sandbox_emails))
+    )
+    sandbox_users = sandbox_users_result.scalars().all()
+
+    users_info = []
+    for user in sandbox_users:
+        # Get org role
+        org_member_result = await db.execute(
+            select(OrgMember)
+            .where(OrgMember.user_id == user.id)
+            .where(OrgMember.org_id == org.id)
+        )
+        org_member = org_member_result.scalar_one_or_none()
+
+        # Get dept role
+        dept_member_result = await db.execute(
+            select(DepartmentMember)
+            .where(DepartmentMember.user_id == user.id)
+            .where(DepartmentMember.department_id == sandbox_dept.id)
+        )
+        dept_member = dept_member_result.scalar_one_or_none()
+
+        users_info.append({
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role.value,
+            "org_role": org_member.role.value if org_member else None,
+            "dept_role": dept_member.role.value if dept_member else None,
+            "is_active": user.is_active
+        })
+
+    # Count entities
+    entities_result = await db.execute(
+        select(Entity).where(Entity.department_id == sandbox_dept.id)
+    )
+    entity_count = len(entities_result.scalars().all())
+
+    # Count chats
+    chat_count = 0
+    for user in sandbox_users:
+        chats_result = await db.execute(
+            select(Chat).where(Chat.owner_id == user.id)
+        )
+        chat_count += len(chats_result.scalars().all())
+
+    # Count calls
+    call_count = 0
+    for user in sandbox_users:
+        calls_result = await db.execute(
+            select(CallRecording).where(CallRecording.owner_id == user.id)
+        )
+        call_count += len(calls_result.scalars().all())
+
+    return SandboxStatusResponse(
+        exists=True,
+        department_id=sandbox_dept.id,
+        users=users_info,
+        entity_count=entity_count,
+        chat_count=chat_count,
+        call_count=call_count
+    )
+
+
+@router.post("/sandbox/switch/{user_email}", response_model=TokenResponse)
+async def switch_to_sandbox_user(
+    user_email: str,
+    request: Request,
+    superadmin: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Quick switch to a sandbox user account.
+
+    Creates an impersonation token for the specified sandbox user.
+    Only works for sandbox_*@test.local users.
+
+    This is a convenience endpoint for quickly testing different roles
+    without manually logging in with credentials.
+
+    **Only SUPERADMIN can access this endpoint.**
+    """
+    superadmin = await db.merge(superadmin)
+
+    # Verify this is a sandbox user email
+    if not user_email.endswith("@test.local") or not user_email.startswith("sandbox_"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only sandbox users (sandbox_*@test.local) can be switched to via this endpoint"
+        )
+
+    # Get target user
+    result = await db.execute(select(User).where(User.email == user_email))
+    target_user = result.scalar_one_or_none()
+
+    if not target_user:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Sandbox user '{user_email}' not found. Create sandbox first."
+        )
+
+    # Cannot impersonate inactive users
+    if not target_user.is_active:
+        raise HTTPException(status_code=400, detail="Cannot impersonate inactive user")
+
+    # Create impersonation token (expires in 1 hour)
+    token = create_impersonation_token(
+        impersonated_user_id=target_user.id,
+        original_user_id=superadmin.id,
+        token_version=target_user.token_version
+    )
+
+    # Log impersonation session for audit
+    impersonation_log = ImpersonationLog(
+        superadmin_id=superadmin.id,
+        impersonated_user_id=target_user.id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    db.add(impersonation_log)
+    await db.commit()
+
+    return TokenResponse(
+        access_token=token,
+        user=UserResponse(
+            id=target_user.id,
+            email=target_user.email,
+            name=target_user.name,
+            role=target_user.role.value,
+            telegram_id=target_user.telegram_id,
+            telegram_username=target_user.telegram_username,
+            is_active=target_user.is_active,
+            created_at=target_user.created_at,
+            chats_count=0
+        )
     )
