@@ -16,6 +16,33 @@ from ..services.password_policy import validate_password
 router = APIRouter()
 
 
+@router.get("/me", response_model=UserResponse)
+async def get_current_user_info(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get current user information."""
+    current_user = await db.merge(current_user)
+
+    # Count user's chats
+    result = await db.execute(
+        select(func.count(Chat.id)).where(Chat.owner_id == current_user.id)
+    )
+    chats_count = result.scalar() or 0
+
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        name=current_user.name,
+        role=current_user.role.value,
+        telegram_id=current_user.telegram_id,
+        telegram_username=current_user.telegram_username,
+        is_active=current_user.is_active,
+        created_at=current_user.created_at,
+        chats_count=chats_count
+    )
+
+
 @router.get("", response_model=List[UserResponse])
 async def get_users(
     db: AsyncSession = Depends(get_db),
