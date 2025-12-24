@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import * as api from '@/services/api';
 import type { ResourceType, AccessLevel, ShareResponse, UserSimple } from '@/services/api';
+import { useAuthStore } from '@/stores/authStore';
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -29,6 +30,9 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(false);
+
+  // Get current user and role helpers from authStore
+  const { user, canShareTo } = useAuthStore();
 
   useEffect(() => {
     if (isOpen) {
@@ -98,8 +102,21 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
     }
   };
 
-  // Filter out users who already have access
-  const availableUsers = users.filter(u => !shares.find(s => s.shared_with_id === u.id));
+  // Filter out users who already have access AND users that current user can't share to
+  const availableUsers = users.filter(u => {
+    // Skip if already shared
+    if (shares.find(s => s.shared_with_id === u.id)) return false;
+
+    // Check if current user can share to this user based on roles and departments
+    if (!user) return false;
+
+    // Use authStore helper to check sharing permissions
+    return canShareTo(
+      u.id,
+      u.department_role || u.org_role,
+      u.department_id
+    );
+  });
 
   if (!isOpen) return null;
 
@@ -160,11 +177,21 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
                         className="w-full p-2 bg-white/5 border border-white/10 rounded-lg text-white mb-3"
                       >
                         <option value="">Выберите пользователя...</option>
-                        {availableUsers.map((user) => (
-                          <option key={user.id} value={user.id}>
-                            {user.name} ({user.email})
-                          </option>
-                        ))}
+                        {availableUsers.map((user) => {
+                          const roleInfo = [];
+                          if (user.org_role) roleInfo.push(user.org_role);
+                          if (user.department_name) roleInfo.push(user.department_name);
+                          if (user.department_role && user.department_role !== 'member') {
+                            roleInfo.push(user.department_role);
+                          }
+                          const roleText = roleInfo.length > 0 ? ` [${roleInfo.join(', ')}]` : '';
+
+                          return (
+                            <option key={user.id} value={user.id}>
+                              {user.name} ({user.email}){roleText}
+                            </option>
+                          );
+                        })}
                       </select>
 
                       {/* Access level */}

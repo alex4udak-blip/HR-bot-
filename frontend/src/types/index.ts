@@ -1,8 +1,16 @@
+export type UserRole = 'superadmin' | 'admin';
+export type OrgRole = 'owner' | 'admin' | 'member';
+export type DeptRole = 'lead' | 'sub_admin' | 'member';
+
 export interface User {
   id: number;
   email: string;
   name: string;
-  role: 'superadmin' | 'admin';
+  role: UserRole;
+  org_role?: OrgRole;
+  department_id?: number;
+  department_name?: string;
+  department_role?: DeptRole;
   telegram_id?: number;
   telegram_username?: string;
   created_at: string;
@@ -44,6 +52,8 @@ export interface Chat {
   entity_id?: number;
   entity_name?: string;
   is_active: boolean;
+  is_shared?: boolean;
+  shared_access_level?: 'view' | 'edit' | 'full';
   messages_count: number;
   participants_count: number;
   last_activity?: string;
@@ -191,9 +201,17 @@ export interface Entity {
   tags: string[];
   extra_data: Record<string, unknown>;
   created_by?: number;
+  owner_id?: number;
   owner_name?: string;
   is_mine?: boolean;
   is_shared?: boolean;
+  access_level?: 'view' | 'edit' | 'full';
+  is_transferred?: boolean;
+  transferred_to_id?: number;
+  transferred_to_name?: string;
+  transferred_at?: string;
+  department_id?: number;
+  department_name?: string;
   created_at: string;
   updated_at: string;
   chats_count?: number;
@@ -256,10 +274,13 @@ export interface CallRecording {
   title?: string;
   entity_id?: number;
   owner_id?: number;
+  owner_name?: string;
   source_type: CallSource;
   source_url?: string;
   bot_name: string;
   status: CallStatus;
+  is_shared?: boolean;
+  shared_access_level?: 'view' | 'edit' | 'full';
   duration_seconds?: number;
   audio_file_path?: string;
   transcript?: string;

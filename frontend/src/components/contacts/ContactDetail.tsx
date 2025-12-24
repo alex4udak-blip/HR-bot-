@@ -141,6 +141,26 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               </span>
             </div>
 
+            {/* Transferred entity indicator */}
+            {entity.is_transferred && (
+              <div className="mb-4 p-3 bg-orange-500/20 border border-orange-500/30 rounded-lg">
+                <div className="flex items-center gap-2 text-orange-300">
+                  <ArrowRightLeft size={16} className="flex-shrink-0" />
+                  <span className="text-sm font-medium">
+                    Контакт передан → {entity.transferred_to_name || 'другому пользователю'}
+                  </span>
+                </div>
+                {entity.transferred_at && (
+                  <p className="text-xs text-orange-300/70 mt-1 ml-6">
+                    {formatDate(entity.transferred_at)}
+                  </p>
+                )}
+                <p className="text-xs text-orange-300/70 mt-1 ml-6">
+                  Это копия только для просмотра. Редактирование недоступно.
+                </p>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
               {entity.email && (
                 <a

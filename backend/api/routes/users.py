@@ -5,12 +5,12 @@ from sqlalchemy import select, func, delete
 
 from ..database import get_db
 from ..models.database import (
-    User, UserRole, Chat, DepartmentMember, OrgMember, SharedAccess,
+    User, UserRole, Chat, DepartmentMember, DeptRole, OrgMember, SharedAccess,
     AnalysisHistory, AIConversation, Entity,
     EntityTransfer, CallRecording, Invitation, CriteriaPreset
 )
 from ..models.schemas import UserCreate, UserUpdate, UserResponse
-from ..services.auth import get_superadmin, hash_password
+from ..services.auth import get_superadmin, get_current_user, hash_password
 from ..services.password_policy import validate_password
 
 router = APIRouter()
@@ -19,19 +19,67 @@ router = APIRouter()
 @router.get("", response_model=List[UserResponse])
 async def get_users(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_superadmin)
+    current_user: User = Depends(get_current_user)
 ):
-    result = await db.execute(select(User).order_by(User.created_at.desc()))
-    users = result.scalars().all()
+    current_user = await db.merge(current_user)
+
+    # SUPERADMIN sees all users
+    if current_user.role == UserRole.SUPERADMIN:
+        result = await db.execute(select(User).order_by(User.created_at.desc()))
+        users = result.scalars().all()
+    # ADMIN/SUB_ADMIN sees:
+    # - All users in their department
+    # - Only ADMIN/SUB_ADMIN from other departments (not MEMBER)
+    elif current_user.role in (UserRole.ADMIN, UserRole.SUB_ADMIN):
+        # Get current user's department
+        dept_member_result = await db.execute(
+            select(DepartmentMember).where(DepartmentMember.user_id == current_user.id)
+        )
+        dept_member = dept_member_result.scalar_one_or_none()
+
+        if not dept_member:
+            # Admin without department - should not happen but handle gracefully
+            return []
+
+        # Get all users from same department
+        same_dept_result = await db.execute(
+            select(User)
+            .join(DepartmentMember, DepartmentMember.user_id == User.id)
+            .where(DepartmentMember.department_id == dept_member.department_id)
+            .order_by(User.created_at.desc())
+        )
+        same_dept_users = set(same_dept_result.scalars().all())
+
+        # Get ADMIN/SUB_ADMIN from other departments
+        other_admins_result = await db.execute(
+            select(User)
+            .join(DepartmentMember, DepartmentMember.user_id == User.id)
+            .where(
+                DepartmentMember.department_id != dept_member.department_id,
+                User.role.in_([UserRole.ADMIN, UserRole.SUB_ADMIN])
+            )
+            .order_by(User.created_at.desc())
+        )
+        other_admins = set(other_admins_result.scalars().all())
+
+        # Combine and deduplicate
+        users = list(same_dept_users | other_admins)
+        users.sort(key=lambda u: u.created_at, reverse=True)
+    else:
+        # Regular users without role - should not happen
+        return []
 
     # Get chat counts for all users
     chat_counts = {}
-    count_result = await db.execute(
-        select(Chat.owner_id, func.count(Chat.id))
-        .group_by(Chat.owner_id)
-    )
-    for owner_id, count in count_result.all():
-        chat_counts[owner_id] = count
+    if users:
+        user_ids = [u.id for u in users]
+        count_result = await db.execute(
+            select(Chat.owner_id, func.count(Chat.id))
+            .where(Chat.owner_id.in_(user_ids))
+            .group_by(Chat.owner_id)
+        )
+        for owner_id, count in count_result.all():
+            chat_counts[owner_id] = count
 
     return [
         UserResponse(
@@ -63,17 +111,46 @@ async def create_user(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_message)
 
+    # Map role string to enum
+    if data.role == "superadmin":
+        user_role = UserRole.SUPERADMIN
+    elif data.role == "sub_admin":
+        user_role = UserRole.SUB_ADMIN
+    else:
+        user_role = UserRole.ADMIN
+
+    # Validate department_id for ADMIN and SUB_ADMIN
+    if user_role in (UserRole.ADMIN, UserRole.SUB_ADMIN):
+        if not data.department_id:
+            raise HTTPException(status_code=400, detail="Admin must be assigned to a department")
+
+        # Verify department exists
+        from ..models.database import Department
+        dept_result = await db.execute(select(Department).where(Department.id == data.department_id))
+        if not dept_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Department not found")
+
     user = User(
         email=data.email,
         password_hash=hash_password(data.password),
         name=data.name,
-        role=UserRole.SUPERADMIN if data.role == "superadmin" else UserRole.ADMIN,
+        role=user_role,
         telegram_id=data.telegram_id,
         telegram_username=data.telegram_username,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
+
+    # Add user to department if specified
+    if data.department_id:
+        dept_member = DepartmentMember(
+            department_id=data.department_id,
+            user_id=user.id,
+            role=DeptRole.lead if user_role == UserRole.ADMIN else DeptRole.member
+        )
+        db.add(dept_member)
+        await db.commit()
 
     return UserResponse(
         id=user.id, email=user.email, name=user.name, role=user.role.value,
@@ -94,18 +171,67 @@ async def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Map role string to enum if role is being updated
+    new_role = None
+    if data.role:
+        if data.role == "superadmin":
+            new_role = UserRole.SUPERADMIN
+        elif data.role == "sub_admin":
+            new_role = UserRole.SUB_ADMIN
+        else:
+            new_role = UserRole.ADMIN
+
+        # Validate department_id for ADMIN and SUB_ADMIN
+        if new_role in (UserRole.ADMIN, UserRole.SUB_ADMIN):
+            # Check if user has a department
+            dept_member_result = await db.execute(
+                select(DepartmentMember).where(DepartmentMember.user_id == user_id)
+            )
+            existing_dept_member = dept_member_result.scalar_one_or_none()
+
+            # If no existing department and no new department provided, raise error
+            if not existing_dept_member and not data.department_id:
+                raise HTTPException(status_code=400, detail="Admin must be assigned to a department")
+
+    # Verify new department exists if provided
+    if data.department_id:
+        from ..models.database import Department
+        dept_result = await db.execute(select(Department).where(Department.id == data.department_id))
+        if not dept_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Department not found")
+
     if data.email:
         user.email = data.email
     if data.name:
         user.name = data.name
-    if data.role:
-        user.role = UserRole.SUPERADMIN if data.role == "superadmin" else UserRole.ADMIN
+    if new_role:
+        user.role = new_role
     if data.telegram_id is not None:
         user.telegram_id = data.telegram_id
     if data.telegram_username is not None:
         user.telegram_username = data.telegram_username
     if data.is_active is not None:
         user.is_active = data.is_active
+
+    # Update department membership if department_id is provided
+    if data.department_id:
+        # Check if user already has department membership
+        dept_member_result = await db.execute(
+            select(DepartmentMember).where(DepartmentMember.user_id == user_id)
+        )
+        existing_dept_member = dept_member_result.scalar_one_or_none()
+
+        if existing_dept_member:
+            # Update existing membership
+            existing_dept_member.department_id = data.department_id
+        else:
+            # Create new membership
+            dept_member = DepartmentMember(
+                department_id=data.department_id,
+                user_id=user.id,
+                role=DeptRole.lead if user.role == UserRole.ADMIN else DeptRole.member
+            )
+            db.add(dept_member)
 
     await db.commit()
     await db.refresh(user)

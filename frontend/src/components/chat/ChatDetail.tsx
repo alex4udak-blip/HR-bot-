@@ -258,12 +258,14 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
   // Entity store for linking
   const { entities, fetchEntities } = useEntityStore();
 
-  // Helper to check permissions
+  // Helper to check permissions using authStore
+  const { canDeleteResource } = useAuthStore();
   const canDelete = () => {
-    if (!user) return false;
-    if (user.role === 'superadmin') return true;
-    if (chat.owner_id === user.id) return true;
-    return false;
+    return canDeleteResource({
+      owner_id: chat.owner_id,
+      is_mine: chat.owner_id === user?.id,
+      access_level: chat.shared_access_level
+    });
   };
 
   // Fetch entities when dropdown opens

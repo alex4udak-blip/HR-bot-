@@ -34,6 +34,7 @@ class UserCreate(BaseModel):
     role: str = "admin"
     telegram_id: Optional[int] = None
     telegram_username: Optional[str] = None
+    department_id: Optional[int] = None
 
 
 class UserUpdate(BaseModel):
@@ -43,6 +44,7 @@ class UserUpdate(BaseModel):
     telegram_id: Optional[int] = None
     telegram_username: Optional[str] = None
     is_active: Optional[bool] = None
+    department_id: Optional[int] = None
 
 
 class UserResponse(BaseModel):

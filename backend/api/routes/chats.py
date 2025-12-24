@@ -37,24 +37,76 @@ from ..services.documents import document_parser
 router = APIRouter()
 
 
+# === Pydantic Schemas ===
+
+class ShareRequest(BaseModel):
+    shared_with_id: int
+    access_level: AccessLevel = AccessLevel.view
+    note: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+
 async def can_access_chat(user: User, chat: Chat, user_org_id: int = None, db: AsyncSession = None) -> bool:
-    """Check if user can access this chat.
+    """Check if user can access this chat based on new role hierarchy.
+
+    Hierarchy:
+    1. SUPERADMIN - sees EVERYTHING without exceptions
+    2. OWNER - sees everything in organization, BUT NOT private content created by SUPERADMIN
+    3. ADMIN (lead) - sees all chats in their department
+    4. SUB_ADMIN - same as ADMIN for viewing
+    5. MEMBER - sees only THEIR OWN chats
 
     Args:
         user: Current user
         chat: Chat to check access for
         user_org_id: User's organization ID (required for org-based access)
-        db: Database session (required for SharedAccess check)
+        db: Database session (required for role checks and SharedAccess)
     """
-    if user.role == UserRole.SUPERADMIN:
+    from ..services.auth import is_superadmin, is_owner, was_created_by_superadmin
+
+    # 1. SUPERADMIN - has access to EVERYTHING
+    if is_superadmin(user):
         return True
+
     # Check org membership if org_id is provided
     if user_org_id and chat.org_id != user_org_id:
         return False
-    # Check ownership
+
+    # 2. OWNER - has access to everything in organization, EXCEPT private content created by SUPERADMIN
+    if db and user_org_id and await is_owner(user, user_org_id, db):
+        # Check if chat was created by SUPERADMIN (private content restriction)
+        if await was_created_by_superadmin(chat, db):
+            # OWNER cannot access private SUPERADMIN content
+            return False
+        return True
+
+    # 3. Chat owner has full access
     if chat.owner_id == user.id:
         return True
-    # Check SharedAccess if db provided
+
+    # 4. Department-based access (ADMIN/SUB_ADMIN/MEMBER)
+    # For chats, we check if linked entity is in user's department
+    if db and chat.entity_id:
+        # Get the entity to check its department
+        from ..models.database import Entity
+        entity_result = await db.execute(
+            select(Entity).where(Entity.id == chat.entity_id)
+        )
+        entity = entity_result.scalar_one_or_none()
+
+        if entity and entity.department_id:
+            # Check if user can view based on department membership
+            from ..services.auth import can_view_in_department
+            dept_can_view = await can_view_in_department(
+                user,
+                resource_owner_id=chat.owner_id,
+                resource_dept_id=entity.department_id,
+                db=db
+            )
+            if dept_can_view:
+                return True
+
+    # 5. Check SharedAccess for explicitly shared chats
     if db:
         shared_result = await db.execute(
             select(SharedAccess).where(
@@ -66,6 +118,7 @@ async def can_access_chat(user: User, chat: Chat, user_org_id: int = None, db: A
         )
         if shared_result.scalar_one_or_none():
             return True
+
     return False
 
 
@@ -1765,4 +1818,210 @@ async def cleanup_bad_import(
         "success": True,
         "deleted": deleted_count,
         "mode": mode,
+    }
+
+
+async def can_share_to(
+    from_user: User,
+    to_user: User,
+    from_user_org_id: int,
+    db: AsyncSession
+) -> bool:
+    """
+    Check if from_user can share resources with to_user.
+
+    Logic:
+    - MEMBER → only within their department
+    - ADMIN → their department + admins of other departments + OWNER/SUPERADMIN
+    - OWNER → anyone in organization
+    - SUPERADMIN → anyone
+    """
+    # SUPERADMIN can share with anyone
+    if from_user.role == UserRole.SUPERADMIN:
+        return True
+
+    # Get from_user's role in the organization
+    from_user_role = await get_user_org_role(from_user, from_user_org_id, db)
+
+    # OWNER can share with anyone in their organization
+    if from_user_role == OrgRole.owner:
+        # Check that to_user is in the same organization
+        to_user_org = await get_user_org(to_user, db)
+        return to_user_org and to_user_org.id == from_user_org_id
+
+    # Get to_user's role in the organization
+    to_user_org_role = await get_user_org_role(to_user, from_user_org_id, db)
+
+    # If to_user is not in the organization, cannot share
+    if to_user_org_role is None:
+        return False
+
+    # ADMIN can share with:
+    # 1. Their department members
+    # 2. Admins of other departments
+    # 3. OWNER/SUPERADMIN
+    if from_user_role == OrgRole.admin:
+        # Can share with OWNER or SUPERADMIN
+        if to_user_org_role == OrgRole.owner or to_user.role == UserRole.SUPERADMIN:
+            return True
+
+        # Can share with other admins
+        if to_user_org_role == OrgRole.admin:
+            return True
+
+        # Can share within their departments
+        # Get from_user's departments
+        from_depts_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == from_user.id
+            )
+        )
+        from_dept_ids = set(from_depts_result.scalars().all())
+
+        # Get to_user's departments
+        to_depts_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == to_user.id
+            )
+        )
+        to_dept_ids = set(to_depts_result.scalars().all())
+
+        # Check if they share at least one department
+        return bool(from_dept_ids & to_dept_ids)
+
+    # MEMBER can only share within their department
+    if from_user_role == OrgRole.member:
+        # Get from_user's departments
+        from_depts_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == from_user.id
+            )
+        )
+        from_dept_ids = set(from_depts_result.scalars().all())
+
+        # Get to_user's departments
+        to_depts_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == to_user.id
+            )
+        )
+        to_dept_ids = set(to_depts_result.scalars().all())
+
+        # Can only share if they are in the same department
+        return bool(from_dept_ids & to_dept_ids)
+
+    return False
+
+
+@router.post("/{chat_id}/share")
+async def share_chat(
+    chat_id: int,
+    data: ShareRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Share a chat with another user.
+
+    Permissions:
+    - MEMBER → only within their department
+    - ADMIN → their department + admins of other departments + OWNER/SUPERADMIN
+    - OWNER → anyone in organization
+    - SUPERADMIN → anyone
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Get chat
+    result = await db.execute(
+        select(Chat).where(
+            Chat.id == chat_id,
+            Chat.org_id == org.id,
+            Chat.deleted_at.is_(None)
+        )
+    )
+    chat = result.scalar_one_or_none()
+
+    if not chat:
+        raise HTTPException(404, "Chat not found")
+
+    # Check if user has permission to share this chat (requires full access or ownership)
+    can_share = False
+    if current_user.role == UserRole.SUPERADMIN:
+        can_share = True
+    else:
+        user_role = await get_user_org_role(current_user, org.id, db)
+        if user_role == OrgRole.owner:
+            can_share = True
+        elif chat.owner_id == current_user.id:
+            can_share = True  # Owner of chat
+        else:
+            # Check if shared with full access
+            shared_result = await db.execute(
+                select(SharedAccess).where(
+                    SharedAccess.resource_type == ResourceType.chat,
+                    SharedAccess.resource_id == chat_id,
+                    SharedAccess.shared_with_id == current_user.id,
+                    SharedAccess.access_level == AccessLevel.full,
+                    or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+                )
+            )
+            if shared_result.scalar_one_or_none():
+                can_share = True
+
+    if not can_share:
+        raise HTTPException(403, "No permission to share this chat")
+
+    # Get target user
+    to_user_result = await db.execute(
+        select(User).where(User.id == data.shared_with_id)
+    )
+    to_user = to_user_result.scalar_one_or_none()
+
+    if not to_user:
+        raise HTTPException(404, "Target user not found")
+
+    # Check if current_user can share with to_user
+    if not await can_share_to(current_user, to_user, org.id, db):
+        raise HTTPException(403, "You cannot share with this user based on your role and department")
+
+    # Check if already shared
+    existing_result = await db.execute(
+        select(SharedAccess).where(
+            SharedAccess.resource_type == ResourceType.chat,
+            SharedAccess.resource_id == chat_id,
+            SharedAccess.shared_with_id == data.shared_with_id
+        )
+    )
+    existing_share = existing_result.scalar_one_or_none()
+
+    if existing_share:
+        # Update existing share
+        existing_share.access_level = data.access_level
+        existing_share.note = data.note
+        existing_share.expires_at = data.expires_at
+        existing_share.shared_by_id = current_user.id
+    else:
+        # Create new share
+        share = SharedAccess(
+            resource_type=ResourceType.chat,
+            resource_id=chat_id,
+            chat_id=chat_id,  # FK for cascade delete
+            shared_by_id=current_user.id,
+            shared_with_id=data.shared_with_id,
+            access_level=data.access_level,
+            note=data.note,
+            expires_at=data.expires_at
+        )
+        db.add(share)
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "chat_id": chat_id,
+        "shared_with_id": data.shared_with_id,
+        "access_level": data.access_level.value
     }

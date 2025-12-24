@@ -718,6 +718,10 @@ export interface UserSimple {
   id: number;
   name: string;
   email: string;
+  org_role?: string;
+  department_id?: number;
+  department_name?: string;
+  department_role?: string;
 }
 
 export const shareResource = async (data: ShareRequest): Promise<ShareResponse> => {
@@ -750,6 +754,53 @@ export const getResourceShares = async (resourceType: ResourceType, resourceId: 
 export const getSharableUsers = async (): Promise<UserSimple[]> => {
   const { data } = await api.get('/sharing/users');
   return data;
+};
+
+// === CONVENIENCE METHODS FOR SHARING ===
+
+export const shareChat = async (
+  chatId: number,
+  userId: number,
+  accessLevel: AccessLevel = 'view',
+  note?: string
+): Promise<ShareResponse> => {
+  return shareResource({
+    resource_type: 'chat',
+    resource_id: chatId,
+    shared_with_id: userId,
+    access_level: accessLevel,
+    note
+  });
+};
+
+export const shareCall = async (
+  callId: number,
+  userId: number,
+  accessLevel: AccessLevel = 'view',
+  note?: string
+): Promise<ShareResponse> => {
+  return shareResource({
+    resource_type: 'call',
+    resource_id: callId,
+    shared_with_id: userId,
+    access_level: accessLevel,
+    note
+  });
+};
+
+export const shareEntity = async (
+  entityId: number,
+  userId: number,
+  accessLevel: AccessLevel = 'view',
+  note?: string
+): Promise<ShareResponse> => {
+  return shareResource({
+    resource_type: 'entity',
+    resource_id: entityId,
+    shared_with_id: userId,
+    access_level: accessLevel,
+    note
+  });
 };
 
 // === DEPARTMENTS ===

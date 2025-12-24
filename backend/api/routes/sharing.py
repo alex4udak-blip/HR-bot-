@@ -57,6 +57,9 @@ class UserSimple(BaseModel):
     id: int
     name: str
     email: str
+    org_role: Optional[str] = None
+    department_name: Optional[str] = None
+    department_role: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -559,9 +562,12 @@ async def get_sharable_users(
     if not org:
         return []
 
-    # Get all users in the same organization
+    # Import models here to avoid circular imports
+    from ..models.database import Department, DepartmentMember
+
+    # Get all users in the same organization with their roles and departments
     result = await db.execute(
-        select(User)
+        select(User, OrgMember)
         .join(OrgMember, OrgMember.user_id == User.id)
         .where(
             OrgMember.org_id == org.id,
@@ -570,6 +576,34 @@ async def get_sharable_users(
         )
         .order_by(User.name)
     )
-    users = result.scalars().all()
+    rows = result.all()
 
-    return [UserSimple(id=u.id, name=u.name, email=u.email) for u in users]
+    # Build response with role information
+    response = []
+    for user, org_member in rows:
+        # Get user's first department (if any)
+        dept_result = await db.execute(
+            select(Department, DepartmentMember)
+            .join(DepartmentMember, DepartmentMember.department_id == Department.id)
+            .where(DepartmentMember.user_id == user.id)
+            .limit(1)
+        )
+        dept_row = dept_result.first()
+
+        dept_name = None
+        dept_role = None
+        if dept_row:
+            dept, dept_member = dept_row
+            dept_name = dept.name
+            dept_role = dept_member.role.value if dept_member.role else None
+
+        response.append(UserSimple(
+            id=user.id,
+            name=user.name,
+            email=user.email,
+            org_role=org_member.role.value if org_member.role else None,
+            department_name=dept_name,
+            department_role=dept_role
+        ))
+
+    return response
