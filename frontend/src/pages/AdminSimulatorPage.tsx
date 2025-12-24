@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Shield,
@@ -18,10 +18,15 @@ import {
   MessageSquare,
   Phone,
   UserCheck,
-  Target
+  Target,
+  Play,
+  Plus,
+  LogIn,
+  Database
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuthStore } from '@/stores/authStore';
+import { apiClient } from '@/lib/api';
 
 // Типы ролей
 type OrgRole = 'superadmin' | 'owner' | 'admin' | 'member';
@@ -85,9 +90,33 @@ const ACCESS_LEVELS: { id: AccessLevel; name: string }[] = [
   { id: 'full', name: 'Полный доступ' }
 ];
 
+// Типы для sandbox
+interface SandboxUser {
+  email: string;
+  role: string;
+  role_label: string;
+}
+
+interface SandboxStatus {
+  exists: boolean;
+  department_id?: number;
+  department_name?: string;
+  users?: SandboxUser[];
+  stats?: {
+    contacts: number;
+    chats: number;
+    calls: number;
+  };
+}
+
 export default function AdminSimulatorPage() {
   const { user, isSuperAdmin } = useAuthStore();
   const [selectedRole, setSelectedRole] = useState<OrgRole>('member');
+
+  // Sandbox state
+  const [sandboxStatus, setSandboxStatus] = useState<SandboxStatus>({ exists: false });
+  const [sandboxLoading, setSandboxLoading] = useState(false);
+  const [sandboxError, setSandboxError] = useState<string | null>(null);
 
   // Состояние для тестирования сценариев
   const [scenario, setScenario] = useState({
@@ -102,6 +131,68 @@ export default function AdminSimulatorPage() {
     targetUserRole: 'member' as OrgRole,
     targetSameDepartment: true
   });
+
+  // Загрузка статуса sandbox при монтировании
+  useEffect(() => {
+    fetchSandboxStatus();
+  }, []);
+
+  // Функции для работы с sandbox
+  const fetchSandboxStatus = async () => {
+    try {
+      const response = await apiClient.get('/api/admin/sandbox/status');
+      setSandboxStatus(response.data);
+      setSandboxError(null);
+    } catch (error: any) {
+      console.error('Error fetching sandbox status:', error);
+      setSandboxError(error.response?.data?.detail || 'Ошибка загрузки статуса sandbox');
+    }
+  };
+
+  const createSandbox = async () => {
+    setSandboxLoading(true);
+    setSandboxError(null);
+    try {
+      const response = await apiClient.post('/api/admin/sandbox/create');
+      setSandboxStatus(response.data);
+    } catch (error: any) {
+      console.error('Error creating sandbox:', error);
+      setSandboxError(error.response?.data?.detail || 'Ошибка создания sandbox');
+    } finally {
+      setSandboxLoading(false);
+    }
+  };
+
+  const deleteSandbox = async () => {
+    if (!confirm('Вы уверены, что хотите удалить тестовое окружение?')) {
+      return;
+    }
+    setSandboxLoading(true);
+    setSandboxError(null);
+    try {
+      await apiClient.delete('/api/admin/sandbox/delete');
+      setSandboxStatus({ exists: false });
+    } catch (error: any) {
+      console.error('Error deleting sandbox:', error);
+      setSandboxError(error.response?.data?.detail || 'Ошибка удаления sandbox');
+    } finally {
+      setSandboxLoading(false);
+    }
+  };
+
+  const switchToUser = async (email: string) => {
+    setSandboxLoading(true);
+    setSandboxError(null);
+    try {
+      await apiClient.post(`/api/admin/sandbox/switch/${email}`);
+      // Перезагружаем страницу для применения новой сессии
+      window.location.href = '/';
+    } catch (error: any) {
+      console.error('Error switching user:', error);
+      setSandboxError(error.response?.data?.detail || 'Ошибка переключения пользователя');
+      setSandboxLoading(false);
+    }
+  };
 
   // Проверка доступа - только для SUPERADMIN
   if (!isSuperAdmin()) {
@@ -709,6 +800,216 @@ export default function AdminSimulatorPage() {
               </tbody>
             </table>
           </div>
+        </div>
+
+        {/* Тестовое окружение (Sandbox) */}
+        <div className="glass rounded-2xl p-6">
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+              <Database className="w-6 h-6 text-cyan-400" />
+              Тестовое окружение (Sandbox)
+            </h2>
+            <p className="text-white/60 text-sm">
+              Создайте изолированную среду для тестирования ролей и прав доступа
+            </p>
+          </div>
+
+          {/* Error message */}
+          {sandboxError && (
+            <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-red-400 text-sm">{sandboxError}</p>
+              </div>
+              <button
+                onClick={() => setSandboxError(null)}
+                className="text-red-400 hover:text-red-300"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Status indicator */}
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={clsx(
+                'w-3 h-3 rounded-full',
+                sandboxStatus.exists ? 'bg-green-400' : 'bg-white/20'
+              )}></div>
+              <span className="text-white font-medium">
+                {sandboxStatus.exists ? 'Sandbox активен' : 'Sandbox не создан'}
+              </span>
+            </div>
+
+            {sandboxStatus.exists ? (
+              <button
+                onClick={deleteSandbox}
+                disabled={sandboxLoading}
+                className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 rounded-lg text-red-400 font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Trash2 className="w-4 h-4" />
+                Удалить Sandbox
+              </button>
+            ) : (
+              <button
+                onClick={createSandbox}
+                disabled={sandboxLoading}
+                className="px-4 py-2 bg-green-500/20 hover:bg-green-500/30 border border-green-500/30 rounded-lg text-green-400 font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Plus className="w-4 h-4" />
+                Создать Sandbox
+              </button>
+            )}
+          </div>
+
+          {/* Sandbox details */}
+          {sandboxStatus.exists && sandboxStatus.users && (
+            <div className="space-y-6">
+              {/* Department info */}
+              <div className="p-4 bg-white/5 rounded-xl">
+                <div className="flex items-center gap-2 text-cyan-400 mb-1">
+                  <Building2 className="w-5 h-5" />
+                  <span className="font-semibold">Департамент</span>
+                </div>
+                <p className="text-white">
+                  {sandboxStatus.department_name} <span className="text-white/40">(ID: {sandboxStatus.department_id})</span>
+                </p>
+              </div>
+
+              {/* Users table */}
+              <div>
+                <h3 className="text-white font-semibold mb-3">Тестовые пользователи</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-white/10">
+                        <th className="text-left py-3 px-4 text-white/60 font-medium">Email</th>
+                        <th className="text-left py-3 px-4 text-white/60 font-medium">Роль</th>
+                        <th className="text-right py-3 px-4 text-white/60 font-medium">Действия</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sandboxStatus.users.map((user) => (
+                        <tr key={user.email} className="border-b border-white/5 hover:bg-white/5">
+                          <td className="py-3 px-4">
+                            <span className="text-white font-mono text-sm">{user.email}</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={clsx(
+                              'px-2 py-1 rounded text-sm font-medium',
+                              user.role === 'owner' && 'bg-cyan-500/20 text-cyan-400',
+                              user.role === 'admin' && 'bg-blue-500/20 text-blue-400',
+                              user.role === 'sub_admin' && 'bg-purple-500/20 text-purple-400',
+                              user.role === 'member' && 'bg-green-500/20 text-green-400'
+                            )}>
+                              {user.role_label}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => switchToUser(user.email)}
+                              disabled={sandboxLoading}
+                              className="px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/30 rounded-lg text-cyan-400 font-medium transition-colors flex items-center gap-2 ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <LogIn className="w-4 h-4" />
+                              Войти как
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Stats */}
+              {sandboxStatus.stats && (
+                <div className="p-4 bg-white/5 rounded-xl">
+                  <div className="flex items-center gap-2 text-white/60 mb-2">
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span className="font-semibold">Статистика</span>
+                  </div>
+                  <div className="flex items-center gap-6 text-sm">
+                    <div className="flex items-center gap-2">
+                      <UserCheck className="w-4 h-4 text-green-400" />
+                      <span className="text-white">{sandboxStatus.stats.contacts} контактов</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-blue-400" />
+                      <span className="text-white">{sandboxStatus.stats.chats} чата</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-4 h-4 text-purple-400" />
+                      <span className="text-white">{sandboxStatus.stats.calls} звонка</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Quick scenario buttons */}
+              <div>
+                <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                  <Play className="w-5 h-5 text-orange-400" />
+                  Быстрые сценарии
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <button
+                    onClick={() => switchToUser('sandbox_owner@test.local')}
+                    disabled={sandboxLoading}
+                    className="p-4 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-xl text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-cyan-400">Тест: Owner видит всё</span>
+                      <ArrowRightLeft className="w-4 h-4 text-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                    <p className="text-sm text-white/60">
+                      Проверить доступ владельца ко всем ресурсам организации
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => switchToUser('sandbox_admin@test.local')}
+                    disabled={sandboxLoading}
+                    className="p-4 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-xl text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-blue-400">Тест: Admin видит только свой отдел</span>
+                      <ArrowRightLeft className="w-4 h-4 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                    <p className="text-sm text-white/60">
+                      Проверить ограничения админа по департаменту
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => switchToUser('sandbox_member@test.local')}
+                    disabled={sandboxLoading}
+                    className="p-4 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 rounded-xl text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-green-400">Тест: Member видит только своё</span>
+                      <ArrowRightLeft className="w-4 h-4 text-green-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                    <p className="text-sm text-white/60">
+                      Проверить базовый доступ сотрудника
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Info block */}
+              <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+                <h3 className="text-sm font-semibold text-blue-400 mb-2">Как использовать:</h3>
+                <ul className="text-sm text-white/70 space-y-1">
+                  <li>• Нажмите "Войти как" чтобы переключиться на тестового пользователя</li>
+                  <li>• Используйте быстрые сценарии для проверки типичных кейсов</li>
+                  <li>• Sandbox изолирован и не влияет на основные данные</li>
+                  <li>• После тестирования удалите sandbox для очистки</li>
+                </ul>
+              </div>
+            </div>
+          )}
         </div>
       </motion.div>
     </div>
