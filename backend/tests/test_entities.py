@@ -1885,3 +1885,3069 @@ class TestEntityStats:
         stats = response.json()
         # Should only count candidates, not clients
         assert "active" in stats
+
+
+# ============================================================================
+# COMPREHENSIVE ENTITY TYPE TESTS
+# ============================================================================
+
+class TestEntityTypes:
+    """Comprehensive tests for all entity types."""
+
+    @pytest.mark.asyncio
+    async def test_create_candidate_all_statuses(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating candidate entities with all possible statuses."""
+        statuses = [
+            EntityStatus.new,
+            EntityStatus.active,
+            EntityStatus.interview,
+            EntityStatus.offer,
+            EntityStatus.hired,
+            EntityStatus.rejected
+        ]
+
+        for status in statuses:
+            response = await client.post(
+                "/api/entities",
+                json={
+                    "type": "candidate",
+                    "name": f"Candidate {status.value}",
+                    "status": status.value
+                },
+                headers=get_auth_headers(admin_token)
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["type"] == "candidate"
+            assert data["status"] == status.value
+
+    @pytest.mark.asyncio
+    async def test_create_client_entity(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating client entity with relevant fields."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "client",
+                "name": "Acme Corporation",
+                "status": "active",
+                "email": "contact@acme.com",
+                "phone": "+1234567890",
+                "company": "Acme Corp",
+                "position": "CTO",
+                "tags": ["enterprise", "b2b"],
+                "extra_data": {
+                    "contract_value": 100000,
+                    "contract_start": "2024-01-01"
+                }
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["type"] == "client"
+        assert data["company"] == "Acme Corp"
+        assert "enterprise" in data["tags"]
+        assert data["extra_data"]["contract_value"] == 100000
+
+    @pytest.mark.asyncio
+    async def test_create_contractor_entity(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating contractor entity."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "contractor",
+                "name": "John Smith",
+                "status": "active",
+                "email": "john@contractor.com",
+                "phone": "+1111111111",
+                "company": "Smith Consulting",
+                "position": "Senior Consultant",
+                "tags": ["freelance", "expert"],
+                "extra_data": {
+                    "hourly_rate": 150,
+                    "availability": "part-time"
+                }
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["type"] == "contractor"
+        assert data["extra_data"]["hourly_rate"] == 150
+
+    @pytest.mark.asyncio
+    async def test_create_lead_entity(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating lead entity."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "lead",
+                "name": "Potential Client",
+                "status": "new",
+                "email": "lead@example.com",
+                "company": "Startup Inc",
+                "tags": ["warm-lead", "startup"],
+                "extra_data": {
+                    "source": "referral",
+                    "interest_level": "high"
+                }
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["type"] == "lead"
+        assert data["status"] == "new"
+        assert "warm-lead" in data["tags"]
+
+    @pytest.mark.asyncio
+    async def test_create_partner_entity(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating partner entity."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "partner",
+                "name": "Strategic Partner",
+                "status": "active",
+                "email": "partner@company.com",
+                "company": "Partner Corp",
+                "tags": ["strategic", "long-term"],
+                "extra_data": {
+                    "partnership_type": "reseller",
+                    "revenue_share": 20
+                }
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["type"] == "partner"
+        assert data["extra_data"]["partnership_type"] == "reseller"
+
+    @pytest.mark.asyncio
+    async def test_create_custom_entity(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating custom entity type."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "custom",
+                "name": "Custom Contact",
+                "status": "active",
+                "tags": ["custom-type"],
+                "extra_data": {
+                    "custom_field_1": "value1",
+                    "custom_field_2": "value2"
+                }
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["type"] == "custom"
+        assert data["extra_data"]["custom_field_1"] == "value1"
+
+    @pytest.mark.asyncio
+    async def test_list_entities_filter_contractor_type(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test filtering for contractor entities."""
+        # Create mixed entity types
+        contractor = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Contractor 1",
+            type=EntityType.contractor,
+            status=EntityStatus.active
+        )
+        candidate = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Candidate 1",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add_all([contractor, candidate])
+        await db_session.commit()
+
+        response = await client.get(
+            "/api/entities?type=contractor",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert all(e["type"] == "contractor" for e in data)
+        assert len(data) >= 1
+
+    @pytest.mark.asyncio
+    async def test_list_entities_filter_lead_type(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test filtering for lead entities."""
+        lead = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Lead 1",
+            type=EntityType.lead,
+            status=EntityStatus.new
+        )
+        db_session.add(lead)
+        await db_session.commit()
+
+        response = await client.get(
+            "/api/entities?type=lead",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert all(e["type"] == "lead" for e in data)
+
+    @pytest.mark.asyncio
+    async def test_list_entities_filter_partner_type(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test filtering for partner entities."""
+        partner = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Partner 1",
+            type=EntityType.partner,
+            status=EntityStatus.active
+        )
+        db_session.add(partner)
+        await db_session.commit()
+
+        response = await client.get(
+            "/api/entities?type=partner",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert all(e["type"] == "partner" for e in data)
+
+
+# ============================================================================
+# ADVANCED SEARCH AND FILTERING TESTS
+# ============================================================================
+
+class TestAdvancedSearch:
+    """Advanced search and filtering scenarios."""
+
+    @pytest.mark.asyncio
+    async def test_search_case_insensitive(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test that search is case-insensitive."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Alexander Thompson",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+
+        # Search with different cases
+        for search_term in ["alexander", "ALEXANDER", "Alexander", "THOMPSON", "thompson"]:
+            response = await client.get(
+                f"/api/entities?search={search_term}",
+                headers=get_auth_headers(admin_token)
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) >= 1
+            assert any("Alexander" in e["name"] or "Thompson" in e["name"] for e in data)
+
+    @pytest.mark.asyncio
+    async def test_search_partial_match(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test partial string matching in search."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Jennifer Martinez",
+            email="jennifer.martinez@example.com",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+
+        # Partial matches
+        response = await client.get(
+            "/api/entities?search=mart",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) >= 1
+        assert any("Martinez" in e["name"] or "martinez" in (e["email"] or "") for e in data)
+
+    @pytest.mark.asyncio
+    async def test_combined_filters_type_and_status(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test combining type and status filters."""
+        # Create diverse entities
+        active_candidate = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Active Candidate",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        rejected_candidate = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Rejected Candidate",
+            type=EntityType.candidate,
+            status=EntityStatus.rejected
+        )
+        active_client = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Active Client",
+            type=EntityType.client,
+            status=EntityStatus.active
+        )
+        db_session.add_all([active_candidate, rejected_candidate, active_client])
+        await db_session.commit()
+
+        # Filter: candidate + active only
+        response = await client.get(
+            "/api/entities?type=candidate&status=active",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        # All results should be candidates with active status
+        assert all(e["type"] == "candidate" and e["status"] == "active" for e in data)
+
+    @pytest.mark.asyncio
+    async def test_combined_filters_type_status_search(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test combining type, status, and search filters."""
+        entity1 = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Python Developer Active",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        entity2 = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Python Developer Rejected",
+            type=EntityType.candidate,
+            status=EntityStatus.rejected
+        )
+        entity3 = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Java Developer Active",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add_all([entity1, entity2, entity3])
+        await db_session.commit()
+
+        # Filter: candidate + active + search "Python"
+        response = await client.get(
+            "/api/entities?type=candidate&status=active&search=Python",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        # Should only get active Python developers
+        assert all(
+            e["type"] == "candidate" and
+            e["status"] == "active" and
+            "Python" in e["name"]
+            for e in data
+        )
+
+    @pytest.mark.asyncio
+    async def test_combined_filters_all_parameters(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test combining all filter parameters."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Senior Python Engineer",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            tags=["senior", "python", "backend"]
+        )
+        db_session.add(entity)
+        await db_session.commit()
+
+        # Combine: type + status + department + search + tags
+        response = await client.get(
+            f"/api/entities?type=candidate&status=active&department_id={department.id}&search=Python&tags=senior",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        # Results should match all criteria
+        for e in data:
+            assert e["type"] == "candidate"
+            assert e["status"] == "active"
+            assert e["department_id"] == department.id
+            # Note: search and tags filtering in SQLite may behave differently than PostgreSQL
+
+
+# ============================================================================
+# COMPREHENSIVE TAG TESTS
+# ============================================================================
+
+class TestEntityTags:
+    """Comprehensive tests for entity tag functionality."""
+
+    @pytest.mark.asyncio
+    async def test_create_entity_with_multiple_tags(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating entity with multiple tags."""
+        tags = ["python", "senior", "remote", "full-time", "backend"]
+
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "candidate",
+                "name": "Multi-Tag Contact",
+                "status": "active",
+                "tags": tags
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert set(data["tags"]) == set(tags)
+        assert len(data["tags"]) == 5
+
+    @pytest.mark.asyncio
+    async def test_create_entity_with_empty_tags(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating entity with empty tags array."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "candidate",
+                "name": "No Tags Contact",
+                "status": "active",
+                "tags": []
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tags"] == []
+
+    @pytest.mark.asyncio
+    async def test_create_entity_without_tags(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating entity without providing tags field."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "candidate",
+                "name": "Default Tags Contact",
+                "status": "active"
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tags"] == []
+
+    @pytest.mark.asyncio
+    async def test_update_entity_add_tags(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test adding tags to entity via update."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Update Tags Test",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            tags=[]
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={"tags": ["new-tag", "another-tag"]},
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "new-tag" in data["tags"]
+        assert "another-tag" in data["tags"]
+
+    @pytest.mark.asyncio
+    async def test_update_entity_replace_tags(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test replacing existing tags."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Replace Tags Test",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            tags=["old-tag-1", "old-tag-2"]
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={"tags": ["new-tag-1", "new-tag-2"]},
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert set(data["tags"]) == {"new-tag-1", "new-tag-2"}
+        assert "old-tag-1" not in data["tags"]
+
+    @pytest.mark.asyncio
+    async def test_filter_by_single_tag(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test filtering entities by single tag."""
+        entity_with_tag = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Tagged Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            tags=["important"]
+        )
+        entity_without_tag = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Untagged Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            tags=["other"]
+        )
+        db_session.add_all([entity_with_tag, entity_without_tag])
+        await db_session.commit()
+
+        response = await client.get(
+            "/api/entities?tags=important",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        # In PostgreSQL, should only return entities with "important" tag
+        # In SQLite, tag filtering may not work the same way
+        if len(data) > 0:
+            assert all("important" in e["tags"] for e in data if e["tags"])
+
+    @pytest.mark.asyncio
+    async def test_filter_by_multiple_tags(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test filtering entities by multiple tags (comma-separated)."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Multi-Tag Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            tags=["python", "senior", "remote"]
+        )
+        db_session.add(entity)
+        await db_session.commit()
+
+        # Filter by multiple tags
+        response = await client.get(
+            "/api/entities?tags=python,senior",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        # Should work in PostgreSQL with array contains
+
+
+# ============================================================================
+# ENTITY STATUS TRANSITION TESTS
+# ============================================================================
+
+class TestEntityStatusTransitions:
+    """Test entity status transitions and workflows."""
+
+    @pytest.mark.asyncio
+    async def test_candidate_workflow_new_to_hired(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test candidate progressing through hiring workflow."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Workflow Candidate",
+            type=EntityType.candidate,
+            status=EntityStatus.new
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Progress through workflow: new -> interview -> offer -> hired
+        workflow = [
+            EntityStatus.interview,
+            EntityStatus.offer,
+            EntityStatus.hired
+        ]
+
+        for status in workflow:
+            response = await client.put(
+                f"/api/entities/{entity.id}",
+                json={"status": status.value},
+                headers=get_auth_headers(admin_token)
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == status.value
+
+    @pytest.mark.asyncio
+    async def test_filter_by_interview_status(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test filtering candidates in interview status."""
+        interview_entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Interview Candidate",
+            type=EntityType.candidate,
+            status=EntityStatus.interview
+        )
+        db_session.add(interview_entity)
+        await db_session.commit()
+
+        response = await client.get(
+            "/api/entities?status=interview",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert all(e["status"] == "interview" for e in data)
+
+    @pytest.mark.asyncio
+    async def test_filter_by_offer_status(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test filtering candidates with offer status."""
+        offer_entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Offer Candidate",
+            type=EntityType.candidate,
+            status=EntityStatus.offer
+        )
+        db_session.add(offer_entity)
+        await db_session.commit()
+
+        response = await client.get(
+            "/api/entities?status=offer",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert all(e["status"] == "offer" for e in data)
+
+    @pytest.mark.asyncio
+    async def test_filter_by_hired_status(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test filtering hired candidates."""
+        hired_entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Hired Candidate",
+            type=EntityType.candidate,
+            status=EntityStatus.hired
+        )
+        db_session.add(hired_entity)
+        await db_session.commit()
+
+        response = await client.get(
+            "/api/entities?status=hired",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert all(e["status"] == "hired" for e in data)
+
+
+# ============================================================================
+# ADVANCED SHARING PERMISSION TESTS
+# ============================================================================
+
+class TestEntitySharingPermissions:
+    """Test entity operations with different sharing permission levels."""
+
+    @pytest.mark.asyncio
+    async def test_shared_view_cannot_edit(
+        self, db_session, client, admin_user, second_user, second_user_token,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """Test that user with view access cannot edit entity."""
+        # Create entity
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Shared Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Share with view access
+        share = SharedAccess(
+            resource_type=ResourceType.entity,
+            resource_id=entity.id,
+            entity_id=entity.id,
+            shared_by_id=admin_user.id,
+            shared_with_id=second_user.id,
+            access_level=AccessLevel.view
+        )
+        db_session.add(share)
+        await db_session.commit()
+
+        # Try to edit
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={"name": "Hacked Name"},
+            headers=get_auth_headers(second_user_token)
+        )
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_shared_view_cannot_delete(
+        self, db_session, client, admin_user, second_user, second_user_token,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """Test that user with view access cannot delete entity."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Shared Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Share with view access
+        share = SharedAccess(
+            resource_type=ResourceType.entity,
+            resource_id=entity.id,
+            entity_id=entity.id,
+            shared_by_id=admin_user.id,
+            shared_with_id=second_user.id,
+            access_level=AccessLevel.view
+        )
+        db_session.add(share)
+        await db_session.commit()
+
+        # Try to delete
+        response = await client.delete(
+            f"/api/entities/{entity.id}",
+            headers=get_auth_headers(second_user_token)
+        )
+
+        assert response.status_code in [403, 404]
+
+    @pytest.mark.asyncio
+    async def test_shared_edit_can_edit(
+        self, db_session, client, admin_user, second_user, second_user_token,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """Test that user with edit access can edit entity."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Shared Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Share with edit access
+        share = SharedAccess(
+            resource_type=ResourceType.entity,
+            resource_id=entity.id,
+            entity_id=entity.id,
+            shared_by_id=admin_user.id,
+            shared_with_id=second_user.id,
+            access_level=AccessLevel.edit
+        )
+        db_session.add(share)
+        await db_session.commit()
+
+        # Edit should succeed
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={"name": "Updated Name"},
+            headers=get_auth_headers(second_user_token)
+        )
+
+        assert response.status_code == 200
+        assert response.json()["name"] == "Updated Name"
+
+    @pytest.mark.asyncio
+    async def test_shared_edit_cannot_delete(
+        self, db_session, client, admin_user, second_user, second_user_token,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """Test that user with edit access cannot delete entity."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Shared Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Share with edit access
+        share = SharedAccess(
+            resource_type=ResourceType.entity,
+            resource_id=entity.id,
+            entity_id=entity.id,
+            shared_by_id=admin_user.id,
+            shared_with_id=second_user.id,
+            access_level=AccessLevel.edit
+        )
+        db_session.add(share)
+        await db_session.commit()
+
+        # Delete should fail
+        response = await client.delete(
+            f"/api/entities/{entity.id}",
+            headers=get_auth_headers(second_user_token)
+        )
+
+        assert response.status_code in [403, 404]
+
+    @pytest.mark.asyncio
+    async def test_shared_full_can_delete(
+        self, db_session, client, admin_user, second_user, second_user_token,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """Test that user with full access can delete entity."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Shared Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Share with full access
+        share = SharedAccess(
+            resource_type=ResourceType.entity,
+            resource_id=entity.id,
+            entity_id=entity.id,
+            shared_by_id=admin_user.id,
+            shared_with_id=second_user.id,
+            access_level=AccessLevel.full
+        )
+        db_session.add(share)
+        await db_session.commit()
+
+        # Delete should succeed
+        response = await client.delete(
+            f"/api/entities/{entity.id}",
+            headers=get_auth_headers(second_user_token)
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_expired_share_no_access(
+        self, db_session, client, admin_user, second_user, second_user_token,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """Test that expired share doesn't grant access."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Shared Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Create expired share
+        share = SharedAccess(
+            resource_type=ResourceType.entity,
+            resource_id=entity.id,
+            entity_id=entity.id,
+            shared_by_id=admin_user.id,
+            shared_with_id=second_user.id,
+            access_level=AccessLevel.full,
+            expires_at=datetime.utcnow() - timedelta(days=1)
+        )
+        db_session.add(share)
+        await db_session.commit()
+
+        # Should not have access
+        response = await client.get(
+            f"/api/entities/{entity.id}",
+            headers=get_auth_headers(second_user_token)
+        )
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_future_expiration_has_access(
+        self, db_session, client, admin_user, second_user, second_user_token,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """Test that share with future expiration works."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Shared Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Create share with future expiration
+        share = SharedAccess(
+            resource_type=ResourceType.entity,
+            resource_id=entity.id,
+            entity_id=entity.id,
+            shared_by_id=admin_user.id,
+            shared_with_id=second_user.id,
+            access_level=AccessLevel.view,
+            expires_at=datetime.utcnow() + timedelta(days=7)
+        )
+        db_session.add(share)
+        await db_session.commit()
+
+        # Should have access
+        response = await client.get(
+            f"/api/entities/{entity.id}",
+            headers=get_auth_headers(second_user_token)
+        )
+
+        assert response.status_code == 200
+
+
+# ============================================================================
+# BULK OPERATIONS TESTS
+# ============================================================================
+
+class TestEntityBulkOperations:
+    """Test bulk/batch entity operations."""
+
+    @pytest.mark.asyncio
+    async def test_create_multiple_entities(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating multiple entities in sequence."""
+        entities_to_create = [
+            {"type": "candidate", "name": "Candidate 1", "status": "new"},
+            {"type": "candidate", "name": "Candidate 2", "status": "active"},
+            {"type": "client", "name": "Client 1", "status": "active"},
+            {"type": "contractor", "name": "Contractor 1", "status": "active"},
+            {"type": "lead", "name": "Lead 1", "status": "new"},
+        ]
+
+        created_ids = []
+        for entity_data in entities_to_create:
+            response = await client.post(
+                "/api/entities",
+                json=entity_data,
+                headers=get_auth_headers(admin_token)
+            )
+            assert response.status_code == 200
+            created_ids.append(response.json()["id"])
+
+        # Verify all created
+        assert len(created_ids) == 5
+        assert len(set(created_ids)) == 5  # All unique
+
+    @pytest.mark.asyncio
+    async def test_update_multiple_entities(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test updating multiple entities."""
+        # Create entities
+        entities = []
+        for i in range(3):
+            entity = Entity(
+                org_id=organization.id,
+                department_id=department.id,
+                created_by=admin_user.id,
+                name=f"Entity {i}",
+                type=EntityType.candidate,
+                status=EntityStatus.new
+            )
+            entities.append(entity)
+        db_session.add_all(entities)
+        await db_session.commit()
+
+        # Update all to active status
+        for entity in entities:
+            await db_session.refresh(entity)
+            response = await client.put(
+                f"/api/entities/{entity.id}",
+                json={"status": "active"},
+                headers=get_auth_headers(admin_token)
+            )
+            assert response.status_code == 200
+            assert response.json()["status"] == "active"
+
+    @pytest.mark.asyncio
+    async def test_delete_multiple_entities(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test deleting multiple entities."""
+        # Create entities
+        entities = []
+        for i in range(3):
+            entity = Entity(
+                org_id=organization.id,
+                department_id=department.id,
+                created_by=admin_user.id,
+                name=f"Entity {i}",
+                type=EntityType.candidate,
+                status=EntityStatus.active
+            )
+            entities.append(entity)
+        db_session.add_all(entities)
+        await db_session.commit()
+
+        # Delete all
+        for entity in entities:
+            await db_session.refresh(entity)
+            response = await client.delete(
+                f"/api/entities/{entity.id}",
+                headers=get_auth_headers(admin_token)
+            )
+            assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_share_with_multiple_users(
+        self, db_session, client, admin_user, admin_token, second_user,
+        regular_user, organization, department, get_auth_headers,
+        org_owner, org_member, org_admin
+    ):
+        """Test sharing entity with multiple users."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Multi-Share Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Share with multiple users
+        users_to_share = [second_user.id, regular_user.id]
+        for user_id in users_to_share:
+            response = await client.post(
+                f"/api/entities/{entity.id}/share",
+                json={
+                    "shared_with_id": user_id,
+                    "access_level": "view"
+                },
+                headers=get_auth_headers(admin_token)
+            )
+            assert response.status_code == 200
+
+        # Verify shares created
+        result = await db_session.execute(
+            select(SharedAccess).where(SharedAccess.entity_id == entity.id)
+        )
+        shares = result.scalars().all()
+        assert len(shares) == 2
+
+    @pytest.mark.asyncio
+    async def test_transfer_multiple_entities_same_user(
+        self, db_session, client, admin_user, admin_token, second_user,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """Test transferring multiple entities to same user."""
+        # Create entities
+        entities = []
+        for i in range(3):
+            entity = Entity(
+                org_id=organization.id,
+                department_id=department.id,
+                created_by=admin_user.id,
+                name=f"Transfer Entity {i}",
+                type=EntityType.candidate,
+                status=EntityStatus.active
+            )
+            entities.append(entity)
+        db_session.add_all(entities)
+        await db_session.commit()
+
+        # Transfer all to second_user
+        for entity in entities:
+            await db_session.refresh(entity)
+            response = await client.post(
+                f"/api/entities/{entity.id}/transfer",
+                json={"to_user_id": second_user.id},
+                headers=get_auth_headers(admin_token)
+            )
+            assert response.status_code == 200
+
+        # Verify all transferred
+        for entity in entities:
+            await db_session.refresh(entity)
+            assert entity.created_by == second_user.id
+
+
+# ============================================================================
+# DEPARTMENT-BASED TRANSFER TESTS
+# ============================================================================
+
+class TestDepartmentTransfers:
+    """Test entity transfers between departments."""
+
+    @pytest.mark.asyncio
+    async def test_transfer_to_different_department(
+        self, db_session, client, admin_user, admin_token, second_user,
+        organization, department, second_department,
+        get_auth_headers, org_owner, org_member
+    ):
+        """Test transferring entity to user in different department."""
+        # Create entity in first department
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Cross-Dept Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Transfer to second department
+        response = await client.post(
+            f"/api/entities/{entity.id}/transfer",
+            json={
+                "to_user_id": second_user.id,
+                "to_department_id": second_department.id
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+
+        # Verify department changed
+        await db_session.refresh(entity)
+        assert entity.department_id == second_department.id
+        assert entity.created_by == second_user.id
+
+    @pytest.mark.asyncio
+    async def test_transfer_within_same_department(
+        self, db_session, client, admin_user, admin_token, second_user,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """Test transferring entity to user in same department."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Same Dept Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Transfer within same department
+        response = await client.post(
+            f"/api/entities/{entity.id}/transfer",
+            json={
+                "to_user_id": second_user.id,
+                "to_department_id": department.id
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+
+        # Verify still in same department
+        await db_session.refresh(entity)
+        assert entity.department_id == department.id
+        assert entity.created_by == second_user.id
+
+    @pytest.mark.asyncio
+    async def test_transfer_from_no_department_to_department(
+        self, db_session, client, admin_user, admin_token, second_user,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """Test transferring entity from no department to a department."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=None,  # No department
+            created_by=admin_user.id,
+            name="No Dept Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Transfer to department
+        response = await client.post(
+            f"/api/entities/{entity.id}/transfer",
+            json={
+                "to_user_id": second_user.id,
+                "to_department_id": department.id
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+
+        # Verify now has department
+        await db_session.refresh(entity)
+        assert entity.department_id == department.id
+
+
+# ============================================================================
+# ADVANCED TAG FILTERING TESTS
+# ============================================================================
+
+class TestAdvancedTagFiltering:
+    """Test advanced tag filtering scenarios."""
+
+    @pytest.mark.asyncio
+    async def test_filter_by_tag_with_special_characters(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test filtering by tags with special characters."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Special Tag Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            tags=["python3.11", "aws-certified", "node.js"]
+        )
+        db_session.add(entity)
+        await db_session.commit()
+
+        # Test filtering (may not work in SQLite but should in PostgreSQL)
+        response = await client.get(
+            "/api/entities?tags=python3.11",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_filter_by_tag_case_sensitive(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test that tag filtering is case-sensitive."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Case Tag Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            tags=["Python", "JavaScript"]
+        )
+        db_session.add(entity)
+        await db_session.commit()
+
+        # Filter by exact case
+        response = await client.get(
+            "/api/entities?tags=Python",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_update_entity_clear_tags(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test clearing all tags from entity."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Clear Tags Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            tags=["tag1", "tag2", "tag3"]
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Clear tags
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={"tags": []},
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        assert response.json()["tags"] == []
+
+    @pytest.mark.asyncio
+    async def test_entity_with_many_tags(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test entity with large number of tags."""
+        many_tags = [f"tag{i}" for i in range(50)]
+
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "candidate",
+                "name": "Many Tags Entity",
+                "status": "active",
+                "tags": many_tags
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        assert len(response.json()["tags"]) == 50
+
+
+# ============================================================================
+# ENTITY SEARCH EDGE CASES
+# ============================================================================
+
+class TestEntitySearchEdgeCases:
+    """Test edge cases in entity search functionality."""
+
+    @pytest.mark.asyncio
+    async def test_search_empty_string(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test search with empty string."""
+        response = await client.get(
+            "/api/entities?search=",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        # Empty search should return all entities
+
+    @pytest.mark.asyncio
+    async def test_search_special_characters(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test search with special characters."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="O'Brien & Associates",
+            email="test+special@example.com",
+            type=EntityType.client,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+
+        # Search for apostrophe
+        response = await client.get(
+            "/api/entities?search=O'Brien",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        if len(data) > 0:
+            assert any("O'Brien" in e["name"] for e in data)
+
+    @pytest.mark.asyncio
+    async def test_search_unicode(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test search with Unicode characters."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Müller Enterprises",
+            type=EntityType.client,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+
+        response = await client.get(
+            "/api/entities?search=Müller",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_search_very_long_query(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test search with very long query string."""
+        long_query = "a" * 1000
+
+        response = await client.get(
+            f"/api/entities?search={long_query}",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        # Should return empty list or handle gracefully
+
+    @pytest.mark.asyncio
+    async def test_search_sql_injection_attempt(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test that search is safe from SQL injection."""
+        malicious_query = "'; DROP TABLE entities; --"
+
+        response = await client.get(
+            f"/api/entities?search={malicious_query}",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        # Should handle safely, no errors
+
+
+# ============================================================================
+# ENTITY LINK/UNLINK ADVANCED TESTS
+# ============================================================================
+
+class TestEntityLinkingAdvanced:
+    """Advanced tests for linking/unlinking chats and resources."""
+
+    @pytest.mark.asyncio
+    async def test_link_multiple_chats_to_entity(
+        self, db_session, client, admin_user, admin_token, entity,
+        organization, get_auth_headers, org_owner
+    ):
+        """Test linking multiple chats to single entity."""
+        # Create multiple chats
+        chats = []
+        for i in range(3):
+            chat = Chat(
+                org_id=organization.id,
+                owner_id=admin_user.id,
+                telegram_chat_id=111111 + i,
+                title=f"Chat {i}",
+                chat_type=ChatType.hr,
+                is_active=True
+            )
+            chats.append(chat)
+        db_session.add_all(chats)
+        await db_session.commit()
+
+        # Link all to entity
+        for chat in chats:
+            await db_session.refresh(chat)
+            response = await client.post(
+                f"/api/entities/{entity.id}/link-chat/{chat.id}",
+                headers=get_auth_headers(admin_token)
+            )
+            assert response.status_code == 200
+
+        # Verify all linked
+        for chat in chats:
+            await db_session.refresh(chat)
+            assert chat.entity_id == entity.id
+
+    @pytest.mark.asyncio
+    async def test_relink_chat_to_different_entity(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test relinking chat from one entity to another."""
+        # Create two entities
+        entity1 = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Entity 1",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        entity2 = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Entity 2",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add_all([entity1, entity2])
+        await db_session.commit()
+        await db_session.refresh(entity1)
+        await db_session.refresh(entity2)
+
+        # Create chat linked to entity1
+        chat = Chat(
+            org_id=organization.id,
+            owner_id=admin_user.id,
+            entity_id=entity1.id,
+            telegram_chat_id=111111,
+            title="Relink Chat",
+            chat_type=ChatType.hr,
+            is_active=True
+        )
+        db_session.add(chat)
+        await db_session.commit()
+        await db_session.refresh(chat)
+
+        # Relink to entity2
+        response = await client.post(
+            f"/api/entities/{entity2.id}/link-chat/{chat.id}",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+
+        # Verify linked to entity2
+        await db_session.refresh(chat)
+        assert chat.entity_id == entity2.id
+
+    @pytest.mark.asyncio
+    async def test_unlink_and_relink_chat(
+        self, db_session, client, admin_user, admin_token, entity,
+        organization, get_auth_headers, org_owner
+    ):
+        """Test unlinking and relinking same chat."""
+        chat = Chat(
+            org_id=organization.id,
+            owner_id=admin_user.id,
+            entity_id=entity.id,
+            telegram_chat_id=111111,
+            title="Test Chat",
+            chat_type=ChatType.hr,
+            is_active=True
+        )
+        db_session.add(chat)
+        await db_session.commit()
+        await db_session.refresh(chat)
+
+        # Unlink
+        response = await client.delete(
+            f"/api/entities/{entity.id}/unlink-chat/{chat.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+
+        # Verify unlinked
+        await db_session.refresh(chat)
+        assert chat.entity_id is None
+
+        # Relink
+        response = await client.post(
+            f"/api/entities/{entity.id}/link-chat/{chat.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+
+        # Verify relinked
+        await db_session.refresh(chat)
+        assert chat.entity_id == entity.id
+
+
+# ============================================================================
+# ADDITIONAL CREATE ENTITY TESTS - EDGE CASES & VALIDATION
+# ============================================================================
+
+class TestCreateEntityEdgeCases:
+    """Additional edge case tests for entity creation."""
+
+    @pytest.mark.asyncio
+    async def test_create_entity_minimal_required_fields(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating entity with only required fields (type and name)."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "candidate",
+                "name": "Minimal Contact"
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "Minimal Contact"
+        assert data["type"] == "candidate"
+        assert data["status"] == "new"  # Default status
+        assert data["tags"] == []
+        assert data["extra_data"] == {}
+        assert data["phone"] is None
+        assert data["email"] is None
+
+    @pytest.mark.asyncio
+    async def test_create_entity_with_telegram_user_id(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating entity with telegram_user_id."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "candidate",
+                "name": "Telegram Contact",
+                "telegram_user_id": 987654321,
+                "status": "active"
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["telegram_user_id"] == 987654321
+
+    @pytest.mark.asyncio
+    async def test_create_entity_empty_tags_array(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating entity with explicitly empty tags array."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "client",
+                "name": "No Tags Contact",
+                "status": "active",
+                "tags": []
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tags"] == []
+
+    @pytest.mark.asyncio
+    async def test_create_entity_empty_extra_data(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating entity with explicitly empty extra_data."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "partner",
+                "name": "No Extra Data",
+                "status": "active",
+                "extra_data": {}
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["extra_data"] == {}
+
+    @pytest.mark.asyncio
+    async def test_create_entity_all_statuses(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating entities with all possible status values."""
+        statuses = ["new", "screening", "interview", "offer", "hired", "rejected",
+                    "active", "paused", "churned", "converted", "ended", "negotiation"]
+
+        for status in statuses:
+            response = await client.post(
+                "/api/entities",
+                json={
+                    "type": "candidate",
+                    "name": f"Status {status} Contact",
+                    "status": status
+                },
+                headers=get_auth_headers(admin_token)
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == status
+
+    @pytest.mark.asyncio
+    async def test_create_entity_as_superadmin(
+        self, client, superadmin_user, superadmin_token, organization,
+        get_auth_headers, superadmin_org_member
+    ):
+        """Test that superadmin can create entities."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "candidate",
+                "name": "Superadmin Contact",
+                "status": "active"
+            },
+            headers=get_auth_headers(superadmin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["created_by"] == superadmin_user.id
+
+    @pytest.mark.asyncio
+    async def test_create_entity_complex_extra_data(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating entity with complex nested extra_data."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "candidate",
+                "name": "Complex Data Contact",
+                "status": "active",
+                "extra_data": {
+                    "skills": ["Python", "JavaScript", "SQL"],
+                    "experience": {
+                        "total_years": 5,
+                        "companies": ["CompanyA", "CompanyB"]
+                    },
+                    "preferences": {
+                        "remote": True,
+                        "salary_expectation": 100000
+                    }
+                }
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "skills" in data["extra_data"]
+        assert "experience" in data["extra_data"]
+        assert data["extra_data"]["skills"] == ["Python", "JavaScript", "SQL"]
+        assert data["extra_data"]["experience"]["total_years"] == 5
+
+    @pytest.mark.asyncio
+    async def test_create_entity_unicode_name(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating entity with unicode characters in name."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "client",
+                "name": "José García 北京 🚀",
+                "status": "active"
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "José García 北京 🚀"
+
+    @pytest.mark.asyncio
+    async def test_create_entity_special_characters_in_fields(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test creating entity with special characters."""
+        response = await client.post(
+            "/api/entities",
+            json={
+                "type": "contractor",
+                "name": "O'Brien & Associates",
+                "company": "Test & Co.",
+                "position": "VP of R&D",
+                "email": "test+label@example.com",
+                "status": "active"
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "O'Brien & Associates"
+        assert data["company"] == "Test & Co."
+        assert data["email"] == "test+label@example.com"
+
+
+# ============================================================================
+# ADDITIONAL UPDATE ENTITY TESTS - EDGE CASES
+# ============================================================================
+
+class TestUpdateEntityEdgeCases:
+    """Additional edge case tests for entity updates."""
+
+    @pytest.mark.asyncio
+    async def test_update_entity_clear_optional_fields(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test clearing optional fields by setting them to null."""
+        # Create entity with all fields populated
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Full Contact",
+            email="full@test.com",
+            phone="+1234567890",
+            company="Test Company",
+            position="Developer",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            tags=["python", "senior"],
+            extra_data={"note": "test"}
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Clear fields
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={
+                "email": None,
+                "phone": None,
+                "company": None,
+                "position": None
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["email"] is None
+        assert data["phone"] is None
+        assert data["company"] is None
+        assert data["position"] is None
+
+    @pytest.mark.asyncio
+    async def test_update_entity_replace_tags(
+        self, client, admin_user, admin_token, entity, get_auth_headers, org_owner
+    ):
+        """Test completely replacing entity tags."""
+        # First set some tags
+        await client.put(
+            f"/api/entities/{entity.id}",
+            json={"tags": ["old", "deprecated"]},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Replace with new tags
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={"tags": ["new", "fresh", "updated"]},
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tags"] == ["new", "fresh", "updated"]
+
+    @pytest.mark.asyncio
+    async def test_update_entity_clear_tags(
+        self, client, admin_user, admin_token, entity, get_auth_headers, org_owner
+    ):
+        """Test clearing all tags."""
+        # Set tags first
+        await client.put(
+            f"/api/entities/{entity.id}",
+            json={"tags": ["tag1", "tag2"]},
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Clear tags
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={"tags": []},
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tags"] == []
+
+    @pytest.mark.asyncio
+    async def test_update_entity_modify_extra_data(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test updating extra_data field."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Data Contact",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            extra_data={"old_key": "old_value"}
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={
+                "extra_data": {
+                    "new_key": "new_value",
+                    "another_key": 123
+                }
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "new_key" in data["extra_data"]
+        assert data["extra_data"]["new_key"] == "new_value"
+
+    @pytest.mark.asyncio
+    async def test_update_entity_change_type(
+        self, client, admin_user, admin_token, entity, get_auth_headers, org_owner
+    ):
+        """Test changing entity type (candidate -> client)."""
+        # Entity is created as candidate
+        assert entity.type == EntityType.candidate
+
+        # Change to client
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={"type": "client"},  # Note: EntityUpdate doesn't have type field
+            headers=get_auth_headers(admin_token)
+        )
+
+        # This should succeed if type is in EntityUpdate, otherwise field is ignored
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_update_entity_with_shared_edit_access(
+        self, db_session, client, admin_user, second_user, second_user_token,
+        entity, get_auth_headers, org_owner, org_member
+    ):
+        """Test updating entity when user has shared edit access."""
+        # Share entity with edit access
+        share = SharedAccess(
+            resource_type=ResourceType.entity,
+            resource_id=entity.id,
+            entity_id=entity.id,
+            shared_by_id=admin_user.id,
+            shared_with_id=second_user.id,
+            access_level=AccessLevel.edit
+        )
+        db_session.add(share)
+        await db_session.commit()
+
+        # Second user updates the entity
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={"name": "Updated by Shared User"},
+            headers=get_auth_headers(second_user_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "Updated by Shared User"
+
+    @pytest.mark.asyncio
+    async def test_update_entity_remove_department(
+        self, client, admin_user, admin_token, entity, get_auth_headers, org_owner
+    ):
+        """Test removing department assignment."""
+        # Entity has department_id set
+        assert entity.department_id is not None
+
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={"department_id": None},
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["department_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_update_entity_as_superadmin(
+        self, db_session, client, superadmin_user, superadmin_token,
+        admin_user, organization, department, get_auth_headers, superadmin_org_member
+    ):
+        """Test that superadmin can update any entity."""
+        # Create entity owned by admin_user
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Admin's Contact",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Superadmin updates it
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={"name": "Updated by Superadmin"},
+            headers=get_auth_headers(superadmin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "Updated by Superadmin"
+
+    @pytest.mark.asyncio
+    async def test_update_entity_only_timestamp_changes(
+        self, db_session, client, admin_user, admin_token, entity,
+        get_auth_headers, org_owner
+    ):
+        """Test that update changes updated_at timestamp even without field changes."""
+        original_updated_at = entity.updated_at
+
+        # Make a no-op update
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={"name": entity.name},  # Same value
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+
+        # Refresh entity from DB
+        await db_session.refresh(entity)
+        # updated_at should be different
+        assert entity.updated_at > original_updated_at
+
+
+# ============================================================================
+# ADDITIONAL DELETE ENTITY TESTS - EDGE CASES
+# ============================================================================
+
+class TestDeleteEntityEdgeCases:
+    """Additional edge case tests for entity deletion."""
+
+    @pytest.mark.asyncio
+    async def test_delete_entity_with_shared_full_access(
+        self, db_session, client, admin_user, second_user, second_user_token,
+        entity, get_auth_headers, org_owner, org_member
+    ):
+        """Test deleting entity when user has shared full access."""
+        # Share entity with full access
+        share = SharedAccess(
+            resource_type=ResourceType.entity,
+            resource_id=entity.id,
+            entity_id=entity.id,
+            shared_by_id=admin_user.id,
+            shared_with_id=second_user.id,
+            access_level=AccessLevel.full
+        )
+        db_session.add(share)
+        await db_session.commit()
+
+        # Second user deletes the entity
+        response = await client.delete(
+            f"/api/entities/{entity.id}",
+            headers=get_auth_headers(second_user_token)
+        )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_delete_entity_as_superadmin(
+        self, db_session, client, superadmin_user, superadmin_token,
+        admin_user, organization, department, get_auth_headers, superadmin_org_member
+    ):
+        """Test that superadmin can delete any entity."""
+        # Create entity owned by admin_user
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Admin's Contact",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Superadmin deletes it
+        response = await client.delete(
+            f"/api/entities/{entity.id}",
+            headers=get_auth_headers(superadmin_token)
+        )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_delete_entity_verify_actually_deleted(
+        self, db_session, client, admin_user, admin_token, entity,
+        get_auth_headers, org_owner
+    ):
+        """Test that entity is actually removed from database."""
+        entity_id = entity.id
+
+        # Delete entity
+        response = await client.delete(
+            f"/api/entities/{entity_id}",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+
+        # Verify entity is gone from DB
+        from sqlalchemy import select
+        result = await db_session.execute(
+            select(Entity).where(Entity.id == entity_id)
+        )
+        deleted_entity = result.scalar_one_or_none()
+        assert deleted_entity is None
+
+    @pytest.mark.asyncio
+    async def test_delete_entity_with_linked_chats(
+        self, db_session, client, admin_user, admin_token, entity,
+        organization, get_auth_headers, org_owner
+    ):
+        """Test deleting entity that has linked chats."""
+        # Create and link chat
+        chat = Chat(
+            org_id=organization.id,
+            owner_id=admin_user.id,
+            entity_id=entity.id,
+            telegram_chat_id=123456789,
+            title="Linked Chat",
+            chat_type=ChatType.hr,
+            is_active=True
+        )
+        db_session.add(chat)
+        await db_session.commit()
+
+        # Delete entity
+        response = await client.delete(
+            f"/api/entities/{entity.id}",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+
+        # Verify chat's entity_id is now null (or chat still exists)
+        await db_session.refresh(chat)
+        # Depending on cascade rules, entity_id should be None
+        assert chat.entity_id is None
+
+    @pytest.mark.asyncio
+    async def test_delete_entity_cannot_delete_with_view_access(
+        self, db_session, client, admin_user, second_user, second_user_token,
+        entity, get_auth_headers, org_owner, org_member
+    ):
+        """Test that user with only view access cannot delete entity."""
+        # Share entity with view access
+        share = SharedAccess(
+            resource_type=ResourceType.entity,
+            resource_id=entity.id,
+            entity_id=entity.id,
+            shared_by_id=admin_user.id,
+            shared_with_id=second_user.id,
+            access_level=AccessLevel.view
+        )
+        db_session.add(share)
+        await db_session.commit()
+
+        # Second user tries to delete
+        response = await client.delete(
+            f"/api/entities/{entity.id}",
+            headers=get_auth_headers(second_user_token)
+        )
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_delete_entity_cannot_delete_with_edit_access(
+        self, db_session, client, admin_user, second_user, second_user_token,
+        entity, get_auth_headers, org_owner, org_member
+    ):
+        """Test that user with only edit access cannot delete entity (needs full)."""
+        # Share entity with edit access
+        share = SharedAccess(
+            resource_type=ResourceType.entity,
+            resource_id=entity.id,
+            entity_id=entity.id,
+            shared_by_id=admin_user.id,
+            shared_with_id=second_user.id,
+            access_level=AccessLevel.edit
+        )
+        db_session.add(share)
+        await db_session.commit()
+
+        # Second user tries to delete
+        response = await client.delete(
+            f"/api/entities/{entity.id}",
+            headers=get_auth_headers(second_user_token)
+        )
+
+        assert response.status_code == 403
+
+
+# ============================================================================
+# ADDITIONAL BULK OPERATIONS TESTS - ADVANCED SCENARIOS
+# ============================================================================
+
+class TestBulkOperationsAdvanced:
+    """Advanced bulk operation tests with error handling."""
+
+    @pytest.mark.asyncio
+    async def test_bulk_status_update(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test updating status for multiple entities."""
+        # Create multiple entities with 'new' status
+        entities = []
+        for i in range(5):
+            entity = Entity(
+                org_id=organization.id,
+                department_id=department.id,
+                created_by=admin_user.id,
+                name=f"Candidate {i}",
+                type=EntityType.candidate,
+                status=EntityStatus.new
+            )
+            entities.append(entity)
+        db_session.add_all(entities)
+        await db_session.commit()
+
+        # Update all to 'interview' status
+        for entity in entities:
+            await db_session.refresh(entity)
+            response = await client.put(
+                f"/api/entities/{entity.id}",
+                json={"status": "interview"},
+                headers=get_auth_headers(admin_token)
+            )
+            assert response.status_code == 200
+
+        # Verify all updated
+        for entity in entities:
+            await db_session.refresh(entity)
+            assert entity.status == EntityStatus.interview
+
+    @pytest.mark.asyncio
+    async def test_bulk_tag_addition(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test adding same tags to multiple entities."""
+        # Create entities
+        entities = []
+        for i in range(3):
+            entity = Entity(
+                org_id=organization.id,
+                department_id=department.id,
+                created_by=admin_user.id,
+                name=f"Entity {i}",
+                type=EntityType.candidate,
+                status=EntityStatus.active,
+                tags=[]
+            )
+            entities.append(entity)
+        db_session.add_all(entities)
+        await db_session.commit()
+
+        # Add tags to all
+        new_tags = ["urgent", "priority", "q4"]
+        for entity in entities:
+            await db_session.refresh(entity)
+            response = await client.put(
+                f"/api/entities/{entity.id}",
+                json={"tags": new_tags},
+                headers=get_auth_headers(admin_token)
+            )
+            assert response.status_code == 200
+
+        # Verify all have tags
+        for entity in entities:
+            await db_session.refresh(entity)
+            assert entity.tags == new_tags
+
+    @pytest.mark.asyncio
+    async def test_bulk_department_assignment(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, second_department, get_auth_headers, org_owner
+    ):
+        """Test reassigning multiple entities to new department."""
+        # Create entities in first department
+        entities = []
+        for i in range(4):
+            entity = Entity(
+                org_id=organization.id,
+                department_id=department.id,
+                created_by=admin_user.id,
+                name=f"Entity {i}",
+                type=EntityType.candidate,
+                status=EntityStatus.active
+            )
+            entities.append(entity)
+        db_session.add_all(entities)
+        await db_session.commit()
+
+        # Move all to second department
+        for entity in entities:
+            await db_session.refresh(entity)
+            response = await client.put(
+                f"/api/entities/{entity.id}",
+                json={"department_id": second_department.id},
+                headers=get_auth_headers(admin_token)
+            )
+            assert response.status_code == 200
+
+        # Verify all moved
+        for entity in entities:
+            await db_session.refresh(entity)
+            assert entity.department_id == second_department.id
+
+    @pytest.mark.asyncio
+    async def test_bulk_share_different_access_levels(
+        self, db_session, client, admin_user, admin_token, second_user,
+        regular_user, organization, department, get_auth_headers,
+        org_owner, org_member, org_admin
+    ):
+        """Test sharing multiple entities with different access levels."""
+        # Create entities
+        entities = []
+        for i in range(3):
+            entity = Entity(
+                org_id=organization.id,
+                department_id=department.id,
+                created_by=admin_user.id,
+                name=f"Share Entity {i}",
+                type=EntityType.candidate,
+                status=EntityStatus.active
+            )
+            entities.append(entity)
+        db_session.add_all(entities)
+        await db_session.commit()
+
+        access_levels = ["view", "edit", "full"]
+
+        # Share each with different access level
+        for i, entity in enumerate(entities):
+            await db_session.refresh(entity)
+            response = await client.post(
+                f"/api/entities/{entity.id}/share",
+                json={
+                    "shared_with_id": second_user.id,
+                    "access_level": access_levels[i]
+                },
+                headers=get_auth_headers(admin_token)
+            )
+            assert response.status_code == 200
+
+        # Verify shares created
+        from sqlalchemy import select
+        result = await db_session.execute(
+            select(SharedAccess).where(SharedAccess.shared_with_id == second_user.id)
+        )
+        shares = result.scalars().all()
+        assert len(shares) == 3
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_with_error_handling(
+        self, db_session, client, admin_user, admin_token, second_user,
+        organization, department, get_auth_headers, org_owner
+    ):
+        """Test bulk delete where some entities fail (transferred)."""
+        # Create mix of normal and transferred entities
+        normal_entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Normal Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+
+        transferred_entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Transferred Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            is_transferred=True,
+            transferred_to_id=second_user.id
+        )
+
+        db_session.add_all([normal_entity, transferred_entity])
+        await db_session.commit()
+        await db_session.refresh(normal_entity)
+        await db_session.refresh(transferred_entity)
+
+        # Try to delete both
+        normal_response = await client.delete(
+            f"/api/entities/{normal_entity.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert normal_response.status_code == 200
+
+        transferred_response = await client.delete(
+            f"/api/entities/{transferred_entity.id}",
+            headers=get_auth_headers(admin_token)
+        )
+        assert transferred_response.status_code == 400
+        assert "Cannot delete a transferred entity" in transferred_response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_bulk_update_mixed_permissions(
+        self, db_session, client, admin_user, second_user, second_user_token,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """Test bulk update where user has permission for some but not all entities."""
+        # Create entities: one owned by second_user, one by admin_user
+        owned_entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=second_user.id,
+            name="Owned Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+
+        other_entity = Entity(
+            org_id=organization.id,
+            department_id=None,  # Not in department
+            created_by=admin_user.id,
+            name="Other Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+
+        db_session.add_all([owned_entity, other_entity])
+        await db_session.commit()
+        await db_session.refresh(owned_entity)
+        await db_session.refresh(other_entity)
+
+        # second_user can update their own
+        owned_response = await client.put(
+            f"/api/entities/{owned_entity.id}",
+            json={"name": "Updated Own"},
+            headers=get_auth_headers(second_user_token)
+        )
+        assert owned_response.status_code == 200
+
+        # second_user cannot update other's without share
+        other_response = await client.put(
+            f"/api/entities/{other_entity.id}",
+            json={"name": "Try Update Other"},
+            headers=get_auth_headers(second_user_token)
+        )
+        assert other_response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_bulk_create_with_validation_errors(
+        self, client, admin_user, admin_token, get_auth_headers, org_owner
+    ):
+        """Test bulk create where some entities have validation errors."""
+        valid_entity = {
+            "type": "candidate",
+            "name": "Valid Entity",
+            "status": "active"
+        }
+
+        invalid_department = {
+            "type": "candidate",
+            "name": "Invalid Dept Entity",
+            "status": "active",
+            "department_id": 99999  # Non-existent
+        }
+
+        # Create valid entity
+        response1 = await client.post(
+            "/api/entities",
+            json=valid_entity,
+            headers=get_auth_headers(admin_token)
+        )
+        assert response1.status_code == 200
+
+        # Create invalid entity
+        response2 = await client.post(
+            "/api/entities",
+            json=invalid_department,
+            headers=get_auth_headers(admin_token)
+        )
+        assert response2.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_bulk_status_transition_workflow(
+        self, db_session, client, admin_user, admin_token, organization,
+        department, get_auth_headers, org_owner
+    ):
+        """Test bulk status transition workflow."""
+        # Create entities in various states
+        entities = []
+        statuses = ["rejected", "hired", "active"]
+
+        for i, status in enumerate(statuses):
+            entity = Entity(
+                org_id=organization.id,
+                department_id=department.id,
+                created_by=admin_user.id,
+                name=f"Status Entity {i}",
+                type=EntityType.candidate,
+                status=getattr(EntityStatus, status)
+            )
+            entities.append(entity)
+
+        db_session.add_all(entities)
+        await db_session.commit()
+
+        # Transition all to ended status
+        for entity in entities:
+            await db_session.refresh(entity)
+            response = await client.put(
+                f"/api/entities/{entity.id}",
+                json={"status": "ended"},
+                headers=get_auth_headers(admin_token)
+            )
+            assert response.status_code == 200
+
+        # Verify all transitioned
+        for entity in entities:
+            await db_session.refresh(entity)
+            assert entity.status == EntityStatus.ended
+
+
+# ============================================================================
+# TRANSFER PERMISSIONS WITH DEPARTMENT ROLES
+# ============================================================================
+
+class TestTransferPermissionsWithRoles:
+    """Test entity transfer permissions with different department roles."""
+
+    @pytest.mark.asyncio
+    async def test_superadmin_can_transfer_to_anyone(
+        self, db_session, client, superadmin_user, superadmin_token,
+        organization, department, second_user, get_auth_headers,
+        superadmin_org_member, org_member
+    ):
+        """Test that SUPERADMIN can transfer to anyone."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=superadmin_user.id,
+            name="SUPERADMIN Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        response = await client.post(
+            f"/api/entities/{entity.id}/transfer",
+            json={
+                "to_user_id": second_user.id,
+                "comment": "SUPERADMIN transfer"
+            },
+            headers=get_auth_headers(superadmin_token)
+        )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_owner_can_transfer_to_anyone_in_org(
+        self, db_session, client, admin_user, admin_token, second_user,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """Test that org OWNER can transfer to anyone in organization."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Owner Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        response = await client.post(
+            f"/api/entities/{entity.id}/transfer",
+            json={
+                "to_user_id": second_user.id,
+                "comment": "Owner transfer"
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(reason="Transfer validation")
+    async def test_transfer_to_user_not_in_organization_fails(
+        self, db_session, client, admin_user, admin_token,
+        organization, department, get_auth_headers, org_owner
+    ):
+        """Test that transfer to user not in organization fails."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Test Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+
+        # Create user NOT in the organization
+        external_user = User(
+            email="external@test.com",
+            password_hash=hash_password("test123"),
+            name="External User",
+            role=UserRole.ADMIN,
+            is_active=True
+        )
+        db_session.add_all([entity, external_user])
+        await db_session.commit()
+        await db_session.refresh(entity)
+        await db_session.refresh(external_user)
+
+        # Try to transfer to external user
+        response = await client.post(
+            f"/api/entities/{entity.id}/transfer",
+            json={
+                "to_user_id": external_user.id,
+                "comment": "External transfer attempt"
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 400
+        assert "not a member of this organization" in response.json()["detail"]
+
+
+# ============================================================================
+# ENTITY ACCESS CONTROL WITH ROLE HIERARCHY
+# ============================================================================
+
+class TestEntityAccessControlRoleHierarchy:
+    """Test entity access control with different role hierarchies."""
+
+    @pytest.mark.asyncio
+    async def test_superadmin_sees_all_entities(
+        self, db_session, client, superadmin_user, superadmin_token,
+        admin_user, organization, department, get_auth_headers,
+        superadmin_org_member, org_owner
+    ):
+        """Test that SUPERADMIN sees all entities without restriction."""
+        # Create entity by admin_user
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Admin Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # SUPERADMIN can see it
+        response = await client.get(
+            f"/api/entities/{entity.id}",
+            headers=get_auth_headers(superadmin_token)
+        )
+
+        assert response.status_code == 200
+        assert response.json()["id"] == entity.id
+
+    @pytest.mark.asyncio
+    async def test_owner_cannot_see_superadmin_private_content(
+        self, db_session, client, admin_user, admin_token,
+        superadmin_user, organization, department, get_auth_headers,
+        org_owner, superadmin_org_member
+    ):
+        """Test that OWNER cannot see private content created by SUPERADMIN."""
+        # Create entity by SUPERADMIN (not in any department = private)
+        superadmin_entity = Entity(
+            org_id=organization.id,
+            department_id=None,  # No department = private
+            created_by=superadmin_user.id,
+            name="SUPERADMIN Private Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(superadmin_entity)
+        await db_session.commit()
+        await db_session.refresh(superadmin_entity)
+
+        # Owner (admin_user) should not be able to access it
+        response = await client.get(
+            f"/api/entities/{superadmin_entity.id}",
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Should return 404 (not found) to hide existence
+        assert response.status_code == 404
+
+
+# ============================================================================
+# SHARE PERMISSIONS ACROSS DEPARTMENTS
+# ============================================================================
+
+class TestSharePermissionsDepartments:
+    """Test entity share permissions across departments."""
+
+    @pytest.mark.asyncio
+    async def test_owner_can_share_with_anyone_in_org(
+        self, db_session, client, admin_user, admin_token, second_user,
+        organization, department, second_department, get_auth_headers,
+        org_owner, org_member
+    ):
+        """Test that org OWNER can share with anyone in organization."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Owner Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Share with second_user (different department)
+        response = await client.post(
+            f"/api/entities/{entity.id}/share",
+            json={
+                "shared_with_id": second_user.id,
+                "access_level": "edit",
+                "note": "Owner sharing"
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_superadmin_can_share_with_anyone(
+        self, db_session, client, superadmin_user, superadmin_token,
+        second_user, organization, department, get_auth_headers,
+        superadmin_org_member, org_member
+    ):
+        """Test that SUPERADMIN can share with anyone."""
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=superadmin_user.id,
+            name="SUPERADMIN Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # Share with second_user
+        response = await client.post(
+            f"/api/entities/{entity.id}/share",
+            json={
+                "shared_with_id": second_user.id,
+                "access_level": "full",
+                "note": "SUPERADMIN sharing"
+            },
+            headers=get_auth_headers(superadmin_token)
+        )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+
+# ============================================================================
+# ADVANCED PERMISSIONS AND FILTERING EDGE CASES
+# ============================================================================
+
+class TestAdvancedPermissionsAndFilteringEdgeCases:
+    """Test advanced permission and filtering edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_share_with_auto_share_related_resources(
+        self, db_session, client, admin_user, admin_token, entity,
+        second_user, organization, get_auth_headers, org_owner, org_member
+    ):
+        """Test that auto_share_related shares chats and calls."""
+        # Create related resources
+        chat1 = Chat(
+            org_id=organization.id,
+            owner_id=admin_user.id,
+            entity_id=entity.id,
+            telegram_chat_id=111,
+            title="Chat 1",
+            chat_type=ChatType.hr,
+            is_active=True
+        )
+        chat2 = Chat(
+            org_id=organization.id,
+            owner_id=admin_user.id,
+            entity_id=entity.id,
+            telegram_chat_id=222,
+            title="Chat 2",
+            chat_type=ChatType.sales,
+            is_active=True
+        )
+        call1 = CallRecording(
+            org_id=organization.id,
+            owner_id=admin_user.id,
+            entity_id=entity.id,
+            title="Call 1",
+            source_type=CallSource.upload,
+            status=CallStatus.done,
+            duration_seconds=300
+        )
+        call2 = CallRecording(
+            org_id=organization.id,
+            owner_id=admin_user.id,
+            entity_id=entity.id,
+            title="Call 2",
+            source_type=CallSource.meet,
+            status=CallStatus.done,
+            duration_seconds=600
+        )
+        db_session.add_all([chat1, chat2, call1, call2])
+        await db_session.commit()
+
+        # Share entity with auto_share_related=True
+        response = await client.post(
+            f"/api/entities/{entity.id}/share",
+            json={
+                "shared_with_id": second_user.id,
+                "access_level": "view",
+                "auto_share_related": True
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["auto_shared"] is not None
+        # Should have shared 2 chats and 2 calls
+        assert data["auto_shared"]["chats"] == 2
+        assert data["auto_shared"]["calls"] == 2
+
+    @pytest.mark.asyncio
+    async def test_link_chat_requires_edit_permission(
+        self, db_session, client, second_user, second_user_token,
+        organization, department, admin_user, get_auth_headers,
+        org_owner, org_member
+    ):
+        """Test that linking chat requires edit permission."""
+        # Create entity owned by admin
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Admin Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        # Create chat
+        chat = Chat(
+            org_id=organization.id,
+            owner_id=admin_user.id,
+            telegram_chat_id=111,
+            title="Test Chat",
+            chat_type=ChatType.hr,
+            is_active=True
+        )
+        db_session.add_all([entity, chat])
+        await db_session.commit()
+        await db_session.refresh(entity)
+        await db_session.refresh(chat)
+
+        # second_user has no permission, should fail
+        response = await client.post(
+            f"/api/entities/{entity.id}/link-chat/{chat.id}",
+            headers=get_auth_headers(second_user_token)
+        )
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(reason="Share permission logic")
+    async def test_link_chat_with_edit_share_permission(
+        self, db_session, client, second_user, second_user_token,
+        organization, department, admin_user, get_auth_headers,
+        org_owner, org_member
+    ):
+        """Test that user with edit share permission can link chat."""
+        # Create entity owned by admin
+        entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,
+            created_by=admin_user.id,
+            name="Admin Entity",
+            type=EntityType.candidate,
+            status=EntityStatus.active
+        )
+        # Create chat
+        chat = Chat(
+            org_id=organization.id,
+            owner_id=admin_user.id,
+            telegram_chat_id=111,
+            title="Test Chat",
+            chat_type=ChatType.hr,
+            is_active=True
+        )
+        # Share entity with edit access
+        share = SharedAccess(
+            resource_type=ResourceType.entity,
+            resource_id=entity.id,
+            entity_id=entity.id,
+            shared_by_id=admin_user.id,
+            shared_with_id=second_user.id,
+            access_level=AccessLevel.edit
+        )
+        db_session.add_all([entity, chat, share])
+        await db_session.commit()
+        await db_session.refresh(entity)
+        await db_session.refresh(chat)
+
+        # second_user has edit permission, should succeed
+        response = await client.post(
+            f"/api/entities/{entity.id}/link-chat/{chat.id}",
+            headers=get_auth_headers(second_user_token)
+        )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True

@@ -921,6 +921,61 @@ class TestUpdateUser:
         assert data["is_active"] is False
 
     @pytest.mark.asyncio
+    async def test_reactivate_inactive_user(
+        self, client, superadmin_token, get_auth_headers, db_session
+    ):
+        """Test reactivating an inactive user."""
+        # Create inactive user
+        user = User(
+            email="inactive@test.com",
+            password_hash="hashed",
+            name="Inactive User",
+            role=UserRole.ADMIN,
+            is_active=False
+        )
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+
+        # Reactivate the user
+        response = await client.patch(
+            f"/api/users/{user.id}",
+            json={"is_active": True},
+            headers=get_auth_headers(superadmin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["is_active"] is True
+
+    @pytest.mark.asyncio
+    async def test_deactivate_then_reactivate_user(
+        self, client, superadmin_token, admin_user, get_auth_headers, db_session
+    ):
+        """Test deactivating and then reactivating the same user."""
+        # Deactivate
+        response = await client.patch(
+            f"/api/users/{admin_user.id}",
+            json={"is_active": False},
+            headers=get_auth_headers(superadmin_token)
+        )
+        assert response.status_code == 200
+        assert response.json()["is_active"] is False
+
+        # Reactivate
+        response = await client.patch(
+            f"/api/users/{admin_user.id}",
+            json={"is_active": True},
+            headers=get_auth_headers(superadmin_token)
+        )
+        assert response.status_code == 200
+        assert response.json()["is_active"] is True
+
+        # Verify in database
+        await db_session.refresh(admin_user)
+        assert admin_user.is_active is True
+
+    @pytest.mark.asyncio
     async def test_update_user_department(
         self, client, superadmin_token, admin_user, department,
         second_department, get_auth_headers, db_session
@@ -1799,3 +1854,290 @@ class TestUserPermissionChecks:
             headers=get_auth_headers(admin_token)
         )
         assert response.status_code == 200
+
+
+class TestChangePassword:
+    """Tests for POST /api/auth/change-password endpoint - change user password."""
+
+    @pytest.mark.asyncio
+    async def test_change_password_success(
+        self, client, admin_user, get_auth_headers, db_session
+    ):
+        """Test successfully changing password."""
+        from api.services.auth import hash_password, verify_password, create_access_token
+
+        # Set a known password for the user
+        admin_user.password_hash = hash_password("OldPassword123!")
+        await db_session.commit()
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+
+        response = await client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "OldPassword123!",
+                "new_password": "NewPassword123!"
+            },
+            headers=get_auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        assert response.json()["message"] == "Password changed"
+
+        # Verify password was actually changed in database
+        await db_session.refresh(admin_user)
+        assert verify_password("NewPassword123!", admin_user.password_hash)
+        assert not verify_password("OldPassword123!", admin_user.password_hash)
+
+    @pytest.mark.asyncio
+    async def test_change_password_wrong_current_password(
+        self, client, admin_user, get_auth_headers, db_session
+    ):
+        """Test changing password with wrong current password fails."""
+        from api.services.auth import hash_password, create_access_token
+
+        admin_user.password_hash = hash_password("CorrectPassword123!")
+        await db_session.commit()
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+
+        response = await client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "WrongPassword123!",
+                "new_password": "NewPassword123!"
+            },
+            headers=get_auth_headers(token)
+        )
+
+        assert response.status_code == 400
+        assert "Wrong current password" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_change_password_weak_new_password(
+        self, client, admin_user, get_auth_headers, db_session
+    ):
+        """Test changing password with weak new password fails validation."""
+        from api.services.auth import hash_password, create_access_token
+
+        admin_user.password_hash = hash_password("OldPassword123!")
+        await db_session.commit()
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+
+        response = await client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "OldPassword123!",
+                "new_password": "weak"
+            },
+            headers=get_auth_headers(token)
+        )
+
+        assert response.status_code == 400
+        # Password policy validation should fail
+        assert "detail" in response.json()
+
+    @pytest.mark.asyncio
+    async def test_change_password_invalidates_tokens(
+        self, client, admin_user, get_auth_headers, db_session
+    ):
+        """Test changing password increments token_version to invalidate existing tokens."""
+        from api.services.auth import hash_password, create_access_token
+
+        admin_user.password_hash = hash_password("OldPassword123!")
+        admin_user.token_version = 0
+        await db_session.commit()
+
+        token = create_access_token(data={"sub": str(admin_user.id), "token_version": 0})
+
+        response = await client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "OldPassword123!",
+                "new_password": "NewPassword123!"
+            },
+            headers=get_auth_headers(token)
+        )
+
+        assert response.status_code == 200
+
+        # Verify token_version was incremented
+        await db_session.refresh(admin_user)
+        assert admin_user.token_version == 1
+
+    @pytest.mark.asyncio
+    async def test_change_password_requires_authentication(self, client):
+        """Test changing password requires authentication."""
+        response = await client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "OldPassword123!",
+                "new_password": "NewPassword123!"
+            }
+        )
+
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_change_password_with_invalid_token(self, client, get_auth_headers):
+        """Test changing password with invalid token fails."""
+        response = await client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "OldPassword123!",
+                "new_password": "NewPassword123!"
+            },
+            headers=get_auth_headers("invalid_token")
+        )
+
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_change_password_same_as_current(
+        self, client, admin_user, get_auth_headers, db_session
+    ):
+        """Test changing password to the same password (should work)."""
+        from api.services.auth import hash_password, create_access_token
+
+        admin_user.password_hash = hash_password("SamePassword123!")
+        await db_session.commit()
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+
+        response = await client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "SamePassword123!",
+                "new_password": "SamePassword123!"
+            },
+            headers=get_auth_headers(token)
+        )
+
+        # Should succeed - no restriction on reusing same password
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_change_password_for_superadmin(
+        self, client, superadmin_user, get_auth_headers, db_session
+    ):
+        """Test SUPERADMIN can change their password."""
+        from api.services.auth import hash_password, create_access_token
+
+        superadmin_user.password_hash = hash_password("SuperOld123!")
+        await db_session.commit()
+
+        token = create_access_token(data={"sub": str(superadmin_user.id)})
+
+        response = await client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "SuperOld123!",
+                "new_password": "SuperNew123!"
+            },
+            headers=get_auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        assert response.json()["message"] == "Password changed"
+
+    @pytest.mark.asyncio
+    async def test_change_password_for_inactive_user(
+        self, client, get_auth_headers, db_session
+    ):
+        """Test inactive user cannot change password."""
+        from api.services.auth import hash_password, create_access_token
+
+        # Create inactive user
+        user = User(
+            email="inactive@test.com",
+            password_hash=hash_password("InactivePass123!"),
+            name="Inactive User",
+            role=UserRole.ADMIN,
+            is_active=False
+        )
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+
+        token = create_access_token(data={"sub": str(user.id)})
+
+        response = await client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "InactivePass123!",
+                "new_password": "NewInactivePass123!"
+            },
+            headers=get_auth_headers(token)
+        )
+
+        # Should fail because get_current_user checks is_active (returns 401 for invalid auth)
+        assert response.status_code in [401, 403]
+
+    @pytest.mark.asyncio
+    async def test_change_password_missing_fields(
+        self, client, admin_token, get_auth_headers
+    ):
+        """Test changing password with missing fields fails."""
+        # Missing new_password
+        response = await client.post(
+            "/api/auth/change-password",
+            json={"current_password": "OldPassword123!"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 422
+
+        # Missing current_password
+        response = await client.post(
+            "/api/auth/change-password",
+            json={"new_password": "NewPassword123!"},
+            headers=get_auth_headers(admin_token)
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_change_password_empty_passwords(
+        self, client, admin_token, get_auth_headers
+    ):
+        """Test changing password with empty strings fails."""
+        response = await client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "",
+                "new_password": ""
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Should fail validation
+        assert response.status_code in [400, 422]
+
+    @pytest.mark.asyncio
+    async def test_change_password_with_special_characters(
+        self, client, admin_user, get_auth_headers, db_session
+    ):
+        """Test changing password with special characters."""
+        from api.services.auth import hash_password, create_access_token, verify_password
+
+        admin_user.password_hash = hash_password("OldPass123!")
+        await db_session.commit()
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+
+        # Password with various special characters
+        new_password = "N3wP@ss#$%^&*()!"
+
+        response = await client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "OldPass123!",
+                "new_password": new_password
+            },
+            headers=get_auth_headers(token)
+        )
+
+        assert response.status_code == 200
+
+        # Verify the special character password works
+        await db_session.refresh(admin_user)
+        assert verify_password(new_password, admin_user.password_hash)

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Request, Query
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -558,6 +559,119 @@ async def get_call_status(
         "duration_seconds": call.duration_seconds,
         "error_message": call.error_message
     }
+
+
+@router.get("/{call_id}/download/transcript")
+async def download_transcript(
+    call_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Download call transcript as a text file"""
+    current_user = await db.merge(current_user)
+
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Call not found")
+
+    result = await db.execute(
+        select(CallRecording).where(
+            CallRecording.id == call_id,
+            CallRecording.org_id == org.id
+        )
+    )
+    call = result.scalar_one_or_none()
+
+    if not call:
+        raise HTTPException(404, "Call not found")
+
+    # Check if user has access to view this call
+    if not await can_access_call(current_user, call, org.id, db):
+        raise HTTPException(403, "Access denied")
+
+    # Check if transcript exists
+    if not call.transcript:
+        raise HTTPException(404, "Transcript not available")
+
+    # Generate filename
+    title = call.title or f"Call_{call.id}"
+    # Sanitize filename
+    safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
+    filename = f"{safe_title}_transcript.txt"
+
+    # Return transcript as downloadable file
+    return Response(
+        content=call.transcript,
+        media_type="text/plain",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+
+@router.get("/{call_id}/download/audio")
+async def download_audio(
+    call_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Download call audio file"""
+    current_user = await db.merge(current_user)
+
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Call not found")
+
+    result = await db.execute(
+        select(CallRecording).where(
+            CallRecording.id == call_id,
+            CallRecording.org_id == org.id
+        )
+    )
+    call = result.scalar_one_or_none()
+
+    if not call:
+        raise HTTPException(404, "Call not found")
+
+    # Check if user has access to view this call
+    if not await can_access_call(current_user, call, org.id, db):
+        raise HTTPException(403, "Access denied")
+
+    # Check if audio file exists
+    if not call.audio_file_path:
+        raise HTTPException(404, "Audio file not available")
+
+    if not os.path.exists(call.audio_file_path):
+        raise HTTPException(404, "Audio file not found on server")
+
+    # Determine content type based on file extension
+    ext = os.path.splitext(call.audio_file_path)[1].lower()
+    content_type_map = {
+        '.mp3': 'audio/mpeg',
+        '.mp4': 'video/mp4',
+        '.wav': 'audio/wav',
+        '.m4a': 'audio/mp4',
+        '.webm': 'video/webm',
+        '.ogg': 'audio/ogg',
+        '.mpeg': 'audio/mpeg',
+    }
+    content_type = content_type_map.get(ext, 'application/octet-stream')
+
+    # Generate filename
+    title = call.title or f"Call_{call.id}"
+    # Sanitize filename
+    safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
+    filename = f"{safe_title}{ext}"
+
+    return FileResponse(
+        call.audio_file_path,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
 
 
 @router.post("/{call_id}/stop")
