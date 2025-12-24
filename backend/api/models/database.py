@@ -60,6 +60,9 @@ class CallSource(str, enum.Enum):
     teams = "teams"
     upload = "upload"
     telegram = "telegram"
+    google_doc = "google_doc"  # Transcript from Google Docs
+    google_drive = "google_drive"  # Media file from Google Drive
+    direct_url = "direct_url"  # Direct link to audio/video
 
 
 class CallStatus(str, enum.Enum):
