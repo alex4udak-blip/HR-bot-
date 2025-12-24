@@ -7,7 +7,7 @@ from ..database import get_db
 from ..models.database import (
     User, UserRole, Chat, DepartmentMember, DeptRole, OrgMember, SharedAccess,
     AnalysisHistory, AIConversation, Entity, EntityAIConversation, EntityAnalysis,
-    EntityTransfer, CallRecording, Invitation, CriteriaPreset
+    EntityTransfer, CallRecording, Invitation, CriteriaPreset, ReportSubscription
 )
 from ..models.schemas import UserCreate, UserUpdate, UserResponse
 from ..services.auth import get_superadmin, get_current_user, hash_password
@@ -294,11 +294,13 @@ async def delete_user(
     await db.execute(delete(AIConversation).where(AIConversation.user_id == user_id))
     await db.execute(delete(EntityAIConversation).where(EntityAIConversation.user_id == user_id))
     await db.execute(delete(EntityAnalysis).where(EntityAnalysis.user_id == user_id))
+    await db.execute(delete(ReportSubscription).where(ReportSubscription.user_id == user_id))
 
     # Nullify optional foreign keys
     await db.execute(update(Chat).where(Chat.owner_id == user_id).values(owner_id=None))
     await db.execute(update(CallRecording).where(CallRecording.owner_id == user_id).values(owner_id=None))
     await db.execute(update(Entity).where(Entity.created_by == user_id).values(created_by=None))
+    await db.execute(update(Entity).where(Entity.transferred_to_id == user_id).values(transferred_to_id=None))
     await db.execute(update(EntityTransfer).where(EntityTransfer.from_user_id == user_id).values(from_user_id=None))
     await db.execute(update(EntityTransfer).where(EntityTransfer.to_user_id == user_id).values(to_user_id=None))
     await db.execute(update(OrgMember).where(OrgMember.invited_by == user_id).values(invited_by=None))
