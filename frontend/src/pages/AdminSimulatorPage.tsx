@@ -123,6 +123,9 @@ export default function AdminSimulatorPage() {
   const [sandboxLoading, setSandboxLoading] = useState(false);
   const [sandboxError, setSandboxError] = useState<string | null>(null);
 
+  // Matrix mode state
+  const [matrixMode, setMatrixMode] = useState<'own' | 'dept' | 'shared_full' | 'shared_edit' | 'shared_view' | 'other_dept'>('own');
+
   // Состояние для тестирования сценариев
   const [scenario, setScenario] = useState({
     actorRole: 'member' as OrgRole,
@@ -419,25 +422,61 @@ export default function AdminSimulatorPage() {
             </p>
           </div>
 
+          {/* Переключатель режима матрицы */}
+          <div className="mb-4">
+            <label className="block text-sm text-white/60 mb-2">Режим доступа к ресурсу:</label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { id: 'own', label: 'Свои ресурсы', color: 'green' },
+                { id: 'dept', label: 'Ресурсы департамента (чужие)', color: 'cyan' },
+                { id: 'shared_full', label: 'Расшаренные (полный доступ)', color: 'blue' },
+                { id: 'shared_edit', label: 'Расшаренные (редактирование)', color: 'yellow' },
+                { id: 'shared_view', label: 'Расшаренные (только просмотр)', color: 'purple' },
+                { id: 'other_dept', label: 'Другой департамент (не расшарено)', color: 'red' },
+              ].map((mode) => (
+                <button
+                  key={mode.id}
+                  onClick={() => setMatrixMode(mode.id as typeof matrixMode)}
+                  className={clsx(
+                    'px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                    matrixMode === mode.id
+                      ? `bg-${mode.color}-500/30 text-${mode.color}-400 border border-${mode.color}-500/50`
+                      : 'bg-white/5 text-white/60 hover:bg-white/10 border border-white/10'
+                  )}
+                  style={matrixMode === mode.id ? {
+                    backgroundColor: mode.color === 'green' ? 'rgba(34, 197, 94, 0.3)' :
+                                    mode.color === 'cyan' ? 'rgba(6, 182, 212, 0.3)' :
+                                    mode.color === 'blue' ? 'rgba(59, 130, 246, 0.3)' :
+                                    mode.color === 'yellow' ? 'rgba(234, 179, 8, 0.3)' :
+                                    mode.color === 'purple' ? 'rgba(168, 85, 247, 0.3)' :
+                                    'rgba(239, 68, 68, 0.3)',
+                    color: mode.color === 'green' ? 'rgb(74, 222, 128)' :
+                           mode.color === 'cyan' ? 'rgb(34, 211, 238)' :
+                           mode.color === 'blue' ? 'rgb(96, 165, 250)' :
+                           mode.color === 'yellow' ? 'rgb(250, 204, 21)' :
+                           mode.color === 'purple' ? 'rgb(192, 132, 252)' :
+                           'rgb(248, 113, 113)',
+                    borderColor: mode.color === 'green' ? 'rgba(34, 197, 94, 0.5)' :
+                                 mode.color === 'cyan' ? 'rgba(6, 182, 212, 0.5)' :
+                                 mode.color === 'blue' ? 'rgba(59, 130, 246, 0.5)' :
+                                 mode.color === 'yellow' ? 'rgba(234, 179, 8, 0.5)' :
+                                 mode.color === 'purple' ? 'rgba(168, 85, 247, 0.5)' :
+                                 'rgba(239, 68, 68, 0.5)'
+                  } : undefined}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Легенда */}
           <div className="mb-4 flex items-center gap-4 text-sm">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center">
                 <Check size={16} className="text-green-400" />
               </div>
-              <span className="text-white/60">Свои ресурсы</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                <Check size={16} className="text-blue-400" />
-              </div>
-              <span className="text-white/60">Расшаренные (с полным доступом)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center">
-                <Check size={16} className="text-yellow-400" />
-              </div>
-              <span className="text-white/60">Департамент (только просмотр)</span>
+              <span className="text-white/60">Разрешено</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center">
@@ -473,35 +512,41 @@ export default function AdminSimulatorPage() {
                       </div>
                     </td>
                     {ROLES.map((role) => {
-                      const ownResource = checkPermission(role.id, action.id, true, false);
-                      const sharedFull = role.id !== 'superadmin' && role.id !== 'owner' && action.id !== 'transfer' && action.id !== 'delete' && checkPermission(role.id, action.id, false, true, 'full');
-                      const deptView = role.id === 'admin' && action.id === 'view';
+                      // Определяем доступ в зависимости от выбранного режима
+                      let allowed = false;
 
-                      let bgColor = 'bg-white/5';
-                      let iconColor = 'text-white/40';
-                      let icon = X;
-
-                      if (ownResource) {
-                        bgColor = 'bg-green-500/20';
-                        iconColor = 'text-green-400';
-                        icon = Check;
-                      } else if (sharedFull) {
-                        bgColor = 'bg-blue-500/20';
-                        iconColor = 'text-blue-400';
-                        icon = Check;
-                      } else if (deptView) {
-                        bgColor = 'bg-yellow-500/20';
-                        iconColor = 'text-yellow-400';
-                        icon = Check;
+                      if (matrixMode === 'own') {
+                        // Свои ресурсы - все могут делать всё со своими
+                        allowed = checkPermission(role.id, action.id, true, false, undefined, true);
+                      } else if (matrixMode === 'dept') {
+                        // Ресурсы департамента (чужие) - только для admin/sub_admin
+                        allowed = checkPermission(role.id, action.id, false, false, undefined, true);
+                      } else if (matrixMode === 'shared_full') {
+                        // Расшаренные с полным доступом
+                        allowed = checkPermission(role.id, action.id, false, true, 'full', false);
+                      } else if (matrixMode === 'shared_edit') {
+                        // Расшаренные с правами редактирования
+                        allowed = checkPermission(role.id, action.id, false, true, 'edit', false);
+                      } else if (matrixMode === 'shared_view') {
+                        // Расшаренные только для просмотра
+                        allowed = checkPermission(role.id, action.id, false, true, 'view', false);
+                      } else if (matrixMode === 'other_dept') {
+                        // Другой департамент, не расшарено
+                        allowed = checkPermission(role.id, action.id, false, false, undefined, false);
                       }
-
-                      const Icon = icon;
 
                       return (
                         <td key={role.id} className="py-4 px-4">
                           <div className="flex justify-center">
-                            <div className={clsx('w-8 h-8 rounded-lg flex items-center justify-center', bgColor)}>
-                              <Icon size={16} className={iconColor} />
+                            <div className={clsx(
+                              'w-8 h-8 rounded-lg flex items-center justify-center',
+                              allowed ? 'bg-green-500/20' : 'bg-white/5'
+                            )}>
+                              {allowed ? (
+                                <Check size={16} className="text-green-400" />
+                              ) : (
+                                <X size={16} className="text-white/40" />
+                              )}
                             </div>
                           </div>
                         </td>
