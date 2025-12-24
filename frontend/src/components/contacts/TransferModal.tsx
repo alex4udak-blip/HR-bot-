@@ -101,13 +101,13 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
                   <User size={14} />
                   Контакт: <span className="text-white">{entity.name}</span>
                 </li>
-                {entity.chats_count > 0 && (
+                {(entity.chats_count ?? 0) > 0 && (
                   <li className="flex items-center gap-2">
                     <MessageSquare size={14} />
                     Чатов: <span className="text-white">{entity.chats_count}</span>
                   </li>
                 )}
-                {entity.calls_count > 0 && (
+                {(entity.calls_count ?? 0) > 0 && (
                   <li className="flex items-center gap-2">
                     <Phone size={14} />
                     Звонков: <span className="text-white">{entity.calls_count}</span>
