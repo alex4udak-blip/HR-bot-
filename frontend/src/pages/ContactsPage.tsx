@@ -26,6 +26,7 @@ import {
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
+import { useAuthStore } from '@/stores/authStore';
 import type { EntityType, Entity } from '@/types';
 import { ENTITY_TYPES, STATUS_LABELS, STATUS_COLORS } from '@/types';
 import type { OwnershipFilter, Department } from '@/services/api';
@@ -72,6 +73,7 @@ export default function ContactsPage() {
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [selectedEntityForTransfer, setSelectedEntityForTransfer] = useState<Entity | null>(null);
 
+  const { user } = useAuthStore();
   const {
     entities,
     currentEntity,
@@ -81,6 +83,35 @@ export default function ContactsPage() {
     setFilters,
     clearCurrentEntity
   } = useEntityStore();
+
+  // Helper functions to check permissions
+  const canEdit = (entity: Entity) => {
+    if (!user) return false;
+    if (user.role === 'superadmin') return true;
+    if (entity.is_mine) return true;
+    return false; // Conservative: shared entities are view-only unless we know access_level
+  };
+
+  const canDelete = (entity: Entity) => {
+    if (!user) return false;
+    if (user.role === 'superadmin') return true;
+    if (entity.is_mine) return true;
+    return false; // Only owner or superadmin can delete
+  };
+
+  const canShare = (entity: Entity) => {
+    if (!user) return false;
+    if (user.role === 'superadmin') return true;
+    if (entity.is_mine) return true;
+    return false; // Only owner or superadmin can share
+  };
+
+  const canTransfer = (entity: Entity) => {
+    if (!user) return false;
+    if (user.role === 'superadmin') return true;
+    if (entity.is_mine) return true;
+    return false; // Only owner or superadmin can transfer
+  };
 
   // Load departments on mount
   useEffect(() => {
@@ -370,36 +401,42 @@ export default function ContactsPage() {
 
                     {/* Quick Actions */}
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleTransfer(entity);
-                        }}
-                        className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
-                        title="Передать"
-                      >
-                        <ArrowRightLeft size={14} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEdit(entity);
-                        }}
-                        className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
-                        title="Редактировать"
-                      >
-                        <Edit size={14} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(entity);
-                        }}
-                        className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400"
-                        title="Удалить"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {canTransfer(entity) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleTransfer(entity);
+                          }}
+                          className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
+                          title="Передать"
+                        >
+                          <ArrowRightLeft size={14} />
+                        </button>
+                      )}
+                      {canEdit(entity) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEdit(entity);
+                          }}
+                          className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
+                          title="Редактировать"
+                        >
+                          <Edit size={14} />
+                        </button>
+                      )}
+                      {canDelete(entity) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(entity);
+                          }}
+                          className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400"
+                          title="Удалить"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </motion.div>
@@ -447,27 +484,33 @@ export default function ContactsPage() {
                   <Bot size={16} />
                   AI
                 </button>
-                <button
-                  onClick={() => setShowShareModal(true)}
-                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
-                >
-                  <Share2 size={16} />
-                  Share
-                </button>
-                <button
-                  onClick={() => handleTransfer(currentEntity as Entity)}
-                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
-                >
-                  <ArrowRightLeft size={16} />
-                  Transfer
-                </button>
-                <button
-                  onClick={() => handleEdit(currentEntity as Entity)}
-                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
-                >
-                  <Edit size={16} />
-                  Edit
-                </button>
+                {canShare(currentEntity as Entity) && (
+                  <button
+                    onClick={() => setShowShareModal(true)}
+                    className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
+                  >
+                    <Share2 size={16} />
+                    Share
+                  </button>
+                )}
+                {canTransfer(currentEntity as Entity) && (
+                  <button
+                    onClick={() => handleTransfer(currentEntity as Entity)}
+                    className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
+                  >
+                    <ArrowRightLeft size={16} />
+                    Transfer
+                  </button>
+                )}
+                {canEdit(currentEntity as Entity) && (
+                  <button
+                    onClick={() => handleEdit(currentEntity as Entity)}
+                    className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
+                  >
+                    <Edit size={16} />
+                    Edit
+                  </button>
+                )}
               </div>
             </div>
 
@@ -585,6 +628,7 @@ export default function ContactsPage() {
           resourceType="entity"
           resourceId={currentEntity.id}
           resourceName={currentEntity.name}
+          canManageAccess={canShare(currentEntity as Entity)}
         />
       )}
     </div>
