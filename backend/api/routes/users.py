@@ -288,16 +288,23 @@ async def delete_user(
     logger = logging.getLogger("hr-analyzer.users")
 
     try:
-        # Delete records where user is required (NOT NULL)
-        await db.execute(delete(DepartmentMember).where(DepartmentMember.user_id == user_id))
-        await db.execute(delete(OrgMember).where(OrgMember.user_id == user_id))
-        await db.execute(delete(SharedAccess).where(SharedAccess.shared_with_id == user_id))
-        await db.execute(delete(SharedAccess).where(SharedAccess.shared_by_id == user_id))
-        await db.execute(delete(AnalysisHistory).where(AnalysisHistory.user_id == user_id))
-        await db.execute(delete(AIConversation).where(AIConversation.user_id == user_id))
-        await db.execute(delete(EntityAIConversation).where(EntityAIConversation.user_id == user_id))
-        await db.execute(delete(EntityAnalysis).where(EntityAnalysis.user_id == user_id))
-        await db.execute(delete(ReportSubscription).where(ReportSubscription.user_id == user_id))
+        # Delete records where user is required (NOT NULL) - use raw SQL for reliability
+        delete_queries = [
+            "DELETE FROM department_members WHERE user_id = :user_id",
+            "DELETE FROM org_members WHERE user_id = :user_id",
+            "DELETE FROM shared_access WHERE shared_with_id = :user_id OR shared_by_id = :user_id",
+            "DELETE FROM analysis_history WHERE user_id = :user_id",
+            "DELETE FROM ai_conversations WHERE user_id = :user_id",
+            "DELETE FROM entity_ai_conversations WHERE user_id = :user_id",
+            "DELETE FROM entity_analyses WHERE user_id = :user_id",
+            "DELETE FROM report_subscriptions WHERE user_id = :user_id",
+        ]
+
+        for query in delete_queries:
+            try:
+                await db.execute(text(query), {"user_id": user_id})
+            except Exception as qe:
+                logger.debug(f"Delete query skipped: {qe}")
 
         # Nullify optional foreign keys using raw SQL (handles missing columns gracefully)
         nullify_queries = [
@@ -323,7 +330,11 @@ async def delete_user(
                 # Column might not exist yet, skip
                 logger.debug(f"Skipping query (column may not exist): {qe}")
 
-        await db.delete(user)
+        # Flush all changes to ensure FK cleanup is applied
+        await db.flush()
+
+        # Delete user using raw SQL to avoid ORM session issues
+        await db.execute(text("DELETE FROM users WHERE id = :user_id"), {"user_id": user_id})
         await db.commit()
         logger.info(f"Successfully deleted user {user_id}")
     except Exception as e:
