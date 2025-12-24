@@ -283,7 +283,7 @@ async def delete_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     # Delete/nullify all related records first
-    from sqlalchemy import update, text
+    from sqlalchemy import text
     import logging
     logger = logging.getLogger("hr-analyzer.users")
 
@@ -299,25 +299,29 @@ async def delete_user(
         await db.execute(delete(EntityAnalysis).where(EntityAnalysis.user_id == user_id))
         await db.execute(delete(ReportSubscription).where(ReportSubscription.user_id == user_id))
 
-        # Nullify optional foreign keys
-        await db.execute(update(Chat).where(Chat.owner_id == user_id).values(owner_id=None))
-        await db.execute(update(CallRecording).where(CallRecording.owner_id == user_id).values(owner_id=None))
-        await db.execute(update(Entity).where(Entity.created_by == user_id).values(created_by=None))
-        await db.execute(update(Entity).where(Entity.transferred_to_id == user_id).values(transferred_to_id=None))
-        await db.execute(update(EntityTransfer).where(EntityTransfer.from_user_id == user_id).values(from_user_id=None))
-        await db.execute(update(EntityTransfer).where(EntityTransfer.to_user_id == user_id).values(to_user_id=None))
-        await db.execute(update(OrgMember).where(OrgMember.invited_by == user_id).values(invited_by=None))
-        await db.execute(update(Invitation).where(Invitation.invited_by_id == user_id).values(invited_by_id=None))
-        await db.execute(update(Invitation).where(Invitation.used_by_id == user_id).values(used_by_id=None))
-        await db.execute(update(CriteriaPreset).where(CriteriaPreset.created_by == user_id).values(created_by=None))
-
-        # Try to find any remaining references using raw SQL
-        # This catches any FK we might have missed
-        await db.execute(text("""
-            UPDATE messages SET sender_telegram_id = NULL WHERE sender_telegram_id IN (
+        # Nullify optional foreign keys using raw SQL (handles missing columns gracefully)
+        nullify_queries = [
+            "UPDATE chats SET owner_id = NULL WHERE owner_id = :user_id",
+            "UPDATE call_recordings SET owner_id = NULL WHERE owner_id = :user_id",
+            "UPDATE entities SET created_by = NULL WHERE created_by = :user_id",
+            "UPDATE entities SET transferred_to_id = NULL WHERE transferred_to_id = :user_id",
+            "UPDATE entity_transfers SET from_user_id = NULL WHERE from_user_id = :user_id",
+            "UPDATE entity_transfers SET to_user_id = NULL WHERE to_user_id = :user_id",
+            "UPDATE org_members SET invited_by = NULL WHERE invited_by = :user_id",
+            "UPDATE invitations SET invited_by_id = NULL WHERE invited_by_id = :user_id",
+            "UPDATE invitations SET used_by_id = NULL WHERE used_by_id = :user_id",
+            "UPDATE criteria_presets SET created_by = NULL WHERE created_by = :user_id",
+            """UPDATE messages SET sender_telegram_id = NULL WHERE sender_telegram_id IN (
                 SELECT telegram_id FROM users WHERE id = :user_id
-            )
-        """), {"user_id": user_id})
+            )""",
+        ]
+
+        for query in nullify_queries:
+            try:
+                await db.execute(text(query), {"user_id": user_id})
+            except Exception as qe:
+                # Column might not exist yet, skip
+                logger.debug(f"Skipping query (column may not exist): {qe}")
 
         await db.delete(user)
         await db.commit()
