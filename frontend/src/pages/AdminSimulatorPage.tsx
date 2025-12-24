@@ -26,11 +26,10 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuthStore } from '@/stores/authStore';
-import { apiClient } from '@/lib/api';
+import api from '@/services/api';
 
 // Типы ролей
 type OrgRole = 'superadmin' | 'owner' | 'admin' | 'member';
-type DeptRole = 'lead' | 'sub_admin' | 'member';
 type ResourceType = 'entity' | 'chat' | 'call';
 type ActionType = 'view' | 'edit' | 'delete' | 'share' | 'transfer';
 type AccessLevel = 'view' | 'edit' | 'full';
@@ -110,8 +109,7 @@ interface SandboxStatus {
 }
 
 export default function AdminSimulatorPage() {
-  const { user, isSuperAdmin } = useAuthStore();
-  const [selectedRole, setSelectedRole] = useState<OrgRole>('member');
+  const { isSuperAdmin } = useAuthStore();
 
   // Sandbox state
   const [sandboxStatus, setSandboxStatus] = useState<SandboxStatus>({ exists: false });
@@ -140,7 +138,7 @@ export default function AdminSimulatorPage() {
   // Функции для работы с sandbox
   const fetchSandboxStatus = async () => {
     try {
-      const response = await apiClient.get('/api/admin/sandbox/status');
+      const response = await api.get('/api/admin/sandbox/status');
       setSandboxStatus(response.data);
       setSandboxError(null);
     } catch (error: any) {
@@ -153,7 +151,7 @@ export default function AdminSimulatorPage() {
     setSandboxLoading(true);
     setSandboxError(null);
     try {
-      const response = await apiClient.post('/api/admin/sandbox/create');
+      const response = await api.post('/api/admin/sandbox/create');
       setSandboxStatus(response.data);
     } catch (error: any) {
       console.error('Error creating sandbox:', error);
@@ -170,7 +168,7 @@ export default function AdminSimulatorPage() {
     setSandboxLoading(true);
     setSandboxError(null);
     try {
-      await apiClient.delete('/api/admin/sandbox/delete');
+      await api.delete('/api/admin/sandbox/delete');
       setSandboxStatus({ exists: false });
     } catch (error: any) {
       console.error('Error deleting sandbox:', error);
@@ -184,7 +182,7 @@ export default function AdminSimulatorPage() {
     setSandboxLoading(true);
     setSandboxError(null);
     try {
-      await apiClient.post(`/api/admin/sandbox/switch/${email}`);
+      await api.post(`/api/admin/sandbox/switch/${email}`);
       // Перезагружаем страницу для применения новой сессии
       window.location.href = '/';
     } catch (error: any) {
@@ -351,7 +349,7 @@ export default function AdminSimulatorPage() {
       else if (resourceIsShared) {
         if (action === 'view') reason = 'Ресурс расшарен вам';
         else if (action === 'edit') reason = `Уровень доступа "${ACCESS_LEVELS.find(l => l.id === resourceAccessLevel)?.name}" позволяет редактирование`;
-        else if (action === 'share') reason = 'Уровень доступа "Полный доступ" позволяет расшаривание';
+        else if ((action as ActionType) === 'share') reason = 'Уровень доступа "Полный доступ" позволяет расшаривание';
       } else if (actorRole === 'admin' && action === 'view' && actorSameDepartment) {
         reason = 'Админ видит все ресурсы своего департамента';
       }
@@ -368,7 +366,7 @@ export default function AdminSimulatorPage() {
         reason = 'Нельзя передавать чужие ресурсы';
       } else if (resourceIsShared && action === 'edit') {
         reason = `Уровень доступа "${ACCESS_LEVELS.find(l => l.id === resourceAccessLevel)?.name}" не позволяет редактирование`;
-      } else if (resourceIsShared && action === 'share' && resourceAccessLevel !== 'full') {
+      } else if (resourceIsShared && (action as ActionType) === 'share' && resourceAccessLevel !== 'full') {
         reason = 'Только "Полный доступ" позволяет расшаривание';
       } else if (actorRole === 'admin' && !actorSameDepartment) {
         reason = 'Ресурс находится в другом департаменте';

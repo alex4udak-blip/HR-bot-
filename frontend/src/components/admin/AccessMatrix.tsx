@@ -1,6 +1,6 @@
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Check, X, AlertCircle, Info } from 'lucide-react';
-import { useState } from 'react';
 import clsx from 'clsx';
 
 // Role type definition
@@ -440,7 +440,7 @@ export default function AccessMatrix() {
           {/* Table Body */}
           <tbody>
             {PERMISSIONS_MATRIX.map((category, categoryIdx) => (
-              <motion.Fragment key={category.category}>
+              <React.Fragment key={category.category}>
                 {/* Category Header */}
                 <tr className="bg-white/5">
                   <td
@@ -488,7 +488,7 @@ export default function AccessMatrix() {
                     ))}
                   </motion.tr>
                 ))}
-              </motion.Fragment>
+              </React.Fragment>
             ))}
           </tbody>
         </table>
