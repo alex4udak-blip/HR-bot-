@@ -253,18 +253,20 @@ async def share_resource(
         share = existing
     else:
         # Verify both users are in the same organization (only for new shares)
-        current_user_org = await get_user_org(current_user, db)
-        if not current_user_org:
-            raise HTTPException(status_code=403, detail="You don't belong to an organization")
+        # SUPERADMIN can share across organizations
+        if current_user.role != UserRole.SUPERADMIN:
+            current_user_org = await get_user_org(current_user, db)
+            if not current_user_org:
+                raise HTTPException(status_code=403, detail="You don't belong to an organization")
 
-        target_user_org_result = await db.execute(
-            select(OrgMember).where(
-                OrgMember.user_id == data.shared_with_id,
-                OrgMember.org_id == current_user_org.id
+            target_user_org_result = await db.execute(
+                select(OrgMember).where(
+                    OrgMember.user_id == data.shared_with_id,
+                    OrgMember.org_id == current_user_org.id
+                )
             )
-        )
-        if not target_user_org_result.scalar_one_or_none():
-            raise HTTPException(status_code=403, detail="Cannot share with users outside your organization")
+            if not target_user_org_result.scalar_one_or_none():
+                raise HTTPException(status_code=403, detail="Cannot share with users outside your organization")
 
         # Create new share
         share = SharedAccess(

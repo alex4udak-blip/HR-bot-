@@ -557,7 +557,15 @@ class TestUploadCall:
         self, client, admin_user, admin_token, entity, get_auth_headers, org_owner
     ):
         """Test uploading call with entity link."""
-        with patch('api.routes.calls.aiofiles.open', new_callable=AsyncMock):
+        # Create proper async context manager mock
+        mock_file = AsyncMock()
+        mock_file.write = AsyncMock()
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_file)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        with patch('api.routes.calls.aiofiles.open', return_value=mock_cm):
             file_content = b"fake audio content"
             files = {"file": ("test.mp3", io.BytesIO(file_content), "audio/mpeg")}
 
@@ -629,7 +637,15 @@ class TestUploadCall:
             ("test.ogg", "audio/ogg"),
         ]
 
-        with patch('api.routes.calls.aiofiles.open', new_callable=AsyncMock):
+        # Create proper async context manager mock
+        mock_file = AsyncMock()
+        mock_file.write = AsyncMock()
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_file)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        with patch('api.routes.calls.aiofiles.open', return_value=mock_cm):
             for filename, mimetype in formats:
                 file_content = b"fake audio"
                 files = {"file": (filename, io.BytesIO(file_content), mimetype)}
@@ -651,13 +667,12 @@ class TestStartBot:
     """Test starting bot recording for Meet/Zoom/Teams."""
 
     @pytest.mark.asyncio
-    @patch('api.routes.calls.call_recorder.start_recording')
     async def test_start_bot_google_meet(
-        self, mock_start_recording, client, admin_user, admin_token,
-        organization, get_auth_headers, org_owner
+        self, client, admin_user, admin_token,
+        organization, get_auth_headers, org_owner, mock_call_recorder_service
     ):
         """Test starting bot for Google Meet."""
-        mock_start_recording.return_value = {"success": True}
+        mock_call_recorder_service.start_recording.return_value = {"success": True}
 
         data = {
             "source_url": "https://meet.google.com/abc-defg-hij",
@@ -676,13 +691,12 @@ class TestStartBot:
         assert response_data["status"] == CallStatus.recording.value
 
     @pytest.mark.asyncio
-    @patch('api.routes.calls.call_recorder.start_recording')
     async def test_start_bot_zoom(
-        self, mock_start_recording, client, admin_user, admin_token,
-        get_auth_headers, org_owner
+        self, client, admin_user, admin_token,
+        get_auth_headers, org_owner, mock_call_recorder_service
     ):
         """Test starting bot for Zoom."""
-        mock_start_recording.return_value = {"success": True}
+        mock_call_recorder_service.start_recording.return_value = {"success": True}
 
         data = {
             "source_url": "https://zoom.us/j/123456789",
@@ -698,13 +712,12 @@ class TestStartBot:
         assert response.status_code == 200
 
     @pytest.mark.asyncio
-    @patch('api.routes.calls.call_recorder.start_recording')
     async def test_start_bot_teams(
-        self, mock_start_recording, client, admin_user, admin_token,
-        get_auth_headers, org_owner
+        self, client, admin_user, admin_token,
+        get_auth_headers, org_owner, mock_call_recorder_service
     ):
         """Test starting bot for Microsoft Teams."""
-        mock_start_recording.return_value = {"success": True}
+        mock_call_recorder_service.start_recording.return_value = {"success": True}
 
         data = {
             "source_url": "https://teams.microsoft.com/l/meetup-join/...",
@@ -739,13 +752,12 @@ class TestStartBot:
         assert "Unsupported meeting URL" in response.json()["detail"]
 
     @pytest.mark.asyncio
-    @patch('api.routes.calls.call_recorder.start_recording')
     async def test_start_bot_with_entity(
-        self, mock_start_recording, client, admin_user, admin_token,
-        entity, get_auth_headers, org_owner
+        self, client, admin_user, admin_token,
+        entity, get_auth_headers, org_owner, mock_call_recorder_service
     ):
         """Test starting bot with entity link."""
-        mock_start_recording.return_value = {"success": True}
+        mock_call_recorder_service.start_recording.return_value = {"success": True}
 
         data = {
             "source_url": "https://meet.google.com/abc-defg-hij",
@@ -763,13 +775,12 @@ class TestStartBot:
         assert response.status_code == 200
 
     @pytest.mark.asyncio
-    @patch('api.routes.calls.call_recorder.start_recording')
     async def test_start_bot_fireflies_error(
-        self, mock_start_recording, client, admin_user, admin_token,
-        get_auth_headers, org_owner
+        self, client, admin_user, admin_token,
+        get_auth_headers, org_owner, mock_call_recorder_service
     ):
         """Test handling Fireflies API error."""
-        mock_start_recording.return_value = {
+        mock_call_recorder_service.start_recording.return_value = {
             "success": False,
             "message": "Invalid meeting URL"
         }
@@ -1170,17 +1181,14 @@ class TestStopRecording:
     """Test stopping call recordings."""
 
     @pytest.mark.asyncio
-    @patch('api.routes.calls.call_recorder.stop_recording')
     async def test_stop_recording_success(
-        self, mock_stop, db_session, client, admin_user, admin_token,
-        call_recording, get_auth_headers, org_owner
+        self, db_session, client, admin_user, admin_token,
+        call_recording, get_auth_headers, org_owner, mock_call_recorder_service
     ):
         """Test successfully stopping a recording."""
         # Set call to recording status
         call_recording.status = CallStatus.recording
         await db_session.commit()
-
-        mock_stop.return_value = None
 
         response = await client.post(
             f"/api/calls/{call_recording.id}/stop",
@@ -1192,7 +1200,7 @@ class TestStopRecording:
         assert data["success"] is True
 
         # Verify stop was called
-        mock_stop.assert_called_once_with(call_recording.id)
+        mock_call_recorder_service.stop_recording.assert_called_once_with(call_recording.id)
 
     @pytest.mark.asyncio
     async def test_stop_recording_not_recording(

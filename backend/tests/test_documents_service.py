@@ -891,6 +891,9 @@ class TestImageOCR:
     @pytest.mark.asyncio
     async def test_convert_heic_to_jpeg(self, parser):
         """Test HEIC conversion to JPEG before OCR."""
+        # Skip test if pillow_heif is not installed (optional dependency)
+        pytest.importorskip('pillow_heif')
+
         heic_bytes = b"fake heic data"
 
         # Mock PIL Image
@@ -1120,6 +1123,9 @@ Content-Type: text/html
     @pytest.mark.asyncio
     async def test_parse_outlook_msg_success(self, parser):
         """Test successful Outlook MSG parsing."""
+        # Skip test if extract_msg is not installed (optional dependency)
+        extract_msg = pytest.importorskip('extract_msg')
+
         mock_msg = Mock()
         mock_msg.sender = "sender@test.com"
         mock_msg.to = "recipient@test.com"
@@ -1142,6 +1148,9 @@ Content-Type: text/html
     @pytest.mark.asyncio
     async def test_parse_msg_error_handling(self, parser):
         """Test MSG parsing error handling."""
+        # Skip test if extract_msg is not installed (optional dependency)
+        extract_msg = pytest.importorskip('extract_msg')
+
         with patch('extract_msg.Message', side_effect=Exception("Parse error")), \
              patch('builtins.open', mock_open()), \
              patch('os.path.exists', return_value=True), \
@@ -1293,9 +1302,10 @@ class TestResourceManagement:
         def track_remove(path):
             removed_files.append(path)
 
+        # Mock os.path.exists to return True so cleanup code runs
         with patch('asyncio.create_subprocess_exec', return_value=mock_process), \
              patch('builtins.open', mock_open()), \
-             patch('os.path.exists', return_value=False), \
+             patch('os.path.exists', return_value=True), \
              patch('os.remove', side_effect=track_remove):
 
             await parser.parse(b"doc content", "test.doc")

@@ -110,6 +110,12 @@ async def require_org_admin(
 ) -> tuple:
     """Require user to be org admin or owner."""
     user = await db.merge(user)
+
+    # Superadmin bypasses org role checks
+    if user.role == UserRole.SUPERADMIN:
+        # Return a special role marker for superadmin
+        return user, org, OrgRole.owner
+
     role = await get_user_org_role(user, org.id, db)
     if role not in (OrgRole.owner, OrgRole.admin):
         raise HTTPException(status_code=403, detail="Admin access required")

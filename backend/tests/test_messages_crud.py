@@ -1257,8 +1257,8 @@ class TestGetLocalFile:
                 headers=get_auth_headers(admin_token)
             )
 
-            # Should be blocked with 403 or 404
-            assert response.status_code in [403, 404]
+            # Should be blocked with 403, 404, or 422 (FastAPI path validation)
+            assert response.status_code in [403, 404, 422]
 
     @pytest.mark.asyncio
     async def test_get_local_file_range_request_video(

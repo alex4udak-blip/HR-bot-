@@ -18,7 +18,8 @@ from sqlalchemy import select, func
 
 from api.models.database import (
     User, Organization, OrgMember, OrgRole, UserRole,
-    Entity, Chat, CallRecording, Department, DepartmentMember, DeptRole
+    Entity, EntityType, Chat, CallRecording, CallSource,
+    Department, DepartmentMember, DeptRole
 )
 
 
@@ -115,21 +116,14 @@ class TestGetCurrentOrganization:
         org_owner: OrgMember, get_auth_headers
     ):
         """Test that organization stats (counts) are returned correctly."""
-        # Create some data
-        member = OrgMember(
-            org_id=organization.id,
-            user_id=admin_user.id,
-            role=OrgRole.member,
-            created_at=datetime.utcnow()
-        )
-        db_session.add(member)
-
+        # Create some data (org_owner already exists as a member)
         entity = Entity(
             org_id=organization.id,
             department_id=department.id,
             created_by=admin_user.id,
             name="Test Entity",
             email="test@example.com",
+            type=EntityType.candidate,
             created_at=datetime.utcnow()
         )
         db_session.add(entity)
@@ -148,6 +142,7 @@ class TestGetCurrentOrganization:
             owner_id=admin_user.id,
             title="Test Call",
             duration_seconds=300,
+            source_type=CallSource.upload,
             created_at=datetime.utcnow()
         )
         db_session.add(call)
@@ -1511,7 +1506,8 @@ class TestRemoveMember:
             department_id=department.id,
             created_by=new_user.id,
             name="User Entity",
-            email="entity@test.com"
+            email="entity@test.com",
+            type=EntityType.candidate
         )
         db_session.add(entity)
 

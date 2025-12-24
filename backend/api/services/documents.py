@@ -579,13 +579,20 @@ class DocumentParser:
                         content = zf.read(name)
                         # Recursively parse
                         result = asyncio.run(self.parse(content, name))
+
+                        # Add to extracted_files regardless of content
+                        file_info = {
+                            "name": name,
+                            "status": result.status,
+                            "size": len(content)
+                        }
+                        if result.error:
+                            file_info["error"] = result.error
+                        extracted_files.append(file_info)
+
+                        # Only add to content if there's actual content
                         if result.content:
                             all_content.append(f"=== {name} ===\n{result.content}")
-                            extracted_files.append({
-                                "name": name,
-                                "status": result.status,
-                                "size": len(content)
-                            })
                     except Exception as e:
                         extracted_files.append({
                             "name": name,
