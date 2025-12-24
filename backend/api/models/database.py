@@ -15,6 +15,7 @@ class Base(DeclarativeBase):
 class UserRole(str, enum.Enum):
     SUPERADMIN = "superadmin"
     ADMIN = "admin"
+    SUB_ADMIN = "sub_admin"
 
 
 class ChatType(str, enum.Enum):
