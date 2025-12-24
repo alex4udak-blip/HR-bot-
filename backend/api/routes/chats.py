@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from pathlib import Path
+from pydantic import BaseModel
 import json
 import hashlib
 import zipfile
@@ -26,7 +27,7 @@ from sqlalchemy.orm import selectinload
 from ..database import get_db
 from ..models.database import User, UserRole, Chat, Message, ChatCriteria, AIConversation, AnalysisHistory, Entity, OrgRole, DepartmentMember, DeptRole, SharedAccess, ResourceType, AccessLevel
 from ..models.schemas import ChatResponse, ChatUpdate, ChatTypeConfig
-from ..services.auth import get_current_user, get_user_org, get_user_org_role
+from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to
 from ..services.chat_types import (
     get_all_chat_types, get_chat_type_config, get_quick_actions,
     get_suggested_questions, get_default_criteria
@@ -1819,98 +1820,6 @@ async def cleanup_bad_import(
         "deleted": deleted_count,
         "mode": mode,
     }
-
-
-async def can_share_to(
-    from_user: User,
-    to_user: User,
-    from_user_org_id: int,
-    db: AsyncSession
-) -> bool:
-    """
-    Check if from_user can share resources with to_user.
-
-    Logic:
-    - MEMBER → only within their department
-    - ADMIN → their department + admins of other departments + OWNER/SUPERADMIN
-    - OWNER → anyone in organization
-    - SUPERADMIN → anyone
-    """
-    # SUPERADMIN can share with anyone
-    if from_user.role == UserRole.SUPERADMIN:
-        return True
-
-    # Get from_user's role in the organization
-    from_user_role = await get_user_org_role(from_user, from_user_org_id, db)
-
-    # OWNER can share with anyone in their organization
-    if from_user_role == OrgRole.owner:
-        # Check that to_user is in the same organization
-        to_user_org = await get_user_org(to_user, db)
-        return to_user_org and to_user_org.id == from_user_org_id
-
-    # Get to_user's role in the organization
-    to_user_org_role = await get_user_org_role(to_user, from_user_org_id, db)
-
-    # If to_user is not in the organization, cannot share
-    if to_user_org_role is None:
-        return False
-
-    # ADMIN can share with:
-    # 1. Their department members
-    # 2. Admins of other departments
-    # 3. OWNER/SUPERADMIN
-    if from_user_role == OrgRole.admin:
-        # Can share with OWNER or SUPERADMIN
-        if to_user_org_role == OrgRole.owner or to_user.role == UserRole.SUPERADMIN:
-            return True
-
-        # Can share with other admins
-        if to_user_org_role == OrgRole.admin:
-            return True
-
-        # Can share within their departments
-        # Get from_user's departments
-        from_depts_result = await db.execute(
-            select(DepartmentMember.department_id).where(
-                DepartmentMember.user_id == from_user.id
-            )
-        )
-        from_dept_ids = set(from_depts_result.scalars().all())
-
-        # Get to_user's departments
-        to_depts_result = await db.execute(
-            select(DepartmentMember.department_id).where(
-                DepartmentMember.user_id == to_user.id
-            )
-        )
-        to_dept_ids = set(to_depts_result.scalars().all())
-
-        # Check if they share at least one department
-        return bool(from_dept_ids & to_dept_ids)
-
-    # MEMBER can only share within their department
-    if from_user_role == OrgRole.member:
-        # Get from_user's departments
-        from_depts_result = await db.execute(
-            select(DepartmentMember.department_id).where(
-                DepartmentMember.user_id == from_user.id
-            )
-        )
-        from_dept_ids = set(from_depts_result.scalars().all())
-
-        # Get to_user's departments
-        to_depts_result = await db.execute(
-            select(DepartmentMember.department_id).where(
-                DepartmentMember.user_id == to_user.id
-            )
-        )
-        to_dept_ids = set(to_depts_result.scalars().all())
-
-        # Can only share if they are in the same department
-        return bool(from_dept_ids & to_dept_ids)
-
-    return False
 
 
 @router.post("/{chat_id}/share")

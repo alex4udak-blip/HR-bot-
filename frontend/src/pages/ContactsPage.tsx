@@ -541,7 +541,7 @@ export default function ContactsPage() {
                     className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
                   >
                     <Share2 size={16} />
-                    Share
+                    Поделиться
                   </button>
                 )}
                 {canTransfer(currentEntity as Entity) && (
@@ -550,7 +550,7 @@ export default function ContactsPage() {
                     className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
                   >
                     <ArrowRightLeft size={16} />
-                    Transfer
+                    Передать
                   </button>
                 )}
                 {canEdit(currentEntity as Entity) && (
@@ -559,7 +559,7 @@ export default function ContactsPage() {
                     className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
                   >
                     <Edit size={16} />
-                    Edit
+                    Редактировать
                   </button>
                 )}
               </div>
@@ -644,7 +644,7 @@ export default function ContactsPage() {
             onSuccess={(entity) => {
               setShowCreateModal(false);
               setEditingEntity(null);
-              toast.success(editingEntity ? 'Contact updated' : 'Contact created');
+              toast.success(editingEntity ? 'Контакт обновлён' : 'Контакт создан');
               if (!editingEntity) {
                 navigate(`/contacts/${entity.id}`);
               }
@@ -665,7 +665,7 @@ export default function ContactsPage() {
             onSuccess={() => {
               setShowTransferModal(false);
               setSelectedEntityForTransfer(null);
-              toast.success('Contact transferred');
+              toast.success('Контакт передан');
             }}
           />
         )}

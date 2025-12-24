@@ -75,40 +75,53 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   // Check if current user can share to target user
+  // Logic mirrors backend auth.py can_share_to()
   canShareTo: (targetUserId: number, targetUserRole?: string, targetDepartmentId?: number) => {
-    const { user, isSuperAdmin, isOwner, isDepartmentAdmin, isMember } = get();
+    const { user, isSuperAdmin, isOwner } = get();
     if (!user) return false;
 
     // Can't share to yourself
     if (user.id === targetUserId) return false;
 
-    // SUPERADMIN can share to anyone
+    // 1. SUPERADMIN can share to anyone
     if (isSuperAdmin()) return true;
 
-    // OWNER can share to anyone
+    // 2. OWNER can share to anyone in organization
     if (isOwner()) return true;
 
-    // Department ADMIN/SUB_ADMIN can share to:
-    // - Other admins (for collaboration)
-    // - Members in their department
-    if (isDepartmentAdmin()) {
-      // Can share to other department admins
-      if (targetUserRole === 'lead' || targetUserRole === 'sub_admin') return true;
+    // Determine if target is OWNER or SUPERADMIN
+    const targetIsOwner = targetUserRole === 'owner';
+    const targetIsSuperAdmin = targetUserRole === 'superadmin';
+
+    // Determine if target is department admin (lead or sub_admin)
+    const targetIsDeptAdmin = targetUserRole === 'lead' || targetUserRole === 'sub_admin';
+
+    // Determine if current user is department admin
+    const currentUserIsDeptAdmin = user.department_role === 'lead' || user.department_role === 'sub_admin';
+
+    // 3. ADMIN/SUB_ADMIN (department_role === 'lead' or 'sub_admin') can share to:
+    //    - OWNER and SUPERADMIN
+    //    - Other ADMIN/SUB_ADMIN (any department)
+    //    - Members in their department
+    if (currentUserIsDeptAdmin) {
+      // Can share to OWNER or SUPERADMIN
+      if (targetIsOwner || targetIsSuperAdmin) return true;
+
+      // Can share to other department admins (any department)
+      if (targetIsDeptAdmin) return true;
+
       // Can share to members in same department
       if (targetDepartmentId && user.department_id && targetDepartmentId === user.department_id) {
         return true;
       }
+
       return false;
     }
 
-    // MEMBER can only share to colleagues in same department
-    if (isMember()) {
-      return targetDepartmentId !== undefined &&
-             user.department_id !== undefined &&
-             targetDepartmentId === user.department_id;
-    }
-
-    return false;
+    // 4. MEMBER can only share within their department
+    return targetDepartmentId !== undefined &&
+           user.department_id !== undefined &&
+           targetDepartmentId === user.department_id;
   },
 
   // Check if current user can delete target user
