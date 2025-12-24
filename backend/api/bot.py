@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from .config import settings
-from .models.database import Base, User, Chat, Message, ChatType
+from .models.database import Base, User, Chat, Message, ChatType, OrgMember
 from .services.transcription import transcription_service
 from .services.documents import document_parser
 
@@ -56,7 +56,7 @@ async def find_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> U
     return result.scalar_one_or_none()
 
 
-async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, owner_id: int | None) -> Chat:
+async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, owner_id: int | None, org_id: int | None = None) -> Chat:
     """Get existing chat or create new one. Restores soft-deleted chats."""
     from sqlalchemy.exc import IntegrityError
 
@@ -81,6 +81,9 @@ async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, o
         if owner_id and not chat.owner_id:
             chat.owner_id = owner_id
             updated = True
+        if org_id and not chat.org_id:
+            chat.org_id = org_id
+            updated = True
         if chat.title != (telegram_chat.title or telegram_chat.full_name):
             chat.title = telegram_chat.title or telegram_chat.full_name
             updated = True
@@ -95,6 +98,7 @@ async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, o
             title=telegram_chat.title or telegram_chat.full_name,
             chat_type=ChatType.work,
             owner_id=owner_id,
+            org_id=org_id,
         )
         session.add(chat)
         await session.commit()
@@ -114,6 +118,8 @@ async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, o
                 logger.info(f"♻️ Restored deleted chat: {chat.title}")
             if not chat.is_active:
                 chat.is_active = True
+            if org_id and not chat.org_id:
+                chat.org_id = org_id
             await session.commit()
         return chat
 
@@ -129,12 +135,22 @@ async def on_bot_added(event: ChatMemberUpdated):
             owner = await find_user_by_telegram_id(session, adder_id)
 
             owner_id = owner.id if owner else None
+            org_id = None
+
+            # Get org_id from owner's organization membership
+            if owner:
+                org_result = await session.execute(
+                    select(OrgMember.org_id).where(OrgMember.user_id == owner.id).limit(1)
+                )
+                org_row = org_result.scalar_one_or_none()
+                if org_row:
+                    org_id = org_row
 
             # Create or get the chat
-            chat = await get_or_create_chat(session, event.chat, owner_id)
+            chat = await get_or_create_chat(session, event.chat, owner_id, org_id)
 
             if owner:
-                logger.info(f"✅ Chat '{event.chat.title}' linked to user {owner.email}")
+                logger.info(f"✅ Chat '{event.chat.title}' linked to user {owner.email} (org_id={org_id})")
             else:
                 logger.info(f"✅ Chat '{event.chat.title}' created (no linked user)")
     except Exception as e:
@@ -170,8 +186,21 @@ async def collect_group_message(message: types.Message):
 
     try:
         async with async_session() as session:
+            # Try to find owner by telegram_id of message sender
+            owner = await find_user_by_telegram_id(session, message.from_user.id)
+            owner_id = owner.id if owner else None
+            org_id = None
+
+            if owner:
+                org_result = await session.execute(
+                    select(OrgMember.org_id).where(OrgMember.user_id == owner.id).limit(1)
+                )
+                org_row = org_result.scalar_one_or_none()
+                if org_row:
+                    org_id = org_row
+
             # Get or create the chat
-            chat = await get_or_create_chat(session, message.chat, None)
+            chat = await get_or_create_chat(session, message.chat, owner_id, org_id)
 
             # Determine content type and content
             content = ""

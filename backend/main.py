@@ -3,6 +3,7 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from sqlalchemy import text
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -330,6 +331,34 @@ async def init_database():
             await create_superadmin_if_not_exists(db)
     except Exception as e:
         logger.warning(f"Superadmin creation: {e}")
+
+    # Step 10: Fix chats with NULL org_id - assign them to the default organization
+    logger.info("=== FIXING CHATS WITH NULL ORG_ID ===")
+    try:
+        async with engine.begin() as conn:
+            # Get the first organization (default org)
+            result = await conn.execute(text("SELECT id FROM organizations ORDER BY id LIMIT 1"))
+            org_row = result.fetchone()
+            if org_row:
+                default_org_id = org_row[0]
+                # Update all chats with NULL org_id
+                update_result = await conn.execute(
+                    text("UPDATE chats SET org_id = :org_id WHERE org_id IS NULL"),
+                    {"org_id": default_org_id}
+                )
+                logger.info(f"Updated {update_result.rowcount} chats with NULL org_id to org_id={default_org_id}")
+
+                # Also update entities and call_recordings with NULL org_id
+                await conn.execute(
+                    text("UPDATE entities SET org_id = :org_id WHERE org_id IS NULL"),
+                    {"org_id": default_org_id}
+                )
+                await conn.execute(
+                    text("UPDATE call_recordings SET org_id = :org_id WHERE org_id IS NULL"),
+                    {"org_id": default_org_id}
+                )
+    except Exception as e:
+        logger.warning(f"Fix NULL org_id: {e}")
 
     logger.info("=== DATABASE INITIALIZATION COMPLETE ===")
 
