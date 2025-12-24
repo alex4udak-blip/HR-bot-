@@ -144,10 +144,18 @@ async def create_user(
 
     # Add user to department if specified
     if data.department_id:
+        # Determine department role based on user role
+        if user_role == UserRole.ADMIN:
+            dept_role = DeptRole.lead
+        elif user_role == UserRole.SUB_ADMIN:
+            dept_role = DeptRole.sub_admin
+        else:
+            dept_role = DeptRole.member
+
         dept_member = DepartmentMember(
             department_id=data.department_id,
             user_id=user.id,
-            role=DeptRole.lead if user_role == UserRole.ADMIN else DeptRole.member
+            role=dept_role
         )
         db.add(dept_member)
         await db.commit()
@@ -221,15 +229,24 @@ async def update_user(
         )
         existing_dept_member = dept_member_result.scalar_one_or_none()
 
+        # Determine department role based on user role
+        if user.role == UserRole.ADMIN:
+            dept_role = DeptRole.lead
+        elif user.role == UserRole.SUB_ADMIN:
+            dept_role = DeptRole.sub_admin
+        else:
+            dept_role = DeptRole.member
+
         if existing_dept_member:
             # Update existing membership
             existing_dept_member.department_id = data.department_id
+            existing_dept_member.role = dept_role
         else:
             # Create new membership
             dept_member = DepartmentMember(
                 department_id=data.department_id,
                 user_id=user.id,
-                role=DeptRole.lead if user.role == UserRole.ADMIN else DeptRole.member
+                role=dept_role
             )
             db.add(dept_member)
 

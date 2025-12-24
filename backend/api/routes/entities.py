@@ -1016,16 +1016,14 @@ async def transfer_entity(
 
     # === STEP 1: Create a frozen copy for the old owner ===
     old_owner_id = entity.created_by
-    old_owner_name = None
-    if to_user:
-        old_owner_name = to_user.name
+    new_owner_name = to_user.name if to_user else "Unknown"
 
     # Create copy with all data except relationships
     entity_copy = Entity(
         org_id=entity.org_id,
         department_id=entity.department_id,
         type=entity.type,
-        name=f"{entity.name} [Передан → {old_owner_name or 'Unknown'}]",
+        name=f"{entity.name} [Передан → {new_owner_name}]",
         status=entity.status,
         phone=entity.phone,
         email=entity.email,
