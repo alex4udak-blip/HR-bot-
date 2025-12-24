@@ -263,7 +263,7 @@ export interface EntityTransfer {
 
 export type CallSource = 'meet' | 'zoom' | 'teams' | 'upload' | 'telegram' | 'google_doc' | 'google_drive' | 'direct_url';
 
-export type ExternalLinkType = 'google_doc' | 'google_drive' | 'direct_media' | 'unknown';
+export type ExternalLinkType = 'google_doc' | 'google_drive' | 'direct_media' | 'fireflies' | 'unknown';
 
 export type CallStatus =
   | 'pending'

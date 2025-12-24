@@ -5,6 +5,7 @@ Processes external URLs containing call recordings or transcripts:
 - Google Docs (already transcribed)
 - Google Drive (audio/video files)
 - Direct URLs (audio/video files)
+- Fireflies.ai (transcripts)
 """
 
 import os
@@ -14,7 +15,7 @@ import tempfile
 import aiohttp
 from datetime import datetime
 from typing import Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 
 from ..config import settings
 from ..models.database import CallRecording, CallSource, CallStatus
@@ -29,6 +30,7 @@ class LinkType:
     GOOGLE_DOC = "google_doc"
     GOOGLE_DRIVE = "google_drive"
     DIRECT_MEDIA = "direct_media"
+    FIREFLIES = "fireflies"
     UNKNOWN = "unknown"
 
 
@@ -41,6 +43,9 @@ class ExternalLinkProcessor:
     # Google Drive file URL pattern
     GDRIVE_PATTERN = re.compile(r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)')
     GDRIVE_OPEN_PATTERN = re.compile(r'drive\.google\.com/open\?id=([a-zA-Z0-9_-]+)')
+
+    # Fireflies URL pattern
+    FIREFLIES_PATTERN = re.compile(r'app\.fireflies\.ai/view/([^/?]+)')
 
     def __init__(self):
         self.session: Optional[aiohttp.ClientSession] = None
@@ -65,6 +70,10 @@ class ExternalLinkProcessor:
             LinkType constant
         """
         url_lower = url.lower()
+
+        # Fireflies.ai
+        if "fireflies.ai" in url_lower:
+            return LinkType.FIREFLIES
 
         # Google Docs
         if "docs.google.com/document" in url_lower:
@@ -95,6 +104,14 @@ class ExternalLinkProcessor:
 
         return None
 
+    def _extract_fireflies_transcript_id(self, url: str) -> Optional[str]:
+        """Extract transcript ID from Fireflies URL."""
+        match = self.FIREFLIES_PATTERN.search(url)
+        if match:
+            # URL decode the ID (it may contain special chars like ::)
+            return unquote(match.group(1))
+        return None
+
     async def process_url(
         self,
         url: str,
@@ -108,7 +125,7 @@ class ExternalLinkProcessor:
         Process an external URL and create a CallRecording.
 
         Args:
-            url: External URL (Google Docs, Google Drive, or direct media)
+            url: External URL (Google Docs, Google Drive, Fireflies, or direct media)
             organization_id: Organization ID
             owner_id: Owner user ID
             department_id: Optional department ID
@@ -135,7 +152,11 @@ class ExternalLinkProcessor:
                 created_at=datetime.utcnow()
             )
 
-            if link_type == LinkType.GOOGLE_DOC:
+            if link_type == LinkType.FIREFLIES:
+                call.source_type = CallSource.telegram  # Use telegram as placeholder until we add fireflies enum
+                call = await self._process_fireflies(call, url)
+
+            elif link_type == LinkType.GOOGLE_DOC:
                 call.source_type = CallSource.google_doc
                 call = await self._process_google_doc(call, url)
 
@@ -159,41 +180,152 @@ class ExternalLinkProcessor:
             logger.info(f"Created CallRecording {call.id} from external URL")
             return call
 
-    async def _process_google_doc(self, call: CallRecording, url: str) -> CallRecording:
+    async def _process_fireflies(self, call: CallRecording, url: str) -> CallRecording:
         """
-        Process Google Doc as a transcript.
-        Skip transcription, go directly to AI analysis.
+        Process Fireflies.ai shared/public transcript URL.
+        Scrapes the public transcript page and runs AI analysis.
+
+        NOTE: This handles PUBLIC shared Fireflies links, not the internal API.
         """
         try:
-            call.status = CallStatus.transcribing
-
-            # Parse document
-            result = await google_docs_service.parse_from_url(url)
-
-            if result.status != "parsed":
+            transcript_id = self._extract_fireflies_transcript_id(url)
+            if not transcript_id:
                 call.status = CallStatus.failed
-                call.error_message = result.error or "Failed to parse Google Doc"
+                call.error_message = "Invalid Fireflies URL - could not extract transcript ID"
                 return call
 
-            # Document content is the transcript
-            call.transcript = result.content
-            call.status = CallStatus.analyzing
+            call.status = CallStatus.transcribing
+            call.fireflies_transcript_id = transcript_id
 
-            # Run AI analysis
-            call_processor._init_clients()
-            analysis = await call_processor._analyze(result.content)
+            # Fetch the public Fireflies page
+            logger.info(f"Fetching public Fireflies transcript: {url}")
 
-            call.summary = analysis.get("summary")
-            call.action_items = analysis.get("action_items")
-            call.key_points = analysis.get("key_points")
+            session = await self._get_session()
+
+            # Fireflies uses a share URL that we can scrape
+            async with session.get(url, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }) as response:
+                if response.status != 200:
+                    call.status = CallStatus.failed
+                    call.error_message = f"Failed to access Fireflies link: HTTP {response.status}. Make sure the link is public/shared."
+                    return call
+
+                html = await response.text()
+
+            # Try to extract transcript from the HTML
+            # Fireflies embeds JSON data in the page for Next.js
+            import json
+
+            transcript_text = None
+            title = None
+
+            # Look for __NEXT_DATA__ script tag which contains the transcript data
+            next_data_match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
+            if next_data_match:
+                try:
+                    next_data = json.loads(next_data_match.group(1))
+                    # Navigate to transcript data
+                    page_props = next_data.get('props', {}).get('pageProps', {})
+                    transcript_data = page_props.get('transcript', {})
+
+                    if transcript_data:
+                        title = transcript_data.get('title')
+                        sentences = transcript_data.get('sentences', [])
+
+                        if sentences:
+                            # Build transcript text
+                            lines = []
+                            for s in sentences:
+                                speaker = s.get('speaker_name', 'Speaker')
+                                text = s.get('text', s.get('raw_text', ''))
+                                if text:
+                                    lines.append(f"{speaker}: {text}")
+                            transcript_text = "\n".join(lines)
+
+                            # Build speaker segments
+                            speakers = []
+                            for s in sentences:
+                                speakers.append({
+                                    "speaker": s.get("speaker_name", "Speaker"),
+                                    "start": s.get("start_time", 0),
+                                    "end": s.get("end_time", 0),
+                                    "text": s.get("text", s.get("raw_text", ""))
+                                })
+                            call.speakers = speakers
+
+                            # Get duration
+                            call.duration_seconds = transcript_data.get('duration')
+
+                            # Get summary if available
+                            summary = transcript_data.get('summary', {})
+                            if summary:
+                                call.summary = summary.get('overview') or summary.get('short_summary')
+                                call.action_items = summary.get('action_items', [])
+                                call.key_points = summary.get('keywords', [])
+
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Failed to parse __NEXT_DATA__: {e}")
+
+            # Fallback: try to extract text from readable elements
+            if not transcript_text:
+                # Simple extraction of visible text
+                from html.parser import HTMLParser
+
+                class TextExtractor(HTMLParser):
+                    def __init__(self):
+                        super().__init__()
+                        self.text_parts = []
+                        self.in_script = False
+                        self.in_style = False
+
+                    def handle_starttag(self, tag, attrs):
+                        if tag in ('script', 'style'):
+                            self.in_script = True
+
+                    def handle_endtag(self, tag):
+                        if tag in ('script', 'style'):
+                            self.in_script = False
+
+                    def handle_data(self, data):
+                        if not self.in_script:
+                            text = data.strip()
+                            if text and len(text) > 20:  # Skip short fragments
+                                self.text_parts.append(text)
+
+                extractor = TextExtractor()
+                extractor.feed(html)
+
+                if extractor.text_parts:
+                    transcript_text = "\n".join(extractor.text_parts)
+
+            if not transcript_text or len(transcript_text) < 50:
+                call.status = CallStatus.failed
+                call.error_message = "Could not extract transcript from Fireflies page. The link might not be public or the format changed."
+                return call
+
+            # Update call with extracted data
+            if title and (not call.title or call.title.startswith("External Recording")):
+                call.title = title
+
+            call.transcript = transcript_text
+
+            # Run AI analysis if no summary from Fireflies
+            if not call.summary:
+                call.status = CallStatus.analyzing
+                call_processor._init_clients()
+                analysis = await call_processor._analyze(call.transcript)
+                call.summary = analysis.get("summary")
+                call.action_items = analysis.get("action_items")
+                call.key_points = analysis.get("key_points")
 
             call.status = CallStatus.done
             call.processed_at = datetime.utcnow()
 
-            logger.info(f"Google Doc processed: {len(result.content)} chars")
+            logger.info(f"Fireflies transcript processed: {len(call.transcript)} chars")
 
         except Exception as e:
-            logger.error(f"Error processing Google Doc: {e}")
+            logger.error(f"Error processing Fireflies: {e}")
             call.status = CallStatus.failed
             call.error_message = str(e)
 

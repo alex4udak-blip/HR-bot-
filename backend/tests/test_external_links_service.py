@@ -31,6 +31,8 @@ def processor():
 def sample_urls():
     """Sample URLs for testing."""
     return {
+        "fireflies": "https://app.fireflies.ai/view/-::01KD5QWTGSP2XFCHP4T3P507DV",
+        "fireflies_simple": "https://app.fireflies.ai/view/ABC123xyz",
         "google_doc": "https://docs.google.com/document/d/1ABC123xyz/edit",
         "google_drive": "https://drive.google.com/file/d/1XYZ789abc/view",
         "google_drive_open": "https://drive.google.com/open?id=1XYZ789abc",
@@ -68,6 +70,22 @@ def mock_call_recording():
 
 class TestLinkTypeDetection:
     """Tests for link type detection."""
+
+    def test_detect_fireflies(self, processor, sample_urls):
+        """Test detection of Fireflies.ai URLs."""
+        link_type = processor.detect_link_type(sample_urls["fireflies"])
+        assert link_type == LinkType.FIREFLIES
+
+    def test_detect_fireflies_simple(self, processor, sample_urls):
+        """Test detection of simple Fireflies.ai URLs."""
+        link_type = processor.detect_link_type(sample_urls["fireflies_simple"])
+        assert link_type == LinkType.FIREFLIES
+
+    def test_detect_fireflies_case_insensitive(self, processor):
+        """Test case-insensitive detection of Fireflies URLs."""
+        url = "https://APP.FIREFLIES.AI/view/ABC123"
+        link_type = processor.detect_link_type(url)
+        assert link_type == LinkType.FIREFLIES
 
     def test_detect_google_doc(self, processor, sample_urls):
         """Test detection of Google Docs URLs."""
@@ -129,6 +147,39 @@ class TestLinkTypeDetection:
         """Test detection of unknown URL with query params."""
         link_type = processor.detect_link_type(sample_urls["unknown_with_params"])
         assert link_type == LinkType.UNKNOWN
+
+
+# ============================================================================
+# TEST FIREFLIES TRANSCRIPT ID EXTRACTION
+# ============================================================================
+
+class TestFirefliesExtraction:
+    """Tests for Fireflies transcript ID extraction."""
+
+    def test_extract_fireflies_id_standard(self, processor):
+        """Test extraction from standard Fireflies URL."""
+        url = "https://app.fireflies.ai/view/ABC123xyz"
+        transcript_id = processor._extract_fireflies_transcript_id(url)
+        assert transcript_id == "ABC123xyz"
+
+    def test_extract_fireflies_id_with_special_chars(self, processor):
+        """Test extraction from Fireflies URL with special characters."""
+        url = "https://app.fireflies.ai/view/-::01KD5QWTGSP2XFCHP4T3P507DV"
+        transcript_id = processor._extract_fireflies_transcript_id(url)
+        assert transcript_id == "-::01KD5QWTGSP2XFCHP4T3P507DV"
+
+    def test_extract_fireflies_id_url_encoded(self, processor):
+        """Test extraction from URL-encoded Fireflies URL."""
+        url = "https://app.fireflies.ai/view/-%3A%3A01KD5QWTGSP2"
+        transcript_id = processor._extract_fireflies_transcript_id(url)
+        # URL decoded
+        assert transcript_id == "-::01KD5QWTGSP2"
+
+    def test_extract_fireflies_id_invalid(self, processor):
+        """Test extraction from invalid URL."""
+        url = "https://example.com/not-fireflies"
+        transcript_id = processor._extract_fireflies_transcript_id(url)
+        assert transcript_id is None
 
 
 # ============================================================================

@@ -2,6 +2,7 @@
 External Links API Routes.
 
 Endpoints for processing external URLs:
+- Fireflies.ai (transcripts)
 - Google Docs (transcripts)
 - Google Drive (media files)
 - Direct media URLs
@@ -126,6 +127,7 @@ async def detect_link_type(
     link_type = external_link_processor.detect_link_type(url)
 
     descriptions = {
+        LinkType.FIREFLIES: "Fireflies.ai transcript. Will be fetched and analyzed (no transcription needed).",
         LinkType.GOOGLE_DOC: "Google Docs document. Will be parsed as text and analyzed (no transcription needed).",
         LinkType.GOOGLE_DRIVE: "Google Drive file. Will be downloaded and transcribed if it's audio/video.",
         LinkType.DIRECT_MEDIA: "Direct media file. Will be downloaded and transcribed.",
@@ -186,6 +188,14 @@ async def get_supported_types():
     """
     return {
         "supported_types": [
+            {
+                "type": "fireflies",
+                "name": "Fireflies.ai",
+                "description": "Shared transcripts from Fireflies.ai",
+                "example": "https://app.fireflies.ai/view/ABC123",
+                "handling": "Transcript fetched and analyzed by AI (no transcription needed)",
+                "requirements": "Link must be public/shared"
+            },
             {
                 "type": "google_doc",
                 "name": "Google Docs",

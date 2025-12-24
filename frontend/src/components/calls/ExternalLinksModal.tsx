@@ -11,7 +11,8 @@ import {
   CheckCircle,
   AlertCircle,
   HelpCircle,
-  Copy
+  Copy,
+  Flame
 } from 'lucide-react';
 import {
   detectExternalLinkType,
@@ -35,6 +36,13 @@ const LINK_TYPE_INFO: Record<ExternalLinkType, {
   color: string;
   examples: string[];
 }> = {
+  fireflies: {
+    label: 'Fireflies.ai',
+    description: 'Транскрипт из Fireflies.ai',
+    icon: Flame,
+    color: 'text-orange-400 bg-orange-500/20',
+    examples: ['app.fireflies.ai/view/...']
+  },
   google_doc: {
     label: 'Google Docs',
     description: 'Транскрипт из Google Документа',
