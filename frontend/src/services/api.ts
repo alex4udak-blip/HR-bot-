@@ -625,7 +625,7 @@ export const updateCall = async (
 
 // === EXTERNAL LINKS ===
 
-export type ExternalLinkType = 'google_doc' | 'google_drive' | 'direct_media' | 'unknown';
+export type ExternalLinkType = 'google_doc' | 'google_drive' | 'direct_media' | 'fireflies' | 'unknown';
 
 export interface DetectLinkTypeResponse {
   url: string;
