@@ -12,6 +12,7 @@ interface ShareModalProps {
   resourceType: ResourceType;
   resourceId: number;
   resourceName: string;
+  canManageAccess?: boolean; // If true, user can add/remove shares (defaults to true for backward compatibility)
 }
 
 const ACCESS_LEVELS: { id: AccessLevel; label: string; icon: typeof Eye; description: string }[] = [
@@ -20,7 +21,7 @@ const ACCESS_LEVELS: { id: AccessLevel; label: string; icon: typeof Eye; descrip
   { id: 'full', label: 'Полный', icon: Shield, description: 'Полный доступ + может делиться' },
 ];
 
-export default function ShareModal({ isOpen, onClose, resourceType, resourceId, resourceName }: ShareModalProps) {
+export default function ShareModal({ isOpen, onClose, resourceType, resourceId, resourceName, canManageAccess = true }: ShareModalProps) {
   const [users, setUsers] = useState<UserSimple[]>([]);
   const [shares, setShares] = useState<ShareResponse[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -143,75 +144,77 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
             </div>
           ) : (
             <>
-              {/* Add new share */}
-              <div className="bg-white/5 rounded-xl p-4 mb-6 flex-shrink-0">
-                <h4 className="text-sm font-medium text-white mb-3">Добавить доступ</h4>
+              {/* Add new share - only visible if user can manage access */}
+              {canManageAccess && (
+                <div className="bg-white/5 rounded-xl p-4 mb-6 flex-shrink-0">
+                  <h4 className="text-sm font-medium text-white mb-3">Добавить доступ</h4>
 
-                {availableUsers.length === 0 ? (
-                  <p className="text-sm text-white/40">Нет доступных пользователей для шаринга</p>
-                ) : (
-                  <>
-                    {/* User selection */}
-                    <select
-                      value={selectedUserId || ''}
-                      onChange={(e) => setSelectedUserId(e.target.value ? Number(e.target.value) : null)}
-                      className="w-full p-2 bg-white/5 border border-white/10 rounded-lg text-white mb-3"
-                    >
-                      <option value="">Выберите пользователя...</option>
-                      {availableUsers.map((user) => (
-                        <option key={user.id} value={user.id}>
-                          {user.name} ({user.email})
-                        </option>
-                      ))}
-                    </select>
+                  {availableUsers.length === 0 ? (
+                    <p className="text-sm text-white/40">Нет доступных пользователей для шаринга</p>
+                  ) : (
+                    <>
+                      {/* User selection */}
+                      <select
+                        value={selectedUserId || ''}
+                        onChange={(e) => setSelectedUserId(e.target.value ? Number(e.target.value) : null)}
+                        className="w-full p-2 bg-white/5 border border-white/10 rounded-lg text-white mb-3"
+                      >
+                        <option value="">Выберите пользователя...</option>
+                        {availableUsers.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.name} ({user.email})
+                          </option>
+                        ))}
+                      </select>
 
-                    {/* Access level */}
-                    <div className="flex gap-2 mb-3">
-                      {ACCESS_LEVELS.map((level) => {
-                        const Icon = level.icon;
-                        return (
-                          <button
-                            key={level.id}
-                            onClick={() => setAccessLevel(level.id)}
-                            className={clsx(
-                              'flex-1 p-2 rounded-lg border transition-colors text-sm',
-                              accessLevel === level.id
-                                ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
-                                : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
-                            )}
-                          >
-                            <Icon size={16} className="mx-auto mb-1" />
-                            {level.label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                      {/* Access level */}
+                      <div className="flex gap-2 mb-3">
+                        {ACCESS_LEVELS.map((level) => {
+                          const Icon = level.icon;
+                          return (
+                            <button
+                              key={level.id}
+                              onClick={() => setAccessLevel(level.id)}
+                              className={clsx(
+                                'flex-1 p-2 rounded-lg border transition-colors text-sm',
+                                accessLevel === level.id
+                                  ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
+                                  : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+                              )}
+                            >
+                              <Icon size={16} className="mx-auto mb-1" />
+                              {level.label}
+                            </button>
+                          );
+                        })}
+                      </div>
 
-                    {/* Note */}
-                    <input
-                      type="text"
-                      placeholder="Комментарий (опционально)"
-                      value={note}
-                      onChange={(e) => setNote(e.target.value)}
-                      className="w-full p-2 bg-white/5 border border-white/10 rounded-lg text-white mb-3 placeholder-white/40"
-                    />
+                      {/* Note */}
+                      <input
+                        type="text"
+                        placeholder="Комментарий (опционально)"
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                        className="w-full p-2 bg-white/5 border border-white/10 rounded-lg text-white mb-3 placeholder-white/40"
+                      />
 
-                    {/* Share button */}
-                    <button
-                      onClick={handleShare}
-                      disabled={!selectedUserId || loading}
-                      className="w-full py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {loading ? (
-                        <Loader2 size={16} className="animate-spin" />
-                      ) : (
-                        <Share2 size={16} />
-                      )}
-                      Поделиться
-                    </button>
-                  </>
-                )}
-              </div>
+                      {/* Share button */}
+                      <button
+                        onClick={handleShare}
+                        disabled={!selectedUserId || loading}
+                        className="w-full py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {loading ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <Share2 size={16} />
+                        )}
+                        Поделиться
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
 
               {/* Current shares */}
               <div className="flex-1 overflow-y-auto min-h-0">
@@ -242,13 +245,15 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
                               {share.note && <span>• {share.note}</span>}
                             </div>
                           </div>
-                          <button
-                            onClick={() => handleRevoke(share.id)}
-                            className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400"
-                            title="Отозвать доступ"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          {canManageAccess && (
+                            <button
+                              onClick={() => handleRevoke(share.id)}
+                              className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400"
+                              title="Отозвать доступ"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
                         </div>
                       );
                     })}

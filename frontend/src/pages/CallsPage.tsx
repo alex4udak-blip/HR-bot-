@@ -16,6 +16,7 @@ import {
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useCallStore } from '@/stores/callStore';
+import { useAuthStore } from '@/stores/authStore';
 import type { CallStatus, CallRecording } from '@/types';
 import { CALL_STATUS_LABELS, CALL_STATUS_COLORS } from '@/types';
 import CallRecorderModal from '@/components/calls/CallRecorderModal';
@@ -26,6 +27,7 @@ export default function CallsPage() {
   const navigate = useNavigate();
   const [showRecorderModal, setShowRecorderModal] = useState(false);
 
+  const { user } = useAuthStore();
   const {
     calls,
     currentCall,
@@ -40,6 +42,21 @@ export default function CallsPage() {
     pollStatus,
     stopPolling
   } = useCallStore();
+
+  // Helper functions to check permissions
+  const canEdit = (call: CallRecording) => {
+    if (!user) return false;
+    if (user.role === 'superadmin') return true;
+    if (call.owner_id === user.id) return true;
+    return false;
+  };
+
+  const canDelete = (call: CallRecording) => {
+    if (!user) return false;
+    if (user.role === 'superadmin') return true;
+    if (call.owner_id === user.id) return true;
+    return false;
+  };
 
   // Fetch calls on mount
   useEffect(() => {
@@ -291,7 +308,7 @@ export default function CallsPage() {
 
                     {/* Quick Actions */}
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 flex-shrink-0">
-                      {call.status === 'failed' && (
+                      {call.status === 'failed' && canEdit(call) && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -303,16 +320,18 @@ export default function CallsPage() {
                           <RefreshCw size={14} />
                         </button>
                       )}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(call);
-                        }}
-                        className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 flex-shrink-0"
-                        title="Delete"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {canDelete(call) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(call);
+                          }}
+                          className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 flex-shrink-0"
+                          title="Delete"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </motion.div>

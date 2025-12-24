@@ -39,6 +39,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Chat, Message, ChatTypeId } from '@/types';
 import { getMessages, getParticipants, updateChat, deleteChat, downloadReport } from '@/services/api';
 import { useEntityStore } from '@/stores/entityStore';
+import { useAuthStore } from '@/stores/authStore';
 import CriteriaPanel from './CriteriaPanel';
 import ImportHistoryModal from './ImportHistoryModal';
 import toast from 'react-hot-toast';
@@ -253,8 +254,17 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
   const navigate = useNavigate();
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
+  const { user } = useAuthStore();
   // Entity store for linking
   const { entities, fetchEntities } = useEntityStore();
+
+  // Helper to check permissions
+  const canDelete = () => {
+    if (!user) return false;
+    if (user.role === 'superadmin') return true;
+    if (chat.owner_id === user.id) return true;
+    return false;
+  };
 
   // Fetch entities when dropdown opens
   useEffect(() => {
@@ -538,13 +548,15 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
           </button>
 
           {/* Delete Button */}
-          <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="p-1.5 rounded-lg text-dark-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-            title="Удалить чат"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {canDelete() && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="p-1.5 rounded-lg text-dark-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+              title="Удалить чат"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 

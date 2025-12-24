@@ -12,26 +12,38 @@ import {
   Phone,
   Building2
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import BackgroundEffects from './BackgroundEffects';
 import clsx from 'clsx';
-
-const navItems = [
-  { path: '/dashboard', icon: LayoutDashboard, label: 'Главная' },
-  { path: '/chats', icon: MessageSquare, label: 'Чаты' },
-  { path: '/calls', icon: Phone, label: 'Созвоны' },
-  { path: '/contacts', icon: Users, label: 'Контакты' },
-  { path: '/trash', icon: Trash2, label: 'Корзина' },
-  { path: '/users', icon: Users, label: 'Пользователи' },
-  { path: '/departments', icon: Building2, label: 'Департаменты' },
-  { path: '/settings', icon: Settings, label: 'Настройки' },
-];
 
 export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+
+  const navItems = useMemo(() => {
+    const items = [
+      { path: '/dashboard', icon: LayoutDashboard, label: 'Главная' },
+      { path: '/chats', icon: MessageSquare, label: 'Чаты' },
+      { path: '/calls', icon: Phone, label: 'Созвоны' },
+      { path: '/contacts', icon: Users, label: 'Контакты' },
+      { path: '/trash', icon: Trash2, label: 'Корзина' },
+    ];
+
+    // Добавляем пункты для superadmin
+    if (user?.role === 'superadmin') {
+      items.push({ path: '/users', icon: Users, label: 'Пользователи' });
+    }
+
+    // Добавляем пункты для admin и superadmin
+    if (user?.role === 'superadmin' || user?.role === 'admin') {
+      items.push({ path: '/departments', icon: Building2, label: 'Департаменты' });
+      items.push({ path: '/settings', icon: Settings, label: 'Настройки' });
+    }
+
+    return items;
+  }, [user?.role]);
 
   const handleLogout = () => {
     logout();
