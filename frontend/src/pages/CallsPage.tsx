@@ -334,7 +334,7 @@ export default function CallsPage() {
                             handleDelete(call);
                           }}
                           className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 flex-shrink-0"
-                          title="Delete"
+                          title="Удалить"
                         >
                           <Trash2 size={14} />
                         </button>
@@ -395,7 +395,7 @@ export default function CallsPage() {
             onClose={() => setShowRecorderModal(false)}
             onSuccess={() => {
               setShowRecorderModal(false);
-              toast.success('Recording started');
+              toast.success('Запись начата');
             }}
           />
         )}

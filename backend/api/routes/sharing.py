@@ -58,6 +58,7 @@ class UserSimple(BaseModel):
     name: str
     email: str
     org_role: Optional[str] = None
+    department_id: Optional[int] = None
     department_name: Optional[str] = None
     department_role: Optional[str] = None
 
@@ -590,10 +591,12 @@ async def get_sharable_users(
         )
         dept_row = dept_result.first()
 
+        dept_id = None
         dept_name = None
         dept_role = None
         if dept_row:
             dept, dept_member = dept_row
+            dept_id = dept.id
             dept_name = dept.name
             dept_role = dept_member.role.value if dept_member.role else None
 
@@ -602,6 +605,7 @@ async def get_sharable_users(
             name=user.name,
             email=user.email,
             org_role=org_member.role.value if org_member.role else None,
+            department_id=dept_id,
             department_name=dept_name,
             department_role=dept_role
         ))

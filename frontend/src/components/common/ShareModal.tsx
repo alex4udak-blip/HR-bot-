@@ -110,10 +110,16 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
     // Check if current user can share to this user based on roles and departments
     if (!user) return false;
 
+    // Determine target user's effective role for canShareTo check
+    // Priority: owner (org_role) > department_role (lead/sub_admin/member) > org_role (member)
+    const targetUserRole = u.org_role === 'owner'
+      ? 'owner'
+      : (u.department_role || u.org_role || 'member');
+
     // Use authStore helper to check sharing permissions
     return canShareTo(
       u.id,
-      u.department_role || u.org_role,
+      targetUserRole,
       u.department_id
     );
   });
