@@ -22,6 +22,11 @@ from api.models.database import (
 from api.services.auth import create_access_token
 
 
+def auth_headers(token: str) -> dict:
+    """Create authorization headers with token."""
+    return {"Authorization": f"Bearer {token}"}
+
+
 class TestCreateInvitation:
     """Tests for POST /api/invitations endpoint."""
 

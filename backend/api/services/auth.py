@@ -121,6 +121,39 @@ async def get_current_user(
     return user
 
 
+async def get_current_user_allow_inactive(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Get current user without checking is_active status.
+
+    This is used for endpoints like /me where we want inactive users
+    to be able to see their account status.
+    """
+    try:
+        payload = jwt.decode(
+            credentials.credentials, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+        )
+        user_id = payload.get("sub")
+        token_version = payload.get("token_version", 0)  # Default to 0 for old tokens
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    result = await db.execute(select(User).where(User.id == int(user_id)))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    # Verify token version matches - invalidates old tokens on password change
+    if user.token_version != token_version:
+        raise HTTPException(status_code=401, detail="Token has been invalidated")
+
+    return user
+
+
 async def get_superadmin(user: User = Depends(get_current_user)) -> User:
     if user.role != UserRole.SUPERADMIN:
         raise HTTPException(status_code=403, detail="Superadmin access required")
@@ -407,8 +440,9 @@ async def can_view_in_department(user: User, resource_owner_id: int, resource_de
     """Check if user can view a resource based on department membership.
 
     Rules:
-    - ADMIN/SUB_ADMIN can view all resources in their department
-    - MEMBER can only view their own resources
+    - Owner can always view their own resources
+    - Department admins (lead/sub_admin) can view all resources in their department
+    - Regular members can only view their own resources
     - If resource has no department, only owner can view it (unless shared)
 
     Args:
@@ -430,7 +464,7 @@ async def can_view_in_department(user: User, resource_owner_id: int, resource_de
     if not resource_dept_id:
         return False
 
-    # Check user's role in the resource's department
+    # Check if user is a member of the resource's department
     result = await db.execute(
         select(DepartmentMember).where(
             DepartmentMember.user_id == user.id,
@@ -439,14 +473,15 @@ async def can_view_in_department(user: User, resource_owner_id: int, resource_de
     )
     member = result.scalar_one_or_none()
 
+    # If not a member of the department, cannot view
     if not member:
-        return False  # User is not in this department
+        return False
 
-    # ADMIN and SUB_ADMIN can view all resources in their department
+    # Department admins (lead/sub_admin) can view all resources in their department
     if member.role in (DeptRole.lead, DeptRole.sub_admin):
         return True
 
-    # MEMBER can only view their own resources (already checked above)
+    # Regular members can only view their own resources
     return False
 
 
@@ -479,15 +514,20 @@ async def get_department_admin(user: User, db: AsyncSession) -> Optional[Departm
     Returns:
         Department object if user is ADMIN/SUB_ADMIN, None otherwise
     """
+    from ..models.database import DeptRole
+
     # Only ADMIN and SUB_ADMIN can have departments
     if user.role not in (UserRole.ADMIN, UserRole.SUB_ADMIN):
         return None
 
-    # Get user's department membership
+    # Get user's department membership where they are lead or sub_admin
     result = await db.execute(
         select(Department)
         .join(DepartmentMember, DepartmentMember.department_id == Department.id)
-        .where(DepartmentMember.user_id == user.id)
+        .where(
+            DepartmentMember.user_id == user.id,
+            DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+        )
         .limit(1)  # Admin should only have one department
     )
     return result.scalar_one_or_none()

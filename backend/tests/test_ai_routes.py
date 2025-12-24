@@ -1118,14 +1118,14 @@ class TestPermissionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_admin_cannot_access_other_admin_chat(
-        self, client, db_session, organization, second_user, second_user_token,
+        self, client, db_session, organization, admin_user, second_user, second_user_token,
         get_auth_headers, org_member
     ):
         """Test admin cannot access another admin's chat."""
-        # Create chat owned by different admin
+        # Create chat owned by different admin (admin_user)
         other_chat = Chat(
             org_id=organization.id,
-            owner_id=999,  # Different owner
+            owner_id=admin_user.id,  # Owned by admin_user, not second_user
             telegram_chat_id=555555,
             title="Other Chat",
             is_active=True
@@ -1134,6 +1134,7 @@ class TestPermissionEdgeCases:
         await db_session.commit()
         await db_session.refresh(other_chat)
 
+        # second_user tries to access admin_user's chat
         response = await client.post(
             f"/api/chats/{other_chat.id}/ai/message",
             headers=get_auth_headers(second_user_token),
@@ -1144,15 +1145,15 @@ class TestPermissionEdgeCases:
 
     @pytest.mark.asyncio
     async def test_admin_cannot_access_other_admin_entity(
-        self, client, db_session, organization, department, second_user,
+        self, client, db_session, organization, department, admin_user, second_user,
         second_user_token, get_auth_headers, org_member
     ):
         """Test admin cannot access another admin's entity."""
-        # Create entity owned by different admin
+        # Create entity owned by different admin (admin_user)
         other_entity = Entity(
             org_id=organization.id,
             department_id=department.id,
-            created_by=999,  # Different creator
+            created_by=admin_user.id,  # Created by admin_user, not second_user
             name="Other Contact",
             type=EntityType.candidate,
             status=EntityStatus.active
@@ -1161,6 +1162,7 @@ class TestPermissionEdgeCases:
         await db_session.commit()
         await db_session.refresh(other_entity)
 
+        # second_user tries to access admin_user's entity
         response = await client.get(
             f"/api/entities/{other_entity.id}/ai/actions",
             headers=get_auth_headers(second_user_token)

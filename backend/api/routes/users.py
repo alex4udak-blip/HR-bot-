@@ -10,7 +10,7 @@ from ..models.database import (
     EntityTransfer, CallRecording, Invitation, CriteriaPreset, ReportSubscription
 )
 from ..models.schemas import UserCreate, UserUpdate, UserResponse
-from ..services.auth import get_superadmin, get_current_user, hash_password
+from ..services.auth import get_superadmin, get_current_user, get_current_user_allow_inactive, hash_password
 from ..services.password_policy import validate_password
 
 router = APIRouter()
@@ -19,9 +19,14 @@ router = APIRouter()
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user_allow_inactive)
 ):
-    """Get current user information."""
+    """Get current user information.
+
+    Note: This endpoint allows inactive users to access their info
+    to see their is_active status. We use get_current_user_allow_inactive
+    instead of get_current_user to bypass the is_active check.
+    """
     current_user = await db.merge(current_user)
 
     # Count user's chats
@@ -78,12 +83,15 @@ async def get_users(
         same_dept_users = set(same_dept_result.scalars().all())
 
         # Get ADMIN/SUB_ADMIN from other departments
+        # Note: We check both user role and department role to ensure
+        # we only see actual admins, not members with ADMIN user role
         other_admins_result = await db.execute(
             select(User)
             .join(DepartmentMember, DepartmentMember.user_id == User.id)
             .where(
                 DepartmentMember.department_id != dept_member.department_id,
-                User.role.in_([UserRole.ADMIN, UserRole.SUB_ADMIN])
+                User.role.in_([UserRole.ADMIN, UserRole.SUB_ADMIN]),
+                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
             )
             .order_by(User.created_at.desc())
         )

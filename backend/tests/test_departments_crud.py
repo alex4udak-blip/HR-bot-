@@ -71,7 +71,7 @@ class TestCreateDepartment:
 
     async def test_superadmin_creates_root_department_success(
         self, client: AsyncClient, superadmin_user: User, superadmin_token: str,
-        organization: Organization, get_auth_headers
+        organization: Organization, superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test superadmin can create root department."""
         response = await client.post(
@@ -402,7 +402,8 @@ class TestListDepartments:
 
     async def test_superadmin_lists_all_departments(
         self, client: AsyncClient, superadmin_token: str, department: Department,
-        second_department: Department, organization: Organization, get_auth_headers
+        second_department: Department, organization: Organization, superadmin_org_member: OrgMember,
+        get_auth_headers
     ):
         """Test superadmin sees all departments with full details."""
         response = await client.get(
@@ -893,7 +894,7 @@ class TestDeleteDepartment:
 
     async def test_superadmin_deletes_department(
         self, client: AsyncClient, superadmin_token: str, department: Department,
-        organization: Organization, get_auth_headers
+        organization: Organization, superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test superadmin can delete department."""
         response = await client.delete(
@@ -1907,7 +1908,7 @@ class TestCrossOrganizationIsolation:
 
     async def test_superadmin_can_access_any_org_departments(
         self, client: AsyncClient, superadmin_token: str, department: Department,
-        get_auth_headers
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test superadmin can access departments from any organization."""
         response = await client.get(

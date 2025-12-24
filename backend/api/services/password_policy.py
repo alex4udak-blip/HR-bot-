@@ -39,23 +39,17 @@ def validate_password(password: str, email: str = None) -> Tuple[bool, str]:
         - (True, "") if password is valid
         - (False, "error message") if password is invalid
     """
+    # Check against common passwords first (case-insensitive)
+    # This provides better feedback than generic length/character errors
+    if password.lower() in COMMON_PASSWORDS:
+        return False, "Password is too common. Please choose a stronger password"
+
     # Check minimum length
     if len(password) < 8:
         return False, "Password must be at least 8 characters"
 
-    # Check for at least one digit
-    if not any(c.isdigit() for c in password):
-        return False, "Password must contain at least one number"
-
-    # Check for at least one letter
-    if not any(c.isalpha() for c in password):
-        return False, "Password must contain at least one letter"
-
-    # Check against common passwords (case-insensitive)
-    if password.lower() in COMMON_PASSWORDS:
-        return False, "Password is too common. Please choose a stronger password"
-
-    # Check if password matches email
+    # Check if password matches email - before character checks
+    # so we can provide a more specific error message
     if email:
         # Extract username from email (part before @)
         email_username = email.lower().split('@')[0]
@@ -66,6 +60,14 @@ def validate_password(password: str, email: str = None) -> Tuple[bool, str]:
 
         if password.lower() == email_username:
             return False, "Password cannot be same as email username"
+
+    # Check for at least one digit
+    if not any(c.isdigit() for c in password):
+        return False, "Password must contain at least one number"
+
+    # Check for at least one letter
+    if not any(c.isalpha() for c in password):
+        return False, "Password must contain at least one letter"
 
     # All checks passed
     return True, ""

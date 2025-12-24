@@ -612,7 +612,7 @@ Regular text after horizontal rule.
 
     def test_generate_pdf_report_basic(self, sample_markdown):
         """Test PDF report generation with basic content."""
-        with patch('api.services.reports._register_fonts', return_value=True):
+        with patch('api.services.reports._register_fonts', return_value=False):
             pdf_bytes = generate_pdf_report(
                 title="Test Report",
                 content=sample_markdown,
@@ -628,7 +628,7 @@ Regular text after horizontal rule.
         """Test PDF report with Cyrillic characters."""
         content = "# Тестовый отчёт\n\nЭто **русский** текст."
 
-        with patch('api.services.reports._register_fonts', return_value=True):
+        with patch('api.services.reports._register_fonts', return_value=False):
             pdf_bytes = generate_pdf_report(
                 title="Отчёт",
                 content=content,
@@ -652,7 +652,7 @@ Regular text after horizontal rule.
 
     def test_generate_pdf_report_empty_content(self):
         """Test PDF report with empty content."""
-        with patch('api.services.reports._register_fonts', return_value=True):
+        with patch('api.services.reports._register_fonts', return_value=False):
             pdf_bytes = generate_pdf_report(
                 title="Empty Report",
                 content="",
@@ -790,7 +790,7 @@ class TestPasswordPolicy:
 
     def test_validate_password_no_letter(self):
         """Test password without a letter."""
-        is_valid, error = validate_password("12345678")
+        is_valid, error = validate_password("98765432")
         assert is_valid is False
         assert "at least one letter" in error
 
@@ -823,13 +823,13 @@ class TestPasswordPolicy:
 
     def test_validate_password_matches_email_username(self):
         """Test password cannot be same as email username."""
-        is_valid, error = validate_password("testuser1", email="testuser@example.com")
+        is_valid, error = validate_password("testuser", email="testuser@example.com")
         assert is_valid is False
         assert "cannot be same as email username" in error
 
     def test_validate_password_matches_email_username_case_insensitive(self):
         """Test password email username check is case-insensitive."""
-        is_valid, error = validate_password("TESTUSER1", email="testuser@example.com")
+        is_valid, error = validate_password("TESTUSER", email="testuser@example.com")
         assert is_valid is False
         assert "cannot be same as email username" in error
 

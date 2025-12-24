@@ -26,8 +26,7 @@ from api.routes.realtime import (
     broadcast_entity_deleted,
     broadcast_chat_message,
     broadcast_share_created,
-    broadcast_share_revoked,
-    manager
+    broadcast_share_revoked
 )
 from api.models.database import User, Organization, OrgMember, OrgRole
 
@@ -532,7 +531,7 @@ class TestBroadcastHelpers:
     """Test helper functions for broadcasting events."""
 
     @pytest.mark.asyncio
-    async def test_broadcast_entity_created(self, connection_manager: ConnectionManager, admin_user: User):
+    async def test_broadcast_entity_created(self, connection_manager: ConnectionManager, admin_user: User, monkeypatch):
         """Test broadcasting entity created event."""
         org_id = 1
         mock_ws = AsyncMock()
@@ -548,26 +547,21 @@ class TestBroadcastHelpers:
             "type": "candidate"
         }
 
-        # Use the global manager (reset it first)
-        global manager
-        original_manager = manager
-        manager = connection_manager
+        # Patch the global manager in the realtime module
+        monkeypatch.setattr("api.routes.realtime.manager", connection_manager)
 
-        try:
-            await broadcast_entity_created(org_id, entity_data)
+        await broadcast_entity_created(org_id, entity_data)
 
-            # Verify message was sent
-            mock_ws.send_text.assert_awaited_once()
-            sent_message = mock_ws.send_text.call_args[0][0]
-            event_data = json.loads(sent_message)
+        # Verify message was sent
+        mock_ws.send_text.assert_awaited_once()
+        sent_message = mock_ws.send_text.call_args[0][0]
+        event_data = json.loads(sent_message)
 
-            assert event_data["type"] == "entity.created"
-            assert event_data["payload"] == entity_data
-        finally:
-            manager = original_manager
+        assert event_data["type"] == "entity.created"
+        assert event_data["payload"] == entity_data
 
     @pytest.mark.asyncio
-    async def test_broadcast_entity_updated(self, connection_manager: ConnectionManager, admin_user: User):
+    async def test_broadcast_entity_updated(self, connection_manager: ConnectionManager, admin_user: User, monkeypatch):
         """Test broadcasting entity updated event."""
         org_id = 1
         mock_ws = AsyncMock()
@@ -582,24 +576,20 @@ class TestBroadcastHelpers:
             "status": "active"
         }
 
-        global manager
-        original_manager = manager
-        manager = connection_manager
+        # Patch the global manager in the realtime module
+        monkeypatch.setattr("api.routes.realtime.manager", connection_manager)
 
-        try:
-            await broadcast_entity_updated(org_id, entity_data)
+        await broadcast_entity_updated(org_id, entity_data)
 
-            mock_ws.send_text.assert_awaited_once()
-            sent_message = mock_ws.send_text.call_args[0][0]
-            event_data = json.loads(sent_message)
+        mock_ws.send_text.assert_awaited_once()
+        sent_message = mock_ws.send_text.call_args[0][0]
+        event_data = json.loads(sent_message)
 
-            assert event_data["type"] == "entity.updated"
-            assert event_data["payload"] == entity_data
-        finally:
-            manager = original_manager
+        assert event_data["type"] == "entity.updated"
+        assert event_data["payload"] == entity_data
 
     @pytest.mark.asyncio
-    async def test_broadcast_entity_deleted(self, connection_manager: ConnectionManager, admin_user: User):
+    async def test_broadcast_entity_deleted(self, connection_manager: ConnectionManager, admin_user: User, monkeypatch):
         """Test broadcasting entity deleted event."""
         org_id = 1
         mock_ws = AsyncMock()
@@ -610,25 +600,21 @@ class TestBroadcastHelpers:
 
         entity_id = 123
 
-        global manager
-        original_manager = manager
-        manager = connection_manager
+        # Patch the global manager in the realtime module
+        monkeypatch.setattr("api.routes.realtime.manager", connection_manager)
 
-        try:
-            await broadcast_entity_deleted(org_id, entity_id)
+        await broadcast_entity_deleted(org_id, entity_id)
 
-            mock_ws.send_text.assert_awaited_once()
-            sent_message = mock_ws.send_text.call_args[0][0]
-            event_data = json.loads(sent_message)
+        mock_ws.send_text.assert_awaited_once()
+        sent_message = mock_ws.send_text.call_args[0][0]
+        event_data = json.loads(sent_message)
 
-            assert event_data["type"] == "entity.deleted"
-            assert event_data["payload"]["id"] == entity_id
-            assert event_data["payload"]["resource_type"] == "entity"
-        finally:
-            manager = original_manager
+        assert event_data["type"] == "entity.deleted"
+        assert event_data["payload"]["id"] == entity_id
+        assert event_data["payload"]["resource_type"] == "entity"
 
     @pytest.mark.asyncio
-    async def test_broadcast_chat_message(self, connection_manager: ConnectionManager, admin_user: User):
+    async def test_broadcast_chat_message(self, connection_manager: ConnectionManager, admin_user: User, monkeypatch):
         """Test broadcasting chat message event."""
         org_id = 1
         mock_ws = AsyncMock()
@@ -643,24 +629,20 @@ class TestBroadcastHelpers:
             "sender_name": "Test User"
         }
 
-        global manager
-        original_manager = manager
-        manager = connection_manager
+        # Patch the global manager in the realtime module
+        monkeypatch.setattr("api.routes.realtime.manager", connection_manager)
 
-        try:
-            await broadcast_chat_message(org_id, message_data)
+        await broadcast_chat_message(org_id, message_data)
 
-            mock_ws.send_text.assert_awaited_once()
-            sent_message = mock_ws.send_text.call_args[0][0]
-            event_data = json.loads(sent_message)
+        mock_ws.send_text.assert_awaited_once()
+        sent_message = mock_ws.send_text.call_args[0][0]
+        event_data = json.loads(sent_message)
 
-            assert event_data["type"] == "chat.message"
-            assert event_data["payload"] == message_data
-        finally:
-            manager = original_manager
+        assert event_data["type"] == "chat.message"
+        assert event_data["payload"] == message_data
 
     @pytest.mark.asyncio
-    async def test_broadcast_share_created(self, connection_manager: ConnectionManager, admin_user: User):
+    async def test_broadcast_share_created(self, connection_manager: ConnectionManager, admin_user: User, monkeypatch):
         """Test broadcasting share created event."""
         mock_ws = AsyncMock()
         mock_ws.accept = AsyncMock()
@@ -676,24 +658,20 @@ class TestBroadcastHelpers:
             "shared_with_id": admin_user.id
         }
 
-        global manager
-        original_manager = manager
-        manager = connection_manager
+        # Patch the global manager in the realtime module
+        monkeypatch.setattr("api.routes.realtime.manager", connection_manager)
 
-        try:
-            await broadcast_share_created(admin_user.id, share_data)
+        await broadcast_share_created(admin_user.id, share_data)
 
-            mock_ws.send_text.assert_awaited_once()
-            sent_message = mock_ws.send_text.call_args[0][0]
-            event_data = json.loads(sent_message)
+        mock_ws.send_text.assert_awaited_once()
+        sent_message = mock_ws.send_text.call_args[0][0]
+        event_data = json.loads(sent_message)
 
-            assert event_data["type"] == "share.created"
-            assert event_data["payload"] == share_data
-        finally:
-            manager = original_manager
+        assert event_data["type"] == "share.created"
+        assert event_data["payload"] == share_data
 
     @pytest.mark.asyncio
-    async def test_broadcast_share_revoked(self, connection_manager: ConnectionManager, admin_user: User):
+    async def test_broadcast_share_revoked(self, connection_manager: ConnectionManager, admin_user: User, monkeypatch):
         """Test broadcasting share revoked event."""
         mock_ws = AsyncMock()
         mock_ws.accept = AsyncMock()
@@ -707,21 +685,17 @@ class TestBroadcastHelpers:
             "resource_id": 789
         }
 
-        global manager
-        original_manager = manager
-        manager = connection_manager
+        # Patch the global manager in the realtime module
+        monkeypatch.setattr("api.routes.realtime.manager", connection_manager)
 
-        try:
-            await broadcast_share_revoked(admin_user.id, share_data)
+        await broadcast_share_revoked(admin_user.id, share_data)
 
-            mock_ws.send_text.assert_awaited_once()
-            sent_message = mock_ws.send_text.call_args[0][0]
-            event_data = json.loads(sent_message)
+        mock_ws.send_text.assert_awaited_once()
+        sent_message = mock_ws.send_text.call_args[0][0]
+        event_data = json.loads(sent_message)
 
-            assert event_data["type"] == "share.revoked"
-            assert event_data["payload"] == share_data
-        finally:
-            manager = original_manager
+        assert event_data["type"] == "share.revoked"
+        assert event_data["payload"] == share_data
 
 
 # ============================================================================

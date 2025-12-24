@@ -126,12 +126,9 @@ def sample_criteria() -> List[dict]:
 @pytest.fixture
 def mock_anthropic_client():
     """Mock AsyncAnthropic client."""
-    mock_client = MagicMock()
-
-    # Mock for streaming responses
-    mock_stream = AsyncMock()
-    mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
-    mock_stream.__aexit__ = AsyncMock(return_value=None)
+    # Mock for non-streaming responses
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(text="Complete test response with analysis.")]
 
     async def mock_text_stream():
         """Simulate streaming text chunks."""
@@ -139,13 +136,20 @@ def mock_anthropic_client():
         for chunk in chunks:
             yield chunk
 
-    mock_stream.text_stream = mock_text_stream()
-    mock_client.messages.stream = MagicMock(return_value=mock_stream)
+    # Function to create a fresh stream each time
+    def create_stream(*args, **kwargs):
+        """Create a fresh mock stream with a new generator."""
+        mock_stream = MagicMock()
+        mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
+        mock_stream.__aexit__ = AsyncMock(return_value=None)
+        mock_stream.text_stream = mock_text_stream()
+        return mock_stream
 
-    # Mock for non-streaming responses
-    mock_response = MagicMock()
-    mock_response.content = [MagicMock(text="Complete test response with analysis.")]
+    # Create the mock client with messages attribute
+    mock_client = MagicMock()
+    mock_client.messages = MagicMock()
     mock_client.messages.create = AsyncMock(return_value=mock_response)
+    mock_client.messages.stream = MagicMock(side_effect=create_stream)
 
     return mock_client
 
@@ -469,7 +473,7 @@ class TestChatStream:
         """Test basic chat streaming functionality."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             chunks = []
             async for chunk in service.chat_stream(
                 user_message="Tell me about the candidates",
@@ -495,7 +499,7 @@ class TestChatStream:
             {"role": "assistant", "content": "Previous answer"}
         ]
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             chunks = []
             async for chunk in service.chat_stream(
                 user_message="Follow-up question",
@@ -523,7 +527,7 @@ class TestChatStream:
         """Test that chat stream uses correct model parameters."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             async for _ in service.chat_stream(
                 user_message="Test",
                 chat_title="Test Chat",
@@ -554,7 +558,7 @@ class TestQuickAction:
         """Test quick action for HR full analysis."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             chunks = []
             async for chunk in service.quick_action(
                 action="full_analysis",
@@ -579,7 +583,7 @@ class TestQuickAction:
         """Test quick action for project blockers."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             chunks = []
             async for chunk in service.quick_action(
                 action="blockers",
@@ -597,7 +601,7 @@ class TestQuickAction:
         """Test that quick action falls back to other types if action not found."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             # Use "summary" action which exists in multiple types
             chunks = []
             async for chunk in service.quick_action(
@@ -616,7 +620,7 @@ class TestQuickAction:
         """Test quick action with completely unknown action."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             chunks = []
             async for chunk in service.quick_action(
                 action="nonexistent_action_12345",
@@ -638,7 +642,7 @@ class TestQuickAction:
         hr_actions = ["full_analysis", "red_flags", "strengths", "recommendation", "culture_fit"]
 
         for action in hr_actions:
-            with patch.object(service, 'client', mock_anthropic_client):
+            with patch.object(service, '_client', mock_anthropic_client):
                 chunks = []
                 async for chunk in service.quick_action(
                     action=action,
@@ -664,7 +668,7 @@ class TestGenerateReport:
         """Test generating a standard report."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             result = await service.generate_report(
                 chat_title="Interview",
                 messages=sample_messages,
@@ -688,7 +692,7 @@ class TestGenerateReport:
         """Test generating a quick report."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             result = await service.generate_report(
                 chat_title="Interview",
                 messages=sample_messages,
@@ -711,7 +715,7 @@ class TestGenerateReport:
         """Test generating a detailed report."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             result = await service.generate_report(
                 chat_title="Interview",
                 messages=sample_messages,
@@ -734,7 +738,7 @@ class TestGenerateReport:
         """Test generating report without quotes."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             result = await service.generate_report(
                 chat_title="Interview",
                 messages=sample_messages,
@@ -757,7 +761,7 @@ class TestGenerateReport:
         chat_types = ["hr", "project", "client", "contractor", "sales", "support", "custom"]
 
         for chat_type in chat_types:
-            with patch.object(service, 'client', mock_anthropic_client):
+            with patch.object(service, '_client', mock_anthropic_client):
                 result = await service.generate_report(
                     chat_title=f"Test {chat_type}",
                     messages=sample_messages,
@@ -774,7 +778,7 @@ class TestGenerateReport:
         """Test that HR report includes correct structure."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             await service.generate_report(
                 chat_title="Interview",
                 messages=sample_messages,
@@ -799,7 +803,7 @@ class TestGenerateReport:
         """Test that project report includes correct structure."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             await service.generate_report(
                 chat_title="Project",
                 messages=sample_messages,
@@ -840,7 +844,7 @@ class TestErrorHandling:
         mock_client = MagicMock()
         mock_client.messages.stream.side_effect = Exception("API Error")
 
-        with patch.object(service, 'client', mock_client):
+        with patch.object(service, '_client', mock_client):
             with pytest.raises(Exception, match="API Error"):
                 async for _ in service.chat_stream(
                     user_message="Test",
@@ -860,7 +864,7 @@ class TestErrorHandling:
         mock_client = MagicMock()
         mock_client.messages.create = AsyncMock(side_effect=Exception("API Error"))
 
-        with patch.object(service, 'client', mock_client):
+        with patch.object(service, '_client', mock_client):
             with pytest.raises(Exception, match="API Error"):
                 await service.generate_report(
                     chat_title="Test",
@@ -876,7 +880,7 @@ class TestErrorHandling:
         """Test that empty messages list is handled correctly."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             chunks = []
             async for chunk in service.chat_stream(
                 user_message="Analyze empty chat",
@@ -957,7 +961,7 @@ class TestIntegration:
         """Test complete workflow: create service, build prompt, stream response."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             full_response = []
             async for chunk in service.chat_stream(
                 user_message="Give me a detailed analysis of all candidates",
@@ -988,7 +992,7 @@ class TestIntegration:
         """Test complete quick action workflow."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             full_response = []
             async for chunk in service.quick_action(
                 action="full_analysis",
@@ -1006,7 +1010,7 @@ class TestIntegration:
         """Test complete report generation workflow."""
         service = AIService()
 
-        with patch.object(service, 'client', mock_anthropic_client):
+        with patch.object(service, '_client', mock_anthropic_client):
             report = await service.generate_report(
                 chat_title="Candidate Evaluation",
                 messages=sample_messages,

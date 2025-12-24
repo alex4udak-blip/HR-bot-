@@ -204,6 +204,16 @@ async def clear_ai_history(
     user: User = Depends(get_current_user),
 ):
     user = await db.merge(user)
+
+    # Check chat exists and user has access
+    result = await db.execute(select(Chat).where(Chat.id == chat_id))
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if not can_access_chat(user, chat):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Delete conversation for this user and chat
     result = await db.execute(
         select(AIConversation).where(
             AIConversation.chat_id == chat_id,

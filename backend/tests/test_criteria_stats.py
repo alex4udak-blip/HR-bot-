@@ -27,18 +27,18 @@ class TestCriteriaPresets:
 
     @pytest.mark.asyncio
     async def test_get_presets_global_and_user_owned(
-        self, client: AsyncClient, db_session, admin_user, admin_token,
+        self, client: AsyncClient, db_session, admin_user, second_user, admin_token,
         get_auth_headers
     ):
         """Test getting global presets and user's own presets."""
-        # Create a global preset
+        # Create a global preset (created by admin_user)
         global_preset = CriteriaPreset(
             name="Global Preset",
             description="A global preset",
             criteria=[{"name": "Experience", "weight": 8}],
             category="technical",
             is_global=True,
-            created_by=1
+            created_by=admin_user.id
         )
         db_session.add(global_preset)
 
@@ -60,7 +60,7 @@ class TestCriteriaPresets:
             criteria=[{"name": "Leadership", "weight": 6}],
             category="management",
             is_global=False,
-            created_by=999
+            created_by=second_user.id  # Use second_user instead of non-existent ID
         )
         db_session.add(other_preset)
         await db_session.commit()

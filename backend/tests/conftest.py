@@ -4,6 +4,9 @@ Pytest configuration and fixtures for HR-Bot backend tests.
 import os
 # Set TESTING mode BEFORE any imports to disable rate limiting
 os.environ["TESTING"] = "1"
+# Set required environment variables for testing
+os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only"
+os.environ["SUPERADMIN_PASSWORD"] = "test-superadmin-password"
 
 import asyncio
 import pytest
@@ -233,6 +236,21 @@ async def org_member(db_session: AsyncSession, organization: Organization, secon
         org_id=organization.id,
         user_id=second_user.id,
         role=OrgRole.member,
+        created_at=datetime.utcnow()
+    )
+    db_session.add(member)
+    await db_session.commit()
+    await db_session.refresh(member)
+    return member
+
+
+@pytest_asyncio.fixture
+async def superadmin_org_member(db_session: AsyncSession, organization: Organization, superadmin_user: User) -> OrgMember:
+    """Create organization membership for superadmin user."""
+    member = OrgMember(
+        org_id=organization.id,
+        user_id=superadmin_user.id,
+        role=OrgRole.owner,
         created_at=datetime.utcnow()
     )
     db_session.add(member)
@@ -621,26 +639,36 @@ def mock_fireflies_client(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_anthropic_client(monkeypatch):
     """Mock Anthropic Claude API for all tests."""
+    # Mock response for non-streaming create()
     mock_response = MagicMock()
     mock_response.content = [MagicMock(text="This is a mock AI response for testing.")]
     mock_response.stop_reason = "end_turn"
     mock_response.usage = MagicMock(input_tokens=100, output_tokens=50)
 
+    # Create async generator for text_stream
+    async def mock_text_stream():
+        chunks = ["Mock ", "streamed ", "response"]
+        for chunk in chunks:
+            yield chunk
+
+    # Function to create a fresh stream each time
+    def create_stream(*args, **kwargs):
+        """Create a fresh mock stream with a new generator."""
+        mock_stream = MagicMock()
+        mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
+        mock_stream.__aexit__ = AsyncMock(return_value=None)
+        mock_stream.text_stream = mock_text_stream()
+        return mock_stream
+
+    # Create the mock client
     mock_client = MagicMock()
-    mock_client.messages.create = MagicMock(return_value=mock_response)
+    mock_client.messages = MagicMock()
+    mock_client.messages.create = AsyncMock(return_value=mock_response)
+    mock_client.messages.stream = MagicMock(side_effect=create_stream)
 
-    # For streaming
-    mock_stream_chunk = MagicMock()
-    mock_stream_chunk.type = "content_block_delta"
-    mock_stream_chunk.delta = MagicMock(text="Mock streamed response")
-
-    mock_stream = MagicMock()
-    mock_stream.__iter__ = lambda self: iter([mock_stream_chunk])
-    mock_stream.__enter__ = lambda self: self
-    mock_stream.__exit__ = lambda self, *args: None
-    mock_client.messages.stream = MagicMock(return_value=mock_stream)
-
+    # Mock both Anthropic and AsyncAnthropic
     monkeypatch.setattr("anthropic.Anthropic", lambda *args, **kwargs: mock_client)
+    monkeypatch.setattr("anthropic.AsyncAnthropic", lambda *args, **kwargs: mock_client)
 
     return mock_client
 
@@ -706,16 +734,26 @@ def mock_subprocess(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_aiofiles(monkeypatch):
     """Mock aiofiles for async file operations."""
-    mock_file = MagicMock()
+    # Create async context manager mock
+    mock_file = AsyncMock()
     mock_file.read = AsyncMock(return_value=b"mock file content")
-    mock_file.write = AsyncMock()
-    mock_file.__aenter__ = AsyncMock(return_value=mock_file)
-    mock_file.__aexit__ = AsyncMock()
+    mock_file.write = AsyncMock(return_value=None)
+    mock_file.close = AsyncMock(return_value=None)
 
-    mock_open = MagicMock(return_value=mock_file)
+    # Create async context manager
+    class MockAsyncFile:
+        async def __aenter__(self):
+            return mock_file
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            return None
+
+    # Mock the open function to return the async context manager
+    def mock_open_func(*args, **kwargs):
+        return MockAsyncFile()
 
     try:
-        monkeypatch.setattr("aiofiles.open", mock_open)
+        monkeypatch.setattr("aiofiles.open", mock_open_func)
     except AttributeError:
         pass  # aiofiles not imported in all modules
 
@@ -743,9 +781,13 @@ def mock_httpx_async(monkeypatch):
     return mock_client
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_reportlab(monkeypatch):
-    """Mock ReportLab for PDF generation tests."""
+    """Mock ReportLab for PDF generation tests.
+
+    NOTE: This fixture is not auto-used. Request it explicitly in tests that need to
+    avoid actual PDF generation. The PDF report tests need real ReportLab functionality.
+    """
     mock_canvas = MagicMock()
     mock_canvas.drawString = MagicMock()
     mock_canvas.save = MagicMock()
@@ -782,18 +824,89 @@ def mock_pillow(monkeypatch):
     return mock_image
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_websocket_broadcast(monkeypatch):
-    """Mock WebSocket broadcast functions."""
-    mock_broadcast = AsyncMock()
+    """Mock WebSocket broadcast helper functions.
 
+    NOTE: Not auto-used. Tests that need to mock broadcasts should request this fixture explicitly.
+    The realtime route tests need real broadcast functionality.
+    """
+    # Mock the actual broadcast helper functions
+    mock_entity_created = AsyncMock()
+    mock_entity_updated = AsyncMock()
+    mock_entity_deleted = AsyncMock()
+    mock_chat_message = AsyncMock()
+    mock_share_created = AsyncMock()
+    mock_share_revoked = AsyncMock()
+
+    monkeypatch.setattr("api.routes.realtime.broadcast_entity_created", mock_entity_created)
+    monkeypatch.setattr("api.routes.realtime.broadcast_entity_updated", mock_entity_updated)
+    monkeypatch.setattr("api.routes.realtime.broadcast_entity_deleted", mock_entity_deleted)
+    monkeypatch.setattr("api.routes.realtime.broadcast_chat_message", mock_chat_message)
+    monkeypatch.setattr("api.routes.realtime.broadcast_share_created", mock_share_created)
+    monkeypatch.setattr("api.routes.realtime.broadcast_share_revoked", mock_share_revoked)
+
+    return {
+        "entity_created": mock_entity_created,
+        "entity_updated": mock_entity_updated,
+        "entity_deleted": mock_entity_deleted,
+        "chat_message": mock_chat_message,
+        "share_created": mock_share_created,
+        "share_revoked": mock_share_revoked,
+    }
+
+
+@pytest.fixture(autouse=True)
+def mock_call_processor(monkeypatch):
+    """Mock call processor for all tests."""
+    # Mock analyze_transcript method
+    mock_analyze = AsyncMock(return_value=None)
+
+    # Mock process_call method
+    mock_process = AsyncMock(return_value=None)
+
+    # Create mock processor
+    mock_processor = MagicMock()
+    mock_processor.analyze_transcript = mock_analyze
+    mock_processor.process_call = mock_process
+
+    # Mock the global call_processor instance
     try:
-        monkeypatch.setattr("api.routes.realtime.broadcast_to_user", mock_broadcast)
-        monkeypatch.setattr("api.routes.realtime.broadcast_to_org", mock_broadcast)
+        monkeypatch.setattr("api.services.call_processor.call_processor", mock_processor)
     except AttributeError:
         pass
 
-    return mock_broadcast
+    # Mock process_call_background function
+    mock_bg_process = AsyncMock(return_value=None)
+    try:
+        monkeypatch.setattr("api.services.call_processor.process_call_background", mock_bg_process)
+    except AttributeError:
+        pass
+
+    return mock_processor
+
+
+@pytest.fixture(autouse=True)
+def mock_call_recorder_service(monkeypatch):
+    """Mock call recorder service for all tests."""
+    # Mock start_recording method
+    mock_start = AsyncMock(return_value={"success": True, "message": "Recording started"})
+
+    # Mock stop_recording method
+    mock_stop = AsyncMock(return_value=None)
+
+    # Create mock recorder
+    mock_recorder = MagicMock()
+    mock_recorder.start_recording = mock_start
+    mock_recorder.stop_recording = mock_stop
+
+    # Mock the global call_recorder instance
+    try:
+        monkeypatch.setattr("api.services.call_recorder.call_recorder", mock_recorder)
+    except AttributeError:
+        pass
+
+    return mock_recorder
 
 
 # ============================================================================
