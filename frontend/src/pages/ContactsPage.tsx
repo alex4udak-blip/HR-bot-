@@ -73,7 +73,12 @@ export default function ContactsPage() {
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [selectedEntityForTransfer, setSelectedEntityForTransfer] = useState<Entity | null>(null);
 
-  const { user } = useAuthStore();
+  const {
+    canEditResource,
+    canDeleteResource,
+    canShareResource
+  } = useAuthStore();
+
   const {
     entities,
     currentEntity,
@@ -84,33 +89,53 @@ export default function ContactsPage() {
     clearCurrentEntity
   } = useEntityStore();
 
-  // Helper functions to check permissions
+  // Helper functions to check permissions using authStore helpers
   const canEdit = (entity: Entity) => {
-    if (!user) return false;
-    if (user.role === 'superadmin') return true;
-    if (entity.is_mine) return true;
-    return false; // Conservative: shared entities are view-only unless we know access_level
+    // Transferred entities are read-only
+    if (entity.is_transferred) return false;
+
+    // Check based on ownership and access level
+    return canEditResource({
+      owner_id: entity.owner_id,
+      is_mine: entity.is_mine,
+      access_level: entity.access_level
+    });
   };
 
   const canDelete = (entity: Entity) => {
-    if (!user) return false;
-    if (user.role === 'superadmin') return true;
-    if (entity.is_mine) return true;
-    return false; // Only owner or superadmin can delete
+    // Transferred entities cannot be deleted
+    if (entity.is_transferred) return false;
+
+    // Only owners can delete
+    return canDeleteResource({
+      owner_id: entity.owner_id,
+      is_mine: entity.is_mine,
+      access_level: entity.access_level
+    });
   };
 
   const canShare = (entity: Entity) => {
-    if (!user) return false;
-    if (user.role === 'superadmin') return true;
-    if (entity.is_mine) return true;
-    return false; // Only owner or superadmin can share
+    // Transferred entities cannot be shared
+    if (entity.is_transferred) return false;
+
+    // Check share permissions
+    return canShareResource({
+      owner_id: entity.owner_id,
+      is_mine: entity.is_mine,
+      access_level: entity.access_level
+    });
   };
 
   const canTransfer = (entity: Entity) => {
-    if (!user) return false;
-    if (user.role === 'superadmin') return true;
-    if (entity.is_mine) return true;
-    return false; // Only owner or superadmin can transfer
+    // Already transferred entities cannot be transferred again
+    if (entity.is_transferred) return false;
+
+    // Only owners can transfer
+    return canDeleteResource({
+      owner_id: entity.owner_id,
+      is_mine: entity.is_mine,
+      access_level: entity.access_level
+    });
   };
 
   // Load departments on mount
@@ -350,7 +375,9 @@ export default function ContactsPage() {
                   onClick={() => handleSelectEntity(entity.id)}
                   className={clsx(
                     'p-4 rounded-xl cursor-pointer transition-all group overflow-hidden',
-                    isSelected
+                    entity.is_transferred
+                      ? 'bg-white/3 border border-white/5 opacity-60'
+                      : isSelected
                       ? 'bg-cyan-500/20 border border-cyan-500/30'
                       : 'bg-white/5 border border-white/5 hover:bg-white/10'
                   )}
@@ -366,6 +393,11 @@ export default function ContactsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <h3 className="font-medium text-white truncate">{entity.name}</h3>
+                        {entity.is_transferred && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300">
+                            Передан
+                          </span>
+                        )}
                         <span className={clsx('text-xs px-2 py-0.5 rounded-full', STATUS_COLORS[entity.status])}>
                           {STATUS_LABELS[entity.status]}
                         </span>
@@ -378,10 +410,16 @@ export default function ContactsPage() {
                       )}
 
                       <div className="flex items-center gap-4 mt-2 text-xs text-white/40">
-                        {entity.is_shared && entity.owner_name && (
+                        {entity.is_transferred && entity.transferred_to_name && (
+                          <span className="flex items-center gap-1 text-orange-400">
+                            <ArrowRightLeft size={12} />
+                            Передан → {entity.transferred_to_name}
+                          </span>
+                        )}
+                        {entity.is_shared && entity.owner_name && !entity.is_transferred && (
                           <span className="flex items-center gap-1 text-purple-400">
                             <Share size={12} />
-                            от {entity.owner_name}
+                            {entity.access_level === 'view' ? 'Просмотр' : entity.access_level === 'edit' ? 'Редактирование' : 'Полный доступ'} от {entity.owner_name}
                           </span>
                         )}
                         {entity.chats_count !== undefined && entity.chats_count > 0 && (
@@ -465,7 +503,20 @@ export default function ContactsPage() {
                 <ChevronLeft size={20} className="text-white/60" />
               </button>
               <div className="flex-1 min-w-0">
-                <h2 className="text-xl font-semibold text-white truncate">{currentEntity.name}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-semibold text-white truncate">{currentEntity.name}</h2>
+                  {currentEntity.is_transferred && currentEntity.transferred_to_name && (
+                    <span className="px-2 py-1 bg-orange-500/20 text-orange-400 text-xs rounded-lg whitespace-nowrap flex items-center gap-1">
+                      <ArrowRightLeft size={12} />
+                      Передан → {currentEntity.transferred_to_name}
+                    </span>
+                  )}
+                  {currentEntity.is_shared && currentEntity.access_level === 'view' && (
+                    <span className="px-2 py-1 bg-purple-500/20 text-purple-400 text-xs rounded-lg whitespace-nowrap">
+                      Только просмотр
+                    </span>
+                  )}
+                </div>
                 <p className="text-sm text-white/60 truncate">
                   {ENTITY_TYPES[currentEntity.type].name}
                   {currentEntity.company && ` @ ${currentEntity.company}`}

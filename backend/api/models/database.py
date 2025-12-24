@@ -91,8 +91,9 @@ class OrgRole(str, enum.Enum):
 
 
 class DeptRole(str, enum.Enum):
-    lead = "lead"        # Department lead - sees all dept data
-    member = "member"    # Regular member - sees own data + shared
+    lead = "lead"           # Department lead - sees all dept data, full management
+    sub_admin = "sub_admin" # Sub-admin - sees all dept data, limited management
+    member = "member"       # Regular member - sees own data + shared
 
 
 class SubscriptionPlan(str, enum.Enum):
@@ -337,9 +338,15 @@ class Entity(Base):
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
+    # Transfer tracking fields
+    is_transferred = Column(Boolean, default=False, index=True)
+    transferred_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    transferred_at = Column(DateTime, nullable=True)
+
     organization = relationship("Organization", back_populates="entities")
     department = relationship("Department", back_populates="entities")
     creator = relationship("User", foreign_keys=[created_by])
+    transferred_to = relationship("User", foreign_keys=[transferred_to_id])
     chats = relationship("Chat", back_populates="entity")
     calls = relationship("CallRecording", back_populates="entity")
     transfers = relationship("EntityTransfer", back_populates="entity")

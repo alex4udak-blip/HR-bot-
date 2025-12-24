@@ -27,7 +27,12 @@ export default function CallsPage() {
   const navigate = useNavigate();
   const [showRecorderModal, setShowRecorderModal] = useState(false);
 
-  const { user } = useAuthStore();
+  const {
+    user,
+    canEditResource,
+    canDeleteResource
+  } = useAuthStore();
+
   const {
     calls,
     currentCall,
@@ -45,17 +50,19 @@ export default function CallsPage() {
 
   // Helper functions to check permissions
   const canEdit = (call: CallRecording) => {
-    if (!user) return false;
-    if (user.role === 'superadmin') return true;
-    if (call.owner_id === user.id) return true;
-    return false;
+    return canEditResource({
+      owner_id: call.owner_id,
+      is_mine: call.owner_id === user?.id,
+      access_level: call.shared_access_level
+    });
   };
 
   const canDelete = (call: CallRecording) => {
-    if (!user) return false;
-    if (user.role === 'superadmin') return true;
-    if (call.owner_id === user.id) return true;
-    return false;
+    return canDeleteResource({
+      owner_id: call.owner_id,
+      is_mine: call.owner_id === user?.id,
+      access_level: call.shared_access_level
+    });
   };
 
   // Fetch calls on mount

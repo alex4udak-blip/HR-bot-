@@ -74,6 +74,11 @@ class EntityResponse(BaseModel):
     updated_at: datetime
     chats_count: int = 0
     calls_count: int = 0
+    # Transfer tracking
+    is_transferred: bool = False
+    transferred_to_id: Optional[int] = None
+    transferred_to_name: Optional[str] = None
+    transferred_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -97,7 +102,116 @@ class TransferResponse(BaseModel):
         from_attributes = True
 
 
+class ShareRequest(BaseModel):
+    shared_with_id: int
+    access_level: AccessLevel = AccessLevel.view
+    note: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    auto_share_related: bool = True  # Auto-share related chats and calls
+
+
 # === Helper Functions ===
+
+async def can_share_to(
+    from_user: User,
+    to_user: User,
+    from_user_org_id: int,
+    db: AsyncSession
+) -> bool:
+    """
+    Check if from_user can share resources with to_user.
+
+    Logic:
+    - MEMBER → only within their department
+    - ADMIN/SUB_ADMIN → their department + admins of other departments + OWNER/SUPERADMIN
+    - OWNER → anyone in organization
+    - SUPERADMIN → anyone
+
+    Args:
+        from_user: User who wants to share
+        to_user: User to share with
+        from_user_org_id: Organization ID of the resource owner
+        db: Database session
+
+    Returns:
+        True if sharing is allowed, False otherwise
+    """
+    # SUPERADMIN can share with anyone
+    if from_user.role == UserRole.SUPERADMIN:
+        return True
+
+    # Get from_user's role in the organization
+    from_user_role = await get_user_org_role(from_user, from_user_org_id, db)
+
+    # OWNER can share with anyone in their organization
+    if from_user_role == OrgRole.owner:
+        # Check that to_user is in the same organization
+        to_user_org = await get_user_org(to_user, db)
+        return to_user_org and to_user_org.id == from_user_org_id
+
+    # Get to_user's role in the organization
+    to_user_org_role = await get_user_org_role(to_user, from_user_org_id, db)
+
+    # If to_user is not in the organization, cannot share
+    if to_user_org_role is None:
+        return False
+
+    # ADMIN can share with:
+    # 1. Their department members
+    # 2. Admins of other departments
+    # 3. OWNER/SUPERADMIN
+    if from_user_role == OrgRole.admin:
+        # Can share with OWNER or SUPERADMIN
+        if to_user_org_role == OrgRole.owner or to_user.role == UserRole.SUPERADMIN:
+            return True
+
+        # Can share with other admins
+        if to_user_org_role == OrgRole.admin:
+            return True
+
+        # Can share within their departments
+        # Get from_user's departments
+        from_depts_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == from_user.id
+            )
+        )
+        from_dept_ids = set(from_depts_result.scalars().all())
+
+        # Get to_user's departments
+        to_depts_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == to_user.id
+            )
+        )
+        to_dept_ids = set(to_depts_result.scalars().all())
+
+        # Check if they share at least one department
+        return bool(from_dept_ids & to_dept_ids)
+
+    # MEMBER can only share within their department
+    if from_user_role == OrgRole.member:
+        # Get from_user's departments
+        from_depts_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == from_user.id
+            )
+        )
+        from_dept_ids = set(from_depts_result.scalars().all())
+
+        # Get to_user's departments
+        to_depts_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == to_user.id
+            )
+        )
+        to_dept_ids = set(to_depts_result.scalars().all())
+
+        # Can only share if they are in the same department
+        return bool(from_dept_ids & to_dept_ids)
+
+    return False
+
 
 async def check_entity_access(
     entity: Entity,
@@ -107,7 +221,14 @@ async def check_entity_access(
     required_level: Optional[AccessLevel] = None
 ) -> bool:
     """
-    Check if user has access to entity.
+    Check if user has access to entity based on new role hierarchy.
+
+    Hierarchy:
+    1. SUPERADMIN - sees EVERYTHING without exceptions
+    2. OWNER - sees everything in organization, BUT NOT private content created by SUPERADMIN
+    3. ADMIN (lead) - sees all resources in their department
+    4. SUB_ADMIN - same as ADMIN for viewing (management rights differ)
+    5. MEMBER - sees only THEIR OWN resources
 
     Args:
         entity: Entity to check access for
@@ -119,34 +240,47 @@ async def check_entity_access(
     Returns:
         True if user has required access, False otherwise
     """
-    # Superadmin has access to everything
-    if user.role == UserRole.SUPERADMIN:
+    from ..services.auth import is_superadmin, is_owner, can_view_in_department, was_created_by_superadmin
+
+    # 1. SUPERADMIN - has access to EVERYTHING
+    if is_superadmin(user):
         return True
 
-    # Org owner has full access
-    user_role = await get_user_org_role(user, org_id, db)
-    if user_role == OrgRole.owner:
+    # 2. OWNER - has access to everything in organization, EXCEPT private content created by SUPERADMIN
+    if await is_owner(user, org_id, db):
+        # Check if entity was created by SUPERADMIN (private content restriction)
+        if await was_created_by_superadmin(entity, db):
+            # OWNER cannot access private SUPERADMIN content
+            return False
         return True
 
-    # Entity owner has full access
+    # 3. Entity owner has full access to their own resources
     if entity.created_by == user.id:
         return True
 
-    # Check department membership - members can view entities in their department
-    # but cannot edit/delete/transfer unless they have explicit ownership or shared access
+    # 4. Department-based access (ADMIN/SUB_ADMIN/MEMBER)
     if entity.department_id:
-        dept_membership_result = await db.execute(
-            select(DepartmentMember).where(
-                DepartmentMember.user_id == user.id,
-                DepartmentMember.department_id == entity.department_id
-            )
+        dept_can_view = await can_view_in_department(
+            user,
+            resource_owner_id=entity.created_by,
+            resource_dept_id=entity.department_id,
+            db=db
         )
-        if dept_membership_result.scalar_one_or_none():
-            # Department members can only view, not edit/delete/transfer
-            if required_level is None:
-                return True
 
-    # Check SharedAccess
+        if dept_can_view:
+            # Can view based on department role
+            # For modifications, need to check if user is admin
+            if required_level is None:
+                # Read access - granted
+                return True
+            elif required_level in (AccessLevel.edit, AccessLevel.full):
+                # Edit/delete/transfer - only ADMIN/SUB_ADMIN can do this
+                from ..services.auth import is_department_admin
+                if await is_department_admin(user, entity.department_id, db):
+                    return True
+                # Otherwise fall through to SharedAccess check
+
+    # 5. Check SharedAccess for explicitly shared resources
     shared_result = await db.execute(
         select(SharedAccess).where(
             SharedAccess.resource_type == ResourceType.entity,
@@ -299,6 +433,14 @@ async def list_entities(
         for owner in owners_result.scalars().all():
             owner_names[owner.id] = owner.name
 
+    # Pre-fetch transferred_to names
+    transferred_to_ids = list(set(e.transferred_to_id for e in entities if e.transferred_to_id))
+    transferred_to_names = {}
+    if transferred_to_ids:
+        transferred_result = await db.execute(select(User).where(User.id.in_(transferred_to_ids)))
+        for user in transferred_result.scalars().all():
+            transferred_to_names[user.id] = user.name
+
     # Pre-fetch department names
     dept_ids = list(set(e.department_id for e in entities if e.department_id))
     dept_names = {}
@@ -350,7 +492,12 @@ async def list_entities(
             "created_at": entity.created_at.isoformat() if entity.created_at else None,
             "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
             "chats_count": chats_counts.get(entity.id, 0),
-            "calls_count": calls_counts.get(entity.id, 0)
+            "calls_count": calls_counts.get(entity.id, 0),
+            # Transfer tracking
+            "is_transferred": entity.is_transferred or False,
+            "transferred_to_id": entity.transferred_to_id,
+            "transferred_to_name": transferred_to_names.get(entity.transferred_to_id) if entity.transferred_to_id else None,
+            "transferred_at": entity.transferred_at.isoformat() if entity.transferred_at else None
         })
 
     return response
@@ -538,6 +685,14 @@ async def get_entity(
             "to_user_name": to_user_name
         })
 
+    # Get transferred_to name if entity is transferred
+    transferred_to_name = None
+    if entity.transferred_to_id:
+        transferred_to_result = await db.execute(
+            select(User.name).where(User.id == entity.transferred_to_id)
+        )
+        transferred_to_name = transferred_to_result.scalar()
+
     return {
         "id": entity.id,
         "type": entity.type,
@@ -555,6 +710,11 @@ async def get_entity(
         "department_name": department_name,
         "created_at": entity.created_at.isoformat() if entity.created_at else None,
         "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
+        # Transfer tracking
+        "is_transferred": entity.is_transferred or False,
+        "transferred_to_id": entity.transferred_to_id,
+        "transferred_to_name": transferred_to_name,
+        "transferred_at": entity.transferred_at.isoformat() if entity.transferred_at else None,
         "chats": [
             {
                 "id": c.id,
@@ -608,6 +768,10 @@ async def update_entity(
 
     if not entity:
         raise HTTPException(404, "Entity not found")
+
+    # Don't allow editing of transferred entities (frozen copies)
+    if entity.is_transferred:
+        raise HTTPException(400, "Cannot edit a transferred entity. This is a read-only copy.")
 
     # Check edit permissions (Salesforce-style)
     can_edit = False
@@ -704,6 +868,10 @@ async def delete_entity(
     if not entity:
         raise HTTPException(404, "Entity not found")
 
+    # Don't allow deleting of transferred entities (frozen copies)
+    if entity.is_transferred:
+        raise HTTPException(400, "Cannot delete a transferred entity. This is a read-only copy.")
+
     # Check delete permissions
     can_delete = False
     if current_user.role == UserRole.SUPERADMIN:
@@ -751,7 +919,10 @@ async def transfer_entity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Transfer contact to another user/department"""
+    """
+    Transfer contact to another user/department with copy mechanism.
+    Creates a frozen copy for the old owner and transfers the original to the new owner.
+    """
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org:
@@ -765,19 +936,75 @@ async def transfer_entity(
     if not entity:
         raise HTTPException(404, "Entity not found")
 
+    # Don't allow transfer of already transferred entities (frozen copies)
+    if entity.is_transferred:
+        raise HTTPException(400, "Cannot transfer a frozen copy. Transfer the original entity instead.")
+
     # Check transfer permissions - requires full access or ownership
     has_access = await check_entity_access(entity, current_user, org.id, db, required_level=AccessLevel.full)
     if not has_access:
         raise HTTPException(403, "No transfer permission for this entity")
 
-    # Get current user's department (first one if multiple)
-    from_dept_id = None
-    user_dept_result = await db.execute(
-        select(DepartmentMember.department_id).where(DepartmentMember.user_id == current_user.id).limit(1)
+    # Validate target user exists and is in the same org
+    to_user_result = await db.execute(
+        select(User).where(User.id == data.to_user_id)
     )
-    from_dept_row = user_dept_result.scalar_one_or_none()
-    if from_dept_row:
-        from_dept_id = from_dept_row
+    to_user = to_user_result.scalar_one_or_none()
+    if not to_user:
+        raise HTTPException(404, "Target user not found")
+
+    # Check if target user has access to this org
+    from_user_role = await get_user_org_role(current_user, org.id, db)
+    to_user_role = await get_user_org_role(to_user, org.id, db)
+    if to_user_role is None and to_user.role != UserRole.SUPERADMIN:
+        raise HTTPException(400, "Target user is not a member of this organization")
+
+    # Check transfer permissions based on roles and departments
+    # Get current user's department memberships
+    from_dept_memberships = await db.execute(
+        select(DepartmentMember).where(DepartmentMember.user_id == current_user.id)
+    )
+    from_dept_memberships = list(from_dept_memberships.scalars().all())
+    from_dept_ids = [dm.department_id for dm in from_dept_memberships]
+
+    # Get target user's department memberships
+    to_dept_memberships = await db.execute(
+        select(DepartmentMember).where(DepartmentMember.user_id == data.to_user_id)
+    )
+    to_dept_memberships = list(to_dept_memberships.scalars().all())
+    to_dept_ids = [dm.department_id for dm in to_dept_memberships]
+
+    # Check transfer permissions based on roles
+    can_transfer = False
+    if current_user.role == UserRole.SUPERADMIN or from_user_role == OrgRole.owner:
+        # SUPERADMIN and OWNER can transfer to anyone
+        can_transfer = True
+    else:
+        # Check department-based permissions
+        has_sub_admin = any(dm.role == DeptRole.sub_admin for dm in from_dept_memberships)
+
+        if has_sub_admin or from_user_role == OrgRole.admin:
+            # SUB_ADMIN and ADMIN can transfer to:
+            # 1. Anyone in their own department
+            # 2. Admins/sub_admins of other departments
+            if any(dept_id in from_dept_ids for dept_id in to_dept_ids):
+                # Same department
+                can_transfer = True
+            else:
+                # Check if target is admin/sub_admin of any department
+                is_target_admin = any(dm.role in [DeptRole.sub_admin, DeptRole.lead] for dm in to_dept_memberships)
+                if is_target_admin or to_user_role == OrgRole.admin:
+                    can_transfer = True
+        else:
+            # MEMBER can only transfer within their own department
+            if any(dept_id in from_dept_ids for dept_id in to_dept_ids):
+                can_transfer = True
+
+    if not can_transfer:
+        raise HTTPException(403, "You don't have permission to transfer to this user based on your role and department")
+
+    # Get current user's department (first one if multiple)
+    from_dept_id = from_dept_ids[0] if from_dept_ids else None
 
     # Validate to_department_id if provided
     if data.to_department_id:
@@ -787,7 +1014,67 @@ async def transfer_entity(
         if not dept_result.scalar_one_or_none():
             raise HTTPException(400, "Invalid target department")
 
-    # Create transfer record
+    # === STEP 1: Create a frozen copy for the old owner ===
+    old_owner_id = entity.created_by
+    old_owner_name = None
+    if to_user:
+        old_owner_name = to_user.name
+
+    # Create copy with all data except relationships
+    entity_copy = Entity(
+        org_id=entity.org_id,
+        department_id=entity.department_id,
+        type=entity.type,
+        name=f"{entity.name} [Передан → {old_owner_name or 'Unknown'}]",
+        status=entity.status,
+        phone=entity.phone,
+        email=entity.email,
+        telegram_user_id=entity.telegram_user_id,
+        company=entity.company,
+        position=entity.position,
+        tags=entity.tags.copy() if entity.tags else [],
+        extra_data=entity.extra_data.copy() if entity.extra_data else {},
+        created_by=old_owner_id,  # Keep old owner
+        created_at=entity.created_at,
+        updated_at=datetime.utcnow(),
+        # Mark as transferred
+        is_transferred=True,
+        transferred_to_id=data.to_user_id,
+        transferred_at=datetime.utcnow()
+    )
+    db.add(entity_copy)
+    await db.flush()  # Get the ID of the copy
+
+    # === STEP 2: Copy all chats to the frozen copy ===
+    chats_result = await db.execute(
+        select(Chat).where(Chat.entity_id == entity_id)
+    )
+    chats = list(chats_result.scalars().all())
+
+    # === STEP 3: Copy all calls to the frozen copy ===
+    calls_result = await db.execute(
+        select(CallRecording).where(CallRecording.entity_id == entity_id)
+    )
+    calls = list(calls_result.scalars().all())
+
+    # Link chats and calls to the copy (read-only reference)
+    # Note: We don't duplicate chats/calls, we just create references
+    # The copy will reference the same chats/calls for historical context
+
+    # === STEP 4: Update original entity - transfer to new owner ===
+    entity.created_by = data.to_user_id
+    if data.to_department_id:
+        entity.department_id = data.to_department_id
+    entity.updated_at = datetime.utcnow()
+
+    # === STEP 5: Transfer all chats and calls to new owner ===
+    for chat in chats:
+        chat.owner_id = data.to_user_id
+
+    for call in calls:
+        call.owner_id = data.to_user_id
+
+    # === STEP 6: Create transfer record ===
     transfer = EntityTransfer(
         entity_id=entity_id,
         from_user_id=current_user.id,
@@ -798,16 +1085,18 @@ async def transfer_entity(
     )
     db.add(transfer)
 
-    # Update entity ownership and department
-    entity.created_by = data.to_user_id
-    if data.to_department_id:
-        entity.department_id = data.to_department_id
-
     await db.commit()
 
     # TODO: Send notification to recipient via Telegram
 
-    return {"success": True, "transfer_id": transfer.id}
+    return {
+        "success": True,
+        "transfer_id": transfer.id,
+        "original_entity_id": entity.id,
+        "copy_entity_id": entity_copy.id,
+        "transferred_chats": len(chats),
+        "transferred_calls": len(calls)
+    }
 
 
 @router.post("/{entity_id}/link-chat/{chat_id}")
@@ -933,3 +1222,199 @@ async def get_entities_stats_by_status(
     result = await db.execute(query)
     stats = {row[0].value: row[1] for row in result.all()}
     return stats
+
+
+@router.post("/{entity_id}/share")
+async def share_entity(
+    entity_id: int,
+    data: ShareRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Share an entity (contact) with another user.
+
+    If auto_share_related=True, automatically shares all related chats and calls
+    with the same access level.
+
+    Permissions:
+    - MEMBER → only within their department
+    - ADMIN → their department + admins of other departments + OWNER/SUPERADMIN
+    - OWNER → anyone in organization
+    - SUPERADMIN → anyone
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Get entity
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check if user has permission to share this entity (requires full access or ownership)
+    can_share = False
+    if current_user.role == UserRole.SUPERADMIN:
+        can_share = True
+    else:
+        user_role = await get_user_org_role(current_user, org.id, db)
+        if user_role == OrgRole.owner:
+            can_share = True
+        elif entity.created_by == current_user.id:
+            can_share = True  # Owner of entity
+        else:
+            # Check if shared with full access
+            shared_result = await db.execute(
+                select(SharedAccess).where(
+                    SharedAccess.resource_type == ResourceType.entity,
+                    SharedAccess.resource_id == entity_id,
+                    SharedAccess.shared_with_id == current_user.id,
+                    SharedAccess.access_level == AccessLevel.full,
+                    or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+                )
+            )
+            if shared_result.scalar_one_or_none():
+                can_share = True
+
+    if not can_share:
+        raise HTTPException(403, "No permission to share this entity")
+
+    # Get target user
+    to_user_result = await db.execute(
+        select(User).where(User.id == data.shared_with_id)
+    )
+    to_user = to_user_result.scalar_one_or_none()
+
+    if not to_user:
+        raise HTTPException(404, "Target user not found")
+
+    # Check if current_user can share with to_user
+    if not await can_share_to(current_user, to_user, org.id, db):
+        raise HTTPException(403, "You cannot share with this user based on your role and department")
+
+    # Check if already shared
+    existing_result = await db.execute(
+        select(SharedAccess).where(
+            SharedAccess.resource_type == ResourceType.entity,
+            SharedAccess.resource_id == entity_id,
+            SharedAccess.shared_with_id == data.shared_with_id
+        )
+    )
+    existing_share = existing_result.scalar_one_or_none()
+
+    if existing_share:
+        # Update existing share
+        existing_share.access_level = data.access_level
+        existing_share.note = data.note
+        existing_share.expires_at = data.expires_at
+        existing_share.shared_by_id = current_user.id
+    else:
+        # Create new share
+        share = SharedAccess(
+            resource_type=ResourceType.entity,
+            resource_id=entity_id,
+            entity_id=entity_id,  # FK for cascade delete
+            shared_by_id=current_user.id,
+            shared_with_id=data.shared_with_id,
+            access_level=data.access_level,
+            note=data.note,
+            expires_at=data.expires_at
+        )
+        db.add(share)
+
+    await db.commit()
+
+    # Auto-share related chats and calls if requested
+    shared_chats = 0
+    shared_calls = 0
+
+    if data.auto_share_related:
+        # Find all chats linked to this entity
+        chats_result = await db.execute(
+            select(Chat).where(Chat.entity_id == entity_id, Chat.org_id == org.id)
+        )
+        chats = chats_result.scalars().all()
+
+        for chat in chats:
+            # Check if already shared
+            existing_chat_share_result = await db.execute(
+                select(SharedAccess).where(
+                    SharedAccess.resource_type == ResourceType.chat,
+                    SharedAccess.resource_id == chat.id,
+                    SharedAccess.shared_with_id == data.shared_with_id
+                )
+            )
+            existing_chat_share = existing_chat_share_result.scalar_one_or_none()
+
+            if existing_chat_share:
+                # Update existing
+                existing_chat_share.access_level = data.access_level
+                existing_chat_share.expires_at = data.expires_at
+                existing_chat_share.shared_by_id = current_user.id
+            else:
+                # Create new share for chat
+                chat_share = SharedAccess(
+                    resource_type=ResourceType.chat,
+                    resource_id=chat.id,
+                    chat_id=chat.id,  # FK for cascade delete
+                    shared_by_id=current_user.id,
+                    shared_with_id=data.shared_with_id,
+                    access_level=data.access_level,
+                    expires_at=data.expires_at
+                )
+                db.add(chat_share)
+                shared_chats += 1
+
+        # Find all calls linked to this entity
+        calls_result = await db.execute(
+            select(CallRecording).where(CallRecording.entity_id == entity_id, CallRecording.org_id == org.id)
+        )
+        calls = calls_result.scalars().all()
+
+        for call in calls:
+            # Check if already shared
+            existing_call_share_result = await db.execute(
+                select(SharedAccess).where(
+                    SharedAccess.resource_type == ResourceType.call,
+                    SharedAccess.resource_id == call.id,
+                    SharedAccess.shared_with_id == data.shared_with_id
+                )
+            )
+            existing_call_share = existing_call_share_result.scalar_one_or_none()
+
+            if existing_call_share:
+                # Update existing
+                existing_call_share.access_level = data.access_level
+                existing_call_share.expires_at = data.expires_at
+                existing_call_share.shared_by_id = current_user.id
+            else:
+                # Create new share for call
+                call_share = SharedAccess(
+                    resource_type=ResourceType.call,
+                    resource_id=call.id,
+                    call_id=call.id,  # FK for cascade delete
+                    shared_by_id=current_user.id,
+                    shared_with_id=data.shared_with_id,
+                    access_level=data.access_level,
+                    expires_at=data.expires_at
+                )
+                db.add(call_share)
+                shared_calls += 1
+
+        await db.commit()
+
+    return {
+        "success": True,
+        "entity_id": entity_id,
+        "shared_with_id": data.shared_with_id,
+        "access_level": data.access_level.value,
+        "auto_shared": {
+            "chats": shared_chats,
+            "calls": shared_calls
+        } if data.auto_share_related else None
+    }

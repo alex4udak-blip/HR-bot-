@@ -11,6 +11,7 @@ from ..models.database import (
     User, UserRole, Organization, OrgMember, OrgRole,
     Department, DepartmentMember, DeptRole
 )
+from typing import Union
 from ..services.auth import get_current_user, get_user_org
 
 router = APIRouter()
@@ -53,6 +54,15 @@ class DepartmentResponse(BaseModel):
     entities_count: int = 0
     children_count: int = 0
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class DepartmentMinimalResponse(BaseModel):
+    """Minimal department info for admins viewing other departments"""
+    id: int
+    name: str
 
     class Config:
         from_attributes = True
@@ -130,13 +140,18 @@ async def get_user_departments(user: User, org: Organization, db: AsyncSession) 
 
 # === Routes ===
 
-@router.get("", response_model=List[DepartmentResponse])
+@router.get("", response_model=List[Union[DepartmentResponse, DepartmentMinimalResponse]])
 async def list_departments(
     parent_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """List all departments in organization.
+
+    Returns:
+        - SUPERADMIN/OWNER: all departments with full details
+        - ADMIN/SUB_ADMIN: own department with full details + other departments with minimal info (id, name only)
+        - MEMBER: only own department with full details
 
     Args:
         parent_id: Filter by parent department. None = top-level departments only.
@@ -146,6 +161,29 @@ async def list_departments(
     org = await get_user_org(current_user, db)
     if not org:
         return []
+
+    # Check if user is org owner or superadmin
+    is_superadmin = current_user.role == UserRole.SUPERADMIN
+    is_owner = False
+    if not is_superadmin:
+        owner_result = await db.execute(
+            select(OrgMember).where(
+                OrgMember.org_id == org.id,
+                OrgMember.user_id == current_user.id,
+                OrgMember.role == OrgRole.owner
+            )
+        )
+        is_owner = owner_result.scalar_one_or_none() is not None
+
+    # Get user's department if they have one
+    user_dept_id = None
+    if not is_superadmin and not is_owner:
+        dept_member_result = await db.execute(
+            select(DepartmentMember).where(DepartmentMember.user_id == current_user.id)
+        )
+        dept_member = dept_member_result.scalar_one_or_none()
+        if dept_member:
+            user_dept_id = dept_member.department_id
 
     # Build query
     query = select(Department).where(Department.org_id == org.id)
@@ -163,63 +201,182 @@ async def list_departments(
     if not departments:
         return []
 
-    # Get all department IDs for batch queries
-    dept_ids = [d.id for d in departments]
+    # SUPERADMIN/OWNER: return all departments with full details
+    if is_superadmin or is_owner:
+        # Get all department IDs for batch queries
+        dept_ids = [d.id for d in departments]
 
-    # Pre-fetch all parent names
-    parent_ids = [d.parent_id for d in departments if d.parent_id]
-    parent_names = {}
-    if parent_ids:
-        parents_result = await db.execute(
-            select(Department).where(Department.id.in_(parent_ids))
+        # Pre-fetch all parent names
+        parent_ids = [d.parent_id for d in departments if d.parent_id]
+        parent_names = {}
+        if parent_ids:
+            parents_result = await db.execute(
+                select(Department).where(Department.id.in_(parent_ids))
+            )
+            for p in parents_result.scalars().all():
+                parent_names[p.id] = p.name
+
+        # Batch query: Get member counts for all departments
+        from sqlalchemy import func
+        members_counts_result = await db.execute(
+            select(DepartmentMember.department_id, func.count(DepartmentMember.id))
+            .where(DepartmentMember.department_id.in_(dept_ids))
+            .group_by(DepartmentMember.department_id)
         )
-        for p in parents_result.scalars().all():
-            parent_names[p.id] = p.name
+        members_counts = {row[0]: row[1] for row in members_counts_result.fetchall()}
 
-    # Batch query: Get member counts for all departments
-    from sqlalchemy import func
-    members_counts_result = await db.execute(
-        select(DepartmentMember.department_id, func.count(DepartmentMember.id))
-        .where(DepartmentMember.department_id.in_(dept_ids))
-        .group_by(DepartmentMember.department_id)
-    )
-    members_counts = {row[0]: row[1] for row in members_counts_result.fetchall()}
+        # Batch query: Get entity counts for all departments
+        from ..models.database import Entity
+        entities_counts_result = await db.execute(
+            select(Entity.department_id, func.count(Entity.id))
+            .where(Entity.department_id.in_(dept_ids))
+            .group_by(Entity.department_id)
+        )
+        entities_counts = {row[0]: row[1] for row in entities_counts_result.fetchall()}
 
-    # Batch query: Get entity counts for all departments
-    from ..models.database import Entity
-    entities_counts_result = await db.execute(
-        select(Entity.department_id, func.count(Entity.id))
-        .where(Entity.department_id.in_(dept_ids))
-        .group_by(Entity.department_id)
-    )
-    entities_counts = {row[0]: row[1] for row in entities_counts_result.fetchall()}
+        # Batch query: Get children counts for all departments
+        children_counts_result = await db.execute(
+            select(Department.parent_id, func.count(Department.id))
+            .where(Department.parent_id.in_(dept_ids))
+            .group_by(Department.parent_id)
+        )
+        children_counts = {row[0]: row[1] for row in children_counts_result.fetchall()}
 
-    # Batch query: Get children counts for all departments
-    children_counts_result = await db.execute(
-        select(Department.parent_id, func.count(Department.id))
-        .where(Department.parent_id.in_(dept_ids))
-        .group_by(Department.parent_id)
-    )
-    children_counts = {row[0]: row[1] for row in children_counts_result.fetchall()}
+        # Build response using the pre-fetched data
+        response = []
+        for dept in departments:
+            response.append(DepartmentResponse(
+                id=dept.id,
+                name=dept.name,
+                description=dept.description,
+                color=dept.color,
+                is_active=dept.is_active,
+                parent_id=dept.parent_id,
+                parent_name=parent_names.get(dept.parent_id) if dept.parent_id else None,
+                members_count=members_counts.get(dept.id, 0),
+                entities_count=entities_counts.get(dept.id, 0),
+                children_count=children_counts.get(dept.id, 0),
+                created_at=dept.created_at
+            ))
 
-    # Build response using the pre-fetched data
-    response = []
-    for dept in departments:
-        response.append(DepartmentResponse(
-            id=dept.id,
-            name=dept.name,
-            description=dept.description,
-            color=dept.color,
-            is_active=dept.is_active,
-            parent_id=dept.parent_id,
-            parent_name=parent_names.get(dept.parent_id) if dept.parent_id else None,
-            members_count=members_counts.get(dept.id, 0),
-            entities_count=entities_counts.get(dept.id, 0),
-            children_count=children_counts.get(dept.id, 0),
-            created_at=dept.created_at
-        ))
+        return response
 
-    return response
+    # ADMIN/SUB_ADMIN: own department full + others minimal
+    elif current_user.role in (UserRole.ADMIN, UserRole.SUB_ADMIN) and user_dept_id:
+        response = []
+
+        # Get stats only for own department
+        from sqlalchemy import func
+        own_dept = next((d for d in departments if d.id == user_dept_id), None)
+
+        if own_dept:
+            # Get parent name if exists
+            parent_name = None
+            if own_dept.parent_id:
+                parent_result = await db.execute(
+                    select(Department).where(Department.id == own_dept.parent_id)
+                )
+                parent = parent_result.scalar_one_or_none()
+                if parent:
+                    parent_name = parent.name
+
+            # Get counts for own department
+            members_count_result = await db.execute(
+                select(func.count(DepartmentMember.id))
+                .where(DepartmentMember.department_id == user_dept_id)
+            )
+            members_count = members_count_result.scalar() or 0
+
+            from ..models.database import Entity
+            entities_count_result = await db.execute(
+                select(func.count(Entity.id))
+                .where(Entity.department_id == user_dept_id)
+            )
+            entities_count = entities_count_result.scalar() or 0
+
+            children_count_result = await db.execute(
+                select(func.count(Department.id))
+                .where(Department.parent_id == user_dept_id)
+            )
+            children_count = children_count_result.scalar() or 0
+
+            response.append(DepartmentResponse(
+                id=own_dept.id,
+                name=own_dept.name,
+                description=own_dept.description,
+                color=own_dept.color,
+                is_active=own_dept.is_active,
+                parent_id=own_dept.parent_id,
+                parent_name=parent_name,
+                members_count=members_count,
+                entities_count=entities_count,
+                children_count=children_count,
+                created_at=own_dept.created_at
+            ))
+
+        # Add other departments with minimal info
+        for dept in departments:
+            if dept.id != user_dept_id:
+                response.append(DepartmentMinimalResponse(
+                    id=dept.id,
+                    name=dept.name
+                ))
+
+        return response
+
+    # MEMBER or no department: only own department
+    elif user_dept_id:
+        own_dept = next((d for d in departments if d.id == user_dept_id), None)
+        if not own_dept:
+            return []
+
+        # Get parent name if exists
+        parent_name = None
+        if own_dept.parent_id:
+            parent_result = await db.execute(
+                select(Department).where(Department.id == own_dept.parent_id)
+            )
+            parent = parent_result.scalar_one_or_none()
+            if parent:
+                parent_name = parent.name
+
+        # Get counts
+        from sqlalchemy import func
+        members_count_result = await db.execute(
+            select(func.count(DepartmentMember.id))
+            .where(DepartmentMember.department_id == user_dept_id)
+        )
+        members_count = members_count_result.scalar() or 0
+
+        from ..models.database import Entity
+        entities_count_result = await db.execute(
+            select(func.count(Entity.id))
+            .where(Entity.department_id == user_dept_id)
+        )
+        entities_count = entities_count_result.scalar() or 0
+
+        children_count_result = await db.execute(
+            select(func.count(Department.id))
+            .where(Department.parent_id == user_dept_id)
+        )
+        children_count = children_count_result.scalar() or 0
+
+        return [DepartmentResponse(
+            id=own_dept.id,
+            name=own_dept.name,
+            description=own_dept.description,
+            color=own_dept.color,
+            is_active=own_dept.is_active,
+            parent_id=own_dept.parent_id,
+            parent_name=parent_name,
+            members_count=members_count,
+            entities_count=entities_count,
+            children_count=children_count,
+            created_at=own_dept.created_at
+        )]
+
+    # No department access
+    return []
 
 
 @router.post("", response_model=DepartmentResponse)
