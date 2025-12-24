@@ -283,30 +283,46 @@ async def delete_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     # Delete/nullify all related records first
-    from sqlalchemy import update
+    from sqlalchemy import update, text
+    import logging
+    logger = logging.getLogger("hr-analyzer.users")
 
-    # Delete records where user is required (NOT NULL)
-    await db.execute(delete(DepartmentMember).where(DepartmentMember.user_id == user_id))
-    await db.execute(delete(OrgMember).where(OrgMember.user_id == user_id))
-    await db.execute(delete(SharedAccess).where(SharedAccess.shared_with_id == user_id))
-    await db.execute(delete(SharedAccess).where(SharedAccess.shared_by_id == user_id))
-    await db.execute(delete(AnalysisHistory).where(AnalysisHistory.user_id == user_id))
-    await db.execute(delete(AIConversation).where(AIConversation.user_id == user_id))
-    await db.execute(delete(EntityAIConversation).where(EntityAIConversation.user_id == user_id))
-    await db.execute(delete(EntityAnalysis).where(EntityAnalysis.user_id == user_id))
-    await db.execute(delete(ReportSubscription).where(ReportSubscription.user_id == user_id))
+    try:
+        # Delete records where user is required (NOT NULL)
+        await db.execute(delete(DepartmentMember).where(DepartmentMember.user_id == user_id))
+        await db.execute(delete(OrgMember).where(OrgMember.user_id == user_id))
+        await db.execute(delete(SharedAccess).where(SharedAccess.shared_with_id == user_id))
+        await db.execute(delete(SharedAccess).where(SharedAccess.shared_by_id == user_id))
+        await db.execute(delete(AnalysisHistory).where(AnalysisHistory.user_id == user_id))
+        await db.execute(delete(AIConversation).where(AIConversation.user_id == user_id))
+        await db.execute(delete(EntityAIConversation).where(EntityAIConversation.user_id == user_id))
+        await db.execute(delete(EntityAnalysis).where(EntityAnalysis.user_id == user_id))
+        await db.execute(delete(ReportSubscription).where(ReportSubscription.user_id == user_id))
 
-    # Nullify optional foreign keys
-    await db.execute(update(Chat).where(Chat.owner_id == user_id).values(owner_id=None))
-    await db.execute(update(CallRecording).where(CallRecording.owner_id == user_id).values(owner_id=None))
-    await db.execute(update(Entity).where(Entity.created_by == user_id).values(created_by=None))
-    await db.execute(update(Entity).where(Entity.transferred_to_id == user_id).values(transferred_to_id=None))
-    await db.execute(update(EntityTransfer).where(EntityTransfer.from_user_id == user_id).values(from_user_id=None))
-    await db.execute(update(EntityTransfer).where(EntityTransfer.to_user_id == user_id).values(to_user_id=None))
-    await db.execute(update(OrgMember).where(OrgMember.invited_by == user_id).values(invited_by=None))
-    await db.execute(update(Invitation).where(Invitation.invited_by_id == user_id).values(invited_by_id=None))
-    await db.execute(update(Invitation).where(Invitation.used_by_id == user_id).values(used_by_id=None))
-    await db.execute(update(CriteriaPreset).where(CriteriaPreset.created_by == user_id).values(created_by=None))
+        # Nullify optional foreign keys
+        await db.execute(update(Chat).where(Chat.owner_id == user_id).values(owner_id=None))
+        await db.execute(update(CallRecording).where(CallRecording.owner_id == user_id).values(owner_id=None))
+        await db.execute(update(Entity).where(Entity.created_by == user_id).values(created_by=None))
+        await db.execute(update(Entity).where(Entity.transferred_to_id == user_id).values(transferred_to_id=None))
+        await db.execute(update(EntityTransfer).where(EntityTransfer.from_user_id == user_id).values(from_user_id=None))
+        await db.execute(update(EntityTransfer).where(EntityTransfer.to_user_id == user_id).values(to_user_id=None))
+        await db.execute(update(OrgMember).where(OrgMember.invited_by == user_id).values(invited_by=None))
+        await db.execute(update(Invitation).where(Invitation.invited_by_id == user_id).values(invited_by_id=None))
+        await db.execute(update(Invitation).where(Invitation.used_by_id == user_id).values(used_by_id=None))
+        await db.execute(update(CriteriaPreset).where(CriteriaPreset.created_by == user_id).values(created_by=None))
 
-    await db.delete(user)
-    await db.commit()
+        # Try to find any remaining references using raw SQL
+        # This catches any FK we might have missed
+        await db.execute(text("""
+            UPDATE messages SET sender_telegram_id = NULL WHERE sender_telegram_id IN (
+                SELECT telegram_id FROM users WHERE id = :user_id
+            )
+        """), {"user_id": user_id})
+
+        await db.delete(user)
+        await db.commit()
+        logger.info(f"Successfully deleted user {user_id}")
+    except Exception as e:
+        logger.error(f"Error deleting user {user_id}: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
