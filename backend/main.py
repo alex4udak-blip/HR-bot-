@@ -301,6 +301,15 @@ async def init_database():
 
     logger.info("=== DEPARTMENTS TABLES READY ===")
 
+    # Add sub_admin to deptrole enum (for SUB_ADMIN role)
+    await run_migration(engine, "ALTER TYPE deptrole ADD VALUE IF NOT EXISTS 'sub_admin'", "Add sub_admin to deptrole enum")
+
+    # Entity transfer tracking columns
+    await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS is_transferred BOOLEAN DEFAULT FALSE", "Add is_transferred to entities")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entities_is_transferred ON entities(is_transferred)", "Index entities.is_transferred")
+    await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS transferred_to_id INTEGER REFERENCES users(id) ON DELETE SET NULL", "Add transferred_to_id to entities")
+    await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS transferred_at TIMESTAMP", "Add transferred_at to entities")
+
     # Step 8: Invitations table
     logger.info("=== SETTING UP INVITATIONS ===")
     create_invitations = """
