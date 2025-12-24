@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from pathlib import Path
+from pydantic import BaseModel
 import json
 import hashlib
 import zipfile
