@@ -60,6 +60,39 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
+def create_impersonation_token(
+    impersonated_user_id: int,
+    original_user_id: int,
+    token_version: int = 0
+) -> str:
+    """Create JWT impersonation token.
+
+    Creates a special token for user impersonation that includes:
+    - sub: ID of the impersonated user (the user to act as)
+    - original_user_id: ID of the original superadmin
+    - is_impersonating: Flag to indicate this is an impersonation session
+    - token_version: Version of the impersonated user's token
+
+    The token expires in 1 hour for security.
+
+    Args:
+        impersonated_user_id: ID of the user to impersonate
+        original_user_id: ID of the superadmin doing the impersonation
+        token_version: Token version of the impersonated user
+
+    Returns:
+        JWT token string
+    """
+    data = {
+        "sub": str(impersonated_user_id),
+        "token_version": token_version,
+        "original_user_id": original_user_id,
+        "is_impersonating": True
+    }
+    expires_delta = timedelta(hours=1)  # Shorter expiration for impersonation
+    return create_access_token(data, expires_delta)
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),

@@ -10,7 +10,8 @@ import {
   Menu,
   X,
   Phone,
-  Building2
+  Building2,
+  Shield
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { useAuthStore } from '@/stores/authStore';
@@ -19,8 +20,16 @@ import clsx from 'clsx';
 
 export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { user, logout } = useAuthStore();
+  const { user, logout, isImpersonating, exitImpersonation } = useAuthStore();
   const navigate = useNavigate();
+
+  const handleExitImpersonation = async () => {
+    try {
+      await exitImpersonation();
+    } catch (error) {
+      console.error('Failed to exit impersonation:', error);
+    }
+  };
 
   const navItems = useMemo(() => {
     const items = [
@@ -40,6 +49,11 @@ export default function Layout() {
     if (user?.role === 'superadmin' || user?.role === 'admin') {
       items.push({ path: '/departments', icon: Building2, label: 'Департаменты' });
       items.push({ path: '/settings', icon: Settings, label: 'Настройки' });
+    }
+
+    // Добавляем симулятор только для superadmin
+    if (user?.role === 'superadmin') {
+      items.push({ path: '/admin/simulator', icon: Shield, label: 'Симулятор ролей' });
     }
 
     return items;
@@ -167,6 +181,34 @@ export default function Layout() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-hidden flex flex-col">
+        {/* Impersonation Banner */}
+        {isImpersonating() && user && (
+          <div className="bg-yellow-500/20 border-b border-yellow-500/30 px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Shield className="w-5 h-5 text-yellow-400" />
+              <div>
+                <p className="text-sm font-semibold text-yellow-200">
+                  Режим имперсонации
+                </p>
+                <p className="text-xs text-yellow-300">
+                  Вы действуете от имени: <span className="font-medium">{user.name}</span> ({user.email})
+                  {user.original_user_name && (
+                    <span className="ml-2">
+                      • Вернуться к: <span className="font-medium">{user.original_user_name}</span>
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleExitImpersonation}
+              className="px-4 py-2 rounded-lg bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-200 hover:text-yellow-100 transition-colors text-sm font-medium border border-yellow-500/30"
+            >
+              Выйти из имперсонации
+            </button>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
           <Outlet />
         </div>

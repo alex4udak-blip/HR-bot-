@@ -515,3 +515,19 @@ class Invitation(Base):
     organization = relationship("Organization")
     invited_by = relationship("User", foreign_keys=[invited_by_id])
     used_by = relationship("User", foreign_keys=[used_by_id])
+
+
+class ImpersonationLog(Base):
+    """Audit log for user impersonation sessions"""
+    __tablename__ = "impersonation_logs"
+
+    id = Column(Integer, primary_key=True)
+    superadmin_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    impersonated_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    started_at = Column(DateTime, default=func.now(), nullable=False)
+    ended_at = Column(DateTime, nullable=True)
+    ip_address = Column(String(45), nullable=True)  # IPv6 support
+    user_agent = Column(String(512), nullable=True)
+
+    superadmin = relationship("User", foreign_keys=[superadmin_id])
+    impersonated_user = relationship("User", foreign_keys=[impersonated_user_id])

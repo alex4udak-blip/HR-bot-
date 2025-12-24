@@ -5,10 +5,15 @@ interface AuthState {
   user: User | null;
   token: string | null;
   isLoading: boolean;
+  originalUser: User | null;  // Store original user during impersonation
   setUser: (user: User | null) => void;
   setToken: (token: string | null) => void;
   setLoading: (loading: boolean) => void;
   logout: () => void;
+  // Impersonation
+  impersonate: (userId: number) => Promise<void>;
+  exitImpersonation: () => Promise<void>;
+  isImpersonating: () => boolean;
   // Role helpers
   isSuperAdmin: () => boolean;
   isOwner: () => boolean;
@@ -27,6 +32,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   token: localStorage.getItem('token'),
   isLoading: true,
+  originalUser: null,
   setUser: (user) => set({ user }),
   setToken: (token) => {
     if (token) {
@@ -39,7 +45,94 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setLoading: (isLoading) => set({ isLoading }),
   logout: () => {
     localStorage.removeItem('token');
-    set({ user: null, token: null });
+    set({ user: null, token: null, originalUser: null });
+  },
+
+  // Impersonate a user
+  impersonate: async (userId: number) => {
+    const { token: currentToken, user: currentUser } = get();
+    if (!currentToken || !currentUser) {
+      throw new Error('Not authenticated');
+    }
+
+    try {
+      const response = await fetch(`/api/admin/impersonate/${userId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${currentToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to impersonate user');
+      }
+
+      const data = await response.json();
+
+      // Store original user before impersonation
+      set({ originalUser: currentUser });
+
+      // Set new token and user with impersonation flag
+      const impersonatedUser = {
+        ...data.user,
+        is_impersonating: true,
+        original_user_id: currentUser.id,
+        original_user_name: currentUser.name,
+      };
+
+      localStorage.setItem('token', data.access_token);
+      set({
+        token: data.access_token,
+        user: impersonatedUser,
+      });
+    } catch (error) {
+      console.error('Impersonation failed:', error);
+      throw error;
+    }
+  },
+
+  // Exit impersonation and return to original user
+  exitImpersonation: async () => {
+    const { originalUser, token } = get();
+    if (!originalUser) {
+      throw new Error('Not currently impersonating');
+    }
+
+    try {
+      const response = await fetch('/api/admin/exit-impersonation', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to exit impersonation');
+      }
+
+      const data = await response.json();
+
+      // Restore original user
+      localStorage.setItem('token', data.access_token);
+      set({
+        token: data.access_token,
+        user: data.user,
+        originalUser: null,
+      });
+    } catch (error) {
+      console.error('Exit impersonation failed:', error);
+      throw error;
+    }
+  },
+
+  // Check if currently impersonating
+  isImpersonating: () => {
+    const { user } = get();
+    return user?.is_impersonating === true;
   },
 
   // Role helper methods

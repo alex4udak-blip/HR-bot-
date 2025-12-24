@@ -12,6 +12,7 @@ import TrashPage from '@/pages/TrashPage';
 import UsersPage from '@/pages/UsersPage';
 import DepartmentsPage from '@/pages/DepartmentsPage';
 import SettingsPage from '@/pages/SettingsPage';
+import AdminSimulatorPage from '@/pages/AdminSimulatorPage';
 import Layout from '@/components/Layout';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -78,6 +79,7 @@ export default function App() {
         <Route path="users" element={<UsersPage />} />
         <Route path="departments" element={<DepartmentsPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="admin/simulator" element={<AdminSimulatorPage />} />
       </Route>
     </Routes>
   );
