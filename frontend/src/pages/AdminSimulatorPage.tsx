@@ -29,7 +29,7 @@ import { useAuthStore } from '@/stores/authStore';
 import api from '@/services/api';
 
 // Типы ролей
-type OrgRole = 'superadmin' | 'owner' | 'admin' | 'member';
+type OrgRole = 'superadmin' | 'owner' | 'admin' | 'sub_admin' | 'member';
 type ResourceType = 'entity' | 'chat' | 'call';
 type ActionType = 'view' | 'edit' | 'delete' | 'share' | 'transfer';
 type AccessLevel = 'view' | 'edit' | 'full';
@@ -52,16 +52,23 @@ const ROLES: { id: OrgRole; name: string; icon: typeof Crown; description: strin
   },
   {
     id: 'admin',
-    name: 'Админ/Руководитель',
+    name: 'Админ (Лид)',
     icon: Shield,
-    description: 'Доступ к своему департаменту',
+    description: 'Полный доступ к своему департаменту',
     color: 'text-blue-400'
+  },
+  {
+    id: 'sub_admin',
+    name: 'Саб-Админ',
+    icon: Shield,
+    description: 'Полный доступ к департаменту (кроме удаления других админов)',
+    color: 'text-indigo-400'
   },
   {
     id: 'member',
     name: 'Сотрудник',
     icon: User,
-    description: 'Базовый доступ',
+    description: 'Доступ только к своим ресурсам',
     color: 'text-green-400'
   }
 ];
@@ -235,24 +242,25 @@ export default function AdminSimulatorPage() {
       return true; // Владелец может делать всё со своими ресурсами
     }
 
-    // Проверка для расшаренных ресурсов
+    // ADMIN и SUB_ADMIN имеют ПОЛНЫЙ доступ к ресурсам своего департамента
+    if (role === 'admin' || role === 'sub_admin') {
+      if (sameDepartment) {
+        // Полный доступ: просмотр, редактирование, удаление, расшаривание, передача
+        return true;
+      }
+      // Вне департамента - только если расшарено
+    }
+
+    // Проверка для расшаренных ресурсов (для любой роли)
     if (isShared) {
       if (action === 'view') return true; // Любой уровень доступа позволяет просмотр
       if (action === 'edit') return accessLevel === 'edit' || accessLevel === 'full';
-      if (action === 'delete') return false; // Нельзя удалять расшаренное
+      if (action === 'delete') return false; // Нельзя удалять расшаренное (только своё)
       if (action === 'share') return accessLevel === 'full';
       if (action === 'transfer') return false; // Нельзя передавать чужое
     }
 
-    // Проверка для ADMIN
-    if (role === 'admin') {
-      // Админ видит всё в своём департаменте
-      if (action === 'view' && sameDepartment) return true;
-      // Но редактировать/удалять/передавать может только своё
-      return false;
-    }
-
-    // MEMBER может работать только со своими ресурсами
+    // MEMBER может работать только со своими ресурсами (isOwner уже проверено выше)
     return false;
   };
 
@@ -268,13 +276,13 @@ export default function AdminSimulatorPage() {
     // OWNER может расшарить кому угодно в организации
     if (fromRole === 'owner') return true;
 
-    // ADMIN может расшарить:
-    // - другим админам (любой департамент)
+    // ADMIN и SUB_ADMIN могут расшарить:
+    // - OWNER/SUPERADMIN (всегда)
+    // - другим админам/саб-админам (любой департамент - между руководителями)
     // - сотрудникам своего департамента
-    // - OWNER/SUPERADMIN
-    if (fromRole === 'admin') {
+    if (fromRole === 'admin' || fromRole === 'sub_admin') {
       if (toRole === 'owner' || toRole === 'superadmin') return true;
-      if (toRole === 'admin') return true;
+      if (toRole === 'admin' || toRole === 'sub_admin') return true; // Между руководителями
       if (toRole === 'member' && sameDepartment) return true;
       return false;
     }
@@ -350,19 +358,21 @@ export default function AdminSimulatorPage() {
       if (actorRole === 'superadmin') reason = 'SUPERADMIN имеет полный доступ';
       else if (actorRole === 'owner') reason = 'OWNER имеет доступ ко всему в организации';
       else if (actorIsOwner) reason = 'Вы владелец этого ресурса';
-      else if (resourceIsShared) {
+      else if ((actorRole === 'admin' || actorRole === 'sub_admin') && actorSameDepartment) {
+        reason = 'Руководитель департамента имеет полный доступ к ресурсам своего отдела';
+      } else if (resourceIsShared) {
         if (action === 'view') reason = 'Ресурс расшарен вам';
         else if (action === 'edit') reason = `Уровень доступа "${ACCESS_LEVELS.find(l => l.id === resourceAccessLevel)?.name}" позволяет редактирование`;
         else if ((action as ActionType) === 'share') reason = 'Уровень доступа "Полный доступ" позволяет расшаривание';
-      } else if (actorRole === 'admin' && action === 'view' && actorSameDepartment) {
-        reason = 'Админ видит все ресурсы своего департамента';
       }
 
       return { allowed: true, reason };
     } else {
       let reason = '';
 
-      if (!actorIsOwner && !resourceIsShared) {
+      if ((actorRole === 'admin' || actorRole === 'sub_admin') && !actorSameDepartment && !resourceIsShared) {
+        reason = 'Ресурс находится в другом департаменте и не расшарен вам';
+      } else if (!actorIsOwner && !resourceIsShared && !(actorRole === 'admin' || actorRole === 'sub_admin')) {
         reason = 'Ресурс вам не принадлежит и не расшарен';
       } else if (resourceIsShared && action === 'delete') {
         reason = 'Нельзя удалять чужие ресурсы, даже расшаренные';
@@ -372,8 +382,6 @@ export default function AdminSimulatorPage() {
         reason = `Уровень доступа "${ACCESS_LEVELS.find(l => l.id === resourceAccessLevel)?.name}" не позволяет редактирование`;
       } else if (resourceIsShared && (action as ActionType) === 'share' && resourceAccessLevel !== 'full') {
         reason = 'Только "Полный доступ" позволяет расшаривание';
-      } else if (actorRole === 'admin' && !actorSameDepartment) {
-        reason = 'Ресурс находится в другом департаменте';
       } else if (actorRole === 'member') {
         reason = 'Сотрудник может работать только со своими ресурсами';
       }
@@ -509,12 +517,13 @@ export default function AdminSimulatorPage() {
           <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
             <h3 className="text-sm font-semibold text-blue-400 mb-2">Правила доступа:</h3>
             <ul className="text-sm text-white/70 space-y-1">
-              <li>• <strong>SUPERADMIN</strong>: полный доступ ко всему</li>
-              <li>• <strong>OWNER</strong>: доступ ко всему в организации</li>
-              <li>• <strong>ADMIN</strong>: видит всё в своём департаменте, но редактирует/удаляет только своё</li>
+              <li>• <strong>SUPERADMIN</strong>: полный доступ ко всему в системе</li>
+              <li>• <strong>OWNER</strong>: полный доступ ко всему в организации</li>
+              <li>• <strong>ADMIN (Лид)</strong>: полный доступ к своему департаменту (просмотр, редактирование, удаление, расшаривание, передача)</li>
+              <li>• <strong>SUB_ADMIN</strong>: полный доступ к департаменту (как ADMIN, но не может удалять других админов)</li>
               <li>• <strong>MEMBER</strong>: работает только со своими ресурсами и расшаренными ему</li>
+              <li>• Расшаривание между админами: ADMIN и SUB_ADMIN могут расшаривать друг другу (между департаментами)</li>
               <li>• Расшаренные ресурсы: нельзя удалять или передавать, даже с полным доступом</li>
-              <li>• Полный доступ: позволяет редактировать и расшаривать дальше</li>
             </ul>
           </div>
         </div>
@@ -797,13 +806,28 @@ export default function AdminSimulatorPage() {
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
                       <Shield className="w-5 h-5 text-blue-400" />
-                      <span className="font-medium text-white">Админ/Руководитель</span>
+                      <span className="font-medium text-white">Админ (Лид)</span>
                     </div>
                   </td>
                   <td className="py-3 px-4 text-white/70">
                     <ul className="list-disc list-inside space-y-1">
                       <li>Владельцу и Суперадмину</li>
-                      <li>Другим админам (любой департамент)</li>
+                      <li>Другим админам и саб-админам (любой департамент)</li>
+                      <li>Сотрудникам своего департамента</li>
+                    </ul>
+                  </td>
+                </tr>
+                <tr className="border-b border-white/5">
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-5 h-5 text-indigo-400" />
+                      <span className="font-medium text-white">Саб-Админ</span>
+                    </div>
+                  </td>
+                  <td className="py-3 px-4 text-white/70">
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>Владельцу и Суперадмину</li>
+                      <li>Другим админам и саб-админам (любой департамент)</li>
                       <li>Сотрудникам своего департамента</li>
                     </ul>
                   </td>
