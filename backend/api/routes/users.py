@@ -6,7 +6,7 @@ from sqlalchemy import select, func, delete
 from ..database import get_db
 from ..models.database import (
     User, UserRole, Chat, DepartmentMember, DeptRole, OrgMember, SharedAccess,
-    AnalysisHistory, AIConversation, Entity,
+    AnalysisHistory, AIConversation, Entity, EntityAIConversation, EntityAnalysis,
     EntityTransfer, CallRecording, Invitation, CriteriaPreset
 )
 from ..models.schemas import UserCreate, UserUpdate, UserResponse
@@ -275,6 +275,8 @@ async def delete_user(
     await db.execute(delete(SharedAccess).where(SharedAccess.shared_by_id == user_id))
     await db.execute(delete(AnalysisHistory).where(AnalysisHistory.user_id == user_id))
     await db.execute(delete(AIConversation).where(AIConversation.user_id == user_id))
+    await db.execute(delete(EntityAIConversation).where(EntityAIConversation.user_id == user_id))
+    await db.execute(delete(EntityAnalysis).where(EntityAnalysis.user_id == user_id))
 
     # Nullify optional foreign keys
     await db.execute(update(Chat).where(Chat.owner_id == user_id).values(owner_id=None))
