@@ -13,7 +13,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
-from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin
+from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links
 from api.config import settings
 
 # Configure logging - show important messages
@@ -152,6 +152,11 @@ async def init_database():
 
     # Fireflies integration migrations
     await run_migration(engine, "ALTER TYPE callsource ADD VALUE IF NOT EXISTS 'teams'", "Add teams to callsource enum")
+
+    # External links integration migrations
+    await run_migration(engine, "ALTER TYPE callsource ADD VALUE IF NOT EXISTS 'google_doc'", "Add google_doc to callsource enum")
+    await run_migration(engine, "ALTER TYPE callsource ADD VALUE IF NOT EXISTS 'google_drive'", "Add google_drive to callsource enum")
+    await run_migration(engine, "ALTER TYPE callsource ADD VALUE IF NOT EXISTS 'direct_url'", "Add direct_url to callsource enum")
     await run_migration(engine, "ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS fireflies_transcript_id VARCHAR(100)", "Add fireflies_transcript_id")
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_fireflies_transcript_id ON call_recordings(fireflies_transcript_id)", "Index fireflies_transcript_id on existing table")
 
@@ -468,6 +473,7 @@ app.include_router(departments.router, prefix="/api/departments", tags=["departm
 app.include_router(invitations.router, prefix="/api/invitations", tags=["invitations"])
 app.include_router(realtime.router, tags=["realtime"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+app.include_router(external_links.router, tags=["external-links"])
 
 
 @app.get("/health")
