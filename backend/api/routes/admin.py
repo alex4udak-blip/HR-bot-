@@ -105,7 +105,7 @@ class UserDetailResponse(BaseModel):
 
 class SandboxCreateRequest(BaseModel):
     """Request to create sandbox"""
-    org_id: int
+    org_id: Optional[int] = None  # If not provided, use first available organization
 
 
 class SandboxUserInfo(BaseModel):
@@ -1048,7 +1048,7 @@ async def get_user_details(
 
 @router.post("/sandbox/create", response_model=SandboxCreateResponse)
 async def create_sandbox(
-    request_body: SandboxCreateRequest,
+    request_body: Optional[SandboxCreateRequest] = None,
     superadmin: User = Depends(get_superadmin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -1074,17 +1074,30 @@ async def create_sandbox(
     """
     superadmin = await db.merge(superadmin)
 
-    # Get organization from request
-    org_result = await db.execute(
-        select(Organization).where(Organization.id == request_body.org_id)
-    )
-    org = org_result.scalar_one_or_none()
+    # Get organization from request or auto-detect first available
+    org_id = request_body.org_id if request_body else None
 
-    if not org:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Organization with id {request_body.org_id} not found"
+    if org_id:
+        org_result = await db.execute(
+            select(Organization).where(Organization.id == org_id)
         )
+        org = org_result.scalar_one_or_none()
+        if not org:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Organization with id {org_id} not found"
+            )
+    else:
+        # Auto-detect first organization
+        org_result = await db.execute(
+            select(Organization).order_by(Organization.id).limit(1)
+        )
+        org = org_result.scalar_one_or_none()
+        if not org:
+            raise HTTPException(
+                status_code=404,
+                detail="No organizations found. Create an organization first."
+            )
 
     # Check if sandbox already exists in this organization
     result = await db.execute(
@@ -1441,7 +1454,7 @@ async def create_sandbox(
 
 @router.delete("/sandbox")
 async def delete_sandbox(
-    org_id: int = Query(..., description="Organization ID"),
+    org_id: Optional[int] = Query(None, description="Organization ID (optional, auto-detects if not provided)"),
     superadmin: User = Depends(get_superadmin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -1459,17 +1472,31 @@ async def delete_sandbox(
     """
     superadmin = await db.merge(superadmin)
 
-    # Get organization from request
-    org_result = await db.execute(
-        select(Organization).where(Organization.id == org_id)
-    )
-    org = org_result.scalar_one_or_none()
-
-    if not org:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Organization with id {org_id} not found"
+    # Get organization from request or auto-detect
+    if org_id:
+        org_result = await db.execute(
+            select(Organization).where(Organization.id == org_id)
         )
+        org = org_result.scalar_one_or_none()
+        if not org:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Organization with id {org_id} not found"
+            )
+    else:
+        # Auto-detect organization that has sandbox
+        org_result = await db.execute(
+            select(Organization)
+            .join(Department, Department.org_id == Organization.id)
+            .where(Department.name == "Sandbox Test Department")
+            .limit(1)
+        )
+        org = org_result.scalar_one_or_none()
+        if not org:
+            raise HTTPException(
+                status_code=404,
+                detail="No sandbox found in any organization"
+            )
 
     # Find sandbox department
     result = await db.execute(
@@ -1603,9 +1630,9 @@ async def delete_sandbox(
     }
 
 
-@router.get("/sandbox/status", response_model=SandboxStatusResponse)
+@router.get("/sandbox/status")
 async def get_sandbox_status(
-    org_id: int = Query(..., description="Organization ID"),
+    org_id: Optional[int] = Query(None, description="Organization ID (optional, auto-detects if not provided)"),
     superadmin: User = Depends(get_superadmin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -1614,25 +1641,51 @@ async def get_sandbox_status(
 
     Returns:
     - Whether sandbox exists
-    - Department ID if exists
-    - List of sandbox users
-    - Count of entities, chats, and calls
+    - Department ID and name if exists
+    - List of sandbox users with roles
+    - Stats: count of entities, chats, and calls
 
     **Only SUPERADMIN can access this endpoint.**
     """
     superadmin = await db.merge(superadmin)
 
-    # Get organization from request
-    org_result = await db.execute(
-        select(Organization).where(Organization.id == org_id)
-    )
-    org = org_result.scalar_one_or_none()
-
-    if not org:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Organization with id {org_id} not found"
+    # Get organization from request or auto-detect
+    if org_id:
+        org_result = await db.execute(
+            select(Organization).where(Organization.id == org_id)
         )
+        org = org_result.scalar_one_or_none()
+        if not org:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Organization with id {org_id} not found"
+            )
+    else:
+        # Try to find organization with sandbox first, otherwise use first org
+        org_result = await db.execute(
+            select(Organization)
+            .join(Department, Department.org_id == Organization.id)
+            .where(Department.name == "Sandbox Test Department")
+            .limit(1)
+        )
+        org = org_result.scalar_one_or_none()
+
+        if not org:
+            # Fallback to first organization
+            org_result = await db.execute(
+                select(Organization).order_by(Organization.id).limit(1)
+            )
+            org = org_result.scalar_one_or_none()
+
+        if not org:
+            # No organizations at all - return empty status
+            return {
+                "exists": False,
+                "department_id": None,
+                "department_name": None,
+                "users": [],
+                "stats": {"contacts": 0, "chats": 0, "calls": 0}
+            }
 
     # Find sandbox department
     result = await db.execute(
@@ -1643,14 +1696,13 @@ async def get_sandbox_status(
     sandbox_dept = result.scalar_one_or_none()
 
     if not sandbox_dept:
-        return SandboxStatusResponse(
-            exists=False,
-            department_id=None,
-            users=[],
-            entity_count=0,
-            chat_count=0,
-            call_count=0
-        )
+        return {
+            "exists": False,
+            "department_id": None,
+            "department_name": None,
+            "users": [],
+            "stats": {"contacts": 0, "chats": 0, "calls": 0}
+        }
 
     # Find sandbox users
     sandbox_emails = [
@@ -1683,13 +1735,28 @@ async def get_sandbox_status(
         )
         dept_member = dept_member_result.scalar_one_or_none()
 
+        # Determine display role and label
+        if org_member and org_member.role.value == "owner":
+            role = "owner"
+            role_label = "Владелец"
+        elif dept_member:
+            role = dept_member.role.value
+            role_labels = {
+                "lead": "Админ (Лид)",
+                "sub_admin": "Саб-Админ",
+                "member": "Сотрудник"
+            }
+            role_label = role_labels.get(role, role)
+        else:
+            role = user.role.value
+            role_label = role
+
         users_info.append({
             "id": user.id,
             "email": user.email,
             "name": user.name,
-            "role": user.role.value,
-            "org_role": org_member.role.value if org_member else None,
-            "dept_role": dept_member.role.value if dept_member else None,
+            "role": role,
+            "role_label": role_label,
             "is_active": user.is_active
         })
 
@@ -1715,25 +1782,28 @@ async def get_sandbox_status(
         )
         call_count += len(calls_result.scalars().all())
 
-    return SandboxStatusResponse(
-        exists=True,
-        department_id=sandbox_dept.id,
-        users=users_info,
-        entity_count=entity_count,
-        chat_count=chat_count,
-        call_count=call_count
-    )
+    return {
+        "exists": True,
+        "department_id": sandbox_dept.id,
+        "department_name": sandbox_dept.name,
+        "users": users_info,
+        "stats": {
+            "contacts": entity_count,
+            "chats": chat_count,
+            "calls": call_count
+        }
+    }
 
 
-@router.post("/sandbox/switch", response_model=TokenResponse)
-async def switch_to_sandbox_user(
-    switch_request: SandboxSwitchRequest,
+@router.post("/sandbox/switch/{email:path}", response_model=TokenResponse)
+async def switch_to_sandbox_user_by_email(
+    email: str,
     request: Request,
     superadmin: User = Depends(get_superadmin),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Quick switch to a sandbox user account.
+    Quick switch to a sandbox user account by email.
 
     Creates an impersonation token for the specified sandbox user.
     Only works for sandbox_*@test.local users.
@@ -1745,14 +1815,14 @@ async def switch_to_sandbox_user(
     """
     superadmin = await db.merge(superadmin)
 
-    # Get target user by ID
-    result = await db.execute(select(User).where(User.id == switch_request.user_id))
+    # Get target user by email
+    result = await db.execute(select(User).where(User.email == email))
     target_user = result.scalar_one_or_none()
 
     if not target_user:
         raise HTTPException(
             status_code=404,
-            detail=f"User with id {switch_request.user_id} not found"
+            detail=f"User with email {email} not found"
         )
 
     # Verify this is a sandbox user email

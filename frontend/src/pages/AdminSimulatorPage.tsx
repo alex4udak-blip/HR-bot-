@@ -138,7 +138,7 @@ export default function AdminSimulatorPage() {
   // Функции для работы с sandbox
   const fetchSandboxStatus = async () => {
     try {
-      const response = await api.get('/api/admin/sandbox/status');
+      const response = await api.get('/admin/sandbox/status');
       setSandboxStatus(response.data);
       setSandboxError(null);
     } catch (error: any) {
@@ -151,7 +151,7 @@ export default function AdminSimulatorPage() {
     setSandboxLoading(true);
     setSandboxError(null);
     try {
-      const response = await api.post('/api/admin/sandbox/create');
+      const response = await api.post('/admin/sandbox/create');
       setSandboxStatus(response.data);
     } catch (error: any) {
       console.error('Error creating sandbox:', error);
@@ -168,7 +168,7 @@ export default function AdminSimulatorPage() {
     setSandboxLoading(true);
     setSandboxError(null);
     try {
-      await api.delete('/api/admin/sandbox/delete');
+      await api.delete('/admin/sandbox');
       setSandboxStatus({ exists: false });
     } catch (error: any) {
       console.error('Error deleting sandbox:', error);
@@ -182,7 +182,11 @@ export default function AdminSimulatorPage() {
     setSandboxLoading(true);
     setSandboxError(null);
     try {
-      await api.post(`/api/admin/sandbox/switch/${email}`);
+      const response = await api.post(`/admin/sandbox/switch/${encodeURIComponent(email)}`);
+      // Save token and reload
+      if (response.data?.access_token) {
+        localStorage.setItem('token', response.data.access_token);
+      }
       // Перезагружаем страницу для применения новой сессии
       window.location.href = '/';
     } catch (error: any) {
@@ -548,41 +552,56 @@ export default function AdminSimulatorPage() {
               </div>
 
               <div>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={scenario.actorIsOwner}
-                    onChange={(e) => setScenario({ ...scenario, actorIsOwner: e.target.checked })}
-                    className="w-4 h-4 rounded accent-cyan-500"
-                  />
-                  <span className="text-white/80">Актёр - владелец ресурса</span>
+                <label className="flex items-center gap-2 text-sm cursor-pointer group">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      checked={scenario.actorIsOwner}
+                      onChange={(e) => setScenario({ ...scenario, actorIsOwner: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-5 h-5 border-2 border-white/30 rounded bg-white/5 peer-checked:bg-cyan-500 peer-checked:border-cyan-500 transition-colors flex items-center justify-center">
+                      {scenario.actorIsOwner && <Check size={14} className="text-white" />}
+                    </div>
+                  </div>
+                  <span className="text-white/80 group-hover:text-white transition-colors">Актёр - владелец ресурса</span>
                 </label>
               </div>
 
               {!scenario.actorIsOwner && (
                 <div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={scenario.actorSameDepartment}
-                      onChange={(e) => setScenario({ ...scenario, actorSameDepartment: e.target.checked })}
-                      className="w-4 h-4 rounded accent-cyan-500"
-                    />
-                    <span className="text-white/80">Ресурс в том же департаменте</span>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer group">
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={scenario.actorSameDepartment}
+                        onChange={(e) => setScenario({ ...scenario, actorSameDepartment: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-5 h-5 border-2 border-white/30 rounded bg-white/5 peer-checked:bg-cyan-500 peer-checked:border-cyan-500 transition-colors flex items-center justify-center">
+                        {scenario.actorSameDepartment && <Check size={14} className="text-white" />}
+                      </div>
+                    </div>
+                    <span className="text-white/80 group-hover:text-white transition-colors">Ресурс в том же департаменте</span>
                   </label>
                 </div>
               )}
 
               {!scenario.actorIsOwner && (
                 <div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={scenario.resourceIsShared}
-                      onChange={(e) => setScenario({ ...scenario, resourceIsShared: e.target.checked })}
-                      className="w-4 h-4 rounded accent-cyan-500"
-                    />
-                    <span className="text-white/80">Ресурс расшарен актёру</span>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer group">
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={scenario.resourceIsShared}
+                        onChange={(e) => setScenario({ ...scenario, resourceIsShared: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-5 h-5 border-2 border-white/30 rounded bg-white/5 peer-checked:bg-cyan-500 peer-checked:border-cyan-500 transition-colors flex items-center justify-center">
+                        {scenario.resourceIsShared && <Check size={14} className="text-white" />}
+                      </div>
+                    </div>
+                    <span className="text-white/80 group-hover:text-white transition-colors">Ресурс расшарен актёру</span>
                   </label>
                 </div>
               )}
@@ -660,14 +679,19 @@ export default function AdminSimulatorPage() {
                   </div>
 
                   <div>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={scenario.targetSameDepartment}
-                        onChange={(e) => setScenario({ ...scenario, targetSameDepartment: e.target.checked })}
-                        className="w-4 h-4 rounded accent-cyan-500"
-                      />
-                      <span className="text-white/80">Цель в том же департаменте</span>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer group">
+                      <div className="relative">
+                        <input
+                          type="checkbox"
+                          checked={scenario.targetSameDepartment}
+                          onChange={(e) => setScenario({ ...scenario, targetSameDepartment: e.target.checked })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-5 h-5 border-2 border-white/30 rounded bg-white/5 peer-checked:bg-cyan-500 peer-checked:border-cyan-500 transition-colors flex items-center justify-center">
+                          {scenario.targetSameDepartment && <Check size={14} className="text-white" />}
+                        </div>
+                      </div>
+                      <span className="text-white/80 group-hover:text-white transition-colors">Цель в том же департаменте</span>
                     </label>
                   </div>
                 </>

@@ -325,6 +325,7 @@ async def delete_user(
             "DELETE FROM entity_ai_conversations WHERE user_id = :user_id",
             "DELETE FROM entity_analyses WHERE user_id = :user_id",
             "DELETE FROM report_subscriptions WHERE user_id = :user_id",
+            "DELETE FROM impersonation_logs WHERE superadmin_id = :user_id OR impersonated_user_id = :user_id",
         ]
 
         for query in delete_queries:
