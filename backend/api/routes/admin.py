@@ -1,9 +1,11 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from pydantic import BaseModel
+from jose import jwt, JWTError
 
 from ..database import get_db
 from ..models.database import (
@@ -14,8 +16,11 @@ from ..models.database import (
 )
 from ..services.auth import get_superadmin, get_current_user, create_access_token, create_impersonation_token, hash_password
 from ..models.schemas import TokenResponse, UserResponse
+from ..config import get_settings
 
 router = APIRouter()
+settings = get_settings()
+security = HTTPBearer()
 
 
 # ==================== Schemas ====================
@@ -39,16 +44,16 @@ class RolePermission(BaseModel):
 
 class AccessMatrixResponse(BaseModel):
     """Complete access control matrix"""
-    roles: List[RolePermission]
-    generated_at: datetime
+    roles: List[str]
+    permissions: List[str]
+    matrix: Dict[str, Dict[str, bool]]
 
 
 class SimulateAccessRequest(BaseModel):
     """Request to simulate access for a role"""
     role: str
-    action: str
-    resource_type: Optional[str] = None
-    context: Optional[Dict[str, Any]] = None
+    org_id: Optional[int] = None
+    dept_id: Optional[int] = None
 
 
 class SimulateAccessResponse(BaseModel):
@@ -59,6 +64,11 @@ class SimulateAccessResponse(BaseModel):
     allowed: bool
     reason: str
     context: Optional[Dict[str, Any]] = None
+
+
+class ImpersonateRequest(BaseModel):
+    """Request to impersonate a user"""
+    user_id: int
 
 
 class ImpersonationLogResponse(BaseModel):
@@ -93,6 +103,11 @@ class UserDetailResponse(BaseModel):
     locked_until: Optional[datetime]
 
 
+class SandboxCreateRequest(BaseModel):
+    """Request to create sandbox"""
+    org_id: int
+
+
 class SandboxUserInfo(BaseModel):
     """Information about a sandbox user"""
     id: int
@@ -104,16 +119,41 @@ class SandboxUserInfo(BaseModel):
     dept_role: str
 
 
+class SandboxEntityInfo(BaseModel):
+    """Information about a sandbox entity"""
+    id: int
+    created_by: int
+    name: str
+    email: str
+    tags: List[str]
+
+
+class SandboxChatInfo(BaseModel):
+    """Information about a sandbox chat"""
+    id: int
+    owner_id: int
+    title: str
+
+
+class SandboxCallInfo(BaseModel):
+    """Information about a sandbox call"""
+    id: int
+    owner_id: int
+    title: str
+
+
 class SandboxCreateResponse(BaseModel):
     """Response for sandbox creation"""
-    message: str
     department_id: int
-    department_name: str
     users: List[SandboxUserInfo]
-    entity_ids: List[int]
-    chat_ids: List[int]
-    call_ids: List[int]
-    created_at: datetime
+    entities: List[SandboxEntityInfo]
+    chats: List[SandboxChatInfo]
+    calls: List[SandboxCallInfo]
+
+
+class SandboxSwitchRequest(BaseModel):
+    """Request to switch to a sandbox user"""
+    user_id: int
 
 
 class SandboxStatusResponse(BaseModel):
@@ -285,7 +325,7 @@ def check_action_permission(role: str, action: str, context: Optional[Dict[str, 
 
 # ==================== Endpoints ====================
 
-@router.get("/access-matrix", response_model=AccessMatrixResponse)
+@router.get("/access-matrix")
 async def get_access_matrix(
     _: User = Depends(get_superadmin),
     db: AsyncSession = Depends(get_db)
@@ -302,104 +342,205 @@ async def get_access_matrix(
 
     **Only SUPERADMIN can access this endpoint.**
     """
-    roles_data = [
-        {
-            "role": "superadmin",
-            "description": "System superadmin with full access to everything across all organizations"
-        },
-        {
-            "role": "owner",
-            "description": "Organization owner with full access within their organization"
-        },
-        {
-            "role": "admin",
-            "description": "Department admin with full access within their department"
-        },
-        {
-            "role": "sub_admin",
-            "description": "Department sub-admin with view access to department data and limited management"
-        },
-        {
-            "role": "member",
-            "description": "Regular member with access to their own data and shared resources"
-        },
+    roles = ["SUPERADMIN", "OWNER", "ADMIN", "SUB_ADMIN", "MEMBER"]
+
+    permissions = [
+        "view_all_users",
+        "create_users",
+        "delete_users",
+        "view_org_entities",
+        "view_dept_entities",
+        "view_own_entities",
+        "edit_org_entities",
+        "edit_dept_entities",
+        "delete_dept_entities",
+        "view_org_chats",
+        "view_dept_chats",
+        "view_org_calls",
+        "manage_departments",
+        "manage_org_members",
+        "impersonate_users"
     ]
 
-    role_permissions = []
+    matrix = {}
 
-    for role_info in roles_data:
-        role = role_info["role"]
-        permissions = get_role_permissions(role)
+    for role in roles:
+        role_lower = role.lower()
+        context = {}
+        if role in ["ADMIN", "SUB_ADMIN"]:
+            context = {"is_dept_admin": True, "same_department": True}
+        elif role == "MEMBER":
+            context = {"is_owner": True}
 
-        role_permissions.append(RolePermission(
-            role=role,
-            can_view_all_orgs=permissions["can_view_all_orgs"],
-            can_delete_users=permissions["can_delete_users"],
-            can_share_resources=permissions["can_share_resources"],
-            can_transfer_resources=permissions["can_transfer_resources"],
-            can_manage_departments=permissions["can_manage_departments"],
-            can_create_users=permissions["can_create_users"],
-            can_edit_org_settings=permissions["can_edit_org_settings"],
-            can_view_all_dept_data=permissions["can_view_all_dept_data"],
-            can_manage_dept_members=permissions["can_manage_dept_members"],
-            can_impersonate_users=permissions["can_impersonate_users"],
-            can_access_admin_panel=permissions["can_access_admin_panel"],
-            description=role_info["description"]
-        ))
+        perms = get_role_permissions(role_lower, context)
 
-    return AccessMatrixResponse(
-        roles=role_permissions,
-        generated_at=datetime.utcnow()
-    )
+        # Build permission matrix for this role
+        role_perms = {}
+
+        if role == "SUPERADMIN":
+            # SUPERADMIN has everything
+            for perm in permissions:
+                role_perms[perm] = True
+        elif role == "OWNER":
+            role_perms["view_all_users"] = True
+            role_perms["create_users"] = perms["can_create_users"]
+            role_perms["delete_users"] = perms["can_delete_users"]
+            role_perms["view_org_entities"] = True
+            role_perms["view_dept_entities"] = True
+            role_perms["view_own_entities"] = True
+            role_perms["edit_org_entities"] = True
+            role_perms["edit_dept_entities"] = True
+            role_perms["delete_dept_entities"] = True
+            role_perms["view_org_chats"] = True
+            role_perms["view_dept_chats"] = True
+            role_perms["view_org_calls"] = True
+            role_perms["manage_departments"] = perms["can_manage_departments"]
+            role_perms["manage_org_members"] = perms.get("can_manage_dept_members", True)
+            role_perms["impersonate_users"] = perms["can_impersonate_users"]
+        elif role == "ADMIN":
+            role_perms["view_all_users"] = False
+            role_perms["create_users"] = perms["can_create_users"]
+            role_perms["delete_users"] = False
+            role_perms["view_org_entities"] = False
+            role_perms["view_dept_entities"] = perms["can_view_all_dept_data"]
+            role_perms["view_own_entities"] = True
+            role_perms["edit_org_entities"] = False
+            role_perms["edit_dept_entities"] = True
+            role_perms["delete_dept_entities"] = True
+            role_perms["view_org_chats"] = False
+            role_perms["view_dept_chats"] = True
+            role_perms["view_org_calls"] = False
+            role_perms["manage_departments"] = False
+            role_perms["manage_org_members"] = False
+            role_perms["impersonate_users"] = False
+        elif role == "SUB_ADMIN":
+            role_perms["view_all_users"] = False
+            role_perms["create_users"] = False
+            role_perms["delete_users"] = False
+            role_perms["view_org_entities"] = False
+            role_perms["view_dept_entities"] = perms["can_view_all_dept_data"]
+            role_perms["view_own_entities"] = True
+            role_perms["edit_org_entities"] = False
+            role_perms["edit_dept_entities"] = True
+            role_perms["delete_dept_entities"] = False
+            role_perms["view_org_chats"] = False
+            role_perms["view_dept_chats"] = True
+            role_perms["view_org_calls"] = False
+            role_perms["manage_departments"] = False
+            role_perms["manage_org_members"] = False
+            role_perms["impersonate_users"] = False
+        elif role == "MEMBER":
+            role_perms["view_all_users"] = False
+            role_perms["create_users"] = False
+            role_perms["delete_users"] = False
+            role_perms["view_org_entities"] = False
+            role_perms["view_dept_entities"] = False
+            role_perms["view_own_entities"] = True
+            role_perms["edit_org_entities"] = False
+            role_perms["edit_dept_entities"] = False
+            role_perms["delete_dept_entities"] = False
+            role_perms["view_org_chats"] = False
+            role_perms["view_dept_chats"] = False
+            role_perms["view_org_calls"] = False
+            role_perms["manage_departments"] = False
+            role_perms["manage_org_members"] = False
+            role_perms["impersonate_users"] = False
+
+        matrix[role] = role_perms
+
+    return {
+        "roles": roles,
+        "permissions": permissions,
+        "matrix": matrix
+    }
 
 
-@router.get("/simulate-access", response_model=SimulateAccessResponse)
+@router.post("/simulate-access")
 async def simulate_access(
-    role: str = Query(..., description="Role to simulate (superadmin, owner, admin, sub_admin, member)"),
-    action: str = Query(..., description="Action to check (e.g., view_all_orgs, delete_users, share_resources)"),
-    resource_type: Optional[str] = Query(None, description="Type of resource (chat, entity, call, user, department)"),
-    same_department: bool = Query(False, description="Whether the action is within the same department"),
-    is_dept_admin: bool = Query(False, description="Whether the user is a department admin"),
-    is_owner: bool = Query(False, description="Whether the user is the resource owner"),
+    request_body: SimulateAccessRequest,
     _: User = Depends(get_superadmin),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Simulate access control for a specific role and action.
+    Simulate access control for a specific role.
 
-    This endpoint allows you to test if a role can perform an action
-    on a resource with specific context.
-
-    **Examples:**
-    - Can ADMIN delete users? `role=admin&action=delete_users`
-    - Can SUB_ADMIN share resources in same dept? `role=sub_admin&action=share_resources&same_department=true`
-    - Can MEMBER transfer resources? `role=member&action=transfer_resources`
+    This endpoint allows you to test what permissions a role has
+    in a given organization/department context.
 
     **Only SUPERADMIN can access this endpoint.**
     """
-    # Build context from query parameters
-    context = {
-        "same_department": same_department,
-        "is_dept_admin": is_dept_admin,
-        "is_owner": is_owner,
-    }
+    role = request_body.role
+    org_id = request_body.org_id
+    dept_id = request_body.dept_id
 
-    # Check permission
-    allowed, reason = check_action_permission(role, action, context)
+    # Build context
+    context = {}
+    if dept_id:
+        context["is_dept_admin"] = True
+        context["same_department"] = True
+    elif role.upper() == "MEMBER":
+        context["is_owner"] = True
 
-    return SimulateAccessResponse(
-        role=role,
-        action=action,
-        resource_type=resource_type,
-        allowed=allowed,
-        reason=reason,
-        context=context
-    )
+    # Get permissions for this role
+    perms = get_role_permissions(role.lower(), context)
+
+    # Build response based on role
+    response = {}
+
+    if role.upper() == "SUPERADMIN":
+        response = {
+            "can_view_all_users": True,
+            "can_delete_users": True,
+            "can_impersonate": True,
+            "can_view_all_orgs": True,
+            "can_manage_departments": True
+        }
+    elif role.upper() == "OWNER":
+        response = {
+            "can_view_org_entities": True,
+            "can_edit_org_entities": True,
+            "can_delete_org_entities": True,
+            "can_manage_org_members": perms.get("can_manage_dept_members", True),
+            "can_manage_departments": perms["can_manage_departments"],
+            "can_impersonate": perms["can_impersonate_users"],
+            "can_view_all_orgs": perms["can_view_all_orgs"]
+        }
+    elif role.upper() == "ADMIN":
+        response = {
+            "can_view_dept_entities": perms["can_view_all_dept_data"],
+            "can_edit_dept_entities": True,
+            "can_delete_dept_entities": True,
+            "can_manage_dept_members": perms["can_manage_dept_members"],
+            "can_view_all_org_entities": False,
+            "can_manage_org_members": False,
+            "can_impersonate": perms["can_impersonate_users"]
+        }
+    elif role.upper() == "SUB_ADMIN":
+        response = {
+            "can_view_dept_entities": perms["can_view_all_dept_data"],
+            "can_view_dept_chats": perms["can_view_all_dept_data"],
+            "can_edit_dept_entities": True,
+            "can_delete_dept_admins": False,
+            "can_manage_dept_members": True,
+            "can_delete_dept_members": False
+        }
+    elif role.upper() == "MEMBER":
+        response = {
+            "can_view_own_entities": True,
+            "can_edit_own_entities": True,
+            "can_view_dept_entities": False,
+            "can_view_all_dept_chats": False,
+            "can_view_shared_entities": True,
+            "can_manage_dept_members": False,
+            "can_impersonate": perms["can_impersonate_users"]
+        }
+
+    return response
 
 
-@router.post("/impersonate/{user_id}", response_model=TokenResponse)
+@router.post("/impersonate")
 async def impersonate_user(
-    user_id: int,
+    request_body: ImpersonateRequest,
     request: Request,
     superadmin: User = Depends(get_superadmin),
     db: AsyncSession = Depends(get_db)
@@ -420,7 +561,7 @@ async def impersonate_user(
     superadmin = await db.merge(superadmin)
 
     # Get target user
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(select(User).where(User.id == request_body.user_id))
     target_user = result.scalar_one_or_none()
 
     if not target_user:
@@ -455,65 +596,74 @@ async def impersonate_user(
     db.add(impersonation_log)
     await db.commit()
 
-    return TokenResponse(
-        access_token=token,
-        user=UserResponse(
-            id=target_user.id,
-            email=target_user.email,
-            name=target_user.name,
-            role=target_user.role.value,
-            telegram_id=target_user.telegram_id,
-            telegram_username=target_user.telegram_username,
-            is_active=target_user.is_active,
-            created_at=target_user.created_at,
-            chats_count=0
-        )
-    )
+    return {
+        "token": token,
+        "impersonated_user": {
+            "id": target_user.id,
+            "email": target_user.email,
+            "name": target_user.name,
+            "role": target_user.role.value,
+            "is_active": target_user.is_active,
+            "created_at": target_user.created_at.isoformat()
+        }
+    }
 
 
-@router.post("/exit-impersonation", response_model=TokenResponse)
+@router.post("/exit-impersonation")
 async def exit_impersonation(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Exit impersonation and return to original SUPERADMIN account.
 
     This endpoint should be called when a SUPERADMIN wants to stop
-    impersonating and return to their own account. The frontend should
-    track the original superadmin ID from the impersonation token.
+    impersonating and return to their own account.
 
     **Returns a regular token for the SUPERADMIN.**
     """
-    current_user = await db.merge(current_user)
+    # Decode the impersonation token to get original user
+    try:
+        payload = jwt.decode(
+            credentials.credentials,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm]
+        )
+        is_impersonating = payload.get("is_impersonating", False)
+        original_user_id = payload.get("original_user_id")
 
-    # Verify this is a SUPERADMIN
-    if current_user.role != UserRole.SUPERADMIN:
+        if not is_impersonating or not original_user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Not in impersonation mode"
+            )
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Get the original superadmin user
+    result = await db.execute(select(User).where(User.id == original_user_id))
+    original_user = result.scalar_one_or_none()
+
+    if not original_user:
+        raise HTTPException(status_code=404, detail="Original user not found")
+
+    # Verify original user is a SUPERADMIN
+    if original_user.role != UserRole.SUPERADMIN:
         raise HTTPException(
             status_code=403,
-            detail="Only superadmin can exit impersonation"
+            detail="Only superadmin can use impersonation"
         )
 
     # Create regular token for superadmin
     token = create_access_token({
-        "sub": str(current_user.id),
-        "token_version": current_user.token_version
+        "sub": str(original_user.id),
+        "token_version": original_user.token_version
     })
 
-    return TokenResponse(
-        access_token=token,
-        user=UserResponse(
-            id=current_user.id,
-            email=current_user.email,
-            name=current_user.name,
-            role=current_user.role.value,
-            telegram_id=current_user.telegram_id,
-            telegram_username=current_user.telegram_username,
-            is_active=current_user.is_active,
-            created_at=current_user.created_at,
-            chats_count=0
-        )
-    )
+    return {
+        "token": token,
+        "message": "Exited impersonation mode"
+    }
 
 
 @router.get("/impersonation-logs", response_model=List[ImpersonationLogResponse])
@@ -570,7 +720,7 @@ async def get_impersonation_logs(
     return log_responses
 
 
-@router.get("/role-permissions", response_model=List[RolePermission])
+@router.get("/role-permissions")
 async def get_role_permissions_list(
     role: Optional[str] = Query(None, description="Filter by specific role"),
     _: User = Depends(get_superadmin),
@@ -590,67 +740,227 @@ async def get_role_permissions_list(
 
     **Only SUPERADMIN can access this endpoint.**
     """
-    roles_data = [
-        {
-            "role": "superadmin",
-            "description": "System superadmin with full access to everything across all organizations. Can impersonate users, manage all orgs, and has no restrictions."
-        },
-        {
-            "role": "owner",
-            "description": "Organization owner with full access within their organization. Can manage all departments, users, and settings. Cannot impersonate or access other orgs."
-        },
-        {
-            "role": "admin",
-            "description": "Department admin (LEAD role in department). Can view all data in their department, manage department members, create users, and share/transfer resources within department. Can share with other admins across departments."
-        },
-        {
-            "role": "sub_admin",
-            "description": "Department sub-admin with view-only access to all department data. Can share resources within department but cannot manage members or transfer resources. Limited management capabilities."
-        },
-        {
-            "role": "member",
-            "description": "Regular member with access to their own data and shared resources only. Can share their own resources within their department. No management capabilities."
-        },
-    ]
+    roles = ["SUPERADMIN", "OWNER", "ADMIN", "SUB_ADMIN", "MEMBER"]
 
-    # Filter by role if specified
     if role:
-        roles_data = [r for r in roles_data if r["role"] == role.lower()]
-        if not roles_data:
+        role_upper = role.upper()
+        if role_upper not in roles:
             raise HTTPException(status_code=404, detail=f"Role '{role}' not found")
+        roles = [role_upper]
 
-    role_permissions = []
+    result = {}
 
-    for role_info in roles_data:
-        role_name = role_info["role"]
-
-        # Get permissions with different contexts to show the full picture
-        # For admin/sub_admin, show permissions when they ARE dept admin
+    for role_name in roles:
+        role_lower = role_name.lower()
         context = {}
-        if role_name in ["admin", "sub_admin"]:
+        if role_name in ["ADMIN", "SUB_ADMIN"]:
             context = {"is_dept_admin": True, "same_department": True}
-        elif role_name == "member":
+        elif role_name == "MEMBER":
             context = {"is_owner": True}
 
-        permissions = get_role_permissions(role_name, context)
+        perms = get_role_permissions(role_lower, context)
 
-        role_permissions.append(RolePermission(
-            role=role_name,
-            can_view_all_orgs=permissions["can_view_all_orgs"],
-            can_delete_users=permissions["can_delete_users"],
-            can_share_resources=permissions["can_share_resources"],
-            can_transfer_resources=permissions["can_transfer_resources"],
-            can_manage_departments=permissions["can_manage_departments"],
-            can_create_users=permissions["can_create_users"],
-            can_edit_org_settings=permissions["can_edit_org_settings"],
-            can_view_all_dept_data=permissions["can_view_all_dept_data"],
-            can_manage_dept_members=permissions["can_manage_dept_members"],
-            can_impersonate_users=permissions["can_impersonate_users"],
-            can_access_admin_panel=permissions["can_access_admin_panel"],
-            description=role_info["description"]
-        ))
+        # Group permissions by category
+        role_perms = {
+            "users": {},
+            "organizations": {},
+            "departments": {},
+            "entities": {},
+            "chats": {},
+            "calls": {},
+            "sharing": {},
+            "admin": {}
+        }
 
-    return role_permissions
+        if role_name == "SUPERADMIN":
+            role_perms["users"] = {
+                "view_all_users": True,
+                "create_users": True,
+                "delete_users": True
+            }
+            role_perms["organizations"] = {
+                "view_all_orgs": True,
+                "edit_org_settings": True
+            }
+            role_perms["departments"] = {
+                "manage_departments": True,
+                "view_all_dept_data": True
+            }
+            role_perms["entities"] = {
+                "view_org_entities": True,
+                "view_dept_entities": True,
+                "edit_org_entities": True,
+                "edit_dept_entities": True,
+                "delete_dept_entities": True
+            }
+            role_perms["chats"] = {
+                "view_org_chats": True,
+                "view_dept_chats": True
+            }
+            role_perms["calls"] = {
+                "view_org_calls": True
+            }
+            role_perms["sharing"] = {
+                "share_resources": True,
+                "transfer_resources": True
+            }
+            role_perms["admin"] = {
+                "impersonate": True,
+                "manage_org": True,
+                "access_admin_panel": True
+            }
+        elif role_name == "OWNER":
+            role_perms["users"] = {
+                "view_all_users": True,
+                "create_users": True,
+                "delete_users": True
+            }
+            role_perms["organizations"] = {
+                "view_all_orgs": False,
+                "edit_org_settings": True
+            }
+            role_perms["departments"] = {
+                "manage_departments": True,
+                "view_all_dept_data": True
+            }
+            role_perms["entities"] = {
+                "view_org_entities": True,
+                "view_dept_entities": True,
+                "edit_org_entities": True,
+                "edit_dept_entities": True,
+                "delete_dept_entities": True
+            }
+            role_perms["chats"] = {
+                "view_org_chats": True,
+                "view_dept_chats": True
+            }
+            role_perms["calls"] = {
+                "view_org_calls": True
+            }
+            role_perms["sharing"] = {
+                "share_resources": True,
+                "transfer_resources": True
+            }
+            role_perms["admin"] = {
+                "impersonate": False,
+                "manage_org": True,
+                "access_admin_panel": True
+            }
+        elif role_name == "ADMIN":
+            role_perms["users"] = {
+                "view_all_users": False,
+                "create_users": perms["can_create_users"],
+                "delete_users": False
+            }
+            role_perms["organizations"] = {
+                "view_all_orgs": False,
+                "edit_org_settings": False
+            }
+            role_perms["departments"] = {
+                "manage_departments": False,
+                "view_all_dept_data": perms["can_view_all_dept_data"]
+            }
+            role_perms["entities"] = {
+                "view_org_entities": False,
+                "view_dept_entities": True,
+                "edit_org_entities": False,
+                "edit_dept_entities": True,
+                "delete_dept_entities": True
+            }
+            role_perms["chats"] = {
+                "view_org_chats": False,
+                "view_dept_chats": True
+            }
+            role_perms["calls"] = {
+                "view_org_calls": False
+            }
+            role_perms["sharing"] = {
+                "share_resources": perms["can_share_resources"],
+                "transfer_resources": perms["can_transfer_resources"]
+            }
+            role_perms["admin"] = {
+                "impersonate": False,
+                "manage_org": False,
+                "access_admin_panel": True
+            }
+        elif role_name == "SUB_ADMIN":
+            role_perms["users"] = {
+                "view_all_users": False,
+                "create_users": False,
+                "delete_users": False
+            }
+            role_perms["organizations"] = {
+                "view_all_orgs": False,
+                "edit_org_settings": False
+            }
+            role_perms["departments"] = {
+                "manage_departments": False,
+                "view_all_dept_data": perms["can_view_all_dept_data"]
+            }
+            role_perms["entities"] = {
+                "view_org_entities": False,
+                "view_dept_entities": True,
+                "edit_org_entities": False,
+                "edit_dept_entities": True,
+                "delete_dept_entities": False
+            }
+            role_perms["chats"] = {
+                "view_org_chats": False,
+                "view_dept_chats": True
+            }
+            role_perms["calls"] = {
+                "view_org_calls": False
+            }
+            role_perms["sharing"] = {
+                "share_resources": perms["can_share_resources"],
+                "transfer_resources": False
+            }
+            role_perms["admin"] = {
+                "impersonate": False,
+                "manage_org": False,
+                "access_admin_panel": True
+            }
+        elif role_name == "MEMBER":
+            role_perms["users"] = {
+                "view_all_users": False,
+                "create_users": False,
+                "delete_users": False
+            }
+            role_perms["organizations"] = {
+                "view_all_orgs": False,
+                "edit_org_settings": False
+            }
+            role_perms["departments"] = {
+                "manage_departments": False,
+                "view_all_dept_data": False
+            }
+            role_perms["entities"] = {
+                "view_org_entities": False,
+                "view_dept_entities": False,
+                "edit_org_entities": False,
+                "edit_dept_entities": False,
+                "delete_dept_entities": False
+            }
+            role_perms["chats"] = {
+                "view_org_chats": False,
+                "view_dept_chats": False
+            }
+            role_perms["calls"] = {
+                "view_org_calls": False
+            }
+            role_perms["sharing"] = {
+                "share_resources": perms["can_share_resources"],
+                "transfer_resources": False
+            }
+            role_perms["admin"] = {
+                "impersonate": False,
+                "manage_org": False,
+                "access_admin_panel": False
+            }
+
+        result[role_name] = role_perms
+
+    return result
 
 
 @router.get("/users/{user_id}/details", response_model=UserDetailResponse)
@@ -738,6 +1048,7 @@ async def get_user_details(
 
 @router.post("/sandbox/create", response_model=SandboxCreateResponse)
 async def create_sandbox(
+    request_body: SandboxCreateRequest,
     superadmin: User = Depends(get_superadmin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -745,7 +1056,7 @@ async def create_sandbox(
     Create an isolated test environment for testing and development.
 
     Creates:
-    - "QA Sandbox" department in superadmin's organization
+    - "Sandbox Test Department" department in specified organization
     - 4 test users with different roles:
       - sandbox_owner@test.local (OrgRole.owner)
       - sandbox_admin@test.local (DeptRole.lead)
@@ -763,40 +1074,36 @@ async def create_sandbox(
     """
     superadmin = await db.merge(superadmin)
 
-    # Check if sandbox already exists
-    result = await db.execute(
-        select(Department)
-        .join(Organization)
-        .join(OrgMember)
-        .where(OrgMember.user_id == superadmin.id)
-        .where(Department.name == "QA Sandbox")
-    )
-    existing_dept = result.scalar_one_or_none()
-
-    if existing_dept:
-        raise HTTPException(
-            status_code=400,
-            detail="Sandbox already exists. Delete it first using DELETE /api/admin/sandbox/delete"
-        )
-
-    # Get superadmin's organization
+    # Get organization from request
     org_result = await db.execute(
-        select(Organization)
-        .join(OrgMember)
-        .where(OrgMember.user_id == superadmin.id)
+        select(Organization).where(Organization.id == request_body.org_id)
     )
     org = org_result.scalar_one_or_none()
 
     if not org:
         raise HTTPException(
-            status_code=400,
-            detail="Superadmin must be part of an organization"
+            status_code=404,
+            detail=f"Organization with id {request_body.org_id} not found"
         )
 
-    # 1. Create QA Sandbox department
+    # Check if sandbox already exists in this organization
+    result = await db.execute(
+        select(Department)
+        .where(Department.org_id == org.id)
+        .where(Department.name == "Sandbox Test Department")
+    )
+    existing_dept = result.scalar_one_or_none()
+
+    if existing_dept:
+        raise HTTPException(
+            status_code=409,
+            detail="Sandbox already exists. Delete it first using DELETE /api/admin/sandbox"
+        )
+
+    # 1. Create Sandbox Test Department
     sandbox_dept = Department(
         org_id=org.id,
-        name="QA Sandbox",
+        name="Sandbox Test Department",
         description="Automated test environment for QA and development",
         color="#FF6B35",
         is_active=True
@@ -1093,20 +1400,48 @@ async def create_sandbox(
 
     await db.commit()
 
+    # Build response with full objects
+    entities_response = [
+        SandboxEntityInfo(
+            id=entity.id,
+            created_by=entity.created_by,
+            name=entity.name,
+            email=entity.email or "",
+            tags=entity.tags or []
+        )
+        for entity in entity_objects
+    ]
+
+    chats_response = [
+        SandboxChatInfo(
+            id=chat.id,
+            owner_id=chat.owner_id,
+            title=chat.title or ""
+        )
+        for chat in chat_objects
+    ]
+
+    calls_response = [
+        SandboxCallInfo(
+            id=call.id,
+            owner_id=call.owner_id,
+            title=call.title or ""
+        )
+        for call in call_objects
+    ]
+
     return SandboxCreateResponse(
-        message="Sandbox environment created successfully",
         department_id=sandbox_dept.id,
-        department_name=sandbox_dept.name,
         users=created_users,
-        entity_ids=entity_ids,
-        chat_ids=chat_ids,
-        call_ids=call_ids,
-        created_at=datetime.utcnow()
+        entities=entities_response,
+        chats=chats_response,
+        calls=calls_response
     )
 
 
-@router.delete("/sandbox/delete")
+@router.delete("/sandbox")
 async def delete_sandbox(
+    org_id: int = Query(..., description="Organization ID"),
     superadmin: User = Depends(get_superadmin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -1115,7 +1450,7 @@ async def delete_sandbox(
 
     Removes:
     - All sandbox users (sandbox_*@test.local)
-    - QA Sandbox department
+    - Sandbox Test Department
     - All associated entities, chats, calls
     - All shared access records
     - Cascade cleanup of all related data
@@ -1124,25 +1459,23 @@ async def delete_sandbox(
     """
     superadmin = await db.merge(superadmin)
 
-    # Get superadmin's organization
+    # Get organization from request
     org_result = await db.execute(
-        select(Organization)
-        .join(OrgMember)
-        .where(OrgMember.user_id == superadmin.id)
+        select(Organization).where(Organization.id == org_id)
     )
     org = org_result.scalar_one_or_none()
 
     if not org:
         raise HTTPException(
-            status_code=400,
-            detail="Superadmin must be part of an organization"
+            status_code=404,
+            detail=f"Organization with id {org_id} not found"
         )
 
     # Find sandbox department
     result = await db.execute(
         select(Department)
         .where(Department.org_id == org.id)
-        .where(Department.name == "QA Sandbox")
+        .where(Department.name == "Sandbox Test Department")
     )
     sandbox_dept = result.scalar_one_or_none()
 
@@ -1165,8 +1498,9 @@ async def delete_sandbox(
     )
     sandbox_users = sandbox_users_result.scalars().all()
 
+    # Count items before deletion
     deleted_count = {
-        "users": 0,
+        "users": len(sandbox_users),
         "entities": 0,
         "chats": 0,
         "calls": 0,
@@ -1174,17 +1508,14 @@ async def delete_sandbox(
         "shared_access": 0
     }
 
-    # Delete entities in sandbox department (cascade will handle chats, calls, shared access)
+    # Count entities
     entities_result = await db.execute(
         select(Entity).where(Entity.department_id == sandbox_dept.id)
     )
     entities = entities_result.scalars().all()
     deleted_count["entities"] = len(entities)
 
-    for entity in entities:
-        await db.delete(entity)
-
-    # Delete chats owned by sandbox users
+    # Count chats and messages
     for user in sandbox_users:
         chats_result = await db.execute(
             select(Chat).where(Chat.owner_id == user.id)
@@ -1193,14 +1524,13 @@ async def delete_sandbox(
         deleted_count["chats"] += len(chats)
 
         for chat in chats:
-            # Count messages
             messages_result = await db.execute(
                 select(Message).where(Message.chat_id == chat.id)
             )
             messages = messages_result.scalars().all()
             deleted_count["messages"] += len(messages)
 
-    # Delete calls owned by sandbox users
+    # Count calls
     for user in sandbox_users:
         calls_result = await db.execute(
             select(CallRecording).where(CallRecording.owner_id == user.id)
@@ -1208,7 +1538,7 @@ async def delete_sandbox(
         calls = calls_result.scalars().all()
         deleted_count["calls"] += len(calls)
 
-    # Delete shared access records
+    # Count shared access
     for user in sandbox_users:
         shared_result = await db.execute(
             select(SharedAccess).where(
@@ -1218,13 +1548,52 @@ async def delete_sandbox(
         shared = shared_result.scalars().all()
         deleted_count["shared_access"] += len(shared)
 
-    # Delete all sandbox users (cascade will handle org memberships, dept memberships)
-    for user in sandbox_users:
-        await db.delete(user)
-        deleted_count["users"] += 1
+    # Delete in proper order to avoid FK constraints
+    # 1. Delete shared access records first
+    await db.execute(
+        delete(SharedAccess).where(
+            SharedAccess.shared_by_id.in_([u.id for u in sandbox_users])
+        )
+    )
+    await db.execute(
+        delete(SharedAccess).where(
+            SharedAccess.shared_with_id.in_([u.id for u in sandbox_users])
+        )
+    )
 
-    # Delete sandbox department (cascade will handle remaining references)
-    await db.delete(sandbox_dept)
+    # 2. Delete messages
+    for user in sandbox_users:
+        chats_result = await db.execute(
+            select(Chat).where(Chat.owner_id == user.id)
+        )
+        chats = chats_result.scalars().all()
+        for chat in chats:
+            await db.execute(delete(Message).where(Message.chat_id == chat.id))
+
+    # 3. Delete chats
+    for user in sandbox_users:
+        await db.execute(delete(Chat).where(Chat.owner_id == user.id))
+
+    # 4. Delete call recordings
+    for user in sandbox_users:
+        await db.execute(delete(CallRecording).where(CallRecording.owner_id == user.id))
+
+    # 5. Delete entities
+    await db.execute(delete(Entity).where(Entity.department_id == sandbox_dept.id))
+
+    # 6. Delete department members
+    await db.execute(delete(DepartmentMember).where(DepartmentMember.department_id == sandbox_dept.id))
+
+    # 7. Delete org members for sandbox users
+    for user in sandbox_users:
+        await db.execute(delete(OrgMember).where(OrgMember.user_id == user.id))
+
+    # 8. Delete sandbox users
+    for user in sandbox_users:
+        await db.execute(delete(User).where(User.id == user.id))
+
+    # 9. Delete sandbox department
+    await db.execute(delete(Department).where(Department.id == sandbox_dept.id))
 
     await db.commit()
 
@@ -1236,6 +1605,7 @@ async def delete_sandbox(
 
 @router.get("/sandbox/status", response_model=SandboxStatusResponse)
 async def get_sandbox_status(
+    org_id: int = Query(..., description="Organization ID"),
     superadmin: User = Depends(get_superadmin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -1252,25 +1622,23 @@ async def get_sandbox_status(
     """
     superadmin = await db.merge(superadmin)
 
-    # Get superadmin's organization
+    # Get organization from request
     org_result = await db.execute(
-        select(Organization)
-        .join(OrgMember)
-        .where(OrgMember.user_id == superadmin.id)
+        select(Organization).where(Organization.id == org_id)
     )
     org = org_result.scalar_one_or_none()
 
     if not org:
         raise HTTPException(
-            status_code=400,
-            detail="Superadmin must be part of an organization"
+            status_code=404,
+            detail=f"Organization with id {org_id} not found"
         )
 
     # Find sandbox department
     result = await db.execute(
         select(Department)
         .where(Department.org_id == org.id)
-        .where(Department.name == "QA Sandbox")
+        .where(Department.name == "Sandbox Test Department")
     )
     sandbox_dept = result.scalar_one_or_none()
 
@@ -1357,9 +1725,9 @@ async def get_sandbox_status(
     )
 
 
-@router.post("/sandbox/switch/{user_email}", response_model=TokenResponse)
+@router.post("/sandbox/switch", response_model=TokenResponse)
 async def switch_to_sandbox_user(
-    user_email: str,
+    switch_request: SandboxSwitchRequest,
     request: Request,
     superadmin: User = Depends(get_superadmin),
     db: AsyncSession = Depends(get_db)
@@ -1377,21 +1745,21 @@ async def switch_to_sandbox_user(
     """
     superadmin = await db.merge(superadmin)
 
-    # Verify this is a sandbox user email
-    if not user_email.endswith("@test.local") or not user_email.startswith("sandbox_"):
-        raise HTTPException(
-            status_code=400,
-            detail="Only sandbox users (sandbox_*@test.local) can be switched to via this endpoint"
-        )
-
-    # Get target user
-    result = await db.execute(select(User).where(User.email == user_email))
+    # Get target user by ID
+    result = await db.execute(select(User).where(User.id == switch_request.user_id))
     target_user = result.scalar_one_or_none()
 
     if not target_user:
         raise HTTPException(
             status_code=404,
-            detail=f"Sandbox user '{user_email}' not found. Create sandbox first."
+            detail=f"User with id {switch_request.user_id} not found"
+        )
+
+    # Verify this is a sandbox user email
+    if not target_user.email.endswith("@test.local"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only sandbox users (@test.local) can be switched to via this endpoint"
         )
 
     # Cannot impersonate inactive users
