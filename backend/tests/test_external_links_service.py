@@ -680,9 +680,11 @@ class TestFirefliesProcessing:
         """Test successful Fireflies processing with Playwright."""
         url = "https://app.fireflies.ai/view/ABC123xyz"
 
-        # Mock the page element to return transcript text
-        mock_element = AsyncMock()
-        mock_element.text_content = AsyncMock(return_value="This is a transcript line from Fireflies.")
+        # Mock the page elements to return transcript text (must be > 100 chars total)
+        mock_element1 = AsyncMock()
+        mock_element1.text_content = AsyncMock(return_value="John: Hello everyone, welcome to our meeting today. Let's discuss the quarterly results.")
+        mock_element2 = AsyncMock()
+        mock_element2.text_content = AsyncMock(return_value="Jane: Thanks John. I have prepared some slides about our progress on the new product launch.")
 
         # Mock page with multiple transcript elements
         mock_page = AsyncMock()
@@ -690,7 +692,7 @@ class TestFirefliesProcessing:
         mock_page.wait_for_selector = AsyncMock(return_value=None)
         mock_page.wait_for_timeout = AsyncMock(return_value=None)
         mock_page.query_selector = AsyncMock(return_value=None)  # No title element
-        mock_page.query_selector_all = AsyncMock(return_value=[mock_element, mock_element])
+        mock_page.query_selector_all = AsyncMock(return_value=[mock_element1, mock_element2])
 
         # Mock browser
         mock_browser = AsyncMock()
@@ -723,7 +725,11 @@ class TestFirefliesProcessing:
             "key_points": ["Key point 1", "Key point 2"]
         }
 
-        with patch('api.services.external_links.async_playwright', mock_async_playwright), \
+        # Create mock playwright module
+        mock_playwright_module = MagicMock()
+        mock_playwright_module.async_playwright = mock_async_playwright
+
+        with patch.dict('sys.modules', {'playwright': MagicMock(), 'playwright.async_api': mock_playwright_module}), \
              patch('api.services.external_links.call_processor._init_clients'), \
              patch('api.services.external_links.call_processor._analyze', return_value=mock_analysis):
 
@@ -743,7 +749,7 @@ class TestFirefliesProcessing:
         result = await processor._process_fireflies(mock_call_recording, url)
 
         assert result.status == CallStatus.failed
-        assert "could not extract transcript ID" in result.error_message.lower()
+        assert "could not extract transcript id" in result.error_message.lower()
 
     @pytest.mark.asyncio
     async def test_process_fireflies_empty_transcript(self, processor, mock_call_recording):
@@ -788,7 +794,11 @@ class TestFirefliesProcessing:
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=mock_response)
 
-        with patch('api.services.external_links.async_playwright', mock_async_playwright), \
+        # Create mock playwright module
+        mock_playwright_module = MagicMock()
+        mock_playwright_module.async_playwright = mock_async_playwright
+
+        with patch.dict('sys.modules', {'playwright': MagicMock(), 'playwright.async_api': mock_playwright_module}), \
              patch.object(processor, '_get_session', return_value=mock_session):
 
             result = await processor._process_fireflies(mock_call_recording, url)
@@ -801,13 +811,14 @@ class TestFirefliesProcessing:
         """Test Fireflies processing when Playwright is not installed."""
         url = "https://app.fireflies.ai/view/ABC123"
 
-        # Mock HTTP fallback with __NEXT_DATA__
+        # Mock HTTP fallback with __NEXT_DATA__ (must be > 100 chars total)
         import json
         transcript_data = {
             "title": "Test Meeting",
             "sentences": [
-                {"speaker_name": "John", "text": "Hello everyone"},
-                {"speaker_name": "Jane", "text": "Hi there"}
+                {"speaker_name": "John", "text": "Hello everyone, welcome to our quarterly review meeting today."},
+                {"speaker_name": "Jane", "text": "Thanks John. I have prepared a detailed presentation about our product launch."},
+                {"speaker_name": "John", "text": "Great, let's get started with the first topic on our agenda."}
             ],
             "duration": 300
         }
@@ -836,11 +847,15 @@ class TestFirefliesProcessing:
             "key_points": []
         }
 
-        # Mock ImportError for Playwright
-        def mock_import_error(*args, **kwargs):
-            raise ImportError("Playwright not installed")
+        # Mock ImportError for Playwright by making the module raise on import
+        class MockPlaywrightModule:
+            @property
+            def async_playwright(self):
+                raise ImportError("Playwright not installed")
 
-        with patch('api.services.external_links.async_playwright', side_effect=mock_import_error), \
+        mock_playwright_module = MockPlaywrightModule()
+
+        with patch.dict('sys.modules', {'playwright': MagicMock(), 'playwright.async_api': mock_playwright_module}), \
              patch.object(processor, '_get_session', return_value=mock_session), \
              patch('api.services.external_links.call_processor._init_clients'), \
              patch('api.services.external_links.call_processor._analyze', return_value=mock_analysis):
@@ -850,7 +865,7 @@ class TestFirefliesProcessing:
         # Should fall back to HTTP scraping
         assert result.status == CallStatus.done
         assert result.transcript is not None
-        assert "John: Hello everyone" in result.transcript
+        assert "John: Hello everyone, welcome" in result.transcript
 
 
 # ============================================================================

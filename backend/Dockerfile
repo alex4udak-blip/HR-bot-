@@ -34,8 +34,8 @@ COPY . .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browser (chromium only to save space)
-RUN playwright install chromium
+# Install Playwright browsers and dependencies
+RUN playwright install --with-deps chromium
 
 # Expose port
 EXPOSE 8000
