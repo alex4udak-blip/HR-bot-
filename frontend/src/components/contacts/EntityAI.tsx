@@ -213,7 +213,7 @@ export default function EntityAI({ entity }: EntityAIProps) {
       )}
 
       {/* Quick Actions */}
-      <div className="flex flex-wrap gap-2 mb-4 flex-shrink-0">
+      <div className="flex flex-wrap gap-1.5 mb-4 flex-shrink-0">
         {QUICK_ACTIONS.map(action => {
           const Icon = action.icon;
           return (
@@ -221,26 +221,27 @@ export default function EntityAI({ entity }: EntityAIProps) {
               key={action.id}
               onClick={() => sendMessage(undefined, action.id)}
               disabled={loading}
+              title={action.label}
               className={clsx(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors',
+                'flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs transition-colors whitespace-nowrap',
                 loading
                   ? 'bg-white/5 text-white/30 cursor-not-allowed'
                   : 'bg-white/5 hover:bg-white/10 text-white/80 hover:text-white'
               )}
             >
-              <Icon size={14} />
-              {action.label}
+              <Icon size={12} className="flex-shrink-0" />
+              <span className="truncate max-w-[70px]">{action.label}</span>
             </button>
           );
         })}
         {messages.length > 0 && (
           <button
             onClick={clearHistory}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-red-500/10 hover:bg-red-500/20 text-red-400/80 hover:text-red-400 transition-colors ml-auto"
+            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400/80 hover:text-red-400 transition-colors whitespace-nowrap"
             title="Очистить историю"
           >
-            <Trash2 size={14} />
-            Очистить
+            <Trash2 size={12} className="flex-shrink-0" />
+            <span className="hidden sm:inline">Очистить</span>
           </button>
         )}
       </div>
