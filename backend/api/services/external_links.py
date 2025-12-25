@@ -13,6 +13,7 @@ import re
 import logging
 import tempfile
 import asyncio
+import subprocess
 import aiohttp
 from datetime import datetime
 from typing import Optional, Tuple
@@ -24,6 +25,67 @@ from .google_docs import google_docs_service
 from .call_processor import call_processor
 
 logger = logging.getLogger("hr-analyzer.external_links")
+
+# Track Playwright installation status
+_playwright_installed = False
+_playwright_install_attempted = False
+
+
+async def ensure_playwright_installed() -> bool:
+    """
+    Ensure Playwright browsers are installed.
+    Auto-installs chromium if not present.
+    Returns True if Playwright is ready to use.
+    """
+    global _playwright_installed, _playwright_install_attempted
+
+    if _playwright_installed:
+        return True
+
+    if _playwright_install_attempted:
+        return False
+
+    _playwright_install_attempted = True
+
+    # Check if chromium is already installed
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as p:
+            # Try to launch - this will fail if browsers not installed
+            browser = await p.chromium.launch(headless=True)
+            await browser.close()
+            _playwright_installed = True
+            logger.info("Playwright chromium is ready")
+            return True
+    except Exception as e:
+        logger.warning(f"Playwright not ready: {e}")
+
+    # Try to install chromium
+    logger.info("Installing Playwright chromium browser...")
+    try:
+        result = await asyncio.create_subprocess_exec(
+            "playwright", "install", "chromium",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await asyncio.wait_for(result.communicate(), timeout=300)
+
+        if result.returncode == 0:
+            logger.info("Playwright chromium installed successfully")
+            _playwright_installed = True
+            return True
+        else:
+            logger.error(f"Playwright install failed: {stderr.decode()}")
+            return False
+    except asyncio.TimeoutError:
+        logger.error("Playwright install timed out after 5 minutes")
+        return False
+    except FileNotFoundError:
+        logger.error("Playwright CLI not found - pip install playwright first")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to install Playwright: {e}")
+        return False
 
 
 class LinkType:
@@ -216,81 +278,82 @@ class ExternalLinkProcessor:
             call.status = CallStatus.transcribing
             call.fireflies_transcript_id = transcript_id
 
-            logger.info(f"Fetching Fireflies transcript with Playwright: {url}")
+            logger.info(f"Fetching Fireflies transcript: {url}")
 
             transcript_text = None
             title = None
 
             # Try Playwright first (handles JavaScript-rendered content)
-            try:
-                from playwright.async_api import async_playwright
+            # Auto-install if needed
+            playwright_ready = await ensure_playwright_installed()
 
-                async with async_playwright() as p:
-                    browser = await p.chromium.launch(headless=True)
-                    page = await browser.new_page()
+            if playwright_ready:
+                try:
+                    from playwright.async_api import async_playwright
 
-                    # Navigate to the page
-                    await page.goto(url, wait_until='networkidle', timeout=60000)
+                    logger.info("Using Playwright for Fireflies extraction")
+                    async with async_playwright() as p:
+                        browser = await p.chromium.launch(headless=True)
+                        page = await browser.new_page()
 
-                    # Wait for transcript content to load
-                    # Fireflies shows transcript in elements with specific classes
-                    try:
-                        await page.wait_for_selector('[class*="transcript"]', timeout=30000)
-                    except Exception:
-                        # Try waiting for any text content
-                        await page.wait_for_timeout(5000)
+                        # Navigate to the page
+                        await page.goto(url, wait_until='networkidle', timeout=60000)
 
-                    # Try to get title
-                    try:
-                        title_el = await page.query_selector('h1, [class*="title"]')
-                        if title_el:
-                            title = await title_el.text_content()
-                    except Exception:
-                        pass
+                        # Wait for transcript content to load
+                        try:
+                            await page.wait_for_selector('[class*="transcript"]', timeout=30000)
+                        except Exception:
+                            await page.wait_for_timeout(5000)
 
-                    # Extract transcript - try multiple selectors
-                    transcript_parts = []
+                        # Try to get title
+                        try:
+                            title_el = await page.query_selector('h1, [class*="title"]')
+                            if title_el:
+                                title = await title_el.text_content()
+                        except Exception:
+                            pass
 
-                    # Try to find transcript container
-                    selectors = [
-                        '[class*="transcript"] [class*="sentence"]',
-                        '[class*="transcript"] [class*="text"]',
-                        '[class*="SentenceText"]',
-                        '[class*="transcript-line"]',
-                        '[data-testid*="transcript"]',
-                    ]
+                        # Extract transcript - try multiple selectors
+                        transcript_parts = []
+                        selectors = [
+                            '[class*="transcript"] [class*="sentence"]',
+                            '[class*="transcript"] [class*="text"]',
+                            '[class*="SentenceText"]',
+                            '[class*="transcript-line"]',
+                            '[data-testid*="transcript"]',
+                        ]
 
-                    for selector in selectors:
-                        elements = await page.query_selector_all(selector)
-                        if elements:
-                            for el in elements:
-                                text = await el.text_content()
-                                if text and text.strip():
-                                    transcript_parts.append(text.strip())
-                            if transcript_parts:
-                                break
+                        for selector in selectors:
+                            elements = await page.query_selector_all(selector)
+                            if elements:
+                                for el in elements:
+                                    text = await el.text_content()
+                                    if text and text.strip():
+                                        transcript_parts.append(text.strip())
+                                if transcript_parts:
+                                    break
 
-                    # If no transcript found with specific selectors, try to get all visible text
-                    if not transcript_parts:
-                        # Get main content area
-                        main_content = await page.query_selector('main, [class*="content"], [class*="transcript"]')
-                        if main_content:
-                            text = await main_content.text_content()
-                            if text:
-                                # Clean up the text
-                                lines = [line.strip() for line in text.split('\n') if line.strip() and len(line.strip()) > 10]
-                                transcript_parts = lines
+                        # If no transcript found, try main content
+                        if not transcript_parts:
+                            main_content = await page.query_selector('main, [class*="content"], [class*="transcript"]')
+                            if main_content:
+                                text = await main_content.text_content()
+                                if text:
+                                    lines = [line.strip() for line in text.split('\n') if line.strip() and len(line.strip()) > 10]
+                                    transcript_parts = lines
 
-                    await browser.close()
+                        await browser.close()
 
-                    if transcript_parts:
-                        transcript_text = "\n".join(transcript_parts)
-                        logger.info(f"Playwright extracted {len(transcript_text)} chars from Fireflies")
+                        if transcript_parts:
+                            transcript_text = "\n".join(transcript_parts)
+                            logger.info(f"Playwright extracted {len(transcript_text)} chars from Fireflies")
 
-            except ImportError:
-                logger.warning("Playwright not installed, falling back to HTTP scraping")
-            except Exception as e:
-                logger.warning(f"Playwright failed: {e}, falling back to HTTP scraping")
+                except ImportError:
+                    logger.warning("Playwright not installed, falling back to HTTP scraping")
+                except Exception as e:
+                    logger.warning(f"Playwright failed: {e}, falling back to HTTP scraping")
+            else:
+                logger.info("Playwright not available, using HTTP fallback")
 
             # Fallback to HTTP if Playwright didn't work
             if not transcript_text:
