@@ -1513,3 +1513,157 @@ test.describe('Responsive Entity Layout - Mobile', () => {
     }
   });
 });
+
+test.describe('Multiple Identifiers - Layout Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupMocks(page);
+  });
+
+  test('test_telegram_usernames_displayed', async ({ page }) => {
+    await page.setViewportSize(VIEWPORTS.desktop);
+    await loginAndNavigate(page);
+
+    const entityCards = page.locator('div.p-4.rounded-xl.cursor-pointer');
+
+    if (await entityCards.count() > 0) {
+      await entityCards.first().click();
+      await page.waitForTimeout(500);
+
+      // Look for Telegram usernames with @ prefix
+      const telegramLinks = page.locator('a[href^="https://t.me/"]');
+
+      if (await telegramLinks.count() > 0) {
+        // First Telegram username should be visible
+        await expect(telegramLinks.first()).toBeVisible();
+
+        // Check href format is correct
+        const href = await telegramLinks.first().getAttribute('href');
+        expect(href).toMatch(/^https:\/\/t\.me\//);
+      }
+    }
+  });
+
+  test('test_multiple_emails_displayed', async ({ page }) => {
+    await page.setViewportSize(VIEWPORTS.desktop);
+    await loginAndNavigate(page);
+
+    const entityCards = page.locator('div.p-4.rounded-xl.cursor-pointer');
+
+    if (await entityCards.count() > 0) {
+      await entityCards.first().click();
+      await page.waitForTimeout(500);
+
+      // Look for email links
+      const emailLinks = page.locator('a[href^="mailto:"]');
+
+      if (await emailLinks.count() > 0) {
+        // Should have at least one email visible
+        await expect(emailLinks.first()).toBeVisible();
+
+        // Emails should not overflow container
+        const emailBox = await emailLinks.first().boundingBox();
+        if (emailBox) {
+          expect(emailBox.width).toBeLessThanOrEqual(VIEWPORTS.desktop.width - 40);
+        }
+      }
+    }
+  });
+
+  test('test_multiple_phones_displayed', async ({ page }) => {
+    await page.setViewportSize(VIEWPORTS.desktop);
+    await loginAndNavigate(page);
+
+    const entityCards = page.locator('div.p-4.rounded-xl.cursor-pointer');
+
+    if (await entityCards.count() > 0) {
+      await entityCards.first().click();
+      await page.waitForTimeout(500);
+
+      // Look for phone links
+      const phoneLinks = page.locator('a[href^="tel:"]');
+
+      if (await phoneLinks.count() > 0) {
+        // Should have at least one phone visible
+        await expect(phoneLinks.first()).toBeVisible();
+
+        // Phone should be clickable
+        const href = await phoneLinks.first().getAttribute('href');
+        expect(href).toMatch(/^tel:/);
+      }
+    }
+  });
+
+  test('test_identifiers_icons_present', async ({ page }) => {
+    await page.setViewportSize(VIEWPORTS.desktop);
+    await loginAndNavigate(page);
+
+    const entityCards = page.locator('div.p-4.rounded-xl.cursor-pointer');
+
+    if (await entityCards.count() > 0) {
+      await entityCards.first().click();
+      await page.waitForTimeout(500);
+
+      // Contact info section should have icons
+      const infoSection = page.locator('div.grid.grid-cols-1.md\\:grid-cols-2.gap-4');
+
+      if (await infoSection.isVisible()) {
+        // Look for SVG icons in the info section
+        const icons = infoSection.locator('svg');
+        const iconCount = await icons.count();
+
+        // Should have at least one icon (email, phone, company, etc.)
+        expect(iconCount).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  test('test_contact_form_telegram_field', async ({ page }) => {
+    await page.setViewportSize(VIEWPORTS.desktop);
+    await loginAndNavigate(page);
+
+    // Open create contact form
+    const createButton = page.locator('button.bg-cyan-500\\/20.text-cyan-400').first();
+
+    if (await createButton.isVisible()) {
+      await createButton.click();
+      await page.waitForTimeout(500);
+
+      // Look for Telegram username input field
+      const telegramInput = page.locator('input[placeholder*="@username"]');
+
+      if (await telegramInput.isVisible()) {
+        await expect(telegramInput).toBeVisible();
+
+        // Field should have proper width
+        const inputBox = await telegramInput.boundingBox();
+        if (inputBox) {
+          expect(inputBox.width).toBeGreaterThan(200);
+        }
+      }
+    }
+  });
+
+  test('test_contact_form_multiple_emails_field', async ({ page }) => {
+    await page.setViewportSize(VIEWPORTS.desktop);
+    await loginAndNavigate(page);
+
+    const createButton = page.locator('button.bg-cyan-500\\/20.text-cyan-400').first();
+
+    if (await createButton.isVisible()) {
+      await createButton.click();
+      await page.waitForTimeout(500);
+
+      // Look for emails input (placeholder contains comma hint)
+      const emailsInput = page.locator('input[placeholder*="@example.com"]');
+
+      if (await emailsInput.isVisible()) {
+        await expect(emailsInput).toBeVisible();
+
+        // Can type multiple emails
+        await emailsInput.fill('test1@example.com, test2@example.com');
+        const value = await emailsInput.inputValue();
+        expect(value).toContain(',');
+      }
+    }
+  });
+});

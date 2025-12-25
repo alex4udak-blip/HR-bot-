@@ -37,9 +37,12 @@ COPY --from=frontend-builder /frontend/dist ./static
 # Create uploads directory
 RUN mkdir -p /app/uploads/calls
 
+# Make startup script executable
+RUN chmod +x start.sh
+
 # Railway injects PORT environment variable
 ENV PORT=8000
 EXPOSE 8000
 
-# Start API server - use shell form to expand $PORT variable
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT
+# Start with migrations + server
+CMD ["./start.sh"]
