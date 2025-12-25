@@ -240,16 +240,22 @@ class ExternalLinkProcessor:
 
             # Look for __NEXT_DATA__ script tag which contains the transcript data
             next_data_match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
+            logger.info(f"__NEXT_DATA__ found: {next_data_match is not None}")
+
             if next_data_match:
                 try:
                     next_data = json.loads(next_data_match.group(1))
                     # Navigate to transcript data
                     page_props = next_data.get('props', {}).get('pageProps', {})
+                    logger.info(f"pageProps keys: {list(page_props.keys())}")
+
                     transcript_data = page_props.get('transcript', {})
+                    logger.info(f"transcript_data keys: {list(transcript_data.keys()) if transcript_data else 'None'}")
 
                     if transcript_data:
                         title = transcript_data.get('title')
                         sentences = transcript_data.get('sentences', [])
+                        logger.info(f"sentences count: {len(sentences)}")
 
                         if sentences:
                             # Build transcript text
