@@ -444,6 +444,50 @@ async def update_chat(
         # -1 means unlink
         chat.entity_id = None if data.entity_id == -1 else data.entity_id
 
+        # Auto-detect telegram_user_id for the entity from chat messages
+        if chat.entity_id:
+            entity_result = await db.execute(select(Entity).where(Entity.id == chat.entity_id))
+            entity = entity_result.scalar_one_or_none()
+
+            if entity and not entity.telegram_user_id:
+                # Get HR's telegram_id to EXCLUDE it
+                hr_telegram_ids = set()
+                if chat.owner_id:
+                    owner_result = await db.execute(select(User.telegram_id).where(User.id == chat.owner_id))
+                    owner_tg_id = owner_result.scalar()
+                    if owner_tg_id:
+                        hr_telegram_ids.add(owner_tg_id)
+
+                # Get ALL telegram_user_ids from messages in this chat
+                from sqlalchemy import distinct
+                msg_result = await db.execute(
+                    select(distinct(Message.telegram_user_id), Message.first_name, Message.last_name, Message.username)
+                    .where(Message.chat_id == chat.id)
+                )
+                all_participants = msg_result.all()
+
+                # Filter out HR's telegram_id — the rest are candidates
+                candidates = [
+                    (tg_id, first_name, last_name, username)
+                    for tg_id, first_name, last_name, username in all_participants
+                    if tg_id and tg_id not in hr_telegram_ids
+                ]
+
+                if candidates:
+                    # Priority 1: Match by entity name
+                    for tg_id, first_name, last_name, username in candidates:
+                        msg_name = f"{first_name or ''} {last_name or ''}".strip().lower()
+                        entity_name = entity.name.lower() if entity.name else ""
+                        if entity_name and msg_name and (entity_name in msg_name or msg_name in entity_name):
+                            entity.telegram_user_id = tg_id
+                            logger.info(f"Auto-detected contact telegram_user_id {tg_id} for entity {entity.id} (matched by name)")
+                            break
+
+                    # Priority 2: If only one candidate left after excluding HR, use that
+                    if not entity.telegram_user_id and len(candidates) == 1:
+                        entity.telegram_user_id = candidates[0][0]
+                        logger.info(f"Auto-assigned contact telegram_user_id {candidates[0][0]} for entity {entity.id} (only candidate in chat)")
+
     await db.commit()
     await db.refresh(chat)
 
