@@ -108,7 +108,7 @@ async def superadmin_user(db_session: AsyncSession) -> User:
     """Create a superadmin user."""
     user = User(
         email="superadmin@test.com",
-        password_hash=hash_password("superadmin123"),
+        password_hash=hash_password("Superadmin123"),
         name="Super Admin",
         role=UserRole.SUPERADMIN,
         is_active=True
@@ -124,7 +124,7 @@ async def admin_user(db_session: AsyncSession) -> User:
     """Create an admin user."""
     user = User(
         email="admin@test.com",
-        password_hash=hash_password("admin123"),
+        password_hash=hash_password("Admin123"),
         name="Admin User",
         role=UserRole.ADMIN,
         is_active=True
@@ -140,7 +140,7 @@ async def regular_user(db_session: AsyncSession) -> User:
     """Create a regular user."""
     user = User(
         email="user@test.com",
-        password_hash=hash_password("user123"),
+        password_hash=hash_password("User123"),
         name="Regular User",
         role=UserRole.ADMIN,
         is_active=True
@@ -156,7 +156,7 @@ async def second_user(db_session: AsyncSession) -> User:
     """Create a second regular user for sharing tests."""
     user = User(
         email="user2@test.com",
-        password_hash=hash_password("user123"),
+        password_hash=hash_password("User123"),
         name="Second User",
         role=UserRole.ADMIN,
         is_active=True
@@ -369,7 +369,7 @@ async def user_with_telegram(db_session: AsyncSession) -> User:
     """Create a user with telegram credentials."""
     user = User(
         email="telegram_user@test.com",
-        password_hash=hash_password("password123"),
+        password_hash=hash_password("Password123"),
         name="Telegram User",
         role=UserRole.ADMIN,
         telegram_id=555666777,

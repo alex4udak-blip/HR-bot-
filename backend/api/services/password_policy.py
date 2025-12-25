@@ -25,7 +25,8 @@ def validate_password(password: str, email: str = None) -> Tuple[bool, str]:
 
     Requirements:
     - Minimum 8 characters
-    - At least one letter
+    - At least one uppercase letter
+    - At least one lowercase letter
     - At least one number
     - Not a common/weak password
     - Not matching user's email
@@ -65,9 +66,13 @@ def validate_password(password: str, email: str = None) -> Tuple[bool, str]:
     if not any(c.isdigit() for c in password):
         return False, "Password must contain at least one number"
 
-    # Check for at least one letter
-    if not any(c.isalpha() for c in password):
-        return False, "Password must contain at least one letter"
+    # Check for at least one uppercase letter
+    if not any(c.isupper() for c in password):
+        return False, "Password must contain at least one uppercase letter"
+
+    # Check for at least one lowercase letter
+    if not any(c.islower() for c in password):
+        return False, "Password must contain at least one lowercase letter"
 
     # All checks passed
     return True, ""
