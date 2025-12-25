@@ -63,6 +63,7 @@ class CallSource(str, enum.Enum):
     google_doc = "google_doc"  # Transcript from Google Docs
     google_drive = "google_drive"  # Media file from Google Drive
     direct_url = "direct_url"  # Direct link to audio/video
+    fireflies = "fireflies"  # Fireflies.ai transcript
 
 
 class CallStatus(str, enum.Enum):

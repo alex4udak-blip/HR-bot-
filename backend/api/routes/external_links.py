@@ -34,7 +34,7 @@ class ProcessURLRequest(BaseModel):
 
 class ProcessURLResponse(BaseModel):
     """Response for URL processing."""
-    id: int
+    call_id: int
     status: str
     source_type: str
     title: Optional[str]
@@ -105,7 +105,7 @@ async def process_external_url(
             message = f"Processing started. Current status: {call.status.value}"
 
         return ProcessURLResponse(
-            id=call.id,
+            call_id=call.id,
             status=call.status.value,
             source_type=call.source_type.value,
             title=call.title,
