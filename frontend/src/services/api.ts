@@ -588,12 +588,15 @@ export const startCallBot = async (data: {
   return response.data;
 };
 
-export const getCallStatus = async (id: number): Promise<{
+export const getCallStatus = async (
+  id: number,
+  signal?: AbortSignal
+): Promise<{
   status: CallStatus;
   duration_seconds?: number;
   error_message?: string;
 }> => {
-  const { data } = await api.get(`/calls/${id}/status`);
+  const { data } = await api.get(`/calls/${id}/status`, { signal });
   return data;
 };
 

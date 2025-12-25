@@ -16,6 +16,7 @@ interface CallState {
   loading: boolean;
   error: string | null;
   pollingInterval: ReturnType<typeof setInterval> | null;
+  pollingAbortController: AbortController | null;
 
   // Actions
   fetchCalls: (entityId?: number) => Promise<void>;
@@ -39,6 +40,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   loading: false,
   error: null,
   pollingInterval: null,
+  pollingAbortController: null,
 
   fetchCalls: async (entityId) => {
     set({ loading: true, error: null });
@@ -167,9 +169,12 @@ export const useCallStore = create<CallState>((set, get) => ({
     // Clear any existing polling
     get().stopPolling();
 
+    // Create new AbortController for this polling session
+    const abortController = new AbortController();
+
     const interval = setInterval(async () => {
       try {
-        const status = await api.getCallStatus(id);
+        const status = await api.getCallStatus(id, abortController.signal);
 
         const prevStatus = get().activeRecording?.status;
         set({
@@ -193,20 +198,31 @@ export const useCallStore = create<CallState>((set, get) => ({
           get().fetchCalls();
           get().fetchCall(id);
         }
-      } catch {
-        get().stopPolling();
+      } catch (err) {
+        // Only stop polling if it's not an abort error (which is expected on cleanup)
+        if (err instanceof Error && err.name !== 'AbortError' && err.name !== 'CanceledError') {
+          get().stopPolling();
+        }
       }
     }, 3000); // Poll every 3 seconds
 
-    set({ pollingInterval: interval });
+    set({ pollingInterval: interval, pollingAbortController: abortController });
   },
 
   stopPolling: () => {
-    const { pollingInterval } = get();
+    const { pollingInterval, pollingAbortController } = get();
+
+    // Abort any in-flight requests
+    if (pollingAbortController) {
+      pollingAbortController.abort();
+    }
+
+    // Clear the interval
     if (pollingInterval) {
       clearInterval(pollingInterval);
-      set({ pollingInterval: null });
     }
+
+    set({ pollingInterval: null, pollingAbortController: null });
   },
 
   clearActiveRecording: () => {

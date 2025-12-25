@@ -53,7 +53,7 @@ export default function App() {
     } else {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, setUser, logout, navigate, setLoading]);
 
   return (
     <Routes>
