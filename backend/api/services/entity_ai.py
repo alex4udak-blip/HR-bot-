@@ -19,6 +19,7 @@ from ..config import get_settings
 from ..models.database import Entity, Chat, Message, CallRecording
 from .cache import cache_service, smart_truncate, format_messages_optimized
 from .participants import identify_participants_from_objects, format_participant_list
+from .entity_memory import entity_memory_service
 
 logger = logging.getLogger("hr-analyzer.entity-ai")
 
@@ -161,6 +162,11 @@ class EntityAIService:
 - **Телефон:** {entity.phone or 'Не указан'}
 - **Теги:** {', '.join(entity.tags) if entity.tags else 'Нет'}
 """)
+
+        # Add AI long-term memory context (summary + key events)
+        memory_context = entity_memory_service.build_memory_context(entity)
+        if memory_context:
+            parts.append(memory_context)
 
         # All linked chats with messages (optimized with smart truncate and participant roles)
         if chats:

@@ -286,3 +286,165 @@ async def clear_entity_ai_history(
         await db.commit()
 
     return {"success": True}
+
+
+@router.post("/entities/{entity_id}/ai/update-summary")
+async def update_entity_ai_summary(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Manually trigger AI summary update for entity.
+
+    This creates/updates the ai_summary field based on all chats and calls.
+    Useful for rebuilding context after significant interactions.
+    """
+    from ..services.entity_memory import entity_memory_service
+    from ..services.cache import format_messages_optimized
+
+    user = await db.merge(user)
+
+    # Get entity with all data
+    entity, chats, calls = await get_entity_with_data(db, entity_id)
+
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    if not can_access_entity(user, entity):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Build content for summarization
+    content_parts = []
+
+    # Add chat messages
+    for chat in chats:
+        if hasattr(chat, 'messages') and chat.messages:
+            messages = sorted(chat.messages, key=lambda m: m.timestamp)[-50:]
+            content_parts.append(f"Чат {chat.title}:\n{format_messages_optimized(messages, max_per_message=300)}")
+
+    # Add call summaries
+    for call in calls:
+        if call.summary:
+            content_parts.append(f"Звонок {call.title}: {call.summary}")
+
+    content = "\n\n".join(content_parts)
+
+    if not content:
+        return {"success": False, "error": "No content to summarize"}
+
+    # Update summary
+    new_summary = await entity_memory_service.update_summary(entity, content, db)
+
+    # Extract key events
+    new_events = await entity_memory_service.extract_key_events(entity, content, db)
+
+    return {
+        "success": True,
+        "summary": new_summary,
+        "new_events_count": len(new_events),
+        "total_events": len(entity.key_events or [])
+    }
+
+
+@router.get("/entities/{entity_id}/ai/memory")
+async def get_entity_ai_memory(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Get entity AI memory (summary + key events)."""
+    user = await db.merge(user)
+
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    if not can_access_entity(user, entity):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return {
+        "summary": entity.ai_summary,
+        "summary_updated_at": entity.ai_summary_updated_at.isoformat() if entity.ai_summary_updated_at else None,
+        "key_events": entity.key_events or []
+    }
+
+
+@router.post("/entities/ai/batch-update-summaries")
+async def batch_update_entity_summaries(
+    limit: int = 10,
+    only_empty: bool = True,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Batch update AI summaries for multiple entities.
+
+    Args:
+        limit: Max entities to process (default 10, max 50)
+        only_empty: Only process entities without summaries (default True)
+
+    This is useful for:
+    - Initial setup: generate summaries for existing entities
+    - Periodic refresh: update old summaries
+    """
+    from ..services.entity_memory import entity_memory_service
+    from ..services.cache import format_messages_optimized
+
+    user = await db.merge(user)
+
+    # Only admins can batch update
+    if user.role not in [UserRole.SUPERADMIN, UserRole.ADMIN]:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    limit = min(limit, 50)  # Cap at 50
+
+    # Get entities to update
+    query = select(Entity).where(Entity.created_by == user.id)
+
+    if only_empty:
+        query = query.where(Entity.ai_summary.is_(None))
+
+    query = query.limit(limit)
+
+    result = await db.execute(query)
+    entities = list(result.scalars().all())
+
+    updated = []
+    errors = []
+
+    for entity in entities:
+        try:
+            # Get entity data
+            entity_obj, chats, calls = await get_entity_with_data(db, entity.id)
+
+            # Build content
+            content_parts = []
+            for chat in chats:
+                if hasattr(chat, 'messages') and chat.messages:
+                    messages = sorted(chat.messages, key=lambda m: m.timestamp)[-50:]
+                    content_parts.append(f"Чат {chat.title}:\n{format_messages_optimized(messages, max_per_message=300)}")
+
+            for call in calls:
+                if call.summary:
+                    content_parts.append(f"Звонок {call.title}: {call.summary}")
+
+            content = "\n\n".join(content_parts)
+
+            if content:
+                await entity_memory_service.update_summary(entity_obj, content, db)
+                await entity_memory_service.extract_key_events(entity_obj, content, db)
+                updated.append({"id": entity.id, "name": entity.name})
+            else:
+                errors.append({"id": entity.id, "name": entity.name, "error": "No content"})
+
+        except Exception as e:
+            logger.error(f"Failed to update entity {entity.id}: {e}")
+            errors.append({"id": entity.id, "name": entity.name, "error": str(e)})
+
+    return {
+        "updated_count": len(updated),
+        "error_count": len(errors),
+        "updated": updated,
+        "errors": errors
+    }
