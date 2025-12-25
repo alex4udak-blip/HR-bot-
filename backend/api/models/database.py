@@ -343,6 +343,11 @@ class Entity(Base):
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
+    # Multiple identifiers support
+    telegram_usernames = Column(JSON, default=list)  # List of telegram usernames (normalized, lowercase, without @)
+    emails = Column(JSON, default=list)  # List of additional emails
+    phones = Column(JSON, default=list)  # List of additional phone numbers
+
     # Transfer tracking fields
     is_transferred = Column(Boolean, default=False, index=True)
     transferred_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)

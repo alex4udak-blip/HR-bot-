@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'add_impersonation_logs'
-down_revision = 'add_entity_transfer_tracking'
+down_revision = 'add_entity_transfer'
 branch_labels = None
 depends_on = None
 

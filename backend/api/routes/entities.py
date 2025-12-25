@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List, Literal
 from datetime import datetime
 from pydantic import BaseModel
+import re
 
 from ..database import get_db
 from ..models.database import (
@@ -27,9 +28,14 @@ class EntityCreate(BaseModel):
     type: EntityType
     name: str
     status: Optional[EntityStatus] = EntityStatus.new
+    # Legacy single identifiers (kept for backward compatibility)
     phone: Optional[str] = None
     email: Optional[str] = None
     telegram_user_id: Optional[int] = None
+    # New multiple identifiers
+    telegram_usernames: Optional[List[str]] = []
+    emails: Optional[List[str]] = []
+    phones: Optional[List[str]] = []
     company: Optional[str] = None
     position: Optional[str] = None
     tags: Optional[List[str]] = []
@@ -40,8 +46,13 @@ class EntityCreate(BaseModel):
 class EntityUpdate(BaseModel):
     name: Optional[str] = None
     status: Optional[EntityStatus] = None
+    # Legacy single identifiers (kept for backward compatibility)
     phone: Optional[str] = None
     email: Optional[str] = None
+    # New multiple identifiers
+    telegram_usernames: Optional[List[str]] = None
+    emails: Optional[List[str]] = None
+    phones: Optional[List[str]] = None
     company: Optional[str] = None
     position: Optional[str] = None
     tags: Optional[List[str]] = None
@@ -60,9 +71,14 @@ class EntityResponse(BaseModel):
     type: EntityType
     name: str
     status: EntityStatus
+    # Legacy single identifiers (kept for backward compatibility)
     phone: Optional[str] = None
     email: Optional[str] = None
     telegram_user_id: Optional[int] = None
+    # New multiple identifiers
+    telegram_usernames: List[str] = []
+    emails: List[str] = []
+    phones: List[str] = []
     company: Optional[str] = None
     position: Optional[str] = None
     tags: List[str] = []
@@ -111,6 +127,92 @@ class ShareRequest(BaseModel):
 
 
 # === Helper Functions ===
+
+def normalize_telegram_username(username: str) -> str:
+    """
+    Normalize telegram username by removing @ and converting to lowercase.
+
+    Args:
+        username: Raw telegram username (may include @)
+
+    Returns:
+        Normalized username (lowercase, without @)
+    """
+    if not username:
+        return ""
+    # Remove @ prefix if present
+    normalized = username.lstrip('@').strip()
+    # Convert to lowercase
+    return normalized.lower()
+
+
+def validate_email(email: str) -> bool:
+    """
+    Validate email format using a simple regex.
+
+    Args:
+        email: Email address to validate
+
+    Returns:
+        True if email is valid, False otherwise
+    """
+    if not email:
+        return False
+    # Simple email regex pattern
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
+
+
+def normalize_and_validate_identifiers(
+    telegram_usernames: Optional[List[str]] = None,
+    emails: Optional[List[str]] = None,
+    phones: Optional[List[str]] = None
+) -> tuple[List[str], List[str], List[str]]:
+    """
+    Normalize and validate multiple identifiers.
+
+    Args:
+        telegram_usernames: List of telegram usernames
+        emails: List of email addresses
+        phones: List of phone numbers
+
+    Returns:
+        Tuple of (normalized_usernames, validated_emails, phones)
+
+    Raises:
+        HTTPException: If any email is invalid
+    """
+    # Normalize telegram usernames
+    normalized_usernames = []
+    if telegram_usernames:
+        for username in telegram_usernames:
+            if username:
+                normalized = normalize_telegram_username(username)
+                if normalized and normalized not in normalized_usernames:
+                    normalized_usernames.append(normalized)
+
+    # Validate and filter emails
+    validated_emails = []
+    if emails:
+        for email in emails:
+            if email:
+                email = email.strip()
+                if not validate_email(email):
+                    raise HTTPException(400, f"Invalid email format: {email}")
+                if email not in validated_emails:
+                    validated_emails.append(email)
+
+    # Filter phones (remove duplicates, keep non-empty)
+    filtered_phones = []
+    if phones:
+        for phone in phones:
+            if phone:
+                phone = phone.strip()
+                if phone and phone not in filtered_phones:
+                    filtered_phones.append(phone)
+
+    return normalized_usernames, validated_emails, filtered_phones
+
 
 async def check_entity_access(
     entity: Entity,
@@ -214,6 +316,7 @@ async def list_entities(
     type: Optional[EntityType] = None,
     status: Optional[EntityStatus] = None,
     search: Optional[str] = None,
+    identifier: Optional[str] = None,  # Search by any identifier (email, phone, telegram username)
     tags: Optional[str] = None,  # comma-separated
     ownership: Optional[OwnershipFilter] = None,  # mine, shared, all
     department_id: Optional[int] = None,  # filter by department
@@ -293,6 +396,21 @@ async def list_entities(
                 Entity.email.ilike(search_term),
                 Entity.phone.ilike(search_term),
                 Entity.company.ilike(search_term)
+            )
+        )
+    if identifier:
+        # Search by any identifier: email, emails[], phone, phones[], telegram_usernames[]
+        identifier_term = identifier.strip()
+        # Normalize telegram username for search
+        normalized_username = normalize_telegram_username(identifier_term)
+        query = query.where(
+            or_(
+                Entity.email.ilike(f"%{identifier_term}%"),
+                Entity.phone.ilike(f"%{identifier_term}%"),
+                # For JSON arrays, use PostgreSQL's JSONB operators
+                func.jsonb_array_length(Entity.emails) > 0 and Entity.emails.op('@>')(func.jsonb_build_array(identifier_term)),
+                func.jsonb_array_length(Entity.phones) > 0 and Entity.phones.op('@>')(func.jsonb_build_array(identifier_term)),
+                func.jsonb_array_length(Entity.telegram_usernames) > 0 and Entity.telegram_usernames.op('@>')(func.jsonb_build_array(normalized_username))
             )
         )
     if tags:
@@ -378,6 +496,9 @@ async def list_entities(
             "phone": entity.phone,
             "email": entity.email,
             "telegram_user_id": entity.telegram_user_id,
+            "telegram_usernames": entity.telegram_usernames or [],
+            "emails": entity.emails or [],
+            "phones": entity.phones or [],
             "company": entity.company,
             "position": entity.position,
             "tags": entity.tags or [],
@@ -425,6 +546,13 @@ async def create_entity(
             raise HTTPException(400, "Invalid department")
         department_name = dept.name
 
+    # Normalize and validate multiple identifiers
+    normalized_usernames, validated_emails, filtered_phones = normalize_and_validate_identifiers(
+        telegram_usernames=data.telegram_usernames,
+        emails=data.emails,
+        phones=data.phones
+    )
+
     entity = Entity(
         org_id=org.id,
         type=data.type,
@@ -433,6 +561,9 @@ async def create_entity(
         phone=data.phone,
         email=data.email,
         telegram_user_id=data.telegram_user_id,
+        telegram_usernames=normalized_usernames,
+        emails=validated_emails,
+        phones=filtered_phones,
         company=data.company,
         position=data.position,
         tags=data.tags or [],
@@ -452,6 +583,9 @@ async def create_entity(
         "phone": entity.phone,
         "email": entity.email,
         "telegram_user_id": entity.telegram_user_id,
+        "telegram_usernames": entity.telegram_usernames or [],
+        "emails": entity.emails or [],
+        "phones": entity.phones or [],
         "company": entity.company,
         "position": entity.position,
         "tags": entity.tags or [],
@@ -600,6 +734,9 @@ async def get_entity(
         "phone": entity.phone,
         "email": entity.email,
         "telegram_user_id": entity.telegram_user_id,
+        "telegram_usernames": entity.telegram_usernames or [],
+        "emails": entity.emails or [],
+        "phones": entity.phones or [],
         "company": entity.company,
         "position": entity.position,
         "tags": entity.tags or [],
@@ -708,6 +845,21 @@ async def update_entity(
             if not dept_result.scalar_one_or_none():
                 raise HTTPException(400, "Invalid department")
 
+    # Normalize and validate multiple identifiers if provided
+    if data.telegram_usernames is not None or data.emails is not None or data.phones is not None:
+        normalized_usernames, validated_emails, filtered_phones = normalize_and_validate_identifiers(
+            telegram_usernames=data.telegram_usernames,
+            emails=data.emails,
+            phones=data.phones
+        )
+        # Override the data with normalized values
+        if data.telegram_usernames is not None:
+            data.telegram_usernames = normalized_usernames
+        if data.emails is not None:
+            data.emails = validated_emails
+        if data.phones is not None:
+            data.phones = filtered_phones
+
     update_data = data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(entity, key, value)
@@ -730,6 +882,9 @@ async def update_entity(
         "phone": entity.phone,
         "email": entity.email,
         "telegram_user_id": entity.telegram_user_id,
+        "telegram_usernames": entity.telegram_usernames or [],
+        "emails": entity.emails or [],
+        "phones": entity.phones or [],
         "company": entity.company,
         "position": entity.position,
         "tags": entity.tags or [],
@@ -1315,3 +1470,87 @@ async def share_entity(
             "calls": shared_calls
         } if data.auto_share_related else None
     }
+
+
+@router.get("/{entity_id}/chat-participants")
+async def get_entity_chat_participants(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all participants from chats linked to this Entity.
+    Returns a list of participants with their roles and identifiers.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Get entity
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check if user has access to view this entity
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(404, "Entity not found")
+
+    # Get all chats linked to this entity
+    from ..models.database import Message
+
+    chats_result = await db.execute(
+        select(Chat).where(Chat.entity_id == entity_id)
+    )
+    chats = chats_result.scalars().all()
+
+    if not chats:
+        return []
+
+    # Collect all participants from all chats
+    participants_map = {}  # Key: telegram_user_id, Value: participant info
+
+    for chat in chats:
+        # Get messages from this chat to identify participants
+        messages_result = await db.execute(
+            select(Message.telegram_user_id, Message.username, Message.first_name, Message.last_name)
+            .where(Message.chat_id == chat.id)
+            .distinct(Message.telegram_user_id)
+        )
+        messages = messages_result.all()
+
+        for msg in messages:
+            telegram_user_id, username, first_name, last_name = msg
+
+            if telegram_user_id and telegram_user_id not in participants_map:
+                # Build participant name
+                name_parts = []
+                if first_name:
+                    name_parts.append(first_name)
+                if last_name:
+                    name_parts.append(last_name)
+                name = " ".join(name_parts) if name_parts else f"User {telegram_user_id}"
+
+                participants_map[telegram_user_id] = {
+                    "telegram_user_id": telegram_user_id,
+                    "telegram_username": username,
+                    "name": name,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "chat_ids": []
+                }
+
+            # Add chat to participant's chat list
+            if telegram_user_id and chat.id not in participants_map[telegram_user_id]["chat_ids"]:
+                participants_map[telegram_user_id]["chat_ids"].append(chat.id)
+
+    # Convert to list and sort by name
+    participants = list(participants_map.values())
+    participants.sort(key=lambda p: p["name"])
+
+    return participants

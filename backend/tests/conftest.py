@@ -364,6 +364,84 @@ async def second_entity(db_session: AsyncSession, organization: Organization, de
     return entity
 
 
+@pytest_asyncio.fixture
+async def user_with_telegram(db_session: AsyncSession) -> User:
+    """Create a user with telegram credentials."""
+    user = User(
+        email="telegram_user@test.com",
+        password_hash=hash_password("password123"),
+        name="Telegram User",
+        role=UserRole.ADMIN,
+        telegram_id=555666777,
+        telegram_username="testuser123",
+        is_active=True
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture
+async def entity_with_usernames(db_session: AsyncSession, organization: Organization, department: Department, admin_user: User) -> Entity:
+    """Entity with telegram_usernames = ["ivan", "ivan_work"]."""
+    entity = Entity(
+        org_id=organization.id,
+        department_id=department.id,
+        created_by=admin_user.id,
+        name="Ivan Petrov",
+        email="ivan@test.com",
+        type=EntityType.candidate,
+        status=EntityStatus.active,
+        telegram_usernames=["ivan", "ivan_work"],
+        created_at=datetime.utcnow()
+    )
+    db_session.add(entity)
+    await db_session.commit()
+    await db_session.refresh(entity)
+    return entity
+
+
+@pytest_asyncio.fixture
+async def entity_with_emails(db_session: AsyncSession, organization: Organization, department: Department, admin_user: User) -> Entity:
+    """Entity with emails = ["a@test.com", "b@test.com"]."""
+    entity = Entity(
+        org_id=organization.id,
+        department_id=department.id,
+        created_by=admin_user.id,
+        name="Multi Email Person",
+        email="a@test.com",
+        emails=["b@test.com", "c@test.com"],
+        type=EntityType.client,
+        status=EntityStatus.active,
+        created_at=datetime.utcnow()
+    )
+    db_session.add(entity)
+    await db_session.commit()
+    await db_session.refresh(entity)
+    return entity
+
+
+@pytest_asyncio.fixture
+async def candidate_entity(db_session: AsyncSession, organization: Organization, department: Department, admin_user: User) -> Entity:
+    """Entity with type=candidate and telegram_user_id."""
+    entity = Entity(
+        org_id=organization.id,
+        department_id=department.id,
+        created_by=admin_user.id,
+        name="Jane Candidate",
+        email="candidate@test.com",
+        telegram_user_id=888999000,
+        type=EntityType.candidate,
+        status=EntityStatus.interview,
+        created_at=datetime.utcnow()
+    )
+    db_session.add(entity)
+    await db_session.commit()
+    await db_session.refresh(entity)
+    return entity
+
+
 # ============================================================================
 # CHAT FIXTURES
 # ============================================================================
@@ -399,6 +477,144 @@ async def second_chat(db_session: AsyncSession, organization: Organization, seco
         created_at=datetime.utcnow()
     )
     db_session.add(chat)
+    await db_session.commit()
+    await db_session.refresh(chat)
+    return chat
+
+
+@pytest_asyncio.fixture
+async def chat_with_messages(db_session: AsyncSession, organization: Organization, admin_user: User, user_with_telegram: User) -> Chat:
+    """Chat with messages from a system user."""
+    chat = Chat(
+        org_id=organization.id,
+        owner_id=admin_user.id,
+        telegram_chat_id=111222333,
+        title="Chat With Messages",
+        chat_type=ChatType.hr,
+        is_active=True,
+        created_at=datetime.utcnow()
+    )
+    db_session.add(chat)
+    await db_session.flush()
+
+    # Add messages from user_with_telegram
+    for i in range(3):
+        msg = Message(
+            chat_id=chat.id,
+            telegram_message_id=10000 + i,
+            telegram_user_id=user_with_telegram.telegram_id,
+            username=user_with_telegram.telegram_username,
+            first_name="Telegram",
+            last_name="User",
+            content=f"Message {i+1}",
+            content_type="text",
+            timestamp=datetime.utcnow()
+        )
+        db_session.add(msg)
+
+    await db_session.commit()
+    await db_session.refresh(chat)
+    return chat
+
+
+@pytest_asyncio.fixture
+async def chat_linked_to_entity(db_session: AsyncSession, organization: Organization, admin_user: User, entity: Entity) -> Chat:
+    """Chat linked to an entity (chat.entity_id is set)."""
+    chat = Chat(
+        org_id=organization.id,
+        owner_id=admin_user.id,
+        entity_id=entity.id,
+        telegram_chat_id=444555666,
+        title="Entity Linked Chat",
+        chat_type=ChatType.hr,
+        is_active=True,
+        created_at=datetime.utcnow()
+    )
+    db_session.add(chat)
+    await db_session.flush()
+
+    # Add message from entity (if it has telegram_user_id)
+    if entity.telegram_user_id:
+        msg = Message(
+            chat_id=chat.id,
+            telegram_message_id=30000,
+            telegram_user_id=entity.telegram_user_id,
+            username="entity_user",
+            first_name=entity.name.split()[0],
+            last_name=entity.name.split()[1] if len(entity.name.split()) > 1 else "",
+            content="Hello from entity",
+            content_type="text",
+            timestamp=datetime.utcnow()
+        )
+        db_session.add(msg)
+
+    await db_session.commit()
+    await db_session.refresh(chat)
+    return chat
+
+
+@pytest_asyncio.fixture
+async def chat_with_mixed_senders(db_session: AsyncSession, organization: Organization, admin_user: User, user_with_telegram: User, entity: Entity) -> Chat:
+    """Chat with messages from User, Entity, and unknown participants."""
+    chat = Chat(
+        org_id=organization.id,
+        owner_id=admin_user.id,
+        telegram_chat_id=777888999,
+        title="Mixed Senders Chat",
+        chat_type=ChatType.work,
+        is_active=True,
+        created_at=datetime.utcnow()
+    )
+    db_session.add(chat)
+    await db_session.flush()
+
+    # Message from system user
+    msg1 = Message(
+        chat_id=chat.id,
+        telegram_message_id=40001,
+        telegram_user_id=user_with_telegram.telegram_id,
+        username=user_with_telegram.telegram_username,
+        first_name="System",
+        last_name="User",
+        content="Message from system user",
+        content_type="text",
+        timestamp=datetime.utcnow()
+    )
+    db_session.add(msg1)
+
+    # Set telegram_user_id on entity for testing
+    entity.telegram_user_id = 123123123
+    db_session.add(entity)
+    await db_session.flush()
+
+    # Message from entity
+    msg2 = Message(
+        chat_id=chat.id,
+        telegram_message_id=40002,
+        telegram_user_id=entity.telegram_user_id,
+        username="entity_username",
+        first_name=entity.name.split()[0],
+        last_name=entity.name.split()[1] if len(entity.name.split()) > 1 else "",
+        content="Message from entity",
+        content_type="text",
+        timestamp=datetime.utcnow()
+    )
+    db_session.add(msg2)
+
+    # Message from unknown user
+    msg3 = Message(
+        chat_id=chat.id,
+        telegram_message_id=40003,
+        telegram_user_id=999888777,
+        username="unknown_user",
+        first_name="Unknown",
+        last_name="Person",
+        content="Message from unknown",
+        content_type="text",
+        timestamp=datetime.utcnow()
+    )
+    db_session.add(msg3)
+
     await db_session.commit()
     await db_session.refresh(chat)
     return chat
