@@ -132,11 +132,24 @@ class EntityAIService:
         chats: List[Chat],
         calls: List[CallRecording]
     ) -> str:
-        """Build comprehensive context about the entity from all sources"""
+        """Build comprehensive context about the entity from all sources.
+
+        IMPORTANT: Identifies which messages/statements belong to the CONTACT
+        vs other participants using telegram_user_id matching.
+        """
         parts = []
 
-        # Basic entity info
-        parts.append(f"""## Контакт: {entity.name}
+        # Basic entity info with identity markers
+        entity_names = [entity.name]
+        if entity.telegram_user_id:
+            entity_names.append(f"Telegram ID: {entity.telegram_user_id}")
+
+        parts.append(f"""## 📋 АНАЛИЗИРУЕМЫЙ КОНТАКТ: {entity.name}
+
+**ВАЖНО:** Все сообщения и высказывания этого контакта помечены как **[КОНТАКТ]**.
+Остальные участники помечены как [Другой участник].
+
+### Данные контакта:
 - **Тип:** {entity.type.value}
 - **Статус:** {entity.status.value}
 - **Компания:** {entity.company or 'Не указана'}
@@ -144,29 +157,68 @@ class EntityAIService:
 - **Email:** {entity.email or 'Не указан'}
 - **Телефон:** {entity.phone or 'Не указан'}
 - **Теги:** {', '.join(entity.tags) if entity.tags else 'Нет'}
+- **Telegram ID:** {entity.telegram_user_id or 'Не указан'}
 """)
 
-        # All linked chats with messages
+        # Helper to check if message is from the contact
+        def is_contact_message(msg: Message) -> bool:
+            """Check if message is from the analyzed contact"""
+            if entity.telegram_user_id and msg.telegram_user_id:
+                return msg.telegram_user_id == entity.telegram_user_id
+            # Fallback: try matching by name
+            msg_name = f"{msg.first_name or ''} {msg.last_name or ''}".strip().lower()
+            entity_name = entity.name.lower() if entity.name else ""
+            return entity_name and msg_name and (
+                entity_name in msg_name or msg_name in entity_name
+            )
+
+        # All linked chats with messages - NO LIMIT
         if chats:
-            parts.append("\n## ПЕРЕПИСКИ:")
+            parts.append("\n## 💬 ПЕРЕПИСКИ:")
+            total_contact_messages = 0
+            total_other_messages = 0
+
             for chat in chats:
                 parts.append(f"\n### Чат: {chat.custom_name or chat.title} ({chat.chat_type.value})")
                 if hasattr(chat, 'messages') and chat.messages:
-                    # Get last 100 messages to avoid context overflow
-                    messages = sorted(chat.messages, key=lambda m: m.timestamp)[-100:]
+                    # Sort by timestamp, NO LIMIT
+                    messages = sorted(chat.messages, key=lambda m: m.timestamp)
+
                     for msg in messages:
+                        is_contact = is_contact_message(msg)
+                        sender_label = "**[КОНТАКТ]**" if is_contact else "[Другой участник]"
+
+                        if is_contact:
+                            total_contact_messages += 1
+                        else:
+                            total_other_messages += 1
+
                         name = f"{msg.first_name or ''} {msg.last_name or ''}".strip() or msg.username or "Unknown"
                         ts = msg.timestamp.strftime("%d.%m %H:%M") if msg.timestamp else ""
-                        content = msg.content[:500] if msg.content else "[медиа]"
-                        parts.append(f"[{ts}] {name}: {content}")
+
+                        # Content type indicator
+                        if msg.content_type == "voice":
+                            content = f"[🎤 Голосовое] {msg.content}" if msg.content else "[🎤 Голосовое сообщение]"
+                        elif msg.content_type == "video_note":
+                            content = f"[📹 Видеокружок] {msg.content}" if msg.content else "[📹 Видеокружок]"
+                        elif msg.content_type == "document":
+                            content = f"[📎 Документ: {msg.file_name}] {msg.content}" if msg.content else f"[📎 Документ: {msg.file_name or 'файл'}]"
+                        elif msg.content_type == "photo":
+                            content = f"[🖼 Фото] {msg.content}" if msg.content else "[🖼 Фото]"
+                        else:
+                            content = msg.content or "[медиа]"
+
+                        parts.append(f"[{ts}] {sender_label} {name}: {content}")
                 else:
                     parts.append("(нет сообщений)")
 
-        # All linked calls with transcripts
+            parts.append(f"\n📊 **Статистика переписок:** {total_contact_messages} сообщений от КОНТАКТА, {total_other_messages} от других участников")
+
+        # All linked calls with FULL transcripts
         if calls:
-            parts.append("\n## ЗВОНКИ:")
+            parts.append("\n## 📞 ЗВОНКИ:")
             for call in calls:
-                call_date = call.created_at.strftime('%d.%m.%Y') if call.created_at else "дата неизвестна"
+                call_date = call.created_at.strftime('%d.%m.%Y %H:%M') if call.created_at else "дата неизвестна"
                 parts.append(f"\n### Звонок от {call_date}")
                 if call.title:
                     parts.append(f"**Название:** {call.title}")
@@ -174,18 +226,33 @@ class EntityAIService:
                     mins = call.duration_seconds // 60
                     secs = call.duration_seconds % 60
                     parts.append(f"**Длительность:** {mins}м {secs}с")
+
+                # Speakers info - identify the contact
+                if call.speakers:
+                    parts.append("**Участники:**")
+                    for speaker in call.speakers if isinstance(call.speakers, list) else []:
+                        speaker_name = speaker.get("speaker", "Unknown") if isinstance(speaker, dict) else str(speaker)
+                        # Try to identify if this speaker is the contact
+                        is_contact_speaker = entity.name.lower() in speaker_name.lower() if entity.name else False
+                        label = " **[КОНТАКТ]**" if is_contact_speaker else ""
+                        parts.append(f"- {speaker_name}{label}")
+
                 if call.summary:
-                    parts.append(f"**Саммари:** {call.summary}")
+                    parts.append(f"\n**📝 Резюме звонка:**\n{call.summary}")
+
                 if call.key_points:
-                    parts.append("**Ключевые моменты:**")
-                    for point in call.key_points[:10]:
+                    parts.append("\n**🎯 Ключевые моменты:**")
+                    for point in call.key_points:
                         parts.append(f"- {point}")
+
+                if call.action_items:
+                    parts.append("\n**✅ Action items:**")
+                    for item in call.action_items:
+                        parts.append(f"- {item}")
+
                 if call.transcript:
-                    # Limit transcript to avoid context overflow
-                    transcript = call.transcript[:5000]
-                    if len(call.transcript) > 5000:
-                        transcript += "\n... (транскрипт обрезан)"
-                    parts.append(f"**Транскрипт:**\n{transcript}")
+                    # FULL TRANSCRIPT - no limit
+                    parts.append(f"\n**📜 Полный транскрипт:**\n{call.transcript}")
 
         if not chats and not calls:
             parts.append("\n⚠️ К этому контакту пока не привязаны чаты или звонки.")
@@ -194,19 +261,28 @@ class EntityAIService:
 
     def _build_system_prompt(self, entity_context: str) -> str:
         """Build system prompt with entity context"""
-        return f"""Ты — AI-ассистент для HR-аналитики. У тебя есть полные данные о контакте:
+        return f"""Ты — AI-ассистент для HR-аналитики. У тебя есть ПОЛНЫЕ данные о контакте:
 все переписки из Telegram и все записи звонков.
 
 {entity_context}
 
-ПРАВИЛА:
+## КРИТИЧЕСКИ ВАЖНО — ИДЕНТИФИКАЦИЯ КОНТАКТА:
+- Сообщения анализируемого контакта помечены как **[КОНТАКТ]**
+- Сообщения других участников помечены как [Другой участник]
+- НИКОГДА не путай высказывания контакта с высказываниями других людей
+- Когда цитируешь контакта — бери ТОЛЬКО сообщения с меткой [КОНТАКТ]
+- В звонках участники тоже помечены, где возможно идентифицировать
+
+## ПРАВИЛА АНАЛИЗА:
 1. Отвечай на русском языке
 2. Основывайся ТОЛЬКО на фактах из предоставленных данных
-3. Приводи конкретные цитаты из переписок/звонков где возможно
-4. Если информации недостаточно — честно скажи об этом
-5. Будь объективен и профессионален
-6. Используй форматирование markdown для структурирования ответа
-7. Не придумывай факты — работай только с тем, что есть"""
+3. Приводи конкретные цитаты из переписок/звонков — указывай дату и кто сказал
+4. ВСЕГДА различай что сказал КОНТАКТ vs что сказали ДРУГИЕ о контакте
+5. Если информации недостаточно — честно скажи об этом
+6. Будь объективен и профессионален
+7. Используй форматирование markdown для структурирования ответа
+8. Не придумывай факты — работай только с тем, что есть
+9. При анализе red/green flags — цитируй ИМЕННО слова контакта, а не других"""
 
     async def chat_stream(
         self,
