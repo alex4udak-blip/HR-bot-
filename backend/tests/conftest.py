@@ -910,6 +910,66 @@ def mock_call_recorder_service(monkeypatch):
     return mock_recorder
 
 
+@pytest.fixture(autouse=True)
+def mock_playwright(monkeypatch):
+    """Mock Playwright async API for all tests.
+
+    This prevents tests from requiring actual browser installation.
+    Mocks the async_playwright context manager and returns mock browser/page objects.
+    """
+    # Create mock element that has text_content method
+    mock_element = AsyncMock()
+    mock_element.text_content = AsyncMock(return_value="Mock element text content")
+
+    # Create mock page with all necessary methods
+    mock_page = AsyncMock()
+    mock_page.goto = AsyncMock(return_value=None)
+    mock_page.wait_for_selector = AsyncMock(return_value=None)
+    mock_page.wait_for_timeout = AsyncMock(return_value=None)
+    mock_page.query_selector = AsyncMock(return_value=mock_element)
+    mock_page.query_selector_all = AsyncMock(return_value=[mock_element])
+
+    # Create mock browser
+    mock_browser = AsyncMock()
+    mock_browser.new_page = AsyncMock(return_value=mock_page)
+    mock_browser.close = AsyncMock(return_value=None)
+
+    # Create mock chromium
+    mock_chromium = MagicMock()
+    mock_chromium.launch = AsyncMock(return_value=mock_browser)
+
+    # Create mock playwright instance
+    mock_playwright_instance = MagicMock()
+    mock_playwright_instance.chromium = mock_chromium
+
+    # Create async context manager for async_playwright
+    class MockAsyncPlaywright:
+        async def __aenter__(self):
+            return mock_playwright_instance
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            return None
+
+    # Mock the async_playwright function
+    def mock_async_playwright():
+        return MockAsyncPlaywright()
+
+    # Apply the mock
+    try:
+        monkeypatch.setattr("playwright.async_api.async_playwright", mock_async_playwright)
+    except (AttributeError, ImportError):
+        # Playwright not imported in all modules
+        pass
+
+    return {
+        "playwright": mock_playwright_instance,
+        "chromium": mock_chromium,
+        "browser": mock_browser,
+        "page": mock_page,
+        "element": mock_element,
+    }
+
+
 # ============================================================================
 # PARALLEL TEST SUPPORT
 # ============================================================================
