@@ -299,8 +299,25 @@ class EntityAIService:
 
         return "\n".join(parts)
 
-    def _build_system_prompt(self, entity_context: str) -> str:
-        """Build system prompt with entity context"""
+    def _build_system_prompt(self, entity_context: str, entity: Entity) -> str:
+        """Build system prompt with entity context and identification hints"""
+        # Build possible name variations for contextual identification
+        name_hints = []
+        if entity.name:
+            name_hints.append(entity.name)
+            # Add first name, last name separately
+            parts = entity.name.split()
+            name_hints.extend([p for p in parts if len(p) > 2])
+        if entity.telegram_username:
+            name_hints.append(f"@{entity.telegram_username.lstrip('@')}")
+        if entity.email:
+            # Add email username part
+            email_name = entity.email.split('@')[0]
+            if len(email_name) > 2:
+                name_hints.append(email_name)
+
+        name_hints_str = ", ".join(set(name_hints)) if name_hints else "не указаны"
+
         return f"""Ты — AI-ассистент для HR-аналитики. У тебя есть ПОЛНЫЕ данные о контакте:
 все переписки из Telegram и все записи звонков.
 
@@ -311,7 +328,15 @@ class EntityAIService:
 - Сообщения других участников помечены как [Другой участник]
 - НИКОГДА не путай высказывания контакта с высказываниями других людей
 - Когда цитируешь контакта — бери ТОЛЬКО сообщения с меткой [КОНТАКТ]
-- В звонках участники тоже помечены, где возможно идентифицировать
+
+### Возможные имена/ники контакта: {name_hints_str}
+
+### КОНТЕКСТНАЯ ИДЕНТИФИКАЦИЯ:
+Если сообщение помечено как [Другой участник], но по контексту ты уверен что это контакт
+(например, к нему обращаются по имени, он отвечает на вопросы о себе, его стиль общения совпадает) —
+ты можешь учитывать это в анализе, но ОБЯЗАТЕЛЬНО укажи что идентификация контекстная.
+
+Пример: "По контексту диалога, участник 'Ваня' вероятно является контактом Иван Петров"
 
 ## ПРАВИЛА АНАЛИЗА:
 1. Отвечай на русском языке
@@ -322,7 +347,8 @@ class EntityAIService:
 6. Будь объективен и профессионален
 7. Используй форматирование markdown для структурирования ответа
 8. Не придумывай факты — работай только с тем, что есть
-9. При анализе red/green flags — цитируй ИМЕННО слова контакта, а не других"""
+9. При анализе red/green flags — цитируй ИМЕННО слова контакта, а не других
+10. Если нужно идентифицировать контакта по контексту — объясни почему ты так решил"""
 
     async def chat_stream(
         self,
@@ -334,7 +360,7 @@ class EntityAIService:
     ) -> AsyncGenerator[str, None]:
         """Stream AI response for chat"""
         context = self._build_entity_context(entity, chats, calls)
-        system = self._build_system_prompt(context)
+        system = self._build_system_prompt(context, entity)
 
         # Build messages for API
         api_messages = []
