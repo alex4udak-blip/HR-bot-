@@ -364,6 +364,14 @@ class Entity(Base):
     ai_conversations = relationship("EntityAIConversation", back_populates="entity", cascade="all, delete-orphan")
     ai_analyses = relationship("EntityAnalysis", back_populates="entity", cascade="all, delete-orphan")
 
+    # AI Long-term Memory
+    # Auto-updated summary of all interactions with this entity
+    ai_summary = Column(Text, nullable=True)
+    ai_summary_updated_at = Column(DateTime, nullable=True)
+    # Key events/milestones extracted from conversations
+    # Format: [{"date": "2024-01-15", "event": "hired", "details": "Нанят в отдел разработки"}]
+    key_events = Column(JSON, default=list)
+
 
 class EntityTransfer(Base):
     __tablename__ = "entity_transfers"
