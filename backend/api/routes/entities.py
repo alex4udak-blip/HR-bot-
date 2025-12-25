@@ -30,6 +30,7 @@ class EntityCreate(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     telegram_user_id: Optional[int] = None
+    telegram_username: Optional[str] = None  # @username (without @)
     company: Optional[str] = None
     position: Optional[str] = None
     tags: Optional[List[str]] = []
@@ -42,6 +43,8 @@ class EntityUpdate(BaseModel):
     status: Optional[EntityStatus] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    telegram_user_id: Optional[int] = None
+    telegram_username: Optional[str] = None  # @username (without @)
     company: Optional[str] = None
     position: Optional[str] = None
     tags: Optional[List[str]] = None
@@ -63,6 +66,7 @@ class EntityResponse(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     telegram_user_id: Optional[int] = None
+    telegram_username: Optional[str] = None
     company: Optional[str] = None
     position: Optional[str] = None
     tags: List[str] = []
@@ -378,6 +382,7 @@ async def list_entities(
             "phone": entity.phone,
             "email": entity.email,
             "telegram_user_id": entity.telegram_user_id,
+            "telegram_username": entity.telegram_username,
             "company": entity.company,
             "position": entity.position,
             "tags": entity.tags or [],
@@ -433,6 +438,7 @@ async def create_entity(
         phone=data.phone,
         email=data.email,
         telegram_user_id=data.telegram_user_id,
+        telegram_username=data.telegram_username.lstrip('@') if data.telegram_username else None,
         company=data.company,
         position=data.position,
         tags=data.tags or [],

@@ -315,6 +315,10 @@ async def init_database():
     await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS transferred_to_id INTEGER REFERENCES users(id) ON DELETE SET NULL", "Add transferred_to_id to entities")
     await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS transferred_at TIMESTAMP", "Add transferred_at to entities")
 
+    # Entity telegram_username for contact identification
+    await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS telegram_username VARCHAR(255)", "Add telegram_username to entities")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entities_telegram_username ON entities(telegram_username)", "Index entities.telegram_username")
+
     # Step 8: Invitations table
     logger.info("=== SETTING UP INVITATIONS ===")
     create_invitations = """

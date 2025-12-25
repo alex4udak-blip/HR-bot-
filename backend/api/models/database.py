@@ -335,6 +335,7 @@ class Entity(Base):
     phone = Column(String(50), nullable=True)
     email = Column(String(255), nullable=True, index=True)
     telegram_user_id = Column(BigInteger, nullable=True, index=True)
+    telegram_username = Column(String(255), nullable=True, index=True)  # @username (stored without @)
     company = Column(String(255), nullable=True)
     position = Column(String(255), nullable=True)
     tags = Column(JSON, default=list)

@@ -157,15 +157,30 @@ class EntityAIService:
 - **Email:** {entity.email or 'Не указан'}
 - **Телефон:** {entity.phone or 'Не указан'}
 - **Теги:** {', '.join(entity.tags) if entity.tags else 'Нет'}
-- **Telegram ID:** {entity.telegram_user_id or 'Не указан'}
+- **Telegram:** {'@' + entity.telegram_username if entity.telegram_username else 'Не указан'} (ID: {entity.telegram_user_id or 'Не указан'})
 """)
 
         # Helper to check if message is from the contact
         def is_contact_message(msg: Message) -> bool:
-            """Check if message is from the analyzed contact"""
+            """Check if message is from the analyzed contact.
+
+            Priority:
+            1. telegram_user_id exact match (most reliable)
+            2. telegram_username match (@username)
+            3. Name similarity match (fallback)
+            """
+            # Priority 1: telegram_user_id exact match
             if entity.telegram_user_id and msg.telegram_user_id:
                 return msg.telegram_user_id == entity.telegram_user_id
-            # Fallback: try matching by name
+
+            # Priority 2: telegram_username match
+            if entity.telegram_username and msg.username:
+                entity_username = entity.telegram_username.lower().lstrip('@')
+                msg_username = msg.username.lower().lstrip('@')
+                if entity_username == msg_username:
+                    return True
+
+            # Priority 3: Name similarity match (fallback)
             msg_name = f"{msg.first_name or ''} {msg.last_name or ''}".strip().lower()
             entity_name = entity.name.lower() if entity.name else ""
             return entity_name and msg_name and (
@@ -228,13 +243,38 @@ class EntityAIService:
                     parts.append(f"**Длительность:** {mins}м {secs}с")
 
                 # Speakers info - identify the contact
+                def is_contact_speaker(speaker_info) -> bool:
+                    """Check if speaker is the analyzed contact by name or email."""
+                    if isinstance(speaker_info, dict):
+                        speaker_name = speaker_info.get("speaker", "").lower()
+                        speaker_email = speaker_info.get("email", "").lower()
+                    else:
+                        speaker_name = str(speaker_info).lower()
+                        speaker_email = ""
+
+                    # Check by email (most reliable for calls)
+                    if entity.email and speaker_email:
+                        if entity.email.lower() == speaker_email:
+                            return True
+
+                    # Check by name
+                    if entity.name:
+                        entity_name = entity.name.lower()
+                        if entity_name in speaker_name or speaker_name in entity_name:
+                            return True
+                        # Also check first/last name parts
+                        name_parts = entity_name.split()
+                        for part in name_parts:
+                            if len(part) > 2 and part in speaker_name:
+                                return True
+
+                    return False
+
                 if call.speakers:
                     parts.append("**Участники:**")
                     for speaker in call.speakers if isinstance(call.speakers, list) else []:
                         speaker_name = speaker.get("speaker", "Unknown") if isinstance(speaker, dict) else str(speaker)
-                        # Try to identify if this speaker is the contact
-                        is_contact_speaker = entity.name.lower() in speaker_name.lower() if entity.name else False
-                        label = " **[КОНТАКТ]**" if is_contact_speaker else ""
+                        label = " **[КОНТАКТ]**" if is_contact_speaker(speaker) else ""
                         parts.append(f"- {speaker_name}{label}")
 
                 if call.summary:
