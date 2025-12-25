@@ -40,5 +40,8 @@ RUN playwright install --with-deps chromium
 # Expose port
 EXPOSE 8000
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Make start script executable
+RUN chmod +x start.sh
+
+# Run the application with migrations
+CMD ["./start.sh"]
