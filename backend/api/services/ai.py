@@ -471,13 +471,17 @@ class AIService:
             }
         ]
 
-        # Build messages for API
+        # Build messages for API (limit history to last 20 exchanges to avoid token overflow)
+        # 20 exchanges = 40 messages (user + assistant pairs)
+        MAX_HISTORY_MESSAGES = 40
+        limited_history = conversation_history[-MAX_HISTORY_MESSAGES:] if len(conversation_history) > MAX_HISTORY_MESSAGES else conversation_history
+
         api_messages = []
-        for msg in conversation_history:
+        for msg in limited_history:
             api_messages.append({"role": msg["role"], "content": msg["content"]})
         api_messages.append({"role": "user", "content": user_message})
 
-        logger.debug(f"Chat stream: {len(messages)} messages, {len(conversation_history)} history")
+        logger.debug(f"Chat stream: {len(messages)} messages, {len(limited_history)}/{len(conversation_history)} history")
 
         async with self.client.messages.stream(
             model=self.model,

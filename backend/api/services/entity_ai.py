@@ -258,9 +258,13 @@ class EntityAIService:
             }
         ]
 
-        # Build messages for API
+        # Build messages for API (limit history to last 20 exchanges to avoid token overflow)
+        # 20 exchanges = 40 messages (user + assistant pairs)
+        MAX_HISTORY_MESSAGES = 40
+        limited_history = conversation_history[-MAX_HISTORY_MESSAGES:] if len(conversation_history) > MAX_HISTORY_MESSAGES else conversation_history
+
         api_messages = []
-        for msg in conversation_history:
+        for msg in limited_history:
             api_messages.append({
                 "role": msg["role"],
                 "content": msg["content"]
