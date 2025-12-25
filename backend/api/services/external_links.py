@@ -294,6 +294,7 @@ class ExternalLinkProcessor:
 
             # Fallback to HTTP if Playwright didn't work
             if not transcript_text:
+                logger.info("Attempting HTTP fallback for Fireflies transcript extraction")
                 try:
                     session = await self._get_session()
                     async with session.get(url, headers={
@@ -302,17 +303,20 @@ class ExternalLinkProcessor:
                         'Accept-Language': 'en-US,en;q=0.5',
                     }, timeout=aiohttp.ClientTimeout(total=30)) as response:
                         if response.status != 200:
+                            logger.warning(f"Fireflies HTTP request returned status {response.status}")
                             call.status = CallStatus.failed
                             call.error_message = f"Failed to access Fireflies link: HTTP {response.status}"
                             return call
 
                         html = await response.text()
+                        logger.info(f"Fireflies HTTP response received: {len(html)} chars")
 
                     # Try __NEXT_DATA__ extraction (Next.js SSR data)
                     import json
                     next_data_match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
 
                     if next_data_match:
+                        logger.info("Found __NEXT_DATA__ in Fireflies page, parsing...")
                         try:
                             next_data = json.loads(next_data_match.group(1))
                             page_props = next_data.get('props', {}).get('pageProps', {})
@@ -344,6 +348,10 @@ class ExternalLinkProcessor:
                                     call.duration_seconds = transcript_data.get('duration')
 
                                     logger.info(f"HTTP fallback extracted {len(transcript_text)} chars from Fireflies via __NEXT_DATA__")
+                                else:
+                                    logger.warning("No sentences found in Fireflies transcript_data")
+                            else:
+                                logger.warning("No transcript_data found in Fireflies pageProps")
 
                         except json.JSONDecodeError as e:
                             logger.warning(f"Failed to parse __NEXT_DATA__: {e}")
@@ -354,8 +362,11 @@ class ExternalLinkProcessor:
                     logger.error(f"HTTP request to Fireflies failed: {e}")
                 except asyncio.TimeoutError:
                     logger.error("HTTP request to Fireflies timed out")
+                except Exception as e:
+                    logger.error(f"Unexpected error in Fireflies HTTP fallback: {type(e).__name__}: {e}")
 
             if not transcript_text or len(transcript_text) < 100:
+                logger.warning(f"Fireflies transcript too short or empty: {len(transcript_text) if transcript_text else 0} chars")
                 call.status = CallStatus.failed
                 call.error_message = "Could not extract transcript from Fireflies. Make sure the link is public/shared. Install playwright for better results: pip install playwright && playwright install chromium"
                 return call
@@ -365,20 +376,31 @@ class ExternalLinkProcessor:
                 call.title = title
 
             call.transcript = transcript_text
+            logger.info(f"Fireflies transcript extracted: {len(transcript_text)} chars")
 
             # Run AI analysis
-            call.status = CallStatus.analyzing
-            call_processor._init_clients()
-            analysis = await call_processor._analyze(call.transcript)
-            if analysis:
-                call.summary = analysis.get("summary")
-                call.action_items = analysis.get("action_items")
-                call.key_points = analysis.get("key_points")
+            try:
+                call.status = CallStatus.analyzing
+                call_processor._init_clients()
+                analysis = await call_processor._analyze(call.transcript)
+                if analysis:
+                    call.summary = analysis.get("summary")
+                    call.action_items = analysis.get("action_items")
+                    call.key_points = analysis.get("key_points")
+                    logger.info("Fireflies AI analysis complete")
+                else:
+                    logger.warning("Fireflies AI analysis returned None")
+            except Exception as e:
+                logger.error(f"Fireflies AI analysis failed: {type(e).__name__}: {e}")
+                # Don't fail the whole process - we still have the transcript
+                call.summary = None
+                call.action_items = None
+                call.key_points = None
 
             call.status = CallStatus.done
             call.processed_at = datetime.utcnow()
 
-            logger.info(f"Fireflies transcript processed: {len(call.transcript)} chars")
+            logger.info(f"Fireflies transcript processed successfully: {len(call.transcript)} chars")
 
         except Exception as e:
             logger.error(f"Error processing Fireflies: {e}")
