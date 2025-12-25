@@ -28,6 +28,8 @@ logger = logging.getLogger("hr-analyzer.external_links")
 class LinkType:
     """Constants for link types."""
     GOOGLE_DOC = "google_doc"
+    GOOGLE_SHEET = "google_sheet"
+    GOOGLE_FORM = "google_form"
     GOOGLE_DRIVE = "google_drive"
     DIRECT_MEDIA = "direct_media"
     FIREFLIES = "fireflies"
@@ -78,6 +80,14 @@ class ExternalLinkProcessor:
         # Google Docs
         if "docs.google.com/document" in url_lower:
             return LinkType.GOOGLE_DOC
+
+        # Google Sheets
+        if "docs.google.com/spreadsheets" in url_lower:
+            return LinkType.GOOGLE_SHEET
+
+        # Google Forms
+        if "docs.google.com/forms" in url_lower:
+            return LinkType.GOOGLE_FORM
 
         # Google Drive
         if "drive.google.com" in url_lower:
@@ -159,6 +169,14 @@ class ExternalLinkProcessor:
             elif link_type == LinkType.GOOGLE_DOC:
                 call.source_type = CallSource.google_doc
                 call = await self._process_google_doc(call, url)
+
+            elif link_type == LinkType.GOOGLE_SHEET:
+                call.source_type = CallSource.google_doc  # Use google_doc as source type
+                call = await self._process_google_sheet(call, url)
+
+            elif link_type == LinkType.GOOGLE_FORM:
+                call.source_type = CallSource.google_doc  # Use google_doc as source type
+                call = await self._process_google_form(call, url)
 
             elif link_type == LinkType.GOOGLE_DRIVE:
                 call.source_type = CallSource.google_drive
@@ -326,6 +344,185 @@ class ExternalLinkProcessor:
 
         except Exception as e:
             logger.error(f"Error processing Fireflies: {e}")
+            call.status = CallStatus.failed
+            call.error_message = str(e)
+
+        return call
+
+    async def _process_google_doc(self, call: CallRecording, url: str) -> CallRecording:
+        """
+        Process Google Docs document as a transcript.
+        Parses the document text and runs AI analysis.
+        """
+        try:
+            # Parse document using google_docs_service
+            result = await google_docs_service.parse_from_url(url)
+
+            if not result or not result.content:
+                call.status = CallStatus.failed
+                error_msg = result.error if result and result.error else "document may not be public"
+                call.error_message = f"Failed to parse Google Doc - {error_msg}"
+                return call
+
+            # Store document text as transcript
+            call.transcript = result.content
+            if result.metadata and result.metadata.get('title'):
+                call.title = result.metadata.get('title')
+
+            # Run AI analysis
+            call.status = CallStatus.analyzing
+            call_processor._init_clients()
+            analysis = await call_processor._analyze(call.transcript)
+            if analysis:
+                call.summary = analysis.get("summary")
+                call.action_items = analysis.get("action_items")
+                call.key_points = analysis.get("key_points")
+
+            call.status = CallStatus.done
+            call.processed_at = datetime.utcnow()
+
+            logger.info(f"Google Doc processed: {len(call.transcript)} chars")
+
+        except Exception as e:
+            logger.error(f"Error processing Google Doc: {e}")
+            call.status = CallStatus.failed
+            call.error_message = str(e)
+
+        return call
+
+    async def _process_google_sheet(self, call: CallRecording, url: str) -> CallRecording:
+        """
+        Process Google Sheets as text data.
+        Exports the spreadsheet as CSV/text and runs AI analysis.
+        """
+        try:
+            # Extract sheet ID
+            match = re.search(r'spreadsheets/d/([a-zA-Z0-9_-]+)', url)
+            if not match:
+                call.status = CallStatus.failed
+                call.error_message = "Invalid Google Sheets URL"
+                return call
+
+            sheet_id = match.group(1)
+
+            # Try to export as CSV (public sheet)
+            export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+
+            session = await self._get_session()
+            async with session.get(export_url, allow_redirects=True) as response:
+                if response.status != 200:
+                    call.status = CallStatus.failed
+                    call.error_message = "Failed to export Google Sheet - document may not be public"
+                    return call
+
+                text = await response.text()
+
+            if not text.strip():
+                call.status = CallStatus.failed
+                call.error_message = "Google Sheet is empty"
+                return call
+
+            # Store CSV text as transcript
+            call.transcript = text
+            call.title = call.title or f"Google Sheet - {sheet_id[:8]}"
+
+            # Run AI analysis
+            call.status = CallStatus.analyzing
+            call_processor._init_clients()
+            analysis = await call_processor._analyze(call.transcript)
+            if analysis:
+                call.summary = analysis.get("summary")
+                call.action_items = analysis.get("action_items")
+                call.key_points = analysis.get("key_points")
+
+            call.status = CallStatus.done
+            call.processed_at = datetime.utcnow()
+
+            logger.info(f"Google Sheet processed: {len(call.transcript)} chars")
+
+        except Exception as e:
+            logger.error(f"Error processing Google Sheet: {e}")
+            call.status = CallStatus.failed
+            call.error_message = str(e)
+
+        return call
+
+    async def _process_google_form(self, call: CallRecording, url: str) -> CallRecording:
+        """
+        Process Google Forms responses as text data.
+        Fetches form data and runs AI analysis.
+        """
+        try:
+            # Extract form ID
+            match = re.search(r'forms/d/([a-zA-Z0-9_-]+)', url)
+            if not match:
+                # Try e/ format for published forms
+                match = re.search(r'forms/d/e/([a-zA-Z0-9_-]+)', url)
+
+            if not match:
+                call.status = CallStatus.failed
+                call.error_message = "Invalid Google Forms URL"
+                return call
+
+            form_id = match.group(1)
+
+            # Fetch the form page
+            session = await self._get_session()
+            async with session.get(url, allow_redirects=True) as response:
+                if response.status != 200:
+                    call.status = CallStatus.failed
+                    call.error_message = "Failed to fetch Google Form - may not be accessible"
+                    return call
+
+                html = await response.text()
+
+            # Parse form content
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, 'html.parser')
+
+            # Extract text content
+            text_parts = []
+
+            # Get form title
+            title_elem = soup.find('div', {'class': 'freebirdFormviewerViewHeaderTitle'})
+            if title_elem:
+                text_parts.append(f"Title: {title_elem.get_text(strip=True)}")
+
+            # Get form description
+            desc_elem = soup.find('div', {'class': 'freebirdFormviewerViewHeaderDescription'})
+            if desc_elem:
+                text_parts.append(f"Description: {desc_elem.get_text(strip=True)}")
+
+            # Get all text from questions
+            for elem in soup.find_all(['div', 'span'], string=True):
+                text = elem.get_text(strip=True)
+                if text and len(text) > 3:
+                    text_parts.append(text)
+
+            if not text_parts:
+                call.status = CallStatus.failed
+                call.error_message = "Could not extract text from Google Form"
+                return call
+
+            call.transcript = "\n".join(text_parts)
+            call.title = call.title or f"Google Form - {form_id[:8]}"
+
+            # Run AI analysis
+            call.status = CallStatus.analyzing
+            call_processor._init_clients()
+            analysis = await call_processor._analyze(call.transcript)
+            if analysis:
+                call.summary = analysis.get("summary")
+                call.action_items = analysis.get("action_items")
+                call.key_points = analysis.get("key_points")
+
+            call.status = CallStatus.done
+            call.processed_at = datetime.utcnow()
+
+            logger.info(f"Google Form processed: {len(call.transcript)} chars")
+
+        except Exception as e:
+            logger.error(f"Error processing Google Form: {e}")
             call.status = CallStatus.failed
             call.error_message = str(e)
 

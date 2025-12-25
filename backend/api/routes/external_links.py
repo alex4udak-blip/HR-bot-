@@ -131,6 +131,8 @@ async def detect_link_type(
     descriptions = {
         LinkType.FIREFLIES: "Fireflies.ai transcript. Will be fetched and analyzed (no transcription needed).",
         LinkType.GOOGLE_DOC: "Google Docs document. Will be parsed as text and analyzed (no transcription needed).",
+        LinkType.GOOGLE_SHEET: "Google Sheets spreadsheet. Will be exported as CSV and analyzed.",
+        LinkType.GOOGLE_FORM: "Google Forms. Will be parsed and analyzed.",
         LinkType.GOOGLE_DRIVE: "Google Drive file. Will be downloaded and transcribed if it's audio/video.",
         LinkType.DIRECT_MEDIA: "Direct media file. Will be downloaded and transcribed.",
         LinkType.UNKNOWN: "Unknown type. Will attempt to download and detect content type."
@@ -205,6 +207,22 @@ async def get_supported_types():
                 "example": "https://docs.google.com/document/d/ABC123/edit",
                 "handling": "Parsed as text, directly analyzed by AI (no transcription)",
                 "requirements": "Document must be shared as 'Anyone with link can view'"
+            },
+            {
+                "type": "google_sheet",
+                "name": "Google Sheets",
+                "description": "Spreadsheets with data to analyze",
+                "example": "https://docs.google.com/spreadsheets/d/ABC123/edit",
+                "handling": "Exported as CSV, directly analyzed by AI",
+                "requirements": "Spreadsheet must be shared as 'Anyone with link can view'"
+            },
+            {
+                "type": "google_form",
+                "name": "Google Forms",
+                "description": "Forms with questions/responses",
+                "example": "https://docs.google.com/forms/d/ABC123/viewform",
+                "handling": "Parsed for questions/content, analyzed by AI",
+                "requirements": "Form must be accessible"
             },
             {
                 "type": "google_drive",

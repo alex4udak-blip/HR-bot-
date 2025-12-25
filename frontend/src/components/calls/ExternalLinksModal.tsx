@@ -12,7 +12,9 @@ import {
   AlertCircle,
   HelpCircle,
   Copy,
-  Flame
+  Flame,
+  Table,
+  ClipboardList
 } from 'lucide-react';
 import {
   detectExternalLinkType,
@@ -49,6 +51,20 @@ const LINK_TYPE_INFO: Record<ExternalLinkType, {
     icon: FileText,
     color: 'text-blue-400 bg-blue-500/20',
     examples: ['docs.google.com/document/d/...']
+  },
+  google_sheet: {
+    label: 'Google Sheets',
+    description: 'Данные из Google Таблицы',
+    icon: Table,
+    color: 'text-emerald-400 bg-emerald-500/20',
+    examples: ['docs.google.com/spreadsheets/d/...']
+  },
+  google_form: {
+    label: 'Google Forms',
+    description: 'Данные из Google Формы',
+    icon: ClipboardList,
+    color: 'text-violet-400 bg-violet-500/20',
+    examples: ['docs.google.com/forms/d/...']
   },
   google_drive: {
     label: 'Google Drive',
