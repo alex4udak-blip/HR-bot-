@@ -200,6 +200,10 @@ export interface Entity {
   phone?: string;
   email?: string;
   telegram_user_id?: number;
+  // Multiple identifiers support
+  telegram_usernames?: string[];
+  emails?: string[];
+  phones?: string[];
   company?: string;
   position?: string;
   tags: string[];

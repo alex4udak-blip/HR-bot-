@@ -96,6 +96,10 @@ const mockEntities = [
     status: 'interview' as const,
     phone: '+1234567890',
     email: 'john.doe@example.com',
+    // Multiple identifiers support
+    telegram_usernames: ['johndoe', 'john_dev'],
+    emails: ['john.doe@example.com', 'john@personal.com'],
+    phones: ['+1234567890', '+0987654321'],
     company: 'Tech Corp',
     position: 'Senior Developer',
     tags: ['javascript', 'react', 'senior'],
@@ -115,6 +119,10 @@ const mockEntities = [
     name: 'Acme Inc',
     status: 'active' as const,
     email: 'contact@acme.com',
+    // Multiple identifiers support
+    telegram_usernames: ['acme_official'],
+    emails: ['contact@acme.com', 'sales@acme.com'],
+    phones: [],
     tags: ['enterprise', 'software'],
     extra_data: {},
     created_by: 1,

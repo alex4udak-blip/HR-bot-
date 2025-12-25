@@ -31,6 +31,10 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
     status: (entity?.status || 'new') as EntityStatus,
     phone: entity?.phone || '',
     email: entity?.email || '',
+    // Multiple identifiers (comma-separated in UI, array in API)
+    telegram_usernames: entity?.telegram_usernames?.join(', ') || '',
+    emails: entity?.emails?.join(', ') || '',
+    phones: entity?.phones?.join(', ') || '',
     company: entity?.company || '',
     position: entity?.position || '',
     tags: entity?.tags?.join(', ') || ''
@@ -63,6 +67,10 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
     e.preventDefault();
     if (!validate()) return;
 
+    // Helper to parse comma-separated values into array
+    const parseList = (str: string): string[] =>
+      str.split(',').map(s => s.trim()).filter(s => s.length > 0);
+
     try {
       const data = {
         type: formData.type,
@@ -70,6 +78,10 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
         status: formData.status,
         phone: formData.phone.trim() || undefined,
         email: formData.email.trim() || undefined,
+        // Multiple identifiers
+        telegram_usernames: parseList(formData.telegram_usernames),
+        emails: parseList(formData.emails),
+        phones: parseList(formData.phones),
         company: formData.company.trim() || undefined,
         position: formData.position.trim() || undefined,
         tags: formData.tags
@@ -180,31 +192,50 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
             </select>
           </div>
 
+          {/* Telegram Usernames */}
+          <div>
+            <label className="block text-sm font-medium text-white/60 mb-2">
+              Telegram @username(ы) <span className="text-white/40">(через запятую)</span>
+            </label>
+            <input
+              type="text"
+              value={formData.telegram_usernames}
+              onChange={(e) => setFormData((prev) => ({ ...prev, telegram_usernames: e.target.value }))}
+              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+              placeholder="@username1, @username2"
+            />
+            <p className="text-xs text-white/40 mt-1">Для связывания чатов с контактом</p>
+          </div>
+
           {/* Contact Info Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-white/60 mb-2">Email</label>
+              <label className="block text-sm font-medium text-white/60 mb-2">
+                Email(ы) <span className="text-white/40">(через запятую)</span>
+              </label>
               <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
+                type="text"
+                value={formData.emails}
+                onChange={(e) => setFormData((prev) => ({ ...prev, emails: e.target.value }))}
                 className={clsx(
                   'w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50',
                   errors.email ? 'border-red-500/50' : 'border-white/10'
                 )}
-                placeholder="john@example.com"
+                placeholder="john@example.com, john.doe@company.com"
               />
               {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-white/60 mb-2">Телефон</label>
+              <label className="block text-sm font-medium text-white/60 mb-2">
+                Телефон(ы) <span className="text-white/40">(через запятую)</span>
+              </label>
               <input
-                type="tel"
-                value={formData.phone}
-                onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))}
+                type="text"
+                value={formData.phones}
+                onChange={(e) => setFormData((prev) => ({ ...prev, phones: e.target.value }))}
                 className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
-                placeholder="+1 234 567 890"
+                placeholder="+7 999 123-45-67, +1 234 567 890"
               />
             </div>
           </div>

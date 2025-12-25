@@ -15,7 +15,8 @@ import {
   User,
   Link2,
   X,
-  Loader2
+  Loader2,
+  AtSign
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -162,7 +163,42 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-              {entity.email && (
+              {/* Telegram usernames */}
+              {entity.telegram_usernames && entity.telegram_usernames.length > 0 && (
+                <div className="flex items-start gap-2 text-white/60 min-w-0">
+                  <AtSign size={16} className="flex-shrink-0 mt-0.5" />
+                  <div className="flex flex-wrap gap-1">
+                    {entity.telegram_usernames.map((username, idx) => (
+                      <a
+                        key={idx}
+                        href={`https://t.me/${username}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-cyan-400 transition-colors"
+                      >
+                        @{username}{idx < entity.telegram_usernames!.length - 1 && ','}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Emails (array first, fallback to single) */}
+              {(entity.emails && entity.emails.length > 0) ? (
+                <div className="flex items-start gap-2 text-white/60 min-w-0">
+                  <Mail size={16} className="flex-shrink-0 mt-0.5" />
+                  <div className="flex flex-wrap gap-1">
+                    {entity.emails.map((email, idx) => (
+                      <a
+                        key={idx}
+                        href={`mailto:${email}`}
+                        className="hover:text-cyan-400 transition-colors truncate"
+                      >
+                        {email}{idx < entity.emails!.length - 1 && ','}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              ) : entity.email && (
                 <a
                   href={`mailto:${entity.email}`}
                   className="flex items-center gap-2 text-white/60 hover:text-cyan-400 transition-colors min-w-0"
@@ -171,7 +207,23 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   <span className="truncate">{entity.email}</span>
                 </a>
               )}
-              {entity.phone && (
+              {/* Phones (array first, fallback to single) */}
+              {(entity.phones && entity.phones.length > 0) ? (
+                <div className="flex items-start gap-2 text-white/60 min-w-0">
+                  <Phone size={16} className="flex-shrink-0 mt-0.5" />
+                  <div className="flex flex-wrap gap-1">
+                    {entity.phones.map((phone, idx) => (
+                      <a
+                        key={idx}
+                        href={`tel:${phone}`}
+                        className="hover:text-cyan-400 transition-colors"
+                      >
+                        {phone}{idx < entity.phones!.length - 1 && ','}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              ) : entity.phone && (
                 <a
                   href={`tel:${entity.phone}`}
                   className="flex items-center gap-2 text-white/60 hover:text-cyan-400 transition-colors min-w-0"
