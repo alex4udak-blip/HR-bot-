@@ -181,23 +181,35 @@ export default function CallsPage() {
       >
         {/* Header */}
         <div className="p-4 border-b border-white/5">
-          <div className="flex items-center justify-between mb-4 gap-4">
-            <h1 className="text-xl font-semibold text-white flex-shrink-0">Записи звонков</h1>
-            <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center justify-between mb-4 gap-2">
+            <h1 className={clsx(
+              "font-semibold text-white flex-shrink-0",
+              currentCall ? "text-base" : "text-xl"
+            )}>
+              {currentCall ? "Звонки" : "Записи звонков"}
+            </h1>
+            <div className="flex items-center gap-1 flex-shrink-0">
               <button
                 onClick={() => setShowExternalLinksModal(true)}
-                className="px-4 py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors flex items-center gap-2 whitespace-nowrap"
+                className={clsx(
+                  "rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors flex items-center gap-2 whitespace-nowrap",
+                  currentCall ? "p-2" : "px-4 py-2"
+                )}
                 title="Добавить внешнюю ссылку (Google Docs, Drive, медиа)"
               >
                 <Link2 size={18} className="flex-shrink-0" />
-                <span className="hidden sm:inline">Внешняя ссылка</span>
+                {!currentCall && <span className="hidden sm:inline">Внешняя ссылка</span>}
               </button>
               <button
                 onClick={() => setShowRecorderModal(true)}
-                className="px-4 py-2 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors flex items-center gap-2 whitespace-nowrap"
+                className={clsx(
+                  "rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors flex items-center gap-2 whitespace-nowrap",
+                  currentCall ? "p-2" : "px-4 py-2"
+                )}
+                title="Новая запись"
               >
                 <Phone size={18} className="flex-shrink-0" />
-                <span className="hidden sm:inline">Новая запись</span>
+                {!currentCall && <span className="hidden sm:inline">Новая запись</span>}
               </button>
             </div>
           </div>
