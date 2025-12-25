@@ -185,8 +185,11 @@ URL_PATTERN = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+')
 async def process_external_links_in_message(text: str, org_id: int, owner_id: int | None, chat_id: int):
     """
     Automatically detect and process external links in message text.
-    Processes Fireflies, Google Docs, Sheets, Forms links in background.
+    Parses Google Docs/Sheets/Forms and saves content as chat messages (not CallRecordings).
     """
+    from .services.google_docs import google_docs_service
+    from datetime import datetime
+
     try:
         # Extract all URLs from message
         urls = URL_PATTERN.findall(text)
@@ -197,33 +200,131 @@ async def process_external_links_in_message(text: str, org_id: int, owner_id: in
             # Detect link type
             link_type = external_link_processor.detect_link_type(url)
 
-            # Only process known external link types (not unknown or direct media)
-            processable_types = {
-                LinkType.FIREFLIES,
+            # Only process Google document types (save to chat, not as CallRecording)
+            # Fireflies links still create CallRecordings since they are actual call transcripts
+            document_types = {
                 LinkType.GOOGLE_DOC,
                 LinkType.GOOGLE_SHEET,
                 LinkType.GOOGLE_FORM,
             }
 
-            if link_type in processable_types:
-                logger.info(f"🔗 Auto-processing {link_type} link from chat {chat_id}: {url[:50]}...")
+            if link_type in document_types:
+                logger.info(f"🔗 Parsing {link_type} link in chat {chat_id}: {url[:50]}...")
 
                 try:
-                    # Process the link in background (don't block message handling)
+                    # Parse the document in background
                     asyncio.create_task(
-                        external_link_processor.process_url(
-                            url=url,
-                            organization_id=org_id,
-                            owner_id=owner_id or 0,
-                            title=f"Auto-imported from chat"
-                        )
+                        _parse_link_to_chat_message(url, link_type, chat_id)
                     )
-                    logger.info(f"✅ Started processing {link_type} link")
+                    logger.info(f"✅ Started parsing {link_type} link")
                 except Exception as e:
-                    logger.error(f"❌ Failed to process {link_type} link: {e}")
+                    logger.error(f"❌ Failed to parse {link_type} link: {e}")
 
     except Exception as e:
         logger.error(f"❌ Error processing external links: {e}")
+
+
+async def _parse_link_to_chat_message(url: str, link_type: str, chat_id: int):
+    """
+    Parse a document link and save the content as a message in the chat.
+    This is similar to how document attachments are parsed.
+    """
+    from .services.google_docs import google_docs_service
+    from datetime import datetime
+    import re
+    import aiohttp
+
+    try:
+        content = None
+        title = None
+        parse_status = "pending"
+        parse_error = None
+        document_metadata = {}
+
+        if link_type == LinkType.GOOGLE_DOC:
+            result = await google_docs_service.parse_from_url(url)
+            if result and result.content:
+                content = result.content
+                title = result.metadata.get('title') if result.metadata else None
+                document_metadata = result.metadata or {}
+                parse_status = "parsed"
+            else:
+                parse_status = "failed"
+                parse_error = result.error if result else "Failed to parse document"
+
+        elif link_type == LinkType.GOOGLE_SHEET:
+            # Extract sheet ID and export as CSV
+            match = re.search(r'spreadsheets/d/([a-zA-Z0-9_-]+)', url)
+            if match:
+                sheet_id = match.group(1)
+                export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(export_url, allow_redirects=True) as response:
+                        if response.status == 200:
+                            content = await response.text()
+                            title = f"Google Sheet"
+                            document_metadata = {"type": "spreadsheet", "sheet_id": sheet_id}
+                            parse_status = "parsed"
+                        else:
+                            parse_status = "failed"
+                            parse_error = "Sheet not public or not accessible"
+            else:
+                parse_status = "failed"
+                parse_error = "Invalid Google Sheets URL"
+
+        elif link_type == LinkType.GOOGLE_FORM:
+            # Forms are harder to parse, just note the link
+            content = f"[Google Form: {url}]"
+            title = "Google Form"
+            document_metadata = {"type": "form"}
+            parse_status = "partial"
+
+        # Save as a message in the chat
+        if content:
+            async with async_session() as session:
+                # Create a system message with the parsed content
+                msg_content = content
+                if title:
+                    msg_content = f"📄 {title}\n\n{content}"
+
+                # Truncate if too long (keep first 10000 chars for display, full in metadata)
+                display_content = msg_content
+                if len(msg_content) > 10000:
+                    display_content = msg_content[:10000] + f"\n\n... [Обрезано, полный текст: {len(msg_content)} символов]"
+                    document_metadata["full_content_length"] = len(msg_content)
+                    document_metadata["truncated"] = True
+
+                db_message = Message(
+                    chat_id=chat_id,
+                    telegram_message_id=None,  # System message, no telegram ID
+                    telegram_user_id=0,  # System/bot user
+                    username="system",
+                    first_name="📎 Parsed Link",
+                    last_name=None,
+                    content=display_content,
+                    content_type="parsed_link",
+                    file_id=None,
+                    file_name=title or url[:50],
+                    document_metadata={
+                        **document_metadata,
+                        "source_url": url,
+                        "link_type": link_type,
+                        "full_content": msg_content if document_metadata.get("truncated") else None
+                    },
+                    parse_status=parse_status,
+                    parse_error=parse_error,
+                    timestamp=datetime.utcnow(),
+                )
+                session.add(db_message)
+                await session.commit()
+
+                logger.info(f"✅ Saved parsed {link_type} link as chat message: {len(content)} chars")
+        else:
+            logger.warning(f"⚠️ Could not parse {link_type} link: {parse_error}")
+
+    except Exception as e:
+        logger.error(f"❌ Error parsing link to chat message: {e}")
 
 
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
