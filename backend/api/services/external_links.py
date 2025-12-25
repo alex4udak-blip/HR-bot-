@@ -12,6 +12,7 @@ import os
 import re
 import logging
 import tempfile
+import asyncio
 import aiohttp
 from datetime import datetime
 from typing import Optional, Tuple
@@ -293,54 +294,66 @@ class ExternalLinkProcessor:
 
             # Fallback to HTTP if Playwright didn't work
             if not transcript_text:
-                session = await self._get_session()
-                async with session.get(url, headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }) as response:
-                    if response.status != 200:
-                        call.status = CallStatus.failed
-                        call.error_message = f"Failed to access Fireflies link: HTTP {response.status}"
-                        return call
+                try:
+                    session = await self._get_session()
+                    async with session.get(url, headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.5',
+                    }, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                        if response.status != 200:
+                            call.status = CallStatus.failed
+                            call.error_message = f"Failed to access Fireflies link: HTTP {response.status}"
+                            return call
 
-                    html = await response.text()
+                        html = await response.text()
 
-                # Try __NEXT_DATA__ extraction
-                import json
-                next_data_match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
+                    # Try __NEXT_DATA__ extraction (Next.js SSR data)
+                    import json
+                    next_data_match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
 
-                if next_data_match:
-                    try:
-                        next_data = json.loads(next_data_match.group(1))
-                        page_props = next_data.get('props', {}).get('pageProps', {})
-                        transcript_data = page_props.get('transcript', {})
+                    if next_data_match:
+                        try:
+                            next_data = json.loads(next_data_match.group(1))
+                            page_props = next_data.get('props', {}).get('pageProps', {})
+                            transcript_data = page_props.get('transcript', {})
 
-                        if transcript_data:
-                            title = title or transcript_data.get('title')
-                            sentences = transcript_data.get('sentences', [])
+                            if transcript_data:
+                                title = title or transcript_data.get('title')
+                                sentences = transcript_data.get('sentences', [])
 
-                            if sentences:
-                                lines = []
-                                for s in sentences:
-                                    speaker = s.get('speaker_name', 'Speaker')
-                                    text = s.get('text', s.get('raw_text', ''))
-                                    if text:
-                                        lines.append(f"{speaker}: {text}")
-                                transcript_text = "\n".join(lines)
+                                if sentences:
+                                    lines = []
+                                    for s in sentences:
+                                        speaker = s.get('speaker_name', 'Speaker')
+                                        text = s.get('text', s.get('raw_text', ''))
+                                        if text:
+                                            lines.append(f"{speaker}: {text}")
+                                    transcript_text = "\n".join(lines)
 
-                                # Extract speakers
-                                speakers = []
-                                for s in sentences:
-                                    speakers.append({
-                                        "speaker": s.get("speaker_name", "Speaker"),
-                                        "start": s.get("start_time", 0),
-                                        "end": s.get("end_time", 0),
-                                        "text": s.get("text", s.get("raw_text", ""))
-                                    })
-                                call.speakers = speakers
-                                call.duration_seconds = transcript_data.get('duration')
+                                    # Extract speakers
+                                    speakers = []
+                                    for s in sentences:
+                                        speakers.append({
+                                            "speaker": s.get("speaker_name", "Speaker"),
+                                            "start": s.get("start_time", 0),
+                                            "end": s.get("end_time", 0),
+                                            "text": s.get("text", s.get("raw_text", ""))
+                                        })
+                                    call.speakers = speakers
+                                    call.duration_seconds = transcript_data.get('duration')
 
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Failed to parse __NEXT_DATA__: {e}")
+                                    logger.info(f"HTTP fallback extracted {len(transcript_text)} chars from Fireflies via __NEXT_DATA__")
+
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"Failed to parse __NEXT_DATA__: {e}")
+                    else:
+                        logger.warning("No __NEXT_DATA__ found in Fireflies page - transcript may require JavaScript rendering")
+
+                except aiohttp.ClientError as e:
+                    logger.error(f"HTTP request to Fireflies failed: {e}")
+                except asyncio.TimeoutError:
+                    logger.error("HTTP request to Fireflies timed out")
 
             if not transcript_text or len(transcript_text) < 100:
                 call.status = CallStatus.failed
