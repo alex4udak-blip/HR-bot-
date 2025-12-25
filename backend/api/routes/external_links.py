@@ -46,6 +46,8 @@ class LinkTypeResponse(BaseModel):
     url: str
     link_type: str
     description: str
+    can_process: bool = True
+    message: Optional[str] = None
 
 
 @router.post("/process-url", response_model=ProcessURLResponse)
