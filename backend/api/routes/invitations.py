@@ -282,93 +282,97 @@ async def accept_invitation(
     db: AsyncSession = Depends(get_db)
 ):
     """Accept an invitation and create user account (public endpoint)."""
-    # Get invitation
-    result = await db.execute(
-        select(Invitation)
-        .options(selectinload(Invitation.organization))
-        .where(Invitation.token == token)
-    )
-    invitation = result.scalar_one_or_none()
-
-    if not invitation:
-        raise HTTPException(status_code=404, detail="Invitation not found")
-
-    # Check if already used
-    if invitation.used_at:
-        raise HTTPException(status_code=400, detail="Invitation already used")
-
-    # Check if expired
-    if invitation.expires_at and datetime.utcnow() > invitation.expires_at:
-        raise HTTPException(status_code=400, detail="Invitation expired")
-
-    # Check if email already exists
-    result = await db.execute(select(User).where(User.email == data.email))
-    existing_user = result.scalar_one_or_none()
-
-    if existing_user:
-        # Check if already a member of this org
+    # Wrap in explicit transaction with optimistic locking to prevent race conditions
+    async with db.begin_nested():
+        # Get invitation with row lock to prevent concurrent accepts
         result = await db.execute(
-            select(OrgMember).where(
-                OrgMember.org_id == invitation.org_id,
-                OrgMember.user_id == existing_user.id
-            )
+            select(Invitation)
+            .options(selectinload(Invitation.organization))
+            .where(Invitation.token == token)
+            .with_for_update()  # Lock the row to prevent concurrent access
         )
-        if result.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="You are already a member of this organization")
+        invitation = result.scalar_one_or_none()
 
-        # Add existing user to org
-        new_user = existing_user
-    else:
-        # Create new user (regular user, not system admin)
-        # User's actual permissions come from OrgMember.role and DepartmentMember.role
-        new_user = User(
-            email=data.email,
-            password_hash=hash_password(data.password),
-            name=data.name
-            # Note: role defaults to ADMIN in model, but actual access is via OrgMember/DeptMember
-        )
-        db.add(new_user)
-        await db.flush()
+        if not invitation:
+            raise HTTPException(status_code=404, detail="Invitation not found")
 
-    # Create organization membership
-    membership = OrgMember(
-        org_id=invitation.org_id,
-        user_id=new_user.id,
-        role=invitation.org_role,
-        invited_by=invitation.invited_by_id
-    )
-    db.add(membership)
+        # Check if already used
+        if invitation.used_at:
+            raise HTTPException(status_code=400, detail="Invitation already used")
 
-    # Add to departments if specified
-    if invitation.department_ids:
-        for dept_info in invitation.department_ids:
-            dept_id = dept_info.get("id")
-            dept_role_str = dept_info.get("role", "member")
+        # Check if expired
+        if invitation.expires_at and datetime.utcnow() > invitation.expires_at:
+            raise HTTPException(status_code=400, detail="Invitation expired")
 
-            try:
-                dept_role = DeptRole(dept_role_str)
-            except ValueError:
-                dept_role = DeptRole.member
+        # Check if email already exists
+        result = await db.execute(select(User).where(User.email == data.email))
+        existing_user = result.scalar_one_or_none()
 
-            # Verify department belongs to org
+        if existing_user:
+            # Check if already a member of this org
             result = await db.execute(
-                select(Department).where(
-                    Department.id == dept_id,
-                    Department.org_id == invitation.org_id
+                select(OrgMember).where(
+                    OrgMember.org_id == invitation.org_id,
+                    OrgMember.user_id == existing_user.id
                 )
             )
-            dept = result.scalar_one_or_none()
-            if dept:
-                dept_membership = DepartmentMember(
-                    department_id=dept_id,
-                    user_id=new_user.id,
-                    role=dept_role
-                )
-                db.add(dept_membership)
+            if result.scalar_one_or_none():
+                raise HTTPException(status_code=400, detail="You are already a member of this organization")
 
-    # Mark invitation as used
-    invitation.used_at = datetime.utcnow()
-    invitation.used_by_id = new_user.id
+            # Add existing user to org
+            new_user = existing_user
+        else:
+            # Create new user (regular user, not system admin)
+            # User's actual permissions come from OrgMember.role and DepartmentMember.role
+            new_user = User(
+                email=data.email,
+                password_hash=hash_password(data.password),
+                name=data.name
+                # Note: role defaults to ADMIN in model, but actual access is via OrgMember/DeptMember
+            )
+            db.add(new_user)
+            await db.flush()
+
+        # Create organization membership
+        membership = OrgMember(
+            org_id=invitation.org_id,
+            user_id=new_user.id,
+            role=invitation.org_role,
+            invited_by=invitation.invited_by_id
+        )
+        db.add(membership)
+
+        # Add to departments if specified
+        if invitation.department_ids:
+            for dept_info in invitation.department_ids:
+                dept_id = dept_info.get("id")
+                dept_role_str = dept_info.get("role", "member")
+
+                try:
+                    dept_role = DeptRole(dept_role_str)
+                except ValueError:
+                    dept_role = DeptRole.member
+
+                # Verify department belongs to org
+                result = await db.execute(
+                    select(Department).where(
+                        Department.id == dept_id,
+                        Department.org_id == invitation.org_id
+                    )
+                )
+                dept = result.scalar_one_or_none()
+                if dept:
+                    dept_membership = DepartmentMember(
+                        department_id=dept_id,
+                        user_id=new_user.id,
+                        role=dept_role
+                    )
+                    db.add(dept_membership)
+
+        # Mark invitation as used
+        invitation.used_at = datetime.utcnow()
+        invitation.used_by_id = new_user.id
+        await db.flush()
 
     await db.commit()
 

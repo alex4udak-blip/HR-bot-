@@ -538,6 +538,8 @@ async def get_department_children(
     current_user: User = Depends(get_current_user)
 ):
     """Get child departments of a department"""
+    from sqlalchemy import func
+
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org:
@@ -560,27 +562,40 @@ async def get_department_children(
     )
     children = result.scalars().all()
 
+    if not children:
+        return []
+
+    # Get all department IDs for batch queries
+    dept_ids = [d.id for d in children]
+
+    # Batch query: Get member counts for all departments
+    members_counts_result = await db.execute(
+        select(DepartmentMember.department_id, func.count(DepartmentMember.id))
+        .where(DepartmentMember.department_id.in_(dept_ids))
+        .group_by(DepartmentMember.department_id)
+    )
+    members_counts = {row[0]: row[1] for row in members_counts_result.fetchall()}
+
+    # Batch query: Get entity counts for all departments
+    from ..models.database import Entity
+    entities_counts_result = await db.execute(
+        select(Entity.department_id, func.count(Entity.id))
+        .where(Entity.department_id.in_(dept_ids))
+        .group_by(Entity.department_id)
+    )
+    entities_counts = {row[0]: row[1] for row in entities_counts_result.fetchall()}
+
+    # Batch query: Get children counts for all departments
+    children_counts_result = await db.execute(
+        select(Department.parent_id, func.count(Department.id))
+        .where(Department.parent_id.in_(dept_ids))
+        .group_by(Department.parent_id)
+    )
+    children_counts = {row[0]: row[1] for row in children_counts_result.fetchall()}
+
+    # Build response using the pre-fetched data
     response = []
     for dept in children:
-        # Count members
-        members_result = await db.execute(
-            select(DepartmentMember).where(DepartmentMember.department_id == dept.id)
-        )
-        members_count = len(list(members_result.scalars().all()))
-
-        # Count entities
-        from ..models.database import Entity
-        entities_result = await db.execute(
-            select(Entity).where(Entity.department_id == dept.id)
-        )
-        entities_count = len(list(entities_result.scalars().all()))
-
-        # Count children
-        children_result = await db.execute(
-            select(Department).where(Department.parent_id == dept.id)
-        )
-        children_count = len(list(children_result.scalars().all()))
-
         response.append(DepartmentResponse(
             id=dept.id,
             name=dept.name,
@@ -589,9 +604,9 @@ async def get_department_children(
             is_active=dept.is_active,
             parent_id=dept.parent_id,
             parent_name=parent_dept.name,
-            members_count=members_count,
-            entities_count=entities_count,
-            children_count=children_count,
+            members_count=members_counts.get(dept.id, 0),
+            entities_count=entities_counts.get(dept.id, 0),
+            children_count=children_counts.get(dept.id, 0),
             created_at=dept.created_at
         ))
 
@@ -882,29 +897,33 @@ async def remove_department_member(
     if not is_owner and not is_lead:
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    result = await db.execute(
-        select(DepartmentMember).where(
-            DepartmentMember.department_id == department_id,
-            DepartmentMember.user_id == user_id
-        )
-    )
-    member = result.scalar_one_or_none()
-    if not member:
-        raise HTTPException(status_code=404, detail="Member not found")
-
-    # Don't allow removing the last lead
-    if member.role == DeptRole.lead:
-        leads_result = await db.execute(
+    # Wrap in explicit transaction to prevent race conditions when checking last lead
+    async with db.begin_nested():
+        result = await db.execute(
             select(DepartmentMember).where(
                 DepartmentMember.department_id == department_id,
-                DepartmentMember.role == DeptRole.lead
+                DepartmentMember.user_id == user_id
             )
         )
-        leads_count = len(list(leads_result.scalars().all()))
-        if leads_count <= 1:
-            raise HTTPException(status_code=400, detail="Cannot remove the last department lead")
+        member = result.scalar_one_or_none()
+        if not member:
+            raise HTTPException(status_code=404, detail="Member not found")
 
-    await db.delete(member)
+        # Don't allow removing the last lead
+        if member.role == DeptRole.lead:
+            leads_result = await db.execute(
+                select(DepartmentMember).where(
+                    DepartmentMember.department_id == department_id,
+                    DepartmentMember.role == DeptRole.lead
+                )
+            )
+            leads_count = len(list(leads_result.scalars().all()))
+            if leads_count <= 1:
+                raise HTTPException(status_code=400, detail="Cannot remove the last department lead")
+
+        await db.delete(member)
+        await db.flush()
+
     await db.commit()
 
     return {"success": True}
@@ -935,25 +954,41 @@ async def get_my_departments(
         for p in parents_result.scalars().all():
             parent_names[p.id] = p.name
 
+    if not departments:
+        return []
+
+    # Get all department IDs for batch queries
+    dept_ids = [d.id for d in departments]
+
+    # Batch query: Get member counts for all departments
+    from sqlalchemy import func
+    members_counts_result = await db.execute(
+        select(DepartmentMember.department_id, func.count(DepartmentMember.id))
+        .where(DepartmentMember.department_id.in_(dept_ids))
+        .group_by(DepartmentMember.department_id)
+    )
+    members_counts = {row[0]: row[1] for row in members_counts_result.fetchall()}
+
+    # Batch query: Get entity counts for all departments
+    from ..models.database import Entity
+    entities_counts_result = await db.execute(
+        select(Entity.department_id, func.count(Entity.id))
+        .where(Entity.department_id.in_(dept_ids))
+        .group_by(Entity.department_id)
+    )
+    entities_counts = {row[0]: row[1] for row in entities_counts_result.fetchall()}
+
+    # Batch query: Get children counts for all departments
+    children_counts_result = await db.execute(
+        select(Department.parent_id, func.count(Department.id))
+        .where(Department.parent_id.in_(dept_ids))
+        .group_by(Department.parent_id)
+    )
+    children_counts = {row[0]: row[1] for row in children_counts_result.fetchall()}
+
+    # Build response using the pre-fetched data
     response = []
     for dept in departments:
-        members_result = await db.execute(
-            select(DepartmentMember).where(DepartmentMember.department_id == dept.id)
-        )
-        members_count = len(list(members_result.scalars().all()))
-
-        from ..models.database import Entity
-        entities_result = await db.execute(
-            select(Entity).where(Entity.department_id == dept.id)
-        )
-        entities_count = len(list(entities_result.scalars().all()))
-
-        # Count children
-        children_result = await db.execute(
-            select(Department).where(Department.parent_id == dept.id)
-        )
-        children_count = len(list(children_result.scalars().all()))
-
         response.append(DepartmentResponse(
             id=dept.id,
             name=dept.name,
@@ -962,9 +997,9 @@ async def get_my_departments(
             is_active=dept.is_active,
             parent_id=dept.parent_id,
             parent_name=parent_names.get(dept.parent_id) if dept.parent_id else None,
-            members_count=members_count,
-            entities_count=entities_count,
-            children_count=children_count,
+            members_count=members_counts.get(dept.id, 0),
+            entities_count=entities_counts.get(dept.id, 0),
+            children_count=children_counts.get(dept.id, 0),
             created_at=dept.created_at
         ))
 
