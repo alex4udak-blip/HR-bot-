@@ -68,7 +68,7 @@ async def process_external_url(
     The processing happens in the background. Use the returned `id` to check status.
     """
     # Get user's organization
-    org = await get_user_org(db, current_user)
+    org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(status_code=400, detail="User not associated with any organization")
 
@@ -165,7 +165,7 @@ async def get_processing_status(
     # Check access
     if call.owner_id != current_user.id and current_user.role.value != "superadmin":
         # Check org membership
-        org = await get_user_org(db, current_user)
+        org = await get_user_org(current_user, db)
         if not org or call.org_id != org.id:
             raise HTTPException(status_code=403, detail="Access denied")
 

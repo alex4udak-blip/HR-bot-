@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, ChatMemberUpdatedFilter, IS_NOT_MEMBER, IS_MEMBER
@@ -11,6 +12,7 @@ from .config import settings
 from .models.database import Base, User, Chat, Message, ChatType, OrgMember
 from .services.transcription import transcription_service
 from .services.documents import document_parser
+from .services.external_links import external_link_processor, LinkType
 
 # Bot logging
 logger = logging.getLogger("hr-analyzer.bot")
@@ -174,6 +176,54 @@ async def on_bot_removed(event: ChatMemberUpdated):
                 logger.info(f"✅ Chat '{event.chat.title}' marked as inactive")
     except Exception as e:
         logger.error(f"❌ Error handling bot removal: {type(e).__name__}: {e}")
+
+
+# URL pattern for extracting links from messages
+URL_PATTERN = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+')
+
+
+async def process_external_links_in_message(text: str, org_id: int, owner_id: int | None, chat_id: int):
+    """
+    Automatically detect and process external links in message text.
+    Processes Fireflies, Google Docs, Sheets, Forms links in background.
+    """
+    try:
+        # Extract all URLs from message
+        urls = URL_PATTERN.findall(text)
+        if not urls:
+            return
+
+        for url in urls:
+            # Detect link type
+            link_type = external_link_processor.detect_link_type(url)
+
+            # Only process known external link types (not unknown or direct media)
+            processable_types = {
+                LinkType.FIREFLIES,
+                LinkType.GOOGLE_DOC,
+                LinkType.GOOGLE_SHEET,
+                LinkType.GOOGLE_FORM,
+            }
+
+            if link_type in processable_types:
+                logger.info(f"🔗 Auto-processing {link_type} link from chat {chat_id}: {url[:50]}...")
+
+                try:
+                    # Process the link in background (don't block message handling)
+                    asyncio.create_task(
+                        external_link_processor.process_url(
+                            url=url,
+                            organization_id=org_id,
+                            owner_id=owner_id or 0,
+                            title=f"Auto-imported from chat"
+                        )
+                    )
+                    logger.info(f"✅ Started processing {link_type} link")
+                except Exception as e:
+                    logger.error(f"❌ Failed to process {link_type} link: {e}")
+
+    except Exception as e:
+        logger.error(f"❌ Error processing external links: {e}")
 
 
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
@@ -390,6 +440,11 @@ async def collect_group_message(message: types.Message):
             )
             session.add(db_message)
             await session.commit()
+
+            # Auto-detect and process external links (Fireflies, Google Docs/Sheets/Forms)
+            if content_type == "text" and content and org_id:
+                await process_external_links_in_message(content, org_id, owner_id, chat.id)
+
     except Exception as e:
         logger.error(f"❌ Error collecting message: {type(e).__name__}: {e}")
 
