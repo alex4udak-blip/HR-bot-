@@ -1,9 +1,21 @@
+"""
+AI Service for chat analysis with Claude API.
+
+Optimizations:
+- Prompt Caching: 90% savings on repeated system prompts
+- Hash-based caching: Avoid re-analyzing unchanged chats
+- Smart truncate: Reduce token usage while preserving context
+"""
+
+import logging
 from typing import List, Optional, AsyncGenerator, Dict
 from anthropic import AsyncAnthropic
 from ..config import get_settings
 from ..models.database import Message
 from .chat_types import get_system_prompt_for_type, get_chat_type_config
+from .cache import cache_service, smart_truncate, format_messages_optimized
 
+logger = logging.getLogger("hr-analyzer.ai")
 settings = get_settings()
 
 
@@ -343,27 +355,13 @@ class AIService:
             self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
         return self._client
 
-    def _format_messages(self, messages: List[Message]) -> str:
-        lines = []
-        for msg in messages:
-            name = f"{msg.first_name or ''} {msg.last_name or ''}".strip() or "Unknown"
-            if msg.username:
-                name = f"{name} (@{msg.username})"
+    def _format_messages(self, messages: List[Message], max_per_message: int = 500) -> str:
+        """
+        Format messages with smart truncation to optimize token usage.
 
-            type_prefix = ""
-            if msg.content_type == "voice":
-                type_prefix = "[🎤 голосовое] "
-            elif msg.content_type == "video_note":
-                type_prefix = "[📹 видео] "
-            elif msg.content_type == "document":
-                type_prefix = f"[📄 {msg.file_name or 'документ'}] "
-            elif msg.content_type == "photo":
-                type_prefix = "[🖼 фото] "
-
-            ts = msg.timestamp.strftime("%d.%m %H:%M")
-            lines.append(f"[{ts}] {name}: {type_prefix}{msg.content}")
-
-        return "\n".join(lines)
+        Uses smart_truncate to preserve beginning and end of long messages.
+        """
+        return format_messages_optimized(messages, max_per_message)
 
     def _format_criteria(self, criteria: List[dict]) -> str:
         if not criteria:
@@ -420,16 +418,33 @@ class AIService:
         chat_type: str = "hr",
         custom_description: str = None,
     ) -> AsyncGenerator[str, None]:
-        """Stream response from Claude."""
-        system = self._build_system_prompt(
+        """
+        Stream response from Claude with Prompt Caching.
+
+        Prompt Caching provides 90% cost reduction on cached system prompts.
+        The system prompt (context + rules) is cached for 5 minutes.
+        """
+        system_text = self._build_system_prompt(
             chat_title, messages, criteria, chat_type, custom_description
         )
+
+        # Use Prompt Caching for system prompt (90% savings!)
+        # cache_control with "ephemeral" type caches for 5 minutes
+        system = [
+            {
+                "type": "text",
+                "text": system_text,
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
 
         # Build messages for API
         api_messages = []
         for msg in conversation_history:
             api_messages.append({"role": msg["role"], "content": msg["content"]})
         api_messages.append({"role": "user", "content": user_message})
+
+        logger.debug(f"Chat stream: {len(messages)} messages, {len(conversation_history)} history")
 
         async with self.client.messages.stream(
             model=self.model,
@@ -479,8 +494,30 @@ class AIService:
         include_quotes: bool = True,
         chat_type: str = "hr",
         custom_description: str = None,
+        chat_id: int = None,
+        use_cache: bool = True,
     ) -> str:
-        """Generate a full report (non-streaming)."""
+        """
+        Generate a full report with caching support.
+
+        Caching:
+        - Computes hash of messages + criteria
+        - Returns cached result if hash matches
+        - Invalidates cache when content changes
+        """
+        # Check cache first (if enabled and chat_id provided)
+        content_hash = None
+        cache_key = None
+
+        if use_cache and chat_id:
+            content_hash = cache_service.compute_messages_hash(messages, criteria)
+            cache_key = f"chat:{chat_id}:report:{report_type}"
+
+            cached = cache_service.get_cached_analysis(cache_key, content_hash)
+            if cached:
+                logger.info(f"Using cached report for chat {chat_id}")
+                return cached
+
         style_prompts = {
             "quick": "Краткий отчёт на 1 страницу. Только ключевые выводы, без деталей.",
             "standard": "Стандартный отчёт на 2-3 страницы. Основные выводы с примерами.",
@@ -547,9 +584,18 @@ class AIService:
 
 Используй markdown для форматирования."""
 
-        system = self._build_system_prompt(
+        system_text = self._build_system_prompt(
             chat_title, messages, criteria, chat_type, custom_description
         )
+
+        # Use Prompt Caching for system prompt
+        system = [
+            {
+                "type": "text",
+                "text": system_text,
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
 
         response = await self.client.messages.create(
             model=self.model,
@@ -558,7 +604,19 @@ class AIService:
             messages=[{"role": "user", "content": prompt}],
         )
 
-        return response.content[0].text
+        result = response.content[0].text
+
+        # Cache the result for future use
+        if cache_key and content_hash:
+            cache_service.set_cached_analysis(
+                cache_key,
+                content_hash,
+                result,
+                ttl_seconds=3600  # 1 hour cache
+            )
+            logger.info(f"Cached report for chat {chat_id}")
+
+        return result
 
 
 ai_service = AIService()

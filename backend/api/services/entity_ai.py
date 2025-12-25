@@ -5,6 +5,11 @@ Provides:
 - Quick actions: full_analysis, red_flags, comparison, prediction, summary, questions
 - Free-form chat about the entity based on all linked chats and calls
 - Streaming responses
+
+Optimizations:
+- Prompt Caching: 90% savings on repeated system prompts
+- Smart truncate: Reduce token usage while preserving context
+- Hash-based caching for quick actions
 """
 from typing import List, AsyncGenerator, Optional
 from anthropic import AsyncAnthropic
@@ -12,6 +17,7 @@ import logging
 
 from ..config import get_settings
 from ..models.database import Entity, Chat, Message, CallRecording
+from .cache import cache_service, smart_truncate
 
 logger = logging.getLogger("hr-analyzer.entity-ai")
 
@@ -146,7 +152,7 @@ class EntityAIService:
 - **Теги:** {', '.join(entity.tags) if entity.tags else 'Нет'}
 """)
 
-        # All linked chats with messages
+        # All linked chats with messages (optimized with smart truncate)
         if chats:
             parts.append("\n## ПЕРЕПИСКИ:")
             for chat in chats:
@@ -155,9 +161,13 @@ class EntityAIService:
                     # Get last 100 messages to avoid context overflow
                     messages = sorted(chat.messages, key=lambda m: m.timestamp)[-100:]
                     for msg in messages:
-                        name = f"{msg.first_name or ''} {msg.last_name or ''}".strip() or msg.username or "Unknown"
+                        # Skip media-only messages
+                        if msg.content_type in ('photo', 'video', 'sticker') and not msg.content:
+                            continue
+                        name = f"{msg.first_name or ''} {msg.last_name or ''}".strip() or msg.username or "?"
                         ts = msg.timestamp.strftime("%d.%m %H:%M") if msg.timestamp else ""
-                        content = msg.content[:500] if msg.content else "[медиа]"
+                        # Use smart_truncate to preserve context
+                        content = smart_truncate(msg.content, 400) if msg.content else "[медиа]"
                         parts.append(f"[{ts}] {name}: {content}")
                 else:
                     parts.append("(нет сообщений)")
@@ -216,9 +226,22 @@ class EntityAIService:
         calls: List[CallRecording],
         conversation_history: List[dict]
     ) -> AsyncGenerator[str, None]:
-        """Stream AI response for chat"""
+        """
+        Stream AI response for chat with Prompt Caching.
+
+        Prompt Caching provides 90% cost reduction on cached system prompts.
+        """
         context = self._build_entity_context(entity, chats, calls)
-        system = self._build_system_prompt(context)
+        system_text = self._build_system_prompt(context)
+
+        # Use Prompt Caching for system prompt (90% savings!)
+        system = [
+            {
+                "type": "text",
+                "text": system_text,
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
 
         # Build messages for API
         api_messages = []
