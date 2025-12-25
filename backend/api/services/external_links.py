@@ -163,7 +163,7 @@ class ExternalLinkProcessor:
             )
 
             if link_type == LinkType.FIREFLIES:
-                call.source_type = CallSource.telegram  # Use telegram as placeholder until we add fireflies enum
+                call.source_type = CallSource.fireflies
                 call = await self._process_fireflies(call, url)
 
             elif link_type == LinkType.GOOGLE_DOC:
@@ -201,7 +201,7 @@ class ExternalLinkProcessor:
     async def _process_fireflies(self, call: CallRecording, url: str) -> CallRecording:
         """
         Process Fireflies.ai shared/public transcript URL.
-        Scrapes the public transcript page and runs AI analysis.
+        Uses Playwright to render the page and extract transcript.
 
         NOTE: This handles PUBLIC shared Fireflies links, not the internal API.
         """
@@ -215,130 +215,149 @@ class ExternalLinkProcessor:
             call.status = CallStatus.transcribing
             call.fireflies_transcript_id = transcript_id
 
-            # Fetch the public Fireflies page
-            logger.info(f"Fetching public Fireflies transcript: {url}")
-
-            session = await self._get_session()
-
-            # Fireflies uses a share URL that we can scrape
-            async with session.get(url, headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }) as response:
-                if response.status != 200:
-                    call.status = CallStatus.failed
-                    call.error_message = f"Failed to access Fireflies link: HTTP {response.status}. Make sure the link is public/shared."
-                    return call
-
-                html = await response.text()
-
-            # Try to extract transcript from the HTML
-            # Fireflies embeds JSON data in the page for Next.js
-            import json
+            logger.info(f"Fetching Fireflies transcript with Playwright: {url}")
 
             transcript_text = None
             title = None
 
-            # Look for __NEXT_DATA__ script tag which contains the transcript data
-            next_data_match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
-            logger.info(f"__NEXT_DATA__ found: {next_data_match is not None}")
+            # Try Playwright first (handles JavaScript-rendered content)
+            try:
+                from playwright.async_api import async_playwright
 
-            if next_data_match:
-                try:
-                    next_data = json.loads(next_data_match.group(1))
-                    # Navigate to transcript data
-                    page_props = next_data.get('props', {}).get('pageProps', {})
-                    logger.info(f"pageProps keys: {list(page_props.keys())}")
+                async with async_playwright() as p:
+                    browser = await p.chromium.launch(headless=True)
+                    page = await browser.new_page()
 
-                    transcript_data = page_props.get('transcript', {})
-                    logger.info(f"transcript_data keys: {list(transcript_data.keys()) if transcript_data else 'None'}")
+                    # Navigate to the page
+                    await page.goto(url, wait_until='networkidle', timeout=60000)
 
-                    if transcript_data:
-                        title = transcript_data.get('title')
-                        sentences = transcript_data.get('sentences', [])
-                        logger.info(f"sentences count: {len(sentences)}")
+                    # Wait for transcript content to load
+                    # Fireflies shows transcript in elements with specific classes
+                    try:
+                        await page.wait_for_selector('[class*="transcript"]', timeout=30000)
+                    except Exception:
+                        # Try waiting for any text content
+                        await page.wait_for_timeout(5000)
 
-                        if sentences:
-                            # Build transcript text
-                            lines = []
-                            for s in sentences:
-                                speaker = s.get('speaker_name', 'Speaker')
-                                text = s.get('text', s.get('raw_text', ''))
-                                if text:
-                                    lines.append(f"{speaker}: {text}")
-                            transcript_text = "\n".join(lines)
+                    # Try to get title
+                    try:
+                        title_el = await page.query_selector('h1, [class*="title"]')
+                        if title_el:
+                            title = await title_el.text_content()
+                    except Exception:
+                        pass
 
-                            # Build speaker segments
-                            speakers = []
-                            for s in sentences:
-                                speakers.append({
-                                    "speaker": s.get("speaker_name", "Speaker"),
-                                    "start": s.get("start_time", 0),
-                                    "end": s.get("end_time", 0),
-                                    "text": s.get("text", s.get("raw_text", ""))
-                                })
-                            call.speakers = speakers
+                    # Extract transcript - try multiple selectors
+                    transcript_parts = []
 
-                            # Get duration
-                            call.duration_seconds = transcript_data.get('duration')
+                    # Try to find transcript container
+                    selectors = [
+                        '[class*="transcript"] [class*="sentence"]',
+                        '[class*="transcript"] [class*="text"]',
+                        '[class*="SentenceText"]',
+                        '[class*="transcript-line"]',
+                        '[data-testid*="transcript"]',
+                    ]
 
-                            # Get summary if available
-                            summary = transcript_data.get('summary', {})
-                            if summary:
-                                call.summary = summary.get('overview') or summary.get('short_summary')
-                                call.action_items = summary.get('action_items', [])
-                                call.key_points = summary.get('keywords', [])
+                    for selector in selectors:
+                        elements = await page.query_selector_all(selector)
+                        if elements:
+                            for el in elements:
+                                text = await el.text_content()
+                                if text and text.strip():
+                                    transcript_parts.append(text.strip())
+                            if transcript_parts:
+                                break
 
-                except json.JSONDecodeError as e:
-                    logger.warning(f"Failed to parse __NEXT_DATA__: {e}")
+                    # If no transcript found with specific selectors, try to get all visible text
+                    if not transcript_parts:
+                        # Get main content area
+                        main_content = await page.query_selector('main, [class*="content"], [class*="transcript"]')
+                        if main_content:
+                            text = await main_content.text_content()
+                            if text:
+                                # Clean up the text
+                                lines = [line.strip() for line in text.split('\n') if line.strip() and len(line.strip()) > 10]
+                                transcript_parts = lines
 
-            # Fallback: try to extract text from readable elements
+                    await browser.close()
+
+                    if transcript_parts:
+                        transcript_text = "\n".join(transcript_parts)
+                        logger.info(f"Playwright extracted {len(transcript_text)} chars from Fireflies")
+
+            except ImportError:
+                logger.warning("Playwright not installed, falling back to HTTP scraping")
+            except Exception as e:
+                logger.warning(f"Playwright failed: {e}, falling back to HTTP scraping")
+
+            # Fallback to HTTP if Playwright didn't work
             if not transcript_text:
-                # Simple extraction of visible text
-                from html.parser import HTMLParser
+                session = await self._get_session()
+                async with session.get(url, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }) as response:
+                    if response.status != 200:
+                        call.status = CallStatus.failed
+                        call.error_message = f"Failed to access Fireflies link: HTTP {response.status}"
+                        return call
 
-                class TextExtractor(HTMLParser):
-                    def __init__(self):
-                        super().__init__()
-                        self.text_parts = []
-                        self.in_script = False
-                        self.in_style = False
+                    html = await response.text()
 
-                    def handle_starttag(self, tag, attrs):
-                        if tag in ('script', 'style'):
-                            self.in_script = True
+                # Try __NEXT_DATA__ extraction
+                import json
+                next_data_match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
 
-                    def handle_endtag(self, tag):
-                        if tag in ('script', 'style'):
-                            self.in_script = False
+                if next_data_match:
+                    try:
+                        next_data = json.loads(next_data_match.group(1))
+                        page_props = next_data.get('props', {}).get('pageProps', {})
+                        transcript_data = page_props.get('transcript', {})
 
-                    def handle_data(self, data):
-                        if not self.in_script:
-                            text = data.strip()
-                            if text and len(text) > 20:  # Skip short fragments
-                                self.text_parts.append(text)
+                        if transcript_data:
+                            title = title or transcript_data.get('title')
+                            sentences = transcript_data.get('sentences', [])
 
-                extractor = TextExtractor()
-                extractor.feed(html)
+                            if sentences:
+                                lines = []
+                                for s in sentences:
+                                    speaker = s.get('speaker_name', 'Speaker')
+                                    text = s.get('text', s.get('raw_text', ''))
+                                    if text:
+                                        lines.append(f"{speaker}: {text}")
+                                transcript_text = "\n".join(lines)
 
-                if extractor.text_parts:
-                    transcript_text = "\n".join(extractor.text_parts)
+                                # Extract speakers
+                                speakers = []
+                                for s in sentences:
+                                    speakers.append({
+                                        "speaker": s.get("speaker_name", "Speaker"),
+                                        "start": s.get("start_time", 0),
+                                        "end": s.get("end_time", 0),
+                                        "text": s.get("text", s.get("raw_text", ""))
+                                    })
+                                call.speakers = speakers
+                                call.duration_seconds = transcript_data.get('duration')
 
-            if not transcript_text or len(transcript_text) < 50:
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Failed to parse __NEXT_DATA__: {e}")
+
+            if not transcript_text or len(transcript_text) < 100:
                 call.status = CallStatus.failed
-                call.error_message = "Could not extract transcript from Fireflies page. The link might not be public or the format changed."
+                call.error_message = "Could not extract transcript from Fireflies. Make sure the link is public/shared. Install playwright for better results: pip install playwright && playwright install chromium"
                 return call
 
             # Update call with extracted data
-            if title and (not call.title or call.title.startswith("External Recording")):
+            if title and (not call.title or call.title.startswith("External Recording") or call.title.startswith("Auto-imported")):
                 call.title = title
 
             call.transcript = transcript_text
 
-            # Run AI analysis if no summary from Fireflies
-            if not call.summary:
-                call.status = CallStatus.analyzing
-                call_processor._init_clients()
-                analysis = await call_processor._analyze(call.transcript)
+            # Run AI analysis
+            call.status = CallStatus.analyzing
+            call_processor._init_clients()
+            analysis = await call_processor._analyze(call.transcript)
+            if analysis:
                 call.summary = analysis.get("summary")
                 call.action_items = analysis.get("action_items")
                 call.key_points = analysis.get("key_points")
