@@ -221,7 +221,11 @@ def smart_truncate(content: str, max_length: int = 500) -> str:
     return f"{start}\n... [пропущено {skipped} символов] ...\n{end}"
 
 
-def format_messages_optimized(messages: list, max_per_message: int = 500) -> str:
+def format_messages_optimized(
+    messages: list,
+    max_per_message: int = 500,
+    participants: Optional[Dict[int, Dict]] = None
+) -> str:
     """
     Format messages with optimized token usage.
 
@@ -229,6 +233,15 @@ def format_messages_optimized(messages: list, max_per_message: int = 500) -> str
     - Smart truncate long messages
     - Skip media without text content
     - Compact timestamp format
+    - Show participant roles if provided
+
+    Args:
+        messages: List of Message objects
+        max_per_message: Max chars per message content
+        participants: Optional dict from identify_participants() to show roles
+
+    Returns:
+        Formatted messages string
     """
     lines = []
 
@@ -237,8 +250,15 @@ def format_messages_optimized(messages: list, max_per_message: int = 500) -> str
         if msg.content_type in ('photo', 'video', 'sticker') and not msg.content:
             continue
 
-        # Build name
-        name = f"{msg.first_name or ''} {msg.last_name or ''}".strip() or msg.username or "?"
+        # Build name with role icon if participants provided
+        if participants and msg.telegram_user_id in participants:
+            from .participants import get_role_icon
+            participant = participants[msg.telegram_user_id]
+            icon = get_role_icon(participant["role"])
+            name = f"{icon} {participant['name']}"
+        else:
+            # Build name without role
+            name = f"{msg.first_name or ''} {msg.last_name or ''}".strip() or msg.username or "?"
 
         # Compact timestamp (just time if today, date+time otherwise)
         ts = msg.timestamp.strftime("%d.%m %H:%M") if msg.timestamp else ""

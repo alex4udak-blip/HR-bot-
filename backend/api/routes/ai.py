@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 import json
 
@@ -27,8 +28,12 @@ def can_access_chat(user: User, chat: Chat) -> bool:
 
 
 async def get_chat_context(db: AsyncSession, chat_id: int):
-    """Get chat with messages and criteria."""
-    result = await db.execute(select(Chat).where(Chat.id == chat_id))
+    """Get chat with messages and criteria, including owner and entity for participant identification."""
+    result = await db.execute(
+        select(Chat)
+        .options(selectinload(Chat.owner), selectinload(Chat.entity))
+        .where(Chat.id == chat_id)
+    )
     chat = result.scalar_one_or_none()
     if not chat:
         return None, [], []
@@ -93,7 +98,7 @@ async def ai_message(
             try:
                 async for chunk in ai_service.quick_action(
                     request.quick_action, chat.title, messages, criteria,
-                    chat_type, custom_description
+                    chat_type, custom_description, chat
                 ):
                     full_response += chunk
                     yield f"data: {json.dumps({'content': chunk})}\n\n"
@@ -129,7 +134,7 @@ async def ai_message(
         try:
             async for chunk in ai_service.chat_stream(
                 request.message, chat.title, messages, criteria, history,
-                chat_type, custom_description
+                chat_type, custom_description, chat
             ):
                 full_response += chunk
                 yield f"data: {json.dumps({'content': chunk})}\n\n"
@@ -244,7 +249,7 @@ async def analyze_chat(
     chat_type = chat.chat_type.value if chat.chat_type else "hr"
     result = await ai_service.generate_report(
         chat.title, messages, criteria, request.report_type, request.include_quotes,
-        chat_type, chat.custom_type_description
+        chat_type, chat.custom_type_description, chat.id, True, chat
     )
 
     analysis = AnalysisHistory(
@@ -315,7 +320,7 @@ async def generate_report_file(
     # Generate report content
     content = await ai_service.generate_report(
         chat.title, messages, criteria, request.report_type, True,
-        chat_type, chat.custom_type_description
+        chat_type, chat.custom_type_description, chat.id, True, chat
     )
 
     # Save to history

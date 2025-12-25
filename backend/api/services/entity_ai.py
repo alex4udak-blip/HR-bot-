@@ -17,7 +17,8 @@ import logging
 
 from ..config import get_settings
 from ..models.database import Entity, Chat, Message, CallRecording
-from .cache import cache_service, smart_truncate
+from .cache import cache_service, smart_truncate, format_messages_optimized
+from .participants import identify_participants_from_objects, format_participant_list
 
 logger = logging.getLogger("hr-analyzer.entity-ai")
 
@@ -152,7 +153,7 @@ class EntityAIService:
 - **Теги:** {', '.join(entity.tags) if entity.tags else 'Нет'}
 """)
 
-        # All linked chats with messages (optimized with smart truncate)
+        # All linked chats with messages (optimized with smart truncate and participant roles)
         if chats:
             parts.append("\n## ПЕРЕПИСКИ:")
             for chat in chats:
@@ -160,15 +161,18 @@ class EntityAIService:
                 if hasattr(chat, 'messages') and chat.messages:
                     # Get last 100 messages to avoid context overflow
                     messages = sorted(chat.messages, key=lambda m: m.timestamp)[-100:]
-                    for msg in messages:
-                        # Skip media-only messages
-                        if msg.content_type in ('photo', 'video', 'sticker') and not msg.content:
-                            continue
-                        name = f"{msg.first_name or ''} {msg.last_name or ''}".strip() or msg.username or "?"
-                        ts = msg.timestamp.strftime("%d.%m %H:%M") if msg.timestamp else ""
-                        # Use smart_truncate to preserve context
-                        content = smart_truncate(msg.content, 400) if msg.content else "[медиа]"
-                        parts.append(f"[{ts}] {name}: {content}")
+
+                    # Identify participants for this chat
+                    participants = identify_participants_from_objects(chat, messages, use_ai_fallback=False)
+
+                    # Add participant list
+                    if participants:
+                        parts.append(format_participant_list(participants))
+
+                    # Format messages with role icons
+                    formatted_messages = format_messages_optimized(messages, max_per_message=400, participants=participants)
+                    if formatted_messages:
+                        parts.append(formatted_messages)
                 else:
                     parts.append("(нет сообщений)")
 

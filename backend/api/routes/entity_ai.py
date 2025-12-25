@@ -47,10 +47,14 @@ async def get_entity_with_data(db: AsyncSession, entity_id: int):
     if not entity:
         return None, [], []
 
-    # Get chats with messages
+    # Get chats with messages, owner, and entity for participant identification
     result = await db.execute(
         select(Chat)
-        .options(selectinload(Chat.messages))
+        .options(
+            selectinload(Chat.messages),
+            selectinload(Chat.owner),
+            selectinload(Chat.entity)
+        )
         .where(Chat.entity_id == entity_id, Chat.deleted_at.is_(None))
         .order_by(Chat.created_at)
     )

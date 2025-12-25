@@ -11,9 +11,10 @@ import logging
 from typing import List, Optional, AsyncGenerator, Dict
 from anthropic import AsyncAnthropic
 from ..config import get_settings
-from ..models.database import Message
+from ..models.database import Message, Chat
 from .chat_types import get_system_prompt_for_type, get_chat_type_config
 from .cache import cache_service, smart_truncate, format_messages_optimized
+from .participants import identify_participants_from_objects, format_participant_list, get_role_label
 
 logger = logging.getLogger("hr-analyzer.ai")
 settings = get_settings()
@@ -355,13 +356,32 @@ class AIService:
             self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
         return self._client
 
-    def _format_messages(self, messages: List[Message], max_per_message: int = 500) -> str:
+    def _format_messages(
+        self,
+        messages: List[Message],
+        chat: Optional[Chat] = None,
+        max_per_message: int = 500
+    ) -> str:
         """
         Format messages with smart truncation to optimize token usage.
 
         Uses smart_truncate to preserve beginning and end of long messages.
+        Shows participant roles if chat is provided.
+
+        Args:
+            messages: List of messages to format
+            chat: Optional Chat object to identify participant roles
+            max_per_message: Max characters per message content
+
+        Returns:
+            Formatted messages string with role icons if chat provided
         """
-        return format_messages_optimized(messages, max_per_message)
+        # Identify participants if chat provided
+        participants = None
+        if chat:
+            participants = identify_participants_from_objects(chat, messages, use_ai_fallback=False)
+
+        return format_messages_optimized(messages, max_per_message, participants)
 
     def _format_criteria(self, criteria: List[dict]) -> str:
         if not criteria:
@@ -382,16 +402,27 @@ class AIService:
         messages: List[Message],
         criteria: List[dict],
         chat_type: str = "hr",
-        custom_description: str = None
+        custom_description: str = None,
+        chat: Optional[Chat] = None
     ) -> str:
-        transcript = self._format_messages(messages)
+        # Identify participants and format messages with roles
+        participants = None
+        if chat:
+            participants = identify_participants_from_objects(chat, messages, use_ai_fallback=False)
+
+        transcript = self._format_messages(messages, chat)
         criteria_text = self._format_criteria(criteria)
         type_prompt = get_system_prompt_for_type(chat_type, custom_description)
+
+        # Build participants section if we have them
+        participants_section = ""
+        if participants:
+            participants_section = f"\n{format_participant_list(participants)}\n"
 
         return f"""{type_prompt}
 
 У тебя есть доступ к переписке из чата "{chat_title}".
-
+{participants_section}
 {criteria_text}
 
 ПЕРЕПИСКА:
@@ -417,15 +448,17 @@ class AIService:
         conversation_history: List[dict],
         chat_type: str = "hr",
         custom_description: str = None,
+        chat: Optional[Chat] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Stream response from Claude with Prompt Caching.
 
         Prompt Caching provides 90% cost reduction on cached system prompts.
         The system prompt (context + rules) is cached for 5 minutes.
+        Shows participant roles if chat object is provided.
         """
         system_text = self._build_system_prompt(
-            chat_title, messages, criteria, chat_type, custom_description
+            chat_title, messages, criteria, chat_type, custom_description, chat
         )
 
         # Use Prompt Caching for system prompt (90% savings!)
@@ -463,6 +496,7 @@ class AIService:
         criteria: List[dict],
         chat_type: str = "hr",
         custom_description: str = None,
+        chat: Optional[Chat] = None,
     ) -> AsyncGenerator[str, None]:
         """Handle quick action buttons with type-specific prompts."""
         # Get prompts for this chat type, fallback to custom
@@ -481,7 +515,7 @@ class AIService:
             prompt = list(type_prompts.values())[0] if type_prompts else "Проанализируй переписку."
 
         async for text in self.chat_stream(
-            prompt, chat_title, messages, criteria, [], chat_type, custom_description
+            prompt, chat_title, messages, criteria, [], chat_type, custom_description, chat
         ):
             yield text
 
@@ -496,6 +530,7 @@ class AIService:
         custom_description: str = None,
         chat_id: int = None,
         use_cache: bool = True,
+        chat: Optional[Chat] = None,
     ) -> str:
         """
         Generate a full report with caching support.
@@ -504,6 +539,7 @@ class AIService:
         - Computes hash of messages + criteria
         - Returns cached result if hash matches
         - Invalidates cache when content changes
+        Shows participant roles if chat object is provided.
         """
         # Check cache first (if enabled and chat_id provided)
         content_hash = None
@@ -585,7 +621,7 @@ class AIService:
 Используй markdown для форматирования."""
 
         system_text = self._build_system_prompt(
-            chat_title, messages, criteria, chat_type, custom_description
+            chat_title, messages, criteria, chat_type, custom_description, chat
         )
 
         # Use Prompt Caching for system prompt
