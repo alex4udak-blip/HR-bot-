@@ -582,11 +582,23 @@ async def get_deleted_chats(
     result = await db.execute(query)
     chats = result.scalars().all()
 
+    if not chats:
+        return []
+
+    # Get all chat IDs for batch queries
+    chat_ids = [chat.id for chat in chats]
+
+    # Batch query: Get message counts for all deleted chats
+    msg_counts_result = await db.execute(
+        select(Message.chat_id, func.count(Message.id))
+        .where(Message.chat_id.in_(chat_ids))
+        .group_by(Message.chat_id)
+    )
+    msg_counts = {row[0]: row[1] for row in msg_counts_result.fetchall()}
+
+    # Build response using the pre-fetched data
     response = []
     for chat in chats:
-        msg_count = await db.execute(
-            select(func.count(Message.id)).where(Message.chat_id == chat.id)
-        )
         days_left = 30 - (datetime.utcnow() - chat.deleted_at).days if chat.deleted_at else 30
 
         response.append(ChatResponse(
@@ -600,7 +612,7 @@ async def get_deleted_chats(
             owner_id=chat.owner_id,
             owner_name=chat.owner.name if chat.owner else None,
             is_active=chat.is_active,
-            messages_count=msg_count.scalar() or 0,
+            messages_count=msg_counts.get(chat.id, 0),
             participants_count=0,
             last_activity=chat.last_activity,
             created_at=chat.created_at,
