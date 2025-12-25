@@ -9,7 +9,9 @@ import {
   FileText,
   HelpCircle,
   Trash2,
-  Loader2
+  Loader2,
+  Brain,
+  RefreshCw
 } from 'lucide-react';
 import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
@@ -35,17 +37,27 @@ interface EntityAIProps {
   entity: EntityWithRelations;
 }
 
+interface AIMemory {
+  summary: string | null;
+  summary_updated_at: string | null;
+  key_events: Array<{date: string; event: string; details: string}>;
+}
+
 export default function EntityAI({ entity }: EntityAIProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
+  const [memory, setMemory] = useState<AIMemory | null>(null);
+  const [updatingMemory, setUpdatingMemory] = useState(false);
+  const [showMemory, setShowMemory] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Load history on mount
+  // Load history and memory on mount
   useEffect(() => {
     loadHistory();
+    loadMemory();
     return () => {
       // Cleanup on unmount
       if (abortControllerRef.current) {
@@ -53,6 +65,44 @@ export default function EntityAI({ entity }: EntityAIProps) {
       }
     };
   }, [entity.id]);
+
+  const loadMemory = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/entities/${entity.id}/ai/memory`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setMemory(data);
+      }
+    } catch (e) {
+      console.error('Failed to load AI memory:', e);
+    }
+  };
+
+  const updateMemory = async () => {
+    setUpdatingMemory(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/entities/${entity.id}/ai/update-summary`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        toast.success(`Память обновлена! Новых событий: ${data.new_events_count}`);
+        loadMemory();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Не удалось обновить память');
+      }
+    } catch (e) {
+      toast.error('Ошибка при обновлении памяти');
+    } finally {
+      setUpdatingMemory(false);
+    }
+  };
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -234,6 +284,43 @@ export default function EntityAI({ entity }: EntityAIProps) {
             </button>
           );
         })}
+        {/* Memory buttons */}
+        <button
+          onClick={() => setShowMemory(!showMemory)}
+          className={clsx(
+            'flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs transition-colors whitespace-nowrap',
+            memory?.summary
+              ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-400'
+              : 'bg-white/5 hover:bg-white/10 text-white/60'
+          )}
+          title={memory?.summary ? 'Показать память AI' : 'Память AI пуста'}
+        >
+          <Brain size={12} className="flex-shrink-0" />
+          <span className="hidden sm:inline">Память</span>
+          {memory?.key_events && memory.key_events.length > 0 && (
+            <span className="bg-purple-500/30 text-purple-300 text-[10px] px-1 rounded">
+              {memory.key_events.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={updateMemory}
+          disabled={updatingMemory || !hasData}
+          className={clsx(
+            'flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs transition-colors whitespace-nowrap',
+            updatingMemory || !hasData
+              ? 'bg-white/5 text-white/30 cursor-not-allowed'
+              : 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400'
+          )}
+          title="Обновить память AI (резюме + события)"
+        >
+          {updatingMemory ? (
+            <Loader2 size={12} className="flex-shrink-0 animate-spin" />
+          ) : (
+            <RefreshCw size={12} className="flex-shrink-0" />
+          )}
+          <span className="hidden sm:inline">{updatingMemory ? 'Обновление...' : 'Обновить'}</span>
+        </button>
         {messages.length > 0 && (
           <button
             onClick={clearHistory}
@@ -245,6 +332,43 @@ export default function EntityAI({ entity }: EntityAIProps) {
           </button>
         )}
       </div>
+
+      {/* Memory Panel */}
+      {showMemory && memory && (
+        <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-3 mb-4 flex-shrink-0">
+          {memory.summary ? (
+            <>
+              <div className="flex items-center gap-2 mb-2">
+                <Brain size={14} className="text-purple-400" />
+                <span className="text-sm font-medium text-purple-300">Память AI</span>
+                {memory.summary_updated_at && (
+                  <span className="text-xs text-white/40">
+                    обновлено {new Date(memory.summary_updated_at).toLocaleDateString('ru')}
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-white/70 mb-2">{memory.summary}</p>
+              {memory.key_events && memory.key_events.length > 0 && (
+                <div className="border-t border-purple-500/20 pt-2 mt-2">
+                  <div className="text-xs text-purple-300 mb-1">Ключевые события:</div>
+                  <div className="space-y-1">
+                    {memory.key_events.slice(-5).map((event, i) => (
+                      <div key={i} className="text-xs text-white/60 flex gap-2">
+                        <span className="text-white/40">{event.date}</span>
+                        <span>{event.details || event.event}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-white/50">
+              Память пуста. Нажмите "Обновить" для создания резюме на основе чатов и звонков.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Messages - flexible height */}
       <div className="flex-1 min-h-0 overflow-y-auto mb-4 pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
