@@ -1795,7 +1795,19 @@ async def get_sandbox_status(
     }
 
 
-@router.post("/sandbox/switch/{email:path}", response_model=TokenResponse)
+def is_secure_context(request: Request) -> bool:
+    """Check if request is from a secure context (HTTPS)."""
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").lower()
+    if forwarded_proto == "https":
+        return True
+    if forwarded_proto == "http":
+        return False
+    if request.url.scheme == "https":
+        return True
+    return settings.cookie_secure
+
+
+@router.post("/sandbox/switch/{email:path}")
 async def switch_to_sandbox_user_by_email(
     email: str,
     request: Request,
@@ -1805,7 +1817,7 @@ async def switch_to_sandbox_user_by_email(
     """
     Quick switch to a sandbox user account by email.
 
-    Creates an impersonation token for the specified sandbox user.
+    Creates an impersonation token and sets it as httpOnly cookie.
     Only works for sandbox_*@test.local users.
 
     This is a convenience endpoint for quickly testing different roles
@@ -1813,6 +1825,8 @@ async def switch_to_sandbox_user_by_email(
 
     **Only SUPERADMIN can access this endpoint.**
     """
+    from fastapi.responses import JSONResponse
+
     superadmin = await db.merge(superadmin)
 
     # Get target user by email
@@ -1853,17 +1867,30 @@ async def switch_to_sandbox_user_by_email(
     db.add(impersonation_log)
     await db.commit()
 
-    return TokenResponse(
-        access_token=token,
-        user=UserResponse(
-            id=target_user.id,
-            email=target_user.email,
-            name=target_user.name,
-            role=target_user.role.value,
-            telegram_id=target_user.telegram_id,
-            telegram_username=target_user.telegram_username,
-            is_active=target_user.is_active,
-            created_at=target_user.created_at,
-            chats_count=0
-        )
+    # Create response with user data
+    response = JSONResponse(content={
+        "user": {
+            "id": target_user.id,
+            "email": target_user.email,
+            "name": target_user.name,
+            "role": target_user.role.value,
+            "telegram_id": target_user.telegram_id,
+            "telegram_username": target_user.telegram_username,
+            "is_active": target_user.is_active,
+            "created_at": target_user.created_at.isoformat(),
+        },
+        "message": f"Switched to {target_user.email}"
+    })
+
+    # Set httpOnly cookie (like login does)
+    use_secure = is_secure_context(request)
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        secure=use_secure,
+        samesite="lax",
+        max_age=3600  # 1 hour for impersonation
     )
+
+    return response

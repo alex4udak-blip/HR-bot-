@@ -161,8 +161,9 @@ export default function AdminSimulatorPage() {
     setSandboxLoading(true);
     setSandboxError(null);
     try {
-      const response = await api.post('/admin/sandbox/create');
-      setSandboxStatus(response.data);
+      await api.post('/admin/sandbox/create');
+      // Re-fetch status to get proper SandboxStatus format
+      await fetchSandboxStatus();
     } catch (error: any) {
       console.error('Error creating sandbox:', error);
       setSandboxError(error.response?.data?.detail || 'Ошибка создания sandbox');
@@ -192,12 +193,9 @@ export default function AdminSimulatorPage() {
     setSandboxLoading(true);
     setSandboxError(null);
     try {
-      const response = await api.post(`/admin/sandbox/switch/${encodeURIComponent(email)}`);
-      // Save token and reload
-      if (response.data?.access_token) {
-        localStorage.setItem('token', response.data.access_token);
-      }
-      // Перезагружаем страницу для применения новой сессии
+      await api.post(`/admin/sandbox/switch/${encodeURIComponent(email)}`);
+      // Cookie is set by backend via Set-Cookie header
+      // Reload page to apply new session
       window.location.href = '/';
     } catch (error: any) {
       console.error('Error switching user:', error);
