@@ -249,6 +249,28 @@ export default function CallsPage() {
                   </div>
                 )}
 
+                {/* Progress bar for processing states */}
+                {['pending', 'processing', 'transcribing', 'analyzing'].includes(activeRecording.status) && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-white/60">
+                        {activeRecording.progressStage || 'Ожидание...'}
+                      </span>
+                      <span className="text-cyan-400 font-medium">
+                        {activeRecording.progress || 0}%
+                      </span>
+                    </div>
+                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-cyan-500 to-purple-500"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${activeRecording.progress || 0}%` }}
+                        transition={{ duration: 0.3, ease: "easeOut" }}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {activeRecording.error && (
                   <p className="text-sm text-red-400 mt-2">{activeRecording.error}</p>
                 )}

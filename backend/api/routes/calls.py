@@ -565,7 +565,9 @@ async def get_call_status(
     return {
         "status": call.status.value,
         "duration_seconds": call.duration_seconds,
-        "error_message": call.error_message
+        "error_message": call.error_message,
+        "progress": call.progress or 0,
+        "progress_stage": call.progress_stage or ""
     }
 
 
