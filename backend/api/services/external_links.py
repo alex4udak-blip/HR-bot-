@@ -427,12 +427,46 @@ class ExternalLinkProcessor:
                                     # Extract participants info (email, name) if available
                                     participants = transcript_data.get('participants', []) or transcript_data.get('attendees', []) or []
                                     if participants:
-                                        logger.info(f"Fireflies participants: {participants}")
+                                        logger.info(f"Fireflies participants ({len(participants)}): {participants[:3]}...")  # Log first 3
 
                                     # Also check for speakers list with more info
                                     speakers_info = transcript_data.get('speakers', []) or []
                                     if speakers_info:
-                                        logger.info(f"Fireflies speakers info: {speakers_info}")
+                                        logger.info(f"Fireflies speakers info ({len(speakers_info)}): {speakers_info[:3]}...")
+
+                                    # Build speaker ID → name mapping
+                                    speaker_map = {}
+                                    # Try speakers list first (usually has id and name)
+                                    for sp in speakers_info:
+                                        sp_id = sp.get('id') or sp.get('speaker_id') or sp.get('speakerId')
+                                        sp_name = sp.get('name') or sp.get('displayName') or sp.get('speaker_name')
+                                        sp_email = sp.get('email')
+                                        if sp_id:
+                                            # Include email in name if available for matching
+                                            if sp_name and sp_email:
+                                                speaker_map[str(sp_id)] = f"{sp_name} ({sp_email})"
+                                            elif sp_name:
+                                                speaker_map[str(sp_id)] = sp_name
+                                        # Also map by name in case sentence uses name directly
+                                        if sp_name:
+                                            speaker_map[sp_name] = sp_name if not sp_email else f"{sp_name} ({sp_email})"
+
+                                    # Also use participants list
+                                    for i, p in enumerate(participants):
+                                        if isinstance(p, dict):
+                                            p_id = p.get('id') or p.get('participantId') or str(i)
+                                            p_name = p.get('name') or p.get('displayName') or p.get('email', f'Participant {i+1}')
+                                            p_email = p.get('email')
+                                            if p_name and p_email and not p_name.endswith(')'):
+                                                speaker_map[str(p_id)] = f"{p_name} ({p_email})"
+                                            else:
+                                                speaker_map[str(p_id)] = p_name
+                                        elif isinstance(p, str):
+                                            # Simple string participant
+                                            speaker_map[str(i)] = p
+
+                                    if speaker_map:
+                                        logger.info(f"Built speaker mapping: {speaker_map}")
 
                                     # Log first sentence structure to understand fields
                                     if sentences:
@@ -441,43 +475,94 @@ class ExternalLinkProcessor:
 
                                     if sentences:
                                         lines = []
+                                        speakers = []
+
                                         for s in sentences:
-                                            speaker = s.get('speaker_name', 'Speaker')
+                                            # Get speaker name - try multiple approaches
+                                            speaker_name = None
+
+                                            # 1. Try direct name fields
+                                            for name_key in ['speaker_name', 'speakerName', 'name', 'speaker']:
+                                                if s.get(name_key) and s.get(name_key) != 'Speaker':
+                                                    speaker_name = s.get(name_key)
+                                                    break
+
+                                            # 2. Try to map speaker ID to name
+                                            if not speaker_name or speaker_name == 'Speaker':
+                                                for id_key in ['speaker_id', 'speakerId', 'speaker_index', 'speakerIndex']:
+                                                    sp_id = s.get(id_key)
+                                                    if sp_id is not None and str(sp_id) in speaker_map:
+                                                        speaker_name = speaker_map[str(sp_id)]
+                                                        break
+
+                                            # 3. Use index in speakers_info if available
+                                            if not speaker_name or speaker_name == 'Speaker':
+                                                sp_idx = s.get('speaker_index') or s.get('speakerIndex')
+                                                if sp_idx is not None and speakers_info and sp_idx < len(speakers_info):
+                                                    sp_info = speakers_info[sp_idx]
+                                                    speaker_name = sp_info.get('name') or sp_info.get('displayName')
+
+                                            speaker_name = speaker_name or 'Speaker'
+
                                             text = s.get('text', s.get('raw_text', ''))
                                             if text:
-                                                lines.append(f"{speaker}: {text}")
-                                        transcript_text = "\n".join(lines)
+                                                lines.append(f"{speaker_name}: {text}")
 
-                                        # Extract speakers WITH timestamps
-                                        # Try multiple possible field names for timestamps
-                                        speakers = []
-                                        for s in sentences:
-                                            # Try different field names for start time
+                                            # Extract timestamps - try many possible field names
                                             start = 0
-                                            for key in ["start_time", "startTime", "start"]:
-                                                if s.get(key) is not None:
-                                                    start = float(s.get(key))
-                                                    break
-                                            if start == 0 and s.get("start_ms"):
-                                                start = float(s.get("start_ms")) / 1000
+                                            for key in ["start_time", "startTime", "start", "s", "begin", "from", "timestamp"]:
+                                                val = s.get(key)
+                                                if val is not None:
+                                                    try:
+                                                        start = float(val)
+                                                        if start > 0:
+                                                            break
+                                                    except (ValueError, TypeError):
+                                                        pass
+                                            # Also check millisecond variants
+                                            if start == 0:
+                                                for key in ["start_ms", "startMs", "sMs"]:
+                                                    val = s.get(key)
+                                                    if val is not None:
+                                                        try:
+                                                            start = float(val) / 1000
+                                                            if start > 0:
+                                                                break
+                                                        except (ValueError, TypeError):
+                                                            pass
 
-                                            # Try different field names for end time
                                             end = 0
-                                            for key in ["end_time", "endTime", "end"]:
-                                                if s.get(key) is not None:
-                                                    end = float(s.get(key))
-                                                    break
-                                            if end == 0 and s.get("end_ms"):
-                                                end = float(s.get("end_ms")) / 1000
+                                            for key in ["end_time", "endTime", "end", "e", "to", "finish"]:
+                                                val = s.get(key)
+                                                if val is not None:
+                                                    try:
+                                                        end = float(val)
+                                                        if end > 0:
+                                                            break
+                                                    except (ValueError, TypeError):
+                                                        pass
+                                            # Also check millisecond variants
+                                            if end == 0:
+                                                for key in ["end_ms", "endMs", "eMs"]:
+                                                    val = s.get(key)
+                                                    if val is not None:
+                                                        try:
+                                                            end = float(val) / 1000
+                                                            if end > 0:
+                                                                break
+                                                        except (ValueError, TypeError):
+                                                            pass
 
                                             speakers.append({
-                                                "speaker": s.get("speaker_name") or s.get("speakerName") or "Speaker",
+                                                "speaker": speaker_name,
                                                 "start": start,
                                                 "end": end,
-                                                "text": s.get("text") or s.get("raw_text") or ""
+                                                "text": text
                                             })
+
+                                        transcript_text = "\n".join(lines)
                                         call.speakers = speakers
-                                        call.duration_seconds = transcript_data.get('duration') or transcript_data.get('duration_seconds')
+                                        call.duration_seconds = transcript_data.get('duration') or transcript_data.get('duration_seconds') or transcript_data.get('duration_sec')
 
                                         # Log if timestamps were found
                                         has_timestamps = any(sp['start'] > 0 or sp['end'] > 0 for sp in speakers)
@@ -648,7 +733,7 @@ class ExternalLinkProcessor:
                     next_data_match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
 
                     if next_data_match:
-                        logger.info("Found __NEXT_DATA__ in Fireflies page, parsing...")
+                        logger.info("Found __NEXT_DATA__ in Fireflies page (HTTP), parsing...")
                         try:
                             next_data = json.loads(next_data_match.group(1))
                             page_props = next_data.get('props', {}).get('pageProps', {})
@@ -658,28 +743,95 @@ class ExternalLinkProcessor:
                                 title = title or transcript_data.get('title')
                                 sentences = transcript_data.get('sentences', [])
 
+                                # Build speaker mapping (same as Playwright version)
+                                speakers_info = transcript_data.get('speakers', []) or []
+                                participants = transcript_data.get('participants', []) or transcript_data.get('attendees', []) or []
+                                speaker_map = {}
+                                for sp in speakers_info:
+                                    sp_id = sp.get('id') or sp.get('speaker_id') or sp.get('speakerId')
+                                    sp_name = sp.get('name') or sp.get('displayName') or sp.get('speaker_name')
+                                    sp_email = sp.get('email')
+                                    if sp_id:
+                                        speaker_map[str(sp_id)] = f"{sp_name} ({sp_email})" if sp_name and sp_email else (sp_name or f"Speaker {sp_id}")
+                                    if sp_name:
+                                        speaker_map[sp_name] = f"{sp_name} ({sp_email})" if sp_email else sp_name
+                                for i, p in enumerate(participants):
+                                    if isinstance(p, dict):
+                                        p_id = p.get('id') or p.get('participantId') or str(i)
+                                        p_name = p.get('name') or p.get('displayName') or p.get('email', f'Participant {i+1}')
+                                        p_email = p.get('email')
+                                        speaker_map[str(p_id)] = f"{p_name} ({p_email})" if p_email and not p_name.endswith(')') else p_name
+                                    elif isinstance(p, str):
+                                        speaker_map[str(i)] = p
+
                                 if sentences:
                                     lines = []
-                                    for s in sentences:
-                                        speaker = s.get('speaker_name', 'Speaker')
-                                        text = s.get('text', s.get('raw_text', ''))
-                                        if text:
-                                            lines.append(f"{speaker}: {text}")
-                                    transcript_text = "\n".join(lines)
-
-                                    # Extract speakers
                                     speakers = []
                                     for s in sentences:
-                                        speakers.append({
-                                            "speaker": s.get("speaker_name", "Speaker"),
-                                            "start": s.get("start_time", 0),
-                                            "end": s.get("end_time", 0),
-                                            "text": s.get("text", s.get("raw_text", ""))
-                                        })
-                                    call.speakers = speakers
-                                    call.duration_seconds = transcript_data.get('duration')
+                                        # Get speaker name with mapping
+                                        speaker_name = None
+                                        for name_key in ['speaker_name', 'speakerName', 'name', 'speaker']:
+                                            if s.get(name_key) and s.get(name_key) != 'Speaker':
+                                                speaker_name = s.get(name_key)
+                                                break
+                                        if not speaker_name or speaker_name == 'Speaker':
+                                            for id_key in ['speaker_id', 'speakerId', 'speaker_index', 'speakerIndex']:
+                                                sp_id = s.get(id_key)
+                                                if sp_id is not None and str(sp_id) in speaker_map:
+                                                    speaker_name = speaker_map[str(sp_id)]
+                                                    break
+                                        speaker_name = speaker_name or 'Speaker'
 
-                                    logger.info(f"HTTP fallback extracted {len(transcript_text)} chars from Fireflies via __NEXT_DATA__")
+                                        text = s.get('text', s.get('raw_text', ''))
+                                        if text:
+                                            lines.append(f"{speaker_name}: {text}")
+
+                                        # Get timestamps with fallbacks
+                                        start = 0
+                                        for key in ["start_time", "startTime", "start", "s"]:
+                                            val = s.get(key)
+                                            if val is not None:
+                                                try:
+                                                    start = float(val)
+                                                    if start > 0:
+                                                        break
+                                                except (ValueError, TypeError):
+                                                    pass
+                                        if start == 0 and s.get("start_ms"):
+                                            try:
+                                                start = float(s.get("start_ms")) / 1000
+                                            except (ValueError, TypeError):
+                                                pass
+
+                                        end = 0
+                                        for key in ["end_time", "endTime", "end", "e"]:
+                                            val = s.get(key)
+                                            if val is not None:
+                                                try:
+                                                    end = float(val)
+                                                    if end > 0:
+                                                        break
+                                                except (ValueError, TypeError):
+                                                    pass
+                                        if end == 0 and s.get("end_ms"):
+                                            try:
+                                                end = float(s.get("end_ms")) / 1000
+                                            except (ValueError, TypeError):
+                                                pass
+
+                                        speakers.append({
+                                            "speaker": speaker_name,
+                                            "start": start,
+                                            "end": end,
+                                            "text": text
+                                        })
+
+                                    transcript_text = "\n".join(lines)
+                                    call.speakers = speakers
+                                    call.duration_seconds = transcript_data.get('duration') or transcript_data.get('duration_seconds')
+
+                                    has_timestamps = any(sp['start'] > 0 or sp['end'] > 0 for sp in speakers)
+                                    logger.info(f"HTTP fallback extracted {len(transcript_text)} chars from Fireflies (has_timestamps={has_timestamps})")
                                 else:
                                     logger.warning("No sentences found in Fireflies transcript_data")
                             else:
