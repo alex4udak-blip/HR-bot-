@@ -1890,7 +1890,8 @@ async def switch_to_sandbox_user_by_email(
         httponly=True,
         secure=use_secure,
         samesite="lax",
-        max_age=3600  # 1 hour for impersonation
+        max_age=3600,  # 1 hour for impersonation
+        path="/"  # Must match login cookie path for cookie to work site-wide
     )
 
     return response

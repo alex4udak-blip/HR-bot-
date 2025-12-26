@@ -338,14 +338,24 @@ class ExternalLinkProcessor:
                             logger.warning("No transcript selectors found, waiting extra time for JS rendering")
                             await page.wait_for_timeout(15000)
 
-                            # Get page HTML for debugging
+                            # Get page HTML and URL for debugging
                             try:
+                                current_url = page.url
                                 page_content = await page.content()
-                                logger.debug(f"Page content length: {len(page_content)} chars")
-                                if len(page_content) < 1000:
+                                logger.info(f"Page URL after loading: {current_url}")
+                                logger.info(f"Page content length: {len(page_content)} chars")
+
+                                # Check for common issues
+                                if "sign" in current_url.lower() or "login" in current_url.lower():
+                                    logger.warning("Page redirected to login - link may not be publicly shared")
+                                elif len(page_content) < 1000:
                                     logger.warning(f"Page content seems too short: {page_content[:500]}")
-                            except Exception:
-                                pass
+
+                                # Log page title for debugging
+                                page_title = await page.title()
+                                logger.info(f"Page title: {page_title}")
+                            except Exception as debug_err:
+                                logger.debug(f"Debug info extraction failed: {debug_err}")
 
                         # Try to get title
                         try:
@@ -542,7 +552,13 @@ class ExternalLinkProcessor:
             if not transcript_text or len(transcript_text) < 20:
                 logger.warning(f"Fireflies transcript too short or empty: {len(transcript_text) if transcript_text else 0} chars")
                 call.status = CallStatus.failed
-                call.error_message = "Could not extract transcript from Fireflies. Make sure the link is public/shared and the page has loaded completely. Fireflies requires JavaScript rendering - ensure Playwright is installed: pip install playwright && playwright install chromium"
+                call.error_message = (
+                    "Could not extract transcript from Fireflies. Please check:\n"
+                    "1. The link is publicly shared (click 'Share' in Fireflies and enable 'Anyone with link')\n"
+                    "2. The meeting has a transcript (not just a scheduled meeting)\n"
+                    "3. The link is valid and not expired\n"
+                    "If issue persists, check server logs for details."
+                )
                 return call
 
             # Update call with extracted data
