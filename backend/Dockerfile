@@ -34,8 +34,15 @@ COPY . .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Set Playwright browser path to a known location
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright-browsers
+
 # Install Playwright browsers and dependencies
-RUN playwright install --with-deps chromium
+RUN mkdir -p $PLAYWRIGHT_BROWSERS_PATH && \
+    playwright install --with-deps chromium
+
+# Verify Playwright installation
+RUN python -c "from playwright.sync_api import sync_playwright; print('Playwright installed successfully')"
 
 # Expose port
 EXPOSE 8000

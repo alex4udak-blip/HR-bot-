@@ -47,18 +47,23 @@ async def ensure_playwright_installed() -> bool:
 
     _playwright_install_attempted = True
 
+    # Log environment info for debugging
+    browsers_path = os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'not set')
+    logger.info(f"Playwright check - PLAYWRIGHT_BROWSERS_PATH: {browsers_path}")
+
     # Check if chromium is already installed
     try:
         from playwright.async_api import async_playwright
+        logger.info("Attempting to launch Playwright chromium...")
         async with async_playwright() as p:
             # Try to launch - this will fail if browsers not installed
             browser = await p.chromium.launch(headless=True)
             await browser.close()
             _playwright_installed = True
-            logger.info("Playwright chromium is ready")
+            logger.info("Playwright chromium is ready and working")
             return True
     except Exception as e:
-        logger.warning(f"Playwright not ready: {e}")
+        logger.warning(f"Playwright launch failed: {type(e).__name__}: {e}", exc_info=True)
 
     # Try to install chromium
     logger.info("Installing Playwright chromium browser...")
@@ -332,6 +337,15 @@ class ExternalLinkProcessor:
                             # Extra wait for dynamic content
                             logger.warning("No transcript selectors found, waiting extra time for JS rendering")
                             await page.wait_for_timeout(15000)
+
+                            # Get page HTML for debugging
+                            try:
+                                page_content = await page.content()
+                                logger.debug(f"Page content length: {len(page_content)} chars")
+                                if len(page_content) < 1000:
+                                    logger.warning(f"Page content seems too short: {page_content[:500]}")
+                            except Exception:
+                                pass
 
                         # Try to get title
                         try:
