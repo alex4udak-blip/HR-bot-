@@ -2,7 +2,7 @@ from datetime import datetime, time
 from typing import Optional
 from sqlalchemy import (
     BigInteger, Boolean, Column, DateTime, Enum as SQLEnum,
-    ForeignKey, Integer, String, Text, JSON, Time, func, UniqueConstraint
+    ForeignKey, Index, Integer, String, Text, JSON, Time, func, text, UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 import enum
@@ -397,6 +397,12 @@ class EntityTransfer(Base):
 
 class CallRecording(Base):
     __tablename__ = "call_recordings"
+    __table_args__ = (
+        # Partial unique index to prevent duplicate source_url imports per organization
+        # Only applies when source_url is NOT NULL (direct uploads don't have source_url)
+        Index('ix_call_recordings_org_source_url', 'org_id', 'source_url', unique=True,
+              postgresql_where=text("source_url IS NOT NULL")),
+    )
 
     id = Column(Integer, primary_key=True)
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)

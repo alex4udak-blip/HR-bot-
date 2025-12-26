@@ -509,49 +509,48 @@ class ExternalLinkProcessor:
                                                 lines.append(f"{speaker_name}: {text}")
 
                                             # Extract timestamps - try many possible field names
-                                            start = 0
+                                            # Note: 0 is a valid timestamp (start of recording), so we use found_start flag
+                                            start = None
                                             for key in ["start_time", "startTime", "start", "s", "begin", "from", "timestamp"]:
                                                 val = s.get(key)
                                                 if val is not None:
                                                     try:
                                                         start = float(val)
-                                                        if start > 0:
-                                                            break
+                                                        break  # Found a value, don't check other keys
                                                     except (ValueError, TypeError):
                                                         pass
-                                            # Also check millisecond variants
-                                            if start == 0:
+                                            # Also check millisecond variants if not found
+                                            if start is None:
                                                 for key in ["start_ms", "startMs", "sMs"]:
                                                     val = s.get(key)
                                                     if val is not None:
                                                         try:
                                                             start = float(val) / 1000
-                                                            if start > 0:
-                                                                break
+                                                            break
                                                         except (ValueError, TypeError):
                                                             pass
+                                            start = start if start is not None else 0
 
-                                            end = 0
+                                            end = None
                                             for key in ["end_time", "endTime", "end", "e", "to", "finish"]:
                                                 val = s.get(key)
                                                 if val is not None:
                                                     try:
                                                         end = float(val)
-                                                        if end > 0:
-                                                            break
+                                                        break  # Found a value, don't check other keys
                                                     except (ValueError, TypeError):
                                                         pass
-                                            # Also check millisecond variants
-                                            if end == 0:
+                                            # Also check millisecond variants if not found
+                                            if end is None:
                                                 for key in ["end_ms", "endMs", "eMs"]:
                                                     val = s.get(key)
                                                     if val is not None:
                                                         try:
                                                             end = float(val) / 1000
-                                                            if end > 0:
-                                                                break
+                                                            break
                                                         except (ValueError, TypeError):
                                                             pass
+                                            end = end if end is not None else 0
 
                                             speakers.append({
                                                 "speaker": speaker_name,
@@ -704,14 +703,22 @@ class ExternalLinkProcessor:
 
                 except ImportError:
                     logger.warning("Playwright not installed, falling back to HTTP scraping")
+                    if call_id:
+                        await self._update_progress(call_id, 15, "Playwright недоступен, HTTP fallback...")
                 except Exception as e:
                     logger.error(f"Playwright failed: {type(e).__name__}: {e}", exc_info=True)
+                    if call_id:
+                        await self._update_progress(call_id, 15, "Ошибка Playwright, HTTP fallback...")
             else:
                 logger.warning("Playwright not available - Fireflies requires JavaScript rendering for reliable extraction")
+                if call_id:
+                    await self._update_progress(call_id, 15, "Playwright недоступен, HTTP fallback...")
 
             # Fallback to HTTP if Playwright didn't work (may not work for JS-rendered content)
             if not transcript_text:
                 logger.info("Attempting HTTP fallback for Fireflies transcript extraction")
+                if call_id:
+                    await self._update_progress(call_id, 20, "HTTP извлечение транскрипта...")
                 try:
                     session = await self._get_session()
                     async with session.get(url, headers={
@@ -787,37 +794,38 @@ class ExternalLinkProcessor:
                                             lines.append(f"{speaker_name}: {text}")
 
                                         # Get timestamps with fallbacks
-                                        start = 0
+                                        # Note: 0 is a valid timestamp (start of recording)
+                                        start = None
                                         for key in ["start_time", "startTime", "start", "s"]:
                                             val = s.get(key)
                                             if val is not None:
                                                 try:
                                                     start = float(val)
-                                                    if start > 0:
-                                                        break
+                                                    break  # Found a value
                                                 except (ValueError, TypeError):
                                                     pass
-                                        if start == 0 and s.get("start_ms"):
+                                        if start is None and s.get("start_ms"):
                                             try:
                                                 start = float(s.get("start_ms")) / 1000
                                             except (ValueError, TypeError):
                                                 pass
+                                        start = start if start is not None else 0
 
-                                        end = 0
+                                        end = None
                                         for key in ["end_time", "endTime", "end", "e"]:
                                             val = s.get(key)
                                             if val is not None:
                                                 try:
                                                     end = float(val)
-                                                    if end > 0:
-                                                        break
+                                                    break  # Found a value
                                                 except (ValueError, TypeError):
                                                     pass
-                                        if end == 0 and s.get("end_ms"):
+                                        if end is None and s.get("end_ms"):
                                             try:
                                                 end = float(s.get("end_ms")) / 1000
                                             except (ValueError, TypeError):
                                                 pass
+                                        end = end if end is not None else 0
 
                                         speakers.append({
                                             "speaker": speaker_name,
@@ -914,9 +922,12 @@ class ExternalLinkProcessor:
             logger.info(f"Fireflies transcript processed successfully: {len(call.transcript)} chars")
 
         except Exception as e:
-            logger.error(f"Error processing Fireflies: {e}")
+            logger.error(f"Error processing Fireflies: {e}", exc_info=True)
             call.status = CallStatus.failed
             call.error_message = str(e)
+            # Update progress to show error state
+            if call_id:
+                await self._update_progress(call_id, 0, f"Ошибка: {str(e)[:50]}")
 
         return call
 

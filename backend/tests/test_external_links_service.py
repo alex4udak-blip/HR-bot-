@@ -1252,6 +1252,75 @@ class TestFirefliesUpdatedParsing:
 
 
 # ============================================================================
+# TEST TIMESTAMP EXTRACTION
+# ============================================================================
+
+class TestFirefliesTimestampExtraction:
+    """Tests for timestamp extraction from Fireflies."""
+
+    @pytest.mark.asyncio
+    async def test_zero_timestamp_accepted(self, processor, mock_call_recording):
+        """
+        Test that 0 is accepted as a valid timestamp.
+
+        This tests the fix for the bug where 'if start > 0' rejected valid 0 values.
+        First sentence of any recording legitimately starts at 0.
+        """
+        url = "https://app.fireflies.ai/view/TIMESTAMP123"
+
+        import json
+        transcript_data = {
+            "title": "Interview Call",
+            "sentences": [
+                # First sentence should start at 0 - this was being rejected!
+                {"speaker_name": "HR", "text": "Welcome to the interview.", "start_time": 0, "end_time": 5},
+                {"speaker_name": "Candidate", "text": "Thank you.", "start_time": 5, "end_time": 8},
+                {"speaker_name": "HR", "text": "Tell me about yourself.", "start_time": 8, "end_time": 12}
+            ],
+            "duration": 120
+        }
+        next_data = {
+            "props": {"pageProps": {"transcript": transcript_data}}
+        }
+
+        html_content = f'<html><script id="__NEXT_DATA__" type="application/json">{json.dumps(next_data)}</script></html>'
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock(return_value=html_content)
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+
+        mock_analysis = {"summary": "Interview", "action_items": [], "key_points": []}
+
+        class MockPlaywrightModule:
+            @property
+            def async_playwright(self):
+                raise ImportError("Playwright not installed")
+
+        with patch.dict('sys.modules', {'playwright': MagicMock(), 'playwright.async_api': MockPlaywrightModule()}), \
+             patch.object(processor, '_get_session', return_value=mock_session), \
+             patch('api.services.external_links.call_processor._init_clients'), \
+             patch('api.services.external_links.call_processor._analyze', return_value=mock_analysis):
+
+            result = await processor._process_fireflies(mock_call_recording, url)
+
+        assert result.status == CallStatus.done
+        assert result.speakers is not None
+        # First speaker segment should have start=0 (not rejected!)
+        assert result.speakers[0]["start"] == 0
+        assert result.speakers[0]["end"] == 5
+        # All timestamps should be preserved
+        assert result.speakers[1]["start"] == 5
+        assert result.speakers[1]["end"] == 8
+        assert result.speakers[2]["start"] == 8
+        assert result.speakers[2]["end"] == 12
+
+
+# ============================================================================
 # TEST SPEAKER ID MAPPING
 # ============================================================================
 
