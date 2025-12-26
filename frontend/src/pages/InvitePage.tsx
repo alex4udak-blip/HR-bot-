@@ -8,9 +8,9 @@ import { validateInvitation, acceptInvitation, type InvitationValidation } from 
 import BackgroundEffects from '@/components/BackgroundEffects';
 
 export default function InvitePage() {
-  const { token } = useParams<{ token: string }>();
+  const { token: inviteToken } = useParams<{ token: string }>();
   const navigate = useNavigate();
-  const { setToken } = useAuthStore();
+  const { setUser } = useAuthStore();
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -27,8 +27,8 @@ export default function InvitePage() {
   });
 
   useEffect(() => {
-    if (token) {
-      validateInvitation(token)
+    if (inviteToken) {
+      validateInvitation(inviteToken)
         .then(data => {
           setInvitation(data);
           if (data.email) setForm(f => ({ ...f, email: data.email || '' }));
@@ -39,7 +39,7 @@ export default function InvitePage() {
         })
         .finally(() => setLoading(false));
     }
-  }, [token]);
+  }, [inviteToken]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,7 +57,7 @@ export default function InvitePage() {
     setSubmitting(true);
 
     try {
-      const response = await acceptInvitation(token!, {
+      const response = await acceptInvitation(inviteToken!, {
         email: form.email,
         name: form.name,
         password: form.password
@@ -67,8 +67,10 @@ export default function InvitePage() {
       setRegistrationComplete(true);
       toast.success('Регистрация завершена!');
 
-      // Store the token for later use
-      setToken(response.access_token);
+      // Cookie is set by backend, just update user state
+      if (response.user) {
+        setUser(response.user);
+      }
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Ошибка регистрации');
     } finally {
