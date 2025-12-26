@@ -269,8 +269,12 @@ class ExternalLinkProcessor:
                 call = await self._process_unknown(call, url)
 
             db.add(call)
-            await db.commit()
-            await db.refresh(call)
+            try:
+                await db.commit()
+                await db.refresh(call)
+            except Exception as db_error:
+                logger.error(f"Database error saving CallRecording: {type(db_error).__name__}: {db_error}", exc_info=True)
+                raise
 
             logger.info(f"Created CallRecording {call.id} from external URL")
             return call
