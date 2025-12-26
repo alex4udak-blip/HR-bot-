@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { getCurrentUser } from '@/services/api';
 import LoginPage from '@/pages/LoginPage';
@@ -35,7 +35,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const { setUser, setLoading, logout } = useAuthStore();
-  const navigate = useNavigate();
 
   useEffect(() => {
     // Try to get current user - cookie is sent automatically

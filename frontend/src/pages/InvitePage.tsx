@@ -3,14 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, User, Sparkles, CheckCircle, XCircle, Send, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useAuthStore } from '@/stores/authStore';
 import { validateInvitation, acceptInvitation, type InvitationValidation } from '@/services/api';
 import BackgroundEffects from '@/components/BackgroundEffects';
 
 export default function InvitePage() {
   const { token: inviteToken } = useParams<{ token: string }>();
   const navigate = useNavigate();
-  const { setUser } = useAuthStore();
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -66,11 +64,6 @@ export default function InvitePage() {
       setTelegramBindUrl(response.telegram_bind_url || null);
       setRegistrationComplete(true);
       toast.success('Регистрация завершена!');
-
-      // Cookie is set by backend, just update user state
-      if (response.user) {
-        setUser(response.user);
-      }
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Ошибка регистрации');
     } finally {
