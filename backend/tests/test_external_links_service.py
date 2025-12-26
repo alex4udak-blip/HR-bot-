@@ -1249,3 +1249,263 @@ class TestFirefliesUpdatedParsing:
         assert result.title == "Team Standup" or result.title is None  # May keep original title
         # Duration should be extracted
         assert result.duration_seconds == 300
+
+
+# ============================================================================
+# TEST ASYNC PROCESSING (NEW)
+# ============================================================================
+
+class TestAsyncFirefliesProcessing:
+    """Tests for async Fireflies processing with progress tracking."""
+
+    @pytest.mark.asyncio
+    async def test_create_pending_call(self, processor):
+        """Test create_pending_call creates record with pending status."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        # Mock the database session
+        mock_call = MagicMock()
+        mock_call.id = 123
+        mock_call.status = CallStatus.pending
+        mock_call.progress = 0
+        mock_call.progress_stage = None
+
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock()
+        mock_db.commit = AsyncMock()
+        mock_db.refresh = AsyncMock()
+
+        # Mock the context manager
+        async def mock_session_context():
+            return mock_db
+
+        mock_session_cm = MagicMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=None)
+
+        with patch('api.services.external_links.AsyncSessionLocal', return_value=mock_session_cm):
+            result = await processor.create_pending_call(
+                url="https://app.fireflies.ai/view/TEST123",
+                organization_id=1,
+                owner_id=1,
+                source_type=CallSource.fireflies,
+                department_id=None,
+                entity_id=None,
+                title="Test Call"
+            )
+
+        # Verify a CallRecording was added
+        mock_db.add.assert_called_once()
+        mock_db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_update_progress(self, processor):
+        """Test _update_progress updates progress in database."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from sqlalchemy import update
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        mock_session_cm = MagicMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=None)
+
+        with patch('api.services.external_links.AsyncSessionLocal', return_value=mock_session_cm):
+            await processor._update_progress(123, 50, "Processing...")
+
+        # Verify execute was called with update statement
+        mock_db.execute.assert_called_once()
+        mock_db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_fireflies_async_updates_progress(self, processor):
+        """Test process_fireflies_async updates progress during processing."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        # Track progress updates
+        progress_updates = []
+
+        async def mock_update_progress(call_id, progress, stage):
+            progress_updates.append((call_id, progress, stage))
+
+        mock_call = MagicMock()
+        mock_call.id = 123
+        mock_call.source_url = "https://app.fireflies.ai/view/TEST123"
+        mock_call.status = CallStatus.pending
+        mock_call.progress = 0
+        mock_call.progress_stage = None
+        mock_call.transcript = None
+        mock_call.summary = None
+        mock_call.action_items = None
+        mock_call.key_points = None
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=mock_call)
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_cm = MagicMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=None)
+
+        # Mock _process_fireflies to return quickly
+        async def mock_process_fireflies(call, url, call_id):
+            call.transcript = "Test transcript content here"
+            call.status = CallStatus.done
+            return call
+
+        with patch('api.services.external_links.AsyncSessionLocal', return_value=mock_session_cm), \
+             patch.object(processor, '_update_progress', side_effect=mock_update_progress), \
+             patch.object(processor, '_process_fireflies', side_effect=mock_process_fireflies):
+
+            await processor.process_fireflies_async(123)
+
+        # Verify progress was updated at start (5%) and page load (10%)
+        assert len(progress_updates) >= 2
+        assert progress_updates[0] == (123, 5, "Запуск обработки...")
+        assert progress_updates[1] == (123, 10, "Загрузка страницы Fireflies...")
+
+    @pytest.mark.asyncio
+    async def test_process_fireflies_async_handles_missing_call(self, processor):
+        """Test process_fireflies_async handles missing call record gracefully."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=None)
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        mock_session_cm = MagicMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=None)
+
+        with patch('api.services.external_links.AsyncSessionLocal', return_value=mock_session_cm), \
+             patch.object(processor, '_update_progress', AsyncMock()):
+
+            # Should not raise exception
+            await processor.process_fireflies_async(999)
+
+    @pytest.mark.asyncio
+    async def test_process_fireflies_async_handles_error(self, processor):
+        """Test process_fireflies_async sets failed status on error."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        mock_call = MagicMock()
+        mock_call.id = 123
+        mock_call.source_url = "https://app.fireflies.ai/view/TEST123"
+        mock_call.status = CallStatus.pending
+        mock_call.progress = 0
+        mock_call.progress_stage = None
+        mock_call.error_message = None
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=mock_call)
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_cm = MagicMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=None)
+
+        # Mock _process_fireflies to raise an error
+        async def mock_process_fireflies_error(call, url, call_id):
+            raise Exception("Test error")
+
+        with patch('api.services.external_links.AsyncSessionLocal', return_value=mock_session_cm), \
+             patch.object(processor, '_update_progress', AsyncMock()), \
+             patch.object(processor, '_process_fireflies', side_effect=mock_process_fireflies_error):
+
+            await processor.process_fireflies_async(123)
+
+        # Verify status was set to failed
+        assert mock_call.status == CallStatus.failed
+        assert "Test error" in mock_call.error_message
+        assert mock_call.progress == 0
+        assert mock_call.progress_stage == "Ошибка"
+
+
+# ============================================================================
+# TEST PROGRESS STAGES
+# ============================================================================
+
+class TestProgressStages:
+    """Tests for progress stage updates during Fireflies processing."""
+
+    @pytest.mark.asyncio
+    async def test_fireflies_progress_stages_order(self, processor, mock_call_recording):
+        """Test that progress stages are updated in correct order."""
+        url = "https://app.fireflies.ai/view/PROGRESS123"
+
+        progress_updates = []
+
+        # Capture progress updates
+        original_update_progress = processor._update_progress
+
+        async def capture_progress(call_id, progress, stage):
+            progress_updates.append((progress, stage))
+
+        # Mock the page
+        mock_element = AsyncMock()
+        mock_element.text_content = AsyncMock(return_value="This is a sufficiently long transcript for testing purposes.")
+        mock_element.get_attribute = AsyncMock(return_value=None)
+        mock_element.query_selector = AsyncMock(return_value=None)
+
+        mock_page = AsyncMock()
+        mock_page.goto = AsyncMock(return_value=None)
+        mock_page.wait_for_selector = AsyncMock(return_value=None)
+        mock_page.wait_for_timeout = AsyncMock(return_value=None)
+        mock_page.query_selector = AsyncMock(return_value=None)
+        mock_page.query_selector_all = AsyncMock(return_value=[mock_element])
+
+        mock_context = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+
+        mock_browser = AsyncMock()
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+        mock_browser.close = AsyncMock(return_value=None)
+
+        mock_chromium = MagicMock()
+        mock_chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_playwright_instance = MagicMock()
+        mock_playwright_instance.chromium = mock_chromium
+
+        class MockAsyncPlaywright:
+            async def __aenter__(self):
+                return mock_playwright_instance
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                return None
+
+        def mock_async_playwright():
+            return MockAsyncPlaywright()
+
+        mock_playwright_module = MagicMock()
+        mock_playwright_module.async_playwright = mock_async_playwright
+
+        mock_analysis = {
+            "summary": "Test",
+            "action_items": [],
+            "key_points": []
+        }
+
+        with patch.dict('sys.modules', {'playwright': MagicMock(), 'playwright.async_api': mock_playwright_module}), \
+             patch.object(processor, '_update_progress', side_effect=capture_progress), \
+             patch('api.services.external_links.call_processor._init_clients'), \
+             patch('api.services.external_links.call_processor._analyze', return_value=mock_analysis):
+
+            result = await processor._process_fireflies(mock_call_recording, url, call_id=123)
+
+        # Verify progress stages are in order
+        if progress_updates:
+            progress_values = [p[0] for p in progress_updates]
+            assert progress_values == sorted(progress_values), \
+                f"Progress should increase monotonically: {progress_values}"
+

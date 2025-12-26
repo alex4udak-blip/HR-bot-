@@ -102,7 +102,7 @@ export default function ExternalLinksModal({
   const [isDetecting, setIsDetecting] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingCallId, setProcessingCallId] = useState<number | null>(null);
-  const [processingStatus, setProcessingStatus] = useState<string>('');
+  const [_processingStatus, setProcessingStatus] = useState<string>('');
   const [progress, setProgress] = useState(0);
   const [progressStage, setProgressStage] = useState('');
   const [error, setError] = useState<string | null>(null);
