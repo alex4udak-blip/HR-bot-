@@ -14,8 +14,32 @@ from ..services.auth import (
 )
 from ..services.password_policy import validate_password
 from ..limiter import limiter
+from ..config import settings
 
 router = APIRouter()
+
+
+def is_secure_context(request: Request) -> bool:
+    """Determine if the request is in a secure HTTPS context.
+
+    Checks:
+    1. X-Forwarded-Proto header (set by Railway and most proxies)
+    2. Request URL scheme
+    3. Falls back to settings.cookie_secure
+    """
+    # Check X-Forwarded-Proto header (most reliable behind proxy)
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").lower()
+    if forwarded_proto == "https":
+        return True
+    if forwarded_proto == "http":
+        return False
+
+    # Check request scheme
+    if request.url.scheme == "https":
+        return True
+
+    # Fall back to settings
+    return settings.cookie_secure
 
 
 @router.post("/login", response_model=UserResponse)
@@ -80,11 +104,13 @@ async def login(
     })
 
     # Set httpOnly cookie (XSS protection)
+    # Determine if we should use secure flag based on request context
+    use_secure = is_secure_context(request)
     response.set_cookie(
         key="access_token",
         value=token,
         httponly=True,  # Not accessible via JavaScript - prevents XSS attacks
-        secure=True,  # Only send over HTTPS in production
+        secure=use_secure,  # Only send over HTTPS when in secure context
         samesite="lax",  # CSRF protection
         max_age=60 * 60 * 24 * 7,  # 7 days
         path="/"
