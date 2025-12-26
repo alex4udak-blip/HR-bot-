@@ -25,7 +25,12 @@ logger = logging.getLogger("hr-analyzer.calls")
 
 # Upload directory for call recordings
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads/calls")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# Only create directory if not in test environment (avoids permission errors in CI)
+if not os.getenv("TESTING"):
+    try:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+    except PermissionError:
+        logger.warning(f"Cannot create upload directory {UPLOAD_DIR} - permission denied")
 
 
 # === Pydantic Schemas (in addition to existing) ===

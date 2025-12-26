@@ -36,6 +36,9 @@ const localStorageMock = (() => {
 })();
 Object.defineProperty(window, 'localStorage', { value: localStorageMock });
 
+// Mock scrollIntoView
+Element.prototype.scrollIntoView = vi.fn();
+
 describe('EntityAI', () => {
   const mockEntity: EntityWithRelations = {
     id: 1,
