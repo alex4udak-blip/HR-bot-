@@ -98,13 +98,21 @@ async def get_current_user(
     access_token: Optional[str] = Cookie(None),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Get current user from httpOnly cookie.
+    """Get current user from httpOnly cookie or Authorization header.
 
-    Reads JWT token from the access_token cookie (not from Authorization header).
-    This provides XSS protection as the token is not accessible via JavaScript.
+    Checks for JWT token in the following order:
+    1. access_token cookie (preferred, XSS-protected)
+    2. Authorization: Bearer header (for API clients and tests)
     """
-    # Get token from cookie
+    # Get token from cookie first
     token = access_token
+
+    # Fallback to Authorization header
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]  # Remove "Bearer " prefix
+
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -142,8 +150,15 @@ async def get_current_user_allow_inactive(
     This is used for endpoints like /me where we want inactive users
     to be able to see their account status.
     """
-    # Get token from cookie
+    # Get token from cookie first
     token = access_token
+
+    # Fallback to Authorization header
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]  # Remove "Bearer " prefix
+
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -187,8 +202,15 @@ async def get_current_user_optional(
     db: AsyncSession = Depends(get_db),
 ) -> Optional[User]:
     """Get current user without raising error if not authenticated."""
-    # Get token from cookie
+    # Get token from cookie first
     token = access_token
+
+    # Fallback to Authorization header
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]  # Remove "Bearer " prefix
+
     if not token:
         return None
 
