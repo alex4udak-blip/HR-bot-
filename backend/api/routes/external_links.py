@@ -106,13 +106,18 @@ async def process_external_url(
 
         return ProcessURLResponse(
             call_id=call.id,
-            status=call.status.value,
-            source_type=call.source_type.value,
+            status=call.status.value if call.status else "unknown",
+            source_type=call.source_type.value if call.source_type else "unknown",
             title=call.title,
             message=message
         )
 
     except Exception as e:
+        import traceback
+        import logging
+        logger = logging.getLogger("hr-analyzer.external_links")
+        logger.error(f"Error in process_external_url: {type(e).__name__}: {e}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error processing URL: {str(e)}")
 
 
