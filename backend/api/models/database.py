@@ -123,8 +123,8 @@ class Organization(Base):
     members = relationship("OrgMember", back_populates="organization", cascade="all, delete-orphan")
     departments = relationship("Department", back_populates="organization", cascade="all, delete-orphan")
     entities = relationship("Entity", back_populates="organization", cascade="all, delete-orphan")
-    chats = relationship("Chat", back_populates="organization")
-    calls = relationship("CallRecording", back_populates="organization")
+    chats = relationship("Chat", back_populates="organization", cascade="all, delete-orphan")
+    calls = relationship("CallRecording", back_populates="organization", cascade="all, delete-orphan")
 
 
 class OrgMember(Base):
@@ -444,7 +444,7 @@ class EntityAIConversation(Base):
 
     id = Column(Integer, primary_key=True)
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     messages = Column(JSON, default=list)  # [{role, content, timestamp}]
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
@@ -502,7 +502,7 @@ class SharedAccess(Base):
     created_at = Column(DateTime, default=func.now())
 
     __table_args__ = (
-        UniqueConstraint('resource_type', 'resource_id', 'shared_with_id', name='uq_shared_access_resource_user'),
+        UniqueConstraint('resource_type', 'resource_id', 'shared_with_id', 'shared_by_id', name='uq_shared_access_resource_user'),
     )
 
     shared_by = relationship("User", foreign_keys=[shared_by_id])

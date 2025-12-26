@@ -131,7 +131,7 @@ class TestAuthenticateUser:
     @pytest.mark.asyncio
     async def test_authenticate_valid_user(self, db_session, admin_user):
         """Test authentication with valid credentials."""
-        user = await authenticate_user(db_session, "admin@test.com", "admin123")
+        user = await authenticate_user(db_session, "admin@test.com", "Admin123")
 
         assert user is not None
         assert user.email == "admin@test.com"
@@ -139,7 +139,7 @@ class TestAuthenticateUser:
     @pytest.mark.asyncio
     async def test_authenticate_wrong_password(self, db_session, admin_user):
         """Test authentication with wrong password."""
-        user = await authenticate_user(db_session, "admin@test.com", "wrongpassword")
+        user = await authenticate_user(db_session, "admin@test.com", "WrongPassword123")
 
         assert user is None
 
@@ -160,7 +160,7 @@ class TestAuthenticateUser:
     @pytest.mark.asyncio
     async def test_authenticate_case_sensitive_email(self, db_session, admin_user):
         """Test that email is case-sensitive (or not, depending on implementation)."""
-        user = await authenticate_user(db_session, "ADMIN@test.com", "admin123")
+        user = await authenticate_user(db_session, "ADMIN@test.com", "Admin123")
         # This depends on implementation - adjust based on expected behavior
         # If case-insensitive:
         # assert user is not None
@@ -176,7 +176,7 @@ class TestLoginEndpoint:
         """Test successful login."""
         response = await client.post("/api/auth/login", json={
             "email": "admin@test.com",
-            "password": "admin123"
+            "password": "Admin123"
         })
 
         assert response.status_code == 200
@@ -189,7 +189,7 @@ class TestLoginEndpoint:
         """Test login with wrong password."""
         response = await client.post("/api/auth/login", json={
             "email": "admin@test.com",
-            "password": "wrongpassword"
+            "password": "WrongPassword123"
         })
 
         assert response.status_code == 401
@@ -285,8 +285,8 @@ class TestChangePassword:
         """Test successful password change."""
         response = await client.post("/api/auth/change-password",
             json={
-                "current_password": "admin123",
-                "new_password": "newpassword123"
+                "current_password": "Admin123",
+                "new_password": "NewPassword123"
             },
             headers=get_auth_headers(admin_token)
         )
@@ -298,8 +298,8 @@ class TestChangePassword:
         """Test password change with wrong current password."""
         response = await client.post("/api/auth/change-password",
             json={
-                "current_password": "wrongpassword",
-                "new_password": "newpassword123"
+                "current_password": "WrongPassword123",
+                "new_password": "NewPassword456"
             },
             headers=get_auth_headers(admin_token)
         )
@@ -311,23 +311,22 @@ class TestChangePassword:
         """Test password change with weak new password."""
         response = await client.post("/api/auth/change-password",
             json={
-                "current_password": "admin123",
+                "current_password": "Admin123",
                 "new_password": "123"  # Too short
             },
             headers=get_auth_headers(admin_token)
         )
 
-        # This test documents EXPECTED behavior - currently might pass due to no validation
-        # After fix, should return 400 or 422
-        # assert response.status_code in [400, 422]
+        # Should now return validation error
+        assert response.status_code in [400, 422]
 
     @pytest.mark.asyncio
     async def test_change_password_unauthenticated(self, client):
         """Test password change without authentication."""
         response = await client.post("/api/auth/change-password",
             json={
-                "current_password": "admin123",
-                "new_password": "newpassword123"
+                "current_password": "Admin123",
+                "new_password": "NewPassword123"
             }
         )
 

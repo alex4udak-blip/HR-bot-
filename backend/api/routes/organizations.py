@@ -408,44 +408,53 @@ async def remove_member(
         raise HTTPException(status_code=403, detail="No permission to remove members")
 
     target_user = membership.user
+    user_deleted = False
 
-    # Check if user is member of any other orgs BEFORE deleting
-    # This prevents race condition where count happens after delete
-    result = await db.execute(
-        select(func.count(OrgMember.id)).where(OrgMember.user_id == user_id)
-    )
-    other_memberships = result.scalar()
+    # Wrap in explicit transaction to prevent race conditions
+    async with db.begin_nested():
+        # Check if user is member of any other orgs
+        result = await db.execute(
+            select(func.count(OrgMember.id)).where(OrgMember.user_id == user_id)
+        )
+        other_memberships = result.scalar()
 
-    # Remove membership
-    await db.delete(membership)
+        # Remove membership
+        await db.delete(membership)
+        await db.flush()
 
-    # If no other memberships (count was 1, just this membership) and not superadmin, delete user entirely
-    if other_memberships <= 1 and target_user.role != UserRole.SUPERADMIN:
-        from sqlalchemy import update
+        # If no other memberships (count was 1, just this membership) and not superadmin, delete user entirely
+        if other_memberships <= 1 and target_user.role != UserRole.SUPERADMIN:
+            from sqlalchemy import update
+            from ..models.database import ReportSubscription, EntityAIConversation
 
-        # Delete records where user is required (NOT NULL)
-        await db.execute(delete(DepartmentMember).where(DepartmentMember.user_id == user_id))
-        await db.execute(delete(SharedAccess).where(SharedAccess.shared_with_id == user_id))
-        await db.execute(delete(SharedAccess).where(SharedAccess.shared_by_id == user_id))
-        await db.execute(delete(AnalysisHistory).where(AnalysisHistory.user_id == user_id))
-        await db.execute(delete(AIConversation).where(AIConversation.user_id == user_id))
+            # Delete records where user is required (NOT NULL) - order matters for foreign keys
+            await db.execute(delete(DepartmentMember).where(DepartmentMember.user_id == user_id))
+            await db.execute(delete(SharedAccess).where(SharedAccess.shared_with_id == user_id))
+            await db.execute(delete(SharedAccess).where(SharedAccess.shared_by_id == user_id))
+            await db.execute(delete(AnalysisHistory).where(AnalysisHistory.user_id == user_id))
+            await db.execute(delete(AIConversation).where(AIConversation.user_id == user_id))
 
-        # Nullify optional foreign keys
-        await db.execute(update(Chat).where(Chat.owner_id == user_id).values(owner_id=None))
-        await db.execute(update(CallRecording).where(CallRecording.owner_id == user_id).values(owner_id=None))
-        await db.execute(update(Entity).where(Entity.created_by == user_id).values(created_by=None))
-        await db.execute(update(EntityTransfer).where(EntityTransfer.from_user_id == user_id).values(from_user_id=None))
-        await db.execute(update(EntityTransfer).where(EntityTransfer.to_user_id == user_id).values(to_user_id=None))
-        await db.execute(update(OrgMember).where(OrgMember.invited_by == user_id).values(invited_by=None))
-        await db.execute(update(Invitation).where(Invitation.invited_by_id == user_id).values(invited_by_id=None))
-        await db.execute(update(Invitation).where(Invitation.used_by_id == user_id).values(used_by_id=None))
-        await db.execute(update(CriteriaPreset).where(CriteriaPreset.created_by == user_id).values(created_by=None))
+            # Delete orphan records that would be left behind
+            await db.execute(delete(ReportSubscription).where(ReportSubscription.user_id == user_id))
+            await db.execute(delete(EntityAIConversation).where(EntityAIConversation.user_id == user_id))
 
-        await db.delete(target_user)
+            # Nullify optional foreign keys
+            await db.execute(update(Chat).where(Chat.owner_id == user_id).values(owner_id=None))
+            await db.execute(update(CallRecording).where(CallRecording.owner_id == user_id).values(owner_id=None))
+            await db.execute(update(Entity).where(Entity.created_by == user_id).values(created_by=None))
+            await db.execute(update(EntityTransfer).where(EntityTransfer.from_user_id == user_id).values(from_user_id=None))
+            await db.execute(update(EntityTransfer).where(EntityTransfer.to_user_id == user_id).values(to_user_id=None))
+            await db.execute(update(OrgMember).where(OrgMember.invited_by == user_id).values(invited_by=None))
+            await db.execute(update(Invitation).where(Invitation.invited_by_id == user_id).values(invited_by_id=None))
+            await db.execute(update(Invitation).where(Invitation.used_by_id == user_id).values(used_by_id=None))
+            await db.execute(update(CriteriaPreset).where(CriteriaPreset.created_by == user_id).values(created_by=None))
+
+            await db.delete(target_user)
+            user_deleted = True
 
     await db.commit()
 
-    return {"success": True, "user_deleted": other_memberships <= 1}
+    return {"success": True, "user_deleted": user_deleted}
 
 
 @router.get("/current/my-role")

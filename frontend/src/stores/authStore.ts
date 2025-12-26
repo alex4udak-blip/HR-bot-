@@ -3,11 +3,9 @@ import type { User } from '@/types';
 
 interface AuthState {
   user: User | null;
-  token: string | null;
   isLoading: boolean;
   originalUser: User | null;  // Store original user during impersonation
   setUser: (user: User | null) => void;
-  setToken: (token: string | null) => void;
   setLoading: (loading: boolean) => void;
   logout: () => void;
   // Impersonation
@@ -30,28 +28,19 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
-  token: localStorage.getItem('token'),
   isLoading: true,
   originalUser: null,
   setUser: (user) => set({ user }),
-  setToken: (token) => {
-    if (token) {
-      localStorage.setItem('token', token);
-    } else {
-      localStorage.removeItem('token');
-    }
-    set({ token });
-  },
   setLoading: (isLoading) => set({ isLoading }),
   logout: () => {
-    localStorage.removeItem('token');
-    set({ user: null, token: null, originalUser: null });
+    // Cookie is cleared by the /auth/logout endpoint
+    set({ user: null, originalUser: null });
   },
 
   // Impersonate a user
   impersonate: async (userId: number) => {
-    const { token: currentToken, user: currentUser } = get();
-    if (!currentToken || !currentUser) {
+    const { user: currentUser } = get();
+    if (!currentUser) {
       throw new Error('Not authenticated');
     }
 
@@ -59,9 +48,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const response = await fetch(`/api/admin/impersonate/${userId}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${currentToken}`,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',  // Send cookies with request
       });
 
       if (!response.ok) {
@@ -74,7 +63,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Store original user before impersonation
       set({ originalUser: currentUser });
 
-      // Set new token and user with impersonation flag
+      // Set new user with impersonation flag (cookie is set by backend)
       const impersonatedUser = {
         ...data.user,
         is_impersonating: true,
@@ -82,9 +71,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         original_user_name: currentUser.name,
       };
 
-      localStorage.setItem('token', data.access_token);
       set({
-        token: data.access_token,
         user: impersonatedUser,
       });
     } catch (error) {
@@ -95,7 +82,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   // Exit impersonation and return to original user
   exitImpersonation: async () => {
-    const { originalUser, token } = get();
+    const { originalUser } = get();
     if (!originalUser) {
       throw new Error('Not currently impersonating');
     }
@@ -104,9 +91,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const response = await fetch('/api/admin/exit-impersonation', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',  // Send cookies with request
       });
 
       if (!response.ok) {
@@ -116,10 +103,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       const data = await response.json();
 
-      // Restore original user
-      localStorage.setItem('token', data.access_token);
+      // Restore original user (cookie is set by backend)
       set({
-        token: data.access_token,
         user: data.user,
         originalUser: null,
       });

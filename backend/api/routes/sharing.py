@@ -12,7 +12,7 @@ from ..models.database import (
     User, UserRole, SharedAccess, ResourceType, AccessLevel,
     Chat, Entity, CallRecording, OrgMember
 )
-from ..services.auth import get_current_user, get_user_org
+from ..services.auth import get_current_user, get_user_org, can_share_to
 from .realtime import broadcast_share_created, broadcast_share_revoked
 
 router = APIRouter()
@@ -232,9 +232,26 @@ async def share_resource(
     result = await db.execute(select(User).where(User.id == data.shared_with_id))
     target_user = result.scalar_one_or_none()
     if not target_user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
 
-    # Check if already shared (before org check to allow updates)
+    # Get current user's organization
+    current_user_org = await get_user_org(current_user, db)
+    if not current_user_org and current_user.role != UserRole.SUPERADMIN:
+        raise HTTPException(status_code=403, detail="Вы не состоите в организации")
+
+    # Verify sharing permissions (organization and department rules)
+    # This checks:
+    # - SUPERADMIN can share with anyone
+    # - OWNER can share with anyone in their organization
+    # - ADMIN can share with their department + other admins + owner
+    # - MEMBER can only share within their department
+    if not await can_share_to(current_user, target_user, current_user_org.id if current_user_org else 0, db):
+        raise HTTPException(
+            status_code=403,
+            detail="Невозможно предоставить доступ этому пользователю (пользователь не находится в вашей организации или отделе)"
+        )
+
+    # Check if already shared
     result = await db.execute(
         select(SharedAccess).where(
             SharedAccess.resource_type == data.resource_type,
@@ -252,22 +269,6 @@ async def share_resource(
         await db.refresh(existing)
         share = existing
     else:
-        # Verify both users are in the same organization (only for new shares)
-        # SUPERADMIN can share across organizations
-        if current_user.role != UserRole.SUPERADMIN:
-            current_user_org = await get_user_org(current_user, db)
-            if not current_user_org:
-                raise HTTPException(status_code=403, detail="You don't belong to an organization")
-
-            target_user_org_result = await db.execute(
-                select(OrgMember).where(
-                    OrgMember.user_id == data.shared_with_id,
-                    OrgMember.org_id == current_user_org.id
-                )
-            )
-            if not target_user_org_result.scalar_one_or_none():
-                raise HTTPException(status_code=403, detail="Cannot share with users outside your organization")
-
         # Create new share
         share = SharedAccess(
             resource_type=data.resource_type,
@@ -518,7 +519,10 @@ async def get_resource_shares(
     if not await has_access_to_resource(current_user, resource_type, resource_id, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    query = select(SharedAccess).where(
+    query = select(SharedAccess).options(
+        selectinload(SharedAccess.shared_by),
+        selectinload(SharedAccess.shared_with)
+    ).where(
         SharedAccess.resource_type == resource_type,
         SharedAccess.resource_id == resource_id
     ).order_by(SharedAccess.created_at.desc())
@@ -526,14 +530,13 @@ async def get_resource_shares(
     result = await db.execute(query)
     shares = result.scalars().all()
 
+    # Batch load resource names
+    resource_names = await batch_get_resource_names(shares, db)
+
+    # Build response using pre-fetched data
     response = []
     for share in shares:
-        by_result = await db.execute(select(User).where(User.id == share.shared_by_id))
-        by_user = by_result.scalar_one_or_none()
-        with_result = await db.execute(select(User).where(User.id == share.shared_with_id))
-        with_user = with_result.scalar_one_or_none()
-
-        resource_name = await get_resource_name(share.resource_type, share.resource_id, db)
+        resource_name = resource_names.get((share.resource_type, share.resource_id))
 
         response.append(ShareResponse(
             id=share.id,
@@ -541,9 +544,9 @@ async def get_resource_shares(
             resource_id=share.resource_id,
             resource_name=resource_name,
             shared_by_id=share.shared_by_id,
-            shared_by_name=by_user.name if by_user else "Unknown",
+            shared_by_name=share.shared_by.name if share.shared_by else "Unknown",
             shared_with_id=share.shared_with_id,
-            shared_with_name=with_user.name if with_user else "Unknown",
+            shared_with_name=share.shared_with.name if share.shared_with else "Unknown",
             access_level=share.access_level,
             note=share.note,
             expires_at=share.expires_at,
@@ -581,23 +584,33 @@ async def get_sharable_users(
     )
     rows = result.all()
 
+    if not rows:
+        return []
+
+    # Batch load departments for all users
+    user_ids = [user.id for user, _ in rows]
+    dept_memberships_result = await db.execute(
+        select(DepartmentMember, Department)
+        .join(Department, Department.id == DepartmentMember.department_id)
+        .where(DepartmentMember.user_id.in_(user_ids))
+    )
+
+    # Build a map of user_id -> (department, department_member) for first department only
+    user_dept_map = {}
+    for dept_member, dept in dept_memberships_result.all():
+        if dept_member.user_id not in user_dept_map:
+            user_dept_map[dept_member.user_id] = (dept, dept_member)
+
     # Build response with role information
     response = []
     for user, org_member in rows:
-        # Get user's first department (if any)
-        dept_result = await db.execute(
-            select(Department, DepartmentMember)
-            .join(DepartmentMember, DepartmentMember.department_id == Department.id)
-            .where(DepartmentMember.user_id == user.id)
-            .limit(1)
-        )
-        dept_row = dept_result.first()
-
         dept_id = None
         dept_name = None
         dept_role = None
-        if dept_row:
-            dept, dept_member = dept_row
+
+        # Get department info from pre-fetched map
+        if user.id in user_dept_map:
+            dept, dept_member = user_dept_map[user.id]
             dept_id = dept.id
             dept_name = dept.name
             dept_role = dept_member.role.value if dept_member.role else None

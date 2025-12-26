@@ -11,21 +11,15 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,  // Send cookies with requests (httpOnly cookie authentication)
 });
 
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
+// Response interceptor - redirect to login on 401
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
+      // Cookie is invalid or expired - redirect to login
       window.location.href = '/login';
     }
     return Promise.reject(error);
@@ -172,13 +166,12 @@ export const streamAIMessage = async (
   onChunk: (chunk: string) => void,
   onDone: () => void
 ) => {
-  const token = localStorage.getItem('token');
   const response = await fetch(`/api/chats/${chatId}/ai/message`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
     },
+    credentials: 'include',  // Send cookies with request
     body: JSON.stringify({ message }),
   });
 
@@ -221,13 +214,12 @@ export const streamQuickAction = async (
   onChunk: (chunk: string) => void,
   onDone: () => void
 ) => {
-  const token = localStorage.getItem('token');
   const response = await fetch(`/api/chats/${chatId}/ai/message`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
     },
+    credentials: 'include',  // Send cookies with request
     body: JSON.stringify({ quick_action: action }),
   });
 
@@ -265,13 +257,12 @@ export const streamQuickAction = async (
 };
 
 export const downloadReport = async (chatId: number, reportType: string, format: string): Promise<Blob> => {
-  const token = localStorage.getItem('token');
   const response = await fetch(`/api/chats/${chatId}/report`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
     },
+    credentials: 'include',  // Send cookies with request
     body: JSON.stringify({ report_type: reportType, format }),
   });
 
@@ -306,7 +297,6 @@ export const importTelegramHistory = async (
   autoProcess: boolean = false,
   importId?: string
 ): Promise<ImportResult> => {
-  const token = localStorage.getItem('token');
   const formData = new FormData();
   formData.append('file', file);
 
@@ -317,9 +307,7 @@ export const importTelegramHistory = async (
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
+    credentials: 'include',  // Send cookies with request
     body: formData,
   });
 
@@ -344,11 +332,8 @@ export interface ImportProgress {
 }
 
 export const getImportProgress = async (chatId: number, importId: string): Promise<ImportProgress> => {
-  const token = localStorage.getItem('token');
   const response = await fetch(`/api/chats/${chatId}/import/progress/${importId}`, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
+    credentials: 'include',  // Send cookies with request
   });
   return response.json();
 };
@@ -365,13 +350,9 @@ export interface CleanupResult {
 export type CleanupMode = 'bad' | 'today' | 'all_imported' | 'all' | 'clear_all' | 'duplicates';
 
 export const cleanupBadImport = async (chatId: number, mode: CleanupMode = 'bad'): Promise<CleanupResult> => {
-  const token = localStorage.getItem('token');
-
   const response = await fetch(`/api/chats/${chatId}/import/cleanup?mode=${mode}`, {
     method: 'DELETE',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
+    credentials: 'include',  // Send cookies with request
   });
 
   if (!response.ok) {
@@ -391,13 +372,9 @@ export interface TranscribeAllResult {
 }
 
 export const transcribeAllMedia = async (chatId: number): Promise<TranscribeAllResult> => {
-  const token = localStorage.getItem('token');
-
   const response = await fetch(`/api/chats/${chatId}/transcribe-all`, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
+    credentials: 'include',  // Send cookies with request
   });
 
   if (!response.ok) {
@@ -415,16 +392,12 @@ export interface RepairVideoResult {
 }
 
 export const repairVideoNotes = async (chatId: number, file: File): Promise<RepairVideoResult> => {
-  const token = localStorage.getItem('token');
-
   const formData = new FormData();
   formData.append('file', file);
 
   const response = await fetch(`/api/chats/${chatId}/repair-video-notes`, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
+    credentials: 'include',  // Send cookies with request
     body: formData,
   });
 
@@ -562,12 +535,9 @@ export const uploadCallRecording = async (
     formData.append('entity_id', String(entityId));
   }
 
-  const token = localStorage.getItem('token');
   const response = await fetch('/api/calls/upload', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
+    credentials: 'include',  // Send cookies with request
     body: formData,
   });
 
@@ -588,12 +558,15 @@ export const startCallBot = async (data: {
   return response.data;
 };
 
-export const getCallStatus = async (id: number): Promise<{
+export const getCallStatus = async (
+  id: number,
+  signal?: AbortSignal
+): Promise<{
   status: CallStatus;
   duration_seconds?: number;
   error_message?: string;
 }> => {
-  const { data } = await api.get(`/calls/${id}/status`);
+  const { data } = await api.get(`/calls/${id}/status`, { signal });
   return data;
 };
 

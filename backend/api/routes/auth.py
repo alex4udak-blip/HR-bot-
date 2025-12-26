@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -18,10 +18,11 @@ from ..limiter import limiter
 router = APIRouter()
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=UserResponse)
 @limiter.limit("5/minute")
 async def login(
     request: Request,
+    response: Response,
     login_request: LoginRequest,
     db: AsyncSession = Depends(get_db)
 ):
@@ -72,19 +73,30 @@ async def login(
     authenticated_user.locked_until = None
     await db.commit()
 
+    # Create JWT token
     token = create_access_token({
         "sub": str(authenticated_user.id),
         "token_version": authenticated_user.token_version
     })
-    return TokenResponse(
-        access_token=token,
-        user=UserResponse(
-            id=authenticated_user.id, email=authenticated_user.email, name=authenticated_user.name,
-            role=authenticated_user.role.value, telegram_id=authenticated_user.telegram_id,
-            telegram_username=authenticated_user.telegram_username,
-            is_active=authenticated_user.is_active, created_at=authenticated_user.created_at,
-            chats_count=0  # Skip lazy loading for login
-        )
+
+    # Set httpOnly cookie (XSS protection)
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,  # Not accessible via JavaScript - prevents XSS attacks
+        secure=True,  # Only send over HTTPS in production
+        samesite="lax",  # CSRF protection
+        max_age=60 * 60 * 24 * 7,  # 7 days
+        path="/"
+    )
+
+    # Return user info only (no token in response body)
+    return UserResponse(
+        id=authenticated_user.id, email=authenticated_user.email, name=authenticated_user.name,
+        role=authenticated_user.role.value, telegram_id=authenticated_user.telegram_id,
+        telegram_username=authenticated_user.telegram_username,
+        is_active=authenticated_user.is_active, created_at=authenticated_user.created_at,
+        chats_count=0  # Skip lazy loading for login
     )
 
 
@@ -102,6 +114,13 @@ async def register(request: Request):
         status_code=403,
         detail="Регистрация отключена. Обратитесь к администратору для создания аккаунта."
     )
+
+
+@router.post("/logout")
+async def logout(response: Response):
+    """Logout user by clearing the httpOnly cookie."""
+    response.delete_cookie(key="access_token", path="/")
+    return {"message": "Logged out successfully"}
 
 
 @router.get("/me", response_model=UserResponse)

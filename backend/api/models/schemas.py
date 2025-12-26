@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List, Any, Literal
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from .database import ChatType
 
 
@@ -20,6 +20,16 @@ class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
 
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        """Validate password complexity requirements."""
+        from ..services.password_policy import validate_password
+        is_valid, error_message = validate_password(v)
+        if not is_valid:
+            raise ValueError(error_message)
+        return v
+
 
 class LinkTelegramRequest(BaseModel):
     telegram_id: int
@@ -35,6 +45,18 @@ class UserCreate(BaseModel):
     telegram_id: Optional[int] = None
     telegram_username: Optional[str] = None
     department_id: Optional[int] = None
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v: str, info) -> str:
+        """Validate password complexity requirements."""
+        from ..services.password_policy import validate_password
+        # Get email from values if available for additional validation
+        email = info.data.get('email') if info.data else None
+        is_valid, error_message = validate_password(v, email)
+        if not is_valid:
+            raise ValueError(error_message)
+        return v
 
 
 class UserUpdate(BaseModel):
