@@ -548,32 +548,58 @@ def calculate_speaker_stats(speakers: list) -> dict:
         return {}
 
     stats = {}
+    # Average speaking rate: ~150 words per minute, ~5 characters per word
+    # So roughly 750 characters per minute = 12.5 chars per second
+    CHARS_PER_SECOND = 12.5
+
+    # Check if timestamps are available
+    has_real_timestamps = any(
+        (segment.get("start", 0) or 0) > 0 or (segment.get("end", 0) or 0) > 0
+        for segment in speakers
+    )
 
     for segment in speakers:
         speaker = segment.get("speaker", "Unknown")
         start = segment.get("start", 0) or 0
         end = segment.get("end", 0) or 0
-        duration = max(0, end - start)
+        text = segment.get("text", "") or ""
+
+        # Calculate duration - use timestamps if available, otherwise estimate from text length
+        if has_real_timestamps:
+            duration = max(0, end - start)
+        else:
+            # Estimate duration based on text length
+            duration = len(text) / CHARS_PER_SECOND if text else 0
 
         if speaker not in stats:
             stats[speaker] = {
                 "total_seconds": 0,
                 "segment_count": 0,
                 "first_speak_time": start,
-                "last_speak_time": end
+                "last_speak_time": end,
+                "total_chars": 0,  # Track chars for percentage calculation
+                "estimated": not has_real_timestamps  # Flag if estimated
             }
 
         stats[speaker]["total_seconds"] += duration
         stats[speaker]["segment_count"] += 1
-        stats[speaker]["first_speak_time"] = min(stats[speaker]["first_speak_time"], start)
-        stats[speaker]["last_speak_time"] = max(stats[speaker]["last_speak_time"], end)
+        stats[speaker]["total_chars"] += len(text)
+        if has_real_timestamps:
+            stats[speaker]["first_speak_time"] = min(stats[speaker]["first_speak_time"], start)
+            stats[speaker]["last_speak_time"] = max(stats[speaker]["last_speak_time"], end)
 
-    # Calculate averages
+    # Calculate averages and percentages
+    total_seconds_all = sum(s["total_seconds"] for s in stats.values())
     for speaker, data in stats.items():
         if data["segment_count"] > 0:
             data["avg_segment_length"] = data["total_seconds"] / data["segment_count"]
         else:
             data["avg_segment_length"] = 0
+        # Add percentage of total speaking time
+        if total_seconds_all > 0:
+            data["percentage"] = round(data["total_seconds"] / total_seconds_all * 100, 1)
+        else:
+            data["percentage"] = 0
 
     return stats
 

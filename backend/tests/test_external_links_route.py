@@ -25,7 +25,7 @@ class TestProcessURLEndpoint:
 
     @pytest.mark.asyncio
     async def test_process_fireflies_url_returns_immediately(
-        self, client: AsyncClient, auth_headers, db_session, organization, admin_user
+        self, client: AsyncClient, admin_token, get_auth_headers, db_session, organization, admin_user
     ):
         """Test that Fireflies URL processing returns immediately with pending status."""
         url = "https://app.fireflies.ai/view/TEST123"
@@ -42,7 +42,7 @@ class TestProcessURLEndpoint:
             response = await client.post(
                 "/api/external/process-url",
                 json={"url": url},
-                headers=auth_headers
+                headers=get_auth_headers(admin_token)
             )
 
         assert response.status_code == 200
@@ -54,7 +54,7 @@ class TestProcessURLEndpoint:
 
     @pytest.mark.asyncio
     async def test_duplicate_url_returns_existing_call(
-        self, client: AsyncClient, auth_headers, db_session, organization, admin_user
+        self, client: AsyncClient, admin_token, get_auth_headers, db_session, organization, admin_user
     ):
         """Test that submitting the same URL within 5 minutes returns existing call."""
         url = "https://app.fireflies.ai/view/DUPLICATE123"
@@ -78,7 +78,7 @@ class TestProcessURLEndpoint:
         response = await client.post(
             "/api/external/process-url",
             json={"url": url},
-            headers=auth_headers
+            headers=get_auth_headers(admin_token)
         )
 
         assert response.status_code == 200
@@ -88,7 +88,7 @@ class TestProcessURLEndpoint:
 
     @pytest.mark.asyncio
     async def test_old_duplicate_url_creates_new_call(
-        self, client: AsyncClient, auth_headers, db_session, organization, admin_user
+        self, client: AsyncClient, admin_token, get_auth_headers, db_session, organization, admin_user
     ):
         """Test that same URL after 5 minutes creates new call."""
         url = "https://app.fireflies.ai/view/OLD123"
@@ -119,7 +119,7 @@ class TestProcessURLEndpoint:
             response = await client.post(
                 "/api/external/process-url",
                 json={"url": url},
-                headers=auth_headers
+                headers=get_auth_headers(admin_token)
             )
 
         assert response.status_code == 200
@@ -146,7 +146,7 @@ class TestStatusEndpoint:
 
     @pytest.mark.asyncio
     async def test_status_returns_progress(
-        self, client: AsyncClient, auth_headers, db_session, organization, admin_user
+        self, client: AsyncClient, admin_token, get_auth_headers, db_session, organization, admin_user
     ):
         """Test that status endpoint returns progress and progress_stage."""
         call = CallRecording(
@@ -166,7 +166,7 @@ class TestStatusEndpoint:
 
         response = await client.get(
             f"/api/external/status/{call.id}",
-            headers=auth_headers
+            headers=get_auth_headers(admin_token)
         )
 
         assert response.status_code == 200
@@ -178,7 +178,7 @@ class TestStatusEndpoint:
 
     @pytest.mark.asyncio
     async def test_status_returns_zero_progress_when_null(
-        self, client: AsyncClient, auth_headers, db_session, organization, admin_user
+        self, client: AsyncClient, admin_token, get_auth_headers, db_session, organization, admin_user
     ):
         """Test that status returns 0 progress when progress is null."""
         call = CallRecording(
@@ -198,7 +198,7 @@ class TestStatusEndpoint:
 
         response = await client.get(
             f"/api/external/status/{call.id}",
-            headers=auth_headers
+            headers=get_auth_headers(admin_token)
         )
 
         assert response.status_code == 200
@@ -208,7 +208,7 @@ class TestStatusEndpoint:
 
     @pytest.mark.asyncio
     async def test_status_done_returns_100_progress(
-        self, client: AsyncClient, auth_headers, db_session, organization, admin_user
+        self, client: AsyncClient, admin_token, get_auth_headers, db_session, organization, admin_user
     ):
         """Test that done status returns 100% progress."""
         call = CallRecording(
@@ -231,7 +231,7 @@ class TestStatusEndpoint:
 
         response = await client.get(
             f"/api/external/status/{call.id}",
-            headers=auth_headers
+            headers=get_auth_headers(admin_token)
         )
 
         assert response.status_code == 200
@@ -242,11 +242,11 @@ class TestStatusEndpoint:
         assert data["transcript_length"] > 0
 
     @pytest.mark.asyncio
-    async def test_status_not_found(self, client: AsyncClient, auth_headers):
+    async def test_status_not_found(self, client: AsyncClient, admin_token, get_auth_headers):
         """Test that status returns 404 for non-existent call."""
         response = await client.get(
             "/api/external/status/99999",
-            headers=auth_headers
+            headers=get_auth_headers(admin_token)
         )
         assert response.status_code == 404
 
@@ -302,7 +302,7 @@ class TestProgressFlow:
 
     @pytest.mark.asyncio
     async def test_progress_increases_over_time(
-        self, client: AsyncClient, auth_headers, db_session, organization, admin_user
+        self, client: AsyncClient, admin_token, get_auth_headers, db_session, organization, admin_user
     ):
         """Test that progress can be tracked and increases."""
         call = CallRecording(
@@ -323,7 +323,7 @@ class TestProgressFlow:
         # Check initial progress
         response1 = await client.get(
             f"/api/external/status/{call.id}",
-            headers=auth_headers
+            headers=get_auth_headers(admin_token)
         )
         data1 = response1.json()
         assert data1["progress"] == 5
@@ -337,7 +337,7 @@ class TestProgressFlow:
         # Check updated progress
         response2 = await client.get(
             f"/api/external/status/{call.id}",
-            headers=auth_headers
+            headers=get_auth_headers(admin_token)
         )
         data2 = response2.json()
         assert data2["progress"] == 50
@@ -345,7 +345,7 @@ class TestProgressFlow:
 
     @pytest.mark.asyncio
     async def test_failed_status_resets_progress(
-        self, client: AsyncClient, auth_headers, db_session, organization, admin_user
+        self, client: AsyncClient, admin_token, get_auth_headers, db_session, organization, admin_user
     ):
         """Test that failed status shows 0 progress with error stage."""
         call = CallRecording(
@@ -366,7 +366,7 @@ class TestProgressFlow:
 
         response = await client.get(
             f"/api/external/status/{call.id}",
-            headers=auth_headers
+            headers=get_auth_headers(admin_token)
         )
 
         assert response.status_code == 200
