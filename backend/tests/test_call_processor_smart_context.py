@@ -144,6 +144,26 @@ class TestCalculateSpeakerStats:
         assert result["Speaker"]["total_seconds"] == 10
         assert result["Speaker"]["estimated"] == False
 
+    def test_zero_start_timestamp_accepted(self):
+        """Test that 0 is accepted as valid start timestamp (first sentence)."""
+        from api.services.call_processor import calculate_speaker_stats
+
+        # First sentence should legitimately start at 0
+        speakers = [
+            {"speaker": "Speaker A", "start": 0, "end": 5, "text": "Hello"},  # First sentence at 0
+            {"speaker": "Speaker B", "start": 5, "end": 15, "text": "Hi there"},  # Second sentence
+            {"speaker": "Speaker A", "start": 15, "end": 20, "text": "Bye"},  # Third sentence
+        ]
+
+        result = calculate_speaker_stats(speakers)
+
+        # Timestamps should be recognized as valid (not estimated)
+        assert result["Speaker A"]["estimated"] == False
+        assert result["Speaker B"]["estimated"] == False
+        # Durations should be correct
+        assert result["Speaker A"]["total_seconds"] == 10  # (5-0) + (20-15) = 10
+        assert result["Speaker B"]["total_seconds"] == 10  # (15-5) = 10
+
 
 class TestBuildSmartContext:
     """Tests for build_smart_context function."""

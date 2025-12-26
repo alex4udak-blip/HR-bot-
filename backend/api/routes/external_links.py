@@ -9,17 +9,21 @@ Endpoints for processing external URLs:
 """
 
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel, HttpUrl
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
 from ..models.database import User, CallRecording, CallSource, CallStatus
 from ..services.auth import get_current_user, get_user_org
 from ..services.external_links import external_link_processor, LinkType
+import logging
+
+logger = logging.getLogger("hr-analyzer.external_links_route")
 
 router = APIRouter(prefix="/api/external", tags=["External Links"])
 
@@ -159,6 +163,28 @@ async def process_external_url(
             title=call.title,
             message=message
         )
+
+    except IntegrityError as e:
+        # Duplicate URL - race condition caught by unique constraint
+        # Return the existing call
+        logger.info(f"Duplicate URL detected via unique constraint: {request.url}")
+        await db.rollback()
+        existing_result = await db.execute(
+            select(CallRecording).where(
+                CallRecording.source_url == request.url,
+                CallRecording.org_id == org.id
+            ).order_by(CallRecording.created_at.desc())
+        )
+        existing_call = existing_result.scalar_one_or_none()
+        if existing_call:
+            return ProcessURLResponse(
+                call_id=existing_call.id,
+                status=existing_call.status.value if existing_call.status else "pending",
+                source_type=existing_call.source_type.value if existing_call.source_type else "unknown",
+                title=existing_call.title,
+                message="This URL has already been imported."
+            )
+        raise HTTPException(status_code=409, detail="Duplicate URL detected")
 
     except Exception as e:
         import traceback

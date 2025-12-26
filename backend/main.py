@@ -265,6 +265,13 @@ async def init_database():
     await run_migration(engine, "ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS speaker_stats JSONB DEFAULT '{}'::jsonb", "Add speaker_stats to call_recordings")
     await run_migration(engine, "ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS segments JSONB DEFAULT '[]'::jsonb", "Add segments to call_recordings")
 
+    # Unique index to prevent duplicate source_url imports per organization
+    await run_migration(
+        engine,
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_call_recordings_org_source_url ON call_recordings(org_id, source_url) WHERE source_url IS NOT NULL",
+        "Unique index on call_recordings(org_id, source_url)"
+    )
+
     logger.info("=== MULTI-TENANCY TABLES READY ===")
 
     # Step 8: Departments
