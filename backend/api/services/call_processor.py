@@ -521,3 +521,277 @@ call_processor = CallProcessor()
 async def process_call_background(call_id: int):
     """Background task wrapper for call processing."""
     await call_processor.process_call(call_id)
+
+
+# =============================================================================
+# SMART CONTEXT FUNCTIONS FOR AI ANALYSIS
+# =============================================================================
+
+# Segment duration in seconds (10 minutes)
+SEGMENT_DURATION = 600
+
+# Short call threshold - use full transcript if under this (30 minutes)
+SHORT_CALL_THRESHOLD = 1800
+
+
+def calculate_speaker_stats(speakers: list) -> dict:
+    """
+    Calculate statistics for each speaker from call segments.
+
+    Args:
+        speakers: List of speaker segments [{speaker, start, end, text}, ...]
+
+    Returns:
+        Dict mapping speaker name to stats
+    """
+    if not speakers:
+        return {}
+
+    stats = {}
+
+    for segment in speakers:
+        speaker = segment.get("speaker", "Unknown")
+        start = segment.get("start", 0) or 0
+        end = segment.get("end", 0) or 0
+        duration = max(0, end - start)
+
+        if speaker not in stats:
+            stats[speaker] = {
+                "total_seconds": 0,
+                "segment_count": 0,
+                "first_speak_time": start,
+                "last_speak_time": end
+            }
+
+        stats[speaker]["total_seconds"] += duration
+        stats[speaker]["segment_count"] += 1
+        stats[speaker]["first_speak_time"] = min(stats[speaker]["first_speak_time"], start)
+        stats[speaker]["last_speak_time"] = max(stats[speaker]["last_speak_time"], end)
+
+    # Calculate averages
+    for speaker, data in stats.items():
+        if data["segment_count"] > 0:
+            data["avg_segment_length"] = data["total_seconds"] / data["segment_count"]
+        else:
+            data["avg_segment_length"] = 0
+
+    return stats
+
+
+async def identify_participant_roles(call, db) -> dict:
+    """
+    Identify roles of call participants.
+
+    Returns:
+        {
+            "evaluator": {"user_id": 5, "name": "HR Manager", "speaker_name": "..."},
+            "target": {"entity_id": 12, "name": "Candidate", "type": "candidate", "speaker_name": "..."},
+            "others": [{"name": "...", "speaker_name": "...", "role": "unknown"}]
+        }
+    """
+    from sqlalchemy import select
+    from ..models.database import User, Entity
+
+    roles = {
+        "evaluator": None,
+        "target": None,
+        "others": []
+    }
+
+    if not call.speakers:
+        return roles
+
+    # Get call owner as potential evaluator
+    if call.owner_id:
+        result = await db.execute(select(User).where(User.id == call.owner_id))
+        owner = result.scalar_one_or_none()
+        if owner:
+            roles["evaluator"] = {
+                "user_id": owner.id,
+                "name": owner.name,
+                "email": owner.email,
+                "speaker_name": None
+            }
+
+    # Get target entity
+    if call.entity_id:
+        result = await db.execute(select(Entity).where(Entity.id == call.entity_id))
+        entity = result.scalar_one_or_none()
+        if entity:
+            roles["target"] = {
+                "entity_id": entity.id,
+                "name": entity.name,
+                "type": entity.type.value if entity.type else None,
+                "email": entity.email,
+                "speaker_name": None
+            }
+
+    # Try to match speakers to roles by email
+    speaker_stats = calculate_speaker_stats(call.speakers)
+
+    for speaker_name in speaker_stats.keys():
+        # Extract email from speaker name if present
+        email = None
+        if "@" in speaker_name:
+            parts = speaker_name.split()
+            for part in parts:
+                if "@" in part:
+                    email = part.strip("()<>[]\"'").lower()
+                    break
+
+        matched = False
+
+        # Match evaluator by email
+        if roles["evaluator"] and email:
+            evaluator_email = (roles["evaluator"].get("email") or "").lower()
+            if evaluator_email and evaluator_email == email:
+                roles["evaluator"]["speaker_name"] = speaker_name
+                matched = True
+
+        # Match target by email
+        if not matched and roles["target"] and email:
+            target_email = (roles["target"].get("email") or "").lower()
+            if target_email and target_email == email:
+                roles["target"]["speaker_name"] = speaker_name
+                matched = True
+
+        # Unmatched speakers go to others
+        if not matched:
+            roles["others"].append({
+                "name": speaker_name,
+                "speaker_name": speaker_name,
+                "role": "unknown"
+            })
+
+    return roles
+
+
+async def process_call_for_ai(call, db, force_reprocess: bool = False):
+    """
+    Process call recording for efficient AI analysis.
+
+    Calculates speaker stats and identifies participant roles.
+    """
+    # Skip if already processed (unless forced)
+    if not force_reprocess and call.speaker_stats and call.participant_roles:
+        logger.debug(f"Call {call.id} already processed, skipping")
+        return call
+
+    logger.info(f"Processing call {call.id} for AI analysis")
+
+    # Calculate speaker stats
+    if call.speakers:
+        call.speaker_stats = calculate_speaker_stats(call.speakers)
+        logger.debug(f"Calculated stats for {len(call.speaker_stats)} speakers")
+
+    # Identify participant roles
+    call.participant_roles = await identify_participant_roles(call, db)
+
+    # Save changes
+    db.add(call)
+    await db.commit()
+    await db.refresh(call)
+
+    return call
+
+
+def build_smart_context(call, include_full_transcript: bool = False) -> str:
+    """
+    Build optimized context for AI analysis.
+
+    For short calls (< 30 min): includes full transcript
+    For long calls: includes summary + smart truncated transcript + participant info
+    """
+    parts = []
+
+    # Call metadata
+    call_date = call.created_at.strftime('%d.%m.%Y') if call.created_at else "дата неизвестна"
+    parts.append(f"### Звонок от {call_date}")
+
+    if call.title:
+        parts.append(f"**Название:** {call.title}")
+
+    if call.duration_seconds:
+        mins = call.duration_seconds // 60
+        secs = call.duration_seconds % 60
+        parts.append(f"**Длительность:** {mins}м {secs}с")
+
+    # Participant roles with speaking time
+    if call.participant_roles:
+        parts.append("\n**Участники:**")
+
+        evaluator = call.participant_roles.get("evaluator")
+        if evaluator:
+            speaker_name = evaluator.get("speaker_name", "")
+            time_str = ""
+            if speaker_name and call.speaker_stats:
+                stats = call.speaker_stats.get(speaker_name, {})
+                total_secs = stats.get("total_seconds", 0)
+                if total_secs:
+                    time_str = f" (~{int(total_secs // 60)}м)"
+            parts.append(f"- 🔑 {evaluator.get('name', 'Неизвестно')} (оценивает){time_str}")
+
+        target = call.participant_roles.get("target")
+        if target:
+            speaker_name = target.get("speaker_name", "")
+            time_str = ""
+            if speaker_name and call.speaker_stats:
+                stats = call.speaker_stats.get(speaker_name, {})
+                total_secs = stats.get("total_seconds", 0)
+                if total_secs:
+                    time_str = f" (~{int(total_secs // 60)}м)"
+            entity_type = target.get("type", "контакт")
+            parts.append(f"- 🎯 {target.get('name', 'Неизвестно')} ({entity_type}){time_str}")
+
+        for other in call.participant_roles.get("others", []):
+            speaker_name = other.get("speaker_name", "")
+            time_str = ""
+            if speaker_name and call.speaker_stats:
+                stats = call.speaker_stats.get(speaker_name, {})
+                total_secs = stats.get("total_seconds", 0)
+                if total_secs:
+                    time_str = f" (~{int(total_secs // 60)}м)"
+            parts.append(f"- 👤 {other.get('name', 'Неизвестно')}{time_str}")
+
+    elif call.speaker_stats:
+        # Fallback to speaker stats if no roles identified
+        parts.append("\n**Участники звонка:**")
+        for speaker, stats in sorted(call.speaker_stats.items(), key=lambda x: -x[1].get("total_seconds", 0)):
+            total_secs = stats.get("total_seconds", 0)
+            mins = int(total_secs // 60)
+            secs = int(total_secs % 60)
+            parts.append(f"- {speaker}: ~{mins}м {secs}с")
+
+    # Summary
+    if call.summary:
+        parts.append(f"\n**Саммари:** {call.summary}")
+
+    # Key points
+    if call.key_points:
+        parts.append("\n**Ключевые моменты:**")
+        for point in call.key_points[:10]:
+            parts.append(f"- {point}")
+
+    # Transcript handling
+    is_short_call = not call.duration_seconds or call.duration_seconds <= SHORT_CALL_THRESHOLD
+
+    if call.transcript:
+        if include_full_transcript or is_short_call:
+            # Include full transcript for short calls
+            parts.append(f"\n**Транскрипт:**\n{call.transcript}")
+        else:
+            # For long calls, use smart truncation
+            MAX_CHARS = 40000
+            if len(call.transcript) > MAX_CHARS:
+                first_part = int(MAX_CHARS * 0.6)
+                last_part = MAX_CHARS - first_part
+                transcript = (
+                    call.transcript[:first_part] +
+                    f"\n\n... [пропущено ~{(len(call.transcript) - MAX_CHARS) // 1000}k символов] ...\n\n" +
+                    call.transcript[-last_part:]
+                )
+            else:
+                transcript = call.transcript
+            parts.append(f"\n**Транскрипт:**\n{transcript}")
+
+    return "\n".join(parts)

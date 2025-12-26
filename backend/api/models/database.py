@@ -418,6 +418,11 @@ class CallRecording(Base):
     action_items = Column(JSON, nullable=True)
     key_points = Column(JSON, nullable=True)
     error_message = Column(Text, nullable=True)
+
+    # Smart context fields for AI analysis
+    participant_roles = Column(JSON, nullable=True)  # {evaluator: {user_id, name}, target: {entity_id, name}, others: [...]}
+    speaker_stats = Column(JSON, nullable=True)  # {"Speaker 1": {total_seconds: 900, role: "hr", user_id: 5}, ...}
+    segments = Column(JSON, nullable=True)  # [{start, end, summary, key_quotes: [], speaker_breakdown: {}}]
     created_at = Column(DateTime, default=func.now())
     started_at = Column(DateTime, nullable=True)
     ended_at = Column(DateTime, nullable=True)

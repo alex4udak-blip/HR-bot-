@@ -191,55 +191,14 @@ class EntityAIService:
                 else:
                     parts.append("(нет сообщений)")
 
-        # All linked calls with transcripts
+        # All linked calls with transcripts - use smart context builder
         if calls:
+            from .call_processor import build_smart_context
             parts.append("\n## ЗВОНКИ:")
             for call in calls:
-                call_date = call.created_at.strftime('%d.%m.%Y') if call.created_at else "дата неизвестна"
-                parts.append(f"\n### Звонок от {call_date}")
-                if call.title:
-                    parts.append(f"**Название:** {call.title}")
-                if call.duration_seconds:
-                    mins = call.duration_seconds // 60
-                    secs = call.duration_seconds % 60
-                    parts.append(f"**Длительность:** {mins}м {secs}с")
-                if call.summary:
-                    parts.append(f"**Саммари:** {call.summary}")
-                # Add speaker statistics if available
-                if call.speakers:
-                    speaker_times = {}
-                    for segment in call.speakers:
-                        speaker = segment.get("speaker", "Unknown")
-                        start = segment.get("start", 0) or 0
-                        end = segment.get("end", 0) or 0
-                        duration = end - start
-                        speaker_times[speaker] = speaker_times.get(speaker, 0) + duration
-                    if speaker_times:
-                        parts.append("**Участники звонка:**")
-                        for speaker, total_secs in sorted(speaker_times.items(), key=lambda x: -x[1]):
-                            mins = int(total_secs // 60)
-                            secs = int(total_secs % 60)
-                            parts.append(f"- {speaker}: ~{mins}м {secs}с")
-                if call.key_points:
-                    parts.append("**Ключевые моменты:**")
-                    for point in call.key_points[:10]:
-                        parts.append(f"- {point}")
-                if call.transcript:
-                    # Smart truncate for long transcripts - keep beginning AND end
-                    # 40000 chars ≈ 8000 words ≈ 40-50 minutes of conversation
-                    MAX_TRANSCRIPT_CHARS = 40000
-                    if len(call.transcript) > MAX_TRANSCRIPT_CHARS:
-                        # Keep first 60% and last 40% to preserve both intro and conclusion
-                        first_part_len = int(MAX_TRANSCRIPT_CHARS * 0.6)
-                        last_part_len = MAX_TRANSCRIPT_CHARS - first_part_len
-                        transcript = (
-                            call.transcript[:first_part_len] +
-                            f"\n\n... [пропущено ~{(len(call.transcript) - MAX_TRANSCRIPT_CHARS) // 1000}k символов из середины] ...\n\n" +
-                            call.transcript[-last_part_len:]
-                        )
-                    else:
-                        transcript = call.transcript
-                    parts.append(f"**Транскрипт:**\n{transcript}")
+                # Use smart context that includes participant roles and optimized transcript
+                call_context = build_smart_context(call, include_full_transcript=False)
+                parts.append(call_context)
 
         if not chats and not calls:
             parts.append("\n⚠️ К этому контакту пока не привязаны чаты или звонки.")

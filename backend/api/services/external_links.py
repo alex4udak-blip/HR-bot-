@@ -753,6 +753,12 @@ class ExternalLinkProcessor:
             call.status = CallStatus.done
             call.processed_at = datetime.utcnow()
 
+            # Calculate speaker stats and participant roles for AI context
+            if call.speakers:
+                from .call_processor import calculate_speaker_stats, identify_participant_roles
+                call.speaker_stats = calculate_speaker_stats(call.speakers)
+                logger.info(f"Calculated speaker stats for {len(call.speaker_stats)} speakers")
+
             logger.info(f"Fireflies transcript processed successfully: {len(call.transcript)} chars")
 
         except Exception as e:
