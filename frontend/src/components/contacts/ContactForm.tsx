@@ -162,8 +162,9 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
 
           {/* Name */}
           <div>
-            <label className="block text-sm font-medium text-white/60 mb-2">Имя *</label>
+            <label htmlFor="contact-name" className="block text-sm font-medium text-white/60 mb-2">Имя *</label>
             <input
+              id="contact-name"
               type="text"
               value={formData.name}
               onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
@@ -267,8 +268,9 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
 
           {/* Tags */}
           <div>
-            <label className="block text-sm font-medium text-white/60 mb-2">Теги (через запятую)</label>
+            <label htmlFor="contact-tags" className="block text-sm font-medium text-white/60 mb-2">Теги (через запятую)</label>
             <input
+              id="contact-tags"
               type="text"
               value={formData.tags}
               onChange={(e) => setFormData((prev) => ({ ...prev, tags: e.target.value }))}
