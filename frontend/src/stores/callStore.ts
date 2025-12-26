@@ -172,6 +172,11 @@ export const useCallStore = create<CallState>((set, get) => ({
     // Create new AbortController for this polling session
     const abortController = new AbortController();
 
+    // Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
     const interval = setInterval(async () => {
       try {
         const status = await api.getCallStatus(id, abortController.signal);
@@ -197,6 +202,15 @@ export const useCallStore = create<CallState>((set, get) => ({
           // Refresh calls list and current call
           get().fetchCalls();
           get().fetchCall(id);
+
+          // Send browser notification if page is hidden
+          if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+            const title = status.status === 'done' ? 'Запись обработана' : 'Ошибка обработки';
+            const body = status.status === 'done'
+              ? 'Транскрипт и анализ готовы'
+              : (status.error_message || 'Не удалось обработать запись');
+            new Notification(title, { body, icon: '/favicon.ico' });
+          }
         }
       } catch (err) {
         // Only stop polling if it's not an abort error (which is expected on cleanup)
