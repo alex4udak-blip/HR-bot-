@@ -9,7 +9,7 @@ from ..models.database import (
     AnalysisHistory, AIConversation, Entity, EntityAIConversation, EntityAnalysis,
     EntityTransfer, CallRecording, Invitation, CriteriaPreset, ReportSubscription
 )
-from ..models.schemas import UserCreate, UserUpdate, UserResponse
+from ..models.schemas import UserCreate, UserUpdate, UserProfileUpdate, UserResponse
 from ..services.auth import get_superadmin, get_current_user, get_current_user_allow_inactive, hash_password
 from ..services.password_policy import validate_password
 
@@ -42,6 +42,60 @@ async def get_current_user_info(
         role=current_user.role.value,
         telegram_id=current_user.telegram_id,
         telegram_username=current_user.telegram_username,
+        additional_emails=current_user.additional_emails or [],
+        additional_telegram_usernames=current_user.additional_telegram_usernames or [],
+        is_active=current_user.is_active,
+        created_at=current_user.created_at,
+        chats_count=chats_count
+    )
+
+
+@router.patch("/me/profile", response_model=UserResponse)
+async def update_current_user_profile(
+    data: UserProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update current user's profile settings.
+
+    Users can update their own name, telegram username, and additional
+    contact identifiers (emails, telegram usernames) for speaker matching.
+    """
+    current_user = await db.merge(current_user)
+
+    if data.name is not None:
+        current_user.name = data.name.strip()
+    if data.telegram_username is not None:
+        # Normalize: remove @ prefix if present, lowercase
+        username = data.telegram_username.strip().lstrip('@').lower()
+        current_user.telegram_username = username if username else None
+    if data.additional_emails is not None:
+        # Normalize: lowercase, strip whitespace, filter empty
+        emails = [e.strip().lower() for e in data.additional_emails if e.strip()]
+        current_user.additional_emails = emails
+    if data.additional_telegram_usernames is not None:
+        # Normalize: remove @ prefix, lowercase, strip whitespace
+        usernames = [u.strip().lstrip('@').lower() for u in data.additional_telegram_usernames if u.strip()]
+        current_user.additional_telegram_usernames = usernames
+
+    await db.commit()
+    await db.refresh(current_user)
+
+    # Get chat count
+    result = await db.execute(
+        select(func.count(Chat.id)).where(Chat.owner_id == current_user.id)
+    )
+    chats_count = result.scalar() or 0
+
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        name=current_user.name,
+        role=current_user.role.value,
+        telegram_id=current_user.telegram_id,
+        telegram_username=current_user.telegram_username,
+        additional_emails=current_user.additional_emails or [],
+        additional_telegram_usernames=current_user.additional_telegram_usernames or [],
         is_active=current_user.is_active,
         created_at=current_user.created_at,
         chats_count=chats_count
@@ -120,6 +174,8 @@ async def get_users(
         UserResponse(
             id=u.id, email=u.email, name=u.name, role=u.role.value,
             telegram_id=u.telegram_id, telegram_username=u.telegram_username,
+            additional_emails=u.additional_emails or [],
+            additional_telegram_usernames=u.additional_telegram_usernames or [],
             is_active=u.is_active, created_at=u.created_at,
             chats_count=chat_counts.get(u.id, 0)
         ) for u in users
@@ -198,6 +254,8 @@ async def create_user(
     return UserResponse(
         id=user.id, email=user.email, name=user.name, role=user.role.value,
         telegram_id=user.telegram_id, telegram_username=user.telegram_username,
+        additional_emails=user.additional_emails or [],
+        additional_telegram_usernames=user.additional_telegram_usernames or [],
         is_active=user.is_active, created_at=user.created_at, chats_count=0
     )
 
@@ -297,6 +355,8 @@ async def update_user(
     return UserResponse(
         id=user.id, email=user.email, name=user.name, role=user.role.value,
         telegram_id=user.telegram_id, telegram_username=user.telegram_username,
+        additional_emails=user.additional_emails or [],
+        additional_telegram_usernames=user.additional_telegram_usernames or [],
         is_active=user.is_active, created_at=user.created_at,
         chats_count=chats_count
     )

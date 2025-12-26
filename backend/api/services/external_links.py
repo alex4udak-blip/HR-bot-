@@ -418,8 +418,26 @@ class ExternalLinkProcessor:
                                 transcript_data = page_props.get('transcript', {})
 
                                 if transcript_data:
+                                    # Log all available fields in transcript_data
+                                    logger.info(f"Fireflies transcript_data keys: {list(transcript_data.keys())}")
+
                                     title = transcript_data.get('title')
                                     sentences = transcript_data.get('sentences', [])
+
+                                    # Extract participants info (email, name) if available
+                                    participants = transcript_data.get('participants', []) or transcript_data.get('attendees', []) or []
+                                    if participants:
+                                        logger.info(f"Fireflies participants: {participants}")
+
+                                    # Also check for speakers list with more info
+                                    speakers_info = transcript_data.get('speakers', []) or []
+                                    if speakers_info:
+                                        logger.info(f"Fireflies speakers info: {speakers_info}")
+
+                                    # Log first sentence structure to understand fields
+                                    if sentences:
+                                        logger.info(f"Fireflies sentence structure (first): {list(sentences[0].keys())}")
+                                        logger.info(f"Fireflies first sentence sample: {sentences[0]}")
 
                                     if sentences:
                                         lines = []
@@ -431,18 +449,39 @@ class ExternalLinkProcessor:
                                         transcript_text = "\n".join(lines)
 
                                         # Extract speakers WITH timestamps
+                                        # Try multiple possible field names for timestamps
                                         speakers = []
                                         for s in sentences:
+                                            # Try different field names for start time
+                                            start = 0
+                                            for key in ["start_time", "startTime", "start"]:
+                                                if s.get(key) is not None:
+                                                    start = float(s.get(key))
+                                                    break
+                                            if start == 0 and s.get("start_ms"):
+                                                start = float(s.get("start_ms")) / 1000
+
+                                            # Try different field names for end time
+                                            end = 0
+                                            for key in ["end_time", "endTime", "end"]:
+                                                if s.get(key) is not None:
+                                                    end = float(s.get(key))
+                                                    break
+                                            if end == 0 and s.get("end_ms"):
+                                                end = float(s.get("end_ms")) / 1000
+
                                             speakers.append({
-                                                "speaker": s.get("speaker_name", "Speaker"),
-                                                "start": s.get("start_time", 0),
-                                                "end": s.get("end_time", 0),
-                                                "text": s.get("text", s.get("raw_text", ""))
+                                                "speaker": s.get("speaker_name") or s.get("speakerName") or "Speaker",
+                                                "start": start,
+                                                "end": end,
+                                                "text": s.get("text") or s.get("raw_text") or ""
                                             })
                                         call.speakers = speakers
-                                        call.duration_seconds = transcript_data.get('duration')
+                                        call.duration_seconds = transcript_data.get('duration') or transcript_data.get('duration_seconds')
 
-                                        logger.info(f"Playwright extracted {len(transcript_text)} chars from __NEXT_DATA__ with {len(speakers)} timestamped speakers")
+                                        # Log if timestamps were found
+                                        has_timestamps = any(sp['start'] > 0 or sp['end'] > 0 for sp in speakers)
+                                        logger.info(f"Playwright extracted {len(transcript_text)} chars from __NEXT_DATA__ with {len(speakers)} speakers (has_timestamps={has_timestamps})")
 
                                         # Progress: Transcript extracted
                                         if call_id:

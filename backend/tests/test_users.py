@@ -6,6 +6,7 @@ import pytest
 from datetime import datetime
 
 from api.models.database import User, UserRole, DepartmentMember, DeptRole, Chat
+from api.services.auth import create_access_token
 
 
 class TestGetUsers:
@@ -1207,3 +1208,242 @@ class TestUserEdgeCases:
         )
         dept_member = result.scalar_one_or_none()
         assert dept_member.role == DeptRole.sub_admin
+
+
+class TestUserProfileUpdate:
+    """Test PATCH /api/users/me/profile endpoint - self profile update."""
+
+    @pytest.mark.asyncio
+    async def test_user_can_update_own_profile_name(
+        self, client, admin_user, admin_token, get_auth_headers
+    ):
+        """Test that user can update their own name."""
+        response = await client.patch(
+            "/api/users/me/profile",
+            json={"name": "Updated Name"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "Updated Name"
+        assert data["id"] == admin_user.id
+
+    @pytest.mark.asyncio
+    async def test_user_can_update_telegram_username(
+        self, client, admin_user, admin_token, get_auth_headers
+    ):
+        """Test that user can update their telegram username."""
+        response = await client.patch(
+            "/api/users/me/profile",
+            json={"telegram_username": "@NewUsername"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        # Should normalize: remove @ prefix, lowercase
+        assert data["telegram_username"] == "newusername"
+
+    @pytest.mark.asyncio
+    async def test_user_can_add_additional_emails(
+        self, client, admin_user, admin_token, get_auth_headers
+    ):
+        """Test that user can add additional emails."""
+        response = await client.patch(
+            "/api/users/me/profile",
+            json={"additional_emails": ["work@example.com", "Personal@Example.org"]},
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        # Should normalize: lowercase, stripped
+        assert "work@example.com" in data["additional_emails"]
+        assert "personal@example.org" in data["additional_emails"]
+
+    @pytest.mark.asyncio
+    async def test_user_can_add_additional_telegram_usernames(
+        self, client, admin_user, admin_token, get_auth_headers
+    ):
+        """Test that user can add additional telegram usernames."""
+        response = await client.patch(
+            "/api/users/me/profile",
+            json={"additional_telegram_usernames": ["@WorkAccount", "PersonalTG"]},
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        # Should normalize: remove @ prefix, lowercase
+        assert "workaccount" in data["additional_telegram_usernames"]
+        assert "personaltg" in data["additional_telegram_usernames"]
+
+    @pytest.mark.asyncio
+    async def test_user_can_update_all_profile_fields(
+        self, client, admin_user, admin_token, get_auth_headers
+    ):
+        """Test that user can update all profile fields at once."""
+        response = await client.patch(
+            "/api/users/me/profile",
+            json={
+                "name": "Full Update Name",
+                "telegram_username": "fullupdate",
+                "additional_emails": ["email1@test.com", "email2@test.com"],
+                "additional_telegram_usernames": ["tg1", "tg2", "tg3"]
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "Full Update Name"
+        assert data["telegram_username"] == "fullupdate"
+        assert len(data["additional_emails"]) == 2
+        assert len(data["additional_telegram_usernames"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_profile_update_filters_empty_values(
+        self, client, admin_user, admin_token, get_auth_headers
+    ):
+        """Test that empty strings are filtered from arrays."""
+        response = await client.patch(
+            "/api/users/me/profile",
+            json={
+                "additional_emails": ["valid@test.com", "", "  ", "another@test.com"],
+                "additional_telegram_usernames": ["valid", "", "  "]
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["additional_emails"] == ["valid@test.com", "another@test.com"]
+        assert data["additional_telegram_usernames"] == ["valid"]
+
+    @pytest.mark.asyncio
+    async def test_profile_update_clears_telegram_username_with_empty_string(
+        self, client, db_session, get_auth_headers
+    ):
+        """Test that empty string clears telegram username."""
+        # Create user with telegram username
+        user = User(
+            email="hastg@test.com",
+            password_hash="hashed",
+            name="Has TG",
+            role=UserRole.ADMIN,
+            telegram_username="oldusername",
+            is_active=True
+        )
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+
+        token = create_access_token(data={"sub": str(user.id)})
+
+        response = await client.patch(
+            "/api/users/me/profile",
+            json={"telegram_username": ""},
+            headers=get_auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["telegram_username"] is None
+
+    @pytest.mark.asyncio
+    async def test_profile_update_requires_authentication(self, client):
+        """Test that profile update requires authentication."""
+        response = await client.patch(
+            "/api/users/me/profile",
+            json={"name": "Unauthenticated"}
+        )
+
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_profile_update_partial_fields_preserve_others(
+        self, client, db_session, get_auth_headers
+    ):
+        """Test that updating some fields doesn't affect others."""
+        # Create user with all fields set
+        user = User(
+            email="fulluser@test.com",
+            password_hash="hashed",
+            name="Original Name",
+            role=UserRole.ADMIN,
+            telegram_username="originaltg",
+            additional_emails=["original@test.com"],
+            additional_telegram_usernames=["originaltguser"],
+            is_active=True
+        )
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+
+        token = create_access_token(data={"sub": str(user.id)})
+
+        # Only update name
+        response = await client.patch(
+            "/api/users/me/profile",
+            json={"name": "New Name Only"},
+            headers=get_auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "New Name Only"
+        # Other fields should be unchanged
+        assert data["telegram_username"] == "originaltg"
+        assert data["additional_emails"] == ["original@test.com"]
+        assert data["additional_telegram_usernames"] == ["originaltguser"]
+
+    @pytest.mark.asyncio
+    async def test_profile_response_includes_new_fields(
+        self, client, admin_token, get_auth_headers
+    ):
+        """Test that profile response includes additional_emails and additional_telegram_usernames."""
+        response = await client.patch(
+            "/api/users/me/profile",
+            json={"name": "Test Fields"},
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        # Response should include these fields even if empty
+        assert "additional_emails" in data
+        assert "additional_telegram_usernames" in data
+        assert isinstance(data["additional_emails"], list)
+        assert isinstance(data["additional_telegram_usernames"], list)
+
+    @pytest.mark.asyncio
+    async def test_get_current_user_includes_additional_fields(
+        self, client, db_session, get_auth_headers
+    ):
+        """Test that GET /api/users/me includes additional profile fields."""
+        # Create user with additional fields
+        user = User(
+            email="withfields@test.com",
+            password_hash="hashed",
+            name="With Fields",
+            role=UserRole.ADMIN,
+            additional_emails=["extra@test.com"],
+            additional_telegram_usernames=["extratg"],
+            is_active=True
+        )
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+
+        token = create_access_token(data={"sub": str(user.id)})
+
+        response = await client.get(
+            "/api/users/me",
+            headers=get_auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["additional_emails"] == ["extra@test.com"]
+        assert data["additional_telegram_usernames"] == ["extratg"]

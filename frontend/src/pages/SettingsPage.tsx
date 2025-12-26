@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -12,12 +12,16 @@ import {
   X,
   Save,
   Globe,
-  User as UserIcon
+  User as UserIcon,
+  Mail,
+  AtSign,
+  Edit3
 } from 'lucide-react';
 import {
   getCriteriaPresets,
   createCriteriaPreset,
-  deleteCriteriaPreset
+  deleteCriteriaPreset,
+  updateUserProfile
 } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import type { Criterion, CriteriaPreset } from '@/types';
@@ -32,8 +36,31 @@ const categoryConfig = {
 
 export default function SettingsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const { user } = useAuthStore();
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const { user, setUser } = useAuthStore();
   const queryClient = useQueryClient();
+
+  // Profile editing state
+  const [profileData, setProfileData] = useState({
+    name: '',
+    telegram_username: '',
+    additional_emails: [] as string[],
+    additional_telegram_usernames: [] as string[],
+  });
+  const [newEmail, setNewEmail] = useState('');
+  const [newTelegramUsername, setNewTelegramUsername] = useState('');
+
+  // Initialize profile data from user
+  useEffect(() => {
+    if (user) {
+      setProfileData({
+        name: user.name || '',
+        telegram_username: user.telegram_username || '',
+        additional_emails: user.additional_emails || [],
+        additional_telegram_usernames: user.additional_telegram_usernames || [],
+      });
+    }
+  }, [user]);
 
   const [newPreset, setNewPreset] = useState({
     name: '',
@@ -75,6 +102,79 @@ export default function SettingsPage() {
       toast.success('Preset deleted');
     },
   });
+
+  // Profile update mutation
+  const profileMutation = useMutation({
+    mutationFn: updateUserProfile,
+    onSuccess: (updatedUser) => {
+      setUser(updatedUser);
+      setIsEditingProfile(false);
+      toast.success('Профиль обновлён');
+    },
+    onError: () => {
+      toast.error('Ошибка обновления профиля');
+    },
+  });
+
+  const handleSaveProfile = () => {
+    profileMutation.mutate({
+      name: profileData.name.trim() || undefined,
+      telegram_username: profileData.telegram_username.trim() || undefined,
+      additional_emails: profileData.additional_emails,
+      additional_telegram_usernames: profileData.additional_telegram_usernames,
+    });
+  };
+
+  const handleAddEmail = () => {
+    const email = newEmail.trim().toLowerCase();
+    if (email && !profileData.additional_emails.includes(email)) {
+      setProfileData({
+        ...profileData,
+        additional_emails: [...profileData.additional_emails, email],
+      });
+      setNewEmail('');
+    }
+  };
+
+  const handleRemoveEmail = (email: string) => {
+    setProfileData({
+      ...profileData,
+      additional_emails: profileData.additional_emails.filter(e => e !== email),
+    });
+  };
+
+  const handleAddTelegramUsername = () => {
+    const username = newTelegramUsername.trim().replace('@', '').toLowerCase();
+    if (username && !profileData.additional_telegram_usernames.includes(username)) {
+      setProfileData({
+        ...profileData,
+        additional_telegram_usernames: [...profileData.additional_telegram_usernames, username],
+      });
+      setNewTelegramUsername('');
+    }
+  };
+
+  const handleRemoveTelegramUsername = (username: string) => {
+    setProfileData({
+      ...profileData,
+      additional_telegram_usernames: profileData.additional_telegram_usernames.filter(u => u !== username),
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingProfile(false);
+    // Reset to user values
+    if (user) {
+      setProfileData({
+        name: user.name || '',
+        telegram_username: user.telegram_username || '',
+        additional_emails: user.additional_emails || [],
+        additional_telegram_usernames: user.additional_telegram_usernames || [],
+      });
+    }
+    setNewEmail('');
+    setNewTelegramUsername('');
+  };
 
   const handleAddCriterion = () => {
     setNewPreset({
@@ -380,16 +480,56 @@ export default function SettingsPage() {
 
         {/* Account Info */}
         <div className="glass rounded-2xl p-6">
-          <h2 className="text-lg font-semibold mb-4">Account</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Аккаунт</h2>
+            {!isEditingProfile ? (
+              <button
+                onClick={() => setIsEditingProfile(true)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-accent-400 hover:bg-accent-500/10 transition-colors"
+              >
+                <Edit3 className="w-4 h-4" />
+                Редактировать
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCancelEdit}
+                  className="px-3 py-1.5 rounded-lg text-sm text-dark-400 hover:bg-white/5 transition-colors"
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={handleSaveProfile}
+                  disabled={profileMutation.isPending}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50 transition-colors"
+                >
+                  <Save className="w-4 h-4" />
+                  {profileMutation.isPending ? 'Сохранение...' : 'Сохранить'}
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="space-y-4">
+            {/* Basic Info */}
             <div className="flex items-center gap-4">
               <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent-500/20 to-purple-500/20 flex items-center justify-center">
                 <span className="text-2xl font-bold text-accent-400">
-                  {user?.name?.[0]?.toUpperCase() || 'U'}
+                  {(isEditingProfile ? profileData.name : user?.name)?.[0]?.toUpperCase() || 'U'}
                 </span>
               </div>
-              <div>
-                <h3 className="font-semibold text-lg">{user?.name}</h3>
+              <div className="flex-1">
+                {isEditingProfile ? (
+                  <input
+                    type="text"
+                    value={profileData.name}
+                    onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
+                    placeholder="Ваше имя"
+                    className="w-full glass-light rounded-lg py-2 px-3 text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+                  />
+                ) : (
+                  <h3 className="font-semibold text-lg">{user?.name}</h3>
+                )}
                 <p className="text-dark-400">{user?.email}</p>
                 <span
                   className={clsx(
@@ -403,12 +543,151 @@ export default function SettingsPage() {
                 </span>
               </div>
             </div>
-            {user?.telegram_username && (
-              <div className="glass-light rounded-xl p-4">
-                <p className="text-sm text-dark-400 mb-1">Telegram Account</p>
-                <p className="font-medium">@{user.telegram_username}</p>
+
+            {/* Telegram Username */}
+            <div className="glass-light rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <AtSign className="w-4 h-4 text-blue-400" />
+                <p className="text-sm text-dark-400">Telegram</p>
               </div>
-            )}
+              {isEditingProfile ? (
+                <input
+                  type="text"
+                  value={profileData.telegram_username}
+                  onChange={(e) => setProfileData({ ...profileData, telegram_username: e.target.value })}
+                  placeholder="@username"
+                  className="w-full bg-transparent border-b border-white/10 pb-1 focus:outline-none focus:border-accent-500"
+                />
+              ) : (
+                <p className="font-medium">
+                  {user?.telegram_username ? `@${user.telegram_username}` : 'Не указан'}
+                </p>
+              )}
+            </div>
+
+            {/* Additional Emails */}
+            <div className="glass-light rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Mail className="w-4 h-4 text-cyan-400" />
+                <p className="text-sm text-dark-400">Дополнительные Email (для распознавания спикера)</p>
+              </div>
+
+              {isEditingProfile ? (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddEmail())}
+                      placeholder="email@example.com"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent-500"
+                    />
+                    <button
+                      onClick={handleAddEmail}
+                      className="px-3 py-2 bg-accent-500/20 text-accent-400 rounded-lg hover:bg-accent-500/30 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {profileData.additional_emails.map((email) => (
+                      <span
+                        key={email}
+                        className="flex items-center gap-1 px-2 py-1 bg-cyan-500/20 text-cyan-400 rounded-lg text-sm"
+                      >
+                        {email}
+                        <button
+                          onClick={() => handleRemoveEmail(email)}
+                          className="hover:text-red-400"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                    {profileData.additional_emails.length === 0 && (
+                      <span className="text-sm text-dark-500">Нет дополнительных email</span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(user?.additional_emails || []).map((email) => (
+                    <span
+                      key={email}
+                      className="px-2 py-1 bg-cyan-500/20 text-cyan-400 rounded-lg text-sm"
+                    >
+                      {email}
+                    </span>
+                  ))}
+                  {(!user?.additional_emails || user.additional_emails.length === 0) && (
+                    <span className="text-sm text-dark-500">Нет дополнительных email</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Additional Telegram Usernames */}
+            <div className="glass-light rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <AtSign className="w-4 h-4 text-purple-400" />
+                <p className="text-sm text-dark-400">Дополнительные Telegram (для распознавания спикера)</p>
+              </div>
+
+              {isEditingProfile ? (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newTelegramUsername}
+                      onChange={(e) => setNewTelegramUsername(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTelegramUsername())}
+                      placeholder="@username"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent-500"
+                    />
+                    <button
+                      onClick={handleAddTelegramUsername}
+                      className="px-3 py-2 bg-accent-500/20 text-accent-400 rounded-lg hover:bg-accent-500/30 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {profileData.additional_telegram_usernames.map((username) => (
+                      <span
+                        key={username}
+                        className="flex items-center gap-1 px-2 py-1 bg-purple-500/20 text-purple-400 rounded-lg text-sm"
+                      >
+                        @{username}
+                        <button
+                          onClick={() => handleRemoveTelegramUsername(username)}
+                          className="hover:text-red-400"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                    {profileData.additional_telegram_usernames.length === 0 && (
+                      <span className="text-sm text-dark-500">Нет дополнительных Telegram</span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(user?.additional_telegram_usernames || []).map((username) => (
+                    <span
+                      key={username}
+                      className="px-2 py-1 bg-purple-500/20 text-purple-400 rounded-lg text-sm"
+                    >
+                      @{username}
+                    </span>
+                  ))}
+                  {(!user?.additional_telegram_usernames || user.additional_telegram_usernames.length === 0) && (
+                    <span className="text-sm text-dark-500">Нет дополнительных Telegram</span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </motion.div>
