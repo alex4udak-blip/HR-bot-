@@ -992,6 +992,82 @@ class ExternalLinkProcessor:
         """
         await call_processor.process_call(call_id)
 
+    async def create_pending_call(
+        self,
+        url: str,
+        organization_id: int,
+        owner_id: int,
+        source_type: CallSource,
+        department_id: Optional[int] = None,
+        entity_id: Optional[int] = None,
+        title: Optional[str] = None
+    ) -> CallRecording:
+        """
+        Create a CallRecording with pending status (for async processing).
+        Returns immediately so the client gets a fast response.
+        """
+        from ..database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as db:
+            call = CallRecording(
+                org_id=organization_id,
+                owner_id=owner_id,
+                entity_id=entity_id,
+                department_id=department_id,
+                source_url=url,
+                source_type=source_type,
+                title=title or f"External Recording - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+                status=CallStatus.pending,
+                created_at=datetime.utcnow()
+            )
+            db.add(call)
+            await db.commit()
+            await db.refresh(call)
+            logger.info(f"Created pending CallRecording {call.id} for async processing")
+            return call
+
+    async def process_fireflies_async(self, call_id: int):
+        """
+        Process Fireflies URL in background.
+        Called as a background task after create_pending_call.
+        """
+        from ..database import AsyncSessionLocal
+        from sqlalchemy import select
+
+        logger.info(f"Starting background Fireflies processing for call {call_id}")
+
+        async with AsyncSessionLocal() as db:
+            # Get the call record
+            result = await db.execute(
+                select(CallRecording).where(CallRecording.id == call_id)
+            )
+            call = result.scalar_one_or_none()
+
+            if not call:
+                logger.error(f"Call {call_id} not found for Fireflies processing")
+                return
+
+            if not call.source_url:
+                logger.error(f"Call {call_id} has no source_url")
+                call.status = CallStatus.failed
+                call.error_message = "No source URL"
+                await db.commit()
+                return
+
+            try:
+                # Process Fireflies - this takes 1-2 minutes
+                call = await self._process_fireflies(call, call.source_url)
+
+                # Save the updated call
+                await db.commit()
+                logger.info(f"Background Fireflies processing complete for call {call_id}")
+
+            except Exception as e:
+                logger.error(f"Background Fireflies processing failed for call {call_id}: {e}", exc_info=True)
+                call.status = CallStatus.failed
+                call.error_message = f"Processing error: {str(e)}"
+                await db.commit()
+
 
 # Singleton instance
 external_link_processor = ExternalLinkProcessor()
