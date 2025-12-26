@@ -23,6 +23,9 @@ RUN apt-get update && apt-get install -y \
     libreoffice-impress \
     unrar-free \
     libheif-dev \
+    # Playwright dependencies
+    wget \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy backend files
@@ -30,6 +33,10 @@ COPY backend/ .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Playwright browsers (Chromium only for smaller image size)
+# This also installs system dependencies needed for the browser
+RUN playwright install chromium --with-deps
 
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /frontend/dist ./static
