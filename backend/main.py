@@ -398,6 +398,24 @@ async def cleanup_deleted_chats_task():
         await asyncio.sleep(86400)
 
 
+async def check_playwright_status():
+    """Check Playwright status at startup and log the result."""
+    import os
+    browsers_path = os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'not set')
+    logger.info(f"Playwright environment check - PLAYWRIGHT_BROWSERS_PATH: {browsers_path}")
+
+    try:
+        from api.services.external_links import ensure_playwright_installed
+        is_ready = await ensure_playwright_installed()
+        if is_ready:
+            logger.info("✓ Playwright is ready for browser automation (Fireflies scraping)")
+        else:
+            logger.warning("✗ Playwright is NOT available - Fireflies links will fail. "
+                         "Ensure Playwright is installed: pip install playwright && playwright install chromium")
+    except Exception as e:
+        logger.error(f"✗ Playwright check failed: {type(e).__name__}: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup - initialize database (wait for it to complete)
@@ -407,6 +425,14 @@ async def lifespan(app: FastAPI):
         logger.error("Database initialization timed out")
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
+
+    # Check Playwright status (for Fireflies link processing)
+    try:
+        await asyncio.wait_for(check_playwright_status(), timeout=30)
+    except asyncio.TimeoutError:
+        logger.warning("Playwright check timed out")
+    except Exception as e:
+        logger.warning(f"Playwright check failed: {e}")
 
     # Start Telegram bot in background
     bot_task = None
@@ -479,6 +505,39 @@ app.include_router(external_links.router, tags=["external-links"])
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+@app.get("/health/playwright")
+async def playwright_health_check():
+    """Check Playwright browser status for debugging Fireflies scraping issues."""
+    import os
+
+    result = {
+        "browsers_path": os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'not set'),
+        "playwright_installed": False,
+        "chromium_available": False,
+        "error": None
+    }
+
+    try:
+        import playwright
+        result["playwright_installed"] = True
+        result["playwright_version"] = playwright.__version__
+    except ImportError as e:
+        result["error"] = f"Playwright not installed: {e}"
+        return result
+
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            result["chromium_available"] = True
+            result["browser_version"] = browser.version
+            await browser.close()
+    except Exception as e:
+        result["error"] = f"Chromium launch failed: {type(e).__name__}: {e}"
+
+    return result
 
 
 # Serve static files (frontend)

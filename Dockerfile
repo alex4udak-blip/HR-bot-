@@ -34,9 +34,16 @@ COPY backend/ .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Set Playwright browser path to a known location
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright-browsers
+
 # Install Playwright browsers (Chromium only for smaller image size)
 # This also installs system dependencies needed for the browser
-RUN playwright install chromium --with-deps
+RUN mkdir -p $PLAYWRIGHT_BROWSERS_PATH && \
+    playwright install chromium --with-deps
+
+# Verify Playwright installation
+RUN python -c "from playwright.sync_api import sync_playwright; print('Playwright installed successfully')"
 
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /frontend/dist ./static
