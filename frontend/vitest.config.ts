@@ -40,7 +40,7 @@ export default defineConfig({
 
     // Test file patterns
     include: ['**/*.{test,spec}.{ts,tsx}'],
-    exclude: ['node_modules', 'dist', 'tests/e2e', 'tests/visual'],
+    exclude: ['node_modules', 'dist', 'tests/e2e', 'tests/visual', '*.config.test.ts'],
   },
 
   resolve: {
