@@ -98,13 +98,24 @@ async def exact_match(
     """
     # Search in Users table
     if username:
+        # First try primary telegram_username
         query = select(User).where(
             User.telegram_username == username
         )
         result = await db.execute(query)
         user = result.scalar_one_or_none()
         if user:
-            logger.debug(f"Exact match found: User {user.id} by username '{username}'")
+            logger.debug(f"Exact match found: User {user.id} by primary username '{username}'")
+            return ParticipantRole.system_user, user
+
+        # Then try additional_telegram_usernames (JSON array)
+        query = select(User).where(
+            User.additional_telegram_usernames.contains([username])
+        )
+        result = await db.execute(query)
+        user = result.scalar_one_or_none()
+        if user:
+            logger.debug(f"Exact match found: User {user.id} by additional_telegram_username '{username}'")
             return ParticipantRole.system_user, user
 
     if telegram_user_id:
@@ -132,9 +143,6 @@ async def exact_match(
                 # Note: Entity type field exists but "employee" is not in EntityType enum
                 # We'll treat any Entity as contact for now
                 return ParticipantRole.contact, entity
-
-        # TODO: Add support for Entity.telegram_usernames (JSON array) when schema is updated
-        # For now, Entity only has single telegram_user_id field
 
     logger.debug(f"No exact match for username='{username}', telegram_user_id={telegram_user_id}")
     return ParticipantRole.unknown, None
@@ -401,7 +409,7 @@ async def identify_call_participants(
 
         # Try to match by email
         if email:
-            # Search in Users
+            # Search in Users by primary email
             query = select(User).where(User.email == email)
             result = await db.execute(query)
             user = result.scalar_one_or_none()
@@ -410,10 +418,22 @@ async def identify_call_participants(
                 participant.role = ParticipantRole.system_user
                 participant.user_id = user.id
                 participant.display_name = user.name
-                logger.debug(f"Matched call speaker '{speaker_name}' to User {user.id} by email")
+                logger.debug(f"Matched call speaker '{speaker_name}' to User {user.id} by primary email")
             else:
-                # Search in Entities (scoped to organization)
-                if org_id:
+                # Search in Users by additional_emails (JSON array)
+                query = select(User).where(
+                    User.additional_emails.contains([email])
+                )
+                result = await db.execute(query)
+                user = result.scalar_one_or_none()
+
+                if user:
+                    participant.role = ParticipantRole.system_user
+                    participant.user_id = user.id
+                    participant.display_name = user.name
+                    logger.debug(f"Matched call speaker '{speaker_name}' to User {user.id} by additional_email")
+                elif org_id:
+                    # Search in Entities (scoped to organization)
                     query = select(Entity).where(
                         Entity.org_id == org_id,
                         Entity.email == email
@@ -431,7 +451,6 @@ async def identify_call_participants(
                             participant.role = ParticipantRole.target
 
                         logger.debug(f"Matched call speaker '{speaker_name}' to Entity {entity.id} by email")
-                    # TODO: Add support for Entity.emails (JSON array) when schema is updated
 
         # If no email match, try fuzzy match by name
         if participant.role == ParticipantRole.unknown and org_id:
