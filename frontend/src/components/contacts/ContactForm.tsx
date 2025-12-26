@@ -115,11 +115,11 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-gray-900 rounded-2xl w-full max-w-lg border border-white/10 shadow-2xl"
+        className="bg-gray-900 rounded-2xl w-full max-w-lg border border-white/10 shadow-2xl max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-white/10">
+        <div className="flex items-center justify-between p-6 border-b border-white/10 flex-shrink-0">
           <h2 className="text-xl font-semibold text-white">
             {entity ? 'Редактирование контакта' : 'Новый контакт'}
           </h2>
@@ -132,7 +132,7 @@ export default function ContactForm({ entity, defaultType, onClose, onSuccess }:
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto flex-1">
           {/* Entity Type */}
           <div>
             <label className="block text-sm font-medium text-white/60 mb-2">Тип</label>
