@@ -56,8 +56,17 @@ async def ensure_playwright_installed() -> bool:
         from playwright.async_api import async_playwright
         logger.info("Attempting to launch Playwright chromium...")
         async with async_playwright() as p:
-            # Try to launch - this will fail if browsers not installed
-            browser = await p.chromium.launch(headless=True)
+            # Try to launch with --no-sandbox for Docker/Railway environments
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--single-process'
+                ]
+            )
             await browser.close()
             _playwright_installed = True
             logger.info("Playwright chromium is ready and working")
@@ -299,9 +308,21 @@ class ExternalLinkProcessor:
 
                     logger.info("Using Playwright for Fireflies extraction")
                     async with async_playwright() as p:
-                        browser = await p.chromium.launch(headless=True)
+                        # Launch with --no-sandbox for Docker/Railway environments
+                        browser = await p.chromium.launch(
+                            headless=True,
+                            args=[
+                                '--no-sandbox',
+                                '--disable-setuid-sandbox',
+                                '--disable-dev-shm-usage',
+                                '--disable-gpu',
+                                '--single-process'
+                            ]
+                        )
                         context = await browser.new_context(
-                            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                            viewport={'width': 1920, 'height': 1080},
+                            locale='en-US'
                         )
                         page = await context.new_page()
 
@@ -342,18 +363,33 @@ class ExternalLinkProcessor:
                             try:
                                 current_url = page.url
                                 page_content = await page.content()
+                                page_title = await page.title()
+
                                 logger.info(f"Page URL after loading: {current_url}")
+                                logger.info(f"Page title: {page_title}")
                                 logger.info(f"Page content length: {len(page_content)} chars")
 
                                 # Check for common issues
                                 if "sign" in current_url.lower() or "login" in current_url.lower():
-                                    logger.warning("Page redirected to login - link may not be publicly shared")
+                                    logger.error("FIREFLIES ERROR: Page redirected to login - link is NOT publicly shared!")
+                                    call.error_message = "Fireflies link requires login. Please share the link publicly: click 'Share' > enable 'Anyone with link can view'"
+                                elif "captcha" in page_content.lower() or "verify" in page_title.lower():
+                                    logger.error("FIREFLIES ERROR: Captcha or verification detected")
+                                    call.error_message = "Fireflies is showing captcha/verification. Try again later or use a different link."
+                                elif "not found" in page_title.lower() or "404" in page_content[:1000]:
+                                    logger.error("FIREFLIES ERROR: Page not found (404)")
+                                    call.error_message = "Fireflies transcript not found. The link may be expired or invalid."
                                 elif len(page_content) < 1000:
                                     logger.warning(f"Page content seems too short: {page_content[:500]}")
 
-                                # Log page title for debugging
-                                page_title = await page.title()
-                                logger.info(f"Page title: {page_title}")
+                                # Save screenshot for debugging
+                                try:
+                                    screenshot_path = f"/tmp/fireflies_debug_{transcript_id}.png"
+                                    await page.screenshot(path=screenshot_path, full_page=True)
+                                    logger.info(f"Debug screenshot saved: {screenshot_path}")
+                                except Exception as ss_err:
+                                    logger.debug(f"Screenshot failed: {ss_err}")
+
                             except Exception as debug_err:
                                 logger.debug(f"Debug info extraction failed: {debug_err}")
 
@@ -374,18 +410,27 @@ class ExternalLinkProcessor:
                         transcript_parts = []
                         speaker_data = []
 
-                        # Modern Fireflies selectors (2024-2025)
+                        # Modern Fireflies selectors (2024-2025) - updated for latest UI
                         selectors = [
+                            # Primary: Direct transcript text elements
+                            '[data-testid="transcript-text"]',
+                            '[data-testid*="sentence"]',
+                            '[data-testid*="transcript"]',
                             # Sentence-based extraction (best quality)
                             '[class*="SentenceItem"], [class*="sentence-item"]',
                             '[class*="TranscriptSentence"], [class*="transcript-sentence"]',
-                            # Speaker-based extraction
-                            '.is-speaker',
+                            '[class*="TranscriptLine"], [class*="transcript-line"]',
+                            # Speaker blocks with text
+                            '[class*="SpeakerSegment"], [class*="speaker-segment"]',
                             '[class*="SpeakerBlock"], [class*="speaker-block"]',
+                            '.is-speaker',
                             # Generic transcript containers
+                            '[class*="transcript"] p',
                             '[class*="transcript"] [class*="text"]',
                             '[class*="Transcript"] [class*="Text"]',
-                            '[data-testid*="transcript"] [class*="text"]',
+                            # React/Next.js dynamic content
+                            '[class*="css-"][class*="text"]',
+                            'div[class*="transcript"] > div > div',
                             # Fallback - any sentence-like elements
                             '[class*="sentence"]',
                             '[class*="Sentence"]',
