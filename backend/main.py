@@ -310,6 +310,9 @@ async def init_database():
     # Add sub_admin to deptrole enum (for SUB_ADMIN role)
     await run_migration(engine, "ALTER TYPE deptrole ADD VALUE IF NOT EXISTS 'sub_admin'", "Add sub_admin to deptrole enum")
 
+    # Add sub_admin to userrole enum (for SUB_ADMIN user role in sandbox)
+    await run_migration(engine, "ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'sub_admin'", "Add sub_admin to userrole enum")
+
     # Entity transfer tracking columns
     await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS is_transferred BOOLEAN DEFAULT FALSE", "Add is_transferred to entities")
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entities_is_transferred ON entities(is_transferred)", "Index entities.is_transferred")
