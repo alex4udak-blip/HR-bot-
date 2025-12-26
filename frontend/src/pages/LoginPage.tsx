@@ -19,9 +19,9 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await login(form.email, form.password);
-      // Cookie is set by backend, just update user state
-      setUser(response.user);
+      const user = await login(form.email, form.password);
+      // Cookie is set by backend, login returns the User directly
+      setUser(user);
       toast.success('С возвращением!');
       navigate('/dashboard');
     } catch (error: any) {
