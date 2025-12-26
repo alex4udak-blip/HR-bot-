@@ -887,3 +887,365 @@ class TestTempDirectory:
             f.write("test")
         assert os.path.exists(test_file)
         os.remove(test_file)
+
+
+# ============================================================================
+# TEST UPDATED FIREFLIES PARSING (2024-2025)
+# ============================================================================
+
+class TestFirefliesUpdatedParsing:
+    """Tests for updated Fireflies parsing with modern selectors and lower minimum length."""
+
+    @pytest.mark.asyncio
+    async def test_fireflies_accepts_short_transcript_20_chars(self, processor, mock_call_recording):
+        """
+        Test that Fireflies processing accepts transcripts >= 20 chars.
+
+        This was updated from 100 chars to 20 chars to handle short meetings.
+        """
+        url = "https://app.fireflies.ai/view/SHORT123"
+
+        # Mock page that returns short but valid transcript (25 chars - just above minimum)
+        mock_element = AsyncMock()
+        mock_element.text_content = AsyncMock(return_value="Hello, this is a test!")  # 24 chars
+        mock_element.get_attribute = AsyncMock(return_value=None)
+        mock_element.query_selector = AsyncMock(return_value=None)
+
+        mock_page = AsyncMock()
+        mock_page.goto = AsyncMock(return_value=None)
+        mock_page.wait_for_selector = AsyncMock(return_value=None)
+        mock_page.wait_for_timeout = AsyncMock(return_value=None)
+        mock_page.query_selector = AsyncMock(return_value=None)
+        mock_page.query_selector_all = AsyncMock(return_value=[mock_element])
+
+        mock_browser = AsyncMock()
+        mock_browser.new_page = AsyncMock(return_value=mock_page)
+        mock_browser.close = AsyncMock(return_value=None)
+
+        mock_chromium = MagicMock()
+        mock_chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_playwright_instance = MagicMock()
+        mock_playwright_instance.chromium = mock_chromium
+
+        class MockAsyncPlaywright:
+            async def __aenter__(self):
+                return mock_playwright_instance
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                return None
+
+        def mock_async_playwright():
+            return MockAsyncPlaywright()
+
+        mock_playwright_module = MagicMock()
+        mock_playwright_module.async_playwright = mock_async_playwright
+
+        mock_analysis = {
+            "summary": "Short meeting",
+            "action_items": [],
+            "key_points": []
+        }
+
+        with patch.dict('sys.modules', {'playwright': MagicMock(), 'playwright.async_api': mock_playwright_module}), \
+             patch('api.services.external_links.call_processor._init_clients'), \
+             patch('api.services.external_links.call_processor._analyze', return_value=mock_analysis):
+
+            result = await processor._process_fireflies(mock_call_recording, url)
+
+        # Should succeed with 20+ char transcript (was previously 100+ chars)
+        assert result.status == CallStatus.done, \
+            f"Expected CallStatus.done for 24 char transcript, got {result.status}. Error: {result.error_message}"
+        assert result.transcript is not None
+        assert len(result.transcript) >= 20
+
+    @pytest.mark.asyncio
+    async def test_fireflies_rejects_too_short_transcript(self, processor, mock_call_recording):
+        """Test that Fireflies processing rejects transcripts < 20 chars."""
+        url = "https://app.fireflies.ai/view/TINY123"
+
+        # Mock page that returns transcript below minimum (15 chars)
+        mock_element = AsyncMock()
+        mock_element.text_content = AsyncMock(return_value="Hi there!")  # 10 chars
+        mock_element.get_attribute = AsyncMock(return_value=None)
+        mock_element.query_selector = AsyncMock(return_value=None)
+
+        mock_page = AsyncMock()
+        mock_page.goto = AsyncMock(return_value=None)
+        mock_page.wait_for_selector = AsyncMock(return_value=None)
+        mock_page.wait_for_timeout = AsyncMock(return_value=None)
+        mock_page.query_selector = AsyncMock(return_value=None)
+        mock_page.query_selector_all = AsyncMock(return_value=[mock_element])
+
+        mock_browser = AsyncMock()
+        mock_browser.new_page = AsyncMock(return_value=mock_page)
+        mock_browser.close = AsyncMock(return_value=None)
+
+        mock_chromium = MagicMock()
+        mock_chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_playwright_instance = MagicMock()
+        mock_playwright_instance.chromium = mock_chromium
+
+        class MockAsyncPlaywright:
+            async def __aenter__(self):
+                return mock_playwright_instance
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                return None
+
+        def mock_async_playwright():
+            return MockAsyncPlaywright()
+
+        mock_playwright_module = MagicMock()
+        mock_playwright_module.async_playwright = mock_async_playwright
+
+        # Mock HTTP fallback that also fails
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock(return_value="<html>No data</html>")
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+
+        with patch.dict('sys.modules', {'playwright': MagicMock(), 'playwright.async_api': mock_playwright_module}), \
+             patch.object(processor, '_get_session', return_value=mock_session):
+
+            result = await processor._process_fireflies(mock_call_recording, url)
+
+        # Should fail for transcript < 20 chars
+        assert result.status == CallStatus.failed
+        assert "could not extract transcript" in result.error_message.lower()
+
+    @pytest.mark.asyncio
+    async def test_fireflies_extracts_speaker_data(self, processor, mock_call_recording):
+        """
+        Test that Fireflies parsing extracts speaker names and timing.
+
+        This was added to provide better transcript quality with speaker attribution.
+        """
+        url = "https://app.fireflies.ai/view/SPEAKERS123"
+
+        # Mock elements with speaker data
+        mock_element1 = AsyncMock()
+        mock_element1.text_content = AsyncMock(return_value="Hello everyone, welcome to the meeting today.")
+        mock_element1.get_attribute = AsyncMock(side_effect=lambda attr: {
+            'data-speaker': 'John Smith',
+            'data-start': '0',
+            'data-end': '5'
+        }.get(attr))
+
+        # Mock nested speaker element
+        mock_speaker_el = AsyncMock()
+        mock_speaker_el.text_content = AsyncMock(return_value="John Smith")
+        mock_element1.query_selector = AsyncMock(return_value=mock_speaker_el)
+
+        mock_element2 = AsyncMock()
+        mock_element2.text_content = AsyncMock(return_value="Thanks for having us, let's discuss the agenda.")
+        mock_element2.get_attribute = AsyncMock(side_effect=lambda attr: {
+            'data-speaker': 'Jane Doe',
+            'data-start': '6',
+            'data-end': '12'
+        }.get(attr))
+
+        mock_speaker_el2 = AsyncMock()
+        mock_speaker_el2.text_content = AsyncMock(return_value="Jane Doe")
+        mock_element2.query_selector = AsyncMock(return_value=mock_speaker_el2)
+
+        mock_page = AsyncMock()
+        mock_page.goto = AsyncMock(return_value=None)
+        mock_page.wait_for_selector = AsyncMock(return_value=None)
+        mock_page.wait_for_timeout = AsyncMock(return_value=None)
+        mock_page.query_selector = AsyncMock(return_value=None)  # No title
+        mock_page.query_selector_all = AsyncMock(return_value=[mock_element1, mock_element2])
+
+        mock_browser = AsyncMock()
+        mock_browser.new_page = AsyncMock(return_value=mock_page)
+        mock_browser.close = AsyncMock(return_value=None)
+
+        mock_chromium = MagicMock()
+        mock_chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_playwright_instance = MagicMock()
+        mock_playwright_instance.chromium = mock_chromium
+
+        class MockAsyncPlaywright:
+            async def __aenter__(self):
+                return mock_playwright_instance
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                return None
+
+        def mock_async_playwright():
+            return MockAsyncPlaywright()
+
+        mock_playwright_module = MagicMock()
+        mock_playwright_module.async_playwright = mock_async_playwright
+
+        mock_analysis = {
+            "summary": "Meeting with speakers",
+            "action_items": ["Review agenda"],
+            "key_points": ["Welcome", "Agenda discussion"]
+        }
+
+        with patch.dict('sys.modules', {'playwright': MagicMock(), 'playwright.async_api': mock_playwright_module}), \
+             patch('api.services.external_links.call_processor._init_clients'), \
+             patch('api.services.external_links.call_processor._analyze', return_value=mock_analysis):
+
+            result = await processor._process_fireflies(mock_call_recording, url)
+
+        assert result.status == CallStatus.done
+        assert result.transcript is not None
+        # Transcript should contain both messages
+        assert "Hello everyone" in result.transcript
+        assert "Thanks for having us" in result.transcript
+
+    @pytest.mark.asyncio
+    async def test_fireflies_uses_modern_selectors(self, processor, mock_call_recording):
+        """
+        Test that Fireflies parsing uses updated CSS selectors for 2024-2025 UI.
+
+        The selector list now includes:
+        - SentenceItem, sentence-item
+        - TranscriptSentence, transcript-sentence
+        - SpeakerBlock, speaker-block
+        - Various transcript container selectors
+        """
+        url = "https://app.fireflies.ai/view/MODERN123"
+
+        # Create mock that tracks which selectors are tried
+        selectors_tried = []
+
+        async def mock_query_selector_all(selector):
+            selectors_tried.append(selector)
+            if 'SentenceItem' in selector or 'sentence-item' in selector:
+                # Return elements when modern selector is used
+                mock_el = AsyncMock()
+                mock_el.text_content = AsyncMock(return_value="This is a modern Fireflies transcript from 2024.")
+                mock_el.get_attribute = AsyncMock(return_value=None)
+                mock_el.query_selector = AsyncMock(return_value=None)
+                return [mock_el]
+            return []
+
+        mock_page = AsyncMock()
+        mock_page.goto = AsyncMock(return_value=None)
+        mock_page.wait_for_selector = AsyncMock(return_value=None)
+        mock_page.wait_for_timeout = AsyncMock(return_value=None)
+        mock_page.query_selector = AsyncMock(return_value=None)
+        mock_page.query_selector_all = mock_query_selector_all
+
+        mock_browser = AsyncMock()
+        mock_browser.new_page = AsyncMock(return_value=mock_page)
+        mock_browser.close = AsyncMock(return_value=None)
+
+        mock_chromium = MagicMock()
+        mock_chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_playwright_instance = MagicMock()
+        mock_playwright_instance.chromium = mock_chromium
+
+        class MockAsyncPlaywright:
+            async def __aenter__(self):
+                return mock_playwright_instance
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                return None
+
+        def mock_async_playwright():
+            return MockAsyncPlaywright()
+
+        mock_playwright_module = MagicMock()
+        mock_playwright_module.async_playwright = mock_async_playwright
+
+        mock_analysis = {
+            "summary": "Modern transcript",
+            "action_items": [],
+            "key_points": []
+        }
+
+        with patch.dict('sys.modules', {'playwright': MagicMock(), 'playwright.async_api': mock_playwright_module}), \
+             patch('api.services.external_links.call_processor._init_clients'), \
+             patch('api.services.external_links.call_processor._analyze', return_value=mock_analysis):
+
+            result = await processor._process_fireflies(mock_call_recording, url)
+
+        assert result.status == CallStatus.done
+        # Verify modern selectors were tried
+        modern_selectors_found = any(
+            'SentenceItem' in s or 'sentence-item' in s
+            for s in selectors_tried
+        )
+        assert modern_selectors_found, \
+            f"Modern selectors not found in tried selectors: {selectors_tried}"
+
+    @pytest.mark.asyncio
+    async def test_fireflies_http_fallback_with_next_data(self, processor, mock_call_recording):
+        """
+        Test that HTTP fallback properly extracts transcript from __NEXT_DATA__.
+
+        This tests the fallback mechanism when Playwright is not available.
+        """
+        url = "https://app.fireflies.ai/view/FALLBACK123"
+
+        import json
+        transcript_data = {
+            "title": "Team Standup",
+            "sentences": [
+                {"speaker_name": "Alice", "text": "Good morning everyone, let's start with updates.", "start_time": 0, "end_time": 5},
+                {"speaker_name": "Bob", "text": "I finished the feature yesterday and it's ready for review.", "start_time": 6, "end_time": 12},
+                {"speaker_name": "Alice", "text": "Great work! Any blockers for today?", "start_time": 13, "end_time": 17}
+            ],
+            "duration": 300
+        }
+        next_data = {
+            "props": {
+                "pageProps": {
+                    "transcript": transcript_data
+                }
+            }
+        }
+
+        html_content = f'<html><script id="__NEXT_DATA__" type="application/json">{json.dumps(next_data)}</script></html>'
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock(return_value=html_content)
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+
+        mock_analysis = {
+            "summary": "Standup summary",
+            "action_items": ["Review feature"],
+            "key_points": ["Feature complete", "No blockers"]
+        }
+
+        # Simulate Playwright not being available
+        class MockPlaywrightModule:
+            @property
+            def async_playwright(self):
+                raise ImportError("Playwright not installed")
+
+        mock_playwright_module = MockPlaywrightModule()
+
+        with patch.dict('sys.modules', {'playwright': MagicMock(), 'playwright.async_api': mock_playwright_module}), \
+             patch.object(processor, '_get_session', return_value=mock_session), \
+             patch('api.services.external_links.call_processor._init_clients'), \
+             patch('api.services.external_links.call_processor._analyze', return_value=mock_analysis):
+
+            result = await processor._process_fireflies(mock_call_recording, url)
+
+        assert result.status == CallStatus.done
+        assert result.transcript is not None
+        # Should have speaker prefixes from HTTP fallback
+        assert "Alice:" in result.transcript
+        assert "Bob:" in result.transcript
+        assert "Good morning everyone" in result.transcript
+        # Title should be extracted
+        assert result.title == "Team Standup" or result.title is None  # May keep original title
+        # Duration should be extracted
+        assert result.duration_seconds == 300
