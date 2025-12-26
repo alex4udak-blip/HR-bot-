@@ -279,13 +279,18 @@ class ExternalLinkProcessor:
             logger.info(f"Created CallRecording {call.id} from external URL")
             return call
 
-    async def _process_fireflies(self, call: CallRecording, url: str) -> CallRecording:
+    async def _process_fireflies(self, call: CallRecording, url: str, call_id: Optional[int] = None) -> CallRecording:
         """
         Process Fireflies.ai shared/public transcript URL.
         Uses Playwright to render the page and extract transcript.
 
         NOTE: This handles PUBLIC shared Fireflies links, not the internal API.
         Fireflies uses client-side rendering, so Playwright is required for reliable extraction.
+
+        Args:
+            call: CallRecording object
+            url: Fireflies URL
+            call_id: Optional call ID for progress tracking (if processing async)
         """
         try:
             transcript_id = self._extract_fireflies_transcript_id(url)
@@ -337,6 +342,10 @@ class ExternalLinkProcessor:
                             logger.warning(f"Navigation with networkidle failed: {nav_err}, trying domcontentloaded")
                             await page.goto(url, wait_until='domcontentloaded', timeout=60000)
                             await page.wait_for_timeout(10000)  # Extra wait for JS
+
+                        # Progress: Page loaded
+                        if call_id:
+                            await self._update_progress(call_id, 30, "Страница загружена, ищем транскрипт...")
 
                         # Wait for transcript content to load - try multiple selectors
                         transcript_loaded = False
@@ -517,6 +526,10 @@ class ExternalLinkProcessor:
                                 speakers = speaker_data
                             logger.info(f"Playwright extracted {len(transcript_text)} chars, {len(speakers)} speaker segments from Fireflies")
 
+                            # Progress: Transcript extracted
+                            if call_id:
+                                await self._update_progress(call_id, 50, "Транскрипт извлечён, обработка спикеров...")
+
                 except ImportError:
                     logger.warning("Playwright not installed, falling back to HTTP scraping")
                 except Exception as e:
@@ -623,6 +636,10 @@ class ExternalLinkProcessor:
 
             logger.info(f"Fireflies transcript extracted: {len(transcript_text)} chars")
 
+            # Progress: Starting AI analysis
+            if call_id:
+                await self._update_progress(call_id, 70, "AI анализ транскрипта...")
+
             # Run AI analysis
             try:
                 call.status = CallStatus.analyzing
@@ -633,6 +650,10 @@ class ExternalLinkProcessor:
                     call.action_items = analysis.get("action_items")
                     call.key_points = analysis.get("key_points")
                     logger.info("Fireflies AI analysis complete")
+
+                    # Progress: AI analysis complete
+                    if call_id:
+                        await self._update_progress(call_id, 95, "Сохранение результатов...")
                 else:
                     logger.warning("Fireflies AI analysis returned None")
             except Exception as e:
@@ -991,6 +1012,112 @@ class ExternalLinkProcessor:
         This is called after the CallRecording is saved with audio_file_path.
         """
         await call_processor.process_call(call_id)
+
+    async def create_pending_call(
+        self,
+        url: str,
+        organization_id: int,
+        owner_id: int,
+        source_type: CallSource,
+        department_id: Optional[int] = None,
+        entity_id: Optional[int] = None,
+        title: Optional[str] = None
+    ) -> CallRecording:
+        """
+        Create a CallRecording with pending status (for async processing).
+        Returns immediately so the client gets a fast response.
+        """
+        from ..database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as db:
+            call = CallRecording(
+                org_id=organization_id,
+                owner_id=owner_id,
+                entity_id=entity_id,
+                department_id=department_id,
+                source_url=url,
+                source_type=source_type,
+                title=title or f"External Recording - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+                status=CallStatus.pending,
+                created_at=datetime.utcnow()
+            )
+            db.add(call)
+            await db.commit()
+            await db.refresh(call)
+            logger.info(f"Created pending CallRecording {call.id} for async processing")
+            return call
+
+    async def _update_progress(self, call_id: int, progress: int, stage: str):
+        """Update progress for a call in the database."""
+        from ..database import AsyncSessionLocal
+        from sqlalchemy import update
+
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                update(CallRecording)
+                .where(CallRecording.id == call_id)
+                .values(progress=progress, progress_stage=stage)
+            )
+            await db.commit()
+            logger.debug(f"Call {call_id} progress: {progress}% - {stage}")
+
+    async def process_fireflies_async(self, call_id: int):
+        """
+        Process Fireflies URL in background.
+        Called as a background task after create_pending_call.
+        Reports progress at each stage.
+        """
+        from ..database import AsyncSessionLocal
+        from sqlalchemy import select
+
+        logger.info(f"Starting background Fireflies processing for call {call_id}")
+
+        # Stage 1: Starting
+        await self._update_progress(call_id, 5, "Запуск обработки...")
+
+        async with AsyncSessionLocal() as db:
+            # Get the call record
+            result = await db.execute(
+                select(CallRecording).where(CallRecording.id == call_id)
+            )
+            call = result.scalar_one_or_none()
+
+            if not call:
+                logger.error(f"Call {call_id} not found for Fireflies processing")
+                return
+
+            if not call.source_url:
+                logger.error(f"Call {call_id} has no source_url")
+                call.status = CallStatus.failed
+                call.error_message = "No source URL"
+                call.progress = 0
+                call.progress_stage = "Ошибка"
+                await db.commit()
+                return
+
+            try:
+                # Stage 2: Loading page
+                await self._update_progress(call_id, 10, "Загрузка страницы Fireflies...")
+
+                # Process Fireflies - this takes 1-2 minutes
+                # The _process_fireflies method will update progress internally
+                call = await self._process_fireflies(call, call.source_url, call_id)
+
+                # Stage 5: Complete
+                call.progress = 100
+                call.progress_stage = "Готово"
+
+                # Save the updated call
+                await db.commit()
+                logger.info(f"Background Fireflies processing complete for call {call_id}")
+
+            except Exception as e:
+                logger.error(f"Background Fireflies processing failed for call {call_id}: {e}", exc_info=True)
+                call.status = CallStatus.failed
+                call.error_message = f"Processing error: {str(e)}"
+                call.progress = 0
+                call.progress_stage = "Ошибка"
+                await db.commit()
 
 
 # Singleton instance

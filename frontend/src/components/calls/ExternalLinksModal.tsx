@@ -103,6 +103,8 @@ export default function ExternalLinksModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingCallId, setProcessingCallId] = useState<number | null>(null);
   const [processingStatus, setProcessingStatus] = useState<string>('');
+  const [progress, setProgress] = useState(0);
+  const [progressStage, setProgressStage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
@@ -149,11 +151,24 @@ export default function ExternalLinksModal({
       try {
         const status = await getExternalProcessingStatus(processingCallId);
         setProcessingStatus(status.status);
+        setProgress(status.progress || 0);
+        setProgressStage(status.progress_stage || '');
 
         if (status.status === 'done') {
+          setProgress(100);
+          setProgressStage('Готово!');
           setSuccess(true);
           setIsProcessing(false);
           clearInterval(pollInterval);
+
+          // Send browser notification if page is not visible
+          if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+            new Notification('Запись обработана', {
+              body: status.title || 'Fireflies транскрипт готов',
+              icon: '/favicon.ico'
+            });
+          }
+
           setTimeout(() => {
             onSuccess(processingCallId);
             handleClose();
@@ -161,15 +176,24 @@ export default function ExternalLinksModal({
         } else if (status.status === 'failed') {
           setError(status.error_message || 'Ошибка обработки');
           setIsProcessing(false);
+          setProgress(0);
+          setProgressStage('Ошибка');
           clearInterval(pollInterval);
         }
       } catch (err) {
         console.error('Error polling status:', err);
       }
-    }, 2000);
+    }, 1500);  // Poll every 1.5s for smoother progress updates
 
     return () => clearInterval(pollInterval);
   }, [processingCallId, onSuccess]);
+
+  // Request notification permission when processing starts
+  useEffect(() => {
+    if (isProcessing && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, [isProcessing]);
 
   const handleSubmit = async () => {
     if (!url.trim()) {
@@ -207,6 +231,8 @@ export default function ExternalLinksModal({
     setIsProcessing(false);
     setProcessingCallId(null);
     setProcessingStatus('');
+    setProgress(0);
+    setProgressStage('');
     onClose();
   };
 
@@ -381,13 +407,31 @@ export default function ExternalLinksModal({
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="flex items-center gap-3 p-4 bg-cyan-500/10 border border-cyan-500/20 rounded-xl"
+                    className="p-4 bg-cyan-500/10 border border-cyan-500/20 rounded-xl space-y-3"
                   >
-                    <Loader2 className="w-5 h-5 text-cyan-400 animate-spin flex-shrink-0" />
-                    <div>
-                      <p className="text-sm text-cyan-300">Обработка...</p>
-                      <p className="text-xs text-cyan-400/60 capitalize">{processingStatus}</p>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
+                        <span className="text-sm text-cyan-300">{progressStage || 'Обработка...'}</span>
+                      </div>
+                      <span className="text-sm font-medium text-cyan-400">{progress}%</span>
                     </div>
+                    {/* Progress bar */}
+                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-cyan-500 to-blue-500"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${progress}%` }}
+                        transition={{ duration: 0.3, ease: "easeOut" }}
+                      />
+                    </div>
+                    <p className="text-xs text-cyan-400/60">
+                      {progress < 30 && "Загрузка страницы Fireflies..."}
+                      {progress >= 30 && progress < 50 && "Извлечение транскрипта..."}
+                      {progress >= 50 && progress < 70 && "Обработка данных спикеров..."}
+                      {progress >= 70 && progress < 95 && "AI анализирует разговор..."}
+                      {progress >= 95 && "Сохранение результатов..."}
+                    </p>
                   </motion.div>
                 )}
 

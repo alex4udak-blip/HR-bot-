@@ -61,12 +61,16 @@ async def process_external_url(
     Process an external URL containing a call recording or transcript.
 
     Supported URL types:
+    - **Fireflies.ai**: Transcripts from Fireflies (processed in background)
     - **Google Docs**: Documents containing call transcripts (skips transcription, goes straight to AI analysis)
     - **Google Drive**: Audio/video files stored in Google Drive
     - **Direct media URLs**: Direct links to .mp3, .mp4, .wav, etc. files
 
     The processing happens in the background. Use the returned `id` to check status.
     """
+    import logging
+    logger = logging.getLogger("hr-analyzer.external_links")
+
     # Get user's organization
     org = await get_user_org(current_user, db)
     if not org:
@@ -75,12 +79,57 @@ async def process_external_url(
     # Detect link type
     link_type = external_link_processor.detect_link_type(request.url)
 
-    if link_type == LinkType.UNKNOWN:
-        # Still try to process, might be detectable after download
-        pass
-
     try:
-        # Process the URL
+        # Check for duplicate URL (same URL submitted in the last 5 minutes)
+        from datetime import timedelta
+        five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
+        existing_result = await db.execute(
+            select(CallRecording).where(
+                CallRecording.source_url == request.url,
+                CallRecording.org_id == org.id,
+                CallRecording.created_at > five_minutes_ago
+            )
+        )
+        existing_call = existing_result.scalar_one_or_none()
+
+        if existing_call:
+            logger.info(f"Duplicate URL detected, returning existing call {existing_call.id}")
+            return ProcessURLResponse(
+                call_id=existing_call.id,
+                status=existing_call.status.value if existing_call.status else "pending",
+                source_type=existing_call.source_type.value if existing_call.source_type else "unknown",
+                title=existing_call.title,
+                message="This URL is already being processed. Please wait."
+            )
+
+        # For Fireflies - use async processing (takes 1-2 minutes)
+        # Create record immediately and process in background
+        if link_type == LinkType.FIREFLIES:
+            call = await external_link_processor.create_pending_call(
+                url=request.url,
+                organization_id=org.id,
+                owner_id=current_user.id,
+                source_type=CallSource.fireflies,
+                department_id=request.department_id,
+                entity_id=request.entity_id,
+                title=request.title
+            )
+
+            # Process Fireflies in background - this takes 1-2 minutes
+            background_tasks.add_task(
+                external_link_processor.process_fireflies_async,
+                call.id
+            )
+
+            return ProcessURLResponse(
+                call_id=call.id,
+                status="pending",
+                source_type="fireflies",
+                title=call.title,
+                message="Fireflies transcript is being processed. This may take 1-2 minutes."
+            )
+
+        # For other types - process synchronously (they're fast)
         call = await external_link_processor.process_url(
             url=request.url,
             organization_id=org.id,
@@ -114,8 +163,6 @@ async def process_external_url(
 
     except Exception as e:
         import traceback
-        import logging
-        logger = logging.getLogger("hr-analyzer.external_links")
         logger.error(f"Error in process_external_url: {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error processing URL: {str(e)}")
@@ -177,6 +224,8 @@ async def get_processing_status(
     return {
         "id": call.id,
         "status": call.status.value,
+        "progress": call.progress or 0,
+        "progress_stage": call.progress_stage or "",
         "source_type": call.source_type.value,
         "source_url": call.source_url,
         "title": call.title,

@@ -161,6 +161,10 @@ async def init_database():
     await run_migration(engine, "ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS fireflies_transcript_id VARCHAR(100)", "Add fireflies_transcript_id")
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_fireflies_transcript_id ON call_recordings(fireflies_transcript_id)", "Index fireflies_transcript_id on existing table")
 
+    # Progress tracking for long-running processing
+    await run_migration(engine, "ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS progress INTEGER DEFAULT 0", "Add progress to call_recordings")
+    await run_migration(engine, "ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS progress_stage VARCHAR(100)", "Add progress_stage to call_recordings")
+
     await run_migration(engine, "ALTER TABLE chats ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP", "Add deleted_at to chats")
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_chats_deleted_at ON chats(deleted_at)", "Index chats.deleted_at")
     await run_migration(engine, "ALTER TABLE chats ADD COLUMN IF NOT EXISTS entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL", "Add entity_id to chats")
@@ -309,6 +313,9 @@ async def init_database():
 
     # Add sub_admin to deptrole enum (for SUB_ADMIN role)
     await run_migration(engine, "ALTER TYPE deptrole ADD VALUE IF NOT EXISTS 'sub_admin'", "Add sub_admin to deptrole enum")
+
+    # Add sub_admin to userrole enum (for SUB_ADMIN user role in sandbox)
+    await run_migration(engine, "ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'sub_admin'", "Add sub_admin to userrole enum")
 
     # Entity transfer tracking columns
     await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS is_transferred BOOLEAN DEFAULT FALSE", "Add is_transferred to entities")
