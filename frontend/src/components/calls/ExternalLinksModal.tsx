@@ -8,7 +8,6 @@ import {
   Cloud,
   ExternalLink,
   Loader2,
-  CheckCircle,
   AlertCircle,
   HelpCircle,
   Copy,
@@ -19,7 +18,6 @@ import {
 import {
   detectExternalLinkType,
   processExternalURL,
-  getExternalProcessingStatus,
   type ExternalLinkType
 } from '@/services/api';
 import type { Entity } from '@/types';
@@ -101,12 +99,7 @@ export default function ExternalLinksModal({
   const [detectedType, setDetectedType] = useState<ExternalLinkType | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [processingCallId, setProcessingCallId] = useState<number | null>(null);
-  const [_processingStatus, setProcessingStatus] = useState<string>('');
-  const [progress, setProgress] = useState(0);
-  const [progressStage, setProgressStage] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
 
   // Detect link type when URL changes
   const detectType = useCallback(async (inputUrl: string) => {
@@ -143,57 +136,6 @@ export default function ExternalLinksModal({
     return () => clearTimeout(timer);
   }, [url, detectType]);
 
-  // Poll processing status
-  useEffect(() => {
-    if (!processingCallId) return;
-
-    const pollInterval = setInterval(async () => {
-      try {
-        const status = await getExternalProcessingStatus(processingCallId);
-        setProcessingStatus(status.status);
-        setProgress(status.progress || 0);
-        setProgressStage(status.progress_stage || '');
-
-        if (status.status === 'done') {
-          setProgress(100);
-          setProgressStage('Готово!');
-          setSuccess(true);
-          setIsProcessing(false);
-          clearInterval(pollInterval);
-
-          // Send browser notification if page is not visible
-          if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
-            new Notification('Запись обработана', {
-              body: status.title || 'Fireflies транскрипт готов',
-              icon: '/favicon.ico'
-            });
-          }
-
-          setTimeout(() => {
-            onSuccess(processingCallId);
-            handleClose();
-          }, 1500);
-        } else if (status.status === 'failed') {
-          setError(status.error_message || 'Ошибка обработки');
-          setIsProcessing(false);
-          setProgress(0);
-          setProgressStage('Ошибка');
-          clearInterval(pollInterval);
-        }
-      } catch (err) {
-        console.error('Error polling status:', err);
-      }
-    }, 1500);  // Poll every 1.5s for smoother progress updates
-
-    return () => clearInterval(pollInterval);
-  }, [processingCallId, onSuccess]);
-
-  // Request notification permission when processing starts
-  useEffect(() => {
-    if (isProcessing && 'Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, [isProcessing]);
 
   const handleSubmit = async () => {
     if (!url.trim()) {
@@ -203,7 +145,6 @@ export default function ExternalLinksModal({
 
     setIsProcessing(true);
     setError(null);
-    setProcessingStatus('pending');
 
     try {
       const result = await processExternalURL({
@@ -212,8 +153,14 @@ export default function ExternalLinksModal({
         entity_id: entityId
       });
 
-      setProcessingCallId(result.call_id);
-      setProcessingStatus(result.status);
+      // Request notification permission for later
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+
+      // Close modal immediately and let CallsPage handle polling
+      onSuccess(result.call_id);
+      handleClose();
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Ошибка обработки ссылки';
       setError(errorMessage);
@@ -227,12 +174,7 @@ export default function ExternalLinksModal({
     setEntityId(undefined);
     setDetectedType(null);
     setError(null);
-    setSuccess(false);
     setIsProcessing(false);
-    setProcessingCallId(null);
-    setProcessingStatus('');
-    setProgress(0);
-    setProgressStage('');
     onClose();
   };
 
@@ -388,7 +330,7 @@ export default function ExternalLinksModal({
                 </div>
               </div>
 
-              {/* Status Messages */}
+              {/* Error Message */}
               <AnimatePresence mode="wait">
                 {error && (
                   <motion.div
@@ -399,51 +341,6 @@ export default function ExternalLinksModal({
                   >
                     <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
                     <p className="text-sm text-red-300">{error}</p>
-                  </motion.div>
-                )}
-
-                {isProcessing && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="p-4 bg-cyan-500/10 border border-cyan-500/20 rounded-xl space-y-3"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
-                        <span className="text-sm text-cyan-300">{progressStage || 'Обработка...'}</span>
-                      </div>
-                      <span className="text-sm font-medium text-cyan-400">{progress}%</span>
-                    </div>
-                    {/* Progress bar */}
-                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                      <motion.div
-                        className="h-full bg-gradient-to-r from-cyan-500 to-blue-500"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${progress}%` }}
-                        transition={{ duration: 0.3, ease: "easeOut" }}
-                      />
-                    </div>
-                    <p className="text-xs text-cyan-400/60">
-                      {progress < 30 && "Загрузка страницы Fireflies..."}
-                      {progress >= 30 && progress < 50 && "Извлечение транскрипта..."}
-                      {progress >= 50 && progress < 70 && "Обработка данных спикеров..."}
-                      {progress >= 70 && progress < 95 && "AI анализирует разговор..."}
-                      {progress >= 95 && "Сохранение результатов..."}
-                    </p>
-                  </motion.div>
-                )}
-
-                {success && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/20 rounded-xl"
-                  >
-                    <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
-                    <p className="text-sm text-green-300">Успешно обработано!</p>
                   </motion.div>
                 )}
               </AnimatePresence>
