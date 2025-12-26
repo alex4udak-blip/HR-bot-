@@ -61,6 +61,12 @@ class Settings(BaseSettings):
         alias="ALLOWED_ORIGINS"
     )
 
+    # Cookie settings
+    cookie_secure: bool = Field(
+        default=True,
+        alias="COOKIE_SECURE"
+    )
+
     def get_allowed_origins_list(self) -> list[str]:
         """Parse comma-separated origins into a list"""
         return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
