@@ -21,45 +21,35 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Create enums
-    userrole_enum = postgresql.ENUM('superadmin', 'admin', name='userrole', create_type=True)
-    userrole_enum.create(op.get_bind(), checkfirst=True)
+    # Create enums using raw SQL with IF NOT EXISTS for PostgreSQL compatibility
+    # This is more reliable than checkfirst with asyncpg
+    conn = op.get_bind()
 
-    chattype_enum = postgresql.ENUM('work', 'hr', 'project', 'client', 'contractor', 'sales', 'support', 'custom', name='chattype', create_type=True)
-    chattype_enum.create(op.get_bind(), checkfirst=True)
+    # Helper to safely create enum types
+    enum_types = [
+        ("userrole", ['superadmin', 'admin']),
+        ("chattype", ['work', 'hr', 'project', 'client', 'contractor', 'sales', 'support', 'custom']),
+        ("entitytype", ['candidate', 'client', 'contractor', 'lead', 'partner', 'custom']),
+        ("entitystatus", ['new', 'screening', 'interview', 'offer', 'hired', 'rejected', 'active', 'paused', 'churned', 'converted', 'ended', 'negotiation']),
+        ("callsource", ['meet', 'zoom', 'teams', 'upload', 'telegram']),
+        ("callstatus", ['pending', 'connecting', 'recording', 'processing', 'transcribing', 'analyzing', 'done', 'failed']),
+        ("reporttype", ['daily_hr', 'weekly_summary', 'daily_calls', 'weekly_pipeline']),
+        ("deliverymethod", ['telegram', 'email']),
+        ("orgrole", ['owner', 'admin', 'member']),
+        ("deptrole", ['lead', 'member']),
+        ("subscriptionplan", ['free', 'pro', 'enterprise']),
+        ("resourcetype", ['chat', 'entity', 'call']),
+        ("accesslevel", ['view', 'edit', 'full']),
+    ]
 
-    entitytype_enum = postgresql.ENUM('candidate', 'client', 'contractor', 'lead', 'partner', 'custom', name='entitytype', create_type=True)
-    entitytype_enum.create(op.get_bind(), checkfirst=True)
-
-    entitystatus_enum = postgresql.ENUM('new', 'screening', 'interview', 'offer', 'hired', 'rejected', 'active', 'paused', 'churned', 'converted', 'ended', 'negotiation', name='entitystatus', create_type=True)
-    entitystatus_enum.create(op.get_bind(), checkfirst=True)
-
-    callsource_enum = postgresql.ENUM('meet', 'zoom', 'teams', 'upload', 'telegram', name='callsource', create_type=True)
-    callsource_enum.create(op.get_bind(), checkfirst=True)
-
-    callstatus_enum = postgresql.ENUM('pending', 'connecting', 'recording', 'processing', 'transcribing', 'analyzing', 'done', 'failed', name='callstatus', create_type=True)
-    callstatus_enum.create(op.get_bind(), checkfirst=True)
-
-    reporttype_enum = postgresql.ENUM('daily_hr', 'weekly_summary', 'daily_calls', 'weekly_pipeline', name='reporttype', create_type=True)
-    reporttype_enum.create(op.get_bind(), checkfirst=True)
-
-    deliverymethod_enum = postgresql.ENUM('telegram', 'email', name='deliverymethod', create_type=True)
-    deliverymethod_enum.create(op.get_bind(), checkfirst=True)
-
-    orgrole_enum = postgresql.ENUM('owner', 'admin', 'member', name='orgrole', create_type=True)
-    orgrole_enum.create(op.get_bind(), checkfirst=True)
-
-    deptrole_enum = postgresql.ENUM('lead', 'member', name='deptrole', create_type=True)
-    deptrole_enum.create(op.get_bind(), checkfirst=True)
-
-    subscriptionplan_enum = postgresql.ENUM('free', 'pro', 'enterprise', name='subscriptionplan', create_type=True)
-    subscriptionplan_enum.create(op.get_bind(), checkfirst=True)
-
-    resourcetype_enum = postgresql.ENUM('chat', 'entity', 'call', name='resourcetype', create_type=True)
-    resourcetype_enum.create(op.get_bind(), checkfirst=True)
-
-    accesslevel_enum = postgresql.ENUM('view', 'edit', 'full', name='accesslevel', create_type=True)
-    accesslevel_enum.create(op.get_bind(), checkfirst=True)
+    for enum_name, values in enum_types:
+        # Check if type exists before creating
+        result = conn.execute(sa.text(
+            "SELECT 1 FROM pg_type WHERE typname = :name"
+        ), {"name": enum_name})
+        if not result.fetchone():
+            values_str = ", ".join(f"'{v}'" for v in values)
+            conn.execute(sa.text(f"CREATE TYPE {enum_name} AS ENUM ({values_str})"))
 
     # Create users table
     op.create_table(
@@ -68,7 +58,7 @@ def upgrade() -> None:
         sa.Column('email', sa.String(length=255), nullable=False),
         sa.Column('password_hash', sa.String(length=255), nullable=False),
         sa.Column('name', sa.String(length=255), nullable=False),
-        sa.Column('role', sa.Enum('superadmin', 'admin', name='userrole'), nullable=True),
+        sa.Column('role', postgresql.ENUM('superadmin', 'admin', name='userrole', create_type=False), nullable=True),
         sa.Column('telegram_id', sa.BigInteger(), nullable=True),
         sa.Column('telegram_username', sa.String(length=255), nullable=True),
         sa.Column('is_active', sa.Boolean(), nullable=True),
@@ -86,7 +76,7 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('name', sa.String(length=255), nullable=False),
         sa.Column('slug', sa.String(length=100), nullable=False),
-        sa.Column('subscription_plan', sa.Enum('free', 'pro', 'enterprise', name='subscriptionplan'), nullable=True),
+        sa.Column('subscription_plan', postgresql.ENUM('free', 'pro', 'enterprise', name='subscriptionplan', create_type=False), nullable=True),
         sa.Column('settings', sa.JSON(), nullable=True),
         sa.Column('is_active', sa.Boolean(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=True),
@@ -102,7 +92,7 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('org_id', sa.Integer(), nullable=False),
         sa.Column('user_id', sa.Integer(), nullable=False),
-        sa.Column('role', sa.Enum('owner', 'admin', 'member', name='orgrole'), nullable=True),
+        sa.Column('role', postgresql.ENUM('owner', 'admin', 'member', name='orgrole', create_type=False), nullable=True),
         sa.Column('invited_by', sa.Integer(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(['invited_by'], ['users.id'], ),
@@ -138,7 +128,7 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('department_id', sa.Integer(), nullable=False),
         sa.Column('user_id', sa.Integer(), nullable=False),
-        sa.Column('role', sa.Enum('lead', 'member', name='deptrole'), nullable=True),
+        sa.Column('role', postgresql.ENUM('lead', 'member', name='deptrole', create_type=False), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(['department_id'], ['departments.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
@@ -153,9 +143,9 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('org_id', sa.Integer(), nullable=True),
         sa.Column('department_id', sa.Integer(), nullable=True),
-        sa.Column('type', sa.Enum('candidate', 'client', 'contractor', 'lead', 'partner', 'custom', name='entitytype'), nullable=False),
+        sa.Column('type', postgresql.ENUM('candidate', 'client', 'contractor', 'lead', 'partner', 'custom', name='entitytype', create_type=False), nullable=False),
         sa.Column('name', sa.String(length=255), nullable=False),
-        sa.Column('status', sa.Enum('new', 'screening', 'interview', 'offer', 'hired', 'rejected', 'active', 'paused', 'churned', 'converted', 'ended', 'negotiation', name='entitystatus'), nullable=True),
+        sa.Column('status', postgresql.ENUM('new', 'screening', 'interview', 'offer', 'hired', 'rejected', 'active', 'paused', 'churned', 'converted', 'ended', 'negotiation', name='entitystatus', create_type=False), nullable=True),
         sa.Column('phone', sa.String(length=50), nullable=True),
         sa.Column('email', sa.String(length=255), nullable=True),
         sa.Column('telegram_user_id', sa.BigInteger(), nullable=True),
@@ -207,7 +197,7 @@ def upgrade() -> None:
         sa.Column('telegram_chat_id', sa.BigInteger(), nullable=False),
         sa.Column('title', sa.String(length=255), nullable=False),
         sa.Column('custom_name', sa.String(length=255), nullable=True),
-        sa.Column('chat_type', sa.Enum('work', 'hr', 'project', 'client', 'contractor', 'sales', 'support', 'custom', name='chattype'), nullable=True),
+        sa.Column('chat_type', postgresql.ENUM('work', 'hr', 'project', 'client', 'contractor', 'sales', 'support', 'custom', name='chattype', create_type=False), nullable=True),
         sa.Column('custom_type_name', sa.String(length=255), nullable=True),
         sa.Column('custom_type_description', sa.Text(), nullable=True),
         sa.Column('owner_id', sa.Integer(), nullable=True),
@@ -263,7 +253,7 @@ def upgrade() -> None:
         sa.Column('description', sa.Text(), nullable=True),
         sa.Column('criteria', sa.JSON(), nullable=False),
         sa.Column('category', sa.String(length=100), nullable=True),
-        sa.Column('chat_type', sa.Enum('work', 'hr', 'project', 'client', 'contractor', 'sales', 'support', 'custom', name='chattype'), nullable=True),
+        sa.Column('chat_type', postgresql.ENUM('work', 'hr', 'project', 'client', 'contractor', 'sales', 'support', 'custom', name='chattype', create_type=False), nullable=True),
         sa.Column('is_global', sa.Boolean(), nullable=True),
         sa.Column('is_default', sa.Boolean(), nullable=True),
         sa.Column('created_by', sa.Integer(), nullable=True),
@@ -329,10 +319,10 @@ def upgrade() -> None:
         sa.Column('title', sa.String(length=255), nullable=True),
         sa.Column('entity_id', sa.Integer(), nullable=True),
         sa.Column('owner_id', sa.Integer(), nullable=True),
-        sa.Column('source_type', sa.Enum('meet', 'zoom', 'teams', 'upload', 'telegram', name='callsource'), nullable=False),
+        sa.Column('source_type', postgresql.ENUM('meet', 'zoom', 'teams', 'upload', 'telegram', name='callsource', create_type=False), nullable=False),
         sa.Column('source_url', sa.String(length=500), nullable=True),
         sa.Column('bot_name', sa.String(length=100), nullable=True),
-        sa.Column('status', sa.Enum('pending', 'connecting', 'recording', 'processing', 'transcribing', 'analyzing', 'done', 'failed', name='callstatus'), nullable=True),
+        sa.Column('status', postgresql.ENUM('pending', 'connecting', 'recording', 'processing', 'transcribing', 'analyzing', 'done', 'failed', name='callstatus', create_type=False), nullable=True),
         sa.Column('duration_seconds', sa.Integer(), nullable=True),
         sa.Column('audio_file_path', sa.String(length=500), nullable=True),
         sa.Column('fireflies_transcript_id', sa.String(length=100), nullable=True),
@@ -361,11 +351,11 @@ def upgrade() -> None:
     op.create_table(
         'shared_access',
         sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('resource_type', sa.Enum('chat', 'entity', 'call', name='resourcetype'), nullable=False),
+        sa.Column('resource_type', postgresql.ENUM('chat', 'entity', 'call', name='resourcetype', create_type=False), nullable=False),
         sa.Column('resource_id', sa.Integer(), nullable=False),
         sa.Column('shared_by_id', sa.Integer(), nullable=False),
         sa.Column('shared_with_id', sa.Integer(), nullable=False),
-        sa.Column('access_level', sa.Enum('view', 'edit', 'full', name='accesslevel'), nullable=True),
+        sa.Column('access_level', postgresql.ENUM('view', 'edit', 'full', name='accesslevel', create_type=False), nullable=True),
         sa.Column('note', sa.String(length=500), nullable=True),
         sa.Column('expires_at', sa.DateTime(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=True),
@@ -386,7 +376,7 @@ def upgrade() -> None:
         sa.Column('org_id', sa.Integer(), nullable=False),
         sa.Column('email', sa.String(length=255), nullable=True),
         sa.Column('name', sa.String(length=255), nullable=True),
-        sa.Column('org_role', sa.Enum('owner', 'admin', 'member', name='orgrole'), nullable=True),
+        sa.Column('org_role', postgresql.ENUM('owner', 'admin', 'member', name='orgrole', create_type=False), nullable=True),
         sa.Column('department_ids', sa.JSON(), nullable=True),
         sa.Column('invited_by_id', sa.Integer(), nullable=True),
         sa.Column('expires_at', sa.DateTime(), nullable=True),
@@ -407,8 +397,8 @@ def upgrade() -> None:
         'report_subscriptions',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('user_id', sa.Integer(), nullable=False),
-        sa.Column('report_type', sa.Enum('daily_hr', 'weekly_summary', 'daily_calls', 'weekly_pipeline', name='reporttype'), nullable=False),
-        sa.Column('delivery_method', sa.Enum('telegram', 'email', name='deliverymethod'), nullable=False),
+        sa.Column('report_type', postgresql.ENUM('daily_hr', 'weekly_summary', 'daily_calls', 'weekly_pipeline', name='reporttype', create_type=False), nullable=False),
+        sa.Column('delivery_method', postgresql.ENUM('telegram', 'email', name='deliverymethod', create_type=False), nullable=False),
         sa.Column('delivery_time', sa.Time(), nullable=True),
         sa.Column('filters', sa.JSON(), nullable=True),
         sa.Column('is_active', sa.Boolean(), nullable=True),
