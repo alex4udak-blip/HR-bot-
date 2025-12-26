@@ -418,8 +418,21 @@ class ExternalLinkProcessor:
                                 transcript_data = page_props.get('transcript', {})
 
                                 if transcript_data:
+                                    # Log all available fields in transcript_data
+                                    logger.info(f"Fireflies transcript_data keys: {list(transcript_data.keys())}")
+
                                     title = transcript_data.get('title')
                                     sentences = transcript_data.get('sentences', [])
+
+                                    # Extract participants info (email, name) if available
+                                    participants = transcript_data.get('participants', []) or transcript_data.get('attendees', []) or []
+                                    if participants:
+                                        logger.info(f"Fireflies participants: {participants}")
+
+                                    # Also check for speakers list with more info
+                                    speakers_info = transcript_data.get('speakers', []) or []
+                                    if speakers_info:
+                                        logger.info(f"Fireflies speakers info: {speakers_info}")
 
                                     # Log first sentence structure to understand fields
                                     if sentences:
