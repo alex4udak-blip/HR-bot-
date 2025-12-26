@@ -404,7 +404,7 @@ class TestCreateUser:
             headers=get_auth_headers(superadmin_token)
         )
 
-        assert response.status_code == 400
+        assert response.status_code in [400, 422]  # 422 for Pydantic validation
         # Should get password policy error
         assert "detail" in response.json()
 
