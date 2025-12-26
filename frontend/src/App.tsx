@@ -34,18 +34,19 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { setUser, setLoading, logout } = useAuthStore();
+  const { setUser, setLoading } = useAuthStore();
 
   useEffect(() => {
     // Try to get current user - cookie is sent automatically
     getCurrentUser()
       .then(setUser)
       .catch(() => {
-        // Not authenticated or session expired
-        logout();
+        // Not authenticated or session expired - just set loading to false
+        // Don't call logout() here as it could clear a user that was just set
+        // by a concurrent login (race condition)
       })
       .finally(() => setLoading(false));
-  }, [setUser, logout, setLoading]);
+  }, [setUser, setLoading]);
 
   return (
     <Routes>
