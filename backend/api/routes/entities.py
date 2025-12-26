@@ -327,45 +327,51 @@ async def list_entities(
 ):
     """List contacts with filters (filtered by user's organization and departments)"""
     current_user = await db.merge(current_user)
-    org = await get_user_org(current_user, db)
-    if not org:
-        return []
 
-    # Get user's department memberships for access control
-    dept_memberships_result = await db.execute(
-        select(DepartmentMember).where(DepartmentMember.user_id == current_user.id)
-    )
-    dept_memberships = list(dept_memberships_result.scalars().all())
-    user_dept_ids = [dm.department_id for dm in dept_memberships]
-    lead_dept_ids = [dm.department_id for dm in dept_memberships if dm.role == DeptRole.lead]
-
-    # Shared entities query
-    shared_ids_query = select(SharedAccess.resource_id).where(
-        SharedAccess.resource_type == ResourceType.entity,
-        SharedAccess.shared_with_id == current_user.id,
-        or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
-    )
-
-    # Determine base query based on ownership filter
-    if ownership == "mine":
-        # Only entities created by current user
-        query = select(Entity).where(
-            Entity.org_id == org.id,
-            Entity.created_by == current_user.id
-        )
-    elif ownership == "shared":
-        # Only entities shared with current user (not owned by them)
-        query = select(Entity).where(
-            Entity.org_id == org.id,
-            Entity.id.in_(shared_ids_query),
-            Entity.created_by != current_user.id
-        )
+    # SUPERADMIN sees everything across all organizations
+    if current_user.role == UserRole.SUPERADMIN:
+        query = select(Entity)
+        # Apply filters
+        if ownership == "mine":
+            query = query.where(Entity.created_by == current_user.id)
+        # For superadmin, skip org/department filtering
     else:
-        # All entities user can see: own + shared + department entities
-        # Superadmin and org owner see all
-        if current_user.role == UserRole.SUPERADMIN:
-            query = select(Entity).where(Entity.org_id == org.id)
+        org = await get_user_org(current_user, db)
+        if not org:
+            return []
+
+        # Get user's department memberships for access control
+        dept_memberships_result = await db.execute(
+            select(DepartmentMember).where(DepartmentMember.user_id == current_user.id)
+        )
+        dept_memberships = list(dept_memberships_result.scalars().all())
+        user_dept_ids = [dm.department_id for dm in dept_memberships]
+        lead_dept_ids = [dm.department_id for dm in dept_memberships if dm.role == DeptRole.lead]
+
+        # Shared entities query
+        shared_ids_query = select(SharedAccess.resource_id).where(
+            SharedAccess.resource_type == ResourceType.entity,
+            SharedAccess.shared_with_id == current_user.id,
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+        )
+
+        # Determine base query based on ownership filter
+        if ownership == "mine":
+            # Only entities created by current user
+            query = select(Entity).where(
+                Entity.org_id == org.id,
+                Entity.created_by == current_user.id
+            )
+        elif ownership == "shared":
+            # Only entities shared with current user (not owned by them)
+            query = select(Entity).where(
+                Entity.org_id == org.id,
+                Entity.id.in_(shared_ids_query),
+                Entity.created_by != current_user.id
+            )
         else:
+            # All entities user can see: own + shared + department entities
+            # Org owner see all
             user_role = await get_user_org_role(current_user, org.id, db)
             if user_role == OrgRole.owner:
                 query = select(Entity).where(Entity.org_id == org.id)

@@ -240,17 +240,20 @@ async def list_calls(
 ):
     """List call recordings (filtered by organization and role)"""
     current_user = await db.merge(current_user)
-    org = await get_user_org(current_user, db)
-    if not org:
-        return []
 
-    query = select(CallRecording).where(CallRecording.org_id == org.id)
+    # SUPERADMIN sees everything across all organizations
+    if current_user.role == UserRole.SUPERADMIN:
+        query = select(CallRecording)
+    else:
+        org = await get_user_org(current_user, db)
+        if not org:
+            return []
 
-    # Salesforce-style access control:
-    # - Superadmin: see all everywhere
-    # - Org Owner: see all in organization
-    # - Others: own + shared + dept lead sees dept members' records
-    if current_user.role != UserRole.SUPERADMIN:
+        query = select(CallRecording).where(CallRecording.org_id == org.id)
+
+        # Salesforce-style access control:
+        # - Org Owner: see all in organization
+        # - Others: own + shared + dept lead sees dept members' records
         user_role = await get_user_org_role(current_user, org.id, db)
 
         if user_role != OrgRole.owner:
