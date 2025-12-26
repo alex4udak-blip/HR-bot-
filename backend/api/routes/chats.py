@@ -214,22 +214,26 @@ async def get_chats(
     # Merge detached user into current session
     user = await db.merge(user)
 
-    # Get user's organization
-    org = await get_user_org(user, db)
-    if not org:
-        return []
+    # SUPERADMIN sees everything across all organizations
+    if user.role == UserRole.SUPERADMIN:
+        query = select(Chat).options(selectinload(Chat.owner), selectinload(Chat.entity)).where(
+            Chat.deleted_at.is_(None)
+        )
+    else:
+        # Get user's organization
+        org = await get_user_org(user, db)
+        if not org:
+            return []
 
-    # Filter by org_id
-    query = select(Chat).options(selectinload(Chat.owner), selectinload(Chat.entity)).where(
-        Chat.deleted_at.is_(None),
-        Chat.org_id == org.id
-    )
+        # Filter by org_id
+        query = select(Chat).options(selectinload(Chat.owner), selectinload(Chat.entity)).where(
+            Chat.deleted_at.is_(None),
+            Chat.org_id == org.id
+        )
 
-    # Salesforce-style access control:
-    # - Superadmin: see all everywhere
-    # - Org Owner: see all in organization
-    # - Others: own + shared + dept lead sees dept members' records
-    if user.role != UserRole.SUPERADMIN:
+        # Salesforce-style access control:
+        # - Org Owner: see all in organization
+        # - Others: own + shared + dept lead sees dept members' records
         user_role = await get_user_org_role(user, org.id, db)
 
         if user_role != OrgRole.owner:
