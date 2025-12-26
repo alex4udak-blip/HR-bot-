@@ -267,6 +267,7 @@ class ExternalLinkProcessor:
         Uses Playwright to render the page and extract transcript.
 
         NOTE: This handles PUBLIC shared Fireflies links, not the internal API.
+        Fireflies uses client-side rendering, so Playwright is required for reliable extraction.
         """
         try:
             transcript_id = self._extract_fireflies_transcript_id(url)
@@ -282,9 +283,9 @@ class ExternalLinkProcessor:
 
             transcript_text = None
             title = None
+            speakers = []
 
-            # Try Playwright first (handles JavaScript-rendered content)
-            # Auto-install if needed
+            # Fireflies uses client-side rendering - Playwright is required
             playwright_ready = await ensure_playwright_installed()
 
             if playwright_ready:
@@ -294,68 +295,163 @@ class ExternalLinkProcessor:
                     logger.info("Using Playwright for Fireflies extraction")
                     async with async_playwright() as p:
                         browser = await p.chromium.launch(headless=True)
-                        page = await browser.new_page()
+                        context = await browser.new_context(
+                            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                        )
+                        page = await context.new_page()
 
-                        # Navigate to the page
-                        await page.goto(url, wait_until='networkidle', timeout=60000)
-
-                        # Wait for transcript content to load
+                        # Navigate to the page with longer timeout for heavy JS apps
                         try:
-                            await page.wait_for_selector('[class*="transcript"]', timeout=30000)
-                        except Exception:
-                            await page.wait_for_timeout(5000)
+                            await page.goto(url, wait_until='networkidle', timeout=90000)
+                        except Exception as nav_err:
+                            logger.warning(f"Navigation with networkidle failed: {nav_err}, trying domcontentloaded")
+                            await page.goto(url, wait_until='domcontentloaded', timeout=60000)
+                            await page.wait_for_timeout(10000)  # Extra wait for JS
 
-                        # Try to get title
-                        try:
-                            title_el = await page.query_selector('h1, [class*="title"]')
-                            if title_el:
-                                title = await title_el.text_content()
-                        except Exception:
-                            pass
-
-                        # Extract transcript - try multiple selectors
-                        transcript_parts = []
-                        selectors = [
-                            '[class*="transcript"] [class*="sentence"]',
-                            '[class*="transcript"] [class*="text"]',
-                            '[class*="SentenceText"]',
-                            '[class*="transcript-line"]',
+                        # Wait for transcript content to load - try multiple selectors
+                        transcript_loaded = False
+                        wait_selectors = [
+                            '[class*="transcript"]',
+                            '[class*="Transcript"]',
+                            '[class*="sentence"]',
+                            '[class*="Sentence"]',
+                            '.is-speaker',
                             '[data-testid*="transcript"]',
                         ]
 
-                        for selector in selectors:
-                            elements = await page.query_selector_all(selector)
-                            if elements:
-                                for el in elements:
-                                    text = await el.text_content()
-                                    if text and text.strip():
-                                        transcript_parts.append(text.strip())
-                                if transcript_parts:
-                                    break
+                        for wait_selector in wait_selectors:
+                            try:
+                                await page.wait_for_selector(wait_selector, timeout=10000)
+                                transcript_loaded = True
+                                logger.info(f"Found transcript element with selector: {wait_selector}")
+                                break
+                            except Exception:
+                                continue
 
-                        # If no transcript found, try main content
+                        if not transcript_loaded:
+                            # Extra wait for dynamic content
+                            logger.warning("No transcript selectors found, waiting extra time for JS rendering")
+                            await page.wait_for_timeout(15000)
+
+                        # Try to get title
+                        try:
+                            title_selectors = ['h1', '[class*="MeetingTitle"]', '[class*="title"]', '[class*="Title"]']
+                            for ts in title_selectors:
+                                title_el = await page.query_selector(ts)
+                                if title_el:
+                                    title = await title_el.text_content()
+                                    if title and title.strip() and len(title.strip()) > 3:
+                                        title = title.strip()
+                                        break
+                        except Exception as e:
+                            logger.debug(f"Title extraction failed: {e}")
+
+                        # Extract transcript - updated selectors for modern Fireflies UI
+                        transcript_parts = []
+                        speaker_data = []
+
+                        # Modern Fireflies selectors (2024-2025)
+                        selectors = [
+                            # Sentence-based extraction (best quality)
+                            '[class*="SentenceItem"], [class*="sentence-item"]',
+                            '[class*="TranscriptSentence"], [class*="transcript-sentence"]',
+                            # Speaker-based extraction
+                            '.is-speaker',
+                            '[class*="SpeakerBlock"], [class*="speaker-block"]',
+                            # Generic transcript containers
+                            '[class*="transcript"] [class*="text"]',
+                            '[class*="Transcript"] [class*="Text"]',
+                            '[data-testid*="transcript"] [class*="text"]',
+                            # Fallback - any sentence-like elements
+                            '[class*="sentence"]',
+                            '[class*="Sentence"]',
+                        ]
+
+                        for selector in selectors:
+                            try:
+                                elements = await page.query_selector_all(selector)
+                                if elements and len(elements) > 0:
+                                    logger.info(f"Found {len(elements)} elements with selector: {selector}")
+
+                                    for el in elements:
+                                        # Try to get speaker name from parent or sibling
+                                        speaker_name = "Speaker"
+                                        try:
+                                            # Look for speaker in parent or nearby elements
+                                            speaker_el = await el.query_selector('[class*="speaker"], [class*="Speaker"], [class*="name"], [class*="Name"]')
+                                            if speaker_el:
+                                                speaker_name = await speaker_el.text_content() or "Speaker"
+                                            else:
+                                                # Try data attribute
+                                                speaker_name = await el.get_attribute('data-speaker') or "Speaker"
+                                        except Exception:
+                                            pass
+
+                                        # Get text content
+                                        text = await el.text_content()
+                                        if text and text.strip():
+                                            clean_text = text.strip()
+                                            # Skip if it's just the speaker name or too short
+                                            if len(clean_text) > 2 and clean_text.lower() != speaker_name.lower():
+                                                transcript_parts.append(clean_text)
+
+                                                # Try to get timing
+                                                start_time = 0
+                                                end_time = 0
+                                                try:
+                                                    start_time = float(await el.get_attribute('data-start') or 0)
+                                                    end_time = float(await el.get_attribute('data-end') or 0)
+                                                except Exception:
+                                                    pass
+
+                                                speaker_data.append({
+                                                    "speaker": speaker_name.strip(),
+                                                    "text": clean_text,
+                                                    "start": start_time,
+                                                    "end": end_time
+                                                })
+
+                                    if transcript_parts:
+                                        logger.info(f"Extracted {len(transcript_parts)} transcript parts")
+                                        break
+                            except Exception as sel_err:
+                                logger.debug(f"Selector {selector} failed: {sel_err}")
+                                continue
+
+                        # If no transcript found, try main content as fallback
                         if not transcript_parts:
-                            main_content = await page.query_selector('main, [class*="content"], [class*="transcript"]')
-                            if main_content:
-                                text = await main_content.text_content()
-                                if text:
-                                    lines = [line.strip() for line in text.split('\n') if line.strip() and len(line.strip()) > 10]
-                                    transcript_parts = lines
+                            logger.warning("No transcript elements found, trying main content fallback")
+                            try:
+                                main_content = await page.query_selector('main, [class*="content"], [class*="Content"], [role="main"]')
+                                if main_content:
+                                    text = await main_content.text_content()
+                                    if text:
+                                        # Filter out short lines and navigation elements
+                                        lines = []
+                                        for line in text.split('\n'):
+                                            line = line.strip()
+                                            if line and len(line) > 15 and not any(skip in line.lower() for skip in ['sign in', 'log in', 'cookie', 'privacy', 'terms']):
+                                                lines.append(line)
+                                        transcript_parts = lines
+                            except Exception as main_err:
+                                logger.debug(f"Main content fallback failed: {main_err}")
 
                         await browser.close()
 
                         if transcript_parts:
                             transcript_text = "\n".join(transcript_parts)
-                            logger.info(f"Playwright extracted {len(transcript_text)} chars from Fireflies")
+                            if speaker_data:
+                                speakers = speaker_data
+                            logger.info(f"Playwright extracted {len(transcript_text)} chars, {len(speakers)} speaker segments from Fireflies")
 
                 except ImportError:
                     logger.warning("Playwright not installed, falling back to HTTP scraping")
                 except Exception as e:
-                    logger.warning(f"Playwright failed: {e}, falling back to HTTP scraping")
+                    logger.error(f"Playwright failed: {type(e).__name__}: {e}", exc_info=True)
             else:
-                logger.info("Playwright not available, using HTTP fallback")
+                logger.warning("Playwright not available - Fireflies requires JavaScript rendering for reliable extraction")
 
-            # Fallback to HTTP if Playwright didn't work
+            # Fallback to HTTP if Playwright didn't work (may not work for JS-rendered content)
             if not transcript_text:
                 logger.info("Attempting HTTP fallback for Fireflies transcript extraction")
                 try:
@@ -428,10 +524,11 @@ class ExternalLinkProcessor:
                 except Exception as e:
                     logger.error(f"Unexpected error in Fireflies HTTP fallback: {type(e).__name__}: {e}")
 
-            if not transcript_text or len(transcript_text) < 100:
+            # Lower minimum to 20 chars to handle short meetings
+            if not transcript_text or len(transcript_text) < 20:
                 logger.warning(f"Fireflies transcript too short or empty: {len(transcript_text) if transcript_text else 0} chars")
                 call.status = CallStatus.failed
-                call.error_message = "Could not extract transcript from Fireflies. Make sure the link is public/shared. Install playwright for better results: pip install playwright && playwright install chromium"
+                call.error_message = "Could not extract transcript from Fireflies. Make sure the link is public/shared and the page has loaded completely. Fireflies requires JavaScript rendering - ensure Playwright is installed: pip install playwright && playwright install chromium"
                 return call
 
             # Update call with extracted data
@@ -439,6 +536,12 @@ class ExternalLinkProcessor:
                 call.title = title
 
             call.transcript = transcript_text
+
+            # Save speakers data if extracted
+            if speakers and not call.speakers:
+                call.speakers = speakers
+                logger.info(f"Saved {len(speakers)} speaker segments")
+
             logger.info(f"Fireflies transcript extracted: {len(transcript_text)} chars")
 
             # Run AI analysis
