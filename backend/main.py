@@ -152,6 +152,7 @@ async def init_database():
 
     # Fireflies integration migrations
     await run_migration(engine, "ALTER TYPE callsource ADD VALUE IF NOT EXISTS 'teams'", "Add teams to callsource enum")
+    await run_migration(engine, "ALTER TYPE callsource ADD VALUE IF NOT EXISTS 'fireflies'", "Add fireflies to callsource enum")
 
     # External links integration migrations
     await run_migration(engine, "ALTER TYPE callsource ADD VALUE IF NOT EXISTS 'google_doc'", "Add google_doc to callsource enum")
