@@ -16,11 +16,7 @@ import AdminSimulatorPage from '@/pages/AdminSimulatorPage';
 import Layout from '@/components/Layout';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { token, user, isLoading } = useAuthStore();
-
-  if (!token) {
-    return <Navigate to="/login" replace />;
-  }
+  const { user, isLoading } = useAuthStore();
 
   if (isLoading) {
     return (
@@ -38,22 +34,19 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { token, setUser, setLoading, logout } = useAuthStore();
+  const { setUser, setLoading, logout } = useAuthStore();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (token) {
-      getCurrentUser()
-        .then(setUser)
-        .catch(() => {
-          logout();
-          navigate('/login');
-        })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
-  }, [token, setUser, logout, navigate, setLoading]);
+    // Try to get current user - cookie is sent automatically
+    getCurrentUser()
+      .then(setUser)
+      .catch(() => {
+        // Not authenticated or session expired
+        logout();
+      })
+      .finally(() => setLoading(false));
+  }, [setUser, logout, setLoading]);
 
   return (
     <Routes>

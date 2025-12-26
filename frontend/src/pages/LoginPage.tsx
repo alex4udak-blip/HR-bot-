@@ -11,7 +11,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ email: '', password: '' });
-  const { setToken, setUser } = useAuthStore();
+  const { setUser } = useAuthStore();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -20,7 +20,7 @@ export default function LoginPage() {
 
     try {
       const response = await login(form.email, form.password);
-      setToken(response.access_token);
+      // Cookie is set by backend, just update user state
       setUser(response.user);
       toast.success('С возвращением!');
       navigate('/dashboard');
