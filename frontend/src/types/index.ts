@@ -13,6 +13,9 @@ export interface User {
   department_role?: DeptRole;
   telegram_id?: number;
   telegram_username?: string;
+  // Additional contact identifiers for speaker matching
+  additional_emails?: string[];
+  additional_telegram_usernames?: string[];
   created_at: string;
   // Impersonation fields
   is_impersonating?: boolean;

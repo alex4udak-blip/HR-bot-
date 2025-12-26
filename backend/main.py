@@ -178,6 +178,10 @@ async def init_database():
     await run_migration(engine, "ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER DEFAULT 0", "Add failed_login_attempts to users")
     await run_migration(engine, "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP", "Add locked_until to users")
 
+    # User profile additional contact identifiers (for speaker matching)
+    await run_migration(engine, "ALTER TABLE users ADD COLUMN IF NOT EXISTS additional_emails JSONB DEFAULT '[]'::jsonb", "Add additional_emails to users")
+    await run_migration(engine, "ALTER TABLE users ADD COLUMN IF NOT EXISTS additional_telegram_usernames JSONB DEFAULT '[]'::jsonb", "Add additional_telegram_usernames to users")
+
     # Entity AI tables
     create_entity_ai_conversations = """
         CREATE TABLE IF NOT EXISTS entity_ai_conversations (

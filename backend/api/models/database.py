@@ -196,6 +196,9 @@ class User(Base):
     role = Column(SQLEnum(UserRole), default=UserRole.ADMIN)
     telegram_id = Column(BigInteger, unique=True, nullable=True, index=True)
     telegram_username = Column(String(255), nullable=True)
+    # Additional contact identifiers for speaker matching
+    additional_emails = Column(JSON, default=list)  # List of additional email addresses
+    additional_telegram_usernames = Column(JSON, default=list)  # List of additional telegram usernames
     is_active = Column(Boolean, default=True)
     token_version = Column(Integer, default=0, nullable=False)  # Increment on password change
     # Brute force protection

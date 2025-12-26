@@ -61,6 +61,18 @@ export const deleteUser = async (id: number): Promise<void> => {
   await api.delete(`/users/${id}`);
 };
 
+export interface UserProfileUpdate {
+  name?: string;
+  telegram_username?: string;
+  additional_emails?: string[];
+  additional_telegram_usernames?: string[];
+}
+
+export const updateUserProfile = async (data: UserProfileUpdate): Promise<User> => {
+  const { data: user } = await api.patch('/users/me/profile', data);
+  return user;
+};
+
 // Chats
 export const getChats = async (): Promise<Chat[]> => {
   const { data } = await api.get('/chats');

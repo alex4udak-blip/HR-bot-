@@ -69,6 +69,14 @@ class UserUpdate(BaseModel):
     department_id: Optional[int] = None
 
 
+class UserProfileUpdate(BaseModel):
+    """Schema for users updating their own profile settings."""
+    name: Optional[str] = None
+    telegram_username: Optional[str] = None
+    additional_emails: Optional[List[str]] = None
+    additional_telegram_usernames: Optional[List[str]] = None
+
+
 class UserResponse(BaseModel):
     id: int
     email: str
@@ -76,6 +84,8 @@ class UserResponse(BaseModel):
     role: str
     telegram_id: Optional[int]
     telegram_username: Optional[str]
+    additional_emails: List[str] = []
+    additional_telegram_usernames: List[str] = []
     is_active: bool
     created_at: datetime
     chats_count: int = 0
