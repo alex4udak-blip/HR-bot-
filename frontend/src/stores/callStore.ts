@@ -7,6 +7,8 @@ interface ActiveRecording {
   status: CallStatus;
   duration: number;
   error?: string;
+  progress?: number;
+  progressStage?: string;
 }
 
 interface CallState {
@@ -187,7 +189,9 @@ export const useCallStore = create<CallState>((set, get) => ({
             id,
             status: status.status,
             duration: status.duration_seconds || 0,
-            error: status.error_message
+            error: status.error_message,
+            progress: status.progress || 0,
+            progressStage: status.progress_stage || ''
           }
         });
 

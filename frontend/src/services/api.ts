@@ -569,6 +569,8 @@ export const getCallStatus = async (
   status: CallStatus;
   duration_seconds?: number;
   error_message?: string;
+  progress?: number;
+  progress_stage?: string;
 }> => {
   const { data } = await api.get(`/calls/${id}/status`, { signal });
   return data;

@@ -406,129 +406,177 @@ class ExternalLinkProcessor:
                             except Exception as debug_err:
                                 logger.debug(f"Debug info extraction failed: {debug_err}")
 
-                        # Try to get title
+                        # First try to extract from __NEXT_DATA__ (most reliable for timestamps)
                         try:
-                            title_selectors = ['h1', '[class*="MeetingTitle"]', '[class*="title"]', '[class*="Title"]']
-                            for ts in title_selectors:
-                                title_el = await page.query_selector(ts)
-                                if title_el:
-                                    title = await title_el.text_content()
-                                    if title and title.strip() and len(title.strip()) > 3:
-                                        title = title.strip()
-                                        break
-                        except Exception as e:
-                            logger.debug(f"Title extraction failed: {e}")
+                            page_html = await page.content()
+                            import json as json_module
+                            next_data_match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', page_html, re.DOTALL)
+                            if next_data_match:
+                                logger.info("Found __NEXT_DATA__ in Fireflies page via Playwright")
+                                next_data = json_module.loads(next_data_match.group(1))
+                                page_props = next_data.get('props', {}).get('pageProps', {})
+                                transcript_data = page_props.get('transcript', {})
 
-                        # Extract transcript - updated selectors for modern Fireflies UI
+                                if transcript_data:
+                                    title = transcript_data.get('title')
+                                    sentences = transcript_data.get('sentences', [])
+
+                                    if sentences:
+                                        lines = []
+                                        for s in sentences:
+                                            speaker = s.get('speaker_name', 'Speaker')
+                                            text = s.get('text', s.get('raw_text', ''))
+                                            if text:
+                                                lines.append(f"{speaker}: {text}")
+                                        transcript_text = "\n".join(lines)
+
+                                        # Extract speakers WITH timestamps
+                                        speakers = []
+                                        for s in sentences:
+                                            speakers.append({
+                                                "speaker": s.get("speaker_name", "Speaker"),
+                                                "start": s.get("start_time", 0),
+                                                "end": s.get("end_time", 0),
+                                                "text": s.get("text", s.get("raw_text", ""))
+                                            })
+                                        call.speakers = speakers
+                                        call.duration_seconds = transcript_data.get('duration')
+
+                                        logger.info(f"Playwright extracted {len(transcript_text)} chars from __NEXT_DATA__ with {len(speakers)} timestamped speakers")
+
+                                        # Progress: Transcript extracted
+                                        if call_id:
+                                            await self._update_progress(call_id, 50, "Транскрипт извлечён, обработка спикеров...")
+
+                        except Exception as next_data_err:
+                            logger.debug(f"__NEXT_DATA__ extraction failed: {next_data_err}")
+
+                        # Try to get title (if not already extracted)
+                        if not title:
+                            try:
+                                title_selectors = ['h1', '[class*="MeetingTitle"]', '[class*="title"]', '[class*="Title"]']
+                                for ts in title_selectors:
+                                    title_el = await page.query_selector(ts)
+                                    if title_el:
+                                        title = await title_el.text_content()
+                                        if title and title.strip() and len(title.strip()) > 3:
+                                            title = title.strip()
+                                            break
+                            except Exception as e:
+                                logger.debug(f"Title extraction failed: {e}")
+
+                        # Extract transcript via DOM if __NEXT_DATA__ didn't work
                         transcript_parts = []
                         speaker_data = []
 
-                        # Modern Fireflies selectors (2024-2025) - updated for latest UI
-                        selectors = [
-                            # Primary: Direct transcript text elements
-                            '[data-testid="transcript-text"]',
-                            '[data-testid*="sentence"]',
-                            '[data-testid*="transcript"]',
-                            # Sentence-based extraction (best quality)
-                            '[class*="SentenceItem"], [class*="sentence-item"]',
-                            '[class*="TranscriptSentence"], [class*="transcript-sentence"]',
-                            '[class*="TranscriptLine"], [class*="transcript-line"]',
-                            # Speaker blocks with text
-                            '[class*="SpeakerSegment"], [class*="speaker-segment"]',
-                            '[class*="SpeakerBlock"], [class*="speaker-block"]',
-                            '.is-speaker',
-                            # Generic transcript containers
-                            '[class*="transcript"] p',
-                            '[class*="transcript"] [class*="text"]',
-                            '[class*="Transcript"] [class*="Text"]',
-                            # React/Next.js dynamic content
-                            '[class*="css-"][class*="text"]',
-                            'div[class*="transcript"] > div > div',
-                            # Fallback - any sentence-like elements
-                            '[class*="sentence"]',
-                            '[class*="Sentence"]',
-                        ]
+                        if not transcript_text:
+                            # Modern Fireflies selectors (2024-2025) - updated for latest UI
+                            selectors = [
+                                # Primary: Direct transcript text elements
+                                '[data-testid="transcript-text"]',
+                                '[data-testid*="sentence"]',
+                                '[data-testid*="transcript"]',
+                                # Sentence-based extraction (best quality)
+                                '[class*="SentenceItem"], [class*="sentence-item"]',
+                                '[class*="TranscriptSentence"], [class*="transcript-sentence"]',
+                                '[class*="TranscriptLine"], [class*="transcript-line"]',
+                                # Speaker blocks with text
+                                '[class*="SpeakerSegment"], [class*="speaker-segment"]',
+                                '[class*="SpeakerBlock"], [class*="speaker-block"]',
+                                '.is-speaker',
+                                # Generic transcript containers
+                                '[class*="transcript"] p',
+                                '[class*="transcript"] [class*="text"]',
+                                '[class*="Transcript"] [class*="Text"]',
+                                # React/Next.js dynamic content
+                                '[class*="css-"][class*="text"]',
+                                'div[class*="transcript"] > div > div',
+                                # Fallback - any sentence-like elements
+                                '[class*="sentence"]',
+                                '[class*="Sentence"]',
+                            ]
 
-                        for selector in selectors:
-                            try:
-                                elements = await page.query_selector_all(selector)
-                                if elements and len(elements) > 0:
-                                    logger.info(f"Found {len(elements)} elements with selector: {selector}")
+                            for selector in selectors:
+                                try:
+                                    elements = await page.query_selector_all(selector)
+                                    if elements and len(elements) > 0:
+                                        logger.info(f"Found {len(elements)} elements with selector: {selector}")
 
-                                    for el in elements:
-                                        # Try to get speaker name from parent or sibling
-                                        speaker_name = "Speaker"
-                                        try:
-                                            # Look for speaker in parent or nearby elements
-                                            speaker_el = await el.query_selector('[class*="speaker"], [class*="Speaker"], [class*="name"], [class*="Name"]')
-                                            if speaker_el:
-                                                speaker_name = await speaker_el.text_content() or "Speaker"
-                                            else:
-                                                # Try data attribute
-                                                speaker_name = await el.get_attribute('data-speaker') or "Speaker"
-                                        except Exception:
-                                            pass
+                                        for el in elements:
+                                            # Try to get speaker name from parent or sibling
+                                            speaker_name = "Speaker"
+                                            try:
+                                                # Look for speaker in parent or nearby elements
+                                                speaker_el = await el.query_selector('[class*="speaker"], [class*="Speaker"], [class*="name"], [class*="Name"]')
+                                                if speaker_el:
+                                                    speaker_name = await speaker_el.text_content() or "Speaker"
+                                                else:
+                                                    # Try data attribute
+                                                    speaker_name = await el.get_attribute('data-speaker') or "Speaker"
+                                            except Exception:
+                                                pass
 
-                                        # Get text content
-                                        text = await el.text_content()
-                                        if text and text.strip():
-                                            clean_text = text.strip()
-                                            # Skip if it's just the speaker name or too short
-                                            if len(clean_text) > 2 and clean_text.lower() != speaker_name.lower():
-                                                transcript_parts.append(clean_text)
+                                            # Get text content
+                                            text = await el.text_content()
+                                            if text and text.strip():
+                                                clean_text = text.strip()
+                                                # Skip if it's just the speaker name or too short
+                                                if len(clean_text) > 2 and clean_text.lower() != speaker_name.lower():
+                                                    transcript_parts.append(clean_text)
 
-                                                # Try to get timing
-                                                start_time = 0
-                                                end_time = 0
-                                                try:
-                                                    start_time = float(await el.get_attribute('data-start') or 0)
-                                                    end_time = float(await el.get_attribute('data-end') or 0)
-                                                except Exception:
-                                                    pass
+                                                    # Try to get timing
+                                                    start_time = 0
+                                                    end_time = 0
+                                                    try:
+                                                        start_time = float(await el.get_attribute('data-start') or 0)
+                                                        end_time = float(await el.get_attribute('data-end') or 0)
+                                                    except Exception:
+                                                        pass
 
-                                                speaker_data.append({
-                                                    "speaker": speaker_name.strip(),
-                                                    "text": clean_text,
-                                                    "start": start_time,
-                                                    "end": end_time
-                                                })
+                                                    speaker_data.append({
+                                                        "speaker": speaker_name.strip(),
+                                                        "text": clean_text,
+                                                        "start": start_time,
+                                                        "end": end_time
+                                                    })
 
-                                    if transcript_parts:
-                                        logger.info(f"Extracted {len(transcript_parts)} transcript parts")
-                                        break
-                            except Exception as sel_err:
-                                logger.debug(f"Selector {selector} failed: {sel_err}")
-                                continue
+                                        if transcript_parts:
+                                            logger.info(f"Extracted {len(transcript_parts)} transcript parts")
+                                            break
+                                except Exception as sel_err:
+                                    logger.debug(f"Selector {selector} failed: {sel_err}")
+                                    continue
 
-                        # If no transcript found, try main content as fallback
-                        if not transcript_parts:
-                            logger.warning("No transcript elements found, trying main content fallback")
-                            try:
-                                main_content = await page.query_selector('main, [class*="content"], [class*="Content"], [role="main"]')
-                                if main_content:
-                                    text = await main_content.text_content()
-                                    if text:
-                                        # Filter out short lines and navigation elements
-                                        lines = []
-                                        for line in text.split('\n'):
-                                            line = line.strip()
-                                            if line and len(line) > 15 and not any(skip in line.lower() for skip in ['sign in', 'log in', 'cookie', 'privacy', 'terms']):
-                                                lines.append(line)
-                                        transcript_parts = lines
-                            except Exception as main_err:
-                                logger.debug(f"Main content fallback failed: {main_err}")
+                            # If no transcript found, try main content as fallback
+                            if not transcript_parts:
+                                logger.warning("No transcript elements found, trying main content fallback")
+                                try:
+                                    main_content = await page.query_selector('main, [class*="content"], [class*="Content"], [role="main"]')
+                                    if main_content:
+                                        text = await main_content.text_content()
+                                        if text:
+                                            # Filter out short lines and navigation elements
+                                            lines = []
+                                            for line in text.split('\n'):
+                                                line = line.strip()
+                                                if line and len(line) > 15 and not any(skip in line.lower() for skip in ['sign in', 'log in', 'cookie', 'privacy', 'terms']):
+                                                    lines.append(line)
+                                            transcript_parts = lines
+                                except Exception as main_err:
+                                    logger.debug(f"Main content fallback failed: {main_err}")
+
+                            # Set transcript_text from DOM extraction
+                            if transcript_parts:
+                                transcript_text = "\n".join(transcript_parts)
+                                if speaker_data:
+                                    speakers = speaker_data
+                                logger.info(f"Playwright extracted {len(transcript_text)} chars, {len(speakers)} speaker segments from Fireflies (DOM)")
+
+                                # Progress: Transcript extracted
+                                if call_id:
+                                    await self._update_progress(call_id, 50, "Транскрипт извлечён, обработка спикеров...")
 
                         await browser.close()
-
-                        if transcript_parts:
-                            transcript_text = "\n".join(transcript_parts)
-                            if speaker_data:
-                                speakers = speaker_data
-                            logger.info(f"Playwright extracted {len(transcript_text)} chars, {len(speakers)} speaker segments from Fireflies")
-
-                            # Progress: Transcript extracted
-                            if call_id:
-                                await self._update_progress(call_id, 50, "Транскрипт извлечён, обработка спикеров...")
 
                 except ImportError:
                     logger.warning("Playwright not installed, falling back to HTTP scraping")
