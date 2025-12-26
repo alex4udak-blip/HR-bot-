@@ -110,7 +110,6 @@ async def process_external_url(
                 organization_id=org.id,
                 owner_id=current_user.id,
                 source_type=CallSource.fireflies,
-                department_id=request.department_id,
                 entity_id=request.entity_id,
                 title=request.title
             )

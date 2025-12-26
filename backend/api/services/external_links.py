@@ -1019,7 +1019,6 @@ class ExternalLinkProcessor:
         organization_id: int,
         owner_id: int,
         source_type: CallSource,
-        department_id: Optional[int] = None,
         entity_id: Optional[int] = None,
         title: Optional[str] = None
     ) -> CallRecording:
@@ -1034,7 +1033,6 @@ class ExternalLinkProcessor:
                 org_id=organization_id,
                 owner_id=owner_id,
                 entity_id=entity_id,
-                department_id=department_id,
                 source_url=url,
                 source_type=source_type,
                 title=title or f"External Recording - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
