@@ -2,9 +2,10 @@ name: Tests
 
 on:
   push:
-    branches: [main, master, 'claude/*']
+    branches: [main, master]  # Only run on main/master pushes
   pull_request:
     branches: [main, master]
+  workflow_dispatch:  # Manual trigger when needed
 
 jobs:
   backend-tests:
