@@ -17,22 +17,36 @@ branch_labels = None
 depends_on = None
 
 
+def column_exists(table_name, column_name):
+    """Check if a column exists in the table."""
+    conn = op.get_bind()
+    result = conn.execute(sa.text(
+        "SELECT 1 FROM information_schema.columns WHERE table_name = :table AND column_name = :column"
+    ), {"table": table_name, "column": column_name})
+    return result.fetchone() is not None
+
+
 def upgrade():
     """Add telegram_usernames, emails, phones JSON columns and migrate existing data."""
 
     # Add new JSON columns with default empty arrays
-    op.add_column('entities', sa.Column('telegram_usernames', postgresql.JSON(astext_type=sa.Text()), nullable=True))
-    op.add_column('entities', sa.Column('emails', postgresql.JSON(astext_type=sa.Text()), nullable=True))
-    op.add_column('entities', sa.Column('phones', postgresql.JSON(astext_type=sa.Text()), nullable=True))
+    if not column_exists('entities', 'telegram_usernames'):
+        op.add_column('entities', sa.Column('telegram_usernames', postgresql.JSON(astext_type=sa.Text()), nullable=True))
+    if not column_exists('entities', 'emails'):
+        op.add_column('entities', sa.Column('emails', postgresql.JSON(astext_type=sa.Text()), nullable=True))
+    if not column_exists('entities', 'phones'):
+        op.add_column('entities', sa.Column('phones', postgresql.JSON(astext_type=sa.Text()), nullable=True))
 
     # Migrate existing data: move email to emails[], phone to phones[]
     # This uses PostgreSQL's JSONB functions to create arrays from single values
+    # Only run if columns were just created (data might already be migrated)
     op.execute("""
         UPDATE entities
         SET emails = CASE
             WHEN email IS NOT NULL AND email != '' THEN to_jsonb(ARRAY[email])
             ELSE '[]'::jsonb
         END
+        WHERE emails IS NULL
     """)
 
     op.execute("""
@@ -41,12 +55,14 @@ def upgrade():
             WHEN phone IS NOT NULL AND phone != '' THEN to_jsonb(ARRAY[phone])
             ELSE '[]'::jsonb
         END
+        WHERE phones IS NULL
     """)
 
     # Set telegram_usernames to empty array for all rows
     op.execute("""
         UPDATE entities
         SET telegram_usernames = '[]'::jsonb
+        WHERE telegram_usernames IS NULL
     """)
 
     # Set default values for new rows
