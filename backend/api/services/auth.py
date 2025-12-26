@@ -4,7 +4,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Cookie, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from ..config import get_settings
@@ -94,12 +94,23 @@ def create_impersonation_token(
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    access_token: Optional[str] = Cookie(None),
     db: AsyncSession = Depends(get_db),
 ) -> User:
+    """Get current user from httpOnly cookie.
+
+    Reads JWT token from the access_token cookie (not from Authorization header).
+    This provides XSS protection as the token is not accessible via JavaScript.
+    """
+    # Get token from cookie
+    token = access_token
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     try:
         payload = jwt.decode(
-            credentials.credentials, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
         )
         user_id = payload.get("sub")
         token_version = payload.get("token_version", 0)  # Default to 0 for old tokens
@@ -122,7 +133,8 @@ async def get_current_user(
 
 
 async def get_current_user_allow_inactive(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    access_token: Optional[str] = Cookie(None),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """Get current user without checking is_active status.
@@ -130,9 +142,14 @@ async def get_current_user_allow_inactive(
     This is used for endpoints like /me where we want inactive users
     to be able to see their account status.
     """
+    # Get token from cookie
+    token = access_token
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     try:
         payload = jwt.decode(
-            credentials.credentials, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
         )
         user_id = payload.get("sub")
         token_version = payload.get("token_version", 0)  # Default to 0 for old tokens
@@ -165,15 +182,19 @@ security_optional = HTTPBearer(auto_error=False)
 
 
 async def get_current_user_optional(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
+    request: Request,
+    access_token: Optional[str] = Cookie(None),
     db: AsyncSession = Depends(get_db),
 ) -> Optional[User]:
     """Get current user without raising error if not authenticated."""
-    if not credentials:
+    # Get token from cookie
+    token = access_token
+    if not token:
         return None
+
     try:
         payload = jwt.decode(
-            credentials.credentials, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
         )
         user_id = payload.get("sub")
         token_version = payload.get("token_version", 0)  # Default to 0 for old tokens
