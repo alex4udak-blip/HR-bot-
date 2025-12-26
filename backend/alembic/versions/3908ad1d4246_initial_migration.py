@@ -21,11 +21,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Create enums using raw SQL with IF NOT EXISTS for PostgreSQL compatibility
-    # This is more reliable than checkfirst with asyncpg
     conn = op.get_bind()
 
-    # Helper to safely create enum types
+    # Check if tables already exist (idempotent migration)
+    result = conn.execute(sa.text(
+        "SELECT 1 FROM information_schema.tables WHERE table_name = 'users'"
+    ))
+    if result.fetchone() is not None:
+        # Tables already exist, skip creation
+        return
+
+    # Create enums using raw SQL with IF NOT EXISTS for PostgreSQL compatibility
+    # This is more reliable than checkfirst with asyncpg
     enum_types = [
         ("userrole", ['superadmin', 'admin']),
         ("chattype", ['work', 'hr', 'project', 'client', 'contractor', 'sales', 'support', 'custom']),
