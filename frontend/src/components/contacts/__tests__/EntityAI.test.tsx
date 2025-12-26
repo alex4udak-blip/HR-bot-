@@ -228,7 +228,8 @@ describe('EntityAI', () => {
 
       render(<EntityAI entity={entityWithoutData} />);
 
-      const updateButton = screen.getByText('Обновить');
+      const updateButtonText = screen.getByText('Обновить');
+      const updateButton = updateButtonText.closest('button');
       expect(updateButton).toBeDisabled();
     });
   });
@@ -281,7 +282,7 @@ describe('EntityAI', () => {
               'Content-Type': 'application/json',
               Authorization: 'Bearer test-token',
             }),
-            body: JSON.stringify({ message: undefined }),
+            body: JSON.stringify({ message: 'Test question' }),
           })
         );
       });
@@ -429,10 +430,12 @@ describe('EntityAI', () => {
 
       render(<EntityAI entity={mockEntity} />);
 
-      const fullAnalysisButton = screen.getByText('Полный анализ');
-      await userEvent.click(fullAnalysisButton);
+      const fullAnalysisButtonText = screen.getByText('Полный анализ');
+      const fullAnalysisButton = fullAnalysisButtonText.closest('button');
+      await userEvent.click(fullAnalysisButton!);
 
-      const redFlagsButton = screen.getByText('Red flags');
+      const redFlagsButtonText = screen.getByText('Red flags');
+      const redFlagsButton = redFlagsButtonText.closest('button');
       expect(redFlagsButton).toBeDisabled();
     });
   });

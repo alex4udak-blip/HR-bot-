@@ -41,9 +41,9 @@ jobs:
         run: |
           cd backend
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov aiosqlite httpx
+          pip install pytest pytest-asyncio pytest-cov pytest-xdist aiosqlite httpx
 
-      - name: Run tests with coverage
+      - name: Run tests with coverage (parallel)
         env:
           DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test_db
           SECRET_KEY: test-secret-key-for-ci
@@ -51,11 +51,11 @@ jobs:
         run: |
           cd backend
           pytest tests/ \
+            -n auto \
             --cov=. \
             --cov-report=xml \
             --cov-report=html \
             --cov-report=term-missing \
-            -v \
             --tb=short \
             2>&1 | tee test-results.txt
 
