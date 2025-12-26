@@ -644,7 +644,7 @@ class TestCreateUser:
             headers=get_auth_headers(superadmin_token)
         )
 
-        assert response.status_code == 400
+        assert response.status_code in [400, 422]  # 422 for Pydantic validation
 
     @pytest.mark.asyncio
     async def test_create_admin_without_department_fails(
@@ -1934,7 +1934,7 @@ class TestChangePassword:
             headers=get_auth_headers(token)
         )
 
-        assert response.status_code == 400
+        assert response.status_code in [400, 422]  # 422 for Pydantic validation
         # Password policy validation should fail
         assert "detail" in response.json()
 

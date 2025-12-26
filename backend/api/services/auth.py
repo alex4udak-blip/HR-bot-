@@ -134,7 +134,9 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="User not found or inactive")
 
     # Verify token version matches - invalidates old tokens on password change
-    if user.token_version != token_version:
+    # Treat None as 0 (for users created before token_version was added)
+    db_token_version = user.token_version if user.token_version is not None else 0
+    if db_token_version != token_version:
         raise HTTPException(status_code=401, detail="Token has been invalidated")
 
     return user
@@ -180,7 +182,9 @@ async def get_current_user_allow_inactive(
         raise HTTPException(status_code=401, detail="User not found")
 
     # Verify token version matches - invalidates old tokens on password change
-    if user.token_version != token_version:
+    # Treat None as 0 (for users created before token_version was added)
+    db_token_version = user.token_version if user.token_version is not None else 0
+    if db_token_version != token_version:
         raise HTTPException(status_code=401, detail="Token has been invalidated")
 
     return user
@@ -232,7 +236,9 @@ async def get_current_user_optional(
         return None
 
     # Verify token version matches - invalidates old tokens on password change
-    if user.token_version != token_version:
+    # Treat None as 0 (for users created before token_version was added)
+    db_token_version = user.token_version if user.token_version is not None else 0
+    if db_token_version != token_version:
         return None
 
     return user
@@ -258,7 +264,9 @@ async def get_user_from_token(token: str, db: AsyncSession) -> Optional[User]:
         return None
 
     # Verify token version matches - invalidates old tokens on password change
-    if user.token_version != token_version:
+    # Treat None as 0 (for users created before token_version was added)
+    db_token_version = user.token_version if user.token_version is not None else 0
+    if db_token_version != token_version:
         return None
 
     return user
