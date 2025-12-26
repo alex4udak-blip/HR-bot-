@@ -174,8 +174,8 @@ class EntityAIService:
             for chat in chats:
                 parts.append(f"\n### Чат: {chat.custom_name or chat.title} ({chat.chat_type.value})")
                 if hasattr(chat, 'messages') and chat.messages:
-                    # Get last 100 messages to avoid context overflow
-                    messages = sorted(chat.messages, key=lambda m: m.timestamp)[-100:]
+                    # Get last 300 messages to have better context (was 100)
+                    messages = sorted(chat.messages, key=lambda m: m.timestamp)[-300:]
 
                     # Identify participants for this chat
                     participants = identify_participants_from_objects(chat, messages, use_ai_fallback=False)
@@ -205,15 +205,40 @@ class EntityAIService:
                     parts.append(f"**Длительность:** {mins}м {secs}с")
                 if call.summary:
                     parts.append(f"**Саммари:** {call.summary}")
+                # Add speaker statistics if available
+                if call.speakers:
+                    speaker_times = {}
+                    for segment in call.speakers:
+                        speaker = segment.get("speaker", "Unknown")
+                        start = segment.get("start", 0) or 0
+                        end = segment.get("end", 0) or 0
+                        duration = end - start
+                        speaker_times[speaker] = speaker_times.get(speaker, 0) + duration
+                    if speaker_times:
+                        parts.append("**Участники звонка:**")
+                        for speaker, total_secs in sorted(speaker_times.items(), key=lambda x: -x[1]):
+                            mins = int(total_secs // 60)
+                            secs = int(total_secs % 60)
+                            parts.append(f"- {speaker}: ~{mins}м {secs}с")
                 if call.key_points:
                     parts.append("**Ключевые моменты:**")
                     for point in call.key_points[:10]:
                         parts.append(f"- {point}")
                 if call.transcript:
-                    # Limit transcript to avoid context overflow
-                    transcript = call.transcript[:5000]
-                    if len(call.transcript) > 5000:
-                        transcript += "\n... (транскрипт обрезан)"
+                    # Smart truncate for long transcripts - keep beginning AND end
+                    # 40000 chars ≈ 8000 words ≈ 40-50 minutes of conversation
+                    MAX_TRANSCRIPT_CHARS = 40000
+                    if len(call.transcript) > MAX_TRANSCRIPT_CHARS:
+                        # Keep first 60% and last 40% to preserve both intro and conclusion
+                        first_part_len = int(MAX_TRANSCRIPT_CHARS * 0.6)
+                        last_part_len = MAX_TRANSCRIPT_CHARS - first_part_len
+                        transcript = (
+                            call.transcript[:first_part_len] +
+                            f"\n\n... [пропущено ~{(len(call.transcript) - MAX_TRANSCRIPT_CHARS) // 1000}k символов из середины] ...\n\n" +
+                            call.transcript[-last_part_len:]
+                        )
+                    else:
+                        transcript = call.transcript
                     parts.append(f"**Транскрипт:**\n{transcript}")
 
         if not chats and not calls:
