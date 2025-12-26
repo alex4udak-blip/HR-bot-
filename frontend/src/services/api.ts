@@ -632,10 +632,12 @@ export const processExternalURL = async (data: {
 };
 
 export const getExternalProcessingStatus = async (callId: number): Promise<{
-  call_id: number;
+  id: number;
   status: string;
-  progress?: number;
+  progress: number;
+  progress_stage: string;
   error_message?: string;
+  title?: string;
 }> => {
   const { data } = await api.get(`/external/status/${callId}`);
   return data;

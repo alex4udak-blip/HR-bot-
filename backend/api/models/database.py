@@ -404,6 +404,8 @@ class CallRecording(Base):
     source_url = Column(String(500), nullable=True)
     bot_name = Column(String(100), default="HR Recorder")
     status = Column(SQLEnum(CallStatus), default=CallStatus.pending, index=True)
+    progress = Column(Integer, default=0)  # 0-100 progress percentage
+    progress_stage = Column(String(100), nullable=True)  # Current processing stage description
     duration_seconds = Column(Integer, nullable=True)
     audio_file_path = Column(String(500), nullable=True)
     fireflies_transcript_id = Column(String(100), nullable=True, index=True)  # Fireflies transcript ID

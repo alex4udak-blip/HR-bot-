@@ -224,6 +224,8 @@ async def get_processing_status(
     return {
         "id": call.id,
         "status": call.status.value,
+        "progress": call.progress or 0,
+        "progress_stage": call.progress_stage or "",
         "source_type": call.source_type.value,
         "source_url": call.source_url,
         "title": call.title,
