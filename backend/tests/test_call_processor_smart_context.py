@@ -90,6 +90,60 @@ class TestCalculateSpeakerStats:
 
         assert result["Speaker 1"]["avg_segment_length"] == 30  # (20 + 40) / 2
 
+    def test_text_length_fallback_when_no_timestamps(self):
+        """Test fallback to text-length estimation when timestamps are all 0."""
+        from api.services.call_processor import calculate_speaker_stats
+
+        # Simulate Fireflies data with no timestamps (common issue)
+        speakers = [
+            {"speaker": "HR Manager", "start": 0, "end": 0, "text": "Hello, welcome to the interview. " * 10},  # ~330 chars
+            {"speaker": "Candidate", "start": 0, "end": 0, "text": "Thank you for having me. I am excited to be here. " * 20},  # ~1000 chars
+        ]
+
+        result = calculate_speaker_stats(speakers)
+
+        # Should estimate time from text length (~12.5 chars/sec)
+        assert result["HR Manager"]["total_seconds"] > 0
+        assert result["Candidate"]["total_seconds"] > 0
+        assert result["HR Manager"]["estimated"] == True
+        assert result["Candidate"]["estimated"] == True
+        # Candidate spoke more (more text)
+        assert result["Candidate"]["total_seconds"] > result["HR Manager"]["total_seconds"]
+        # Should have percentage
+        assert result["HR Manager"]["percentage"] > 0
+        assert result["Candidate"]["percentage"] > 0
+        assert abs(result["HR Manager"]["percentage"] + result["Candidate"]["percentage"] - 100) < 0.5
+
+    def test_percentage_calculation(self):
+        """Test that percentage of speaking time is calculated correctly."""
+        from api.services.call_processor import calculate_speaker_stats
+
+        speakers = [
+            {"speaker": "Speaker A", "start": 0, "end": 60, "text": "Hello"},  # 60 sec
+            {"speaker": "Speaker B", "start": 60, "end": 180, "text": "Hi"},  # 120 sec
+            {"speaker": "Speaker A", "start": 180, "end": 240, "text": "Bye"},  # 60 sec
+        ]
+
+        result = calculate_speaker_stats(speakers)
+
+        # Speaker A: 120 sec (50%), Speaker B: 120 sec (50%)
+        assert result["Speaker A"]["percentage"] == 50.0
+        assert result["Speaker B"]["percentage"] == 50.0
+
+    def test_real_timestamps_override_text_estimation(self):
+        """Test that real timestamps are used when available, not text length."""
+        from api.services.call_processor import calculate_speaker_stats
+
+        speakers = [
+            {"speaker": "Speaker", "start": 0, "end": 10, "text": "x" * 1000},  # 10 sec from timestamps, not ~80 from text
+        ]
+
+        result = calculate_speaker_stats(speakers)
+
+        # Should use timestamp duration (10 sec), not text estimation
+        assert result["Speaker"]["total_seconds"] == 10
+        assert result["Speaker"]["estimated"] == False
+
 
 class TestBuildSmartContext:
     """Tests for build_smart_context function."""

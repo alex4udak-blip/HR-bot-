@@ -652,3 +652,175 @@ class TestHelperFunctions:
         assert "JSON" in prompt
         assert "candidate" in prompt
         assert "interviewer" in prompt
+
+
+# ============================================================================
+# TESTS FOR AI CALL SPEAKER IDENTIFICATION
+# ============================================================================
+
+class TestAICallSpeakerIdentification:
+    """Tests for ai_identify_call_speakers function."""
+
+    @pytest.mark.asyncio
+    async def test_identifies_speakers_by_transcript_context(self):
+        """Test that AI correctly identifies speakers from call transcript."""
+        from api.services.participants import ai_identify_call_speakers, IdentifiedParticipant, ParticipantRole
+        from unittest.mock import MagicMock, AsyncMock, patch
+
+        # Create mock call with transcript
+        mock_call = MagicMock()
+        mock_call.id = 123
+        mock_call.title = "Interview - Backend Developer"
+        mock_call.transcript = """
+HR Manager: Добро пожаловать на собеседование. Расскажите о своем опыте работы с Python.
+Speaker 2: Спасибо. Я работаю с Python уже 5 лет, в основном в backend разработке.
+HR Manager: Отлично. Какие фреймворки вы использовали?
+Speaker 2: FastAPI, Django, Flask. Последние 2 года работаю с FastAPI.
+"""
+
+        unknown_speakers = [
+            IdentifiedParticipant(
+                display_name="Speaker 2",
+                role=ParticipantRole.unknown,
+                confidence=0.5
+            )
+        ]
+
+        known_speakers = [
+            IdentifiedParticipant(
+                display_name="HR Manager",
+                role=ParticipantRole.system_user,
+                confidence=1.0
+            )
+        ]
+
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(
+            text='[{"speaker_name": "Speaker 2", "role": "candidate", "confidence": 0.75, "reasoning": "Отвечает на вопросы про опыт работы"}]'
+        )]
+
+        with patch('api.services.participants.get_settings') as mock_settings, \
+             patch('api.services.participants.AsyncAnthropic') as mock_anthropic:
+            mock_settings.return_value.anthropic_api_key = "test-key"
+            mock_client = AsyncMock()
+            mock_client.messages.create = AsyncMock(return_value=mock_response)
+            mock_anthropic.return_value = mock_client
+
+            result = await ai_identify_call_speakers(
+                call=mock_call,
+                unknown_speakers=unknown_speakers,
+                known_speakers=known_speakers
+            )
+
+            assert len(result) == 1
+            assert result[0].role == ParticipantRole.candidate
+            assert result[0].confidence <= 0.8  # Clamped
+
+    @pytest.mark.asyncio
+    async def test_returns_unchanged_when_no_api_key(self):
+        """Test that speakers are returned unchanged when API key not configured."""
+        from api.services.participants import ai_identify_call_speakers, IdentifiedParticipant, ParticipantRole
+        from unittest.mock import MagicMock, patch
+
+        mock_call = MagicMock()
+        mock_call.id = 123
+        mock_call.transcript = "Test transcript"
+
+        unknown_speakers = [
+            IdentifiedParticipant(
+                display_name="Unknown Speaker",
+                role=ParticipantRole.unknown
+            )
+        ]
+
+        with patch('api.services.participants.get_settings') as mock_settings:
+            mock_settings.return_value.anthropic_api_key = None
+
+            result = await ai_identify_call_speakers(
+                call=mock_call,
+                unknown_speakers=unknown_speakers,
+                known_speakers=[]
+            )
+
+            assert len(result) == 1
+            assert result[0].role == ParticipantRole.unknown
+
+    @pytest.mark.asyncio
+    async def test_handles_api_error_gracefully(self):
+        """Test that errors are handled and speakers returned unchanged."""
+        from api.services.participants import ai_identify_call_speakers, IdentifiedParticipant, ParticipantRole
+        from unittest.mock import MagicMock, AsyncMock, patch
+
+        mock_call = MagicMock()
+        mock_call.id = 123
+        mock_call.transcript = "Test transcript"
+
+        unknown_speakers = [
+            IdentifiedParticipant(
+                display_name="Speaker",
+                role=ParticipantRole.unknown
+            )
+        ]
+
+        with patch('api.services.participants.get_settings') as mock_settings, \
+             patch('api.services.participants.AsyncAnthropic') as mock_anthropic:
+            mock_settings.return_value.anthropic_api_key = "test-key"
+            mock_client = AsyncMock()
+            mock_client.messages.create = AsyncMock(side_effect=Exception("API Error"))
+            mock_anthropic.return_value = mock_client
+
+            result = await ai_identify_call_speakers(
+                call=mock_call,
+                unknown_speakers=unknown_speakers,
+                known_speakers=[]
+            )
+
+            # Should return unchanged on error
+            assert len(result) == 1
+            assert result[0].role == ParticipantRole.unknown
+
+    @pytest.mark.asyncio
+    async def test_empty_speakers_returns_empty(self):
+        """Test that empty speakers list returns empty."""
+        from api.services.participants import ai_identify_call_speakers
+        from unittest.mock import MagicMock
+
+        mock_call = MagicMock()
+        mock_call.transcript = "Test"
+
+        result = await ai_identify_call_speakers(
+            call=mock_call,
+            unknown_speakers=[],
+            known_speakers=[]
+        )
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_no_transcript_returns_unchanged(self):
+        """Test that speakers returned unchanged when no transcript."""
+        from api.services.participants import ai_identify_call_speakers, IdentifiedParticipant, ParticipantRole
+        from unittest.mock import MagicMock, patch
+
+        mock_call = MagicMock()
+        mock_call.id = 123
+        mock_call.transcript = None
+
+        unknown_speakers = [
+            IdentifiedParticipant(
+                display_name="Speaker",
+                role=ParticipantRole.unknown
+            )
+        ]
+
+        with patch('api.services.participants.get_settings') as mock_settings:
+            mock_settings.return_value.anthropic_api_key = "test-key"
+
+            result = await ai_identify_call_speakers(
+                call=mock_call,
+                unknown_speakers=unknown_speakers,
+                known_speakers=[]
+            )
+
+            assert len(result) == 1
+            assert result[0].role == ParticipantRole.unknown

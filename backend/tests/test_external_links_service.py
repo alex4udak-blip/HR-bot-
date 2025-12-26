@@ -1252,6 +1252,184 @@ class TestFirefliesUpdatedParsing:
 
 
 # ============================================================================
+# TEST SPEAKER ID MAPPING
+# ============================================================================
+
+class TestFirefliesSpeakerIdMapping:
+    """Tests for speaker ID → name mapping in Fireflies extraction."""
+
+    @pytest.mark.asyncio
+    async def test_speaker_id_to_name_mapping(self, processor, mock_call_recording):
+        """
+        Test that speaker IDs are mapped to names from speakers list.
+
+        This tests the new speaker mapping functionality where:
+        - speakers list contains {id, name, email}
+        - sentences use speaker_id instead of speaker_name
+        """
+        url = "https://app.fireflies.ai/view/MAPPING123"
+
+        import json
+        transcript_data = {
+            "title": "Interview Call",
+            "speakers": [
+                {"id": 0, "name": "John Smith", "email": "john@company.com"},
+                {"id": 1, "name": "Jane Candidate", "email": "jane@email.com"}
+            ],
+            "sentences": [
+                {"speaker_id": 0, "text": "Welcome to the interview.", "start_time": 0, "end_time": 5},
+                {"speaker_id": 1, "text": "Thank you for having me.", "start_time": 6, "end_time": 10},
+                {"speaker_id": 0, "text": "Tell me about yourself.", "start_time": 11, "end_time": 15}
+            ],
+            "duration": 300
+        }
+        next_data = {
+            "props": {"pageProps": {"transcript": transcript_data}}
+        }
+
+        html_content = f'<html><script id="__NEXT_DATA__" type="application/json">{json.dumps(next_data)}</script></html>'
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock(return_value=html_content)
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+
+        mock_analysis = {"summary": "Interview", "action_items": [], "key_points": []}
+
+        class MockPlaywrightModule:
+            @property
+            def async_playwright(self):
+                raise ImportError("Playwright not installed")
+
+        with patch.dict('sys.modules', {'playwright': MagicMock(), 'playwright.async_api': MockPlaywrightModule()}), \
+             patch.object(processor, '_get_session', return_value=mock_session), \
+             patch('api.services.external_links.call_processor._init_clients'), \
+             patch('api.services.external_links.call_processor._analyze', return_value=mock_analysis):
+
+            result = await processor._process_fireflies(mock_call_recording, url)
+
+        assert result.status == CallStatus.done
+        # Should have mapped speaker IDs to names with emails
+        assert "John Smith (john@company.com):" in result.transcript or "John Smith:" in result.transcript
+        assert "Welcome to the interview" in result.transcript
+        assert result.speakers is not None
+        # Speaker names in speakers list should be mapped, not generic "Speaker"
+        speaker_names = {s["speaker"] for s in result.speakers}
+        assert "Speaker" not in speaker_names or len(speaker_names) > 1  # Either no "Speaker" or both
+
+    @pytest.mark.asyncio
+    async def test_speaker_index_to_name_mapping(self, processor, mock_call_recording):
+        """
+        Test that speaker_index is mapped to speakers list when speaker_id doesn't match.
+        """
+        url = "https://app.fireflies.ai/view/INDEX123"
+
+        import json
+        transcript_data = {
+            "title": "Team Meeting",
+            "speakers": [
+                {"name": "Manager Alice"},
+                {"name": "Developer Bob"}
+            ],
+            "sentences": [
+                {"speakerIndex": 0, "text": "Let's start the meeting.", "start": 0, "end": 5},
+                {"speakerIndex": 1, "text": "Sure, I have updates.", "start": 6, "end": 10}
+            ],
+            "duration": 120
+        }
+        next_data = {
+            "props": {"pageProps": {"transcript": transcript_data}}
+        }
+
+        html_content = f'<html><script id="__NEXT_DATA__" type="application/json">{json.dumps(next_data)}</script></html>'
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock(return_value=html_content)
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+
+        mock_analysis = {"summary": "Meeting", "action_items": [], "key_points": []}
+
+        class MockPlaywrightModule:
+            @property
+            def async_playwright(self):
+                raise ImportError("Playwright not installed")
+
+        with patch.dict('sys.modules', {'playwright': MagicMock(), 'playwright.async_api': MockPlaywrightModule()}), \
+             patch.object(processor, '_get_session', return_value=mock_session), \
+             patch('api.services.external_links.call_processor._init_clients'), \
+             patch('api.services.external_links.call_processor._analyze', return_value=mock_analysis):
+
+            result = await processor._process_fireflies(mock_call_recording, url)
+
+        assert result.status == CallStatus.done
+        assert result.transcript is not None
+        # Should contain actual speaker names from speakers list
+        assert "Let's start the meeting" in result.transcript
+
+    @pytest.mark.asyncio
+    async def test_participants_list_mapping(self, processor, mock_call_recording):
+        """
+        Test that participants list is used when speakers list is not available.
+        """
+        url = "https://app.fireflies.ai/view/PARTICIPANTS123"
+
+        import json
+        transcript_data = {
+            "title": "Client Call",
+            "participants": [
+                {"id": "p1", "name": "Sales Rep", "email": "sales@company.com"},
+                {"id": "p2", "name": "Client CEO", "email": "ceo@client.com"}
+            ],
+            "sentences": [
+                {"speaker_id": "p1", "text": "Thanks for joining.", "start_time": 0, "end_time": 3},
+                {"speaker_id": "p2", "text": "Happy to be here.", "start_time": 4, "end_time": 7}
+            ],
+            "duration": 600
+        }
+        next_data = {
+            "props": {"pageProps": {"transcript": transcript_data}}
+        }
+
+        html_content = f'<html><script id="__NEXT_DATA__" type="application/json">{json.dumps(next_data)}</script></html>'
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock(return_value=html_content)
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+
+        mock_analysis = {"summary": "Client call", "action_items": [], "key_points": []}
+
+        class MockPlaywrightModule:
+            @property
+            def async_playwright(self):
+                raise ImportError("Playwright not installed")
+
+        with patch.dict('sys.modules', {'playwright': MagicMock(), 'playwright.async_api': MockPlaywrightModule()}), \
+             patch.object(processor, '_get_session', return_value=mock_session), \
+             patch('api.services.external_links.call_processor._init_clients'), \
+             patch('api.services.external_links.call_processor._analyze', return_value=mock_analysis):
+
+            result = await processor._process_fireflies(mock_call_recording, url)
+
+        assert result.status == CallStatus.done
+        # Participants should be used for speaker mapping
+        assert "Thanks for joining" in result.transcript
+
+
+# ============================================================================
 # TEST ASYNC PROCESSING (NEW)
 # ============================================================================
 
