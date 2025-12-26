@@ -1,7 +1,7 @@
 """Add entity transfer tracking fields
 
 Revision ID: add_entity_transfer
-Revises: add_sub_admin_role
+Revises: add_sub_admin_to_userrole
 Create Date: 2025-12-24
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'add_entity_transfer'
-down_revision = 'add_sub_admin_role'
+down_revision = 'add_sub_admin_to_userrole'
 branch_labels = None
 depends_on = None
 

@@ -1,8 +1,23 @@
 #!/bin/bash
 set -e
 
-echo "Running database migrations..."
-alembic upgrade head
+echo "=== Starting HR-Bot Backend ==="
+echo "Current directory: $(pwd)"
+echo "Python version: $(python --version)"
 
-echo "Starting server..."
+echo ""
+echo "=== Running database migrations ==="
+echo "Checking current alembic version..."
+python -m alembic current || echo "No current version (fresh database)"
+
+echo ""
+echo "Upgrading to head..."
+python -m alembic upgrade head
+
+echo ""
+echo "Migration complete. Current version:"
+python -m alembic current
+
+echo ""
+echo "=== Starting server ==="
 exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
