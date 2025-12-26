@@ -174,8 +174,8 @@ class EntityAIService:
             for chat in chats:
                 parts.append(f"\n### Чат: {chat.custom_name or chat.title} ({chat.chat_type.value})")
                 if hasattr(chat, 'messages') and chat.messages:
-                    # Get last 100 messages to avoid context overflow
-                    messages = sorted(chat.messages, key=lambda m: m.timestamp)[-100:]
+                    # Get last 300 messages to have better context (was 100)
+                    messages = sorted(chat.messages, key=lambda m: m.timestamp)[-300:]
 
                     # Identify participants for this chat
                     participants = identify_participants_from_objects(chat, messages, use_ai_fallback=False)
@@ -191,30 +191,14 @@ class EntityAIService:
                 else:
                     parts.append("(нет сообщений)")
 
-        # All linked calls with transcripts
+        # All linked calls with transcripts - use smart context builder
         if calls:
+            from .call_processor import build_smart_context
             parts.append("\n## ЗВОНКИ:")
             for call in calls:
-                call_date = call.created_at.strftime('%d.%m.%Y') if call.created_at else "дата неизвестна"
-                parts.append(f"\n### Звонок от {call_date}")
-                if call.title:
-                    parts.append(f"**Название:** {call.title}")
-                if call.duration_seconds:
-                    mins = call.duration_seconds // 60
-                    secs = call.duration_seconds % 60
-                    parts.append(f"**Длительность:** {mins}м {secs}с")
-                if call.summary:
-                    parts.append(f"**Саммари:** {call.summary}")
-                if call.key_points:
-                    parts.append("**Ключевые моменты:**")
-                    for point in call.key_points[:10]:
-                        parts.append(f"- {point}")
-                if call.transcript:
-                    # Limit transcript to avoid context overflow
-                    transcript = call.transcript[:5000]
-                    if len(call.transcript) > 5000:
-                        transcript += "\n... (транскрипт обрезан)"
-                    parts.append(f"**Транскрипт:**\n{transcript}")
+                # Use smart context that includes participant roles and optimized transcript
+                call_context = build_smart_context(call, include_full_transcript=False)
+                parts.append(call_context)
 
         if not chats and not calls:
             parts.append("\n⚠️ К этому контакту пока не привязаны чаты или звонки.")

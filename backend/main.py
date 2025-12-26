@@ -260,6 +260,11 @@ async def init_database():
     await run_migration(engine, "ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE", "Add org_id to call_recordings")
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_org_id ON call_recordings(org_id)", "Index call_recordings.org_id")
 
+    # Smart context fields for AI analysis
+    await run_migration(engine, "ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS participant_roles JSONB DEFAULT '{}'::jsonb", "Add participant_roles to call_recordings")
+    await run_migration(engine, "ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS speaker_stats JSONB DEFAULT '{}'::jsonb", "Add speaker_stats to call_recordings")
+    await run_migration(engine, "ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS segments JSONB DEFAULT '[]'::jsonb", "Add segments to call_recordings")
+
     logger.info("=== MULTI-TENANCY TABLES READY ===")
 
     # Step 8: Departments
