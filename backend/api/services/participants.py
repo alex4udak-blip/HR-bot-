@@ -347,17 +347,20 @@ async def identify_participants(
 async def identify_call_participants(
     call_id: int,
     org_id: Optional[int],
-    db: AsyncSession
+    db: AsyncSession,
+    use_ai_fallback: bool = False
 ) -> List[IdentifiedParticipant]:
     """
     Identify participants in a call recording.
 
-    Searches speakers by email in User.email and Entity.email.
+    Searches speakers by email in User.email, User.additional_emails, and Entity.email.
+    If use_ai_fallback=True, uses AI to identify unknown speakers by analyzing transcript.
 
     Args:
         call_id: Call recording ID
         org_id: Organization ID for scoping Entity searches
         db: Database session
+        use_ai_fallback: If True, use AI to identify unknown speakers from transcript context
 
     Returns:
         List of IdentifiedParticipant objects
@@ -481,6 +484,25 @@ async def identify_call_participants(
 
         identified.append(participant)
 
+    # Use AI to identify unknown speakers if enabled
+    if use_ai_fallback and call.transcript:
+        unknown_speakers = [p for p in identified if p.role == ParticipantRole.unknown]
+        known_speakers = [p for p in identified if p.role != ParticipantRole.unknown]
+
+        if unknown_speakers:
+            logger.info(f"Using AI to identify {len(unknown_speakers)} unknown speakers in call {call_id}")
+            try:
+                updated_unknown = await ai_identify_call_speakers(
+                    call=call,
+                    unknown_speakers=unknown_speakers,
+                    known_speakers=known_speakers
+                )
+                # Replace unknown speakers with AI-identified ones
+                identified = known_speakers + updated_unknown
+            except Exception as e:
+                logger.error(f"AI call speaker identification failed: {e}", exc_info=True)
+                # Continue with original identified list on error
+
     return identified
 
 
@@ -602,6 +624,169 @@ async def ai_identify_unknown_participants(
         logger.error(f"AI identification failed: {e}", exc_info=True)
         # Return participants unchanged on error
         return unknown_participants
+
+
+async def ai_identify_call_speakers(
+    call: "CallRecording",
+    unknown_speakers: List[IdentifiedParticipant],
+    known_speakers: List[IdentifiedParticipant]
+) -> List[IdentifiedParticipant]:
+    """
+    AI определяет роли неизвестных спикеров по контексту транскрипта звонка.
+    Вызывается как fallback когда email/name matching не сработал.
+
+    Args:
+        call: CallRecording object with transcript
+        unknown_speakers: Спикеры с неизвестными ролями
+        known_speakers: Спикеры с известными ролями
+
+    Returns:
+        Обновленный список спикеров с AI-определенными ролями
+    """
+    import json
+    from anthropic import AsyncAnthropic
+    from ..config import get_settings
+
+    if not unknown_speakers:
+        return []
+
+    settings = get_settings()
+
+    if not settings.anthropic_api_key:
+        logger.warning("ANTHROPIC_API_KEY not configured, skipping AI speaker identification")
+        return unknown_speakers
+
+    if not call.transcript:
+        logger.warning(f"No transcript found for call {call.id}")
+        return unknown_speakers
+
+    # Build prompt for call speaker identification
+    prompt = _build_call_speaker_identification_prompt(
+        unknown_speakers=unknown_speakers,
+        known_speakers=known_speakers,
+        transcript=call.transcript[:8000],  # Limit transcript length
+        call_title=call.title or "Звонок"
+    )
+
+    # Call Claude API
+    try:
+        client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+
+        response = await client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1000,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        )
+
+        # Parse JSON response
+        response_text = response.content[0].text
+        logger.debug(f"AI call speaker response: {response_text}")
+
+        # Extract JSON from response
+        json_start = response_text.find('[')
+        json_end = response_text.rfind(']') + 1
+        if json_start >= 0 and json_end > json_start:
+            json_text = response_text[json_start:json_end]
+            identifications = json.loads(json_text)
+        else:
+            raise ValueError("No valid JSON array found in response")
+
+        # Update speakers with AI results
+        speaker_map = {p.display_name: p for p in unknown_speakers}
+
+        for item in identifications:
+            speaker_name = item.get('speaker_name')
+            if speaker_name in speaker_map:
+                participant = speaker_map[speaker_name]
+
+                # Map role string to ParticipantRole enum
+                role_str = item.get('role', 'unknown').lower()
+                try:
+                    participant.role = ParticipantRole(role_str)
+                except ValueError:
+                    logger.warning(f"Invalid role '{role_str}', using UNKNOWN")
+                    participant.role = ParticipantRole.unknown
+
+                # Set confidence (AI predictions are less certain)
+                raw_confidence = item.get('confidence', 0.6)
+                participant.confidence = min(0.8, max(0.5, raw_confidence))
+                participant.ai_reasoning = item.get('reasoning', '')
+
+        logger.info(f"AI identified {len(identifications)} call speakers")
+        return unknown_speakers
+
+    except Exception as e:
+        logger.error(f"AI call speaker identification failed: {e}", exc_info=True)
+        return unknown_speakers
+
+
+def _build_call_speaker_identification_prompt(
+    unknown_speakers: List[IdentifiedParticipant],
+    known_speakers: List[IdentifiedParticipant],
+    transcript: str,
+    call_title: str
+) -> str:
+    """Build prompt for AI call speaker role identification."""
+
+    # Format known speakers
+    known_text = ""
+    if known_speakers:
+        known_lines = ["Известные спикеры с определёнными ролями:"]
+        for p in known_speakers:
+            known_lines.append(f"- {p.display_name} - {p.role.value}")
+        known_text = "\n".join(known_lines)
+
+    # Format unknown speakers
+    unknown_lines = ["Неизвестные спикеры:"]
+    for p in unknown_speakers:
+        unknown_lines.append(f"- speaker_name=\"{p.display_name}\"")
+    unknown_text = "\n".join(unknown_lines)
+
+    prompt = f"""Определи роли неизвестных спикеров по контексту транскрипта звонка.
+
+Название звонка: {call_title}
+
+{known_text}
+
+{unknown_text}
+
+ТРАНСКРИПТ ЗВОНКА:
+{transcript}
+
+РОЛИ И ИХ ПРИЗНАКИ:
+- interviewer: HR или руководитель, проводит интервью, задаёт вопросы про опыт и навыки, представляется от компании
+- candidate: Кандидат на вакансию, отвечает на вопросы про опыт, рассказывает про себя, спрашивает про условия
+- tech_lead: Технический руководитель, задаёт технические вопросы, оценивает технические навыки
+- hr: HR-специалист, обсуждает условия работы, зарплату, график
+- manager: Руководитель, принимает решения, обсуждает задачи
+- colleague: Коллега или член команды
+- external: Внешний участник (клиент, подрядчик)
+
+ЗАДАЧА:
+Проанализируй транскрипт и определи наиболее вероятную роль для каждого неизвестного спикера.
+Верни результат в виде JSON массива:
+
+[
+  {{
+    "speaker_name": "Speaker 1",
+    "role": "candidate",
+    "confidence": 0.75,
+    "reasoning": "Отвечает на вопросы про опыт, рассказывает про свои проекты"
+  }}
+]
+
+ВАЖНО:
+- Confidence должен быть между 0.5 и 0.8 (AI prediction никогда не бывает 100% точным)
+- Если не можешь определить роль - используй "unknown" с низким confidence (0.5)
+- Верни ТОЛЬКО валидный JSON массив, без дополнительного текста
+- Обязательно включи ВСЕХ неизвестных спикеров из списка выше"""
+
+    return prompt
 
 
 def _format_messages_for_ai(messages: List[Message], max_messages: int = 50) -> str:
