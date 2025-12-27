@@ -367,13 +367,12 @@ async def accept_invitation(
             # Add existing user to org
             new_user = existing_user
         else:
-            # Create new user (regular user, not system admin)
-            # User's actual permissions come from OrgMember.role and DepartmentMember.role
+            # Create new user with member role (access determined by OrgRole and DeptRole)
             new_user = User(
                 email=data.email,
                 password_hash=hash_password(data.password),
-                name=data.name
-                # Note: role defaults to ADMIN in model, but actual access is via OrgMember/DeptMember
+                name=data.name,
+                role=UserRole.member  # Regular user - access via OrgMember/DeptMember
             )
             db.add(new_user)
             await db.flush()

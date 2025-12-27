@@ -253,12 +253,12 @@ async def invite_member(
         # Add existing user to org
         new_user = existing_user
     else:
-        # Create new user
+        # Create new user with member role (access determined by OrgRole and DeptRole)
         new_user = User(
             email=data.email,
             password_hash=hash_password(data.password),
             name=data.name,
-            role=UserRole.admin  # Default role for new users
+            role=UserRole.member  # Regular user - access via OrgRole/DeptRole
         )
         db.add(new_user)
         await db.flush()

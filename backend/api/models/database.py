@@ -14,9 +14,10 @@ class Base(DeclarativeBase):
 
 class UserRole(str, enum.Enum):
     # Names must be lowercase to match PostgreSQL enum values
-    superadmin = "superadmin"
-    admin = "admin"
-    sub_admin = "sub_admin"
+    superadmin = "superadmin"  # Platform-wide admin (can access all orgs)
+    admin = "admin"            # Legacy: kept for backwards compatibility
+    sub_admin = "sub_admin"    # Legacy: kept for backwards compatibility
+    member = "member"          # Regular user (access determined by OrgRole and DeptRole)
 
 
 class ChatType(str, enum.Enum):
@@ -194,7 +195,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     name = Column(String(255), nullable=False, index=True)
-    role = Column(SQLEnum(UserRole), default=UserRole.admin)
+    role = Column(SQLEnum(UserRole), default=UserRole.member)
     telegram_id = Column(BigInteger, unique=True, nullable=True, index=True)
     telegram_username = Column(String(255), nullable=True)
     # Additional contact identifiers for speaker matching
