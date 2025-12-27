@@ -328,6 +328,9 @@ async def list_entities(
     """List contacts with filters (filtered by user's organization and departments)"""
     current_user = await db.merge(current_user)
 
+    # Initialize org for all code paths
+    org = None
+
     # SUPERADMIN sees everything across all organizations
     if current_user.role == UserRole.superadmin:
         query = select(Entity)
