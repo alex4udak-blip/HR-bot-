@@ -441,7 +441,8 @@ class ExternalLinkProcessor:
                                 if initial_meeting:
                                     duration_mins = initial_meeting.get('durationMins')
                                     if duration_mins:
-                                        call.duration_seconds = int(duration_mins * 60)
+                                        # Convert to float first, then multiply (duration_mins might be string)
+                                        call.duration_seconds = int(float(duration_mins) * 60)
                                         logger.info(f"Extracted duration from initialMeetingNote: {duration_mins} mins ({call.duration_seconds} seconds)")
 
                                     # Also try to get title if not set
@@ -1210,6 +1211,17 @@ class ExternalLinkProcessor:
                                     '[class*="Analytics"] [class*="row"]'
                                 ];
 
+                                // Helper to fix doubled first letter (avatar + name concatenation)
+                                const fixDuplicatedFirstChar = (name) => {
+                                    if (!name || name.length < 2) return name;
+                                    // If first two chars are the same (case-insensitive), remove first one
+                                    // Examples: "IInna I." -> "Inna I.", "ММатвей" -> "Матвей"
+                                    if (name[0].toLowerCase() === name[1].toLowerCase()) {
+                                        return name.substring(1);
+                                    }
+                                    return name;
+                                };
+
                                 for (const sel of speakerRowSelectors) {
                                     const rows = document.querySelectorAll(sel);
                                     if (rows.length > 0) {
@@ -1224,7 +1236,9 @@ class ExternalLinkProcessor:
                                                 wpmMatch = text?.match(/^([^|0-9]+?)[|]?\s*(\d+)\s*[|]?\s*(\d+)\s*%/);
                                             }
                                             if (wpmMatch) {
-                                                const name = wpmMatch[1].trim();
+                                                let name = wpmMatch[1].trim();
+                                                // Fix doubled first character from avatar + name concatenation
+                                                name = fixDuplicatedFirstChar(name);
                                                 if (name && name.length >= 2 && name.length < 50) {
                                                     result.speakerStats.push({
                                                         name: name,
@@ -1286,7 +1300,9 @@ class ExternalLinkProcessor:
                                                 // Extract name (everything before numbers)
                                                 const match = fullText?.match(/^([^0-9%]+)/);
                                                 if (match) {
-                                                    const name = match[1].trim();
+                                                    let name = match[1].trim();
+                                                    // Fix doubled first character from avatar + name concatenation
+                                                    name = fixDuplicatedFirstChar(name);
                                                     const percentMatch = fullText.match(/(\d{1,2})%/);
                                                     const wpmMatch = fullText.match(/(\d{2,3})\s*(?:WPM|wpm|слов)?/);
                                                     if (name && percentMatch) {
