@@ -124,6 +124,11 @@ async def init_database():
     await run_migration(engine, "UPDATE users SET role = 'admin' WHERE role::text = 'ADMIN'", "Convert ADMIN to admin")
     await run_migration(engine, "UPDATE users SET role = 'sub_admin' WHERE role::text = 'SUB_ADMIN'", "Convert SUB_ADMIN to sub_admin")
 
+    # Step 3.2: Add foreign key columns to shared_access for proper cascade delete (critical for sandbox)
+    # Note: entity_id and chat_id can be added now, call_id must wait until call_recordings exists
+    await run_migration(engine, "ALTER TABLE shared_access ADD COLUMN IF NOT EXISTS entity_id INTEGER REFERENCES entities(id) ON DELETE CASCADE", "Add entity_id to shared_access")
+    await run_migration(engine, "ALTER TABLE shared_access ADD COLUMN IF NOT EXISTS chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE", "Add chat_id to shared_access")
+
     # Step 4: Create call_recordings table if not exists (preserves existing data)
     logger.info("=== SETTING UP call_recordings TABLE ===")
 
@@ -162,6 +167,9 @@ async def init_database():
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_call_recordings_fireflies_transcript_id ON call_recordings(fireflies_transcript_id)", "Index fireflies_transcript_id")
 
     logger.info("=== call_recordings TABLE READY ===")
+
+    # Step 4.1: Now add call_id to shared_access (requires call_recordings to exist)
+    await run_migration(engine, "ALTER TABLE shared_access ADD COLUMN IF NOT EXISTS call_id INTEGER REFERENCES call_recordings(id) ON DELETE CASCADE", "Add call_id to shared_access")
 
     # Step 5: Other column migrations
 
@@ -373,16 +381,6 @@ async def init_database():
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_invitations_org_id ON invitations(org_id)", "Index invitations.org_id")
 
     logger.info("=== INVITATIONS TABLE READY ===")
-
-    # Step 9.1: Add foreign key columns to shared_access for proper cascade delete
-    logger.info("=== UPDATING SHARED_ACCESS TABLE ===")
-    await run_migration(engine, "ALTER TABLE shared_access ADD COLUMN IF NOT EXISTS entity_id INTEGER REFERENCES entities(id) ON DELETE CASCADE", "Add entity_id to shared_access")
-    await run_migration(engine, "ALTER TABLE shared_access ADD COLUMN IF NOT EXISTS chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE", "Add chat_id to shared_access")
-    await run_migration(engine, "ALTER TABLE shared_access ADD COLUMN IF NOT EXISTS call_id INTEGER REFERENCES call_recordings(id) ON DELETE CASCADE", "Add call_id to shared_access")
-    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_shared_access_entity_id ON shared_access(entity_id)", "Index shared_access.entity_id")
-    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_shared_access_chat_id ON shared_access(chat_id)", "Index shared_access.chat_id")
-    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_shared_access_call_id ON shared_access(call_id)", "Index shared_access.call_id")
-    logger.info("=== SHARED_ACCESS TABLE READY ===")
 
     # Step 10: Create superadmin and default organization
     try:
