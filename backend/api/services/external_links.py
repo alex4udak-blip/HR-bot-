@@ -436,6 +436,20 @@ class ExternalLinkProcessor:
                                         if page_props.get(key):
                                             logger.info(f"Found alternative key '{key}': {type(page_props.get(key))}")
 
+                                # Extract duration from initialMeetingNote if available
+                                initial_meeting = page_props.get('initialMeetingNote', {})
+                                if initial_meeting:
+                                    duration_mins = initial_meeting.get('durationMins')
+                                    if duration_mins:
+                                        call.duration_seconds = int(duration_mins * 60)
+                                        logger.info(f"Extracted duration from initialMeetingNote: {duration_mins} mins ({call.duration_seconds} seconds)")
+
+                                    # Also try to get title if not set
+                                    meeting_title = initial_meeting.get('title')
+                                    if meeting_title and not call.title:
+                                        call.title = meeting_title
+                                        logger.info(f"Extracted title from initialMeetingNote: {meeting_title}")
+
                                 if transcript_data:
                                     # Log ALL available fields in transcript_data for debugging
                                     logger.info(f"Fireflies transcript_data keys: {list(transcript_data.keys())}")
@@ -1259,10 +1273,10 @@ class ExternalLinkProcessor:
 
                                 // Strategy 4: Find percentage elements and work backwards
                                 if (result.speakerStats.length === 0) {
-                                    const percentEls = document.querySelectorAll('[class*="percent"], span:contains("%"), div:contains("%")');
                                     const processedParents = new Set();
 
-                                    document.querySelectorAll('*').forEach(el => {
+                                    // Iterate through elements looking for percentage text (vanilla JS approach)
+                                    document.querySelectorAll('[class*="percent"], [class*="Percent"], span, div').forEach(el => {
                                         const text = el.textContent?.trim();
                                         if (text && /^\d{1,2}%$/.test(text)) {
                                             const parent = el.closest('[class*="speaker"], [class*="row"], [class*="item"], [class*="participant"]');
