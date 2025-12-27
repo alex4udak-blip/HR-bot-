@@ -1594,7 +1594,17 @@ class TestDepartmentRoleHierarchy:
         user_token: str, department: Department, organization: Organization,
         org_admin: OrgMember, get_auth_headers
     ):
-        """Test sub_admin role has limited permissions."""
+        """Test sub_admin role has limited permissions.
+
+        Sub_admin CAN:
+        - Add regular members to their department
+        - Update/remove regular members
+
+        Sub_admin CANNOT:
+        - Update department settings
+        - Add/promote to sub_admin or lead roles
+        - Create sub-departments
+        """
         # Make regular_user a sub_admin
         sub_admin = DepartmentMember(
             department_id=department.id,
@@ -1613,13 +1623,28 @@ class TestDepartmentRoleHierarchy:
         )
         assert update_resp.status_code == 403
 
-        # Sub_admin cannot add members
-        add_resp = await client.post(
+        # Sub_admin cannot add sub_admin or lead
+        add_sub_admin_resp = await client.post(
             f"/api/departments/{department.id}/members",
-            json={"user_id": 999, "role": "member"},
+            json={"user_id": org_admin.user_id, "role": "sub_admin"},
             headers=get_auth_headers(user_token)
         )
-        assert add_resp.status_code == 403
+        assert add_sub_admin_resp.status_code == 403
+
+        add_lead_resp = await client.post(
+            f"/api/departments/{department.id}/members",
+            json={"user_id": org_admin.user_id, "role": "lead"},
+            headers=get_auth_headers(user_token)
+        )
+        assert add_lead_resp.status_code == 403
+
+        # Sub_admin cannot create sub-department
+        create_subdept_resp = await client.post(
+            "/api/departments",
+            json={"name": "Sub Admin's Sub-Department", "parent_id": department.id},
+            headers=get_auth_headers(user_token)
+        )
+        assert create_subdept_resp.status_code == 403
 
     async def test_member_has_minimal_permissions(
         self, client: AsyncClient, regular_user: User, user_token: str,

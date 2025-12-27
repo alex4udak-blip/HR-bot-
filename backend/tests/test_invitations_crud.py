@@ -393,6 +393,101 @@ class TestCreateInvitation:
         data = response.json()
         assert data["org_role"] == "member"
 
+    async def test_department_lead_creates_invitation_for_own_department(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        regular_user: User,
+        organization: Organization,
+        department: Department
+    ):
+        """Test department lead can create invitation for their department."""
+        # Give regular_user org member role (not admin/owner) and dept lead role
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+
+        dept_lead = DepartmentMember(
+            department_id=department.id,
+            user_id=regular_user.id,
+            role=DeptRole.lead,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_lead)
+        await db_session.commit()
+
+        token = create_access_token({"sub": str(regular_user.id)})
+
+        # Department lead can create invitation for their department
+        response = await client.post(
+            "/api/invitations",
+            json={
+                "email": "newmember@test.com",
+                "name": "New Department Member",
+                "org_role": "member",
+                "department_ids": [{"id": department.id, "role": "member"}],
+                "expires_in_days": 7
+            },
+            headers=auth_headers(token),
+            params={"org_id": organization.id}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["email"] == "newmember@test.com"
+        assert data["org_role"] == "member"
+        assert len(data["department_ids"]) == 1
+        assert data["department_ids"][0]["id"] == department.id
+
+    async def test_department_lead_must_specify_department(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        regular_user: User,
+        organization: Organization,
+        department: Department
+    ):
+        """Test department lead must specify at least one department."""
+        # Give regular_user org member role (not admin/owner) and dept lead role
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+
+        dept_lead = DepartmentMember(
+            department_id=department.id,
+            user_id=regular_user.id,
+            role=DeptRole.lead,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_lead)
+        await db_session.commit()
+
+        token = create_access_token({"sub": str(regular_user.id)})
+
+        # Department lead must specify department (without being org admin)
+        response = await client.post(
+            "/api/invitations",
+            json={
+                "email": "newmember@test.com",
+                "name": "New Department Member",
+                "org_role": "member",
+                "expires_in_days": 7
+            },
+            headers=auth_headers(token),
+            params={"org_id": organization.id}
+        )
+
+        assert response.status_code == 400
+        assert "department" in response.json()["detail"].lower()
+
 
 class TestListInvitations:
     """Tests for GET /api/invitations endpoint."""
