@@ -426,21 +426,48 @@ class ExternalLinkProcessor:
                                             logger.info(f"Found alternative key '{key}': {type(page_props.get(key))}")
 
                                 if transcript_data:
-                                    # Log all available fields in transcript_data
+                                    # Log ALL available fields in transcript_data for debugging
                                     logger.info(f"Fireflies transcript_data keys: {list(transcript_data.keys())}")
+
+                                    # Log all top-level data to understand structure
+                                    for key in transcript_data.keys():
+                                        val = transcript_data.get(key)
+                                        if isinstance(val, list) and len(val) > 0:
+                                            logger.info(f"Fireflies '{key}' is list with {len(val)} items, first item keys: {list(val[0].keys()) if isinstance(val[0], dict) else type(val[0])}")
+                                            if isinstance(val[0], dict):
+                                                logger.info(f"Fireflies '{key}' first item sample: {val[0]}")
+                                        elif isinstance(val, dict):
+                                            logger.info(f"Fireflies '{key}' is dict with keys: {list(val.keys())}")
+                                        elif val is not None:
+                                            logger.info(f"Fireflies '{key}': {type(val).__name__} = {str(val)[:100]}")
 
                                     title = transcript_data.get('title')
                                     sentences = transcript_data.get('sentences', [])
 
-                                    # Extract participants info (email, name) if available
-                                    participants = transcript_data.get('participants', []) or transcript_data.get('attendees', []) or []
+                                    # Extract participants info (email, name) if available - try more keys
+                                    participants = (
+                                        transcript_data.get('participants', []) or
+                                        transcript_data.get('attendees', []) or
+                                        transcript_data.get('meeting_attendees', []) or
+                                        transcript_data.get('users', []) or
+                                        []
+                                    )
                                     if participants:
                                         logger.info(f"Fireflies participants ({len(participants)}): {participants[:3]}...")  # Log first 3
 
-                                    # Also check for speakers list with more info
-                                    speakers_info = transcript_data.get('speakers', []) or []
+                                    # Also check for speakers list with more info - try more keys
+                                    speakers_info = (
+                                        transcript_data.get('speakers', []) or
+                                        transcript_data.get('speakerList', []) or
+                                        transcript_data.get('speaker_list', []) or
+                                        transcript_data.get('speakerInfo', []) or
+                                        transcript_data.get('speaker_info', []) or
+                                        []
+                                    )
                                     if speakers_info:
-                                        logger.info(f"Fireflies speakers info ({len(speakers_info)}): {speakers_info[:3]}...")
+                                        logger.info(f"Fireflies speakers info ({len(speakers_info)}): {speakers_info}")
+                                    else:
+                                        logger.warning(f"No speakers list found in transcript_data. Available keys: {list(transcript_data.keys())}")
 
                                     # Build speaker ID → name mapping
                                     speaker_map = {}
@@ -475,11 +502,16 @@ class ExternalLinkProcessor:
 
                                     if speaker_map:
                                         logger.info(f"Built speaker mapping: {speaker_map}")
+                                    else:
+                                        logger.warning(f"No speaker mapping built - speakers_info empty and no participants found")
 
-                                    # Log first sentence structure to understand fields
+                                    # Log first sentence structure to understand fields - CRITICAL FOR DEBUGGING
                                     if sentences:
-                                        logger.info(f"Fireflies sentence structure (first): {list(sentences[0].keys())}")
-                                        logger.info(f"Fireflies first sentence sample: {sentences[0]}")
+                                        logger.info(f"Fireflies sentence count: {len(sentences)}")
+                                        logger.info(f"Fireflies sentence[0] ALL keys: {list(sentences[0].keys())}")
+                                        # Log the full first sentence to see all data
+                                        first_sentence_safe = {k: str(v)[:200] if isinstance(v, str) else v for k, v in sentences[0].items()}
+                                        logger.info(f"Fireflies sentence[0] FULL DATA: {first_sentence_safe}")
 
                                     if sentences:
                                         lines = []
@@ -535,11 +567,17 @@ class ExternalLinkProcessor:
                                                 if isinstance(ai_filters, dict):
                                                     speaker_name = ai_filters.get('speaker_name') or ai_filters.get('speakerName')
 
+                                            # 6. If still no name, try to use raw "speaker" field even with "Speaker X" format
+                                            if not speaker_name or speaker_name == 'Speaker':
+                                                raw_speaker = s.get('speaker') or s.get('speakerName') or s.get('speaker_name')
+                                                if raw_speaker and raw_speaker != 'Speaker':
+                                                    speaker_name = raw_speaker  # Use "Speaker 1", "Speaker 2" etc if that's all we have
+
                                             speaker_name = speaker_name or 'Speaker'
 
                                             # Log first few sentences to debug speaker extraction
-                                            if len(speakers) < 3:
-                                                logger.debug(f"Sentence {len(speakers)}: extracted speaker='{speaker_name}' from keys={list(s.keys())}")
+                                            if len(speakers) < 5:
+                                                logger.info(f"Sentence {len(speakers)}: speaker='{speaker_name}', sentence keys={list(s.keys())}, speaker_id={s.get('speaker_id')}, speakerId={s.get('speakerId')}")
 
                                             text = s.get('text', s.get('raw_text', ''))
                                             if text:
@@ -850,12 +888,38 @@ class ExternalLinkProcessor:
                             transcript_data = page_props.get('transcript', {})
 
                             if transcript_data:
+                                # Log ALL keys for debugging (HTTP path)
+                                logger.info(f"[HTTP] Fireflies transcript_data keys: {list(transcript_data.keys())}")
+
+                                # Log all top-level data
+                                for key in transcript_data.keys():
+                                    val = transcript_data.get(key)
+                                    if isinstance(val, list) and len(val) > 0:
+                                        logger.info(f"[HTTP] Fireflies '{key}' is list with {len(val)} items, first item: {val[0] if isinstance(val[0], dict) else type(val[0])}")
+                                    elif isinstance(val, dict):
+                                        logger.info(f"[HTTP] Fireflies '{key}' is dict with keys: {list(val.keys())}")
+
                                 title = title or transcript_data.get('title')
                                 sentences = transcript_data.get('sentences', [])
 
-                                # Build speaker mapping (same as Playwright version)
-                                speakers_info = transcript_data.get('speakers', []) or []
-                                participants = transcript_data.get('participants', []) or transcript_data.get('attendees', []) or []
+                                # Build speaker mapping (same as Playwright version) - try more keys
+                                speakers_info = (
+                                    transcript_data.get('speakers', []) or
+                                    transcript_data.get('speakerList', []) or
+                                    transcript_data.get('speaker_list', []) or
+                                    []
+                                )
+                                participants = (
+                                    transcript_data.get('participants', []) or
+                                    transcript_data.get('attendees', []) or
+                                    transcript_data.get('meeting_attendees', []) or
+                                    []
+                                )
+
+                                logger.info(f"[HTTP] speakers_info count: {len(speakers_info)}, participants count: {len(participants)}")
+                                if speakers_info:
+                                    logger.info(f"[HTTP] speakers_info: {speakers_info}")
+
                                 speaker_map = {}
                                 for sp in speakers_info:
                                     sp_id = sp.get('id') or sp.get('speaker_id') or sp.get('speakerId')
@@ -874,7 +938,12 @@ class ExternalLinkProcessor:
                                     elif isinstance(p, str):
                                         speaker_map[str(i)] = p
 
+                                logger.info(f"[HTTP] Built speaker_map: {speaker_map}")
+
                                 if sentences:
+                                    # Log first sentence for debugging
+                                    logger.info(f"[HTTP] First sentence keys: {list(sentences[0].keys())}")
+                                    logger.info(f"[HTTP] First sentence data: {sentences[0]}")
                                     lines = []
                                     speakers = []
                                     for s in sentences:
