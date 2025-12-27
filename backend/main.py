@@ -374,7 +374,17 @@ async def init_database():
 
     logger.info("=== INVITATIONS TABLE READY ===")
 
-    # Step 9: Create superadmin and default organization
+    # Step 9.1: Add foreign key columns to shared_access for proper cascade delete
+    logger.info("=== UPDATING SHARED_ACCESS TABLE ===")
+    await run_migration(engine, "ALTER TABLE shared_access ADD COLUMN IF NOT EXISTS entity_id INTEGER REFERENCES entities(id) ON DELETE CASCADE", "Add entity_id to shared_access")
+    await run_migration(engine, "ALTER TABLE shared_access ADD COLUMN IF NOT EXISTS chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE", "Add chat_id to shared_access")
+    await run_migration(engine, "ALTER TABLE shared_access ADD COLUMN IF NOT EXISTS call_id INTEGER REFERENCES call_recordings(id) ON DELETE CASCADE", "Add call_id to shared_access")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_shared_access_entity_id ON shared_access(entity_id)", "Index shared_access.entity_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_shared_access_chat_id ON shared_access(chat_id)", "Index shared_access.chat_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_shared_access_call_id ON shared_access(call_id)", "Index shared_access.call_id")
+    logger.info("=== SHARED_ACCESS TABLE READY ===")
+
+    # Step 10: Create superadmin and default organization
     try:
         async with AsyncSessionLocal() as db:
             await create_superadmin_if_not_exists(db)
