@@ -537,12 +537,57 @@ class ExternalLinkProcessor:
                                             speaker_map[sp_name] = sp_name if not sp_email else f"{sp_name} ({sp_email})"
 
                                     # Source 2: analytics speakers (may have name, duration, word_count)
+                                    # Also extract speaker statistics from analytics (wpm, talktime, etc.)
+                                    fireflies_stats_from_analytics = []
+                                    total_talk_time = 0
                                     for asp in analytics_speakers:
                                         asp_id = asp.get('speaker_id') or asp.get('speakerId') or asp.get('id')
                                         asp_name = asp.get('name') or asp.get('displayName')
                                         if asp_id is not None and asp_name and asp_name != 'Speaker':
                                             if str(asp_id) not in speaker_map:
                                                 speaker_map[str(asp_id)] = asp_name
+
+                                        # Extract statistics from analytics_speakers
+                                        if asp_name and asp_name != 'Speaker':
+                                            talk_time = asp.get('talk_time') or asp.get('talkTime') or asp.get('duration') or asp.get('talk_time_seconds') or 0
+                                            total_talk_time += talk_time if isinstance(talk_time, (int, float)) else 0
+
+                                    # Calculate percentages and build stats
+                                    for asp in analytics_speakers:
+                                        asp_name = asp.get('name') or asp.get('displayName')
+                                        if asp_name and asp_name != 'Speaker':
+                                            talk_time = asp.get('talk_time') or asp.get('talkTime') or asp.get('duration') or asp.get('talk_time_seconds') or 0
+                                            word_count = asp.get('word_count') or asp.get('wordCount') or asp.get('words') or 0
+                                            wpm = asp.get('wpm') or asp.get('wordsPerMinute') or asp.get('words_per_minute') or 0
+
+                                            # Calculate WPM if not provided but we have word_count and talk_time
+                                            if not wpm and word_count and talk_time:
+                                                talk_mins = talk_time / 60 if talk_time > 60 else talk_time  # talk_time could be in seconds or minutes
+                                                if talk_mins > 0:
+                                                    wpm = int(word_count / talk_mins)
+
+                                            # Calculate talktime percentage
+                                            talktime_pct = asp.get('percentage') or asp.get('talkTimePercentage') or asp.get('talk_time_percentage') or 0
+                                            if not talktime_pct and total_talk_time > 0 and talk_time:
+                                                talktime_pct = int(talk_time * 100 / total_talk_time)
+
+                                            if wpm or talktime_pct:
+                                                fireflies_stats_from_analytics.append({
+                                                    'name': asp_name,
+                                                    'wpm': int(wpm) if wpm else None,
+                                                    'talktimePercent': int(talktime_pct) if talktime_pct else None,
+                                                    'talktimeSeconds': int(talk_time) if talk_time else None
+                                                })
+                                                logger.info(f"Extracted stats from analytics for '{asp_name}': wpm={wpm}, talktime={talktime_pct}%, talk_time={talk_time}s")
+
+                                    # Store Fireflies speaker stats for later merging
+                                    if fireflies_stats_from_analytics:
+                                        logger.info(f"Fireflies analytics speaker stats: {fireflies_stats_from_analytics}")
+                                        if not hasattr(call, '_fireflies_speaker_stats'):
+                                            call._fireflies_speaker_stats = fireflies_stats_from_analytics
+                                        else:
+                                            # Merge with existing stats
+                                            call._fireflies_speaker_stats.extend(fireflies_stats_from_analytics)
 
                                     # Source 3: meeting_attendees (may have displayName, name, email)
                                     for idx, att in enumerate(meeting_attendees):
@@ -1479,13 +1524,53 @@ class ExternalLinkProcessor:
                                     if sp_name:
                                         speaker_map[sp_name] = f"{sp_name} ({sp_email})" if sp_email else sp_name
 
-                                # Source 2: analytics speakers
+                                # Source 2: analytics speakers - also extract statistics
+                                http_fireflies_stats = []
+                                http_total_talk_time = 0
                                 for asp in analytics_speakers:
                                     asp_id = asp.get('speaker_id') or asp.get('speakerId') or asp.get('id')
                                     asp_name = asp.get('name') or asp.get('displayName')
                                     if asp_id is not None and asp_name and asp_name != 'Speaker':
                                         if str(asp_id) not in speaker_map:
                                             speaker_map[str(asp_id)] = asp_name
+
+                                    # Extract statistics
+                                    if asp_name and asp_name != 'Speaker':
+                                        talk_time = asp.get('talk_time') or asp.get('talkTime') or asp.get('duration') or asp.get('talk_time_seconds') or 0
+                                        http_total_talk_time += talk_time if isinstance(talk_time, (int, float)) else 0
+
+                                # Calculate percentages and build stats for HTTP path
+                                for asp in analytics_speakers:
+                                    asp_name = asp.get('name') or asp.get('displayName')
+                                    if asp_name and asp_name != 'Speaker':
+                                        talk_time = asp.get('talk_time') or asp.get('talkTime') or asp.get('duration') or asp.get('talk_time_seconds') or 0
+                                        word_count = asp.get('word_count') or asp.get('wordCount') or asp.get('words') or 0
+                                        wpm = asp.get('wpm') or asp.get('wordsPerMinute') or asp.get('words_per_minute') or 0
+
+                                        if not wpm and word_count and talk_time:
+                                            talk_mins = talk_time / 60 if talk_time > 60 else talk_time
+                                            if talk_mins > 0:
+                                                wpm = int(word_count / talk_mins)
+
+                                        talktime_pct = asp.get('percentage') or asp.get('talkTimePercentage') or asp.get('talk_time_percentage') or 0
+                                        if not talktime_pct and http_total_talk_time > 0 and talk_time:
+                                            talktime_pct = int(talk_time * 100 / http_total_talk_time)
+
+                                        if wpm or talktime_pct:
+                                            http_fireflies_stats.append({
+                                                'name': asp_name,
+                                                'wpm': int(wpm) if wpm else None,
+                                                'talktimePercent': int(talktime_pct) if talktime_pct else None,
+                                                'talktimeSeconds': int(talk_time) if talk_time else None
+                                            })
+                                            logger.info(f"[HTTP] Extracted stats from analytics for '{asp_name}': wpm={wpm}, talktime={talktime_pct}%, talk_time={talk_time}s")
+
+                                if http_fireflies_stats:
+                                    logger.info(f"[HTTP] Fireflies analytics speaker stats: {http_fireflies_stats}")
+                                    if not hasattr(call, '_fireflies_speaker_stats'):
+                                        call._fireflies_speaker_stats = http_fireflies_stats
+                                    else:
+                                        call._fireflies_speaker_stats.extend(http_fireflies_stats)
 
                                 # Source 3: meeting_attendees
                                 for idx, att in enumerate(meeting_attendees):
@@ -1712,12 +1797,15 @@ class ExternalLinkProcessor:
                                     stats['wpm'] = ff_stat['wpm']
                                 if ff_stat.get('talktimePercent'):
                                     stats['talktime_percent'] = ff_stat['talktimePercent']
-                                    # Also calculate talktime_seconds from duration and percent
-                                    if total_duration > 0:
-                                        stats['talktime_seconds'] = int(total_duration * ff_stat['talktimePercent'] / 100)
-                                        logger.info(f"Updated speaker '{speaker_name}' with Fireflies stats: wpm={ff_stat.get('wpm')}, talktime={ff_stat.get('talktimePercent')}% ({stats['talktime_seconds']}s)")
-                                    else:
-                                        logger.info(f"Updated speaker '{speaker_name}' with Fireflies stats: wpm={ff_stat.get('wpm')}, talktime={ff_stat.get('talktimePercent')}%")
+                                # Use talktimeSeconds directly if available, otherwise calculate from percent
+                                if ff_stat.get('talktimeSeconds'):
+                                    stats['talktime_seconds'] = ff_stat['talktimeSeconds']
+                                    logger.info(f"Updated speaker '{speaker_name}' with Fireflies stats: wpm={ff_stat.get('wpm')}, talktime={ff_stat.get('talktimePercent')}% ({stats['talktime_seconds']}s from analytics)")
+                                elif ff_stat.get('talktimePercent') and total_duration > 0:
+                                    stats['talktime_seconds'] = int(total_duration * ff_stat['talktimePercent'] / 100)
+                                    logger.info(f"Updated speaker '{speaker_name}' with Fireflies stats: wpm={ff_stat.get('wpm')}, talktime={ff_stat.get('talktimePercent')}% ({stats['talktime_seconds']}s calculated)")
+                                else:
+                                    logger.info(f"Updated speaker '{speaker_name}' with Fireflies stats: wpm={ff_stat.get('wpm')}, talktime={ff_stat.get('talktimePercent')}%")
                                 break
 
             logger.info(f"Fireflies transcript processed successfully: {len(call.transcript)} chars")
