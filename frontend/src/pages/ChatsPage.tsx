@@ -25,6 +25,7 @@ import {
 import toast from 'react-hot-toast';
 import { getChats } from '@/services/api';
 import { useChatStore } from '@/stores/chatStore';
+import { useAuthStore } from '@/stores/authStore';
 import ChatList from '@/components/chat/ChatList';
 import ChatDetail from '@/components/chat/ChatDetail';
 import AIPanel from '@/components/chat/AIPanel';
@@ -56,6 +57,7 @@ export default function ChatsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [copied, setCopied] = useState(false);
   const { selectedChatId, setSelectedChatId, setChats } = useChatStore();
+  const { isSuperAdmin, isOwner, user } = useAuthStore();
 
   const handleCopyUsername = () => {
     navigator.clipboard.writeText(BOT_USERNAME);
@@ -85,11 +87,25 @@ export default function ChatsPage() {
   const filteredChats = chats.filter((chat) => {
     const matchesSearch = (chat.custom_name || chat.title).toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = typeFilter === 'all' || chat.chat_type === typeFilter;
-    return matchesSearch && matchesType;
+
+    // Access control: superadmin and owner see everything, others only see their own or shared
+    const hasAccess = isSuperAdmin() || isOwner() ||
+      chat.is_mine === true ||
+      chat.is_shared === true ||
+      chat.owner_id === user?.id;
+
+    return matchesSearch && matchesType && hasAccess;
   });
 
-  // Count chats per type
-  const typeCounts = chats.reduce((acc, chat) => {
+  // Count chats per type - only count accessible chats
+  const accessibleChats = chats.filter((chat) => {
+    return isSuperAdmin() || isOwner() ||
+      chat.is_mine === true ||
+      chat.is_shared === true ||
+      chat.owner_id === user?.id;
+  });
+
+  const typeCounts = accessibleChats.reduce((acc, chat) => {
     acc[chat.chat_type] = (acc[chat.chat_type] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
@@ -120,7 +136,7 @@ export default function ChatsPage() {
           <div className="flex gap-1 overflow-x-auto scrollbar-hide">
             {CHAT_TYPE_FILTERS.map((filter) => {
               const Icon = filter.icon;
-              const count = filter.id === 'all' ? chats.length : (typeCounts[filter.id] || 0);
+              const count = filter.id === 'all' ? accessibleChats.length : (typeCounts[filter.id] || 0);
               const isActive = typeFilter === filter.id;
 
               return (

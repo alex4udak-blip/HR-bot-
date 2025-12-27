@@ -70,11 +70,11 @@ class TestSandboxCreate:
         # Verify entities created
         assert len(data["entities"]) == 5
 
-        # Verify chats created
-        assert len(data["chats"]) == 3
+        # Verify chats created (expanded sandbox has 7 chats)
+        assert len(data["chats"]) == 7
 
-        # Verify calls created
-        assert len(data["calls"]) == 2
+        # Verify calls created (expanded sandbox has 6 calls)
+        assert len(data["calls"]) == 6
 
     async def test_create_sandbox_creates_department(self, client: AsyncClient, superadmin_user: User, organization: Organization, db_session):
         """Test that sandbox creates QA Sandbox department."""
@@ -300,8 +300,8 @@ class TestSandboxDelete:
         assert "deleted" in data
         assert data["deleted"]["users"] == 4
         assert data["deleted"]["entities"] == 5
-        assert data["deleted"]["chats"] == 3
-        assert data["deleted"]["calls"] == 2
+        assert data["deleted"]["chats"] == 7  # expanded sandbox
+        assert data["deleted"]["calls"] == 6  # expanded sandbox
 
     async def test_delete_sandbox_removes_users(self, client: AsyncClient, superadmin_user: User, organization: Organization, db_session):
         """Test that sandbox deletion removes all sandbox users."""
@@ -459,8 +459,8 @@ class TestSandboxStatus:
         assert data["department_id"] is not None
         assert len(data["users"]) == 4
         assert data["stats"]["contacts"] == 5
-        assert data["stats"]["chats"] == 3
-        assert data["stats"]["calls"] == 2
+        assert data["stats"]["chats"] == 7  # expanded sandbox
+        assert data["stats"]["calls"] == 6  # expanded sandbox
 
     async def test_sandbox_status_not_exists(self, client: AsyncClient, superadmin_user: User, organization: Organization, db_session):
         """Test sandbox status when sandbox doesn't exist."""
@@ -584,8 +584,9 @@ class TestSandboxSwitch:
         assert response.status_code == 200
         data = response.json()
 
-        assert "access_token" in data
+        # Token is now set via cookie, response contains user info
         assert "user" in data
+        assert "message" in data
         assert data["user"]["email"] == "sandbox_owner@test.local"
 
     async def test_switch_to_each_sandbox_user(self, client: AsyncClient, superadmin_user: User, organization: Organization, db_session):

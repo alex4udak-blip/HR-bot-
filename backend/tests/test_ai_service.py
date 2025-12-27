@@ -211,15 +211,17 @@ class TestFormatMessages:
         service = AIService()
         result = service._format_messages(sample_messages[:2])
 
-        assert "[15.01 10:00] John Doe (@john_doe): Hello, I'm interested in the position." in result
-        assert "[15.01 10:05] Jane Smith (@jane_smith): Great! Can you tell me about your experience?" in result
+        # Format is now: [timestamp] Name: content (without username in parentheses)
+        assert "[15.01 10:00] John Doe: Hello, I'm interested in the position." in result
+        assert "[15.01 10:05] Jane Smith: Great! Can you tell me about your experience?" in result
 
     def test_format_messages_voice_prefix(self, sample_messages):
         """Test that voice messages have correct prefix."""
         service = AIService()
         result = service._format_messages([sample_messages[2]])
 
-        assert "[🎤 голосовое]" in result
+        # Voice prefix is [🎤]
+        assert "[🎤]" in result
         assert "I have 5 years of Python development experience." in result
 
     def test_format_messages_document_prefix(self, sample_messages):
@@ -227,7 +229,8 @@ class TestFormatMessages:
         service = AIService()
         result = service._format_messages([sample_messages[3]])
 
-        assert "[📄 portfolio.pdf]" in result
+        # Document prefix includes filename
+        assert "[📄" in result and "portfolio.pdf" in result
         assert "Here's my portfolio" in result
 
     def test_format_messages_no_username(self, sample_messages):
@@ -268,12 +271,13 @@ class TestFormatMessages:
 
         result = service._format_messages(messages)
 
-        assert "[🎤 голосовое]" in result
-        assert "[📹 видео]" in result
-        assert "[🖼 фото]" in result
+        # Updated format: shorter prefixes without Russian text
+        assert "[🎤]" in result  # voice
+        assert "[📹]" in result  # video_note
+        # Photo is included only if it has text content
         # Text messages should not have a prefix
         lines = result.split('\n')
-        text_line = [l for l in lines if l.endswith("test") and "🎤" not in l and "📹" not in l and "🖼" not in l]
+        text_line = [l for l in lines if "test" in l and "🎤" not in l and "📹" not in l]
         assert len(text_line) > 0
 
     def test_format_messages_empty_list(self):
@@ -296,7 +300,8 @@ class TestFormatMessages:
 
         result = service._format_messages([msg])
 
-        assert "Unknown:" in result
+        # When no name/username, shows "?" as fallback
+        assert "?:" in result
         assert "Anonymous message" in result
 
 
@@ -440,10 +445,10 @@ class TestBuildSystemPrompt:
             chat_type="hr"
         )
 
-        # Should include formatted messages
-        assert "John Doe (@john_doe)" in result
+        # Should include formatted messages (without username in parentheses)
+        assert "John Doe" in result
         assert "Hello, I'm interested in the position" in result
-        assert "[🎤 голосовое]" in result  # Voice message
+        assert "[🎤]" in result  # Voice message prefix
 
     def test_build_system_prompt_includes_criteria(self, sample_messages, sample_criteria):
         """Test that system prompt includes formatted criteria."""
@@ -982,10 +987,13 @@ class TestIntegration:
             call_kwargs = mock_anthropic_client.messages.stream.call_args[1]
             system_prompt = call_kwargs['system']
 
-            assert "HR expert" in system_prompt
-            assert "Technical Interview - Senior Python Developer" in system_prompt
-            assert "Communication Skills" in system_prompt
-            assert "John Doe" in system_prompt
+            # system_prompt is now a list with cache control, extract the text
+            prompt_text = system_prompt[0]['text'] if isinstance(system_prompt, list) else system_prompt
+
+            assert "HR expert" in prompt_text
+            assert "Technical Interview - Senior Python Developer" in prompt_text
+            assert "Communication Skills" in prompt_text
+            assert "John Doe" in prompt_text
 
     @pytest.mark.asyncio
     async def test_full_workflow_quick_action(self, mock_settings, mock_anthropic_client, sample_messages, sample_criteria):
