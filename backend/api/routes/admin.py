@@ -3034,3 +3034,152 @@ async def get_permission_audit_logs(
         ))
 
     return response
+
+
+# ============================================================================
+# USER EFFECTIVE PERMISSIONS
+# ============================================================================
+
+class EffectivePermissionsResponse(BaseModel):
+    """Response schema for effective permissions."""
+    permissions: Dict[str, bool]
+    source: str  # 'custom_role', 'org_role', 'default'
+    custom_role_id: Optional[int] = None
+    custom_role_name: Optional[str] = None
+    base_role: str
+
+
+@router.get("/me/permissions", response_model=EffectivePermissionsResponse)
+async def get_my_permissions(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get the current user's effective permissions.
+
+    Returns the merged permissions from custom role (if assigned) or default role permissions.
+    This endpoint is used by the frontend to dynamically show/hide UI elements.
+    """
+    # Check if user has custom role
+    custom_role_query = await db.execute(
+        select(UserCustomRole, CustomRole)
+        .join(CustomRole, CustomRole.id == UserCustomRole.role_id)
+        .where(
+            UserCustomRole.user_id == current_user.id,
+            CustomRole.is_active == True
+        )
+        .order_by(UserCustomRole.assigned_at.desc())
+        .limit(1)
+    )
+    custom_role_result = custom_role_query.first()
+
+    if custom_role_result:
+        user_custom_role, custom_role = custom_role_result
+
+        # Get base permissions from the custom role's base_role
+        base_permissions = get_role_permissions(custom_role.base_role)
+
+        # Get permission overrides
+        overrides_query = await db.execute(
+            select(RolePermissionOverride)
+            .where(RolePermissionOverride.role_id == custom_role.id)
+        )
+        overrides = overrides_query.scalars().all()
+
+        # Merge overrides into base permissions
+        permissions = base_permissions.copy()
+        for override in overrides:
+            permissions[override.permission] = override.allowed
+
+        return EffectivePermissionsResponse(
+            permissions=permissions,
+            source="custom_role",
+            custom_role_id=custom_role.id,
+            custom_role_name=custom_role.name,
+            base_role=custom_role.base_role
+        )
+
+    # No custom role - use standard role permissions
+    user_role = current_user.role.value if current_user.role else "member"
+    permissions = get_role_permissions(user_role)
+
+    return EffectivePermissionsResponse(
+        permissions=permissions,
+        source="org_role",
+        custom_role_id=None,
+        custom_role_name=None,
+        base_role=user_role
+    )
+
+
+# ============================================================================
+# MENU CONFIGURATION
+# ============================================================================
+
+class MenuItemConfig(BaseModel):
+    """Configuration for a menu item."""
+    id: str
+    label: str
+    path: str
+    icon: str
+    required_permission: Optional[str] = None
+    superadmin_only: bool = False
+
+
+class MenuConfigResponse(BaseModel):
+    """Response schema for menu configuration."""
+    items: List[MenuItemConfig]
+
+
+# Default menu configuration
+DEFAULT_MENU_ITEMS = [
+    MenuItemConfig(id="dashboard", label="Dashboard", path="/", icon="LayoutDashboard"),
+    MenuItemConfig(id="chats", label="Chats", path="/chats", icon="MessageSquare", required_permission="can_view_chats"),
+    MenuItemConfig(id="contacts", label="Contacts", path="/contacts", icon="Users", required_permission="can_view_contacts"),
+    MenuItemConfig(id="calls", label="Calls", path="/calls", icon="Phone", required_permission="can_view_calls"),
+    MenuItemConfig(id="departments", label="Departments", path="/departments", required_permission="can_view_departments", icon="Building2"),
+    MenuItemConfig(id="users", label="Users", path="/users", icon="UserCog", required_permission="can_view_all_users"),
+    MenuItemConfig(id="invite", label="Invite", path="/invite", icon="UserPlus", required_permission="can_invite_users"),
+    MenuItemConfig(id="settings", label="Settings", path="/settings", icon="Settings"),
+    MenuItemConfig(id="admin", label="Admin Panel", path="/admin", icon="Shield", superadmin_only=True),
+    MenuItemConfig(id="trash", label="Trash", path="/trash", icon="Trash2", required_permission="can_delete_resources"),
+]
+
+
+@router.get("/me/menu", response_model=MenuConfigResponse)
+async def get_my_menu(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get the menu configuration for the current user.
+
+    Returns only menu items that the user has permission to see.
+    This endpoint filters menu items based on user's effective permissions.
+    """
+    # Get user's effective permissions
+    permissions_response = await get_my_permissions(current_user, db)
+    permissions = permissions_response.permissions
+    is_superadmin = current_user.role and current_user.role.value == "superadmin"
+
+    visible_items = []
+    for item in DEFAULT_MENU_ITEMS:
+        # Check superadmin-only items
+        if item.superadmin_only and not is_superadmin:
+            continue
+
+        # Check required permission
+        if item.required_permission:
+            has_permission = permissions.get(item.required_permission, False)
+            # For basic "can_view_*" permissions, default to True for non-members
+            if not has_permission:
+                if item.required_permission.startswith("can_view_"):
+                    # Allow if user is admin or higher
+                    if permissions_response.base_role in ["superadmin", "owner", "admin", "sub_admin"]:
+                        has_permission = True
+                if not has_permission:
+                    continue
+
+        visible_items.append(item)
+
+    return MenuConfigResponse(items=visible_items)

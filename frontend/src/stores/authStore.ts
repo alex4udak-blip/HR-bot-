@@ -1,13 +1,23 @@
 import { create } from 'zustand';
 import type { User } from '@/types';
+import { getMyPermissions, getMyMenu, type EffectivePermissions, type MenuItem } from '@/services/api';
 
 interface AuthState {
   user: User | null;
   isLoading: boolean;
   originalUser: User | null;  // Store original user during impersonation
+  // Permissions
+  permissions: Record<string, boolean>;
+  permissionsSource: string | null;
+  customRoleName: string | null;
+  menuItems: MenuItem[];
+  permissionsLoading: boolean;
   setUser: (user: User | null) => void;
   setLoading: (loading: boolean) => void;
   logout: () => void;
+  // Permissions
+  fetchPermissions: () => Promise<void>;
+  hasPermission: (permission: string) => boolean;
   // Impersonation
   impersonate: (userId: number) => Promise<void>;
   exitImpersonation: () => Promise<void>;
@@ -30,11 +40,76 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isLoading: true,
   originalUser: null,
-  setUser: (user) => set({ user }),
+  // Permissions state
+  permissions: {},
+  permissionsSource: null,
+  customRoleName: null,
+  menuItems: [],
+  permissionsLoading: false,
+  setUser: (user) => {
+    set({ user });
+    // Fetch permissions when user is set
+    if (user) {
+      get().fetchPermissions();
+    }
+  },
   setLoading: (isLoading) => set({ isLoading }),
   logout: () => {
     // Cookie is cleared by the /auth/logout endpoint
-    set({ user: null, originalUser: null });
+    set({
+      user: null,
+      originalUser: null,
+      permissions: {},
+      permissionsSource: null,
+      customRoleName: null,
+      menuItems: [],
+    });
+  },
+
+  // Fetch user's effective permissions
+  fetchPermissions: async () => {
+    const { user } = get();
+    if (!user) return;
+
+    set({ permissionsLoading: true });
+    try {
+      const [permissionsData, menuData] = await Promise.all([
+        getMyPermissions(),
+        getMyMenu(),
+      ]);
+
+      set({
+        permissions: permissionsData.permissions,
+        permissionsSource: permissionsData.source,
+        customRoleName: permissionsData.custom_role_name,
+        menuItems: menuData.items,
+        permissionsLoading: false,
+      });
+    } catch (error) {
+      console.error('Failed to fetch permissions:', error);
+      set({ permissionsLoading: false });
+    }
+  },
+
+  // Check if user has a specific permission
+  hasPermission: (permission: string) => {
+    const { permissions, user } = get();
+
+    // Superadmin has all permissions
+    if (user?.role === 'superadmin') return true;
+
+    // Check explicit permission
+    if (permissions[permission] !== undefined) {
+      return permissions[permission];
+    }
+
+    // Default fallback based on role for common permissions
+    if (permission.startsWith('can_view_')) {
+      // All logged in users can view by default
+      return !!user;
+    }
+
+    return false;
   },
 
   // Impersonate a user

@@ -22,8 +22,7 @@ import {
   Play,
   Plus,
   LogIn,
-  Database,
-  Settings2
+  Database
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuthStore } from '@/stores/authStore';
