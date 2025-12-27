@@ -15,7 +15,8 @@ import {
   User as UserIcon,
   Mail,
   AtSign,
-  Edit3
+  Edit3,
+  Shield
 } from 'lucide-react';
 import {
   getCriteriaPresets,
@@ -27,6 +28,7 @@ import { useAuthStore } from '@/stores/authStore';
 import type { Criterion, CriteriaPreset } from '@/types';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import RoleManagement from '@/components/admin/RoleManagement';
 
 const categoryConfig = {
   basic: { icon: Target, color: 'text-blue-400 bg-blue-500/20', label: 'Basic' },
@@ -34,10 +36,13 @@ const categoryConfig = {
   green_flags: { icon: CheckCircle, color: 'text-green-400 bg-green-500/20', label: 'Green Flags' },
 };
 
+type SettingsTab = 'general' | 'presets' | 'roles';
+
 export default function SettingsPage() {
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const { user, setUser } = useAuthStore();
+  const { user, setUser, isSuperAdmin } = useAuthStore();
   const queryClient = useQueryClient();
 
   // Profile editing state
@@ -219,12 +224,62 @@ export default function SettingsPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold mb-2">Settings</h1>
-            <p className="text-dark-400">Manage criteria presets and preferences</p>
+            <h1 className="text-2xl font-bold mb-2">Настройки</h1>
+            <p className="text-dark-400">Управление настройками и шаблонами</p>
           </div>
         </div>
 
+        {/* Tabs */}
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setActiveTab('general')}
+            className={clsx(
+              'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
+              activeTab === 'general'
+                ? 'bg-accent-500/20 text-accent-400'
+                : 'bg-white/5 text-white/60 hover:bg-white/10'
+            )}
+          >
+            <UserIcon className="w-4 h-4" />
+            Профиль
+          </button>
+          <button
+            onClick={() => setActiveTab('presets')}
+            className={clsx(
+              'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
+              activeTab === 'presets'
+                ? 'bg-accent-500/20 text-accent-400'
+                : 'bg-white/5 text-white/60 hover:bg-white/10'
+            )}
+          >
+            <Target className="w-4 h-4" />
+            Шаблоны критериев
+          </button>
+          {isSuperAdmin() && (
+            <button
+              onClick={() => setActiveTab('roles')}
+              className={clsx(
+                'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
+                activeTab === 'roles'
+                  ? 'bg-accent-500/20 text-accent-400'
+                  : 'bg-white/5 text-white/60 hover:bg-white/10'
+              )}
+            >
+              <Shield className="w-4 h-4" />
+              Роли и права
+            </button>
+          )}
+        </div>
+
+        {/* Roles Tab - Fine-grained access control */}
+        {activeTab === 'roles' && isSuperAdmin() && (
+          <div className="glass rounded-2xl p-6">
+            <RoleManagement />
+          </div>
+        )}
+
         {/* Criteria Presets Section */}
+        {activeTab === 'presets' && (
         <div className="glass rounded-2xl p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -477,8 +532,10 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+        )}
 
         {/* Account Info */}
+        {activeTab === 'general' && (
         <div className="glass rounded-2xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Аккаунт</h2>
@@ -690,6 +747,7 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+        )}
       </motion.div>
     </div>
   );

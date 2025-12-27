@@ -601,8 +601,9 @@ export default function RoleManagement() {
                 />
               </div>
               <div>
-                <label className="block text-sm text-dark-400 mb-1">Base Role</label>
+                <label htmlFor="base-role-select" className="block text-sm text-dark-400 mb-1">Base Role</label>
                 <select
+                  id="base-role-select"
                   value={newRole.base_role}
                   onChange={(e) => setNewRole({ ...newRole, base_role: e.target.value })}
                   className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
