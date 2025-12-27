@@ -10,12 +10,16 @@ Tests for:
 """
 import pytest
 import os
+from pathlib import Path
 from unittest.mock import patch, AsyncMock
 from datetime import datetime
 from sqlalchemy import text
 
 from api.models.database import User, Chat, Organization, OrgMember, OrgRole, ChatType
 from api.services.auth import hash_password
+
+# Get project root directory (works both locally and in CI)
+BACKEND_ROOT = Path(__file__).parent.parent
 
 
 class TestConfigSecurity:
@@ -24,7 +28,7 @@ class TestConfigSecurity:
     def test_telegram_bot_username_from_env(self):
         """Bot username should come from env, not hardcoded."""
         # Read invitations.py file
-        invitations_file = '/home/user/HR-bot-/backend/api/routes/invitations.py'
+        invitations_file = BACKEND_ROOT / 'api' / 'routes' / 'invitations.py'
         with open(invitations_file, 'r') as f:
             content = f.read()
 
@@ -44,7 +48,7 @@ class TestConfigSecurity:
         # This is the recommended pattern
         expected_pattern = "os.getenv('TELEGRAM_BOT_USERNAME'"
 
-        invitations_file = '/home/user/HR-bot-/backend/api/routes/invitations.py'
+        invitations_file = BACKEND_ROOT / 'api' / 'routes' / 'invitations.py'
         with open(invitations_file, 'r') as f:
             content = f.read()
 
@@ -60,7 +64,7 @@ class TestSQLInjection:
 
     async def test_no_fstring_sql_injection_in_migrations(self):
         """Check that SQL queries don't use f-strings with user input."""
-        main_file = '/home/user/HR-bot-/backend/main.py'
+        main_file = BACKEND_ROOT / 'main.py'
         with open(main_file, 'r') as f:
             content = f.read()
 
@@ -92,7 +96,7 @@ class TestSQLInjection:
 
     async def test_migration_enum_values_are_hardcoded(self):
         """Verify that migration enum values come from hardcoded list, not user input."""
-        main_file = '/home/user/HR-bot-/backend/main.py'
+        main_file = BACKEND_ROOT / 'main.py'
         with open(main_file, 'r') as f:
             lines = f.readlines()
 
@@ -115,7 +119,7 @@ class TestCodeQuality:
 
     def test_no_wildcard_imports_in_models(self):
         """Wildcard imports can cause namespace pollution and hide dependencies."""
-        models_init = '/home/user/HR-bot-/backend/api/models/__init__.py'
+        models_init = BACKEND_ROOT / 'api' / 'models' / '__init__.py'
         with open(models_init, 'r') as f:
             content = f.read()
 
@@ -130,7 +134,7 @@ class TestCodeQuality:
     def test_explicit_imports_preferred(self):
         """Document that explicit imports are preferred over wildcards."""
         # This test documents the preferred pattern
-        models_init = '/home/user/HR-bot-/backend/api/models/__init__.py'
+        models_init = BACKEND_ROOT / 'api' / 'models' / '__init__.py'
         with open(models_init, 'r') as f:
             lines = f.readlines()
 
@@ -457,8 +461,8 @@ class TestEnvironmentConfiguration:
         """Verify no secrets are hardcoded in the codebase."""
         # Check key files for common secret patterns
         files_to_check = [
-            '/home/user/HR-bot-/backend/main.py',
-            '/home/user/HR-bot-/backend/api/routes/invitations.py',
+            BACKEND_ROOT / 'main.py',
+            BACKEND_ROOT / 'api' / 'routes' / 'invitations.py',
         ]
 
         secret_patterns = [
