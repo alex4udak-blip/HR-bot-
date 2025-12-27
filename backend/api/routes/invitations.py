@@ -28,6 +28,45 @@ from .organizations import get_current_org, require_org_admin
 router = APIRouter()
 
 
+async def require_invitation_access(
+    user: User = Depends(get_current_user),
+    org: Organization = Depends(get_current_org),
+    db: AsyncSession = Depends(get_db)
+) -> tuple:
+    """Require user to be org admin/owner OR department lead.
+
+    Returns: (user, org, org_role, is_dept_lead, user_dept_ids)
+    """
+    user = await db.merge(user)
+
+    # Superadmin bypasses all checks
+    if user.role == UserRole.superadmin:
+        return user, org, OrgRole.owner, True, set()
+
+    # Get user's org role
+    from ..services.auth import get_user_org_role
+    org_role = await get_user_org_role(user, org.id, db)
+
+    # Get user's department memberships with roles
+    result = await db.execute(
+        select(DepartmentMember).where(DepartmentMember.user_id == user.id)
+    )
+    dept_memberships = result.scalars().all()
+    user_dept_ids = {dm.department_id for dm in dept_memberships}
+
+    # Check if user is lead/sub_admin in any department
+    is_dept_lead = any(dm.role in (DeptRole.lead, DeptRole.sub_admin) for dm in dept_memberships)
+
+    # Allow org owner, org admin, OR department lead/sub_admin
+    if org_role in (OrgRole.owner, OrgRole.admin):
+        return user, org, org_role, is_dept_lead, user_dept_ids
+
+    if is_dept_lead:
+        return user, org, org_role, is_dept_lead, user_dept_ids
+
+    raise HTTPException(status_code=403, detail="Admin or department lead access required")
+
+
 # Schemas
 class InvitationCreate(BaseModel):
     email: Optional[EmailStr] = None
@@ -87,19 +126,25 @@ def generate_token() -> str:
 async def create_invitation(
     data: InvitationCreate,
     db: AsyncSession = Depends(get_db),
-    auth: tuple = Depends(require_org_admin)
+    auth: tuple = Depends(require_invitation_access)
 ):
-    """Create an invitation link for a new user."""
-    user, org, role = auth
+    """Create an invitation link for a new user.
 
-    # Validate role
+    Permissions:
+    - Org owner: can invite to any department with any org role
+    - Org admin: can invite to their departments with member org role
+    - Department lead/sub_admin: can invite to their departments with member org role
+    """
+    user, org, role, is_dept_lead, user_dept_ids = auth
+
+    # Validate org role for invitation
     try:
-        org_role = OrgRole(data.org_role)
+        invite_org_role = OrgRole(data.org_role)
     except ValueError:
-        org_role = OrgRole.member
+        invite_org_role = OrgRole.member
 
     # Only owner can create owner/admin invites
-    if org_role in (OrgRole.owner, OrgRole.admin) and role != OrgRole.owner:
+    if invite_org_role in (OrgRole.owner, OrgRole.admin) and role != OrgRole.owner:
         raise HTTPException(status_code=403, detail="Only owner can create owner/admin invitations")
 
     # Check if email is already a member of the organization
@@ -116,15 +161,7 @@ async def create_invitation(
             if result.scalar_one_or_none():
                 raise HTTPException(status_code=400, detail="User is already a member of this organization")
 
-    # Get user's department IDs (for admin restriction)
-    user_dept_result = await db.execute(
-        select(DepartmentMember.department_id).where(
-            DepartmentMember.user_id == user.id
-        )
-    )
-    user_dept_ids = set(r for r in user_dept_result.scalars().all())
-
-    # Admin can only invite to their own departments
+    # Non-owners can only invite to their own departments
     if role != OrgRole.owner and data.department_ids:
         for dept_info in data.department_ids:
             dept_id = dept_info.get("id")
@@ -133,6 +170,14 @@ async def create_invitation(
                     status_code=403,
                     detail=f"You can only invite to departments you belong to"
                 )
+
+    # Department leads (not org admins) MUST specify at least one department
+    if role not in (OrgRole.owner, OrgRole.admin) and is_dept_lead:
+        if not data.department_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="Department leads must specify at least one department for the invitation"
+            )
 
     # Generate token
     token = generate_token()
@@ -148,7 +193,7 @@ async def create_invitation(
         org_id=org.id,
         email=data.email,
         name=data.name,
-        org_role=org_role,
+        org_role=invite_org_role,
         department_ids=data.department_ids or [],
         invited_by_id=user.id,
         expires_at=expires_at
@@ -179,17 +224,17 @@ async def create_invitation(
 async def list_invitations(
     include_used: bool = False,
     db: AsyncSession = Depends(get_db),
-    auth: tuple = Depends(require_org_admin)
+    auth: tuple = Depends(require_invitation_access)
 ):
     """List invitations for current organization.
 
-    Owner sees all, admin sees only their own invitations.
+    Owner sees all, admin/lead sees only their own invitations.
     """
-    user, org, role = auth
+    user, org, role, is_dept_lead, user_dept_ids = auth
 
     query = select(Invitation).where(Invitation.org_id == org.id)
 
-    # Admin can only see invitations they created
+    # Non-owners can only see invitations they created
     if role != OrgRole.owner:
         query = query.where(Invitation.invited_by_id == user.id)
 
@@ -395,13 +440,13 @@ async def accept_invitation(
 async def revoke_invitation(
     invitation_id: int,
     db: AsyncSession = Depends(get_db),
-    auth: tuple = Depends(require_org_admin)
+    auth: tuple = Depends(require_invitation_access)
 ):
     """Revoke/delete an invitation.
 
-    Owner can revoke any, admin can only revoke their own invitations.
+    Owner can revoke any, admin/lead can only revoke their own invitations.
     """
-    user, org, role = auth
+    user, org, role, is_dept_lead, user_dept_ids = auth
 
     result = await db.execute(
         select(Invitation).where(

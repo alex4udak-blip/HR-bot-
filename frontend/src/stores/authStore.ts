@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { User } from '@/types';
-import { getMyPermissions, getMyMenu, type EffectivePermissions, type MenuItem } from '@/services/api';
+import { getMyPermissions, getMyMenu, type MenuItem } from '@/services/api';
 
 interface AuthState {
   user: User | null;
