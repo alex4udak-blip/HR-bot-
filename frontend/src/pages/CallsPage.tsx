@@ -56,7 +56,7 @@ export default function CallsPage() {
     return canEditResource({
       owner_id: call.owner_id,
       is_mine: call.owner_id === user?.id,
-      access_level: call.shared_access_level
+      access_level: call.access_level ?? undefined
     });
   };
 
@@ -64,7 +64,7 @@ export default function CallsPage() {
     return canDeleteResource({
       owner_id: call.owner_id,
       is_mine: call.owner_id === user?.id,
-      access_level: call.shared_access_level
+      access_level: call.access_level ?? undefined
     });
   };
 
