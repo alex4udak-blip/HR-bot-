@@ -295,9 +295,9 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
             {/* AI Assistant - only show if showAIInOverview is true */}
             {showAIInOverview && <EntityAI entity={entity} />}
 
-            <div className={clsx("grid grid-cols-1 xl:grid-cols-2 gap-4", showAIInOverview && "mt-6")}>
+            <div className={clsx("grid grid-cols-1 xl:grid-cols-2 gap-4 items-start", showAIInOverview && "mt-6")}>
             {/* Recent Chats */}
-            <div className="bg-white/5 rounded-xl p-4">
+            <div className="bg-white/5 rounded-xl p-4 h-fit">
               <div className="flex items-center justify-between gap-2 mb-4">
                 <h3 className="text-base font-semibold text-white flex items-center gap-2 min-w-0">
                   <MessageSquare size={18} className="text-cyan-400 flex-shrink-0" />
@@ -333,7 +333,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
             </div>
 
             {/* Recent Calls */}
-            <div className="bg-white/5 rounded-xl p-4">
+            <div className="bg-white/5 rounded-xl p-4 h-fit">
               <div className="flex items-center justify-between gap-2 mb-4">
                 <h3 className="text-base font-semibold text-white flex items-center gap-2 min-w-0">
                   <Phone size={18} className="text-green-400 flex-shrink-0" />
@@ -373,7 +373,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
             </div>
 
             {/* Transfer History */}
-            <div className="bg-white/5 rounded-xl p-4 xl:col-span-2">
+            <div className="bg-white/5 rounded-xl p-4 xl:col-span-2 h-fit">
               <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
                 <ArrowRightLeft size={18} className="text-purple-400" />
                 История передач

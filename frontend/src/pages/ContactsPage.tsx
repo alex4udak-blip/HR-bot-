@@ -89,7 +89,9 @@ export default function ContactsPage() {
     fetchEntity,
     deleteEntity,
     setFilters,
-    clearCurrentEntity
+    clearCurrentEntity,
+    typeCounts,
+    fetchTypeCounts
   } = useEntityStore();
 
   // Helper functions to check permissions using authStore helpers
@@ -141,10 +143,11 @@ export default function ContactsPage() {
     });
   };
 
-  // Load departments on mount
+  // Load departments and type counts on mount
   useEffect(() => {
     getDepartments().then(setDepartments).catch(console.error);
-  }, []);
+    fetchTypeCounts(); // Load initial type counts
+  }, [fetchTypeCounts]);
 
   // Load entities on mount and when any filter changes - single unified effect
   useEffect(() => {
@@ -228,11 +231,8 @@ export default function ContactsPage() {
       entity.created_by === user?.id;
   });
 
-  // Count entities per type - only count accessible entities
-  const typeCounts = accessibleEntities.reduce((acc, entity) => {
-    acc[entity.type] = (acc[entity.type] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  // Note: typeCounts comes from the store and is fetched separately
+  // to show accurate totals even when filtered by type
 
   const getEntityIcon = (type: EntityType) => {
     const icons = {
@@ -329,9 +329,10 @@ export default function ContactsPage() {
           <div className="flex flex-wrap gap-2">
             {ENTITY_TYPE_FILTERS.map((filter) => {
               const Icon = filter.icon;
+              // Use typeCounts from store - these stay constant regardless of type filter
               const count = filter.id === 'all'
-                ? accessibleEntities.length
-                : typeCounts[filter.id] || 0;
+                ? typeCounts.all
+                : typeCounts[filter.id as keyof typeof typeCounts] || 0;
 
               return (
                 <button
