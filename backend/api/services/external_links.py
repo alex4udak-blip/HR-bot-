@@ -1357,6 +1357,15 @@ class ExternalLinkProcessor:
                 # The _process_fireflies method will update progress internally
                 call = await self._process_fireflies(call, call.source_url, call_id)
 
+                # Identify participant roles (evaluator, target, others)
+                if call.speakers and call.status == CallStatus.done:
+                    try:
+                        from .call_processor import identify_participant_roles
+                        call.participant_roles = await identify_participant_roles(call, db)
+                        logger.info(f"Identified participant roles: {call.participant_roles}")
+                    except Exception as e:
+                        logger.warning(f"Failed to identify participant roles: {e}")
+
                 # Stage 5: Complete
                 call.progress = 100
                 call.progress_stage = "Готово"
