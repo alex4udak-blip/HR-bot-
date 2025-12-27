@@ -207,10 +207,15 @@ async def create_user(
         user_role = UserRole.superadmin
     elif data.role == "sub_admin":
         user_role = UserRole.sub_admin
-    else:
+    elif data.role == "member":
+        user_role = UserRole.member
+    elif data.role == "admin":
         user_role = UserRole.admin
+    else:
+        # Default to member for unknown roles
+        user_role = UserRole.member
 
-    # Validate department_id for ADMIN and SUB_ADMIN
+    # Validate department_id for ADMIN and SUB_ADMIN (legacy system roles)
     if user_role in (UserRole.admin, UserRole.sub_admin):
         if not data.department_id:
             raise HTTPException(status_code=400, detail="Admin must be assigned to a department")
@@ -279,10 +284,15 @@ async def update_user(
             new_role = UserRole.superadmin
         elif data.role == "sub_admin":
             new_role = UserRole.sub_admin
-        else:
+        elif data.role == "member":
+            new_role = UserRole.member
+        elif data.role == "admin":
             new_role = UserRole.admin
+        else:
+            # Default to member for unknown roles
+            new_role = UserRole.member
 
-        # Validate department_id for ADMIN and SUB_ADMIN
+        # Validate department_id for ADMIN and SUB_ADMIN (legacy system roles)
         if new_role in (UserRole.admin, UserRole.sub_admin):
             # Check if user has a department
             dept_member_result = await db.execute(

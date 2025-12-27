@@ -71,14 +71,26 @@ async def get_entity_with_data(db: AsyncSession, entity_id: int):
     return entity, chats, calls
 
 
-def can_access_entity(user: User, entity: Entity) -> bool:
-    """Check if user can access entity"""
-    if user.role == UserRole.superadmin:
-        return True
-    # Admin can access entities they created
-    if user.role == UserRole.admin:
+async def can_access_entity(user: User, entity: Entity, db: AsyncSession) -> bool:
+    """Check if user can access entity.
+
+    Uses the proper role hierarchy:
+    1. SUPERADMIN - sees everything
+    2. OWNER - sees everything in org (except superadmin private content)
+    3. ADMIN/SUB_ADMIN - sees department data
+    4. MEMBER - sees own resources and shared
+    """
+    from .entities import check_entity_access
+
+    # Get org_id from entity
+    org_id = entity.org_id
+    if not org_id:
+        # Fallback: only owner or superadmin can access
+        if user.role == UserRole.superadmin:
+            return True
         return entity.created_by == user.id
-    return False
+
+    return await check_entity_access(entity, user, org_id, db)
 
 
 @router.get("/entities/{entity_id}/ai/actions")
@@ -98,7 +110,7 @@ async def get_available_actions(
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
 
-    if not can_access_entity(user, entity):
+    if not await can_access_entity(user, entity, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     return {
@@ -121,7 +133,7 @@ async def entity_ai_message(
 
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if not can_access_entity(user, entity):
+    if not await can_access_entity(user, entity, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Validate request
@@ -235,7 +247,7 @@ async def get_entity_ai_history(
     entity = result.scalar_one_or_none()
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if not can_access_entity(user, entity):
+    if not await can_access_entity(user, entity, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Get conversation
@@ -269,7 +281,7 @@ async def clear_entity_ai_history(
     entity = result.scalar_one_or_none()
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if not can_access_entity(user, entity):
+    if not await can_access_entity(user, entity, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Delete conversation
@@ -309,7 +321,7 @@ async def update_entity_ai_summary(
 
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if not can_access_entity(user, entity):
+    if not await can_access_entity(user, entity, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Build content for summarization
@@ -361,7 +373,7 @@ async def get_entity_ai_memory(
 
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if not can_access_entity(user, entity):
+    if not await can_access_entity(user, entity, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     return {
@@ -393,8 +405,33 @@ async def batch_update_entity_summaries(
 
     user = await db.merge(user)
 
-    # Only admins can batch update
-    if user.role not in [UserRole.superadmin, UserRole.admin]:
+    # Check if user has admin-level access (org admin, dept lead, or superadmin)
+    from ..services.auth import get_user_org, get_user_org_role
+    from ..models.database import OrgRole, DepartmentMember, DeptRole
+
+    is_admin = False
+    if user.role == UserRole.superadmin:
+        is_admin = True
+    else:
+        # Check org role
+        org = await get_user_org(user, db)
+        if org:
+            org_role = await get_user_org_role(user, org.id, db)
+            if org_role in (OrgRole.owner, OrgRole.admin):
+                is_admin = True
+
+        # Check department role
+        if not is_admin:
+            result = await db.execute(
+                select(DepartmentMember).where(
+                    DepartmentMember.user_id == user.id,
+                    DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+                )
+            )
+            if result.scalar_one_or_none():
+                is_admin = True
+
+    if not is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     limit = min(limit, 50)  # Cap at 50
