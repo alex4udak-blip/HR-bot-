@@ -481,28 +481,57 @@ class ExternalLinkProcessor:
                                             # Get speaker name - try multiple approaches
                                             speaker_name = None
 
-                                            # 1. Try direct name fields
-                                            for name_key in ['speaker_name', 'speakerName', 'name', 'speaker']:
-                                                if s.get(name_key) and s.get(name_key) != 'Speaker':
-                                                    speaker_name = s.get(name_key)
+                                            # 1. Try direct name fields (most common)
+                                            for name_key in ['speaker_name', 'speakerName', 'name', 'speaker', 'user_name', 'userName', 'participant_name']:
+                                                val = s.get(name_key)
+                                                if val and val != 'Speaker' and not str(val).startswith('Speaker '):
+                                                    speaker_name = val
                                                     break
 
-                                            # 2. Try to map speaker ID to name
+                                            # 2. Try nested objects (Fireflies sometimes uses this)
                                             if not speaker_name or speaker_name == 'Speaker':
-                                                for id_key in ['speaker_id', 'speakerId', 'speaker_index', 'speakerIndex']:
+                                                for obj_key in ['user', 'speaker', 'participant', 'attendee']:
+                                                    obj = s.get(obj_key)
+                                                    if isinstance(obj, dict):
+                                                        for name_key in ['name', 'displayName', 'full_name', 'email']:
+                                                            val = obj.get(name_key)
+                                                            if val and val != 'Speaker':
+                                                                speaker_name = val
+                                                                break
+                                                    if speaker_name and speaker_name != 'Speaker':
+                                                        break
+
+                                            # 3. Try to map speaker ID to name from speaker_map
+                                            if not speaker_name or speaker_name == 'Speaker':
+                                                for id_key in ['speaker_id', 'speakerId', 'speaker_index', 'speakerIndex', 'user_id', 'userId', 'participant_id']:
                                                     sp_id = s.get(id_key)
                                                     if sp_id is not None and str(sp_id) in speaker_map:
                                                         speaker_name = speaker_map[str(sp_id)]
                                                         break
 
-                                            # 3. Use index in speakers_info if available
+                                            # 4. Use index in speakers_info if available
                                             if not speaker_name or speaker_name == 'Speaker':
-                                                sp_idx = s.get('speaker_index') or s.get('speakerIndex')
-                                                if sp_idx is not None and speakers_info and sp_idx < len(speakers_info):
-                                                    sp_info = speakers_info[sp_idx]
-                                                    speaker_name = sp_info.get('name') or sp_info.get('displayName')
+                                                sp_idx = s.get('speaker_index') or s.get('speakerIndex') or s.get('speaker_id')
+                                                if sp_idx is not None:
+                                                    try:
+                                                        idx = int(sp_idx)
+                                                        if speakers_info and 0 <= idx < len(speakers_info):
+                                                            sp_info = speakers_info[idx]
+                                                            speaker_name = sp_info.get('name') or sp_info.get('displayName') or sp_info.get('email')
+                                                    except (ValueError, TypeError):
+                                                        pass
+
+                                            # 5. Check ai_filters or other Fireflies-specific fields
+                                            if not speaker_name or speaker_name == 'Speaker':
+                                                ai_filters = s.get('ai_filters') or s.get('aiFilters') or {}
+                                                if isinstance(ai_filters, dict):
+                                                    speaker_name = ai_filters.get('speaker_name') or ai_filters.get('speakerName')
 
                                             speaker_name = speaker_name or 'Speaker'
+
+                                            # Log first few sentences to debug speaker extraction
+                                            if len(speakers) < 3:
+                                                logger.debug(f"Sentence {len(speakers)}: extracted speaker='{speaker_name}' from keys={list(s.keys())}")
 
                                             text = s.get('text', s.get('raw_text', ''))
                                             if text:
@@ -775,18 +804,45 @@ class ExternalLinkProcessor:
                                     lines = []
                                     speakers = []
                                     for s in sentences:
-                                        # Get speaker name with mapping
+                                        # Get speaker name with mapping (same logic as Playwright path)
                                         speaker_name = None
-                                        for name_key in ['speaker_name', 'speakerName', 'name', 'speaker']:
-                                            if s.get(name_key) and s.get(name_key) != 'Speaker':
-                                                speaker_name = s.get(name_key)
+
+                                        # 1. Try direct name fields
+                                        for name_key in ['speaker_name', 'speakerName', 'name', 'speaker', 'user_name', 'userName']:
+                                            val = s.get(name_key)
+                                            if val and val != 'Speaker' and not str(val).startswith('Speaker '):
+                                                speaker_name = val
                                                 break
+
+                                        # 2. Try nested objects
+                                        if not speaker_name or speaker_name == 'Speaker':
+                                            for obj_key in ['user', 'speaker', 'participant']:
+                                                obj = s.get(obj_key)
+                                                if isinstance(obj, dict):
+                                                    speaker_name = obj.get('name') or obj.get('displayName') or obj.get('email')
+                                                    if speaker_name and speaker_name != 'Speaker':
+                                                        break
+
+                                        # 3. Try speaker ID mapping
                                         if not speaker_name or speaker_name == 'Speaker':
                                             for id_key in ['speaker_id', 'speakerId', 'speaker_index', 'speakerIndex']:
                                                 sp_id = s.get(id_key)
                                                 if sp_id is not None and str(sp_id) in speaker_map:
                                                     speaker_name = speaker_map[str(sp_id)]
                                                     break
+
+                                        # 4. Try index lookup in speakers_info
+                                        if not speaker_name or speaker_name == 'Speaker':
+                                            sp_idx = s.get('speaker_id') or s.get('speaker_index')
+                                            if sp_idx is not None:
+                                                try:
+                                                    idx = int(sp_idx)
+                                                    if speakers_info and 0 <= idx < len(speakers_info):
+                                                        sp_info = speakers_info[idx]
+                                                        speaker_name = sp_info.get('name') or sp_info.get('displayName')
+                                                except (ValueError, TypeError):
+                                                    pass
+
                                         speaker_name = speaker_name or 'Speaker'
 
                                         text = s.get('text', s.get('raw_text', ''))
@@ -1356,6 +1412,15 @@ class ExternalLinkProcessor:
                 # Process Fireflies - this takes 1-2 minutes
                 # The _process_fireflies method will update progress internally
                 call = await self._process_fireflies(call, call.source_url, call_id)
+
+                # Identify participant roles (evaluator, target, others)
+                if call.speakers and call.status == CallStatus.done:
+                    try:
+                        from .call_processor import identify_participant_roles
+                        call.participant_roles = await identify_participant_roles(call, db)
+                        logger.info(f"Identified participant roles: {call.participant_roles}")
+                    except Exception as e:
+                        logger.warning(f"Failed to identify participant roles: {e}")
 
                 # Stage 5: Complete
                 call.progress = 100
