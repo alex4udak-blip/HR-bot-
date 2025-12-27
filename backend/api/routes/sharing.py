@@ -27,6 +27,7 @@ class ShareRequest(BaseModel):
     access_level: AccessLevel = AccessLevel.view
     note: Optional[str] = None
     expires_at: Optional[datetime] = None
+    auto_share_related: bool = True  # For entities: auto-share linked chats/calls
 
 
 class ShareResponse(BaseModel):
@@ -287,6 +288,77 @@ async def share_resource(
         await db.refresh(share)
 
     resource_name = await get_resource_name(data.resource_type, data.resource_id, db)
+
+    # Auto-share related chats and calls when sharing an entity
+    shared_related = {"chats": 0, "calls": 0}
+    if data.resource_type == ResourceType.entity and data.auto_share_related:
+        # Get the entity's org_id for filtering
+        entity_result = await db.execute(
+            select(Entity).where(Entity.id == data.resource_id)
+        )
+        entity = entity_result.scalar_one_or_none()
+
+        if entity:
+            # Find all chats linked to this entity
+            chats_result = await db.execute(
+                select(Chat).where(Chat.entity_id == data.resource_id, Chat.org_id == entity.org_id)
+            )
+            linked_chats = chats_result.scalars().all()
+
+            for chat in linked_chats:
+                # Check if already shared
+                existing_chat_share = await db.execute(
+                    select(SharedAccess).where(
+                        SharedAccess.resource_type == ResourceType.chat,
+                        SharedAccess.resource_id == chat.id,
+                        SharedAccess.shared_with_id == data.shared_with_id
+                    )
+                )
+                if not existing_chat_share.scalar_one_or_none():
+                    chat_share = SharedAccess(
+                        resource_type=ResourceType.chat,
+                        resource_id=chat.id,
+                        chat_id=chat.id,
+                        shared_by_id=current_user.id,
+                        shared_with_id=data.shared_with_id,
+                        access_level=data.access_level,
+                        note=f"Автоматически расшарено вместе с контактом: {entity.name}",
+                        expires_at=data.expires_at
+                    )
+                    db.add(chat_share)
+                    shared_related["chats"] += 1
+
+            # Find all calls linked to this entity
+            calls_result = await db.execute(
+                select(CallRecording).where(CallRecording.entity_id == data.resource_id, CallRecording.org_id == entity.org_id)
+            )
+            linked_calls = calls_result.scalars().all()
+
+            for call in linked_calls:
+                # Check if already shared
+                existing_call_share = await db.execute(
+                    select(SharedAccess).where(
+                        SharedAccess.resource_type == ResourceType.call,
+                        SharedAccess.resource_id == call.id,
+                        SharedAccess.shared_with_id == data.shared_with_id
+                    )
+                )
+                if not existing_call_share.scalar_one_or_none():
+                    call_share = SharedAccess(
+                        resource_type=ResourceType.call,
+                        resource_id=call.id,
+                        call_id=call.id,
+                        shared_by_id=current_user.id,
+                        shared_with_id=data.shared_with_id,
+                        access_level=data.access_level,
+                        note=f"Автоматически расшарено вместе с контактом: {entity.name}",
+                        expires_at=data.expires_at
+                    )
+                    db.add(call_share)
+                    shared_related["calls"] += 1
+
+            if shared_related["chats"] > 0 or shared_related["calls"] > 0:
+                await db.commit()
 
     response_data = ShareResponse(
         id=share.id,

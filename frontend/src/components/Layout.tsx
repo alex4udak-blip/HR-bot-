@@ -45,8 +45,9 @@ export default function Layout() {
       items.push({ path: '/users', icon: Users, label: 'Пользователи' });
     }
 
-    // Добавляем пункты для admin и superadmin
-    if (user?.role === 'superadmin' || user?.role === 'admin') {
+    // Добавляем пункты для superadmin и org owner
+    // Members and regular admins should NOT see Departments
+    if (user?.role === 'superadmin' || user?.org_role === 'owner') {
       items.push({ path: '/departments', icon: Building2, label: 'Департаменты' });
       items.push({ path: '/settings', icon: Settings, label: 'Настройки' });
     }
@@ -57,7 +58,7 @@ export default function Layout() {
     }
 
     return items;
-  }, [user?.role]);
+  }, [user?.role, user?.org_role]);
 
   const handleLogout = () => {
     logout();
