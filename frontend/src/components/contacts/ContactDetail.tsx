@@ -126,11 +126,11 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
   };
 
   return (
-    <div className="p-6">
+    <div className="p-6 space-y-6">
       {/* Contact Info Card */}
-      <div className="bg-white/5 rounded-xl p-6 mb-6">
+      <div className="glass rounded-xl p-6 border border-white/10">
         <div className="flex items-start gap-4">
-          <div className="w-16 h-16 aspect-square rounded-xl bg-gradient-to-br from-cyan-500/30 to-purple-500/30 flex items-center justify-center flex-shrink-0">
+          <div className="w-16 h-16 aspect-square rounded-xl bg-gradient-to-br from-cyan-500/30 to-purple-500/30 flex items-center justify-center flex-shrink-0 border border-white/10">
             <User size={32} className="text-white" />
           </div>
 
@@ -266,7 +266,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
       </div>
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-2 mb-6">
+      <div className="glass rounded-xl p-1.5 flex flex-wrap gap-1 border border-white/10">
         {[
           { id: 'overview', label: 'Обзор' },
           { id: 'chats', label: `Чаты (${entity.chats?.length || 0})` },
@@ -277,10 +277,10 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
             key={tab.id}
             onClick={() => setActiveTab(tab.id as typeof activeTab)}
             className={clsx(
-              'px-4 py-2 rounded-lg text-sm transition-colors whitespace-nowrap',
+              'px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap',
               activeTab === tab.id
-                ? 'bg-cyan-500/20 text-cyan-400'
-                : 'bg-white/5 text-white/60 hover:bg-white/10'
+                ? 'bg-cyan-500/20 text-cyan-400 shadow-sm'
+                : 'text-white/60 hover:bg-white/5 hover:text-white/80'
             )}
           >
             {tab.label}
@@ -297,7 +297,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
             <div className={clsx("grid grid-cols-1 xl:grid-cols-2 gap-4 items-start", showAIInOverview && "mt-6")}>
             {/* Recent Chats */}
-            <div className="bg-white/5 rounded-xl p-4 h-fit">
+            <div className="glass rounded-xl p-4 h-fit border border-white/10">
               <div className="flex items-center justify-between gap-2 mb-4">
                 <h3 className="text-base font-semibold text-white flex items-center gap-2 min-w-0">
                   <MessageSquare size={18} className="text-cyan-400 flex-shrink-0" />
@@ -333,7 +333,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
             </div>
 
             {/* Recent Calls */}
-            <div className="bg-white/5 rounded-xl p-4 h-fit">
+            <div className="glass rounded-xl p-4 h-fit border border-white/10">
               <div className="flex items-center justify-between gap-2 mb-4">
                 <h3 className="text-base font-semibold text-white flex items-center gap-2 min-w-0">
                   <Phone size={18} className="text-green-400 flex-shrink-0" />
@@ -373,7 +373,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
             </div>
 
             {/* Transfer History */}
-            <div className="bg-white/5 rounded-xl p-4 xl:col-span-2 h-fit">
+            <div className="glass rounded-xl p-4 xl:col-span-2 h-fit border border-white/10">
               <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
                 <ArrowRightLeft size={18} className="text-purple-400" />
                 История передач

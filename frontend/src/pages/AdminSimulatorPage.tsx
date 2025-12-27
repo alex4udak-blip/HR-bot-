@@ -117,12 +117,13 @@ interface SandboxStatus {
 }
 
 export default function AdminSimulatorPage() {
-  const { isSuperAdmin } = useAuthStore();
+  const { user, isSuperAdmin, isLoading: authLoading } = useAuthStore();
 
   // Sandbox state
   const [sandboxStatus, setSandboxStatus] = useState<SandboxStatus>({ exists: false });
   const [sandboxLoading, setSandboxLoading] = useState(false);
   const [sandboxError, setSandboxError] = useState<string | null>(null);
+  const [pageLoading, setPageLoading] = useState(true);
 
   // Matrix mode state
   const [matrixMode, setMatrixMode] = useState<'own' | 'dept' | 'shared_full' | 'shared_edit' | 'shared_view' | 'other_dept'>('own');
@@ -143,8 +144,20 @@ export default function AdminSimulatorPage() {
 
   // Загрузка статуса sandbox при монтировании
   useEffect(() => {
-    fetchSandboxStatus();
-  }, []);
+    const loadInitialData = async () => {
+      try {
+        await fetchSandboxStatus();
+      } finally {
+        setPageLoading(false);
+      }
+    };
+
+    if (!authLoading && user) {
+      loadInitialData();
+    } else if (!authLoading && !user) {
+      setPageLoading(false);
+    }
+  }, [authLoading, user]);
 
   // Функции для работы с sandbox
   // Helper to extract error message from API errors
@@ -222,10 +235,26 @@ export default function AdminSimulatorPage() {
     }
   };
 
+  // Показать загрузку пока данные пользователя загружаются
+  if (authLoading || pageLoading) {
+    return (
+      <div className="h-full flex items-center justify-center p-6 bg-dark-900">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="text-center"
+        >
+          <div className="w-12 h-12 border-2 border-accent-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-white/60">Загрузка симулятора...</p>
+        </motion.div>
+      </div>
+    );
+  }
+
   // Проверка доступа - только для SUPERADMIN
   if (!isSuperAdmin()) {
     return (
-      <div className="h-full flex items-center justify-center p-6">
+      <div className="h-full flex items-center justify-center p-6 bg-dark-900">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -235,6 +264,9 @@ export default function AdminSimulatorPage() {
           <h2 className="text-2xl font-bold mb-2">Доступ запрещён</h2>
           <p className="text-white/60">
             Эта страница доступна только пользователям с ролью SUPERADMIN
+          </p>
+          <p className="text-sm text-white/40 mt-2">
+            Текущая роль: {user?.role || 'не определена'}
           </p>
         </motion.div>
       </div>
