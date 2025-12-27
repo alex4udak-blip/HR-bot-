@@ -139,15 +139,15 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
               break;
 
             case 'call.progress':
-              onCallProgress?.(data.payload as CallProgressEvent);
+              onCallProgress?.(data.payload as unknown as CallProgressEvent);
               break;
 
             case 'call.completed':
-              onCallCompleted?.(data.payload as CallCompletedEvent);
+              onCallCompleted?.(data.payload as unknown as CallCompletedEvent);
               break;
 
             case 'call.failed':
-              onCallFailed?.(data.payload as CallFailedEvent);
+              onCallFailed?.(data.payload as unknown as CallFailedEvent);
               break;
 
             case 'entity.created':
@@ -159,7 +159,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
               break;
 
             case 'entity.deleted':
-              onEntityDeleted?.(data.payload as { id: number });
+              onEntityDeleted?.(data.payload as unknown as { id: number });
               break;
 
             default:
