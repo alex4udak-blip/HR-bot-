@@ -851,7 +851,7 @@ export const shareEntity = async (
 
 // === DEPARTMENTS ===
 
-export type DeptRole = 'lead' | 'member';
+export type DeptRole = 'lead' | 'sub_admin' | 'member';
 
 export interface Department {
   id: number;

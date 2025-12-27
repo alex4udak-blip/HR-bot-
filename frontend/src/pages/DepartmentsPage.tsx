@@ -38,6 +38,7 @@ import clsx from 'clsx';
 
 const DEPT_ROLE_CONFIG: Record<DeptRole, { label: string; icon: typeof Crown; color: string; description: string }> = {
   lead: { label: 'Руководитель', icon: Crown, color: 'text-yellow-400 bg-yellow-500/20', description: 'Видит все данные департамента' },
+  sub_admin: { label: 'Саб-админ', icon: Users, color: 'text-indigo-400 bg-indigo-500/20', description: 'Полный доступ, кроме удаления админов' },
   member: { label: 'Участник', icon: UserIcon, color: 'text-white/60 bg-white/10', description: 'Видит свои данные и расшаренные' },
 };
 
@@ -843,12 +844,19 @@ function DepartmentMembersModal({
                             className="px-2 py-1 bg-white/5 border border-white/10 rounded text-white text-sm"
                           >
                             <option value="lead">Руководитель</option>
+                            <option value="sub_admin">Саб-админ</option>
                             <option value="member">Участник</option>
                           </select>
                         ) : (
-                          <span className={clsx('text-xs px-2 py-1 rounded-lg', roleConfig.color)}>
-                            {roleConfig.label}
-                          </span>
+                          <select
+                            value={member.role}
+                            onChange={(e) => handleRoleChange(member.user_id, e.target.value as DeptRole)}
+                            className="px-2 py-1 bg-white/5 border border-white/10 rounded text-white text-sm"
+                            disabled={member.role === 'lead'}
+                          >
+                            <option value="sub_admin">Саб-админ</option>
+                            <option value="member">Участник</option>
+                          </select>
                         )}
                         <button
                           onClick={() => handleRemoveMember(member)}
@@ -912,12 +920,18 @@ function AddMemberForm({
             className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm"
           >
             <option value="lead">Руководитель</option>
+            <option value="sub_admin">Саб-админ</option>
             <option value="member">Участник</option>
           </select>
         ) : (
-          <span className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white/60 text-sm">
-            Участник
-          </span>
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value as DeptRole)}
+            className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm"
+          >
+            <option value="sub_admin">Саб-админ</option>
+            <option value="member">Участник</option>
+          </select>
         )}
       </div>
       <div className="flex gap-2">

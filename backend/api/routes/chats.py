@@ -247,11 +247,11 @@ async def get_chats(
             )
             shared_chat_ids = [r for r in shared_result.scalars().all()]
 
-            # Get departments where user is lead
+            # Get departments where user is lead or sub_admin
             lead_dept_result = await db.execute(
                 select(DepartmentMember.department_id).where(
                     DepartmentMember.user_id == user.id,
-                    DepartmentMember.role == DeptRole.lead
+                    DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
                 )
             )
             lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
