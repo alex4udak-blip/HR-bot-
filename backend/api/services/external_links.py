@@ -538,6 +538,21 @@ class ExternalLinkProcessor:
                                     else:
                                         logger.warning(f"No speaker mapping built - speakers_info empty and no participants found")
 
+                                    # FALLBACK: Try to extract name from meeting title
+                                    # Fireflies often uses participant name as meeting title (e.g., "Inna I.", "плюхаев матвей")
+                                    if not speaker_map and title:
+                                        # Clean title - remove common suffixes
+                                        clean_title = title
+                                        for suffix in [' - Meeting recording', ' - Запись встречи', ' meeting', ' Meeting', ' call', ' Call']:
+                                            if clean_title.endswith(suffix):
+                                                clean_title = clean_title[:-len(suffix)]
+
+                                        # If title looks like a name (not too long, no special chars)
+                                        if clean_title and len(clean_title) < 50 and not any(c in clean_title for c in ['http', '/', '@', '#']):
+                                            # Use title as first speaker name
+                                            speaker_map['0'] = clean_title.strip()
+                                            logger.info(f"Using meeting title as speaker name: '{clean_title}'")
+
                                     # Log first sentence structure to understand fields - CRITICAL FOR DEBUGGING
                                     if sentences:
                                         logger.info(f"Fireflies sentence count: {len(sentences)}")
@@ -606,7 +621,22 @@ class ExternalLinkProcessor:
                                                 if raw_speaker and raw_speaker != 'Speaker':
                                                     speaker_name = raw_speaker  # Use "Speaker 1", "Speaker 2" etc if that's all we have
 
-                                            speaker_name = speaker_name or 'Speaker'
+                                            # 7. LAST RESORT: Use numbered speaker based on speaker_id
+                                            # This ensures we at least distinguish between different speakers
+                                            if not speaker_name or speaker_name == 'Speaker':
+                                                sp_id = s.get('speaker_id') or s.get('speakerId') or s.get('speaker_index') or s.get('speakerIndex')
+                                                if sp_id is not None:
+                                                    try:
+                                                        sp_num = int(sp_id)
+                                                        # Use title for speaker 0 if available, otherwise numbered
+                                                        if sp_num == 0 and '0' in speaker_map:
+                                                            speaker_name = speaker_map['0']
+                                                        else:
+                                                            speaker_name = f"Спикер {sp_num + 1}"
+                                                    except (ValueError, TypeError):
+                                                        speaker_name = f"Спикер ({sp_id})"
+
+                                            speaker_name = speaker_name or 'Спикер'
 
                                             # Log first few sentences to debug speaker extraction
                                             if len(speakers) < 5:
@@ -1003,6 +1033,16 @@ class ExternalLinkProcessor:
                                             speaker_map[str(i)] = p
 
                                 logger.info(f"[HTTP] Built speaker_map: {speaker_map}")
+
+                                # FALLBACK: Try to extract name from meeting title
+                                if not speaker_map and title:
+                                    clean_title = title
+                                    for suffix in [' - Meeting recording', ' - Запись встречи', ' meeting', ' Meeting', ' call', ' Call']:
+                                        if clean_title.endswith(suffix):
+                                            clean_title = clean_title[:-len(suffix)]
+                                    if clean_title and len(clean_title) < 50 and not any(c in clean_title for c in ['http', '/', '@', '#']):
+                                        speaker_map['0'] = clean_title.strip()
+                                        logger.info(f"[HTTP] Using meeting title as speaker name: '{clean_title}'")
 
                                 if sentences:
                                     # Log first sentence for debugging
