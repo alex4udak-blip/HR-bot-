@@ -147,16 +147,22 @@ describe('EntityAI', () => {
     });
 
     it('should show memory when memory button is clicked', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          summary: 'Candidate summary',
-          summary_updated_at: '2024-01-01T00:00:00Z',
-          key_events: [
-            { date: '2024-01-01', event: 'First contact', details: 'Initial call' },
-          ],
-        }),
-      });
+      // Mock both history and memory API calls (component loads both on mount)
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ([]), // history response
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            summary: 'Candidate summary',
+            summary_updated_at: '2024-01-01T00:00:00Z',
+            key_events: [
+              { date: '2024-01-01', event: 'First contact', details: 'Initial call' },
+            ],
+          }),
+        });
 
       render(<EntityAI entity={mockEntity} />);
 
@@ -177,7 +183,12 @@ describe('EntityAI', () => {
     });
 
     it('should update memory when update button is clicked', async () => {
+      // Mock history, memory, and update API calls
       mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ([]), // history response
+        })
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({
