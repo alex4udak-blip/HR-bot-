@@ -1701,6 +1701,7 @@ class ExternalLinkProcessor:
                 fireflies_stats = getattr(call, '_fireflies_speaker_stats', None)
                 if fireflies_stats:
                     logger.info(f"Merging Fireflies speaker stats: {fireflies_stats}")
+                    total_duration = call.duration_seconds or 0
                     for ff_stat in fireflies_stats:
                         ff_name = ff_stat.get('name', '').lower()
                         # Find matching speaker in calculated stats
@@ -1711,7 +1712,12 @@ class ExternalLinkProcessor:
                                     stats['wpm'] = ff_stat['wpm']
                                 if ff_stat.get('talktimePercent'):
                                     stats['talktime_percent'] = ff_stat['talktimePercent']
-                                logger.info(f"Updated speaker '{speaker_name}' with Fireflies stats: wpm={ff_stat.get('wpm')}, talktime={ff_stat.get('talktimePercent')}%")
+                                    # Also calculate talktime_seconds from duration and percent
+                                    if total_duration > 0:
+                                        stats['talktime_seconds'] = int(total_duration * ff_stat['talktimePercent'] / 100)
+                                        logger.info(f"Updated speaker '{speaker_name}' with Fireflies stats: wpm={ff_stat.get('wpm')}, talktime={ff_stat.get('talktimePercent')}% ({stats['talktime_seconds']}s)")
+                                    else:
+                                        logger.info(f"Updated speaker '{speaker_name}' with Fireflies stats: wpm={ff_stat.get('wpm')}, talktime={ff_stat.get('talktimePercent')}%")
                                 break
 
             logger.info(f"Fireflies transcript processed successfully: {len(call.transcript)} chars")
