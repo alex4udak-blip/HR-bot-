@@ -19,6 +19,7 @@ interface CallState {
   error: string | null;
   pollingInterval: ReturnType<typeof setInterval> | null;
   pollingAbortController: AbortController | null;
+  useWebSocket: boolean; // Whether WebSocket is connected (disables polling)
 
   // Actions
   fetchCalls: (entityId?: number) => Promise<void>;
@@ -33,6 +34,12 @@ interface CallState {
   stopPolling: () => void;
   clearActiveRecording: () => void;
   clearError: () => void;
+
+  // WebSocket event handlers
+  setWebSocketConnected: (connected: boolean) => void;
+  handleCallProgress: (data: { id: number; progress: number; progress_stage: string; status: string }) => void;
+  handleCallCompleted: (data: { id: number; title?: string; has_summary?: boolean; has_transcript?: boolean; duration_seconds?: number; speaker_stats?: Record<string, unknown> }) => void;
+  handleCallFailed: (data: { id: number; error_message: string }) => void;
 }
 
 export const useCallStore = create<CallState>((set, get) => ({
@@ -43,6 +50,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   error: null,
   pollingInterval: null,
   pollingAbortController: null,
+  useWebSocket: false,
 
   fetchCalls: async (entityId) => {
     set({ loading: true, error: null });
@@ -168,6 +176,12 @@ export const useCallStore = create<CallState>((set, get) => ({
   },
 
   pollStatus: (id) => {
+    // Don't poll if WebSocket is connected - real-time updates will come via WebSocket
+    if (get().useWebSocket) {
+      console.log('[CallStore] WebSocket connected, skipping polling');
+      return;
+    }
+
     // Clear any existing polling
     get().stopPolling();
 
@@ -180,6 +194,11 @@ export const useCallStore = create<CallState>((set, get) => ({
     }
 
     const interval = setInterval(async () => {
+      // Stop polling if WebSocket became connected
+      if (get().useWebSocket) {
+        get().stopPolling();
+        return;
+      }
       try {
         const status = await api.getCallStatus(id, abortController.signal);
 
@@ -248,5 +267,96 @@ export const useCallStore = create<CallState>((set, get) => ({
     set({ activeRecording: null });
   },
 
-  clearError: () => set({ error: null })
+  clearError: () => set({ error: null }),
+
+  // WebSocket event handlers
+  setWebSocketConnected: (connected) => {
+    set({ useWebSocket: connected });
+    // Stop polling when WebSocket is connected
+    if (connected) {
+      get().stopPolling();
+    }
+  },
+
+  handleCallProgress: (data) => {
+    const { activeRecording } = get();
+
+    // Update activeRecording if this is the call we're tracking
+    if (activeRecording?.id === data.id || !activeRecording) {
+      set({
+        activeRecording: {
+          id: data.id,
+          status: data.status as CallStatus,
+          duration: 0,
+          progress: data.progress,
+          progressStage: data.progress_stage
+        }
+      });
+    }
+
+    console.log(`[WebSocket] Call ${data.id} progress: ${data.progress}% - ${data.progress_stage}`);
+  },
+
+  handleCallCompleted: (data) => {
+    const { activeRecording } = get();
+
+    // Update activeRecording
+    if (activeRecording?.id === data.id) {
+      set({
+        activeRecording: {
+          ...activeRecording,
+          status: 'done' as CallStatus,
+          progress: 100,
+          progressStage: 'Готово',
+          duration: data.duration_seconds || 0
+        }
+      });
+    }
+
+    // Refresh calls list and current call
+    get().fetchCalls();
+    get().fetchCall(data.id);
+
+    // Send browser notification if page is hidden
+    if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+      const title = data.title || 'Запись';
+      new Notification('Запись обработана', {
+        body: `"${title}" - транскрипт и анализ готовы`,
+        icon: '/favicon.ico'
+      });
+    }
+
+    console.log(`[WebSocket] Call ${data.id} completed`);
+  },
+
+  handleCallFailed: (data) => {
+    const { activeRecording } = get();
+
+    // Update activeRecording
+    if (activeRecording?.id === data.id) {
+      set({
+        activeRecording: {
+          ...activeRecording,
+          status: 'failed' as CallStatus,
+          progress: 0,
+          progressStage: 'Ошибка',
+          error: data.error_message
+        }
+      });
+    }
+
+    // Refresh calls list
+    get().fetchCalls();
+    get().fetchCall(data.id);
+
+    // Send browser notification if page is hidden
+    if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+      new Notification('Ошибка обработки', {
+        body: data.error_message || 'Не удалось обработать запись',
+        icon: '/favicon.ico'
+      });
+    }
+
+    console.log(`[WebSocket] Call ${data.id} failed: ${data.error_message}`);
+  }
 }));

@@ -152,21 +152,36 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-async def authenticate_websocket(token: Optional[str], db: AsyncSession) -> Optional[User]:
-    """Authenticate WebSocket connection using JWT token.
+async def authenticate_websocket(token: Optional[str], websocket: WebSocket, db: AsyncSession) -> Optional[User]:
+    """Authenticate WebSocket connection using JWT token or cookie.
+
+    Supports two authentication methods:
+    1. JWT token in query parameter: ws://host/ws?token=<jwt_token>
+    2. access_token cookie (httpOnly) - automatically sent by browser
 
     Args:
-        token: JWT token from query parameter
+        token: JWT token from query parameter (optional)
+        websocket: WebSocket connection to extract cookies from
         db: Database session
 
     Returns:
         User object if authenticated, None otherwise
     """
-    if not token:
-        return None
+    # Try query parameter token first
+    if token:
+        user = await get_user_from_token(token, db)
+        if user:
+            return user
 
-    user = await get_user_from_token(token, db)
-    return user
+    # Fallback to cookie-based auth
+    cookies = websocket.cookies
+    cookie_token = cookies.get("access_token")
+    if cookie_token:
+        user = await get_user_from_token(cookie_token, db)
+        if user:
+            return user
+
+    return None
 
 
 async def get_user_org_id(user: User, db: AsyncSession) -> Optional[int]:
@@ -191,8 +206,9 @@ async def websocket_endpoint(
 ):
     """WebSocket endpoint for real-time events.
 
-    Connection requires JWT token in query parameter:
-    ws://host/ws?token=<jwt_token>
+    Authentication methods (in order of priority):
+    1. JWT token in query parameter: ws://host/ws?token=<jwt_token>
+    2. access_token cookie (httpOnly) - automatically sent by browser
 
     Events are broadcast in the following format:
     {
@@ -217,8 +233,8 @@ async def websocket_endpoint(
     db = await anext(db_gen)
 
     try:
-        # Authenticate user
-        user = await authenticate_websocket(token, db)
+        # Authenticate user (supports both query token and cookie)
+        user = await authenticate_websocket(token, websocket, db)
 
         if not user:
             # Close connection with 401/403 status code
@@ -250,7 +266,7 @@ async def websocket_endpoint(
                 except asyncio.TimeoutError:
                     # Periodic token validation
                     # Re-validate token to handle expiry
-                    current_user = await authenticate_websocket(token, db)
+                    current_user = await authenticate_websocket(token, websocket, db)
                     if not current_user or current_user.id != user.id:
                         # Token expired or invalidated
                         await websocket.close(
