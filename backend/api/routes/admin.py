@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from jose import jwt, JWTError
 
@@ -558,7 +559,13 @@ async def impersonate_user(
 
     **Only SUPERADMIN can access this endpoint.**
     """
-    superadmin = await db.merge(superadmin)
+    # Re-fetch superadmin to avoid detached instance issues
+    superadmin_result = await db.execute(
+        select(User).where(User.id == superadmin.id)
+    )
+    superadmin = superadmin_result.scalar_one_or_none()
+    if not superadmin:
+        raise HTTPException(status_code=401, detail="Superadmin not found")
 
     # Get target user
     result = await db.execute(select(User).where(User.id == request_body.user_id))
@@ -1072,7 +1079,13 @@ async def create_sandbox(
 
     **Only SUPERADMIN can access this endpoint.**
     """
-    superadmin = await db.merge(superadmin)
+    # Re-fetch superadmin to avoid detached instance issues
+    superadmin_result = await db.execute(
+        select(User).where(User.id == superadmin.id)
+    )
+    superadmin = superadmin_result.scalar_one_or_none()
+    if not superadmin:
+        raise HTTPException(status_code=401, detail="Superadmin not found")
 
     # Get organization from request or auto-detect first available
     org_id = request_body.org_id if request_body else None
@@ -1111,6 +1124,26 @@ async def create_sandbox(
         raise HTTPException(
             status_code=409,
             detail="Sandbox already exists. Delete it first using DELETE /api/admin/sandbox"
+        )
+
+    # Check if sandbox users already exist (could be leftover from failed creation)
+    sandbox_emails = [
+        "sandbox_owner@test.local",
+        "sandbox_admin@test.local",
+        "sandbox_subadmin@test.local",
+        "sandbox_member@test.local"
+    ]
+    existing_users_result = await db.execute(
+        select(User).where(User.email.in_(sandbox_emails))
+    )
+    existing_users = existing_users_result.scalars().all()
+
+    if existing_users:
+        existing_emails = [u.email for u in existing_users]
+        raise HTTPException(
+            status_code=409,
+            detail=f"Sandbox users already exist: {', '.join(existing_emails)}. "
+                   f"Delete them first or run DELETE /api/admin/sandbox to clean up."
         )
 
     # 1. Create Sandbox Test Department
@@ -1411,7 +1444,24 @@ async def create_sandbox(
     )
     db.add(share3)
 
-    await db.commit()
+    # Commit with error handling
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        error_detail = str(e.orig) if hasattr(e, 'orig') else str(e)
+        raise HTTPException(
+            status_code=409,
+            detail=f"Database integrity error during sandbox creation. "
+                   f"This usually means some sandbox data already exists. "
+                   f"Try running DELETE /api/admin/sandbox first. Error: {error_detail}"
+        )
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create sandbox: {str(e)}"
+        )
 
     # Build response with full objects
     entities_response = [
@@ -1470,7 +1520,13 @@ async def delete_sandbox(
 
     **Only SUPERADMIN can access this endpoint.**
     """
-    superadmin = await db.merge(superadmin)
+    # Re-fetch superadmin to avoid detached instance issues
+    superadmin_result = await db.execute(
+        select(User).where(User.id == superadmin.id)
+    )
+    superadmin = superadmin_result.scalar_one_or_none()
+    if not superadmin:
+        raise HTTPException(status_code=401, detail="Superadmin not found")
 
     # Get organization from request or auto-detect
     if org_id:
@@ -1622,7 +1678,15 @@ async def delete_sandbox(
     # 9. Delete sandbox department
     await db.execute(delete(Department).where(Department.id == sandbox_dept.id))
 
-    await db.commit()
+    # Commit with error handling
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete sandbox: {str(e)}"
+        )
 
     return {
         "message": "Sandbox environment deleted successfully",
@@ -1647,7 +1711,13 @@ async def get_sandbox_status(
 
     **Only SUPERADMIN can access this endpoint.**
     """
-    superadmin = await db.merge(superadmin)
+    # Re-fetch superadmin to avoid detached instance issues
+    superadmin_result = await db.execute(
+        select(User).where(User.id == superadmin.id)
+    )
+    superadmin = superadmin_result.scalar_one_or_none()
+    if not superadmin:
+        raise HTTPException(status_code=401, detail="Superadmin not found")
 
     # Get organization from request or auto-detect
     if org_id:
@@ -1827,7 +1897,13 @@ async def switch_to_sandbox_user_by_email(
     """
     from fastapi.responses import JSONResponse
 
-    superadmin = await db.merge(superadmin)
+    # Re-fetch superadmin to avoid detached instance issues
+    superadmin_result = await db.execute(
+        select(User).where(User.id == superadmin.id)
+    )
+    superadmin = superadmin_result.scalar_one_or_none()
+    if not superadmin:
+        raise HTTPException(status_code=401, detail="Superadmin not found")
 
     # Get target user by email
     result = await db.execute(select(User).where(User.email == email))
