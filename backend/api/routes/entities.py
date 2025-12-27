@@ -472,21 +472,93 @@ async def list_entities(
         for dept in depts_result.scalars().all():
             dept_names[dept.id] = dept.name
 
-    # Batch query: Get chat counts for all entities
-    chats_counts_result = await db.execute(
-        select(Chat.entity_id, func.count(Chat.id))
-        .where(Chat.entity_id.in_(entity_ids))
-        .group_by(Chat.entity_id)
-    )
-    chats_counts = {row[0]: row[1] for row in chats_counts_result.fetchall()}
+    # Batch query: Get chat/call counts WITH ACCESS CONTROL
+    # Superadmin and org owner see all counts, others see only accessible counts
+    user_role = await get_user_org_role(current_user, org.id, db) if org else None
 
-    # Batch query: Get call counts for all entities
-    calls_counts_result = await db.execute(
-        select(CallRecording.entity_id, func.count(CallRecording.id))
-        .where(CallRecording.entity_id.in_(entity_ids))
-        .group_by(CallRecording.entity_id)
-    )
-    calls_counts = {row[0]: row[1] for row in calls_counts_result.fetchall()}
+    if current_user.role == UserRole.superadmin or user_role == OrgRole.owner:
+        # Full access - count all chats/calls
+        chats_counts_result = await db.execute(
+            select(Chat.entity_id, func.count(Chat.id))
+            .where(Chat.entity_id.in_(entity_ids))
+            .group_by(Chat.entity_id)
+        )
+        chats_counts = {row[0]: row[1] for row in chats_counts_result.fetchall()}
+
+        calls_counts_result = await db.execute(
+            select(CallRecording.entity_id, func.count(CallRecording.id))
+            .where(CallRecording.entity_id.in_(entity_ids))
+            .group_by(CallRecording.entity_id)
+        )
+        calls_counts = {row[0]: row[1] for row in calls_counts_result.fetchall()}
+    else:
+        # Limited access - count only accessible chats/calls
+        # Get IDs of chats shared with current user
+        shared_chats_result = await db.execute(
+            select(SharedAccess.resource_id).where(
+                SharedAccess.resource_type == ResourceType.chat,
+                SharedAccess.shared_with_id == current_user.id,
+                or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+            )
+        )
+        shared_chat_ids = set(shared_chats_result.scalars().all())
+
+        # Get IDs of calls shared with current user
+        shared_calls_result = await db.execute(
+            select(SharedAccess.resource_id).where(
+                SharedAccess.resource_type == ResourceType.call,
+                SharedAccess.shared_with_id == current_user.id,
+                or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+            )
+        )
+        shared_call_ids = set(shared_calls_result.scalars().all())
+
+        # Get departments where user is lead
+        lead_dept_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == current_user.id,
+                DepartmentMember.role == DeptRole.lead
+            )
+        )
+        lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
+
+        # Get user IDs in departments where current user is lead
+        dept_member_ids = set()
+        if lead_dept_ids:
+            dept_members_result = await db.execute(
+                select(DepartmentMember.user_id).where(
+                    DepartmentMember.department_id.in_(lead_dept_ids)
+                )
+            )
+            dept_member_ids = set(dept_members_result.scalars().all())
+
+        # Build chat access conditions
+        chat_conditions = [Chat.owner_id == current_user.id]  # Own chats
+        if shared_chat_ids:
+            chat_conditions.append(Chat.id.in_(shared_chat_ids))  # Shared with me
+        if dept_member_ids:
+            chat_conditions.append(Chat.owner_id.in_(dept_member_ids))  # Dept members' chats
+
+        chats_counts_result = await db.execute(
+            select(Chat.entity_id, func.count(Chat.id))
+            .where(Chat.entity_id.in_(entity_ids), or_(*chat_conditions))
+            .group_by(Chat.entity_id)
+        )
+        chats_counts = {row[0]: row[1] for row in chats_counts_result.fetchall()}
+
+        # Build call access conditions
+        call_conditions = [CallRecording.owner_id == current_user.id]  # Own calls
+        if shared_call_ids:
+            call_conditions.append(CallRecording.id.in_(shared_call_ids))  # Shared with me
+        if dept_member_ids:
+            call_conditions.append(CallRecording.owner_id.in_(dept_member_ids))  # Dept members' calls
+
+        calls_counts_result = await db.execute(
+            select(CallRecording.entity_id, func.count(CallRecording.id))
+            .where(CallRecording.entity_id.in_(entity_ids), or_(*call_conditions))
+            .group_by(CallRecording.entity_id)
+        )
+        calls_counts = {row[0]: row[1] for row in calls_counts_result.fetchall()}
 
     # Build response using pre-fetched data
     response = []
@@ -636,22 +708,90 @@ async def get_entity(
     if not has_access:
         raise HTTPException(404, "Entity not found")
 
-    # Load related data
-    chats_result = await db.execute(
-        select(Chat).where(Chat.entity_id == entity_id)
-    )
-    calls_result = await db.execute(
-        select(CallRecording).where(CallRecording.entity_id == entity_id).order_by(CallRecording.created_at.desc())
-    )
+    # Load related data WITH ACCESS CONTROL
+    user_role = await get_user_org_role(current_user, org.id, db)
+
+    # Superadmin and org owner see all chats/calls
+    if current_user.role == UserRole.superadmin or user_role == OrgRole.owner:
+        chats_result = await db.execute(
+            select(Chat).where(Chat.entity_id == entity_id)
+        )
+        calls_result = await db.execute(
+            select(CallRecording).where(CallRecording.entity_id == entity_id).order_by(CallRecording.created_at.desc())
+        )
+        chats = chats_result.scalars().all()
+        calls = calls_result.scalars().all()
+    else:
+        # Limited access - only show accessible chats/calls
+        # Get IDs of chats shared with current user
+        shared_chats_result = await db.execute(
+            select(SharedAccess.resource_id).where(
+                SharedAccess.resource_type == ResourceType.chat,
+                SharedAccess.shared_with_id == current_user.id,
+                or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+            )
+        )
+        shared_chat_ids = set(shared_chats_result.scalars().all())
+
+        # Get IDs of calls shared with current user
+        shared_calls_result = await db.execute(
+            select(SharedAccess.resource_id).where(
+                SharedAccess.resource_type == ResourceType.call,
+                SharedAccess.shared_with_id == current_user.id,
+                or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+            )
+        )
+        shared_call_ids = set(shared_calls_result.scalars().all())
+
+        # Get departments where user is lead
+        lead_dept_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == current_user.id,
+                DepartmentMember.role == DeptRole.lead
+            )
+        )
+        lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
+
+        # Get user IDs in departments where current user is lead
+        dept_member_ids = set()
+        if lead_dept_ids:
+            dept_members_result = await db.execute(
+                select(DepartmentMember.user_id).where(
+                    DepartmentMember.department_id.in_(lead_dept_ids)
+                )
+            )
+            dept_member_ids = set(dept_members_result.scalars().all())
+
+        # Build chat access conditions
+        chat_conditions = [Chat.owner_id == current_user.id]  # Own chats
+        if shared_chat_ids:
+            chat_conditions.append(Chat.id.in_(shared_chat_ids))  # Shared with me
+        if dept_member_ids:
+            chat_conditions.append(Chat.owner_id.in_(dept_member_ids))  # Dept members' chats
+
+        chats_result = await db.execute(
+            select(Chat).where(Chat.entity_id == entity_id, or_(*chat_conditions))
+        )
+        chats = chats_result.scalars().all()
+
+        # Build call access conditions
+        call_conditions = [CallRecording.owner_id == current_user.id]  # Own calls
+        if shared_call_ids:
+            call_conditions.append(CallRecording.id.in_(shared_call_ids))  # Shared with me
+        if dept_member_ids:
+            call_conditions.append(CallRecording.owner_id.in_(dept_member_ids))  # Dept members' calls
+
+        calls_result = await db.execute(
+            select(CallRecording).where(CallRecording.entity_id == entity_id, or_(*call_conditions)).order_by(CallRecording.created_at.desc())
+        )
+        calls = calls_result.scalars().all()
+
     transfers_result = await db.execute(
         select(EntityTransfer).where(EntityTransfer.entity_id == entity_id).order_by(EntityTransfer.created_at.desc())
     )
     analyses_result = await db.execute(
         select(AnalysisHistory).where(AnalysisHistory.entity_id == entity_id).order_by(AnalysisHistory.created_at.desc())
     )
-
-    chats = chats_result.scalars().all()
-    calls = calls_result.scalars().all()
     transfers = transfers_result.scalars().all()
     analyses = analyses_result.scalars().all()
 

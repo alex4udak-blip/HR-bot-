@@ -1,5 +1,8 @@
 version: '3.8'
 
+# IMPORTANT: Copy .env.example to .env and configure before running
+# Never commit .env file to repository
+
 services:
   # Combined backend + frontend (same as Railway deployment)
   app:
@@ -8,10 +11,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/hr_analyzer
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
-      - SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL:-admin@example.com}
-      - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD:-changeme123}
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      - SECRET_KEY=${SECRET_KEY}
+      - SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL}
+      - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -26,13 +29,13 @@ services:
     image: postgres:15-alpine
     container_name: hr-analyzer-db
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=hr_analyzer
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
       interval: 5s
       timeout: 5s
       retries: 5
