@@ -1787,10 +1787,12 @@ class ExternalLinkProcessor:
                 if fireflies_stats:
                     logger.info(f"Merging Fireflies speaker stats: {fireflies_stats}")
                     total_duration = call.duration_seconds or 0
+                    # Create a new dict to ensure SQLAlchemy detects the change
+                    updated_stats = dict(call.speaker_stats)
                     for ff_stat in fireflies_stats:
                         ff_name = ff_stat.get('name', '').lower()
                         # Find matching speaker in calculated stats
-                        for speaker_name, stats in call.speaker_stats.items():
+                        for speaker_name, stats in updated_stats.items():
                             if ff_name and (ff_name in speaker_name.lower() or speaker_name.lower() in ff_name):
                                 # Update with Fireflies data
                                 if ff_stat.get('wpm'):
@@ -1807,6 +1809,9 @@ class ExternalLinkProcessor:
                                 else:
                                     logger.info(f"Updated speaker '{speaker_name}' with Fireflies stats: wpm={ff_stat.get('wpm')}, talktime={ff_stat.get('talktimePercent')}%")
                                 break
+                    # Reassign to ensure SQLAlchemy marks the column as modified
+                    call.speaker_stats = updated_stats
+                    logger.info(f"Speaker stats after Fireflies merge: {call.speaker_stats}")
 
             logger.info(f"Fireflies transcript processed successfully: {len(call.transcript)} chars")
 
