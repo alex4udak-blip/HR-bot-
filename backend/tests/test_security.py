@@ -184,7 +184,7 @@ class TestRateLimiting:
         # Try to login again - should succeed with correct password now
         response = await client.post("/api/auth/login", json={
             "email": "admin@test.com",
-            "password": "admin123"
+            "password": "Admin123"  # Correct password from fixture
         })
         assert response.status_code == 200, "Account should unlock after timeout expires"
 
@@ -543,12 +543,12 @@ class TestSessionSecurity:
         response = await client.get("/api/auth/me", headers=get_auth_headers(admin_token))
         assert response.status_code == 200
 
-        # Change password
+        # Change password - use valid password that passes validation
         response = await client.post(
             "/api/auth/change-password",
             json={
-                "current_password": "admin123",
-                "new_password": "newpassword456"
+                "current_password": "Admin123",  # Correct password from fixture
+                "new_password": "NewPassword456"  # Must have uppercase, lowercase, numbers
             },
             headers=get_auth_headers(admin_token)
         )
@@ -576,19 +576,27 @@ class TestSessionSecurity:
 
         This documents whether multiple simultaneous logins are allowed.
         This is typically allowed but should be monitored for suspicious activity.
+
+        Note: The login endpoint uses httpOnly cookies for tokens (security feature),
+        so we extract tokens from cookies instead of JSON response.
         """
         # Login twice
         response1 = await client.post("/api/auth/login", json={
-            "email": "admin@test.com",
-            "password": "admin123"
+            "email": admin_user.email,
+            "password": "Admin123"  # Correct password from fixture
         })
-        token1 = response1.json()["access_token"]
+        assert response1.status_code == 200, f"First login failed: {response1.text}"
+        # Token is in httpOnly cookie, not in JSON response
+        token1 = response1.cookies.get("access_token")
+        assert token1 is not None, "No access_token cookie in first login response"
 
         response2 = await client.post("/api/auth/login", json={
-            "email": "admin@test.com",
-            "password": "admin123"
+            "email": admin_user.email,
+            "password": "Admin123"  # Correct password from fixture
         })
-        token2 = response2.json()["access_token"]
+        assert response2.status_code == 200, f"Second login failed: {response2.text}"
+        token2 = response2.cookies.get("access_token")
+        assert token2 is not None, "No access_token cookie in second login response"
 
         # Both tokens should work
         response1 = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {token1}"})

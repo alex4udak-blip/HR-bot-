@@ -604,7 +604,7 @@ async def list_entities(
     return response
 
 
-@router.post("")
+@router.post("", status_code=201)
 async def create_entity(
     data: EntityCreate,
     db: AsyncSession = Depends(get_db),

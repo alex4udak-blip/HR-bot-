@@ -379,7 +379,7 @@ async def list_departments(
     return []
 
 
-@router.post("", response_model=DepartmentResponse)
+@router.post("", response_model=DepartmentResponse, status_code=201)
 async def create_department(
     data: DepartmentCreate,
     db: AsyncSession = Depends(get_db),

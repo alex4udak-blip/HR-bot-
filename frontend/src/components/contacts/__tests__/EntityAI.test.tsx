@@ -147,25 +147,33 @@ describe('EntityAI', () => {
     });
 
     it('should show memory when memory button is clicked', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          summary: 'Candidate summary',
-          summary_updated_at: '2024-01-01T00:00:00Z',
-          key_events: [
-            { date: '2024-01-01', event: 'First contact', details: 'Initial call' },
-          ],
-        }),
-      });
+      // Mock both history and memory API calls (component loads both on mount)
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ([]), // history response
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            summary: 'Candidate summary',
+            summary_updated_at: '2024-01-01T00:00:00Z',
+            key_events: [
+              { date: '2024-01-01', event: 'First contact', details: 'Initial call' },
+            ],
+          }),
+        });
 
       render(<EntityAI entity={mockEntity} />);
 
+      // Use title attribute since text is hidden on small screens (hidden sm:inline)
+      // Title is "Показать память AI" when memory has data
       await waitFor(() => {
-        const memoryButton = screen.getByText('Память');
+        const memoryButton = screen.getByTitle(/показать память ai/i);
         expect(memoryButton).toBeInTheDocument();
       });
 
-      const memoryButton = screen.getByText('Память');
+      const memoryButton = screen.getByTitle(/показать память ai/i);
       await userEvent.click(memoryButton);
 
       await waitFor(() => {
@@ -175,7 +183,12 @@ describe('EntityAI', () => {
     });
 
     it('should update memory when update button is clicked', async () => {
+      // Mock history, memory, and update API calls
       mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ([]), // history response
+        })
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({
@@ -191,12 +204,13 @@ describe('EntityAI', () => {
 
       render(<EntityAI entity={mockEntity} />);
 
+      // Use title attribute since text is hidden on small screens (hidden sm:inline)
       await waitFor(() => {
-        const updateButton = screen.getByText('Обновить');
+        const updateButton = screen.getByTitle('Обновить память AI (резюме + события)');
         expect(updateButton).toBeInTheDocument();
       });
 
-      const updateButton = screen.getByText('Обновить');
+      const updateButton = screen.getByTitle('Обновить память AI (резюме + события)');
       await userEvent.click(updateButton);
 
       await waitFor(() => {
