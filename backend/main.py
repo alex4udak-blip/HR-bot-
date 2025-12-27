@@ -99,6 +99,10 @@ async def init_database():
     for value in ['work', 'hr', 'project', 'client', 'contractor', 'sales', 'support', 'custom']:
         await run_migration(engine, f"ALTER TYPE chattype ADD VALUE IF NOT EXISTS '{value}'", f"Add {value} to chattype")
 
+    # Step 2.1: Add sub_admin to role enums (critical for sandbox - moved here to ensure it runs early)
+    await run_migration(engine, "ALTER TYPE deptrole ADD VALUE IF NOT EXISTS 'sub_admin'", "Add sub_admin to deptrole enum")
+    await run_migration(engine, "ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'sub_admin'", "Add sub_admin to userrole enum")
+
     # Step 3: Create all tables
     logger.info("Creating tables with create_all...")
     try:
@@ -327,11 +331,7 @@ async def init_database():
 
     logger.info("=== DEPARTMENTS TABLES READY ===")
 
-    # Add sub_admin to deptrole enum (for SUB_ADMIN role)
-    await run_migration(engine, "ALTER TYPE deptrole ADD VALUE IF NOT EXISTS 'sub_admin'", "Add sub_admin to deptrole enum")
-
-    # Add sub_admin to userrole enum (for SUB_ADMIN user role in sandbox)
-    await run_migration(engine, "ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'sub_admin'", "Add sub_admin to userrole enum")
+    # Note: sub_admin enum values are now added in Step 2.1 (early in init to avoid timeout issues)
 
     # Entity transfer tracking columns
     await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS is_transferred BOOLEAN DEFAULT FALSE", "Add is_transferred to entities")
