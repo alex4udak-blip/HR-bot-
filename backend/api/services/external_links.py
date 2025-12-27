@@ -783,46 +783,125 @@ class ExternalLinkProcessor:
                                     if elements and len(elements) > 0:
                                         logger.info(f"Found {len(elements)} elements with selector: {selector}")
 
+                                        # Log first element's HTML structure to understand DOM
+                                        if elements:
+                                            try:
+                                                first_outer = await elements[0].evaluate('el => el.outerHTML.substring(0, 500)')
+                                                logger.info(f"First element HTML preview: {first_outer}")
+                                                # Also check parent structure
+                                                parent_outer = await elements[0].evaluate('el => el.parentElement ? el.parentElement.outerHTML.substring(0, 800) : "no parent"')
+                                                logger.info(f"Parent element HTML preview: {parent_outer}")
+                                            except Exception as e:
+                                                logger.debug(f"Could not log element HTML: {e}")
+
                                         for el in elements:
                                             # Try multiple approaches to find speaker name
                                             speaker_name = "Speaker"
                                             timestamp_text = None
 
                                             try:
-                                                # Approach 1: Look in parent container for speaker name
-                                                # Fireflies structure: parent has speaker info, child has text
-                                                parent = await el.evaluate_handle('el => el.parentElement')
-                                                if parent:
-                                                    # Try to find speaker name in parent's children
-                                                    for sp_selector in [
-                                                        '[class*="speaker"]', '[class*="Speaker"]',
-                                                        '[class*="name"]', '[class*="Name"]',
-                                                        '[class*="author"]', '[class*="Author"]',
-                                                        '[class*="user"]', '[class*="User"]',
-                                                        'span[class*="css-"]'  # React dynamic classes
-                                                    ]:
-                                                        try:
-                                                            sp_el = await parent.query_selector(sp_selector)
-                                                            if sp_el:
-                                                                sp_text = await sp_el.text_content()
-                                                                if sp_text and sp_text.strip() and len(sp_text.strip()) < 50:
-                                                                    # Check if it looks like a name (not the transcript text)
-                                                                    sp_text = sp_text.strip()
-                                                                    if sp_text != speaker_name and not sp_text.startswith('Speaker'):
-                                                                        speaker_name = sp_text
-                                                                        break
-                                                        except Exception:
-                                                            pass
+                                                # NEW Approach 0: Use JavaScript to traverse DOM and find speaker
+                                                # Fireflies structure: speaker name is in a header row above or beside text
+                                                speaker_info = await el.evaluate('''el => {
+                                                    // Look for speaker name in various DOM locations
+                                                    let result = {speaker: null, timestamp: null};
 
-                                                    # Also look for timestamp in parent
-                                                    for time_selector in ['[class*="time"]', '[class*="Time"]', '[class*="timestamp"]', 'time']:
-                                                        try:
-                                                            time_el = await parent.query_selector(time_selector)
-                                                            if time_el:
-                                                                timestamp_text = await time_el.text_content()
-                                                                break
-                                                        except Exception:
-                                                            pass
+                                                    // Try parent and grandparent containers
+                                                    let container = el.parentElement;
+                                                    for (let i = 0; i < 5 && container; i++) {
+                                                        // Look for speaker name element
+                                                        const nameSelectors = [
+                                                            '[class*="SpeakerName"]', '[class*="speakerName"]', '[class*="speaker-name"]',
+                                                            '[class*="UserName"]', '[class*="userName"]', '[class*="user-name"]',
+                                                            '[class*="AuthorName"]', '[class*="author"]',
+                                                            'a[href*="mailto"]',  // Sometimes name is a mailto link
+                                                            '.speaker-label', '.name-label'
+                                                        ];
+
+                                                        for (const sel of nameSelectors) {
+                                                            const nameEl = container.querySelector(sel);
+                                                            if (nameEl) {
+                                                                const text = nameEl.textContent?.trim();
+                                                                if (text && text.length < 50 && !text.includes('Speaker')) {
+                                                                    result.speaker = text;
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+
+                                                        // Look for timestamp (like "01:15")
+                                                        const timeSelectors = ['[class*="time"]', '[class*="Time"]', 'time', '[class*="stamp"]'];
+                                                        for (const sel of timeSelectors) {
+                                                            const timeEl = container.querySelector(sel);
+                                                            if (timeEl) {
+                                                                const timeText = timeEl.textContent?.trim();
+                                                                if (timeText && /^\d{1,2}:\d{2}/.test(timeText)) {
+                                                                    result.timestamp = timeText;
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+
+                                                        if (result.speaker) break;
+                                                        container = container.parentElement;
+                                                    }
+
+                                                    // If still no speaker, look at previous siblings
+                                                    if (!result.speaker) {
+                                                        let sibling = el.previousElementSibling;
+                                                        for (let i = 0; i < 3 && sibling; i++) {
+                                                            const text = sibling.textContent?.trim();
+                                                            // Check if it looks like a speaker name (short, no numbers at start)
+                                                            if (text && text.length < 40 && text.length > 1 && !/^\d/.test(text) && !text.includes('Speaker')) {
+                                                                result.speaker = text.split('\\n')[0].trim();  // Take first line only
+                                                                break;
+                                                            }
+                                                            sibling = sibling.previousElementSibling;
+                                                        }
+                                                    }
+
+                                                    return result;
+                                                }''')
+
+                                                if speaker_info.get('speaker'):
+                                                    speaker_name = speaker_info['speaker']
+                                                if speaker_info.get('timestamp'):
+                                                    timestamp_text = speaker_info['timestamp']
+
+                                                # Approach 1: Look in parent container for speaker name (fallback)
+                                                if speaker_name == "Speaker":
+                                                    parent = await el.evaluate_handle('el => el.parentElement')
+                                                    if parent:
+                                                        # Try to find speaker name in parent's children
+                                                        for sp_selector in [
+                                                            '[class*="speaker"]', '[class*="Speaker"]',
+                                                            '[class*="name"]', '[class*="Name"]',
+                                                            '[class*="author"]', '[class*="Author"]',
+                                                            '[class*="user"]', '[class*="User"]',
+                                                            'span[class*="css-"]'  # React dynamic classes
+                                                        ]:
+                                                            try:
+                                                                sp_el = await parent.query_selector(sp_selector)
+                                                                if sp_el:
+                                                                    sp_text = await sp_el.text_content()
+                                                                    if sp_text and sp_text.strip() and len(sp_text.strip()) < 50:
+                                                                        sp_text = sp_text.strip()
+                                                                        if sp_text != speaker_name and not sp_text.startswith('Speaker'):
+                                                                            speaker_name = sp_text
+                                                                            break
+                                                            except Exception:
+                                                                pass
+
+                                                        # Also look for timestamp in parent
+                                                        if not timestamp_text:
+                                                            for time_selector in ['[class*="time"]', '[class*="Time"]', '[class*="timestamp"]', 'time']:
+                                                                try:
+                                                                    time_el = await parent.query_selector(time_selector)
+                                                                    if time_el:
+                                                                        timestamp_text = await time_el.text_content()
+                                                                        break
+                                                                except Exception:
+                                                                    pass
 
                                                 # Approach 2: Look in previous sibling
                                                 if speaker_name == "Speaker":
