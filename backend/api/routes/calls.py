@@ -516,10 +516,14 @@ async def get_call(
         "source_url": call.source_url,
         "bot_name": call.bot_name,
         "status": call.status,
+        "progress": call.progress,
+        "progress_stage": call.progress_stage,
         "duration_seconds": call.duration_seconds,
         "audio_file_path": call.audio_file_path,
         "transcript": call.transcript,
         "speakers": call.speakers,
+        "speaker_stats": call.speaker_stats,
+        "participant_roles": call.participant_roles,
         "summary": call.summary,
         "action_items": call.action_items,
         "key_points": call.key_points,
@@ -682,6 +686,56 @@ async def download_audio(
             "Content-Disposition": f'attachment; filename="{filename}"'
         }
     )
+
+
+@router.post("/{call_id}/recalculate-stats")
+async def recalculate_call_stats(
+    call_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Recalculate speaker stats for a call.
+
+    Useful for calls that were processed before speaker stats were implemented,
+    or when timestamps/speakers have been fixed.
+    """
+    current_user = await db.merge(current_user)
+
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Call not found")
+
+    result = await db.execute(
+        select(CallRecording).where(
+            CallRecording.id == call_id,
+            CallRecording.org_id == org.id
+        )
+    )
+    call = result.scalar_one_or_none()
+
+    if not call:
+        raise HTTPException(404, "Call not found")
+
+    # Check if user has access to edit this call
+    if not await can_access_call(current_user, call, org.id, db):
+        raise HTTPException(403, "Access denied")
+
+    if not call.speakers:
+        raise HTTPException(400, "Call has no speaker data to calculate stats from")
+
+    # Calculate speaker stats
+    from ..services.call_processor import calculate_speaker_stats
+    call.speaker_stats = calculate_speaker_stats(call.speakers)
+
+    await db.commit()
+    await db.refresh(call)
+
+    return {
+        "message": "Speaker stats recalculated successfully",
+        "speaker_stats": call.speaker_stats
+    }
 
 
 @router.post("/{call_id}/stop")
