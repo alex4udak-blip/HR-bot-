@@ -22,11 +22,13 @@ import {
   Play,
   Plus,
   LogIn,
-  Database
+  Database,
+  Settings2
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuthStore } from '@/stores/authStore';
 import api from '@/services/api';
+import RoleManagement from '@/components/admin/RoleManagement';
 
 // Типы ролей
 type OrgRole = 'superadmin' | 'owner' | 'admin' | 'sub_admin' | 'member';
@@ -426,6 +428,11 @@ export default function AdminSimulatorPage() {
             <h1 className="text-3xl font-bold text-white">Симулятор ролей и прав доступа</h1>
             <p className="text-white/60">Тестирование матрицы доступа и сценариев</p>
           </div>
+        </div>
+
+        {/* Custom Role Management */}
+        <div className="glass rounded-2xl p-6">
+          <RoleManagement />
         </div>
 
         {/* Матрица доступа */}

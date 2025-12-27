@@ -1017,4 +1017,97 @@ export const revokeInvitation = async (id: number): Promise<{ success: boolean }
   return data;
 };
 
+// Custom Roles API (Superadmin only)
+export interface CustomRole {
+  id: number;
+  name: string;
+  description?: string;
+  base_role: 'owner' | 'admin' | 'sub_admin' | 'member';
+  org_id?: number;
+  created_by?: number;
+  created_at: string;
+  is_active: boolean;
+  permission_overrides?: PermissionOverride[];
+}
+
+export interface PermissionOverride {
+  id: number;
+  role_id: number;
+  permission: string;
+  allowed: boolean;
+}
+
+export interface PermissionAuditLog {
+  id: number;
+  changed_by?: number;
+  role_id?: number;
+  action: string;
+  permission?: string;
+  old_value?: boolean;
+  new_value?: boolean;
+  details?: Record<string, unknown>;
+  created_at: string;
+}
+
+export const getCustomRoles = async (): Promise<CustomRole[]> => {
+  const { data } = await api.get('/admin/custom-roles');
+  return data;
+};
+
+export const getCustomRole = async (id: number): Promise<CustomRole> => {
+  const { data } = await api.get(`/admin/custom-roles/${id}`);
+  return data;
+};
+
+export const createCustomRole = async (roleData: {
+  name: string;
+  description?: string;
+  base_role: string;
+  org_id?: number;
+}): Promise<CustomRole> => {
+  const { data } = await api.post('/admin/custom-roles', roleData);
+  return data;
+};
+
+export const updateCustomRole = async (id: number, updates: {
+  name?: string;
+  description?: string;
+  is_active?: boolean;
+}): Promise<CustomRole> => {
+  const { data } = await api.patch(`/admin/custom-roles/${id}`, updates);
+  return data;
+};
+
+export const deleteCustomRole = async (id: number): Promise<void> => {
+  await api.delete(`/admin/custom-roles/${id}`);
+};
+
+export const setRolePermission = async (roleId: number, permission: string, allowed: boolean): Promise<PermissionOverride> => {
+  const { data } = await api.post(`/admin/custom-roles/${roleId}/permissions`, { permission, allowed });
+  return data;
+};
+
+export const removeRolePermission = async (roleId: number, permission: string): Promise<void> => {
+  await api.delete(`/admin/custom-roles/${roleId}/permissions/${permission}`);
+};
+
+export const assignCustomRole = async (roleId: number, userId: number): Promise<{ success: boolean }> => {
+  const { data } = await api.post(`/admin/custom-roles/${roleId}/assign/${userId}`);
+  return data;
+};
+
+export const unassignCustomRole = async (roleId: number, userId: number): Promise<{ success: boolean }> => {
+  const { data } = await api.delete(`/admin/custom-roles/${roleId}/assign/${userId}`);
+  return data;
+};
+
+export const getPermissionAuditLogs = async (params?: {
+  role_id?: number;
+  limit?: number;
+  offset?: number;
+}): Promise<PermissionAuditLog[]> => {
+  const { data } = await api.get('/admin/permission-audit-logs', { params });
+  return data;
+};
+
 export default api;

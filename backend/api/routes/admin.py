@@ -5,7 +5,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from sqlalchemy.exc import IntegrityError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from jose import jwt, JWTError
 
 from ..database import get_db
@@ -13,7 +13,8 @@ from ..models.database import (
     User, UserRole, OrgRole, DeptRole, Organization, OrgMember, Department,
     DepartmentMember, ImpersonationLog, Entity, EntityType, EntityStatus,
     Chat, ChatType, Message, CallRecording, CallSource, CallStatus,
-    SharedAccess, ResourceType, AccessLevel
+    SharedAccess, ResourceType, AccessLevel, CustomRole, RolePermissionOverride,
+    UserCustomRole, PermissionAuditLog
 )
 from ..services.auth import get_superadmin, get_current_user, create_access_token, create_impersonation_token, hash_password
 from ..models.schemas import TokenResponse, UserResponse
@@ -173,6 +174,52 @@ class SandboxStatusResponse(BaseModel):
     stats: Optional[SandboxStatsInfo] = None
 
 
+class CustomRoleCreate(BaseModel):
+    """Request to create a custom role"""
+    name: str = Field(..., min_length=2, max_length=50, description="Name of the custom role")
+    description: Optional[str] = Field(None, max_length=255, description="Description of the custom role")
+    base_role: str = Field(..., pattern="^(owner|admin|sub_admin|member)$", description="Base role to inherit permissions from")
+    org_id: Optional[int] = Field(None, description="Organization ID (None for global)")
+
+
+class CustomRoleUpdate(BaseModel):
+    """Request to update a custom role"""
+    name: Optional[str] = Field(None, min_length=2, max_length=50, description="Updated name")
+    description: Optional[str] = Field(None, max_length=255, description="Updated description")
+    is_active: Optional[bool] = Field(None, description="Active status")
+
+
+class PermissionOverride(BaseModel):
+    """Permission override for a custom role"""
+    permission: str = Field(..., description="Permission key (e.g., 'can_view_all_orgs')")
+    allowed: bool = Field(..., description="Whether the permission is allowed")
+
+
+class CustomRoleResponse(BaseModel):
+    """Response for custom role with merged permissions"""
+    id: int
+    name: str
+    description: Optional[str]
+    base_role: str
+    org_id: Optional[int]
+    is_active: bool
+    created_at: datetime
+    permissions: Dict[str, bool] = {}  # merged with base role defaults
+
+
+class PermissionAuditLogResponse(BaseModel):
+    """Response for permission audit log entry"""
+    id: int
+    custom_role_id: Optional[int]
+    user_id: Optional[int]
+    action: str
+    changed_by_id: int
+    changed_by_name: str
+    changed_by_email: str
+    details: Optional[Dict[str, Any]]
+    created_at: datetime
+
+
 # ==================== Helper Functions ====================
 
 def get_role_permissions(role: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, bool]:
@@ -290,6 +337,119 @@ def get_role_permissions(role: str, context: Optional[Dict[str, Any]] = None) ->
 
     # Unknown role - no permissions
     return permissions
+
+
+async def get_user_effective_permissions(
+    user: User,
+    db: AsyncSession,
+    context: Optional[Dict[str, Any]] = None
+) -> Dict[str, bool]:
+    """
+    Get effective permissions for a user, checking custom roles first.
+
+    This function checks if the user has a custom role assigned via UserCustomRole.
+    If found, it returns the base permissions from the custom role's base_role,
+    merged with any permission overrides from RolePermissionOverride.
+
+    If no custom role is assigned, it falls back to the standard role-based permissions.
+
+    Args:
+        user: The User object
+        db: Database session
+        context: Optional context for permission evaluation
+
+    Returns:
+        Dictionary of permissions with boolean values
+    """
+    # 1. Check if user has custom role
+    custom_role_query = await db.execute(
+        select(UserCustomRole, CustomRole)
+        .join(CustomRole, CustomRole.id == UserCustomRole.role_id)
+        .where(
+            UserCustomRole.user_id == user.id,
+            CustomRole.is_active == True
+        )
+        .order_by(UserCustomRole.assigned_at.desc())
+        .limit(1)
+    )
+    result = custom_role_query.first()
+
+    if result:
+        user_custom_role, custom_role = result
+        # Get base permissions from the custom role's base_role
+        base_perms = get_role_permissions(custom_role.base_role, context)
+
+        # Apply overrides from RolePermissionOverride
+        overrides_query = await db.execute(
+            select(RolePermissionOverride)
+            .where(RolePermissionOverride.role_id == custom_role.id)
+        )
+        overrides = overrides_query.scalars().all()
+
+        for override in overrides:
+            base_perms[override.permission] = override.allowed
+
+        return base_perms
+
+    # 2. Fallback to standard role-based permissions
+    return get_role_permissions(user.role.value, context)
+
+
+async def get_role_permissions_with_overrides(
+    role: str,
+    context: Optional[Dict[str, Any]] = None,
+    db: Optional[AsyncSession] = None,
+    user_id: Optional[int] = None
+) -> Dict[str, bool]:
+    """
+    Get permissions for a role with optional database-backed custom role overrides.
+
+    This function supports both the original hardcoded permissions (when db and user_id
+    are not provided) and database-backed custom roles (when both are provided).
+
+    Args:
+        role: The role name (e.g., "admin", "owner")
+        context: Optional context for permission evaluation
+        db: Optional database session for custom role lookup
+        user_id: Optional user ID for custom role lookup
+
+    Returns:
+        Dictionary of permissions with boolean values
+    """
+    # If db and user_id provided, check for custom role assignment
+    if db is not None and user_id is not None:
+        # Check if user has custom role
+        custom_role_query = await db.execute(
+            select(UserCustomRole, CustomRole)
+            .join(CustomRole, CustomRole.id == UserCustomRole.role_id)
+            .where(
+                UserCustomRole.user_id == user_id,
+                CustomRole.is_active == True
+            )
+            .order_by(UserCustomRole.assigned_at.desc())
+            .limit(1)
+        )
+        result = custom_role_query.first()
+
+        if result:
+            user_custom_role, custom_role = result
+            # Get base permissions from the custom role's base_role
+            base_perms = get_role_permissions(custom_role.base_role, context)
+
+            # Apply overrides from RolePermissionOverride
+            overrides_query = await db.execute(
+                select(RolePermissionOverride)
+                .where(RolePermissionOverride.role_id == custom_role.id)
+            )
+            overrides = overrides_query.scalars().all()
+
+            for override in overrides:
+                base_perms[override.permission] = override.allowed
+
+            return base_perms
+
+    # Fallback to standard hardcoded permissions
+    return get_role_permissions(role, context)
 
 
 def check_action_permission(role: str, action: str, context: Optional[Dict[str, Any]] = None) -> tuple[bool, str]:
@@ -2103,5 +2263,774 @@ async def switch_to_sandbox_user_by_email(
         max_age=3600,  # 1 hour for impersonation
         path="/"  # Must match login cookie path for cookie to work site-wide
     )
+
+    return response
+# ==================== Custom Roles Management Endpoints ====================
+
+
+@router.post("/custom-roles", response_model=CustomRoleResponse)
+async def create_custom_role(
+    request_body: CustomRoleCreate,
+    superadmin: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Create a new custom role.
+
+    Custom roles inherit permissions from a base role (owner, admin, sub_admin, member)
+    and can have specific permission overrides.
+
+    **Only SUPERADMIN can access this endpoint.**
+    """
+    # Re-fetch superadmin to avoid detached instance issues
+    superadmin_result = await db.execute(
+        select(User).where(User.id == superadmin.id)
+    )
+    superadmin = superadmin_result.scalar_one_or_none()
+    if not superadmin:
+        raise HTTPException(status_code=401, detail="Superadmin not found")
+
+    # Validate base_role
+    valid_base_roles = ["owner", "admin", "sub_admin", "member"]
+    if request_body.base_role not in valid_base_roles:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid base_role. Must be one of: {', '.join(valid_base_roles)}"
+        )
+
+    # If org_id provided, validate it exists
+    if request_body.org_id:
+        org_result = await db.execute(
+            select(Organization).where(Organization.id == request_body.org_id)
+        )
+        org = org_result.scalar_one_or_none()
+        if not org:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Organization with id {request_body.org_id} not found"
+            )
+
+    # Create custom role
+    custom_role = CustomRole(
+        name=request_body.name,
+        description=request_body.description,
+        base_role=request_body.base_role,
+        org_id=request_body.org_id,
+        is_active=True
+    )
+    db.add(custom_role)
+    await db.flush()
+
+    # Create audit log entry
+    audit_log = PermissionAuditLog(
+        custom_role_id=custom_role.id,
+        action="create_custom_role",
+        changed_by_id=superadmin.id,
+        details={
+            "name": request_body.name,
+            "base_role": request_body.base_role,
+            "org_id": request_body.org_id
+        }
+    )
+    db.add(audit_log)
+
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"Custom role with name '{request_body.name}' already exists"
+        )
+
+    # Get base role permissions
+    base_permissions = get_role_permissions(request_body.base_role)
+
+    return CustomRoleResponse(
+        id=custom_role.id,
+        name=custom_role.name,
+        description=custom_role.description,
+        base_role=custom_role.base_role,
+        org_id=custom_role.org_id,
+        is_active=custom_role.is_active,
+        created_at=custom_role.created_at,
+        permissions=base_permissions
+    )
+
+
+@router.get("/custom-roles", response_model=List[CustomRoleResponse])
+async def list_custom_roles(
+    org_id: Optional[int] = Query(None, description="Filter by organization ID"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    _: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all custom roles with optional filters.
+
+    **Query Parameters:**
+    - `org_id` (optional): Filter by organization ID
+    - `is_active` (optional): Filter by active status
+
+    **Only SUPERADMIN can access this endpoint.**
+    """
+    query = select(CustomRole)
+
+    # Apply filters
+    if org_id is not None:
+        query = query.where(CustomRole.org_id == org_id)
+    if is_active is not None:
+        query = query.where(CustomRole.is_active == is_active)
+
+    result = await db.execute(query.order_by(CustomRole.created_at.desc()))
+    custom_roles = result.scalars().all()
+
+    # Build response with merged permissions
+    response = []
+    for role in custom_roles:
+        # Get base permissions
+        base_permissions = get_role_permissions(role.base_role)
+
+        # Get permission overrides
+        overrides_result = await db.execute(
+            select(RolePermissionOverride)
+            .where(RolePermissionOverride.custom_role_id == role.id)
+        )
+        overrides = overrides_result.scalars().all()
+
+        # Merge permissions
+        merged_permissions = base_permissions.copy()
+        for override in overrides:
+            merged_permissions[override.permission] = override.allowed
+
+        response.append(CustomRoleResponse(
+            id=role.id,
+            name=role.name,
+            description=role.description,
+            base_role=role.base_role,
+            org_id=role.org_id,
+            is_active=role.is_active,
+            created_at=role.created_at,
+            permissions=merged_permissions
+        ))
+
+    return response
+
+
+@router.get("/custom-roles/{role_id}", response_model=CustomRoleResponse)
+async def get_custom_role(
+    role_id: int,
+    _: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get a specific custom role with all merged permissions.
+
+    Returns the custom role with permissions merged from:
+    - Base role default permissions
+    - Custom permission overrides
+
+    **Only SUPERADMIN can access this endpoint.**
+    """
+    # Get custom role
+    result = await db.execute(
+        select(CustomRole).where(CustomRole.id == role_id)
+    )
+    custom_role = result.scalar_one_or_none()
+
+    if not custom_role:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Custom role with id {role_id} not found"
+        )
+
+    # Get base permissions
+    base_permissions = get_role_permissions(custom_role.base_role)
+
+    # Get permission overrides
+    overrides_result = await db.execute(
+        select(RolePermissionOverride)
+        .where(RolePermissionOverride.custom_role_id == role_id)
+    )
+    overrides = overrides_result.scalars().all()
+
+    # Merge permissions
+    merged_permissions = base_permissions.copy()
+    for override in overrides:
+        merged_permissions[override.permission] = override.allowed
+
+    return CustomRoleResponse(
+        id=custom_role.id,
+        name=custom_role.name,
+        description=custom_role.description,
+        base_role=custom_role.base_role,
+        org_id=custom_role.org_id,
+        is_active=custom_role.is_active,
+        created_at=custom_role.created_at,
+        permissions=merged_permissions
+    )
+
+
+@router.patch("/custom-roles/{role_id}", response_model=CustomRoleResponse)
+async def update_custom_role(
+    role_id: int,
+    request_body: CustomRoleUpdate,
+    superadmin: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update a custom role's basic information.
+
+    Can update:
+    - Name
+    - Description
+    - Active status
+
+    **Only SUPERADMIN can access this endpoint.**
+    """
+    # Re-fetch superadmin to avoid detached instance issues
+    superadmin_result = await db.execute(
+        select(User).where(User.id == superadmin.id)
+    )
+    superadmin = superadmin_result.scalar_one_or_none()
+    if not superadmin:
+        raise HTTPException(status_code=401, detail="Superadmin not found")
+
+    # Get custom role
+    result = await db.execute(
+        select(CustomRole).where(CustomRole.id == role_id)
+    )
+    custom_role = result.scalar_one_or_none()
+
+    if not custom_role:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Custom role with id {role_id} not found"
+        )
+
+    # Track changes for audit log
+    changes = {}
+
+    # Update fields
+    if request_body.name is not None:
+        changes["name"] = {"old": custom_role.name, "new": request_body.name}
+        custom_role.name = request_body.name
+
+    if request_body.description is not None:
+        changes["description"] = {"old": custom_role.description, "new": request_body.description}
+        custom_role.description = request_body.description
+
+    if request_body.is_active is not None:
+        changes["is_active"] = {"old": custom_role.is_active, "new": request_body.is_active}
+        custom_role.is_active = request_body.is_active
+
+    # Create audit log entry
+    audit_log = PermissionAuditLog(
+        custom_role_id=role_id,
+        action="update_custom_role",
+        changed_by_id=superadmin.id,
+        details={"changes": changes}
+    )
+    db.add(audit_log)
+    await db.commit()
+
+    # Get merged permissions for response
+    base_permissions = get_role_permissions(custom_role.base_role)
+    overrides_result = await db.execute(
+        select(RolePermissionOverride)
+        .where(RolePermissionOverride.custom_role_id == role_id)
+    )
+    overrides = overrides_result.scalars().all()
+    merged_permissions = base_permissions.copy()
+    for override in overrides:
+        merged_permissions[override.permission] = override.allowed
+
+    return CustomRoleResponse(
+        id=custom_role.id,
+        name=custom_role.name,
+        description=custom_role.description,
+        base_role=custom_role.base_role,
+        org_id=custom_role.org_id,
+        is_active=custom_role.is_active,
+        created_at=custom_role.created_at,
+        permissions=merged_permissions
+    )
+
+
+@router.delete("/custom-roles/{role_id}")
+async def delete_custom_role(
+    role_id: int,
+    superadmin: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Soft delete a custom role (set is_active=False).
+
+    This will not delete the role from the database, but will make it
+    inactive and prevent it from being assigned to new users.
+
+    **Only SUPERADMIN can access this endpoint.**
+    """
+    # Re-fetch superadmin to avoid detached instance issues
+    superadmin_result = await db.execute(
+        select(User).where(User.id == superadmin.id)
+    )
+    superadmin = superadmin_result.scalar_one_or_none()
+    if not superadmin:
+        raise HTTPException(status_code=401, detail="Superadmin not found")
+
+    # Get custom role
+    result = await db.execute(
+        select(CustomRole).where(CustomRole.id == role_id)
+    )
+    custom_role = result.scalar_one_or_none()
+
+    if not custom_role:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Custom role with id {role_id} not found"
+        )
+
+    # Soft delete
+    custom_role.is_active = False
+
+    # Create audit log entry
+    audit_log = PermissionAuditLog(
+        custom_role_id=role_id,
+        action="delete_custom_role",
+        changed_by_id=superadmin.id,
+        details={"role_name": custom_role.name}
+    )
+    db.add(audit_log)
+    await db.commit()
+
+    return {
+        "message": f"Custom role '{custom_role.name}' has been deactivated",
+        "role_id": role_id,
+        "is_active": False
+    }
+
+
+@router.post("/custom-roles/{role_id}/permissions")
+async def add_permission_override(
+    role_id: int,
+    request_body: PermissionOverride,
+    superadmin: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Add or update a permission override for a custom role.
+
+    This allows you to grant or deny specific permissions that differ
+    from the base role's default permissions.
+
+    **Only SUPERADMIN can access this endpoint.**
+    """
+    # Re-fetch superadmin to avoid detached instance issues
+    superadmin_result = await db.execute(
+        select(User).where(User.id == superadmin.id)
+    )
+    superadmin = superadmin_result.scalar_one_or_none()
+    if not superadmin:
+        raise HTTPException(status_code=401, detail="Superadmin not found")
+
+    # Get custom role
+    result = await db.execute(
+        select(CustomRole).where(CustomRole.id == role_id)
+    )
+    custom_role = result.scalar_one_or_none()
+
+    if not custom_role:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Custom role with id {role_id} not found"
+        )
+
+    # Validate permission key exists in base permissions
+    base_permissions = get_role_permissions(custom_role.base_role)
+    if request_body.permission not in base_permissions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid permission key: {request_body.permission}. "
+                   f"Valid permissions: {', '.join(base_permissions.keys())}"
+        )
+
+    # Check if override already exists
+    override_result = await db.execute(
+        select(RolePermissionOverride)
+        .where(RolePermissionOverride.custom_role_id == role_id)
+        .where(RolePermissionOverride.permission == request_body.permission)
+    )
+    existing_override = override_result.scalar_one_or_none()
+
+    if existing_override:
+        # Update existing override
+        old_value = existing_override.allowed
+        existing_override.allowed = request_body.allowed
+        action = "update_permission_override"
+    else:
+        # Create new override
+        new_override = RolePermissionOverride(
+            custom_role_id=role_id,
+            permission=request_body.permission,
+            allowed=request_body.allowed
+        )
+        db.add(new_override)
+        old_value = base_permissions.get(request_body.permission)
+        action = "add_permission_override"
+
+    # Create audit log entry
+    audit_log = PermissionAuditLog(
+        custom_role_id=role_id,
+        action=action,
+        changed_by_id=superadmin.id,
+        details={
+            "permission": request_body.permission,
+            "old_value": old_value,
+            "new_value": request_body.allowed
+        }
+    )
+    db.add(audit_log)
+    await db.commit()
+
+    return {
+        "message": f"Permission '{request_body.permission}' override {'updated' if existing_override else 'added'}",
+        "role_id": role_id,
+        "permission": request_body.permission,
+        "allowed": request_body.allowed
+    }
+
+
+@router.delete("/custom-roles/{role_id}/permissions/{permission}")
+async def remove_permission_override(
+    role_id: int,
+    permission: str,
+    superadmin: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Remove a permission override from a custom role.
+
+    This will revert the permission back to the base role's default value.
+
+    **Only SUPERADMIN can access this endpoint.**
+    """
+    # Re-fetch superadmin to avoid detached instance issues
+    superadmin_result = await db.execute(
+        select(User).where(User.id == superadmin.id)
+    )
+    superadmin = superadmin_result.scalar_one_or_none()
+    if not superadmin:
+        raise HTTPException(status_code=401, detail="Superadmin not found")
+
+    # Get custom role
+    role_result = await db.execute(
+        select(CustomRole).where(CustomRole.id == role_id)
+    )
+    custom_role = role_result.scalar_one_or_none()
+
+    if not custom_role:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Custom role with id {role_id} not found"
+        )
+
+    # Get permission override
+    override_result = await db.execute(
+        select(RolePermissionOverride)
+        .where(RolePermissionOverride.custom_role_id == role_id)
+        .where(RolePermissionOverride.permission == permission)
+    )
+    override = override_result.scalar_one_or_none()
+
+    if not override:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Permission override '{permission}' not found for role {role_id}"
+        )
+
+    # Store old value for audit log
+    old_value = override.allowed
+
+    # Delete override
+    await db.execute(
+        delete(RolePermissionOverride)
+        .where(RolePermissionOverride.id == override.id)
+    )
+
+    # Get base permission value
+    base_permissions = get_role_permissions(custom_role.base_role)
+    base_value = base_permissions.get(permission)
+
+    # Create audit log entry
+    audit_log = PermissionAuditLog(
+        custom_role_id=role_id,
+        action="remove_permission_override",
+        changed_by_id=superadmin.id,
+        details={
+            "permission": permission,
+            "old_value": old_value,
+            "reverted_to": base_value
+        }
+    )
+    db.add(audit_log)
+    await db.commit()
+
+    return {
+        "message": f"Permission override '{permission}' removed. Reverted to base role default.",
+        "role_id": role_id,
+        "permission": permission,
+        "reverted_to": base_value
+    }
+
+
+@router.post("/custom-roles/{role_id}/assign/{user_id}")
+async def assign_custom_role_to_user(
+    role_id: int,
+    user_id: int,
+    superadmin: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Assign a custom role to a user.
+
+    This creates a UserCustomRole relationship between the user and the custom role.
+
+    **Only SUPERADMIN can access this endpoint.**
+    """
+    # Re-fetch superadmin to avoid detached instance issues
+    superadmin_result = await db.execute(
+        select(User).where(User.id == superadmin.id)
+    )
+    superadmin = superadmin_result.scalar_one_or_none()
+    if not superadmin:
+        raise HTTPException(status_code=401, detail="Superadmin not found")
+
+    # Get custom role
+    role_result = await db.execute(
+        select(CustomRole).where(CustomRole.id == role_id)
+    )
+    custom_role = role_result.scalar_one_or_none()
+
+    if not custom_role:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Custom role with id {role_id} not found"
+        )
+
+    if not custom_role.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot assign inactive custom role '{custom_role.name}'"
+        )
+
+    # Get user
+    user_result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+    user = user_result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail=f"User with id {user_id} not found"
+        )
+
+    # Check if already assigned
+    existing_result = await db.execute(
+        select(UserCustomRole)
+        .where(UserCustomRole.user_id == user_id)
+        .where(UserCustomRole.custom_role_id == role_id)
+    )
+    existing = existing_result.scalar_one_or_none()
+
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"User {user.name} already has custom role '{custom_role.name}' assigned"
+        )
+
+    # Create assignment
+    assignment = UserCustomRole(
+        user_id=user_id,
+        custom_role_id=role_id
+    )
+    db.add(assignment)
+
+    # Create audit log entry
+    audit_log = PermissionAuditLog(
+        custom_role_id=role_id,
+        user_id=user_id,
+        action="assign_custom_role",
+        changed_by_id=superadmin.id,
+        details={
+            "user_name": user.name,
+            "user_email": user.email,
+            "role_name": custom_role.name
+        }
+    )
+    db.add(audit_log)
+    await db.commit()
+
+    return {
+        "message": f"Custom role '{custom_role.name}' assigned to user {user.name}",
+        "role_id": role_id,
+        "user_id": user_id,
+        "user_name": user.name,
+        "role_name": custom_role.name
+    }
+
+
+@router.delete("/custom-roles/{role_id}/assign/{user_id}")
+async def remove_custom_role_from_user(
+    role_id: int,
+    user_id: int,
+    superadmin: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Remove a custom role from a user.
+
+    This deletes the UserCustomRole relationship between the user and the custom role.
+
+    **Only SUPERADMIN can access this endpoint.**
+    """
+    # Re-fetch superadmin to avoid detached instance issues
+    superadmin_result = await db.execute(
+        select(User).where(User.id == superadmin.id)
+    )
+    superadmin = superadmin_result.scalar_one_or_none()
+    if not superadmin:
+        raise HTTPException(status_code=401, detail="Superadmin not found")
+
+    # Get custom role
+    role_result = await db.execute(
+        select(CustomRole).where(CustomRole.id == role_id)
+    )
+    custom_role = role_result.scalar_one_or_none()
+
+    if not custom_role:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Custom role with id {role_id} not found"
+        )
+
+    # Get user
+    user_result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+    user = user_result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail=f"User with id {user_id} not found"
+        )
+
+    # Get assignment
+    assignment_result = await db.execute(
+        select(UserCustomRole)
+        .where(UserCustomRole.user_id == user_id)
+        .where(UserCustomRole.custom_role_id == role_id)
+    )
+    assignment = assignment_result.scalar_one_or_none()
+
+    if not assignment:
+        raise HTTPException(
+            status_code=404,
+            detail=f"User {user.name} does not have custom role '{custom_role.name}' assigned"
+        )
+
+    # Delete assignment
+    await db.execute(
+        delete(UserCustomRole).where(UserCustomRole.id == assignment.id)
+    )
+
+    # Create audit log entry
+    audit_log = PermissionAuditLog(
+        custom_role_id=role_id,
+        user_id=user_id,
+        action="remove_custom_role",
+        changed_by_id=superadmin.id,
+        details={
+            "user_name": user.name,
+            "user_email": user.email,
+            "role_name": custom_role.name
+        }
+    )
+    db.add(audit_log)
+    await db.commit()
+
+    return {
+        "message": f"Custom role '{custom_role.name}' removed from user {user.name}",
+        "role_id": role_id,
+        "user_id": user_id,
+        "user_name": user.name,
+        "role_name": custom_role.name
+    }
+
+
+@router.get("/permission-audit-logs", response_model=List[PermissionAuditLogResponse])
+async def get_permission_audit_logs(
+    role_id: Optional[int] = Query(None, description="Filter by custom role ID"),
+    changed_by: Optional[int] = Query(None, description="Filter by user who made the change"),
+    limit: int = Query(100, description="Maximum number of logs to return"),
+    offset: int = Query(0, description="Number of logs to skip"),
+    _: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get audit trail for custom roles and permission changes.
+
+    Returns a log of all changes made to custom roles, including:
+    - Role creation/updates/deletions
+    - Permission overrides added/removed
+    - Role assignments to users
+
+    **Query Parameters:**
+    - `role_id` (optional): Filter by custom role ID
+    - `changed_by` (optional): Filter by user ID who made the change
+    - `limit`: Maximum number of logs to return (default: 100)
+    - `offset`: Number of logs to skip (default: 0)
+
+    **Only SUPERADMIN can access this endpoint.**
+    """
+    query = select(PermissionAuditLog)
+
+    # Apply filters
+    if role_id is not None:
+        query = query.where(PermissionAuditLog.custom_role_id == role_id)
+    if changed_by is not None:
+        query = query.where(PermissionAuditLog.changed_by_id == changed_by)
+
+    # Order by most recent first
+    query = query.order_by(PermissionAuditLog.created_at.desc())
+
+    # Apply pagination
+    query = query.offset(offset).limit(limit)
+
+    result = await db.execute(query)
+    logs = result.scalars().all()
+
+    # Build response with user information
+    response = []
+    for log in logs:
+        # Get user who made the change
+        user_result = await db.execute(
+            select(User).where(User.id == log.changed_by_id)
+        )
+        user = user_result.scalar_one_or_none()
+
+        response.append(PermissionAuditLogResponse(
+            id=log.id,
+            custom_role_id=log.custom_role_id,
+            user_id=log.user_id,
+            action=log.action,
+            changed_by_id=log.changed_by_id,
+            changed_by_name=user.name if user else "Unknown",
+            changed_by_email=user.email if user else "Unknown",
+            details=log.details,
+            created_at=log.created_at
+        ))
 
     return response
