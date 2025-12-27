@@ -147,17 +147,29 @@ export default function AdminSimulatorPage() {
     const loadInitialData = async () => {
       try {
         await fetchSandboxStatus();
+      } catch (e) {
+        console.error('Failed to load sandbox status:', e);
       } finally {
         setPageLoading(false);
       }
     };
+
+    // Timeout fallback - if auth takes too long, stop loading anyway
+    const timeout = setTimeout(() => {
+      if (pageLoading) {
+        console.warn('AdminSimulator: Auth loading timeout, forcing page load');
+        setPageLoading(false);
+      }
+    }, 5000);
 
     if (!authLoading && user) {
       loadInitialData();
     } else if (!authLoading && !user) {
       setPageLoading(false);
     }
-  }, [authLoading, user]);
+
+    return () => clearTimeout(timeout);
+  }, [authLoading, user, pageLoading]);
 
   // Функции для работы с sandbox
   // Helper to extract error message from API errors
@@ -444,7 +456,7 @@ export default function AdminSimulatorPage() {
   const testResult = testScenario();
 
   return (
-    <div className="h-full overflow-y-auto p-6">
+    <div className="h-full overflow-y-auto p-6 bg-dark-950 min-h-screen">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
