@@ -571,35 +571,52 @@ def calculate_speaker_stats(speakers: list) -> dict:
             # Estimate duration based on text length
             duration = len(text) / CHARS_PER_SECOND if text else 0
 
+        # Count words in text
+        word_count = len(text.split()) if text else 0
+
         if speaker not in stats:
             stats[speaker] = {
                 "total_seconds": 0,
+                "talktime_seconds": 0,  # Alias for UI compatibility
                 "segment_count": 0,
                 "first_speak_time": start,
                 "last_speak_time": end,
                 "total_chars": 0,  # Track chars for percentage calculation
+                "total_words": 0,  # Track words for WPM calculation
                 "estimated": not has_real_timestamps  # Flag if estimated
             }
 
         stats[speaker]["total_seconds"] += duration
+        stats[speaker]["talktime_seconds"] += duration
         stats[speaker]["segment_count"] += 1
         stats[speaker]["total_chars"] += len(text)
+        stats[speaker]["total_words"] += word_count
         if has_real_timestamps:
             stats[speaker]["first_speak_time"] = min(stats[speaker]["first_speak_time"], start)
             stats[speaker]["last_speak_time"] = max(stats[speaker]["last_speak_time"], end)
 
-    # Calculate averages and percentages
+    # Calculate averages, percentages, and WPM
     total_seconds_all = sum(s["total_seconds"] for s in stats.values())
     for speaker, data in stats.items():
         if data["segment_count"] > 0:
             data["avg_segment_length"] = data["total_seconds"] / data["segment_count"]
         else:
             data["avg_segment_length"] = 0
+
         # Add percentage of total speaking time
         if total_seconds_all > 0:
             data["percentage"] = round(data["total_seconds"] / total_seconds_all * 100, 1)
+            data["talktime_percent"] = int(data["total_seconds"] / total_seconds_all * 100)
         else:
             data["percentage"] = 0
+            data["talktime_percent"] = 0
+
+        # Calculate WPM (words per minute)
+        if data["total_seconds"] > 0:
+            minutes = data["total_seconds"] / 60
+            data["wpm"] = int(data["total_words"] / minutes) if minutes > 0 else 0
+        else:
+            data["wpm"] = 0
 
     return stats
 

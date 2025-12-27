@@ -143,31 +143,38 @@ export default function CallDetail({ call }: CallDetailProps) {
   const getSpeakerStats = () => {
     if (!call.speakers || call.speakers.length === 0) return [];
 
-    const stats: Record<string, { talkTime: number; wordCount: number }> = {};
-    let totalTalkTime = 0;
+    const stats: Record<string, { talkTime: number; wordCount: number; segmentDuration: number }> = {};
+    let totalSegmentDuration = 0;
 
     call.speakers.forEach(segment => {
       const speaker = segment.speaker;
-      const duration = segment.end - segment.start;
+      const segmentDur = segment.end - segment.start;
       const words = segment.text.split(/\s+/).filter(w => w.length > 0).length;
 
       if (!stats[speaker]) {
-        stats[speaker] = { talkTime: 0, wordCount: 0 };
+        stats[speaker] = { talkTime: 0, wordCount: 0, segmentDuration: 0 };
       }
-      stats[speaker].talkTime += duration;
+      stats[speaker].segmentDuration += segmentDur;
       stats[speaker].wordCount += words;
-      totalTalkTime += duration;
+      totalSegmentDuration += segmentDur;
     });
+
+    // Use actual call duration if available, otherwise use sum of segment durations
+    // Fireflies segments only cover speech time, not pauses, so we scale proportionally
+    const actualDuration = call.duration_seconds || totalSegmentDuration;
+    const scaleFactor = totalSegmentDuration > 0 ? actualDuration / totalSegmentDuration : 1;
 
     // Convert to array with percentages and WPM
     return Object.entries(stats).map(([speaker, data]) => {
-      const percentage = totalTalkTime > 0 ? (data.talkTime / totalTalkTime) * 100 : 0;
-      const minutes = data.talkTime / 60;
+      // Scale talkTime to match actual call duration
+      const talkTime = data.segmentDuration * scaleFactor;
+      const percentage = actualDuration > 0 ? (talkTime / actualDuration) * 100 : 0;
+      const minutes = talkTime / 60;
       const wpm = minutes > 0 ? Math.round(data.wordCount / minutes) : 0;
 
       return {
         speaker,
-        talkTime: data.talkTime,
+        talkTime,
         percentage: Math.round(percentage),
         wordCount: data.wordCount,
         wpm
