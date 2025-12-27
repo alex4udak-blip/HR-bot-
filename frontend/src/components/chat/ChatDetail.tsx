@@ -259,12 +259,19 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
   const { entities, fetchEntities } = useEntityStore();
 
   // Helper to check permissions using authStore
-  const { canDeleteResource } = useAuthStore();
+  const { canDeleteResource, canEditResource } = useAuthStore();
   const canDelete = () => {
     return canDeleteResource({
       owner_id: chat.owner_id,
-      is_mine: chat.owner_id === user?.id,
-      access_level: chat.shared_access_level
+      is_mine: chat.is_mine ?? (chat.owner_id === user?.id),
+      access_level: chat.access_level
+    });
+  };
+  const canEdit = () => {
+    return canEditResource({
+      owner_id: chat.owner_id,
+      is_mine: chat.is_mine ?? (chat.owner_id === user?.id),
+      access_level: chat.access_level
     });
   };
 
@@ -408,12 +415,14 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
               <h2 className="text-xl font-semibold flex-1 truncate">
                 {chat.custom_name || chat.title}
               </h2>
-              <button
-                onClick={() => setIsEditing(true)}
-                className="p-2 rounded-lg hover:bg-white/5 text-dark-400 hover:text-dark-200"
-              >
-                <Edit3 className="w-4 h-4" />
-              </button>
+              {canEdit() && (
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="p-2 rounded-lg hover:bg-white/5 text-dark-400 hover:text-dark-200"
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+              )}
             </>
           )}
         </div>
@@ -422,11 +431,14 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
             {chat.messages_count} сообщ. | {chat.participants_count} участн.
           </p>
 
-          {/* Chat Type Selector */}
+          {/* Chat Type Selector - editable only for users with edit permission */}
           <div className="relative">
             <button
-              onClick={() => setShowTypeDropdown(!showTypeDropdown)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 transition-colors"
+              onClick={() => canEdit() && setShowTypeDropdown(!showTypeDropdown)}
+              className={clsx(
+                'flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-accent-500/20 text-accent-400 transition-colors',
+                canEdit() ? 'hover:bg-accent-500/30 cursor-pointer' : 'cursor-default'
+              )}
             >
               {(() => {
                 const typeInfo = CHAT_TYPES.find(t => t.id === chat.chat_type);
@@ -435,13 +447,13 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                   <>
                     <Icon className="w-3.5 h-3.5" />
                     {typeInfo?.name || chat.chat_type}
-                    <ChevronDown className="w-3 h-3" />
+                    {canEdit() && <ChevronDown className="w-3 h-3" />}
                   </>
                 );
               })()}
             </button>
 
-            {showTypeDropdown && (
+            {showTypeDropdown && canEdit() && (
               <div className="absolute top-full left-0 mt-1 w-48 glass rounded-xl border border-white/10 shadow-xl z-50 overflow-hidden">
                 {CHAT_TYPES.map((type) => {
                   const Icon = type.icon;
@@ -468,15 +480,18 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
             )}
           </div>
 
-          {/* Entity Selector */}
+          {/* Entity Selector - editable only for users with edit permission */}
           <div className="relative">
             <button
-              onClick={() => setShowEntityDropdown(!showEntityDropdown)}
+              onClick={() => canEdit() && setShowEntityDropdown(!showEntityDropdown)}
               className={clsx(
                 'flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors',
                 chat.entity_id
-                  ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
-                  : 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
+                  ? 'bg-green-500/20 text-green-400'
+                  : 'bg-purple-500/20 text-purple-400',
+                canEdit()
+                  ? (chat.entity_id ? 'hover:bg-green-500/30' : 'hover:bg-purple-500/30') + ' cursor-pointer'
+                  : 'cursor-default'
               )}
             >
               {chat.entity_id ? (
@@ -484,16 +499,16 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                   <Link className="w-3.5 h-3.5" />
                   {chat.entity_name || 'Контакт'}
                 </>
-              ) : (
+              ) : canEdit() ? (
                 <>
                   <Unlink className="w-3.5 h-3.5" />
                   Привязать
                 </>
-              )}
-              <ChevronDown className="w-3 h-3" />
+              ) : null}
+              {canEdit() && <ChevronDown className="w-3 h-3" />}
             </button>
 
-            {showEntityDropdown && (
+            {showEntityDropdown && canEdit() && (
               <div className="absolute top-full left-0 mt-1 w-56 glass rounded-xl border border-white/10 shadow-xl z-50 overflow-hidden max-h-64 overflow-y-auto">
                 {/* Unlink option */}
                 {chat.entity_id && (

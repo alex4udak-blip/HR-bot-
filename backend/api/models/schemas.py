@@ -137,6 +137,10 @@ class ChatResponse(BaseModel):
     has_criteria: bool = False
     deleted_at: Optional[datetime] = None
     days_until_permanent_delete: Optional[int] = None
+    # Permission fields for frontend
+    is_mine: bool = False
+    is_shared: bool = False
+    access_level: Optional[str] = None  # 'view', 'edit', 'full' or None
 
     class Config:
         from_attributes = True

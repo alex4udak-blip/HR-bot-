@@ -313,9 +313,30 @@ async def list_calls(
     result = await db.execute(query)
     calls = result.unique().scalars().all()
 
+    if not calls:
+        return []
+
+    # Get call IDs for batch query
+    call_ids = [call.id for call in calls]
+
+    # Batch query: Get shared access for current user
+    shared_access_result = await db.execute(
+        select(SharedAccess.resource_id, SharedAccess.access_level)
+        .where(
+            SharedAccess.resource_type == ResourceType.call,
+            SharedAccess.resource_id.in_(call_ids),
+            SharedAccess.shared_with_id == current_user.id,
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > dt.utcnow())
+        )
+    )
+    shared_access_map = {row[0]: row[1].value for row in shared_access_result.fetchall()}
+
     response = []
     for call in calls:
         entity_name = call.entity.name if call.entity else None
+        is_mine = call.owner_id == current_user.id
+        is_shared = call.id in shared_access_map
+        access_level = shared_access_map.get(call.id) if is_shared else ('full' if is_mine else None)
 
         response.append({
             "id": call.id,
@@ -336,7 +357,10 @@ async def list_calls(
             "started_at": call.started_at,
             "ended_at": call.ended_at,
             "processed_at": call.processed_at,
-            "entity_name": entity_name
+            "entity_name": entity_name,
+            "is_mine": is_mine,
+            "is_shared": is_shared,
+            "access_level": access_level,
         })
 
     return response

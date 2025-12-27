@@ -1314,25 +1314,49 @@ async def create_sandbox(
         entity_ids.append(entity.id)
         entity_objects.append(entity)
 
-    # 4. Create 3 test chats linked to entities
+    # 4. Create test chats linked to entities (more variety)
     chat_data = [
         {
             "title": "Interview with John Candidate",
             "chat_type": ChatType.hr,
             "entity_idx": 0,
-            "owner_idx": 0
+            "owner_idx": 0  # Owner
         },
         {
             "title": "Client Meeting - Sarah",
             "chat_type": ChatType.client,
             "entity_idx": 1,
-            "owner_idx": 1
+            "owner_idx": 1  # Admin
         },
         {
             "title": "Contractor Negotiation - Mike",
             "chat_type": ChatType.contractor,
             "entity_idx": 2,
-            "owner_idx": 1
+            "owner_idx": 1  # Admin
+        },
+        {
+            "title": "Lead Discussion - Lisa",
+            "chat_type": ChatType.sales,
+            "entity_idx": 3,
+            "owner_idx": 2  # SubAdmin
+        },
+        {
+            "title": "Partner Onboarding - Alex",
+            "chat_type": ChatType.work,
+            "entity_idx": 4,
+            "owner_idx": 3  # Member
+        },
+        {
+            "title": "Technical Support Chat",
+            "chat_type": ChatType.support,
+            "entity_idx": None,
+            "owner_idx": 0  # Owner - no entity linked
+        },
+        {
+            "title": "Project Alpha Discussion",
+            "chat_type": ChatType.project,
+            "entity_idx": None,
+            "owner_idx": 1  # Admin - no entity linked
         }
     ]
 
@@ -1340,6 +1364,11 @@ async def create_sandbox(
     chat_objects = []
 
     for idx, chat_info in enumerate(chat_data):
+        # Handle optional entity linking
+        entity_id = None
+        if chat_info["entity_idx"] is not None:
+            entity_id = entity_objects[chat_info["entity_idx"]].id
+
         chat = Chat(
             org_id=org.id,
             telegram_chat_id=1000000 + idx,  # Fake telegram chat IDs
@@ -1347,7 +1376,7 @@ async def create_sandbox(
             custom_name=chat_info["title"],
             chat_type=chat_info["chat_type"],
             owner_id=user_objects[chat_info["owner_idx"]].id,
-            entity_id=entity_objects[chat_info["entity_idx"]].id,
+            entity_id=entity_id,
             is_active=True
         )
         db.add(chat)
@@ -1370,12 +1399,12 @@ async def create_sandbox(
             )
             db.add(message)
 
-    # 5. Create 2 test call recordings
+    # 5. Create test call recordings (more variety)
     call_data = [
         {
             "title": "Technical Interview Call",
             "entity_idx": 0,
-            "owner_idx": 0,
+            "owner_idx": 0,  # Owner
             "source_type": CallSource.meet,
             "status": CallStatus.done,
             "duration_seconds": 3600
@@ -1383,10 +1412,42 @@ async def create_sandbox(
         {
             "title": "Client Discovery Call",
             "entity_idx": 1,
-            "owner_idx": 1,
+            "owner_idx": 1,  # Admin
             "source_type": CallSource.zoom,
             "status": CallStatus.done,
             "duration_seconds": 2400
+        },
+        {
+            "title": "Contractor Onboarding",
+            "entity_idx": 2,
+            "owner_idx": 1,  # Admin
+            "source_type": CallSource.fireflies,
+            "status": CallStatus.done,
+            "duration_seconds": 1800
+        },
+        {
+            "title": "Sales Demo Call",
+            "entity_idx": 3,
+            "owner_idx": 2,  # SubAdmin
+            "source_type": CallSource.meet,
+            "status": CallStatus.done,
+            "duration_seconds": 2700
+        },
+        {
+            "title": "Partner Strategy Session",
+            "entity_idx": 4,
+            "owner_idx": 3,  # Member
+            "source_type": CallSource.zoom,
+            "status": CallStatus.done,
+            "duration_seconds": 3300
+        },
+        {
+            "title": "Team Standup Recording",
+            "entity_idx": None,
+            "owner_idx": 0,  # Owner - no entity linked
+            "source_type": CallSource.meet,
+            "status": CallStatus.done,
+            "duration_seconds": 900
         }
     ]
 
@@ -1394,10 +1455,15 @@ async def create_sandbox(
     call_objects = []
 
     for call_info in call_data:
+        # Handle optional entity linking
+        call_entity_id = None
+        if call_info["entity_idx"] is not None:
+            call_entity_id = entity_objects[call_info["entity_idx"]].id
+
         call = CallRecording(
             org_id=org.id,
             title=call_info["title"],
-            entity_id=entity_objects[call_info["entity_idx"]].id,
+            entity_id=call_entity_id,
             owner_id=user_objects[call_info["owner_idx"]].id,
             source_type=call_info["source_type"],
             status=call_info["status"],
@@ -1413,42 +1479,104 @@ async def create_sandbox(
         call_ids.append(call.id)
         call_objects.append(call)
 
-    # 6. Create sharing relationships
-    # Share entity 0 from owner to admin
-    share1 = SharedAccess(
-        resource_type=ResourceType.entity,
-        resource_id=entity_objects[0].id,
-        entity_id=entity_objects[0].id,
-        shared_by_id=user_objects[0].id,
-        shared_with_id=user_objects[1].id,
-        access_level=AccessLevel.edit,
-        note="Shared for collaboration"
-    )
-    db.add(share1)
+    # 6. Create sharing relationships (comprehensive cross-user sharing)
+    sharing_data = [
+        # Owner shares with others
+        {
+            "resource_type": ResourceType.entity,
+            "resource": entity_objects[0],  # John Candidate
+            "from_idx": 0,  # Owner
+            "to_idx": 1,    # Admin
+            "access_level": AccessLevel.edit,
+            "note": "Admin has edit access to candidate"
+        },
+        {
+            "resource_type": ResourceType.chat,
+            "resource": chat_objects[0],  # Interview with John
+            "from_idx": 0,  # Owner
+            "to_idx": 2,    # SubAdmin
+            "access_level": AccessLevel.view,
+            "note": "SubAdmin can view interview chat"
+        },
+        {
+            "resource_type": ResourceType.call,
+            "resource": call_objects[0],  # Technical Interview Call
+            "from_idx": 0,  # Owner
+            "to_idx": 3,    # Member
+            "access_level": AccessLevel.view,
+            "note": "Member can view call recording"
+        },
+        # Admin shares with others
+        {
+            "resource_type": ResourceType.entity,
+            "resource": entity_objects[1],  # Sarah Client
+            "from_idx": 1,  # Admin
+            "to_idx": 2,    # SubAdmin
+            "access_level": AccessLevel.view,
+            "note": "SubAdmin can view client info"
+        },
+        {
+            "resource_type": ResourceType.chat,
+            "resource": chat_objects[1],  # Client Meeting - Sarah
+            "from_idx": 1,  # Admin
+            "to_idx": 3,    # Member
+            "access_level": AccessLevel.view,
+            "note": "Member can view client meeting"
+        },
+        {
+            "resource_type": ResourceType.call,
+            "resource": call_objects[1],  # Client Discovery Call
+            "from_idx": 1,  # Admin
+            "to_idx": 0,    # Owner
+            "access_level": AccessLevel.full,
+            "note": "Owner has full access"
+        },
+        # SubAdmin shares with member
+        {
+            "resource_type": ResourceType.entity,
+            "resource": entity_objects[3],  # Lisa Lead
+            "from_idx": 2,  # SubAdmin
+            "to_idx": 3,    # Member
+            "access_level": AccessLevel.view,
+            "note": "Member can view lead info"
+        },
+        {
+            "resource_type": ResourceType.call,
+            "resource": call_objects[3],  # Sales Demo Call
+            "from_idx": 2,  # SubAdmin
+            "to_idx": 0,    # Owner
+            "access_level": AccessLevel.edit,
+            "note": "Owner can edit sales demo"
+        },
+        # Cross-sharing for member
+        {
+            "resource_type": ResourceType.call,
+            "resource": call_objects[4],  # Partner Strategy Session
+            "from_idx": 3,  # Member
+            "to_idx": 1,    # Admin
+            "access_level": AccessLevel.view,
+            "note": "Admin can review partner session"
+        },
+    ]
 
-    # Share chat 0 from owner to subadmin
-    share2 = SharedAccess(
-        resource_type=ResourceType.chat,
-        resource_id=chat_objects[0].id,
-        chat_id=chat_objects[0].id,
-        shared_by_id=user_objects[0].id,
-        shared_with_id=user_objects[2].id,
-        access_level=AccessLevel.view,
-        note="View-only access"
-    )
-    db.add(share2)
-
-    # Share call 0 from owner to member
-    share3 = SharedAccess(
-        resource_type=ResourceType.call,
-        resource_id=call_objects[0].id,
-        call_id=call_objects[0].id,
-        shared_by_id=user_objects[0].id,
-        shared_with_id=user_objects[3].id,
-        access_level=AccessLevel.view,
-        note="Call recording access"
-    )
-    db.add(share3)
+    for share_info in sharing_data:
+        resource = share_info["resource"]
+        share = SharedAccess(
+            resource_type=share_info["resource_type"],
+            resource_id=resource.id,
+            shared_by_id=user_objects[share_info["from_idx"]].id,
+            shared_with_id=user_objects[share_info["to_idx"]].id,
+            access_level=share_info["access_level"],
+            note=share_info["note"]
+        )
+        # Set the appropriate foreign key based on resource type
+        if share_info["resource_type"] == ResourceType.entity:
+            share.entity_id = resource.id
+        elif share_info["resource_type"] == ResourceType.chat:
+            share.chat_id = resource.id
+        elif share_info["resource_type"] == ResourceType.call:
+            share.call_id = resource.id
+        db.add(share)
 
     # Commit with error handling
     try:
