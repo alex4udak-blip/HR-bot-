@@ -1431,12 +1431,14 @@ class ExternalLinkProcessor:
             logger.info(f"Created pending CallRecording {call.id} for async processing")
             return call
 
-    async def _update_progress(self, call_id: int, progress: int, stage: str):
-        """Update progress for a call in the database."""
+    async def _update_progress(self, call_id: int, progress: int, stage: str, org_id: int = None):
+        """Update progress for a call in the database and broadcast via WebSocket."""
         from ..database import AsyncSessionLocal
-        from sqlalchemy import update
+        from sqlalchemy import update, select
+        from ..routes.realtime import broadcast_call_progress
 
         async with AsyncSessionLocal() as db:
+            # Update progress in database
             await db.execute(
                 update(CallRecording)
                 .where(CallRecording.id == call_id)
@@ -1445,14 +1447,34 @@ class ExternalLinkProcessor:
             await db.commit()
             logger.debug(f"Call {call_id} progress: {progress}% - {stage}")
 
+            # Get org_id if not provided
+            if org_id is None:
+                result = await db.execute(
+                    select(CallRecording.org_id).where(CallRecording.id == call_id)
+                )
+                org_id = result.scalar_one_or_none()
+
+            # Broadcast progress update via WebSocket
+            if org_id:
+                try:
+                    await broadcast_call_progress(org_id, {
+                        "id": call_id,
+                        "progress": progress,
+                        "progress_stage": stage,
+                        "status": "processing"
+                    })
+                except Exception as e:
+                    logger.debug(f"Failed to broadcast progress for call {call_id}: {e}")
+
     async def process_fireflies_async(self, call_id: int):
         """
         Process Fireflies URL in background.
         Called as a background task after create_pending_call.
-        Reports progress at each stage.
+        Reports progress at each stage and broadcasts real-time updates via WebSocket.
         """
         from ..database import AsyncSessionLocal
         from sqlalchemy import select
+        from ..routes.realtime import broadcast_call_completed, broadcast_call_failed
 
         logger.info(f"Starting background Fireflies processing for call {call_id}")
 
@@ -1470,6 +1492,9 @@ class ExternalLinkProcessor:
                 logger.error(f"Call {call_id} not found for Fireflies processing")
                 return
 
+            # Store org_id for broadcasts
+            org_id = call.org_id
+
             if not call.source_url:
                 logger.error(f"Call {call_id} has no source_url")
                 call.status = CallStatus.failed
@@ -1477,11 +1502,13 @@ class ExternalLinkProcessor:
                 call.progress = 0
                 call.progress_stage = "Ошибка"
                 await db.commit()
+                # Broadcast failure
+                await self._broadcast_call_failed_safe(org_id, call_id, "No source URL")
                 return
 
             try:
                 # Stage 2: Loading page
-                await self._update_progress(call_id, 10, "Загрузка страницы Fireflies...")
+                await self._update_progress(call_id, 10, "Загрузка страницы Fireflies...", org_id)
 
                 # Process Fireflies - this takes 1-2 minutes
                 # The _process_fireflies method will update progress internally
@@ -1504,6 +1531,22 @@ class ExternalLinkProcessor:
                 await db.commit()
                 logger.info(f"Background Fireflies processing complete for call {call_id}")
 
+                # Broadcast completion via WebSocket
+                try:
+                    await broadcast_call_completed(org_id, {
+                        "id": call_id,
+                        "title": call.title,
+                        "status": "done",
+                        "has_summary": bool(call.summary),
+                        "has_transcript": bool(call.transcript),
+                        "duration_seconds": call.duration_seconds,
+                        "speaker_stats": call.speaker_stats,
+                        "progress": 100,
+                        "progress_stage": "Готово"
+                    })
+                except Exception as e:
+                    logger.debug(f"Failed to broadcast completion for call {call_id}: {e}")
+
             except Exception as e:
                 logger.error(f"Background Fireflies processing failed for call {call_id}: {e}", exc_info=True)
                 call.status = CallStatus.failed
@@ -1511,6 +1554,22 @@ class ExternalLinkProcessor:
                 call.progress = 0
                 call.progress_stage = "Ошибка"
                 await db.commit()
+                # Broadcast failure
+                await self._broadcast_call_failed_safe(org_id, call_id, str(e))
+
+    async def _broadcast_call_failed_safe(self, org_id: int, call_id: int, error_message: str):
+        """Safely broadcast call failure, catching any exceptions."""
+        try:
+            from ..routes.realtime import broadcast_call_failed
+            await broadcast_call_failed(org_id, {
+                "id": call_id,
+                "status": "failed",
+                "error_message": error_message,
+                "progress": 0,
+                "progress_stage": "Ошибка"
+            })
+        except Exception as e:
+            logger.debug(f"Failed to broadcast failure for call {call_id}: {e}")
 
 
 # Singleton instance

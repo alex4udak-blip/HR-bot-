@@ -26,7 +26,10 @@ from api.routes.realtime import (
     broadcast_entity_deleted,
     broadcast_chat_message,
     broadcast_share_created,
-    broadcast_share_revoked
+    broadcast_share_revoked,
+    broadcast_call_progress,
+    broadcast_call_completed,
+    broadcast_call_failed
 )
 from api.models.database import User, Organization, OrgMember, OrgRole
 
@@ -925,3 +928,178 @@ class TestEdgeCasesAndErrors:
 
         # Verify all special characters are preserved
         assert event_data["payload"] == payload
+
+
+# ============================================================================
+# 7. Call Processing Events Tests
+# ============================================================================
+
+class TestCallProcessingBroadcasts:
+    """Tests for call processing broadcast functions."""
+
+    @pytest.mark.asyncio
+    async def test_broadcast_call_progress(
+        self,
+        connection_manager: ConnectionManager,
+        mock_websocket,
+        admin_user: User
+    ):
+        """Test broadcasting call processing progress."""
+        org_id = 1
+        await connection_manager.connect(mock_websocket, admin_user, org_id)
+
+        call_data = {
+            "id": 123,
+            "progress": 50,
+            "progress_stage": "Извлечение транскрипта...",
+            "status": "processing"
+        }
+
+        with patch('api.routes.realtime.manager', connection_manager):
+            await broadcast_call_progress(org_id, call_data)
+
+        mock_websocket.send_text.assert_awaited_once()
+        sent_message = mock_websocket.send_text.call_args[0][0]
+        event_data = json.loads(sent_message)
+
+        assert event_data["type"] == "call.progress"
+        assert event_data["payload"]["id"] == 123
+        assert event_data["payload"]["progress"] == 50
+        assert event_data["payload"]["progress_stage"] == "Извлечение транскрипта..."
+
+    @pytest.mark.asyncio
+    async def test_broadcast_call_completed(
+        self,
+        connection_manager: ConnectionManager,
+        mock_websocket,
+        admin_user: User
+    ):
+        """Test broadcasting call processing completion."""
+        org_id = 1
+        await connection_manager.connect(mock_websocket, admin_user, org_id)
+
+        call_data = {
+            "id": 456,
+            "title": "Interview Call",
+            "status": "done",
+            "has_summary": True,
+            "has_transcript": True,
+            "duration_seconds": 1800,
+            "speaker_stats": {"HR": {"total_seconds": 900, "percentage": 50}},
+            "progress": 100,
+            "progress_stage": "Готово"
+        }
+
+        with patch('api.routes.realtime.manager', connection_manager):
+            await broadcast_call_completed(org_id, call_data)
+
+        mock_websocket.send_text.assert_awaited_once()
+        sent_message = mock_websocket.send_text.call_args[0][0]
+        event_data = json.loads(sent_message)
+
+        assert event_data["type"] == "call.completed"
+        assert event_data["payload"]["id"] == 456
+        assert event_data["payload"]["status"] == "done"
+        assert event_data["payload"]["has_summary"] is True
+        assert event_data["payload"]["progress"] == 100
+
+    @pytest.mark.asyncio
+    async def test_broadcast_call_failed(
+        self,
+        connection_manager: ConnectionManager,
+        mock_websocket,
+        admin_user: User
+    ):
+        """Test broadcasting call processing failure."""
+        org_id = 1
+        await connection_manager.connect(mock_websocket, admin_user, org_id)
+
+        call_data = {
+            "id": 789,
+            "status": "failed",
+            "error_message": "Could not extract transcript",
+            "progress": 0,
+            "progress_stage": "Ошибка"
+        }
+
+        with patch('api.routes.realtime.manager', connection_manager):
+            await broadcast_call_failed(org_id, call_data)
+
+        mock_websocket.send_text.assert_awaited_once()
+        sent_message = mock_websocket.send_text.call_args[0][0]
+        event_data = json.loads(sent_message)
+
+        assert event_data["type"] == "call.failed"
+        assert event_data["payload"]["id"] == 789
+        assert event_data["payload"]["status"] == "failed"
+        assert event_data["payload"]["error_message"] == "Could not extract transcript"
+        assert event_data["payload"]["progress"] == 0
+
+    @pytest.mark.asyncio
+    async def test_call_events_only_sent_to_same_org(
+        self,
+        connection_manager: ConnectionManager,
+        admin_user: User,
+        second_user: User
+    ):
+        """Test that call events are only broadcast to users in the same org."""
+        org_id_1 = 1
+        org_id_2 = 2
+
+        ws1 = AsyncMock()
+        ws1.accept = AsyncMock()
+        ws1.send_text = AsyncMock()
+
+        ws2 = AsyncMock()
+        ws2.accept = AsyncMock()
+        ws2.send_text = AsyncMock()
+
+        await connection_manager.connect(ws1, admin_user, org_id_1)
+        await connection_manager.connect(ws2, second_user, org_id_2)
+
+        call_data = {"id": 123, "progress": 75, "progress_stage": "AI анализ..."}
+
+        with patch('api.routes.realtime.manager', connection_manager):
+            await broadcast_call_progress(org_id_1, call_data)
+
+        # Only user in org_1 should receive the event
+        ws1.send_text.assert_awaited_once()
+        ws2.send_text.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_call_progress_multiple_updates(
+        self,
+        connection_manager: ConnectionManager,
+        mock_websocket,
+        admin_user: User
+    ):
+        """Test multiple progress updates are sent correctly."""
+        org_id = 1
+        await connection_manager.connect(mock_websocket, admin_user, org_id)
+
+        progress_stages = [
+            (5, "Запуск обработки..."),
+            (10, "Загрузка страницы Fireflies..."),
+            (30, "Извлечение транскрипта..."),
+            (60, "AI анализ транскрипта..."),
+            (90, "Сохранение результатов..."),
+            (100, "Готово")
+        ]
+
+        with patch('api.routes.realtime.manager', connection_manager):
+            for progress, stage in progress_stages:
+                await broadcast_call_progress(org_id, {
+                    "id": 123,
+                    "progress": progress,
+                    "progress_stage": stage,
+                    "status": "processing" if progress < 100 else "done"
+                })
+
+        # Should have sent 6 messages
+        assert mock_websocket.send_text.await_count == 6
+
+        # Check last message is 100%
+        last_message = mock_websocket.send_text.call_args_list[-1][0][0]
+        event_data = json.loads(last_message)
+        assert event_data["payload"]["progress"] == 100
+        assert event_data["payload"]["progress_stage"] == "Готово"
