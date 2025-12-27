@@ -46,7 +46,22 @@ def mock_websocket():
     ws.send_text = AsyncMock()
     ws.close = AsyncMock()
     ws.receive_text = AsyncMock()
+    ws.cookies = {}  # Empty cookies by default
     return ws
+
+
+@pytest.fixture
+def mock_websocket_with_cookie():
+    """Create a mock WebSocket connection with cookie support."""
+    def _create(cookie_token=None):
+        ws = AsyncMock()
+        ws.accept = AsyncMock()
+        ws.send_text = AsyncMock()
+        ws.close = AsyncMock()
+        ws.receive_text = AsyncMock()
+        ws.cookies = {"access_token": cookie_token} if cookie_token else {}
+        return ws
+    return _create
 
 
 @pytest.fixture
@@ -425,44 +440,61 @@ class TestWebSocketAuthentication:
         self,
         db_session: AsyncSession,
         admin_user: User,
-        admin_token: str
+        admin_token: str,
+        mock_websocket
     ):
         """Test authenticating WebSocket with valid token."""
-        user = await authenticate_websocket(admin_token, db_session)
+        user = await authenticate_websocket(admin_token, mock_websocket, db_session)
 
         assert user is not None
         assert user.id == admin_user.id
         assert user.email == admin_user.email
 
     @pytest.mark.asyncio
-    async def test_authenticate_websocket_no_token(self, db_session: AsyncSession):
+    async def test_authenticate_websocket_no_token(self, db_session: AsyncSession, mock_websocket):
         """Test authenticating WebSocket without token."""
-        user = await authenticate_websocket(None, db_session)
+        user = await authenticate_websocket(None, mock_websocket, db_session)
 
         assert user is None
 
     @pytest.mark.asyncio
-    async def test_authenticate_websocket_empty_token(self, db_session: AsyncSession):
+    async def test_authenticate_websocket_empty_token(self, db_session: AsyncSession, mock_websocket):
         """Test authenticating WebSocket with empty token."""
-        user = await authenticate_websocket("", db_session)
+        user = await authenticate_websocket("", mock_websocket, db_session)
 
         assert user is None
 
     @pytest.mark.asyncio
-    async def test_authenticate_websocket_invalid_token(self, db_session: AsyncSession):
+    async def test_authenticate_websocket_invalid_token(self, db_session: AsyncSession, mock_websocket):
         """Test authenticating WebSocket with invalid token."""
         invalid_token = "invalid.jwt.token"
-        user = await authenticate_websocket(invalid_token, db_session)
+        user = await authenticate_websocket(invalid_token, mock_websocket, db_session)
 
         assert user is None
 
     @pytest.mark.asyncio
-    async def test_authenticate_websocket_malformed_token(self, db_session: AsyncSession):
+    async def test_authenticate_websocket_malformed_token(self, db_session: AsyncSession, mock_websocket):
         """Test authenticating WebSocket with malformed token."""
         malformed_token = "not-a-jwt-token"
-        user = await authenticate_websocket(malformed_token, db_session)
+        user = await authenticate_websocket(malformed_token, mock_websocket, db_session)
 
         assert user is None
+
+    @pytest.mark.asyncio
+    async def test_authenticate_websocket_cookie_auth(
+        self,
+        db_session: AsyncSession,
+        admin_user: User,
+        admin_token: str,
+        mock_websocket_with_cookie
+    ):
+        """Test authenticating WebSocket with cookie-based auth."""
+        ws = mock_websocket_with_cookie(admin_token)
+        user = await authenticate_websocket(None, ws, db_session)
+
+        assert user is not None
+        assert user.id == admin_user.id
+        assert user.email == admin_user.email
 
     @pytest.mark.asyncio
     async def test_get_user_org_id_with_membership(
