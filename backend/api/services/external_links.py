@@ -415,7 +415,15 @@ class ExternalLinkProcessor:
                                 logger.info("Found __NEXT_DATA__ in Fireflies page via Playwright")
                                 next_data = json_module.loads(next_data_match.group(1))
                                 page_props = next_data.get('props', {}).get('pageProps', {})
+                                logger.info(f"Fireflies pageProps keys: {list(page_props.keys())}")
                                 transcript_data = page_props.get('transcript', {})
+
+                                if not transcript_data:
+                                    logger.warning(f"No transcript in pageProps. Available keys: {list(page_props.keys())}")
+                                    # Maybe transcript is under different key
+                                    for key in ['meeting', 'data', 'transcriptData', 'content']:
+                                        if page_props.get(key):
+                                            logger.info(f"Found alternative key '{key}': {type(page_props.get(key))}")
 
                                 if transcript_data:
                                     # Log all available fields in transcript_data
@@ -655,18 +663,69 @@ class ExternalLinkProcessor:
                                         logger.info(f"Found {len(elements)} elements with selector: {selector}")
 
                                         for el in elements:
-                                            # Try to get speaker name from parent or sibling
+                                            # Try multiple approaches to find speaker name
                                             speaker_name = "Speaker"
+                                            timestamp_text = None
+
                                             try:
-                                                # Look for speaker in parent or nearby elements
-                                                speaker_el = await el.query_selector('[class*="speaker"], [class*="Speaker"], [class*="name"], [class*="Name"]')
-                                                if speaker_el:
-                                                    speaker_name = await speaker_el.text_content() or "Speaker"
-                                                else:
-                                                    # Try data attribute
-                                                    speaker_name = await el.get_attribute('data-speaker') or "Speaker"
-                                            except Exception:
-                                                pass
+                                                # Approach 1: Look in parent container for speaker name
+                                                # Fireflies structure: parent has speaker info, child has text
+                                                parent = await el.evaluate_handle('el => el.parentElement')
+                                                if parent:
+                                                    # Try to find speaker name in parent's children
+                                                    for sp_selector in [
+                                                        '[class*="speaker"]', '[class*="Speaker"]',
+                                                        '[class*="name"]', '[class*="Name"]',
+                                                        '[class*="author"]', '[class*="Author"]',
+                                                        '[class*="user"]', '[class*="User"]',
+                                                        'span[class*="css-"]'  # React dynamic classes
+                                                    ]:
+                                                        try:
+                                                            sp_el = await parent.query_selector(sp_selector)
+                                                            if sp_el:
+                                                                sp_text = await sp_el.text_content()
+                                                                if sp_text and sp_text.strip() and len(sp_text.strip()) < 50:
+                                                                    # Check if it looks like a name (not the transcript text)
+                                                                    sp_text = sp_text.strip()
+                                                                    if sp_text != speaker_name and not sp_text.startswith('Speaker'):
+                                                                        speaker_name = sp_text
+                                                                        break
+                                                        except Exception:
+                                                            pass
+
+                                                    # Also look for timestamp in parent
+                                                    for time_selector in ['[class*="time"]', '[class*="Time"]', '[class*="timestamp"]', 'time']:
+                                                        try:
+                                                            time_el = await parent.query_selector(time_selector)
+                                                            if time_el:
+                                                                timestamp_text = await time_el.text_content()
+                                                                break
+                                                        except Exception:
+                                                            pass
+
+                                                # Approach 2: Look in previous sibling
+                                                if speaker_name == "Speaker":
+                                                    try:
+                                                        prev_sibling = await el.evaluate_handle('el => el.previousElementSibling')
+                                                        if prev_sibling:
+                                                            sib_text = await prev_sibling.text_content()
+                                                            if sib_text and len(sib_text.strip()) < 50:
+                                                                speaker_name = sib_text.strip()
+                                                    except Exception:
+                                                        pass
+
+                                                # Approach 3: Direct child elements
+                                                if speaker_name == "Speaker":
+                                                    speaker_el = await el.query_selector('[class*="speaker"], [class*="Speaker"], [class*="name"], [class*="Name"]')
+                                                    if speaker_el:
+                                                        speaker_name = await speaker_el.text_content() or "Speaker"
+
+                                                # Approach 4: data attributes
+                                                if speaker_name == "Speaker":
+                                                    speaker_name = await el.get_attribute('data-speaker') or await el.get_attribute('data-speaker-name') or "Speaker"
+
+                                            except Exception as e:
+                                                logger.debug(f"Error extracting speaker: {e}")
 
                                             # Get text content
                                             text = await el.text_content()
@@ -676,7 +735,7 @@ class ExternalLinkProcessor:
                                                 if len(clean_text) > 2 and clean_text.lower() != speaker_name.lower():
                                                     transcript_parts.append(clean_text)
 
-                                                    # Try to get timing
+                                                    # Try to get timing from data attributes
                                                     start_time = 0
                                                     end_time = 0
                                                     try:
@@ -685,8 +744,20 @@ class ExternalLinkProcessor:
                                                     except Exception:
                                                         pass
 
+                                                    # Try to parse timestamp from text like "01:15"
+                                                    if start_time == 0 and timestamp_text:
+                                                        try:
+                                                            # Parse MM:SS or HH:MM:SS
+                                                            parts = timestamp_text.strip().split(':')
+                                                            if len(parts) == 2:
+                                                                start_time = int(parts[0]) * 60 + int(parts[1])
+                                                            elif len(parts) == 3:
+                                                                start_time = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                                                        except Exception:
+                                                            pass
+
                                                     speaker_data.append({
-                                                        "speaker": speaker_name.strip(),
+                                                        "speaker": speaker_name.strip() if speaker_name else "Speaker",
                                                         "text": clean_text,
                                                         "start": start_time,
                                                         "end": end_time
@@ -694,6 +765,9 @@ class ExternalLinkProcessor:
 
                                         if transcript_parts:
                                             logger.info(f"Extracted {len(transcript_parts)} transcript parts")
+                                            # Log first speaker to debug
+                                            if speaker_data:
+                                                logger.info(f"First speaker extracted: {speaker_data[0].get('speaker', 'Unknown')}")
                                             break
                                 except Exception as sel_err:
                                     logger.debug(f"Selector {selector} failed: {sel_err}")
@@ -1357,12 +1431,14 @@ class ExternalLinkProcessor:
             logger.info(f"Created pending CallRecording {call.id} for async processing")
             return call
 
-    async def _update_progress(self, call_id: int, progress: int, stage: str):
-        """Update progress for a call in the database."""
+    async def _update_progress(self, call_id: int, progress: int, stage: str, org_id: int = None):
+        """Update progress for a call in the database and broadcast via WebSocket."""
         from ..database import AsyncSessionLocal
-        from sqlalchemy import update
+        from sqlalchemy import update, select
+        from ..routes.realtime import broadcast_call_progress
 
         async with AsyncSessionLocal() as db:
+            # Update progress in database
             await db.execute(
                 update(CallRecording)
                 .where(CallRecording.id == call_id)
@@ -1371,14 +1447,34 @@ class ExternalLinkProcessor:
             await db.commit()
             logger.debug(f"Call {call_id} progress: {progress}% - {stage}")
 
+            # Get org_id if not provided
+            if org_id is None:
+                result = await db.execute(
+                    select(CallRecording.org_id).where(CallRecording.id == call_id)
+                )
+                org_id = result.scalar_one_or_none()
+
+            # Broadcast progress update via WebSocket
+            if org_id:
+                try:
+                    await broadcast_call_progress(org_id, {
+                        "id": call_id,
+                        "progress": progress,
+                        "progress_stage": stage,
+                        "status": "processing"
+                    })
+                except Exception as e:
+                    logger.debug(f"Failed to broadcast progress for call {call_id}: {e}")
+
     async def process_fireflies_async(self, call_id: int):
         """
         Process Fireflies URL in background.
         Called as a background task after create_pending_call.
-        Reports progress at each stage.
+        Reports progress at each stage and broadcasts real-time updates via WebSocket.
         """
         from ..database import AsyncSessionLocal
         from sqlalchemy import select
+        from ..routes.realtime import broadcast_call_completed, broadcast_call_failed
 
         logger.info(f"Starting background Fireflies processing for call {call_id}")
 
@@ -1396,6 +1492,9 @@ class ExternalLinkProcessor:
                 logger.error(f"Call {call_id} not found for Fireflies processing")
                 return
 
+            # Store org_id for broadcasts
+            org_id = call.org_id
+
             if not call.source_url:
                 logger.error(f"Call {call_id} has no source_url")
                 call.status = CallStatus.failed
@@ -1403,11 +1502,13 @@ class ExternalLinkProcessor:
                 call.progress = 0
                 call.progress_stage = "Ошибка"
                 await db.commit()
+                # Broadcast failure
+                await self._broadcast_call_failed_safe(org_id, call_id, "No source URL")
                 return
 
             try:
                 # Stage 2: Loading page
-                await self._update_progress(call_id, 10, "Загрузка страницы Fireflies...")
+                await self._update_progress(call_id, 10, "Загрузка страницы Fireflies...", org_id)
 
                 # Process Fireflies - this takes 1-2 minutes
                 # The _process_fireflies method will update progress internally
@@ -1430,6 +1531,22 @@ class ExternalLinkProcessor:
                 await db.commit()
                 logger.info(f"Background Fireflies processing complete for call {call_id}")
 
+                # Broadcast completion via WebSocket
+                try:
+                    await broadcast_call_completed(org_id, {
+                        "id": call_id,
+                        "title": call.title,
+                        "status": "done",
+                        "has_summary": bool(call.summary),
+                        "has_transcript": bool(call.transcript),
+                        "duration_seconds": call.duration_seconds,
+                        "speaker_stats": call.speaker_stats,
+                        "progress": 100,
+                        "progress_stage": "Готово"
+                    })
+                except Exception as e:
+                    logger.debug(f"Failed to broadcast completion for call {call_id}: {e}")
+
             except Exception as e:
                 logger.error(f"Background Fireflies processing failed for call {call_id}: {e}", exc_info=True)
                 call.status = CallStatus.failed
@@ -1437,6 +1554,22 @@ class ExternalLinkProcessor:
                 call.progress = 0
                 call.progress_stage = "Ошибка"
                 await db.commit()
+                # Broadcast failure
+                await self._broadcast_call_failed_safe(org_id, call_id, str(e))
+
+    async def _broadcast_call_failed_safe(self, org_id: int, call_id: int, error_message: str):
+        """Safely broadcast call failure, catching any exceptions."""
+        try:
+            from ..routes.realtime import broadcast_call_failed
+            await broadcast_call_failed(org_id, {
+                "id": call_id,
+                "status": "failed",
+                "error_message": error_message,
+                "progress": 0,
+                "progress_stage": "Ошибка"
+            })
+        except Exception as e:
+            logger.debug(f"Failed to broadcast failure for call {call_id}: {e}")
 
 
 # Singleton instance

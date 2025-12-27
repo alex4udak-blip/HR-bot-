@@ -14,6 +14,7 @@ import DepartmentsPage from '@/pages/DepartmentsPage';
 import SettingsPage from '@/pages/SettingsPage';
 import AdminSimulatorPage from '@/pages/AdminSimulatorPage';
 import Layout from '@/components/Layout';
+import { WebSocketProvider } from '@/components/WebSocketProvider';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuthStore();
@@ -56,7 +57,9 @@ export default function App() {
         path="/"
         element={
           <ProtectedRoute>
-            <Layout />
+            <WebSocketProvider>
+              <Layout />
+            </WebSocketProvider>
           </ProtectedRoute>
         }
       >

@@ -152,21 +152,36 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-async def authenticate_websocket(token: Optional[str], db: AsyncSession) -> Optional[User]:
-    """Authenticate WebSocket connection using JWT token.
+async def authenticate_websocket(token: Optional[str], websocket: WebSocket, db: AsyncSession) -> Optional[User]:
+    """Authenticate WebSocket connection using JWT token or cookie.
+
+    Supports two authentication methods:
+    1. JWT token in query parameter: ws://host/ws?token=<jwt_token>
+    2. access_token cookie (httpOnly) - automatically sent by browser
 
     Args:
-        token: JWT token from query parameter
+        token: JWT token from query parameter (optional)
+        websocket: WebSocket connection to extract cookies from
         db: Database session
 
     Returns:
         User object if authenticated, None otherwise
     """
-    if not token:
-        return None
+    # Try query parameter token first
+    if token:
+        user = await get_user_from_token(token, db)
+        if user:
+            return user
 
-    user = await get_user_from_token(token, db)
-    return user
+    # Fallback to cookie-based auth
+    cookies = websocket.cookies
+    cookie_token = cookies.get("access_token")
+    if cookie_token:
+        user = await get_user_from_token(cookie_token, db)
+        if user:
+            return user
+
+    return None
 
 
 async def get_user_org_id(user: User, db: AsyncSession) -> Optional[int]:
@@ -191,8 +206,9 @@ async def websocket_endpoint(
 ):
     """WebSocket endpoint for real-time events.
 
-    Connection requires JWT token in query parameter:
-    ws://host/ws?token=<jwt_token>
+    Authentication methods (in order of priority):
+    1. JWT token in query parameter: ws://host/ws?token=<jwt_token>
+    2. access_token cookie (httpOnly) - automatically sent by browser
 
     Events are broadcast in the following format:
     {
@@ -208,14 +224,17 @@ async def websocket_endpoint(
     - chat.message
     - share.created
     - share.revoked
+    - call.progress (call processing progress update)
+    - call.completed (call processing finished successfully)
+    - call.failed (call processing failed with error)
     """
     # Get database session
     db_gen = get_db()
     db = await anext(db_gen)
 
     try:
-        # Authenticate user
-        user = await authenticate_websocket(token, db)
+        # Authenticate user (supports both query token and cookie)
+        user = await authenticate_websocket(token, websocket, db)
 
         if not user:
             # Close connection with 401/403 status code
@@ -247,7 +266,7 @@ async def websocket_endpoint(
                 except asyncio.TimeoutError:
                     # Periodic token validation
                     # Re-validate token to handle expiry
-                    current_user = await authenticate_websocket(token, db)
+                    current_user = await authenticate_websocket(token, websocket, db)
                     if not current_user or current_user.id != user.id:
                         # Token expired or invalidated
                         await websocket.close(
@@ -316,3 +335,50 @@ async def broadcast_share_created(user_id: int, share_data: Dict[str, Any]):
 async def broadcast_share_revoked(user_id: int, share_data: Dict[str, Any]):
     """Broadcast share.revoked event to specific user."""
     await manager.broadcast_to_user(user_id, "share.revoked", share_data)
+
+
+# ============================================================================
+# CALL PROCESSING EVENTS
+# ============================================================================
+
+async def broadcast_call_progress(org_id: int, call_data: Dict[str, Any]):
+    """Broadcast call.progress event to organization.
+
+    Args:
+        org_id: Organization ID
+        call_data: Call progress data including:
+            - id: Call ID
+            - progress: Progress percentage (0-100)
+            - progress_stage: Current stage description
+            - status: Current status (pending, transcribing, analyzing, etc.)
+    """
+    await manager.broadcast_to_org(org_id, "call.progress", call_data)
+
+
+async def broadcast_call_completed(org_id: int, call_data: Dict[str, Any]):
+    """Broadcast call.completed event to organization.
+
+    Args:
+        org_id: Organization ID
+        call_data: Completed call data including:
+            - id: Call ID
+            - title: Call title
+            - status: "done"
+            - has_summary: Whether summary is available
+            - has_transcript: Whether transcript is available
+            - duration_seconds: Call duration
+    """
+    await manager.broadcast_to_org(org_id, "call.completed", call_data)
+
+
+async def broadcast_call_failed(org_id: int, call_data: Dict[str, Any]):
+    """Broadcast call.failed event to organization.
+
+    Args:
+        org_id: Organization ID
+        call_data: Failed call data including:
+            - id: Call ID
+            - error_message: Error description
+            - status: "failed"
+    """
+    await manager.broadcast_to_org(org_id, "call.failed", call_data)
