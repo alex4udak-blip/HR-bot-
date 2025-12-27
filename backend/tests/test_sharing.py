@@ -534,3 +534,153 @@ class TestSharableUsers:
 
         user_ids = [u["id"] for u in data]
         assert other_user.id not in user_ids, "Users from other orgs should not appear"
+
+
+class TestAutoShareRelated:
+    """Tests for auto_share_related feature in general sharing endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_entity_share_auto_shares_linked_chat(
+        self, db_session, client, admin_user, admin_token, entity, second_user, organization, get_auth_headers, org_owner, org_member
+    ):
+        """Test that sharing entity with auto_share_related=True also shares linked chats."""
+        from api.models.database import Chat, ChatType, SharedAccess
+
+        # Create a chat linked to the entity
+        linked_chat = Chat(
+            org_id=organization.id,
+            owner_id=admin_user.id,
+            entity_id=entity.id,
+            telegram_chat_id=99001,
+            title="Chat linked to entity",
+            chat_type=ChatType.hr
+        )
+        db_session.add(linked_chat)
+        await db_session.commit()
+        await db_session.refresh(linked_chat)
+
+        # Share entity via general sharing endpoint (auto_share_related=True by default)
+        response = await client.post(
+            "/api/sharing",
+            json={
+                "resource_type": "entity",
+                "resource_id": entity.id,
+                "shared_with_id": second_user.id,
+                "access_level": "view",
+                "auto_share_related": True
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+
+        # Check that linked chat was also shared
+        from sqlalchemy import select
+        chat_share_result = await db_session.execute(
+            select(SharedAccess).where(
+                SharedAccess.resource_type == ResourceType.chat,
+                SharedAccess.resource_id == linked_chat.id,
+                SharedAccess.shared_with_id == second_user.id
+            )
+        )
+        chat_share = chat_share_result.scalar_one_or_none()
+
+        assert chat_share is not None, "Linked chat should be auto-shared"
+        assert chat_share.access_level == AccessLevel.view, "Chat should have same access level as entity"
+
+    @pytest.mark.asyncio
+    async def test_entity_share_auto_shares_linked_call(
+        self, db_session, client, admin_user, admin_token, entity, second_user, organization, get_auth_headers, org_owner, org_member
+    ):
+        """Test that sharing entity with auto_share_related=True also shares linked calls."""
+        from api.models.database import CallRecording, CallSource, CallStatus, SharedAccess
+
+        # Create a call linked to the entity
+        linked_call = CallRecording(
+            org_id=organization.id,
+            owner_id=admin_user.id,
+            entity_id=entity.id,
+            source_type=CallSource.upload,
+            status=CallStatus.done,
+            title="Call linked to entity"
+        )
+        db_session.add(linked_call)
+        await db_session.commit()
+        await db_session.refresh(linked_call)
+
+        # Share entity via general sharing endpoint (auto_share_related=True by default)
+        response = await client.post(
+            "/api/sharing",
+            json={
+                "resource_type": "entity",
+                "resource_id": entity.id,
+                "shared_with_id": second_user.id,
+                "access_level": "edit",
+                "auto_share_related": True
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+
+        # Check that linked call was also shared
+        from sqlalchemy import select
+        call_share_result = await db_session.execute(
+            select(SharedAccess).where(
+                SharedAccess.resource_type == ResourceType.call,
+                SharedAccess.resource_id == linked_call.id,
+                SharedAccess.shared_with_id == second_user.id
+            )
+        )
+        call_share = call_share_result.scalar_one_or_none()
+
+        assert call_share is not None, "Linked call should be auto-shared"
+        assert call_share.access_level == AccessLevel.edit, "Call should have same access level as entity"
+
+    @pytest.mark.asyncio
+    async def test_entity_share_no_auto_share_when_disabled(
+        self, db_session, client, admin_user, admin_token, entity, second_user, organization, get_auth_headers, org_owner, org_member
+    ):
+        """Test that auto_share_related=False does not share linked resources."""
+        from api.models.database import Chat, ChatType, SharedAccess
+
+        # Create a chat linked to the entity
+        linked_chat = Chat(
+            org_id=organization.id,
+            owner_id=admin_user.id,
+            entity_id=entity.id,
+            telegram_chat_id=99003,
+            title="Chat that should NOT be shared",
+            chat_type=ChatType.hr
+        )
+        db_session.add(linked_chat)
+        await db_session.commit()
+        await db_session.refresh(linked_chat)
+
+        # Share entity with auto_share_related=False
+        response = await client.post(
+            "/api/sharing",
+            json={
+                "resource_type": "entity",
+                "resource_id": entity.id,
+                "shared_with_id": second_user.id,
+                "access_level": "view",
+                "auto_share_related": False
+            },
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+
+        # Check that linked chat was NOT shared
+        from sqlalchemy import select
+        chat_share_result = await db_session.execute(
+            select(SharedAccess).where(
+                SharedAccess.resource_type == ResourceType.chat,
+                SharedAccess.resource_id == linked_chat.id,
+                SharedAccess.shared_with_id == second_user.id
+            )
+        )
+        chat_share = chat_share_result.scalar_one_or_none()
+
+        assert chat_share is None, "Linked chat should NOT be shared when auto_share_related=False"
