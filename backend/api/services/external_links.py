@@ -1002,6 +1002,126 @@ class ExternalLinkProcessor:
                                 if call_id:
                                     await self._update_progress(call_id, 50, "Транскрипт извлечён, обработка спикеров...")
 
+                        # Extract duration and speaker statistics from the page
+                        try:
+                            stats = await page.evaluate('''() => {
+                                let result = {
+                                    duration: null,
+                                    durationSeconds: null,
+                                    speakerStats: []
+                                };
+
+                                // Try to find duration (format: "MM:SS" or "HH:MM:SS")
+                                // Look in player controls, metadata sections, etc.
+                                const durationSelectors = [
+                                    '[class*="duration"]', '[class*="Duration"]',
+                                    '[class*="time-total"]', '[class*="total-time"]',
+                                    '[class*="audio-duration"]', '[class*="video-duration"]',
+                                    '[class*="player"] [class*="time"]',
+                                    'time', '[datetime]'
+                                ];
+
+                                for (const sel of durationSelectors) {
+                                    const els = document.querySelectorAll(sel);
+                                    for (const el of els) {
+                                        const text = el.textContent?.trim();
+                                        // Match MM:SS or HH:MM:SS pattern
+                                        const match = text?.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+                                        if (match) {
+                                            result.duration = text;
+                                            // Convert to seconds
+                                            if (match[3]) {
+                                                // HH:MM:SS
+                                                result.durationSeconds = parseInt(match[1])*3600 + parseInt(match[2])*60 + parseInt(match[3]);
+                                            } else {
+                                                // MM:SS
+                                                result.durationSeconds = parseInt(match[1])*60 + parseInt(match[2]);
+                                            }
+                                            break;
+                                        }
+                                    }
+                                    if (result.duration) break;
+                                }
+
+                                // Also try to find "/ MM:SS" pattern (common in players like "00:00 / 14:31")
+                                if (!result.duration) {
+                                    const allText = document.body.innerText;
+                                    const playerMatch = allText.match(/\d{1,2}:\d{2}\s*\/\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+                                    if (playerMatch) {
+                                        if (playerMatch[3]) {
+                                            result.duration = `${playerMatch[1]}:${playerMatch[2]}:${playerMatch[3]}`;
+                                            result.durationSeconds = parseInt(playerMatch[1])*3600 + parseInt(playerMatch[2])*60 + parseInt(playerMatch[3]);
+                                        } else {
+                                            result.duration = `${playerMatch[1]}:${playerMatch[2]}`;
+                                            result.durationSeconds = parseInt(playerMatch[1])*60 + parseInt(playerMatch[2]);
+                                        }
+                                    }
+                                }
+
+                                // Look for speaker talktime statistics
+                                // Fireflies shows: Speaker Name | WPM | TALKTIME%
+                                const talktimeSelectors = [
+                                    '[class*="talktime"]', '[class*="Talktime"]', '[class*="talk-time"]',
+                                    '[class*="speaker-stat"]', '[class*="SpeakerStat"]',
+                                    '[class*="analytics"]', '[class*="Analytics"]'
+                                ];
+
+                                // Find speaker stats container
+                                for (const sel of talktimeSelectors) {
+                                    const container = document.querySelector(sel);
+                                    if (container) {
+                                        // Look for individual speaker rows
+                                        const rows = container.querySelectorAll('[class*="row"], [class*="item"], [class*="speaker"], tr, li');
+                                        for (const row of rows) {
+                                            const text = row.textContent?.trim();
+                                            // Try to extract name, WPM, and percentage
+                                            // Pattern like: "Inna I. 23 55%"
+                                            const wpmMatch = text?.match(/(.+?)\s+(\d+)\s*(?:WPM|wpm)?\s*(\d+)\s*%/);
+                                            if (wpmMatch) {
+                                                result.speakerStats.push({
+                                                    name: wpmMatch[1].trim(),
+                                                    wpm: parseInt(wpmMatch[2]),
+                                                    talktimePercent: parseInt(wpmMatch[3])
+                                                });
+                                            }
+                                        }
+                                        if (result.speakerStats.length > 0) break;
+                                    }
+                                }
+
+                                // Alternative: Look for speaker names with percentages nearby
+                                if (result.speakerStats.length === 0) {
+                                    const percentEls = document.querySelectorAll('[class*="percent"], [class*="Percent"]');
+                                    for (const el of percentEls) {
+                                        const parent = el.closest('[class*="speaker"], [class*="row"], [class*="item"]');
+                                        if (parent) {
+                                            const text = parent.textContent?.trim();
+                                            const match = text?.match(/(.+?)\s+(\d+)\s*%/);
+                                            if (match) {
+                                                result.speakerStats.push({
+                                                    name: match[1].replace(/\d+\s*(?:WPM|wpm)?/, '').trim(),
+                                                    talktimePercent: parseInt(match[2])
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+
+                                return result;
+                            }''')
+
+                            if stats:
+                                if stats.get('duration'):
+                                    logger.info(f"Extracted duration: {stats['duration']} ({stats.get('durationSeconds')} seconds)")
+                                    call.duration_seconds = stats.get('durationSeconds')
+                                if stats.get('speakerStats'):
+                                    logger.info(f"Extracted speaker stats: {stats['speakerStats']}")
+                                    # Store in call metadata or update speaker_stats later
+                                    if not hasattr(call, '_fireflies_speaker_stats'):
+                                        call._fireflies_speaker_stats = stats['speakerStats']
+                        except Exception as stats_err:
+                            logger.warning(f"Could not extract duration/stats: {stats_err}")
+
                         await browser.close()
 
                 except ImportError:
@@ -1337,6 +1457,23 @@ class ExternalLinkProcessor:
                 from .call_processor import calculate_speaker_stats, identify_participant_roles
                 call.speaker_stats = calculate_speaker_stats(call.speakers)
                 logger.info(f"Calculated speaker stats for {len(call.speaker_stats)} speakers")
+
+                # If we have Fireflies speaker stats with WPM and talktime, merge them
+                fireflies_stats = getattr(call, '_fireflies_speaker_stats', None)
+                if fireflies_stats:
+                    logger.info(f"Merging Fireflies speaker stats: {fireflies_stats}")
+                    for ff_stat in fireflies_stats:
+                        ff_name = ff_stat.get('name', '').lower()
+                        # Find matching speaker in calculated stats
+                        for speaker_name, stats in call.speaker_stats.items():
+                            if ff_name and (ff_name in speaker_name.lower() or speaker_name.lower() in ff_name):
+                                # Update with Fireflies data
+                                if ff_stat.get('wpm'):
+                                    stats['wpm'] = ff_stat['wpm']
+                                if ff_stat.get('talktimePercent'):
+                                    stats['talktime_percent'] = ff_stat['talktimePercent']
+                                logger.info(f"Updated speaker '{speaker_name}' with Fireflies stats: wpm={ff_stat.get('wpm')}, talktime={ff_stat.get('talktimePercent')}%")
+                                break
 
             logger.info(f"Fireflies transcript processed successfully: {len(call.transcript)} chars")
 
