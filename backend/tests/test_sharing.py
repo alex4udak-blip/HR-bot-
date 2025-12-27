@@ -456,7 +456,7 @@ class TestDuplicateShares:
 
     @pytest.mark.asyncio
     async def test_cannot_create_duplicate_share(
-        self, client, admin_user, admin_token, entity, entity_share_view, second_user, get_auth_headers, org_owner
+        self, client, admin_user, admin_token, entity, entity_share_view, second_user, get_auth_headers, org_owner, org_member
     ):
         """Test that duplicate shares are not created."""
         response = await client.post(

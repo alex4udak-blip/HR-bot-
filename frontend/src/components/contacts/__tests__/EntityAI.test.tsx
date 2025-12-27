@@ -160,12 +160,14 @@ describe('EntityAI', () => {
 
       render(<EntityAI entity={mockEntity} />);
 
+      // Use title attribute since text is hidden on small screens (hidden sm:inline)
+      // Title is "Показать память AI" when memory has data
       await waitFor(() => {
-        const memoryButton = screen.getByText('Память');
+        const memoryButton = screen.getByTitle(/показать память ai/i);
         expect(memoryButton).toBeInTheDocument();
       });
 
-      const memoryButton = screen.getByText('Память');
+      const memoryButton = screen.getByTitle(/показать память ai/i);
       await userEvent.click(memoryButton);
 
       await waitFor(() => {
@@ -191,12 +193,13 @@ describe('EntityAI', () => {
 
       render(<EntityAI entity={mockEntity} />);
 
+      // Use title attribute since text is hidden on small screens (hidden sm:inline)
       await waitFor(() => {
-        const updateButton = screen.getByText('Обновить');
+        const updateButton = screen.getByTitle('Обновить память AI (резюме + события)');
         expect(updateButton).toBeInTheDocument();
       });
 
-      const updateButton = screen.getByText('Обновить');
+      const updateButton = screen.getByTitle('Обновить память AI (резюме + события)');
       await userEvent.click(updateButton);
 
       await waitFor(() => {

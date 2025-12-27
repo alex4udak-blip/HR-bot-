@@ -90,6 +90,7 @@ class TestDeletedChatsNoNPlusOne:
         admin_user,
         admin_token,
         organization,
+        org_owner,  # Required to give admin_user access to the organization
         get_auth_headers
     ):
         """
@@ -187,6 +188,7 @@ class TestDepartmentChildrenNoNPlusOne:
         admin_user,
         admin_token,
         organization,
+        org_owner,  # Required to give admin_user access to the organization
         get_auth_headers
     ):
         """
@@ -309,6 +311,7 @@ class TestMyDepartmentsNoNPlusOne:
         admin_user,
         admin_token,
         organization,
+        org_owner,  # Required to give admin_user access to the organization
         get_auth_headers
     ):
         """
@@ -524,6 +527,7 @@ class TestSharableUsersNoNPlusOne:
         admin_user,
         admin_token,
         organization,
+        org_owner,  # Required to give admin_user access to the organization
         get_auth_headers
     ):
         """
