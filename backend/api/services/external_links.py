@@ -416,6 +416,17 @@ class ExternalLinkProcessor:
                                 next_data = json_module.loads(next_data_match.group(1))
                                 page_props = next_data.get('props', {}).get('pageProps', {})
                                 logger.info(f"Fireflies pageProps keys: {list(page_props.keys())}")
+
+                                # Log ALL pageProps structure to find speakers/analytics
+                                for pp_key in page_props.keys():
+                                    pp_val = page_props.get(pp_key)
+                                    if isinstance(pp_val, dict):
+                                        logger.info(f"pageProps['{pp_key}'] is dict with keys: {list(pp_val.keys())}")
+                                    elif isinstance(pp_val, list) and len(pp_val) > 0:
+                                        logger.info(f"pageProps['{pp_key}'] is list with {len(pp_val)} items")
+                                        if isinstance(pp_val[0], dict):
+                                            logger.info(f"  First item keys: {list(pp_val[0].keys())}")
+
                                 transcript_data = page_props.get('transcript', {})
 
                                 if not transcript_data:
@@ -438,6 +449,15 @@ class ExternalLinkProcessor:
                                                 logger.info(f"Fireflies '{key}' first item sample: {val[0]}")
                                         elif isinstance(val, dict):
                                             logger.info(f"Fireflies '{key}' is dict with keys: {list(val.keys())}")
+                                            # Log nested dict contents for important keys
+                                            if key in ['analytics', 'speakerAnalytics', 'speaker_analytics', 'speakerTalktime', 'speaker_talktime', 'speakers']:
+                                                for nested_key, nested_val in val.items():
+                                                    if isinstance(nested_val, list) and nested_val:
+                                                        logger.info(f"  '{key}.{nested_key}' list ({len(nested_val)} items): {nested_val[:2]}")
+                                                    elif isinstance(nested_val, dict):
+                                                        logger.info(f"  '{key}.{nested_key}' dict keys: {list(nested_val.keys())}")
+                                                    else:
+                                                        logger.info(f"  '{key}.{nested_key}': {nested_val}")
                                         elif val is not None:
                                             logger.info(f"Fireflies '{key}': {type(val).__name__} = {str(val)[:100]}")
 
@@ -538,6 +558,21 @@ class ExternalLinkProcessor:
                                     else:
                                         logger.warning(f"No speaker mapping built - speakers_info empty and no participants found")
 
+                                    # FALLBACK: Try to extract name from meeting title
+                                    # Fireflies often uses participant name as meeting title (e.g., "Inna I.", "плюхаев матвей")
+                                    if not speaker_map and title:
+                                        # Clean title - remove common suffixes
+                                        clean_title = title
+                                        for suffix in [' - Meeting recording', ' - Запись встречи', ' meeting', ' Meeting', ' call', ' Call']:
+                                            if clean_title.endswith(suffix):
+                                                clean_title = clean_title[:-len(suffix)]
+
+                                        # If title looks like a name (not too long, no special chars)
+                                        if clean_title and len(clean_title) < 50 and not any(c in clean_title for c in ['http', '/', '@', '#']):
+                                            # Use title as first speaker name
+                                            speaker_map['0'] = clean_title.strip()
+                                            logger.info(f"Using meeting title as speaker name: '{clean_title}'")
+
                                     # Log first sentence structure to understand fields - CRITICAL FOR DEBUGGING
                                     if sentences:
                                         logger.info(f"Fireflies sentence count: {len(sentences)}")
@@ -606,7 +641,22 @@ class ExternalLinkProcessor:
                                                 if raw_speaker and raw_speaker != 'Speaker':
                                                     speaker_name = raw_speaker  # Use "Speaker 1", "Speaker 2" etc if that's all we have
 
-                                            speaker_name = speaker_name or 'Speaker'
+                                            # 7. LAST RESORT: Use numbered speaker based on speaker_id
+                                            # This ensures we at least distinguish between different speakers
+                                            if not speaker_name or speaker_name == 'Speaker':
+                                                sp_id = s.get('speaker_id') or s.get('speakerId') or s.get('speaker_index') or s.get('speakerIndex')
+                                                if sp_id is not None:
+                                                    try:
+                                                        sp_num = int(sp_id)
+                                                        # Use title for speaker 0 if available, otherwise numbered
+                                                        if sp_num == 0 and '0' in speaker_map:
+                                                            speaker_name = speaker_map['0']
+                                                        else:
+                                                            speaker_name = f"Спикер {sp_num + 1}"
+                                                    except (ValueError, TypeError):
+                                                        speaker_name = f"Спикер ({sp_id})"
+
+                                            speaker_name = speaker_name or 'Спикер'
 
                                             # Log first few sentences to debug speaker extraction
                                             if len(speakers) < 5:
@@ -918,19 +968,36 @@ class ExternalLinkProcessor:
                         try:
                             next_data = json.loads(next_data_match.group(1))
                             page_props = next_data.get('props', {}).get('pageProps', {})
+
+                            # Log ALL pageProps structure
+                            logger.info(f"[HTTP] pageProps keys: {list(page_props.keys())}")
+                            for pp_key in page_props.keys():
+                                pp_val = page_props.get(pp_key)
+                                if isinstance(pp_val, dict):
+                                    logger.info(f"[HTTP] pageProps['{pp_key}'] dict keys: {list(pp_val.keys())}")
+                                elif isinstance(pp_val, list) and len(pp_val) > 0:
+                                    logger.info(f"[HTTP] pageProps['{pp_key}'] list ({len(pp_val)} items)")
+
                             transcript_data = page_props.get('transcript', {})
 
                             if transcript_data:
                                 # Log ALL keys for debugging (HTTP path)
                                 logger.info(f"[HTTP] Fireflies transcript_data keys: {list(transcript_data.keys())}")
 
-                                # Log all top-level data
+                                # Log all top-level data with nested inspection
                                 for key in transcript_data.keys():
                                     val = transcript_data.get(key)
                                     if isinstance(val, list) and len(val) > 0:
                                         logger.info(f"[HTTP] Fireflies '{key}' is list with {len(val)} items, first item: {val[0] if isinstance(val[0], dict) else type(val[0])}")
                                     elif isinstance(val, dict):
                                         logger.info(f"[HTTP] Fireflies '{key}' is dict with keys: {list(val.keys())}")
+                                        # Log nested for important keys
+                                        if key in ['analytics', 'speakerAnalytics', 'speakers']:
+                                            for nk, nv in val.items():
+                                                if isinstance(nv, list) and nv:
+                                                    logger.info(f"[HTTP]   '{key}.{nk}' list: {nv[:2]}")
+                                                else:
+                                                    logger.info(f"[HTTP]   '{key}.{nk}': {str(nv)[:100]}")
 
                                 title = title or transcript_data.get('title')
                                 sentences = transcript_data.get('sentences', [])
@@ -1003,6 +1070,16 @@ class ExternalLinkProcessor:
                                             speaker_map[str(i)] = p
 
                                 logger.info(f"[HTTP] Built speaker_map: {speaker_map}")
+
+                                # FALLBACK: Try to extract name from meeting title
+                                if not speaker_map and title:
+                                    clean_title = title
+                                    for suffix in [' - Meeting recording', ' - Запись встречи', ' meeting', ' Meeting', ' call', ' Call']:
+                                        if clean_title.endswith(suffix):
+                                            clean_title = clean_title[:-len(suffix)]
+                                    if clean_title and len(clean_title) < 50 and not any(c in clean_title for c in ['http', '/', '@', '#']):
+                                        speaker_map['0'] = clean_title.strip()
+                                        logger.info(f"[HTTP] Using meeting title as speaker name: '{clean_title}'")
 
                                 if sentences:
                                     # Log first sentence for debugging
