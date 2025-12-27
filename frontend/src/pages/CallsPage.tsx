@@ -33,7 +33,9 @@ export default function CallsPage() {
   const {
     user,
     canEditResource,
-    canDeleteResource
+    canDeleteResource,
+    isSuperAdmin,
+    isOwner
   } = useAuthStore();
 
   const {
@@ -67,6 +69,14 @@ export default function CallsPage() {
       access_level: call.access_level ?? undefined
     });
   };
+
+  // Filter calls by access - superadmin and owner see everything, others only see their own or shared
+  const accessibleCalls = calls.filter((call) => {
+    return isSuperAdmin() || isOwner() ||
+      call.is_mine === true ||
+      call.is_shared === true ||
+      call.owner_id === user?.id;
+  });
 
   // Fetch calls on mount
   useEffect(() => {
@@ -290,11 +300,11 @@ export default function CallsPage() {
 
         {/* Call List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {loading && calls.length === 0 ? (
+          {loading && accessibleCalls.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
             </div>
-          ) : calls.length === 0 ? (
+          ) : accessibleCalls.length === 0 ? (
             <div className="text-center py-8 text-white/40">
               <Phone className="mx-auto mb-2" size={40} />
               <p>Нет записей звонков</p>
@@ -306,7 +316,7 @@ export default function CallsPage() {
               </button>
             </div>
           ) : (
-            calls.map((call) => {
+            accessibleCalls.map((call) => {
               const isSelected = currentCall?.id === call.id;
 
               return (

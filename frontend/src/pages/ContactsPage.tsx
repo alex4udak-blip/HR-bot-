@@ -74,9 +74,12 @@ export default function ContactsPage() {
   const [selectedEntityForTransfer, setSelectedEntityForTransfer] = useState<Entity | null>(null);
 
   const {
+    user,
     canEditResource,
     canDeleteResource,
-    canShareResource
+    canShareResource,
+    isSuperAdmin,
+    isOwner
   } = useAuthStore();
 
   const {
@@ -217,8 +220,16 @@ export default function ContactsPage() {
     setShowCreateModal(true);
   };
 
-  // Count entities per type
-  const typeCounts = entities.reduce((acc, entity) => {
+  // Filter entities by access - superadmin and owner see everything, others only see their own or shared
+  const accessibleEntities = entities.filter((entity) => {
+    return isSuperAdmin() || isOwner() ||
+      entity.is_mine === true ||
+      entity.is_shared === true ||
+      entity.created_by === user?.id;
+  });
+
+  // Count entities per type - only count accessible entities
+  const typeCounts = accessibleEntities.reduce((acc, entity) => {
     acc[entity.type] = (acc[entity.type] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
@@ -296,8 +307,8 @@ export default function ContactsPage() {
             })}
           </div>
 
-          {/* Department Filter */}
-          {departments.length > 0 && (
+          {/* Department Filter - Only for Superadmin/Owner */}
+          {departments.length > 0 && (isSuperAdmin() || isOwner()) && (
             <div className="mb-3">
               <select
                 value={departmentFilter}
@@ -319,7 +330,7 @@ export default function ContactsPage() {
             {ENTITY_TYPE_FILTERS.map((filter) => {
               const Icon = filter.icon;
               const count = filter.id === 'all'
-                ? entities.length
+                ? accessibleEntities.length
                 : typeCounts[filter.id] || 0;
 
               return (
@@ -344,11 +355,11 @@ export default function ContactsPage() {
 
         {/* Entity List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {loading && entities.length === 0 ? (
+          {loading && accessibleEntities.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
             </div>
-          ) : entities.length === 0 ? (
+          ) : accessibleEntities.length === 0 ? (
             <div className="text-center py-8 text-white/40">
               <Users className="mx-auto mb-2" size={40} />
               <p>Контакты не найдены</p>
@@ -363,7 +374,7 @@ export default function ContactsPage() {
               </button>
             </div>
           ) : (
-            entities.map((entity) => {
+            accessibleEntities.map((entity) => {
               const Icon = getEntityIcon(entity.type);
               const isSelected = currentEntity?.id === entity.id;
 
