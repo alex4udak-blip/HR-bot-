@@ -798,65 +798,159 @@ class ExternalLinkProcessor:
                                             # Try multiple approaches to find speaker name
                                             speaker_name = "Speaker"
                                             timestamp_text = None
+                                            start_time_sec = 0
+                                            end_time_sec = 0
 
                                             try:
                                                 # NEW Approach 0: Use JavaScript to traverse DOM and find speaker
-                                                # Fireflies structure: speaker name is in a header row above or beside text
+                                                # Fireflies structure: speaker headers precede groups of transcript sentences
+                                                # Timestamps are encoded in class names like "cap-time-75.524--76.024"
                                                 speaker_info = await el.evaluate('''el => {
-                                                    // Look for speaker name in various DOM locations
-                                                    let result = {speaker: null, timestamp: null};
+                                                    let result = {speaker: null, timestamp: null, startSec: null, endSec: null};
 
-                                                    // Try parent and grandparent containers
-                                                    let container = el.parentElement;
-                                                    for (let i = 0; i < 5 && container; i++) {
-                                                        // Look for speaker name element
-                                                        const nameSelectors = [
-                                                            '[class*="SpeakerName"]', '[class*="speakerName"]', '[class*="speaker-name"]',
-                                                            '[class*="UserName"]', '[class*="userName"]', '[class*="user-name"]',
-                                                            '[class*="AuthorName"]', '[class*="author"]',
-                                                            'a[href*="mailto"]',  // Sometimes name is a mailto link
-                                                            '.speaker-label', '.name-label'
-                                                        ];
-
-                                                        for (const sel of nameSelectors) {
-                                                            const nameEl = container.querySelector(sel);
-                                                            if (nameEl) {
-                                                                const text = nameEl.textContent?.trim();
-                                                                if (text && text.length < 50 && !text.includes('Speaker')) {
-                                                                    result.speaker = text;
-                                                                    break;
-                                                                }
-                                                            }
+                                                    // FIRST: Extract timestamp from class name pattern cap-time-XX.XXX--YY.YYY
+                                                    const checkTimestamp = (element) => {
+                                                        const classes = element.className || '';
+                                                        const match = classes.match(/cap-time-([\d.]+)--([\d.]+)/);
+                                                        if (match) {
+                                                            result.startSec = parseFloat(match[1]);
+                                                            result.endSec = parseFloat(match[2]);
+                                                            return true;
                                                         }
+                                                        return false;
+                                                    };
 
-                                                        // Look for timestamp (like "01:15")
-                                                        const timeSelectors = ['[class*="time"]', '[class*="Time"]', 'time', '[class*="stamp"]'];
-                                                        for (const sel of timeSelectors) {
-                                                            const timeEl = container.querySelector(sel);
-                                                            if (timeEl) {
-                                                                const timeText = timeEl.textContent?.trim();
-                                                                if (timeText && /^\d{1,2}:\d{2}/.test(timeText)) {
-                                                                    result.timestamp = timeText;
-                                                                    break;
-                                                                }
-                                                            }
+                                                    // Check element itself and children for timestamp
+                                                    checkTimestamp(el);
+                                                    if (!result.startSec) {
+                                                        const spans = el.querySelectorAll('span');
+                                                        for (const span of spans) {
+                                                            if (checkTimestamp(span)) break;
                                                         }
+                                                    }
 
-                                                        if (result.speaker) break;
+                                                    // SECOND: Find speaker name by looking at DOM structure
+                                                    // Traverse up to find ContentPost container, then look for speaker header
+                                                    let container = el;
+                                                    let contentPost = null;
+
+                                                    // Go up to find ContentPost or similar container
+                                                    for (let i = 0; i < 10 && container; i++) {
+                                                        // Check for ContentPost data attribute
+                                                        if (container.dataset?.sentryElement?.includes('ContentPost') ||
+                                                            container.className?.includes('ContentPost') ||
+                                                            container.id?.startsWith('content-post')) {
+                                                            contentPost = container;
+                                                            break;
+                                                        }
+                                                        // Check for speaker wrapper patterns
+                                                        const cls = container.className || '';
+                                                        if (cls.includes('speaker-section') || cls.includes('SpeakerSection') ||
+                                                            cls.includes('speaker-block') || cls.includes('SpeakerBlock')) {
+                                                            contentPost = container;
+                                                            break;
+                                                        }
                                                         container = container.parentElement;
                                                     }
 
-                                                    // If still no speaker, look at previous siblings
-                                                    if (!result.speaker) {
-                                                        let sibling = el.previousElementSibling;
-                                                        for (let i = 0; i < 3 && sibling; i++) {
-                                                            const text = sibling.textContent?.trim();
-                                                            // Check if it looks like a speaker name (short, no numbers at start)
-                                                            if (text && text.length < 40 && text.length > 1 && !/^\d/.test(text) && !text.includes('Speaker')) {
-                                                                result.speaker = text.split('\\n')[0].trim();  // Take first line only
-                                                                break;
+                                                    // Look for speaker header in various locations
+                                                    const findSpeakerName = (element) => {
+                                                        if (!element) return null;
+
+                                                        // Try name selectors within element
+                                                        const nameSelectors = [
+                                                            '[class*="SpeakerName"]', '[class*="speakerName"]', '[class*="speaker-name"]',
+                                                            '[class*="UserName"]', '[class*="userName"]', '[class*="user-name"]',
+                                                            '[class*="AuthorName"]', '[class*="author-name"]',
+                                                            '[class*="ParticipantName"]', '[class*="participant-name"]',
+                                                            'a[href*="mailto"]',
+                                                            '[class*="avatar"] + *', // Element after avatar often has name
+                                                            '[class*="name"]:not([class*="timestamp"])'
+                                                        ];
+
+                                                        for (const sel of nameSelectors) {
+                                                            try {
+                                                                const nameEl = element.querySelector(sel);
+                                                                if (nameEl) {
+                                                                    const text = nameEl.textContent?.trim();
+                                                                    // Valid speaker name: 2-50 chars, not "Speaker", not a timestamp
+                                                                    if (text && text.length >= 2 && text.length < 50 &&
+                                                                        !text.includes('Speaker') && !/^\d{1,2}:\d{2}/.test(text)) {
+                                                                        return text.split('\\n')[0].trim();
+                                                                    }
+                                                                }
+                                                            } catch(e) {}
+                                                        }
+                                                        return null;
+                                                    };
+
+                                                    // Try to find speaker in ContentPost container
+                                                    if (contentPost) {
+                                                        result.speaker = findSpeakerName(contentPost);
+
+                                                        // If not found, look at preceding siblings of ContentPost
+                                                        if (!result.speaker) {
+                                                            let sibling = contentPost.previousElementSibling;
+                                                            for (let i = 0; i < 5 && sibling && !result.speaker; i++) {
+                                                                result.speaker = findSpeakerName(sibling);
+                                                                if (!result.speaker) {
+                                                                    // Check sibling's text directly
+                                                                    const sibText = sibling.textContent?.trim();
+                                                                    if (sibText && sibText.length >= 2 && sibText.length < 50 &&
+                                                                        !sibText.includes('Speaker') && !/^\d{1,2}:\d{2}/.test(sibText)) {
+                                                                        result.speaker = sibText.split('\\n')[0].trim();
+                                                                    }
+                                                                }
+                                                                sibling = sibling.previousElementSibling;
                                                             }
-                                                            sibling = sibling.previousElementSibling;
+                                                        }
+                                                    }
+
+                                                    // Fallback: traverse up and look at each level
+                                                    if (!result.speaker) {
+                                                        container = el.parentElement;
+                                                        for (let i = 0; i < 8 && container && !result.speaker; i++) {
+                                                            // Check previous siblings at this level
+                                                            let sibling = container.previousElementSibling;
+                                                            for (let j = 0; j < 3 && sibling && !result.speaker; j++) {
+                                                                result.speaker = findSpeakerName(sibling);
+                                                                if (!result.speaker) {
+                                                                    // Direct text check
+                                                                    const sibText = sibling.textContent?.trim();
+                                                                    // Look for patterns like "Name I." or single words that look like names
+                                                                    if (sibText && sibText.length >= 2 && sibText.length < 40) {
+                                                                        const lines = sibText.split('\\n');
+                                                                        for (const line of lines) {
+                                                                            const trimmed = line.trim();
+                                                                            // Name pattern: not starting with number, not containing typical non-name chars
+                                                                            if (trimmed && trimmed.length >= 2 && trimmed.length < 40 &&
+                                                                                !/^\d/.test(trimmed) && !trimmed.includes('Speaker') &&
+                                                                                !/^\d{1,2}:\d{2}/.test(trimmed) &&
+                                                                                !trimmed.includes('WPM') && !trimmed.includes('%')) {
+                                                                                result.speaker = trimmed;
+                                                                                break;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                sibling = sibling.previousElementSibling;
+                                                            }
+
+                                                            // Also check within container's children
+                                                            if (!result.speaker) {
+                                                                result.speaker = findSpeakerName(container);
+                                                            }
+
+                                                            container = container.parentElement;
+                                                        }
+                                                    }
+
+                                                    // Look for MM:SS timestamp text as fallback
+                                                    if (!result.timestamp) {
+                                                        const allText = el.closest('[class*="speaker"], [class*="content"]')?.textContent || '';
+                                                        const timeMatch = allText.match(/(\d{1,2}:\d{2})/);
+                                                        if (timeMatch) {
+                                                            result.timestamp = timeMatch[1];
                                                         }
                                                     }
 
@@ -867,6 +961,11 @@ class ExternalLinkProcessor:
                                                     speaker_name = speaker_info['speaker']
                                                 if speaker_info.get('timestamp'):
                                                     timestamp_text = speaker_info['timestamp']
+                                                # Use extracted timestamps from class pattern
+                                                if speaker_info.get('startSec') is not None:
+                                                    start_time_sec = speaker_info['startSec']
+                                                if speaker_info.get('endSec') is not None:
+                                                    end_time_sec = speaker_info['endSec']
 
                                                 # Approach 1: Look in parent container for speaker name (fallback)
                                                 if speaker_name == "Speaker":
@@ -935,16 +1034,19 @@ class ExternalLinkProcessor:
                                                 if len(clean_text) > 2 and clean_text.lower() != speaker_name.lower():
                                                     transcript_parts.append(clean_text)
 
-                                                    # Try to get timing from data attributes
-                                                    start_time = 0
-                                                    end_time = 0
-                                                    try:
-                                                        start_time = float(await el.get_attribute('data-start') or 0)
-                                                        end_time = float(await el.get_attribute('data-end') or 0)
-                                                    except Exception:
-                                                        pass
+                                                    # Use pre-extracted timestamps from cap-time class pattern
+                                                    start_time = start_time_sec
+                                                    end_time = end_time_sec
 
-                                                    # Try to parse timestamp from text like "01:15"
+                                                    # Fallback: try data attributes if class pattern didn't work
+                                                    if start_time == 0:
+                                                        try:
+                                                            start_time = float(await el.get_attribute('data-start') or 0)
+                                                            end_time = float(await el.get_attribute('data-end') or 0)
+                                                        except Exception:
+                                                            pass
+
+                                                    # Fallback: parse timestamp from text like "01:15"
                                                     if start_time == 0 and timestamp_text:
                                                         try:
                                                             # Parse MM:SS or HH:MM:SS
@@ -965,9 +1067,15 @@ class ExternalLinkProcessor:
 
                                         if transcript_parts:
                                             logger.info(f"Extracted {len(transcript_parts)} transcript parts")
-                                            # Log first speaker to debug
+                                            # Log first few speakers and timestamps for debugging
                                             if speaker_data:
                                                 logger.info(f"First speaker extracted: {speaker_data[0].get('speaker', 'Unknown')}")
+                                                # Log first 3 segments with details
+                                                for i, seg in enumerate(speaker_data[:3]):
+                                                    logger.info(f"Segment {i}: speaker='{seg.get('speaker')}', start={seg.get('start'):.2f}s, end={seg.get('end'):.2f}s, text='{seg.get('text', '')[:50]}...'")
+                                                # Count unique speakers
+                                                unique_speakers = set(s.get('speaker') for s in speaker_data)
+                                                logger.info(f"Unique speakers found: {unique_speakers}")
                                             break
                                 except Exception as sel_err:
                                     logger.debug(f"Selector {selector} failed: {sel_err}")
@@ -1008,11 +1116,12 @@ class ExternalLinkProcessor:
                                 let result = {
                                     duration: null,
                                     durationSeconds: null,
-                                    speakerStats: []
+                                    speakerStats: [],
+                                    speakerNames: [],  // Also collect speaker names for mapping
+                                    debug: {}
                                 };
 
                                 // Try to find duration (format: "MM:SS" or "HH:MM:SS")
-                                // Look in player controls, metadata sections, etc.
                                 const durationSelectors = [
                                     '[class*="duration"]', '[class*="Duration"]',
                                     '[class*="time-total"]', '[class*="total-time"]',
@@ -1025,16 +1134,12 @@ class ExternalLinkProcessor:
                                     const els = document.querySelectorAll(sel);
                                     for (const el of els) {
                                         const text = el.textContent?.trim();
-                                        // Match MM:SS or HH:MM:SS pattern
                                         const match = text?.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
                                         if (match) {
                                             result.duration = text;
-                                            // Convert to seconds
                                             if (match[3]) {
-                                                // HH:MM:SS
                                                 result.durationSeconds = parseInt(match[1])*3600 + parseInt(match[2])*60 + parseInt(match[3]);
                                             } else {
-                                                // MM:SS
                                                 result.durationSeconds = parseInt(match[1])*60 + parseInt(match[2]);
                                             }
                                             break;
@@ -1043,7 +1148,7 @@ class ExternalLinkProcessor:
                                     if (result.duration) break;
                                 }
 
-                                // Also try to find "/ MM:SS" pattern (common in players like "00:00 / 14:31")
+                                // Try "00:00 / MM:SS" pattern
                                 if (!result.duration) {
                                     const allText = document.body.innerText;
                                     const playerMatch = allText.match(/\d{1,2}:\d{2}\s*\/\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
@@ -1058,69 +1163,173 @@ class ExternalLinkProcessor:
                                     }
                                 }
 
-                                // Look for speaker talktime statistics
-                                // Fireflies shows: Speaker Name | WPM | TALKTIME%
-                                const talktimeSelectors = [
-                                    '[class*="talktime"]', '[class*="Talktime"]', '[class*="talk-time"]',
-                                    '[class*="speaker-stat"]', '[class*="SpeakerStat"]',
-                                    '[class*="analytics"]', '[class*="Analytics"]'
+                                // ENHANCED: Look for speaker names and stats in sidebar/panel
+                                // Fireflies shows: Avatar | Name | WPM | TALKTIME%
+
+                                // Strategy 1: Find sidebar with speaker list
+                                const sidebarSelectors = [
+                                    '[class*="sidebar"]', '[class*="Sidebar"]',
+                                    '[class*="panel"]', '[class*="Panel"]',
+                                    '[class*="speaker-list"]', '[class*="SpeakerList"]',
+                                    '[class*="participants"]', '[class*="Participants"]',
+                                    'aside', '[role="complementary"]'
                                 ];
 
-                                // Find speaker stats container
-                                for (const sel of talktimeSelectors) {
-                                    const container = document.querySelector(sel);
-                                    if (container) {
-                                        // Look for individual speaker rows
-                                        const rows = container.querySelectorAll('[class*="row"], [class*="item"], [class*="speaker"], tr, li');
+                                let sidebar = null;
+                                for (const sel of sidebarSelectors) {
+                                    sidebar = document.querySelector(sel);
+                                    if (sidebar) {
+                                        result.debug.sidebarFound = sel;
+                                        break;
+                                    }
+                                }
+
+                                // Strategy 2: Look for speaker stat cards/rows anywhere on page
+                                const speakerRowSelectors = [
+                                    '[class*="speaker"][class*="row"]',
+                                    '[class*="speaker"][class*="card"]',
+                                    '[class*="speaker"][class*="item"]',
+                                    '[class*="participant"][class*="row"]',
+                                    '[class*="talktime"]',
+                                    '[class*="Talktime"]',
+                                    '[class*="analytics"] [class*="row"]',
+                                    '[class*="Analytics"] [class*="row"]'
+                                ];
+
+                                for (const sel of speakerRowSelectors) {
+                                    const rows = document.querySelectorAll(sel);
+                                    if (rows.length > 0) {
+                                        result.debug.speakerRowsFound = sel;
                                         for (const row of rows) {
                                             const text = row.textContent?.trim();
-                                            // Try to extract name, WPM, and percentage
-                                            // Pattern like: "Inna I. 23 55%"
-                                            const wpmMatch = text?.match(/(.+?)\s+(\d+)\s*(?:WPM|wpm)?\s*(\d+)\s*%/);
+                                            // Try various patterns
+                                            // "Name 123 WPM 45%" or "Name 123 45%"
+                                            let wpmMatch = text?.match(/^([^0-9]+?)\s*(\d+)\s*(?:WPM|wpm|слов\/мин)?\s*(\d+)\s*%/);
+                                            if (!wpmMatch) {
+                                                // Try "Name | 123 | 45%" with separators
+                                                wpmMatch = text?.match(/^([^|0-9]+?)[|]?\s*(\d+)\s*[|]?\s*(\d+)\s*%/);
+                                            }
                                             if (wpmMatch) {
-                                                result.speakerStats.push({
-                                                    name: wpmMatch[1].trim(),
-                                                    wpm: parseInt(wpmMatch[2]),
-                                                    talktimePercent: parseInt(wpmMatch[3])
-                                                });
+                                                const name = wpmMatch[1].trim();
+                                                if (name && name.length >= 2 && name.length < 50) {
+                                                    result.speakerStats.push({
+                                                        name: name,
+                                                        wpm: parseInt(wpmMatch[2]),
+                                                        talktimePercent: parseInt(wpmMatch[3])
+                                                    });
+                                                }
                                             }
                                         }
                                         if (result.speakerStats.length > 0) break;
                                     }
                                 }
 
-                                // Alternative: Look for speaker names with percentages nearby
+                                // Strategy 3: Look for speaker names near avatars
                                 if (result.speakerStats.length === 0) {
-                                    const percentEls = document.querySelectorAll('[class*="percent"], [class*="Percent"]');
-                                    for (const el of percentEls) {
-                                        const parent = el.closest('[class*="speaker"], [class*="row"], [class*="item"]');
-                                        if (parent) {
-                                            const text = parent.textContent?.trim();
-                                            const match = text?.match(/(.+?)\s+(\d+)\s*%/);
-                                            if (match) {
-                                                result.speakerStats.push({
-                                                    name: match[1].replace(/\d+\s*(?:WPM|wpm)?/, '').trim(),
-                                                    talktimePercent: parseInt(match[2])
-                                                });
+                                    const avatarSelectors = [
+                                        '[class*="avatar"]', '[class*="Avatar"]',
+                                        'img[class*="profile"]', 'img[class*="user"]'
+                                    ];
+
+                                    for (const sel of avatarSelectors) {
+                                        const avatars = document.querySelectorAll(sel);
+                                        for (const avatar of avatars) {
+                                            // Look at adjacent elements for name
+                                            const parent = avatar.closest('[class*="speaker"], [class*="participant"], [class*="user"], [class*="row"]');
+                                            if (parent) {
+                                                // Find name element (usually span/div after avatar)
+                                                const textNodes = parent.querySelectorAll('span, div, p');
+                                                for (const node of textNodes) {
+                                                    if (node === avatar || node.contains(avatar)) continue;
+                                                    const text = node.textContent?.trim();
+                                                    // Check if it looks like a name (not number, not too long)
+                                                    if (text && text.length >= 2 && text.length < 40 &&
+                                                        !/^\d/.test(text) && !/^\d{1,2}:\d{2}/.test(text) &&
+                                                        !text.includes('%') && !text.includes('WPM')) {
+                                                        if (!result.speakerNames.includes(text)) {
+                                                            result.speakerNames.push(text);
+                                                        }
+                                                        break;
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 }
 
+                                // Strategy 4: Find percentage elements and work backwards
+                                if (result.speakerStats.length === 0) {
+                                    const percentEls = document.querySelectorAll('[class*="percent"], span:contains("%"), div:contains("%")');
+                                    const processedParents = new Set();
+
+                                    document.querySelectorAll('*').forEach(el => {
+                                        const text = el.textContent?.trim();
+                                        if (text && /^\d{1,2}%$/.test(text)) {
+                                            const parent = el.closest('[class*="speaker"], [class*="row"], [class*="item"], [class*="participant"]');
+                                            if (parent && !processedParents.has(parent)) {
+                                                processedParents.add(parent);
+                                                const fullText = parent.textContent?.trim();
+                                                // Extract name (everything before numbers)
+                                                const match = fullText?.match(/^([^0-9%]+)/);
+                                                if (match) {
+                                                    const name = match[1].trim();
+                                                    const percentMatch = fullText.match(/(\d{1,2})%/);
+                                                    const wpmMatch = fullText.match(/(\d{2,3})\s*(?:WPM|wpm|слов)?/);
+                                                    if (name && percentMatch) {
+                                                        result.speakerStats.push({
+                                                            name: name,
+                                                            wpm: wpmMatch ? parseInt(wpmMatch[1]) : null,
+                                                            talktimePercent: parseInt(percentMatch[1])
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    });
+                                }
+
+                                // Log what we found for debugging
+                                result.debug.totalElements = document.querySelectorAll('*').length;
+                                result.debug.speakerRelatedElements = document.querySelectorAll('[class*="speaker"], [class*="Speaker"]').length;
+
                                 return result;
                             }''')
 
                             if stats:
+                                # Log debug info
+                                if stats.get('debug'):
+                                    logger.info(f"Stats extraction debug: {stats['debug']}")
+
                                 if stats.get('duration'):
                                     logger.info(f"Extracted duration: {stats['duration']} ({stats.get('durationSeconds')} seconds)")
                                     call.duration_seconds = stats.get('durationSeconds')
+
                                 if stats.get('speakerStats'):
-                                    logger.info(f"Extracted speaker stats: {stats['speakerStats']}")
-                                    # Store in call metadata or update speaker_stats later
+                                    logger.info(f"Extracted speaker stats ({len(stats['speakerStats'])}): {stats['speakerStats']}")
                                     if not hasattr(call, '_fireflies_speaker_stats'):
                                         call._fireflies_speaker_stats = stats['speakerStats']
+
+                                    # Also use these names to improve speaker mapping in transcript
+                                    for sp_stat in stats['speakerStats']:
+                                        name = sp_stat.get('name')
+                                        if name and name not in ['Speaker', 'Спикер']:
+                                            # Add to speakerNames list for potential transcript remapping
+                                            if not hasattr(call, '_fireflies_speaker_names'):
+                                                call._fireflies_speaker_names = []
+                                            if name not in call._fireflies_speaker_names:
+                                                call._fireflies_speaker_names.append(name)
+
+                                if stats.get('speakerNames'):
+                                    logger.info(f"Extracted speaker names ({len(stats['speakerNames'])}): {stats['speakerNames']}")
+                                    if not hasattr(call, '_fireflies_speaker_names'):
+                                        call._fireflies_speaker_names = stats['speakerNames']
+                                    else:
+                                        for name in stats['speakerNames']:
+                                            if name not in call._fireflies_speaker_names:
+                                                call._fireflies_speaker_names.append(name)
+
                         except Exception as stats_err:
-                            logger.warning(f"Could not extract duration/stats: {stats_err}")
+                            logger.warning(f"Could not extract duration/stats: {stats_err}", exc_info=True)
 
                         await browser.close()
 
