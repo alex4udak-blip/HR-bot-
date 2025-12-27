@@ -34,26 +34,26 @@ import clsx from 'clsx';
 
 // Available permissions that can be configured
 const AVAILABLE_PERMISSIONS = [
-  { id: 'can_view_all_users', label: 'View All Users', category: 'Users' },
-  { id: 'can_delete_users', label: 'Delete Users', category: 'Users' },
-  { id: 'can_change_roles', label: 'Change User Roles', category: 'Users' },
-  { id: 'can_invite_users', label: 'Invite Users', category: 'Organization' },
-  { id: 'can_manage_org_settings', label: 'Manage Org Settings', category: 'Organization' },
-  { id: 'can_create_departments', label: 'Create Departments', category: 'Departments' },
-  { id: 'can_manage_dept_members', label: 'Manage Department Members', category: 'Departments' },
-  { id: 'can_create_resources', label: 'Create Resources', category: 'Resources' },
-  { id: 'can_share_resources', label: 'Share Resources', category: 'Resources' },
-  { id: 'can_transfer_resources', label: 'Transfer Resources', category: 'Resources' },
-  { id: 'can_delete_resources', label: 'Delete Resources', category: 'Resources' },
-  { id: 'can_view_audit_logs', label: 'View Audit Logs', category: 'Admin' },
-  { id: 'can_impersonate', label: 'Impersonate Users', category: 'Admin' },
+  { id: 'can_view_all_users', label: 'Просмотр всех пользователей', category: 'Пользователи' },
+  { id: 'can_delete_users', label: 'Удаление пользователей', category: 'Пользователи' },
+  { id: 'can_change_roles', label: 'Изменение ролей пользователей', category: 'Пользователи' },
+  { id: 'can_invite_users', label: 'Приглашение пользователей', category: 'Организация' },
+  { id: 'can_manage_org_settings', label: 'Управление настройками организации', category: 'Организация' },
+  { id: 'can_create_departments', label: 'Создание департаментов', category: 'Департаменты' },
+  { id: 'can_manage_dept_members', label: 'Управление участниками департамента', category: 'Департаменты' },
+  { id: 'can_create_resources', label: 'Создание ресурсов', category: 'Ресурсы' },
+  { id: 'can_share_resources', label: 'Расшаривание ресурсов', category: 'Ресурсы' },
+  { id: 'can_transfer_resources', label: 'Передача ресурсов', category: 'Ресурсы' },
+  { id: 'can_delete_resources', label: 'Удаление ресурсов', category: 'Ресурсы' },
+  { id: 'can_view_audit_logs', label: 'Просмотр журнала аудита', category: 'Админ' },
+  { id: 'can_impersonate', label: 'Вход под другим пользователем', category: 'Админ' },
 ];
 
 const BASE_ROLES = [
-  { value: 'owner', label: 'Owner', color: 'text-amber-400' },
-  { value: 'admin', label: 'Admin', color: 'text-blue-400' },
-  { value: 'sub_admin', label: 'Sub Admin', color: 'text-cyan-400' },
-  { value: 'member', label: 'Member', color: 'text-green-400' },
+  { value: 'owner', label: 'Владелец', color: 'text-amber-400' },
+  { value: 'admin', label: 'Администратор', color: 'text-blue-400' },
+  { value: 'sub_admin', label: 'Саб-админ', color: 'text-cyan-400' },
+  { value: 'member', label: 'Участник', color: 'text-green-400' },
 ];
 
 interface RoleCardProps {
@@ -86,11 +86,11 @@ function RoleCard({ role, onEdit, onDelete, onManagePermissions, onManageUsers }
             <h3 className="font-semibold text-white">{role.name}</h3>
             <div className="flex items-center gap-2 mt-0.5">
               <span className={clsx('text-xs', baseRoleConfig?.color)}>
-                Based on: {baseRoleConfig?.label}
+                Основа: {baseRoleConfig?.label}
               </span>
               {!role.is_active && (
                 <span className="px-1.5 py-0.5 text-xs bg-red-500/20 text-red-400 rounded">
-                  Inactive
+                  Неактивна
                 </span>
               )}
             </div>
@@ -100,21 +100,21 @@ function RoleCard({ role, onEdit, onDelete, onManagePermissions, onManageUsers }
           <button
             onClick={() => onManageUsers(role)}
             className="p-2 rounded-lg text-dark-400 hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
-            title="Manage Users"
+            title="Пользователи"
           >
             <Users className="w-4 h-4" />
           </button>
           <button
             onClick={() => onEdit(role)}
             className="p-2 rounded-lg text-dark-400 hover:text-accent-400 hover:bg-accent-500/10 transition-colors"
-            title="Edit Role"
+            title="Редактировать"
           >
             <Edit3 className="w-4 h-4" />
           </button>
           <button
             onClick={() => onDelete(role)}
             className="p-2 rounded-lg text-dark-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-            title="Delete Role"
+            title="Удалить"
           >
             <Trash2 className="w-4 h-4" />
           </button>
@@ -127,13 +127,13 @@ function RoleCard({ role, onEdit, onDelete, onManagePermissions, onManageUsers }
 
       <div className="flex items-center justify-between">
         <span className="text-xs text-dark-500">
-          {permissionCount} permission override{permissionCount !== 1 ? 's' : ''}
+          {permissionCount} {permissionCount === 1 ? 'переопределение' : 'переопределений'}
         </span>
         <button
           onClick={() => onManagePermissions(role)}
           className="text-xs text-accent-400 hover:text-accent-300 transition-colors"
         >
-          Configure Permissions
+          Настроить права
         </button>
       </div>
     </motion.div>
@@ -158,10 +158,10 @@ function PermissionEditor({ role, onClose }: PermissionEditorProps) {
       setRolePermission(role.id, permission, allowed),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['custom-roles'] });
-      toast.success('Permission updated');
+      toast.success('Право обновлено');
     },
     onError: () => {
-      toast.error('Failed to update permission');
+      toast.error('Не удалось обновить право');
     },
   });
 
@@ -169,10 +169,10 @@ function PermissionEditor({ role, onClose }: PermissionEditorProps) {
     mutationFn: (permission: string) => removeRolePermission(role.id, permission),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['custom-roles'] });
-      toast.success('Permission reset to default');
+      toast.success('Право сброшено к значению по умолчанию');
     },
     onError: () => {
-      toast.error('Failed to reset permission');
+      toast.error('Не удалось сбросить право');
     },
   });
 
@@ -193,7 +193,7 @@ function PermissionEditor({ role, onClose }: PermissionEditorProps) {
         <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl max-h-[85vh] glass rounded-2xl p-6 shadow-xl overflow-hidden flex flex-col z-50">
           <Dialog.Title className="text-xl font-semibold mb-4 flex items-center gap-3">
             <Shield className="w-6 h-6 text-accent-400" />
-            Permissions: {role.name}
+            Права доступа: {role.name}
           </Dialog.Title>
 
           <div className="flex-1 overflow-y-auto space-y-4">
@@ -235,7 +235,7 @@ function PermissionEditor({ role, onClose }: PermissionEditorProps) {
                                   'ml-2 text-xs px-1.5 py-0.5 rounded',
                                   currentValue ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
                                 )}>
-                                  {currentValue ? 'Allowed' : 'Denied'}
+                                  {currentValue ? 'Разрешено' : 'Запрещено'}
                                 </span>
                               )}
                             </div>
@@ -248,7 +248,7 @@ function PermissionEditor({ role, onClose }: PermissionEditorProps) {
                                     ? 'bg-green-500/20 text-green-400'
                                     : 'text-dark-500 hover:text-green-400 hover:bg-green-500/10'
                                 )}
-                                title="Allow"
+                                title="Разрешить"
                               >
                                 <Check className="w-4 h-4" />
                               </button>
@@ -260,7 +260,7 @@ function PermissionEditor({ role, onClose }: PermissionEditorProps) {
                                     ? 'bg-red-500/20 text-red-400'
                                     : 'text-dark-500 hover:text-red-400 hover:bg-red-500/10'
                                 )}
-                                title="Deny"
+                                title="Запретить"
                               >
                                 <X className="w-4 h-4" />
                               </button>
@@ -268,7 +268,7 @@ function PermissionEditor({ role, onClose }: PermissionEditorProps) {
                                 <button
                                   onClick={() => removePermissionMutation.mutate(perm.id)}
                                   className="p-1.5 rounded-lg text-dark-500 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
-                                  title="Reset to default"
+                                  title="Сбросить"
                                 >
                                   <AlertCircle className="w-4 h-4" />
                                 </button>
@@ -287,7 +287,7 @@ function PermissionEditor({ role, onClose }: PermissionEditorProps) {
           <div className="flex justify-end pt-4 mt-4 border-t border-white/5">
             <Dialog.Close asChild>
               <button className="px-4 py-2 rounded-xl glass-light hover:bg-white/10 transition-colors">
-                Close
+                Закрыть
               </button>
             </Dialog.Close>
           </div>
@@ -315,11 +315,11 @@ function UserAssignmentDialog({ role, onClose }: UserAssignmentDialogProps) {
     mutationFn: (userId: number) => assignCustomRole(role.id, userId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['custom-roles'] });
-      toast.success('User assigned to role');
+      toast.success('Пользователь назначен на роль');
       setSelectedUserId(null);
     },
     onError: () => {
-      toast.error('Failed to assign user');
+      toast.error('Не удалось назначить пользователя');
     },
   });
 
@@ -331,7 +331,7 @@ function UserAssignmentDialog({ role, onClose }: UserAssignmentDialogProps) {
         <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg max-h-[85vh] glass rounded-2xl p-6 shadow-xl overflow-hidden flex flex-col z-50">
           <Dialog.Title className="text-xl font-semibold mb-4 flex items-center gap-3">
             <Users className="w-6 h-6 text-blue-400" />
-            Users with role: {role.name}
+            Пользователи с ролью: {role.name}
           </Dialog.Title>
 
           <div className="flex-1 overflow-y-auto space-y-4">
@@ -342,7 +342,7 @@ function UserAssignmentDialog({ role, onClose }: UserAssignmentDialogProps) {
                 onChange={(e) => setSelectedUserId(e.target.value ? Number(e.target.value) : null)}
                 className="flex-1 glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
               >
-                <option value="">Select user to add...</option>
+                <option value="">Выберите пользователя...</option>
                 {users.map(user => (
                   <option key={user.id} value={user.id}>
                     {user.name || user.email}
@@ -361,14 +361,14 @@ function UserAssignmentDialog({ role, onClose }: UserAssignmentDialogProps) {
             {/* Current users placeholder - would need to extend API */}
             <div className="glass-light rounded-xl p-4 text-center text-dark-400">
               <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">Users with this role will appear here</p>
+              <p className="text-sm">Пользователи с этой ролью появятся здесь</p>
             </div>
           </div>
 
           <div className="flex justify-end pt-4 mt-4 border-t border-white/5">
             <Dialog.Close asChild>
               <button className="px-4 py-2 rounded-xl glass-light hover:bg-white/10 transition-colors">
-                Close
+                Закрыть
               </button>
             </Dialog.Close>
           </div>
@@ -410,10 +410,10 @@ export default function RoleManagement() {
       queryClient.invalidateQueries({ queryKey: ['custom-roles'] });
       setIsCreateDialogOpen(false);
       setNewRole({ name: '', description: '', base_role: 'member' });
-      toast.success('Role created');
+      toast.success('Роль создана');
     },
     onError: () => {
-      toast.error('Failed to create role');
+      toast.error('Не удалось создать роль');
     },
   });
 
@@ -423,10 +423,10 @@ export default function RoleManagement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['custom-roles'] });
       setEditingRole(null);
-      toast.success('Role updated');
+      toast.success('Роль обновлена');
     },
     onError: () => {
-      toast.error('Failed to update role');
+      toast.error('Не удалось обновить роль');
     },
   });
 
@@ -434,15 +434,15 @@ export default function RoleManagement() {
     mutationFn: deleteCustomRole,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['custom-roles'] });
-      toast.success('Role deleted');
+      toast.success('Роль удалена');
     },
     onError: () => {
-      toast.error('Failed to delete role');
+      toast.error('Не удалось удалить роль');
     },
   });
 
   const handleDelete = (role: CustomRole) => {
-    if (confirm(`Delete role "${role.name}"? This action cannot be undone.`)) {
+    if (confirm(`Удалить роль "${role.name}"? Это действие нельзя отменить.`)) {
       deleteMutation.mutate(role.id);
     }
   };
@@ -452,7 +452,7 @@ export default function RoleManagement() {
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <Shield className="w-12 h-12 mx-auto text-dark-500 mb-3" />
-          <p className="text-dark-400">Superadmin access required</p>
+          <p className="text-dark-400">Требуется доступ суперадминистратора</p>
         </div>
       </div>
     );
@@ -465,10 +465,10 @@ export default function RoleManagement() {
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">
             <Shield className="w-6 h-6 text-accent-400" />
-            Custom Roles
+            Настройка ролей
           </h2>
           <p className="text-sm text-dark-400 mt-1">
-            Create and manage custom roles with fine-grained permissions
+            Создание и управление кастомными ролями с тонкой настройкой прав
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -480,14 +480,14 @@ export default function RoleManagement() {
             )}
           >
             <History className="w-5 h-5" />
-            Audit Log
+            Журнал
           </button>
           <button
             onClick={() => setIsCreateDialogOpen(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent-500 text-white hover:bg-accent-600 transition-colors"
           >
             <Plus className="w-5 h-5" />
-            New Role
+            Новая роль
           </button>
         </div>
       </div>
@@ -500,9 +500,9 @@ export default function RoleManagement() {
       ) : roles.length === 0 ? (
         <div className="glass rounded-xl p-8 text-center">
           <Shield className="w-12 h-12 mx-auto text-dark-500 mb-3" />
-          <p className="text-dark-400">No custom roles yet</p>
+          <p className="text-dark-400">Кастомных ролей пока нет</p>
           <p className="text-sm text-dark-500 mt-1">
-            Create your first custom role to get started
+            Создайте первую кастомную роль для начала работы
           </p>
         </div>
       ) : (
@@ -532,12 +532,12 @@ export default function RoleManagement() {
             <div className="p-4 border-b border-white/5">
               <h3 className="font-semibold flex items-center gap-2">
                 <History className="w-5 h-5 text-amber-400" />
-                Permission Audit Log
+                Журнал изменений прав
               </h3>
             </div>
             <div className="max-h-64 overflow-y-auto">
               {auditLogs.length === 0 ? (
-                <p className="p-4 text-center text-dark-500">No audit logs yet</p>
+                <p className="p-4 text-center text-dark-500">Журнал пока пуст</p>
               ) : (
                 <div className="divide-y divide-white/5">
                   {auditLogs.map(log => (
@@ -549,7 +549,7 @@ export default function RoleManagement() {
                           log.action === 'update' && 'bg-blue-500/20 text-blue-400',
                           log.action === 'delete' && 'bg-red-500/20 text-red-400'
                         )}>
-                          {log.action}
+                          {log.action === 'create' ? 'создание' : log.action === 'update' ? 'изменение' : 'удаление'}
                         </span>
                         <span className="text-dark-500 text-xs">
                           {new Date(log.created_at).toLocaleString()}
@@ -557,10 +557,10 @@ export default function RoleManagement() {
                       </div>
                       {log.permission && (
                         <p className="text-sm text-dark-400 mt-1">
-                          Permission: {log.permission}
+                          Право: {log.permission}
                           {log.old_value !== null && log.new_value !== null && (
                             <span className="ml-2">
-                              {log.old_value ? 'allowed' : 'denied'} &rarr; {log.new_value ? 'allowed' : 'denied'}
+                              {log.old_value ? 'разрешено' : 'запрещено'} &rarr; {log.new_value ? 'разрешено' : 'запрещено'}
                             </span>
                           )}
                         </p>
@@ -580,7 +580,7 @@ export default function RoleManagement() {
           <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
           <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md glass rounded-2xl p-6 shadow-xl z-50">
             <Dialog.Title className="text-xl font-semibold mb-4">
-              Create Custom Role
+              Создать кастомную роль
             </Dialog.Title>
             <form
               onSubmit={(e) => {
@@ -590,18 +590,18 @@ export default function RoleManagement() {
               className="space-y-4"
             >
               <div>
-                <label className="block text-sm text-dark-400 mb-1">Name</label>
+                <label className="block text-sm text-dark-400 mb-1">Название</label>
                 <input
                   type="text"
                   value={newRole.name}
                   onChange={(e) => setNewRole({ ...newRole, name: e.target.value })}
                   required
-                  placeholder="e.g., Content Manager"
+                  placeholder="Например: Контент-менеджер"
                   className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
                 />
               </div>
               <div>
-                <label htmlFor="base-role-select" className="block text-sm text-dark-400 mb-1">Base Role</label>
+                <label htmlFor="base-role-select" className="block text-sm text-dark-400 mb-1">Базовая роль</label>
                 <select
                   id="base-role-select"
                   value={newRole.base_role}
@@ -615,16 +615,16 @@ export default function RoleManagement() {
                   ))}
                 </select>
                 <p className="text-xs text-dark-500 mt-1">
-                  Inherits default permissions from this role
+                  Наследует права от выбранной роли
                 </p>
               </div>
               <div>
-                <label className="block text-sm text-dark-400 mb-1">Description</label>
+                <label className="block text-sm text-dark-400 mb-1">Описание</label>
                 <textarea
                   value={newRole.description}
                   onChange={(e) => setNewRole({ ...newRole, description: e.target.value })}
                   rows={2}
-                  placeholder="Optional description..."
+                  placeholder="Необязательное описание..."
                   className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50 resize-none"
                 />
               </div>
@@ -634,7 +634,7 @@ export default function RoleManagement() {
                     type="button"
                     className="flex-1 py-2.5 rounded-xl glass-light hover:bg-white/10 transition-colors"
                   >
-                    Cancel
+                    Отмена
                   </button>
                 </Dialog.Close>
                 <button
@@ -643,7 +643,7 @@ export default function RoleManagement() {
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50 transition-colors"
                 >
                   <Save className="w-4 h-4" />
-                  {createMutation.isPending ? 'Creating...' : 'Create'}
+                  {createMutation.isPending ? 'Создание...' : 'Создать'}
                 </button>
               </div>
             </form>
@@ -658,7 +658,7 @@ export default function RoleManagement() {
             <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
             <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md glass rounded-2xl p-6 shadow-xl z-50">
               <Dialog.Title className="text-xl font-semibold mb-4">
-                Edit Role: {editingRole.name}
+                Редактировать: {editingRole.name}
               </Dialog.Title>
               <form
                 onSubmit={(e) => {
@@ -677,7 +677,7 @@ export default function RoleManagement() {
                 className="space-y-4"
               >
                 <div>
-                  <label className="block text-sm text-dark-400 mb-1">Name</label>
+                  <label className="block text-sm text-dark-400 mb-1">Название</label>
                   <input
                     type="text"
                     name="name"
@@ -687,7 +687,7 @@ export default function RoleManagement() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-dark-400 mb-1">Description</label>
+                  <label className="block text-sm text-dark-400 mb-1">Описание</label>
                   <textarea
                     name="description"
                     defaultValue={editingRole.description}
@@ -702,7 +702,7 @@ export default function RoleManagement() {
                     defaultChecked={editingRole.is_active}
                     className="w-5 h-5 rounded accent-accent-500"
                   />
-                  <span>Active</span>
+                  <span>Активна</span>
                 </label>
                 <div className="flex gap-3 pt-2">
                   <Dialog.Close asChild>
@@ -710,7 +710,7 @@ export default function RoleManagement() {
                       type="button"
                       className="flex-1 py-2.5 rounded-xl glass-light hover:bg-white/10 transition-colors"
                     >
-                      Cancel
+                      Отмена
                     </button>
                   </Dialog.Close>
                   <button
@@ -719,7 +719,7 @@ export default function RoleManagement() {
                     className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50 transition-colors"
                   >
                     <Save className="w-4 h-4" />
-                    {updateMutation.isPending ? 'Saving...' : 'Save'}
+                    {updateMutation.isPending ? 'Сохранение...' : 'Сохранить'}
                   </button>
                 </div>
               </form>
