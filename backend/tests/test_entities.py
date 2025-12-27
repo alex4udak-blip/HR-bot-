@@ -513,7 +513,7 @@ class TestListEntities:
             email="noorg@test.com",
             password_hash=hash_password("test123"),
             name="No Org User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(no_org_user)
@@ -777,7 +777,7 @@ class TestCreateEntity:
             email="noorg2@test.com",
             password_hash=hash_password("test123"),
             name="No Org User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(no_org_user)
@@ -4631,7 +4631,7 @@ class TestTransferPermissionsWithRoles:
             email="external@test.com",
             password_hash=hash_password("test123"),
             name="External User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add_all([entity, external_user])

@@ -22,7 +22,7 @@ router = APIRouter()
 
 
 def can_access_chat(user: User, chat: Chat) -> bool:
-    if user.role == UserRole.SUPERADMIN:
+    if user.role == UserRole.superadmin:
         return True
     return chat.owner_id == user.id
 

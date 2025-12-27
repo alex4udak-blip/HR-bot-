@@ -375,7 +375,7 @@ class TestDatabaseConstraints:
             email=admin_user.email,  # Same email
             password_hash=hash_password("password123"),
             name="Duplicate User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
 

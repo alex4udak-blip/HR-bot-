@@ -329,7 +329,7 @@ async def list_entities(
     current_user = await db.merge(current_user)
 
     # SUPERADMIN sees everything across all organizations
-    if current_user.role == UserRole.SUPERADMIN:
+    if current_user.role == UserRole.superadmin:
         query = select(Entity)
         # Apply filters
         if ownership == "mine":
@@ -817,7 +817,7 @@ async def update_entity(
 
     # Check edit permissions (Salesforce-style)
     can_edit = False
-    if current_user.role == UserRole.SUPERADMIN:
+    if current_user.role == UserRole.superadmin:
         can_edit = True
     else:
         user_role = await get_user_org_role(current_user, org.id, db)
@@ -934,7 +934,7 @@ async def delete_entity(
 
     # Check delete permissions
     can_delete = False
-    if current_user.role == UserRole.SUPERADMIN:
+    if current_user.role == UserRole.superadmin:
         can_delete = True
     else:
         user_role = await get_user_org_role(current_user, org.id, db)
@@ -1016,7 +1016,7 @@ async def transfer_entity(
     # Check if target user has access to this org
     from_user_role = await get_user_org_role(current_user, org.id, db)
     to_user_role = await get_user_org_role(to_user, org.id, db)
-    if to_user_role is None and to_user.role != UserRole.SUPERADMIN:
+    if to_user_role is None and to_user.role != UserRole.superadmin:
         raise HTTPException(400, "Target user is not a member of this organization")
 
     # Check transfer permissions based on roles and departments
@@ -1036,7 +1036,7 @@ async def transfer_entity(
 
     # Check transfer permissions based on roles
     can_transfer = False
-    if current_user.role == UserRole.SUPERADMIN or from_user_role == OrgRole.owner:
+    if current_user.role == UserRole.superadmin or from_user_role == OrgRole.owner:
         # SUPERADMIN and OWNER can transfer to anyone
         can_transfer = True
     else:
@@ -1317,7 +1317,7 @@ async def share_entity(
 
     # Check if user has permission to share this entity (requires full access or ownership)
     can_share = False
-    if current_user.role == UserRole.SUPERADMIN:
+    if current_user.role == UserRole.superadmin:
         can_share = True
     else:
         user_role = await get_user_org_role(current_user, org.id, db)

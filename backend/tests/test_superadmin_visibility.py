@@ -31,7 +31,7 @@ class TestSuperadminChatsVisibility:
         """
         CRITICAL TEST: Superadmin WITHOUT org membership can see chats in that org.
 
-        This verifies the fix where we check UserRole.SUPERADMIN BEFORE checking
+        This verifies the fix where we check UserRole.superadmin BEFORE checking
         org membership in the chats route.
         """
         # Create a chat in the organization (owned by admin_user who IS in the org)

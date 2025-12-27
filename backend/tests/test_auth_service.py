@@ -511,7 +511,7 @@ class TestCreateSuperadminIfNotExists:
         # Check superadmin created
         from sqlalchemy import select
         result = await db_session.execute(
-            select(User).where(User.role == UserRole.SUPERADMIN)
+            select(User).where(User.role == UserRole.superadmin)
         )
         superadmin = result.scalar_one_or_none()
         assert superadmin is not None
@@ -1034,7 +1034,7 @@ class TestGetDepartmentAdmin:
             email="dept_admin@test.com",
             password_hash=hash_password("password"),
             name="Dept Admin",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(admin)
@@ -1060,7 +1060,7 @@ class TestGetDepartmentAdmin:
             email="sub_admin@test.com",
             password_hash=hash_password("password"),
             name="Sub Admin",
-            role=UserRole.SUB_ADMIN,
+            role=UserRole.sub_admin,
             is_active=True
         )
         db_session.add(sub_admin)

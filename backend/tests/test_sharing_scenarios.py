@@ -40,7 +40,7 @@ class TestSharingChain:
             email="third@test.com",
             password_hash=hash_password("user123"),
             name="Third User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(third_user)
@@ -91,7 +91,7 @@ class TestSharingChain:
             email="fourth@test.com",
             password_hash=hash_password("user123"),
             name="Fourth User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(fourth_user)
@@ -133,7 +133,7 @@ class TestSharingChain:
             email="third@test.com",
             password_hash=hash_password("user123"),
             name="Third User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(third_user)
@@ -226,7 +226,7 @@ class TestCrossDepartmentSharing:
             email="dept1admin@test.com",
             password_hash=hash_password("password"),
             name="Dept1 Admin",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user_dept1)
@@ -238,7 +238,7 @@ class TestCrossDepartmentSharing:
             email="dept2member@test.com",
             password_hash=hash_password("password"),
             name="Dept2 Member",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user_dept2)
@@ -345,14 +345,14 @@ class TestCrossDepartmentSharing:
             email="sales@test.com",
             password_hash=hash_password("password"),
             name="Sales User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         user2 = User(
             email="hr@test.com",
             password_hash=hash_password("password"),
             name="HR User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add_all([user1, user2])
@@ -593,7 +593,7 @@ class TestTransferWithSharing:
             email="third@test.com",
             password_hash=hash_password("user123"),
             name="Third User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(third_user)
@@ -1015,7 +1015,7 @@ class TestOrganizationBoundaries:
             email="other@other.com",
             password_hash=hash_password("password"),
             name="Other Org User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_user)
@@ -1066,7 +1066,7 @@ class TestOrganizationBoundaries:
             email="otheruser@other.com",
             password_hash=hash_password("password"),
             name="Other User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_user)
@@ -1137,7 +1137,7 @@ class TestOrganizationBoundaries:
                 email=f"otheruser{i}@other.com",
                 password_hash=hash_password("password"),
                 name=f"Other User {i}",
-                role=UserRole.ADMIN,
+                role=UserRole.admin,
                 is_active=True
             )
             db_session.add(other_user)

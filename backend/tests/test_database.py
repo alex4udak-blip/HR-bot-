@@ -507,7 +507,7 @@ class TestDataTypes:
             email="telegram_user@test.com",
             password_hash=hash_password("test123"),
             name="Telegram User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             telegram_id=large_telegram_id,
             is_active=True
         )
@@ -745,7 +745,7 @@ class TestConstraintViolations:
             email=admin_user.email,  # Duplicate email
             password_hash=hash_password("test123"),
             name="Duplicate User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(duplicate_user)
@@ -761,7 +761,7 @@ class TestConstraintViolations:
             email="user1@test.com",
             password_hash=hash_password("test123"),
             name="User 1",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             telegram_id=123456789,
             is_active=True
         )
@@ -772,7 +772,7 @@ class TestConstraintViolations:
             email="user2@test.com",
             password_hash=hash_password("test123"),
             name="User 2",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             telegram_id=123456789,  # Duplicate telegram_id
             is_active=True
         )
@@ -821,7 +821,7 @@ class TestConstraintViolations:
             email=None,  # NULL email
             password_hash=hash_password("test123"),
             name="No Email User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user)

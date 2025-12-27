@@ -59,7 +59,7 @@ class TestListCalls:
             email="newuser@test.com",
             password_hash="hashed",
             name="New User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(new_user)
@@ -392,7 +392,7 @@ class TestGetCall:
             email="noorg@test.com",
             password_hash="hashed",
             name="No Org User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user)
@@ -603,7 +603,7 @@ class TestUploadCall:
             email="noorg@test.com",
             password_hash="hashed",
             name="No Org User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user)
@@ -808,7 +808,7 @@ class TestStartBot:
             email="noorg@test.com",
             password_hash="hashed",
             name="No Org User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user)
@@ -3753,7 +3753,7 @@ class TestCallSharingAdvanced:
                 email=f"user_{level}@test.com",
                 password_hash="hashed",
                 name=f"User {level}",
-                role=UserRole.ADMIN,
+                role=UserRole.admin,
                 is_active=True
             )
             db_session.add(user)

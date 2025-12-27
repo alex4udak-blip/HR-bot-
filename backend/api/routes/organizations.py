@@ -87,7 +87,7 @@ async def get_current_org(
     user = await db.merge(user)
 
     # Superadmin can access any organization
-    if user.role == UserRole.SUPERADMIN:
+    if user.role == UserRole.superadmin:
         # Return first available organization for superadmin
         result = await db.execute(
             select(Organization).order_by(Organization.created_at).limit(1)
@@ -112,7 +112,7 @@ async def require_org_admin(
     user = await db.merge(user)
 
     # Superadmin bypasses org role checks
-    if user.role == UserRole.SUPERADMIN:
+    if user.role == UserRole.superadmin:
         # Return a special role marker for superadmin
         return user, org, OrgRole.owner
 
@@ -258,7 +258,7 @@ async def invite_member(
             email=data.email,
             password_hash=hash_password(data.password),
             name=data.name,
-            role=UserRole.ADMIN  # Default role for new users
+            role=UserRole.admin  # Default role for new users
         )
         db.add(new_user)
         await db.flush()
@@ -394,7 +394,7 @@ async def remove_member(
 
     # Permission checks based on roles
     # Superadmin can remove anyone
-    if current_user.role == UserRole.SUPERADMIN:
+    if current_user.role == UserRole.superadmin:
         pass  # No restrictions for superadmin
     # Owner can remove admins and members, but not other owners
     elif current_role == OrgRole.owner:
@@ -423,7 +423,7 @@ async def remove_member(
         await db.flush()
 
         # If no other memberships (count was 1, just this membership) and not superadmin, delete user entirely
-        if other_memberships <= 1 and target_user.role != UserRole.SUPERADMIN:
+        if other_memberships <= 1 and target_user.role != UserRole.superadmin:
             from sqlalchemy import update
             from ..models.database import ReportSubscription, EntityAIConversation
 

@@ -26,7 +26,7 @@ async def create_test_user(
     email: str = "test@test.com",
     password: str = "Password123",
     name: str = "Test User",
-    role: UserRole = UserRole.ADMIN,
+    role: UserRole = UserRole.admin,
     is_active: bool = True,
     telegram_id: Optional[int] = None,
     telegram_username: Optional[str] = None
@@ -67,7 +67,7 @@ async def create_user_with_token(
     email: str = "test@test.com",
     password: str = "Password123",
     name: str = "Test User",
-    role: UserRole = UserRole.ADMIN,
+    role: UserRole = UserRole.admin,
 ) -> tuple[User, str]:
     """Create a test user and return user object with auth token.
 

@@ -195,7 +195,7 @@ class TestCrossOrgSharing:
             email="other@other.com",
             password_hash=hash_password("password"),
             name="Other Org User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_user)
@@ -508,7 +508,7 @@ class TestSharableUsers:
             email="other2@other.com",
             password_hash=hash_password("password"),
             name="Other Org User 2",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_user)

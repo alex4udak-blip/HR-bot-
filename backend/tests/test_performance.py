@@ -363,7 +363,7 @@ class TestSharesListNoNPlusOne:
                 email=f"shareuser{i}@test.com",
                 password_hash="hashed",
                 name=f"Share User {i}",
-                role=UserRole.ADMIN,
+                role=UserRole.admin,
                 is_active=True
             )
             db_session.add(user)

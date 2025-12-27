@@ -73,10 +73,10 @@ async def get_entity_with_data(db: AsyncSession, entity_id: int):
 
 def can_access_entity(user: User, entity: Entity) -> bool:
     """Check if user can access entity"""
-    if user.role == UserRole.SUPERADMIN:
+    if user.role == UserRole.superadmin:
         return True
     # Admin can access entities they created
-    if user.role == UserRole.ADMIN:
+    if user.role == UserRole.admin:
         return entity.created_by == user.id
     return False
 
@@ -394,7 +394,7 @@ async def batch_update_entity_summaries(
     user = await db.merge(user)
 
     # Only admins can batch update
-    if user.role not in [UserRole.SUPERADMIN, UserRole.ADMIN]:
+    if user.role not in [UserRole.superadmin, UserRole.admin]:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     limit = min(limit, 50)  # Cap at 50

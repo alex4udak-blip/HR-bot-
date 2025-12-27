@@ -143,7 +143,7 @@ async def check_chat_modification_access(
         True if user has required access level, False otherwise
     """
     # Superadmin can do anything
-    if user.role == UserRole.SUPERADMIN:
+    if user.role == UserRole.superadmin:
         return True
 
     # Org owner can do anything in their org
@@ -215,7 +215,7 @@ async def get_chats(
     user = await db.merge(user)
 
     # SUPERADMIN sees everything across all organizations
-    if user.role == UserRole.SUPERADMIN:
+    if user.role == UserRole.superadmin:
         query = select(Chat).options(selectinload(Chat.owner), selectinload(Chat.entity)).where(
             Chat.deleted_at.is_(None)
         )
@@ -433,7 +433,7 @@ async def update_chat(
         chat.custom_name = data.custom_name
     if data.is_active is not None:
         chat.is_active = data.is_active
-    if data.owner_id is not None and user.role == UserRole.SUPERADMIN:
+    if data.owner_id is not None and user.role == UserRole.superadmin:
         chat.owner_id = data.owner_id
     if data.chat_type is not None:
         try:
@@ -532,7 +532,7 @@ async def delete_chat(
 
     # Check delete permissions (require ownership or full access)
     can_delete = False
-    if user.role == UserRole.SUPERADMIN:
+    if user.role == UserRole.superadmin:
         can_delete = True
     else:
         user_role = await get_user_org_role(user, org.id, db)
@@ -579,7 +579,7 @@ async def get_deleted_chats(
         Chat.deleted_at.isnot(None),
         Chat.org_id == org.id
     )
-    if user.role != UserRole.SUPERADMIN:
+    if user.role != UserRole.superadmin:
         query = query.where(Chat.owner_id == user.id)
     query = query.order_by(Chat.deleted_at.desc())
 
@@ -1874,7 +1874,7 @@ async def share_chat(
 
     # Check if user has permission to share this chat (requires full access or ownership)
     can_share = False
-    if current_user.role == UserRole.SUPERADMIN:
+    if current_user.role == UserRole.superadmin:
         can_share = True
     else:
         user_role = await get_user_org_role(current_user, org.id, db)

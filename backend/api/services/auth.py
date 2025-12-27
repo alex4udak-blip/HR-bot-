@@ -191,7 +191,7 @@ async def get_current_user_allow_inactive(
 
 
 async def get_superadmin(user: User = Depends(get_current_user)) -> User:
-    if user.role != UserRole.SUPERADMIN:
+    if user.role != UserRole.superadmin:
         raise HTTPException(status_code=403, detail="Superadmin access required")
     return user
 
@@ -296,7 +296,7 @@ async def create_superadmin_if_not_exists(db: AsyncSession):
     logger = logging.getLogger("hr-analyzer.auth")
 
     # Create superadmin if not exists
-    result = await db.execute(select(User).where(User.role == UserRole.SUPERADMIN))
+    result = await db.execute(select(User).where(User.role == UserRole.superadmin))
     superadmin = result.scalar_one_or_none()
 
     if not superadmin:
@@ -304,7 +304,7 @@ async def create_superadmin_if_not_exists(db: AsyncSession):
             email=settings.superadmin_email,
             password_hash=hash_password(settings.superadmin_password),
             name="Super Admin",
-            role=UserRole.SUPERADMIN,
+            role=UserRole.superadmin,
         )
         db.add(superadmin)
         await db.flush()
@@ -352,7 +352,7 @@ async def create_superadmin_if_not_exists(db: AsyncSession):
         )
         if not result.scalar_one_or_none():
             # Superadmin is owner, others are admins (for now)
-            role = OrgRole.owner if user.role == UserRole.SUPERADMIN else OrgRole.admin
+            role = OrgRole.owner if user.role == UserRole.superadmin else OrgRole.admin
             membership = OrgMember(
                 org_id=default_org.id,
                 user_id=user.id,
@@ -416,7 +416,7 @@ async def get_user_org_role(user: User, org_id: int, db: AsyncSession) -> Option
 
 def is_superadmin(user: User) -> bool:
     """Check if user is SUPERADMIN (global access to everything)."""
-    return user.role == UserRole.SUPERADMIN
+    return user.role == UserRole.superadmin
 
 
 async def is_owner(user: User, org_id: int, db: AsyncSession) -> bool:
@@ -424,7 +424,7 @@ async def is_owner(user: User, org_id: int, db: AsyncSession) -> bool:
 
     OWNER sees everything in the organization, except private content created by SUPERADMIN.
     """
-    if user.role == UserRole.SUPERADMIN:
+    if user.role == UserRole.superadmin:
         return False  # Superadmin is not owner, it's higher
 
     user_role = await get_user_org_role(user, org_id, db)
@@ -549,7 +549,7 @@ async def was_created_by_superadmin(resource, db: AsyncSession) -> bool:
     )
     creator = result.scalar_one_or_none()
 
-    return creator and creator.role == UserRole.SUPERADMIN
+    return creator and creator.role == UserRole.superadmin
 
 
 async def get_department_admin(user: User, db: AsyncSession) -> Optional[Department]:
@@ -568,7 +568,7 @@ async def get_department_admin(user: User, db: AsyncSession) -> Optional[Departm
     from ..models.database import DeptRole
 
     # Only ADMIN and SUB_ADMIN can have departments
-    if user.role not in (UserRole.ADMIN, UserRole.SUB_ADMIN):
+    if user.role not in (UserRole.admin, UserRole.sub_admin):
         return None
 
     # Get user's department membership where they are lead or sub_admin
@@ -637,7 +637,7 @@ async def can_share_to(
         True if sharing is allowed, False otherwise
     """
     # SUPERADMIN can share with anyone
-    if from_user.role == UserRole.SUPERADMIN:
+    if from_user.role == UserRole.superadmin:
         return True
 
     # Get from_user's role in the organization
@@ -662,7 +662,7 @@ async def can_share_to(
     # 3. OWNER/SUPERADMIN
     if from_user_role == OrgRole.admin:
         # Can share with OWNER or SUPERADMIN
-        if to_user_org_role == OrgRole.owner or to_user.role == UserRole.SUPERADMIN:
+        if to_user_org_role == OrgRole.owner or to_user.role == UserRole.superadmin:
             return True
 
         # Can share with other admins

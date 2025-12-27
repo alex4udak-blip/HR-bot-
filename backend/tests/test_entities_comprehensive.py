@@ -494,7 +494,7 @@ class TestTransferEntityComprehensive:
             email="noorg@test.com",
             password_hash="hashed",
             name="No Org User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(no_org_user)

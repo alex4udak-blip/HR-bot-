@@ -1203,7 +1203,7 @@ class TestAddDepartmentMember:
             email="outsider@test.com",
             password_hash="hash",
             name="Outsider",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_user)
@@ -1884,7 +1884,7 @@ class TestCrossOrganizationIsolation:
             email="otherorg@test.com",
             password_hash="hash",
             name="Other Org User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_user)
@@ -2921,7 +2921,7 @@ class TestMoveUsersBetweenDepartments:
                 email=f"move_user_{i}@test.com",
                 password_hash="hashed",
                 name=f"Move User {i}",
-                role=UserRole.ADMIN,
+                role=UserRole.admin,
                 is_active=True
             )
             db_session.add(user)
@@ -3243,7 +3243,7 @@ class TestEnhancedDepartmentStatistics:
                 email=f"role_user_{i}@test.com",
                 password_hash="hashed",
                 name=f"Role User {i}",
-                role=UserRole.ADMIN,
+                role=UserRole.admin,
                 is_active=True
             )
             db_session.add(user)
@@ -3343,7 +3343,7 @@ class TestEnhancedDepartmentStatistics:
                 email=f"bulk_user_{i}@test.com",
                 password_hash="hashed",
                 name=f"Bulk User {i}",
-                role=UserRole.ADMIN,
+                role=UserRole.admin,
                 is_active=True
             )
             db_session.add(user)
@@ -3931,7 +3931,7 @@ class TestBulkMemberOperations:
                 email=f"bulk_add_{i}@test.com",
                 password_hash="hashed",
                 name=f"Bulk User {i}",
-                role=UserRole.ADMIN,
+                role=UserRole.admin,
                 is_active=True
             )
             db_session.add(user)
@@ -3986,7 +3986,7 @@ class TestBulkMemberOperations:
                 email=f"role_change_{i}@test.com",
                 password_hash="hashed",
                 name=f"Role User {i}",
-                role=UserRole.ADMIN,
+                role=UserRole.admin,
                 is_active=True
             )
             db_session.add(user)
@@ -4046,7 +4046,7 @@ class TestBulkMemberOperations:
                 email=f"remove_member_{i}@test.com",
                 password_hash="hashed",
                 name=f"Member {i}",
-                role=UserRole.ADMIN,
+                role=UserRole.admin,
                 is_active=True
             )
             db_session.add(user)

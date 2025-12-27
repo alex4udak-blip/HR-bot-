@@ -84,7 +84,7 @@ async def resource_exists(resource_type: ResourceType, resource_id: int, db: Asy
 
 async def can_share_resource(user: User, resource_type: ResourceType, resource_id: int, db: AsyncSession) -> bool:
     """Check if user can share a resource (must own it or have full access)"""
-    if user.role == UserRole.SUPERADMIN:
+    if user.role == UserRole.superadmin:
         return True
 
     # Check ownership
@@ -119,7 +119,7 @@ async def can_share_resource(user: User, resource_type: ResourceType, resource_i
 
 async def has_access_to_resource(user: User, resource_type: ResourceType, resource_id: int, db: AsyncSession) -> bool:
     """Check if user has any access to a resource"""
-    if user.role == UserRole.SUPERADMIN:
+    if user.role == UserRole.superadmin:
         return True
 
     # Check ownership
@@ -236,7 +236,7 @@ async def share_resource(
 
     # Get current user's organization
     current_user_org = await get_user_org(current_user, db)
-    if not current_user_org and current_user.role != UserRole.SUPERADMIN:
+    if not current_user_org and current_user.role != UserRole.superadmin:
         raise HTTPException(status_code=403, detail="Вы не состоите в организации")
 
     # Verify sharing permissions (organization and department rules)
@@ -337,7 +337,7 @@ async def update_share(
         raise HTTPException(status_code=404, detail="Share not found")
 
     # Only the person who shared or superadmin can update
-    if share.shared_by_id != current_user.id and current_user.role != UserRole.SUPERADMIN:
+    if share.shared_by_id != current_user.id and current_user.role != UserRole.superadmin:
         raise HTTPException(status_code=403, detail="You can only update shares you created")
 
     # Update the share
@@ -390,7 +390,7 @@ async def revoke_share(
         raise HTTPException(status_code=404, detail="Share not found")
 
     # Only the person who shared or superadmin can revoke
-    if share.shared_by_id != current_user.id and current_user.role != UserRole.SUPERADMIN:
+    if share.shared_by_id != current_user.id and current_user.role != UserRole.superadmin:
         raise HTTPException(status_code=403, detail="You can only revoke shares you created")
 
     # Store share info before deletion

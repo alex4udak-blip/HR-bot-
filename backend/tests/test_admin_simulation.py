@@ -31,7 +31,7 @@ async def sub_admin_user(db_session):
         email="subadmin@test.com",
         password_hash="$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYqVr/1fXem",  # hashed "password"
         name="Sub Admin",
-        role=UserRole.SUB_ADMIN,
+        role=UserRole.sub_admin,
         is_active=True
     )
     db_session.add(user)
@@ -47,7 +47,7 @@ async def member_user(db_session):
         email="member@test.com",
         password_hash="$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYqVr/1fXem",
         name="Regular Member",
-        role=UserRole.ADMIN,  # Base role, but will be MEMBER in org/dept
+        role=UserRole.admin,  # Base role, but will be MEMBER in org/dept
         is_active=True
     )
     db_session.add(user)
@@ -63,7 +63,7 @@ async def owner_user(db_session):
         email="owner@test.com",
         password_hash="$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYqVr/1fXem",
         name="Organization Owner",
-        role=UserRole.ADMIN,
+        role=UserRole.admin,
         is_active=True
     )
     db_session.add(user)

@@ -438,7 +438,7 @@ class TestTokenSecurity:
             email="inactive@test.com",
             password_hash=hash_password("password123"),
             name="Inactive User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=False
         )
         db_session.add(inactive_user)

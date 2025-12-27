@@ -110,7 +110,7 @@ async def superadmin_user(db_session: AsyncSession) -> User:
         email="superadmin@test.com",
         password_hash=hash_password("Superadmin123"),
         name="Super Admin",
-        role=UserRole.SUPERADMIN,
+        role=UserRole.superadmin,
         is_active=True
     )
     db_session.add(user)
@@ -126,7 +126,7 @@ async def admin_user(db_session: AsyncSession) -> User:
         email="admin@test.com",
         password_hash=hash_password("Admin123"),
         name="Admin User",
-        role=UserRole.ADMIN,
+        role=UserRole.admin,
         is_active=True
     )
     db_session.add(user)
@@ -142,7 +142,7 @@ async def regular_user(db_session: AsyncSession) -> User:
         email="user@test.com",
         password_hash=hash_password("User123"),
         name="Regular User",
-        role=UserRole.ADMIN,
+        role=UserRole.admin,
         is_active=True
     )
     db_session.add(user)
@@ -158,7 +158,7 @@ async def second_user(db_session: AsyncSession) -> User:
         email="user2@test.com",
         password_hash=hash_password("User123"),
         name="Second User",
-        role=UserRole.ADMIN,
+        role=UserRole.admin,
         is_active=True
     )
     db_session.add(user)
@@ -371,7 +371,7 @@ async def user_with_telegram(db_session: AsyncSession) -> User:
         email="telegram_user@test.com",
         password_hash=hash_password("Password123"),
         name="Telegram User",
-        role=UserRole.ADMIN,
+        role=UserRole.admin,
         telegram_id=555666777,
         telegram_username="testuser123",
         is_active=True

@@ -274,7 +274,7 @@ class TestStatusEndpoint:
             email="other@example.com",
             password_hash="hash",
             name="Other User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_user)
