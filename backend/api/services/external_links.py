@@ -441,7 +441,8 @@ class ExternalLinkProcessor:
                                 if initial_meeting:
                                     duration_mins = initial_meeting.get('durationMins')
                                     if duration_mins:
-                                        call.duration_seconds = int(duration_mins * 60)
+                                        # Convert to float first, then multiply (duration_mins might be string)
+                                        call.duration_seconds = int(float(duration_mins) * 60)
                                         logger.info(f"Extracted duration from initialMeetingNote: {duration_mins} mins ({call.duration_seconds} seconds)")
 
                                     # Also try to get title if not set
@@ -1210,6 +1211,17 @@ class ExternalLinkProcessor:
                                     '[class*="Analytics"] [class*="row"]'
                                 ];
 
+                                // Helper to fix doubled first letter (avatar + name concatenation)
+                                const fixDuplicatedFirstChar = (name) => {
+                                    if (!name || name.length < 2) return name;
+                                    // If first two chars are the same (case-insensitive), remove first one
+                                    // Examples: "IInna I." -> "Inna I.", "ММатвей" -> "Матвей"
+                                    if (name[0].toLowerCase() === name[1].toLowerCase()) {
+                                        return name.substring(1);
+                                    }
+                                    return name;
+                                };
+
                                 for (const sel of speakerRowSelectors) {
                                     const rows = document.querySelectorAll(sel);
                                     if (rows.length > 0) {
@@ -1224,7 +1236,9 @@ class ExternalLinkProcessor:
                                                 wpmMatch = text?.match(/^([^|0-9]+?)[|]?\s*(\d+)\s*[|]?\s*(\d+)\s*%/);
                                             }
                                             if (wpmMatch) {
-                                                const name = wpmMatch[1].trim();
+                                                let name = wpmMatch[1].trim();
+                                                // Fix doubled first character from avatar + name concatenation
+                                                name = fixDuplicatedFirstChar(name);
                                                 if (name && name.length >= 2 && name.length < 50) {
                                                     result.speakerStats.push({
                                                         name: name,
@@ -1286,7 +1300,9 @@ class ExternalLinkProcessor:
                                                 // Extract name (everything before numbers)
                                                 const match = fullText?.match(/^([^0-9%]+)/);
                                                 if (match) {
-                                                    const name = match[1].trim();
+                                                    let name = match[1].trim();
+                                                    // Fix doubled first character from avatar + name concatenation
+                                                    name = fixDuplicatedFirstChar(name);
                                                     const percentMatch = fullText.match(/(\d{1,2})%/);
                                                     const wpmMatch = fullText.match(/(\d{2,3})\s*(?:WPM|wpm|слов)?/);
                                                     if (name && percentMatch) {
@@ -1685,6 +1701,7 @@ class ExternalLinkProcessor:
                 fireflies_stats = getattr(call, '_fireflies_speaker_stats', None)
                 if fireflies_stats:
                     logger.info(f"Merging Fireflies speaker stats: {fireflies_stats}")
+                    total_duration = call.duration_seconds or 0
                     for ff_stat in fireflies_stats:
                         ff_name = ff_stat.get('name', '').lower()
                         # Find matching speaker in calculated stats
@@ -1695,7 +1712,12 @@ class ExternalLinkProcessor:
                                     stats['wpm'] = ff_stat['wpm']
                                 if ff_stat.get('talktimePercent'):
                                     stats['talktime_percent'] = ff_stat['talktimePercent']
-                                logger.info(f"Updated speaker '{speaker_name}' with Fireflies stats: wpm={ff_stat.get('wpm')}, talktime={ff_stat.get('talktimePercent')}%")
+                                    # Also calculate talktime_seconds from duration and percent
+                                    if total_duration > 0:
+                                        stats['talktime_seconds'] = int(total_duration * ff_stat['talktimePercent'] / 100)
+                                        logger.info(f"Updated speaker '{speaker_name}' with Fireflies stats: wpm={ff_stat.get('wpm')}, talktime={ff_stat.get('talktimePercent')}% ({stats['talktime_seconds']}s)")
+                                    else:
+                                        logger.info(f"Updated speaker '{speaker_name}' with Fireflies stats: wpm={ff_stat.get('wpm')}, talktime={ff_stat.get('talktimePercent')}%")
                                 break
 
             logger.info(f"Fireflies transcript processed successfully: {len(call.transcript)} chars")
