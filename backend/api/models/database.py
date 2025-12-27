@@ -565,3 +565,85 @@ class ImpersonationLog(Base):
 
     superadmin = relationship("User", foreign_keys=[superadmin_id])
     impersonated_user = relationship("User", foreign_keys=[impersonated_user_id])
+
+
+class CustomRole(Base):
+    """Custom roles created by superadmin"""
+    __tablename__ = "custom_roles"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(50), nullable=False)
+    description = Column(String(255), nullable=True)
+    base_role = Column(String(20), nullable=False)  # inherits from: owner, admin, sub_admin, member
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)  # null = system-wide
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    is_active = Column(Boolean, default=True)
+
+    # Unique constraint: name unique per org (or globally if org_id is null)
+    __table_args__ = (
+        UniqueConstraint('name', 'org_id', name='uq_custom_role_name_org'),
+    )
+
+    # Relationships
+    organization = relationship("Organization")
+    creator = relationship("User", foreign_keys=[created_by])
+    permission_overrides = relationship("RolePermissionOverride", back_populates="role", cascade="all, delete-orphan")
+    user_assignments = relationship("UserCustomRole", back_populates="role", cascade="all, delete-orphan")
+    audit_logs = relationship("PermissionAuditLog", back_populates="role", cascade="all, delete-orphan")
+
+
+class RolePermissionOverride(Base):
+    """Permission overrides for custom roles"""
+    __tablename__ = "role_permission_overrides"
+
+    id = Column(Integer, primary_key=True)
+    role_id = Column(Integer, ForeignKey("custom_roles.id", ondelete="CASCADE"), nullable=False, index=True)
+    permission = Column(String(50), nullable=False)  # e.g. "can_delete_users", "can_share_resources"
+    allowed = Column(Boolean, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('role_id', 'permission', name='uq_role_permission'),
+    )
+
+    # Relationships
+    role = relationship("CustomRole", back_populates="permission_overrides")
+
+
+class PermissionAuditLog(Base):
+    """Audit log for permission changes"""
+    __tablename__ = "permission_audit_logs"
+
+    id = Column(Integer, primary_key=True)
+    changed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    role_id = Column(Integer, ForeignKey("custom_roles.id", ondelete="CASCADE"), nullable=True)
+    action = Column(String(20), nullable=False)  # 'create', 'update', 'delete'
+    permission = Column(String(50), nullable=True)
+    old_value = Column(Boolean, nullable=True)
+    new_value = Column(Boolean, nullable=True)
+    details = Column(JSON, nullable=True)  # additional context
+    created_at = Column(DateTime, default=func.now(), index=True)
+
+    # Relationships
+    changed_by_user = relationship("User", foreign_keys=[changed_by])
+    role = relationship("CustomRole", back_populates="audit_logs")
+
+
+class UserCustomRole(Base):
+    """Assignment of custom roles to users"""
+    __tablename__ = "user_custom_roles"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    role_id = Column(Integer, ForeignKey("custom_roles.id", ondelete="CASCADE"), nullable=False, index=True)
+    assigned_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    assigned_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'role_id', name='uq_user_custom_role'),
+    )
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    role = relationship("CustomRole", back_populates="user_assignments")
+    assigned_by_user = relationship("User", foreign_keys=[assigned_by])

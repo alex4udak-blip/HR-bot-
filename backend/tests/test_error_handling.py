@@ -238,13 +238,11 @@ class TestOpenAIAPIErrorHandling:
 
         monkeypatch.setattr("openai.OpenAI", lambda *args, **kwargs: mock_client)
 
-        # Test with call upload endpoint (if exists)
-        # The exact endpoint might vary - this is a general pattern
+        # Test with call upload endpoint
         with open(audio_file, 'rb') as f:
             response = await client.post(
-                "/api/calls",
+                "/api/calls/upload",
                 files={"file": ("test.mp3", f, "audio/mpeg")},
-                data={"title": "Test Call"},
                 cookies={"access_token": admin_token}
             )
 
@@ -262,9 +260,8 @@ class TestOpenAIAPIErrorHandling:
 
         with open(invalid_file, 'rb') as f:
             response = await client.post(
-                "/api/calls",
+                "/api/calls/upload",
                 files={"file": ("invalid.mp3", f, "audio/mpeg")},
-                data={"title": "Test Call"},
                 cookies={"access_token": admin_token}
             )
 
@@ -451,8 +448,7 @@ class TestFileUploadErrorHandling:
     async def test_missing_file_upload(self, client, admin_token, organization, org_owner):
         """Test handling when file is not provided in upload."""
         response = await client.post(
-            "/api/calls",
-            data={"title": "Test Call"},
+            "/api/calls/upload",
             cookies={"access_token": admin_token}
         )
 
@@ -470,9 +466,8 @@ class TestFileUploadErrorHandling:
 
         with open(corrupted_file, 'rb') as f:
             response = await client.post(
-                "/api/calls",
+                "/api/calls/upload",
                 files={"file": ("corrupted.mp3", f, "audio/mpeg")},
-                data={"title": "Test Call"},
                 cookies={"access_token": admin_token}
             )
 
@@ -491,9 +486,8 @@ class TestFileUploadErrorHandling:
 
         with open(large_file, 'rb') as f:
             response = await client.post(
-                "/api/calls",
+                "/api/calls/upload",
                 files={"file": ("large.mp3", f, "audio/mpeg")},
-                data={"title": "Test Call"},
                 cookies={"access_token": admin_token}
             )
 
