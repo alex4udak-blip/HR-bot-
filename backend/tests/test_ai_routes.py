@@ -854,15 +854,38 @@ class TestEntityAIActions:
         assert response.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_get_entity_ai_actions_access_denied(
-        self, client, second_entity, admin_token, get_auth_headers, org_owner
+    async def test_org_owner_can_access_any_entity_actions(
+        self, client, second_entity, admin_token, get_auth_headers, org_owner,
+        org_member, mock_entity_ai_service
     ):
-        """Test access denied for entity AI actions."""
-        response = await client.get(
-            f"/api/entities/{second_entity.id}/ai/actions",
-            headers=get_auth_headers(admin_token)
-        )
+        """Test org owner can access any entity in their org (new role hierarchy).
 
+        With the updated role-based access control, org owners have full access
+        to all entities in their organization.
+        """
+        with patch('api.routes.entity_ai.entity_ai_service', mock_entity_ai_service):
+            response = await client.get(
+                f"/api/entities/{second_entity.id}/ai/actions",
+                headers=get_auth_headers(admin_token)
+            )
+            # Org owner (admin_user via org_owner fixture) CAN access second_entity
+            assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_member_cannot_access_other_member_entity_actions(
+        self, client, entity, second_user_token, get_auth_headers, org_owner, org_member
+    ):
+        """Test org member cannot access another member's entity.
+
+        A regular org member should not be able to access entities created by
+        other members unless explicitly shared or in the same department with
+        appropriate role.
+        """
+        response = await client.get(
+            f"/api/entities/{entity.id}/ai/actions",
+            headers=get_auth_headers(second_user_token)
+        )
+        # second_user is org member, cannot access admin_user's entity
         assert response.status_code == 403
 
     @pytest.mark.asyncio
@@ -978,15 +1001,19 @@ class TestEntityAIMessage:
 
     @pytest.mark.asyncio
     async def test_entity_ai_message_access_denied(
-        self, client, second_entity, admin_token, get_auth_headers, org_owner
+        self, client, entity, second_user_token, get_auth_headers, org_owner, org_member
     ):
-        """Test access denied for entity AI message."""
+        """Test access denied for entity AI message.
+
+        A regular org member should not be able to send messages to entities
+        created by other members.
+        """
         response = await client.post(
-            f"/api/entities/{second_entity.id}/ai/message",
-            headers=get_auth_headers(admin_token),
+            f"/api/entities/{entity.id}/ai/message",
+            headers=get_auth_headers(second_user_token),
             json={"message": "Test"}
         )
-
+        # second_user is org member, cannot access admin_user's entity
         assert response.status_code == 403
 
 
@@ -1044,14 +1071,18 @@ class TestEntityAIHistory:
 
     @pytest.mark.asyncio
     async def test_get_entity_ai_history_access_denied(
-        self, client, second_entity, admin_token, get_auth_headers, org_owner
+        self, client, entity, second_user_token, get_auth_headers, org_owner, org_member
     ):
-        """Test access denied for entity AI history."""
-        response = await client.get(
-            f"/api/entities/{second_entity.id}/ai/history",
-            headers=get_auth_headers(admin_token)
-        )
+        """Test access denied for entity AI history.
 
+        A regular org member should not be able to access history for entities
+        created by other members.
+        """
+        response = await client.get(
+            f"/api/entities/{entity.id}/ai/history",
+            headers=get_auth_headers(second_user_token)
+        )
+        # second_user is org member, cannot access admin_user's entity
         assert response.status_code == 403
 
 
@@ -1098,14 +1129,18 @@ class TestClearEntityAIHistory:
 
     @pytest.mark.asyncio
     async def test_clear_entity_ai_history_access_denied(
-        self, client, second_entity, admin_token, get_auth_headers, org_owner
+        self, client, entity, second_user_token, get_auth_headers, org_owner, org_member
     ):
-        """Test access denied when clearing entity history."""
-        response = await client.delete(
-            f"/api/entities/{second_entity.id}/ai/history",
-            headers=get_auth_headers(admin_token)
-        )
+        """Test access denied when clearing entity history.
 
+        A regular org member should not be able to clear history for entities
+        created by other members.
+        """
+        response = await client.delete(
+            f"/api/entities/{entity.id}/ai/history",
+            headers=get_auth_headers(second_user_token)
+        )
+        # second_user is org member, cannot access admin_user's entity
         assert response.status_code == 403
 
 
