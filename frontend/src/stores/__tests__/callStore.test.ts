@@ -443,6 +443,8 @@ describe('callStore', () => {
         status: 'processing',
         duration: 30,
         error: undefined,
+        progress: 0,
+        progressStage: '',
       });
       expect(state.pollingInterval).not.toBeNull();
     });
