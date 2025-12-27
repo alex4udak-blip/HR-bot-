@@ -695,7 +695,7 @@ class TestInviteMember:
             email="existing@test.com",
             password_hash="hash",
             name="Existing User",
-            role=UserRole.ADMIN
+            role=UserRole.admin
         )
         db_session.add(existing_user)
         await db_session.commit()
@@ -1338,7 +1338,7 @@ class TestRemoveMember:
             email="tobedeleted@test.com",
             password_hash="hash",
             name="To Be Deleted",
-            role=UserRole.ADMIN
+            role=UserRole.admin
         )
         db_session.add(new_user)
         await db_session.flush()
@@ -1378,7 +1378,7 @@ class TestRemoveMember:
             email="multiorg@test.com",
             password_hash="hash",
             name="Multi Org User",
-            role=UserRole.ADMIN
+            role=UserRole.admin
         )
         db_session.add(new_user)
         await db_session.flush()
@@ -1478,7 +1478,7 @@ class TestRemoveMember:
             email="cleanup@test.com",
             password_hash="hash",
             name="Cleanup User",
-            role=UserRole.ADMIN
+            role=UserRole.admin
         )
         db_session.add(new_user)
         await db_session.flush()

@@ -55,7 +55,7 @@ async def create_preset(
 ):
     user = await db.merge(user)
     # Only superadmin can create global presets
-    is_global = data.is_global and user.role == UserRole.SUPERADMIN
+    is_global = data.is_global and user.role == UserRole.superadmin
 
     preset = CriteriaPreset(
         name=data.name,
@@ -95,7 +95,7 @@ async def delete_preset(
         raise HTTPException(status_code=404, detail="Preset not found")
 
     # Only owner or superadmin can delete
-    if preset.created_by != user.id and user.role != UserRole.SUPERADMIN:
+    if preset.created_by != user.id and user.role != UserRole.superadmin:
         raise HTTPException(status_code=403, detail="Access denied")
 
     await db.delete(preset)
@@ -116,7 +116,7 @@ async def get_chat_criteria(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if user.role != UserRole.SUPERADMIN and chat.owner_id != user.id:
+    if user.role != UserRole.superadmin and chat.owner_id != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = await db.execute(select(ChatCriteria).where(ChatCriteria.chat_id == chat_id))
@@ -152,7 +152,7 @@ async def update_chat_criteria(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if user.role != UserRole.SUPERADMIN and chat.owner_id != user.id:
+    if user.role != UserRole.superadmin and chat.owner_id != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = await db.execute(select(ChatCriteria).where(ChatCriteria.chat_id == chat_id))

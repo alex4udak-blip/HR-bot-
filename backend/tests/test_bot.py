@@ -114,7 +114,7 @@ async def db_user(db_session: AsyncSession) -> User:
         email="testuser@example.com",
         password_hash="hashed_password",
         name="Test User",
-        role=UserRole.ADMIN,
+        role=UserRole.admin,
         telegram_id=987654321,
         telegram_username="testuser",
         is_active=True
@@ -132,7 +132,7 @@ async def db_user_no_telegram(db_session: AsyncSession) -> User:
         email="notelegram@example.com",
         password_hash="hashed_password",
         name="No Telegram User",
-        role=UserRole.ADMIN,
+        role=UserRole.admin,
         is_active=True
     )
     db_session.add(user)

@@ -18,7 +18,7 @@ async def get_stats(
 ):
     # Merge detached user into current session to avoid lazy loading issues
     user = await db.merge(user)
-    is_super = user.role == UserRole.SUPERADMIN
+    is_super = user.role == UserRole.superadmin
     now = datetime.utcnow()
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_ago = now - timedelta(days=7)

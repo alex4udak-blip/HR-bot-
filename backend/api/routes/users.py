@@ -110,13 +110,13 @@ async def get_users(
     current_user = await db.merge(current_user)
 
     # SUPERADMIN sees all users
-    if current_user.role == UserRole.SUPERADMIN:
+    if current_user.role == UserRole.superadmin:
         result = await db.execute(select(User).order_by(User.created_at.desc()))
         users = result.scalars().all()
     # ADMIN/SUB_ADMIN sees:
     # - All users in their department
     # - Only ADMIN/SUB_ADMIN from other departments (not MEMBER)
-    elif current_user.role in (UserRole.ADMIN, UserRole.SUB_ADMIN):
+    elif current_user.role in (UserRole.admin, UserRole.sub_admin):
         # Get current user's department
         dept_member_result = await db.execute(
             select(DepartmentMember).where(DepartmentMember.user_id == current_user.id)
@@ -144,7 +144,7 @@ async def get_users(
             .join(DepartmentMember, DepartmentMember.user_id == User.id)
             .where(
                 DepartmentMember.department_id != dept_member.department_id,
-                User.role.in_([UserRole.ADMIN, UserRole.SUB_ADMIN]),
+                User.role.in_([UserRole.admin, UserRole.sub_admin]),
                 DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
             )
             .order_by(User.created_at.desc())
@@ -204,14 +204,14 @@ async def create_user(
 
     # Map role string to enum
     if data.role == "superadmin":
-        user_role = UserRole.SUPERADMIN
+        user_role = UserRole.superadmin
     elif data.role == "sub_admin":
-        user_role = UserRole.SUB_ADMIN
+        user_role = UserRole.sub_admin
     else:
-        user_role = UserRole.ADMIN
+        user_role = UserRole.admin
 
     # Validate department_id for ADMIN and SUB_ADMIN
-    if user_role in (UserRole.ADMIN, UserRole.SUB_ADMIN):
+    if user_role in (UserRole.admin, UserRole.sub_admin):
         if not data.department_id:
             raise HTTPException(status_code=400, detail="Admin must be assigned to a department")
 
@@ -236,9 +236,9 @@ async def create_user(
     # Add user to department if specified
     if data.department_id:
         # Determine department role based on user role
-        if user_role == UserRole.ADMIN:
+        if user_role == UserRole.admin:
             dept_role = DeptRole.lead
-        elif user_role == UserRole.SUB_ADMIN:
+        elif user_role == UserRole.sub_admin:
             dept_role = DeptRole.sub_admin
         else:
             dept_role = DeptRole.member
@@ -276,14 +276,14 @@ async def update_user(
     new_role = None
     if data.role:
         if data.role == "superadmin":
-            new_role = UserRole.SUPERADMIN
+            new_role = UserRole.superadmin
         elif data.role == "sub_admin":
-            new_role = UserRole.SUB_ADMIN
+            new_role = UserRole.sub_admin
         else:
-            new_role = UserRole.ADMIN
+            new_role = UserRole.admin
 
         # Validate department_id for ADMIN and SUB_ADMIN
-        if new_role in (UserRole.ADMIN, UserRole.SUB_ADMIN):
+        if new_role in (UserRole.admin, UserRole.sub_admin):
             # Check if user has a department
             dept_member_result = await db.execute(
                 select(DepartmentMember).where(DepartmentMember.user_id == user_id)
@@ -323,9 +323,9 @@ async def update_user(
         existing_dept_member = dept_member_result.scalar_one_or_none()
 
         # Determine department role based on user role
-        if user.role == UserRole.ADMIN:
+        if user.role == UserRole.admin:
             dept_role = DeptRole.lead
-        elif user.role == UserRole.SUB_ADMIN:
+        elif user.role == UserRole.sub_admin:
             dept_role = DeptRole.sub_admin
         else:
             dept_role = DeptRole.member

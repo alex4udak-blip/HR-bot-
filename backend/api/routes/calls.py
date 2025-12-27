@@ -79,7 +79,7 @@ async def can_access_call(user: User, call: CallRecording, user_org_id: int = No
                 select(User).where(User.id == call.owner_id)
             )
             owner = owner_result.scalar_one_or_none()
-            if owner and owner.role == UserRole.SUPERADMIN:
+            if owner and owner.role == UserRole.superadmin:
                 # OWNER cannot access private SUPERADMIN content
                 return False
         return True
@@ -145,7 +145,7 @@ async def check_call_modification_access(
         True if user has required access level, False otherwise
     """
     # Superadmin can do anything
-    if user.role == UserRole.SUPERADMIN:
+    if user.role == UserRole.superadmin:
         return True
 
     # Org owner can do anything in their org
@@ -242,7 +242,7 @@ async def list_calls(
     current_user = await db.merge(current_user)
 
     # SUPERADMIN sees everything across all organizations
-    if current_user.role == UserRole.SUPERADMIN:
+    if current_user.role == UserRole.superadmin:
         query = select(CallRecording)
     else:
         org = await get_user_org(current_user, db)
@@ -1149,7 +1149,7 @@ async def share_call(
 
     # Check if user has permission to share this call (requires full access or ownership)
     can_share = False
-    if current_user.role == UserRole.SUPERADMIN:
+    if current_user.role == UserRole.superadmin:
         can_share = True
     else:
         user_role = await get_user_org_role(current_user, org.id, db)

@@ -437,7 +437,7 @@ class TestResourceSharesNoNPlusOne:
                 email=f"sharetest{i}@test.com",
                 password_hash="hashed",
                 name=f"Share Test User {i}",
-                role=UserRole.ADMIN,
+                role=UserRole.admin,
                 is_active=True
             )
             db_session.add(user)
@@ -558,7 +558,7 @@ class TestSharableUsersNoNPlusOne:
                 email=f"sharableuser{i}@test.com",
                 password_hash="hashed",
                 name=f"Sharable User {i}",
-                role=UserRole.ADMIN,
+                role=UserRole.admin,
                 is_active=True
             )
             db_session.add(user)

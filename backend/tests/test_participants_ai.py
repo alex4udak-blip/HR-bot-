@@ -93,7 +93,7 @@ class TestIdentifyParticipantsWithAI:
             email="hr@test.com",
             password_hash="hash",
             name="HR Manager",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             telegram_id=111111,
             telegram_username="hr_manager",
             is_active=True
@@ -278,7 +278,7 @@ class TestAIIdentifyUnknownParticipants:
             email="hr@test.com",
             password_hash="hash",
             name="HR Manager",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             telegram_id=111111,
             is_active=True
         )

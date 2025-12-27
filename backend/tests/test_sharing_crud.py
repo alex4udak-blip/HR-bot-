@@ -422,7 +422,7 @@ class TestCreateShareErrors:
             email="other@other.com",
             password_hash=hash_password("password"),
             name="Other Org User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_user)
@@ -1000,7 +1000,7 @@ class TestGetResourceShares:
             email="noauth@test.com",
             password_hash=hash_password("password"),
             name="No Access User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(new_user)
@@ -1039,7 +1039,7 @@ class TestGetResourceShares:
                 email=f"user{i}@test.com",
                 password_hash=hash_password("password"),
                 name=f"User {i}",
-                role=UserRole.ADMIN,
+                role=UserRole.admin,
                 is_active=True
             )
             db_session.add(user)
@@ -1382,7 +1382,7 @@ class TestDeleteShare:
                 email=f"deluser{i}@test.com",
                 password_hash=hash_password("password"),
                 name=f"Delete User {i}",
-                role=UserRole.ADMIN,
+                role=UserRole.admin,
                 is_active=True
             )
             db_session.add(user)
@@ -1486,7 +1486,7 @@ class TestGetSharableUsers:
             email="otherorg@test.com",
             password_hash=hash_password("password"),
             name="Other Org User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_user)
@@ -1524,7 +1524,7 @@ class TestGetSharableUsers:
             email="inactive@test.com",
             password_hash=hash_password("password"),
             name="Inactive User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=False
         )
         db_session.add(inactive_user)
@@ -1614,7 +1614,7 @@ class TestGetSharableUsers:
             email="noorg@test.com",
             password_hash=hash_password("password"),
             name="No Org User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(no_org_user)
@@ -1645,7 +1645,7 @@ class TestGetSharableUsers:
                 email=f"{name.lower()}@test.com",
                 password_hash=hash_password("password"),
                 name=name,
-                role=UserRole.ADMIN,
+                role=UserRole.admin,
                 is_active=True
             )
             db_session.add(user)

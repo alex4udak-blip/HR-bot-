@@ -84,7 +84,7 @@ class DepartmentMemberResponse(BaseModel):
 
 async def is_org_owner(user: User, org: Organization, db: AsyncSession) -> bool:
     """Check if user is owner of organization (not admin)"""
-    if user.role == UserRole.SUPERADMIN:
+    if user.role == UserRole.superadmin:
         return True
 
     result = await db.execute(
@@ -99,7 +99,7 @@ async def is_org_owner(user: User, org: Organization, db: AsyncSession) -> bool:
 
 async def is_org_admin_or_owner(user: User, org: Organization, db: AsyncSession) -> bool:
     """Check if user is admin or owner of organization"""
-    if user.role == UserRole.SUPERADMIN:
+    if user.role == UserRole.superadmin:
         return True
 
     result = await db.execute(
@@ -163,7 +163,7 @@ async def list_departments(
         return []
 
     # Check if user is org owner or superadmin
-    is_superadmin = current_user.role == UserRole.SUPERADMIN
+    is_superadmin = current_user.role == UserRole.superadmin
     is_owner = False
     if not is_superadmin:
         owner_result = await db.execute(
@@ -262,7 +262,7 @@ async def list_departments(
         return response
 
     # ADMIN/SUB_ADMIN: own department full + others minimal
-    elif current_user.role in (UserRole.ADMIN, UserRole.SUB_ADMIN) and user_dept_id:
+    elif current_user.role in (UserRole.admin, UserRole.sub_admin) and user_dept_id:
         response = []
 
         # Get stats only for own department

@@ -44,7 +44,7 @@ class TestUserOnboardingFlow:
             email="superadmin@test.com",
             password="Superadmin123",
             name="Super Admin",
-            role=UserRole.SUPERADMIN
+            role=UserRole.superadmin
         )
         superadmin_token = create_access_token(data={"sub": str(superadmin.id)})
 

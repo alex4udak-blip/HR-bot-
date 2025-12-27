@@ -100,7 +100,7 @@ class TestGetCurrentUserMe:
             email="telegram@test.com",
             password_hash="hashed",
             name="Telegram User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             telegram_id=123456789,
             telegram_username="testuser",
             is_active=True
@@ -174,7 +174,7 @@ class TestGetCurrentUserMe:
             email="subadmin@test.com",
             password_hash="hashed",
             name="Sub Admin",
-            role=UserRole.SUB_ADMIN,
+            role=UserRole.sub_admin,
             is_active=True
         )
         db_session.add(user)
@@ -201,7 +201,7 @@ class TestGetCurrentUserMe:
             email="inactive@test.com",
             password_hash="hashed",
             name="Inactive User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=False
         )
         db_session.add(user)
@@ -292,7 +292,7 @@ class TestListUsers:
             email="otheradmin@test.com",
             password_hash="hashed",
             name="Other Admin",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_admin)
@@ -338,7 +338,7 @@ class TestListUsers:
             email="othermember@test.com",
             password_hash="hashed",
             name="Other Member",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_member)
@@ -388,7 +388,7 @@ class TestListUsers:
             email="subadmin@test.com",
             password_hash="hashed",
             name="Sub Admin",
-            role=UserRole.SUB_ADMIN,
+            role=UserRole.sub_admin,
             is_active=True
         )
         db_session.add(sub_admin)
@@ -604,7 +604,7 @@ class TestCreateUser:
             email="existing@test.com",
             password_hash="hashed",
             name="Existing",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             telegram_id=111111,
             is_active=True
         )
@@ -930,7 +930,7 @@ class TestUpdateUser:
             email="inactive@test.com",
             password_hash="hashed",
             name="Inactive User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=False
         )
         db_session.add(user)
@@ -1016,7 +1016,7 @@ class TestUpdateUser:
             email="nodept@test.com",
             password_hash="hashed",
             name="No Dept",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user)
@@ -1049,7 +1049,7 @@ class TestUpdateUser:
             email="subadmin@test.com",
             password_hash="hashed",
             name="Sub Admin",
-            role=UserRole.SUB_ADMIN,
+            role=UserRole.sub_admin,
             is_active=True
         )
         db_session.add(user)
@@ -1080,7 +1080,7 @@ class TestUpdateUser:
             email="super@test.com",
             password_hash="hashed",
             name="Super",
-            role=UserRole.SUPERADMIN,
+            role=UserRole.superadmin,
             is_active=True
         )
         db_session.add(user)
@@ -1226,7 +1226,7 @@ class TestDeleteUser:
             email="deptuser@test.com",
             password_hash="hashed",
             name="Dept User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user)
@@ -1264,7 +1264,7 @@ class TestDeleteUser:
             email="chatowner@test.com",
             password_hash="hashed",
             name="Chat Owner",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user)
@@ -1309,7 +1309,7 @@ class TestDeleteUser:
             email="shareuser@test.com",
             password_hash="hashed",
             name="Share User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user)
@@ -1334,7 +1334,7 @@ class TestDeleteUser:
             email="other@test.com",
             password_hash="hashed",
             name="Other",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_user)
@@ -1376,7 +1376,7 @@ class TestDeleteUser:
             email="callowner@test.com",
             password_hash="hashed",
             name="Call Owner",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user)
@@ -1422,7 +1422,7 @@ class TestDeleteUser:
             email="entitycreator@test.com",
             password_hash="hashed",
             name="Entity Creator",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user)
@@ -1467,7 +1467,7 @@ class TestDeleteUser:
             email="orgmember@test.com",
             password_hash="hashed",
             name="Org Member",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user)
@@ -1506,7 +1506,7 @@ class TestDeleteUser:
             email="complex@test.com",
             password_hash="hashed",
             name="Complex User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             telegram_id=777777,
             is_active=True
         )
@@ -1632,7 +1632,7 @@ class TestUserRoleChanges:
             email="rolechange@test.com",
             password_hash="hashed",
             name="Role Change",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user)
@@ -1667,7 +1667,7 @@ class TestUserRoleChanges:
             email="subtoaadmin@test.com",
             password_hash="hashed",
             name="Sub to Admin",
-            role=UserRole.SUB_ADMIN,
+            role=UserRole.sub_admin,
             is_active=True
         )
         db_session.add(user)
@@ -1701,7 +1701,7 @@ class TestUserRoleChanges:
             email="promote@test.com",
             password_hash="hashed",
             name="Promote",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(user)
@@ -1726,7 +1726,7 @@ class TestUserRoleChanges:
             email="demote@test.com",
             password_hash="hashed",
             name="Demote",
-            role=UserRole.SUPERADMIN,
+            role=UserRole.superadmin,
             is_active=True
         )
         db_session.add(user)
@@ -1788,7 +1788,7 @@ class TestUserPermissionChecks:
             email="subadmin@test.com",
             password_hash="hashed",
             name="Sub Admin",
-            role=UserRole.SUB_ADMIN,
+            role=UserRole.sub_admin,
             is_active=True
         )
         db_session.add(user)
@@ -2053,7 +2053,7 @@ class TestChangePassword:
             email="inactive@test.com",
             password_hash=hash_password("InactivePass123!"),
             name="Inactive User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=False
         )
         db_session.add(user)

@@ -198,7 +198,7 @@ def get_role_permissions(role: str, context: Optional[Dict[str, Any]] = None) ->
 
     context = context or {}
 
-    if role == "superadmin" or role == UserRole.SUPERADMIN.value:
+    if role == "superadmin" or role == UserRole.superadmin.value:
         # SUPERADMIN has ALL permissions
         return {
             "can_view_all_orgs": True,
@@ -230,7 +230,7 @@ def get_role_permissions(role: str, context: Optional[Dict[str, Any]] = None) ->
             "can_access_admin_panel": True,
         }
 
-    elif role == "admin" or role == UserRole.ADMIN.value or role == OrgRole.admin.value:
+    elif role == "admin" or role == UserRole.admin.value or role == OrgRole.admin.value:
         # ADMIN has department-wide permissions
         # Context: same_department (bool), is_dept_admin (bool)
         is_dept_admin = context.get("is_dept_admin", False)
@@ -250,7 +250,7 @@ def get_role_permissions(role: str, context: Optional[Dict[str, Any]] = None) ->
             "can_access_admin_panel": True,
         }
 
-    elif role == "sub_admin" or role == UserRole.SUB_ADMIN.value or role == DeptRole.sub_admin.value:
+    elif role == "sub_admin" or role == UserRole.sub_admin.value or role == DeptRole.sub_admin.value:
         # SUB_ADMIN has limited department permissions
         # Context: same_department (bool), is_dept_admin (bool)
         is_dept_admin = context.get("is_dept_admin", False)
@@ -585,7 +585,7 @@ async def impersonate_user(
         raise HTTPException(status_code=400, detail="Cannot impersonate yourself")
 
     # Cannot impersonate another superadmin
-    if target_user.role == UserRole.SUPERADMIN:
+    if target_user.role == UserRole.superadmin:
         raise HTTPException(status_code=403, detail="Cannot impersonate another superadmin")
 
     # Cannot impersonate inactive users
@@ -661,7 +661,7 @@ async def exit_impersonation(
         raise HTTPException(status_code=404, detail="Original user not found")
 
     # Verify original user is a SUPERADMIN
-    if original_user.role != UserRole.SUPERADMIN:
+    if original_user.role != UserRole.superadmin:
         raise HTTPException(
             status_code=403,
             detail="Only superadmin can use impersonation"
@@ -1170,28 +1170,28 @@ async def create_sandbox(
         {
             "email": "sandbox_owner@test.local",
             "name": "Sandbox Owner",
-            "role": UserRole.ADMIN,
+            "role": UserRole.admin,
             "org_role": OrgRole.owner,
             "dept_role": DeptRole.lead
         },
         {
             "email": "sandbox_admin@test.local",
             "name": "Sandbox Admin",
-            "role": UserRole.ADMIN,
+            "role": UserRole.admin,
             "org_role": OrgRole.admin,
             "dept_role": DeptRole.lead
         },
         {
             "email": "sandbox_subadmin@test.local",
             "name": "Sandbox SubAdmin",
-            "role": UserRole.SUB_ADMIN,
+            "role": UserRole.sub_admin,
             "org_role": OrgRole.member,
             "dept_role": DeptRole.sub_admin
         },
         {
             "email": "sandbox_member@test.local",
             "name": "Sandbox Member",
-            "role": UserRole.ADMIN,
+            "role": UserRole.admin,
             "org_role": OrgRole.member,
             "dept_role": DeptRole.member
         }

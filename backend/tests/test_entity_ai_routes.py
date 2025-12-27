@@ -976,7 +976,7 @@ class TestBatchUpdateSummaries:
         )
 
         # Regular users should be denied (403) or succeed if they have ADMIN role
-        # Based on the fixture, regular_user has UserRole.ADMIN, so it should succeed
+        # Based on the fixture, regular_user has UserRole.admin, so it should succeed
         assert response.status_code in [200, 403]
 
     async def test_batch_update_unauthenticated(

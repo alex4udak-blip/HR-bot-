@@ -79,7 +79,7 @@ class TestCrossOrgSharing:
             email="otherorg@test.com",
             password_hash="hash",
             name="Other Org User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_org_user)
@@ -132,7 +132,7 @@ class TestCrossOrgSharing:
             email="otherorg2@test.com",
             password_hash="hash",
             name="Other Org User 2",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_org_user)
@@ -183,7 +183,7 @@ class TestCrossOrgSharing:
             email="otherorg3@test.com",
             password_hash="hash",
             name="Other Org User 3",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_org_user)
@@ -248,7 +248,7 @@ class TestCrossOrgSharing:
             email="secondorg@test.com",
             password_hash="hash",
             name="Second Org User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_org_user)
@@ -298,14 +298,14 @@ class TestCrossOrgSharing:
             email="member1@test.com",
             password_hash="hash",
             name="Member 1",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         member2 = User(
             email="member2@test.com",
             password_hash="hash",
             name="Member 2",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add_all([member1, member2])
@@ -391,14 +391,14 @@ class TestCrossOrgSharing:
             email="deptmember1@test.com",
             password_hash="hash",
             name="Dept Member 1",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         member2 = User(
             email="deptmember2@test.com",
             password_hash="hash",
             name="Dept Member 2",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add_all([member1, member2])
@@ -497,7 +497,7 @@ class TestCrossOrgSharing:
             email="otherdept@test.com",
             password_hash="hash",
             name="Other Dept User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(other_dept_user)
@@ -569,7 +569,7 @@ class TestCrossOrgSharing:
             email="orphan@test.com",
             password_hash="hash",
             name="Orphan User",
-            role=UserRole.ADMIN,
+            role=UserRole.admin,
             is_active=True
         )
         db_session.add(orphan_user)
