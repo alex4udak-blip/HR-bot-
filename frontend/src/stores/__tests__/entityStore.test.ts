@@ -13,6 +13,16 @@ vi.mock('@/services/api', () => ({
   transferEntity: vi.fn(),
 }));
 
+const initialTypeCounts = {
+  all: 0,
+  candidate: 0,
+  client: 0,
+  contractor: 0,
+  lead: 0,
+  partner: 0,
+  custom: 0,
+};
+
 describe('entityStore', () => {
   beforeEach(() => {
     // Reset store state before each test
@@ -23,6 +33,7 @@ describe('entityStore', () => {
       error: null,
       filters: {},
       fetchVersion: 0,
+      typeCounts: initialTypeCounts,
     });
     vi.clearAllMocks();
   });
@@ -40,6 +51,7 @@ describe('entityStore', () => {
       expect(state.error).toBeNull();
       expect(state.filters).toEqual({});
       expect(state.fetchVersion).toBe(0);
+      expect(state.typeCounts).toEqual(initialTypeCounts);
     });
   });
 
@@ -598,6 +610,229 @@ describe('entityStore', () => {
       useEntityStore.getState().clearError();
 
       expect(useEntityStore.getState().error).toBeNull();
+    });
+  });
+
+  describe('fetchTypeCounts', () => {
+    it('should fetch and count entities by type', async () => {
+      const mockEntities: Entity[] = [
+        {
+          id: 1,
+          type: 'candidate',
+          name: 'Candidate 1',
+          status: 'new',
+          tags: [],
+          extra_data: {},
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+        {
+          id: 2,
+          type: 'candidate',
+          name: 'Candidate 2',
+          status: 'new',
+          tags: [],
+          extra_data: {},
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+        {
+          id: 3,
+          type: 'client',
+          name: 'Client 1',
+          status: 'active',
+          tags: [],
+          extra_data: {},
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+        {
+          id: 4,
+          type: 'custom',
+          name: 'Custom 1',
+          status: 'new',
+          tags: [],
+          extra_data: {},
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+      ];
+
+      vi.mocked(api.getEntities).mockResolvedValueOnce(mockEntities);
+
+      await useEntityStore.getState().fetchTypeCounts();
+
+      const typeCounts = useEntityStore.getState().typeCounts;
+      expect(typeCounts.all).toBe(4);
+      expect(typeCounts.candidate).toBe(2);
+      expect(typeCounts.client).toBe(1);
+      expect(typeCounts.custom).toBe(1);
+      expect(typeCounts.contractor).toBe(0);
+      expect(typeCounts.lead).toBe(0);
+      expect(typeCounts.partner).toBe(0);
+    });
+
+    it('should fetch counts without type filter even when type filter is set', async () => {
+      const mockEntities: Entity[] = [
+        {
+          id: 1,
+          type: 'candidate',
+          name: 'Candidate 1',
+          status: 'new',
+          tags: [],
+          extra_data: {},
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+      ];
+
+      // Set type filter in state
+      useEntityStore.setState({
+        filters: { type: 'candidate' as const, ownership: 'mine' as const },
+      });
+
+      vi.mocked(api.getEntities).mockResolvedValueOnce(mockEntities);
+
+      await useEntityStore.getState().fetchTypeCounts();
+
+      // Should call API without type filter
+      expect(api.getEntities).toHaveBeenCalledWith({
+        ownership: 'mine',
+        // type should NOT be included
+      });
+    });
+
+    it('should handle fetch error gracefully', async () => {
+      vi.mocked(api.getEntities).mockRejectedValueOnce(new Error('Network error'));
+
+      await useEntityStore.getState().fetchTypeCounts();
+
+      // Should not throw, just log error
+      // typeCounts should remain unchanged
+      expect(useEntityStore.getState().typeCounts).toEqual(initialTypeCounts);
+    });
+  });
+
+  describe('setFilters with typeCounts', () => {
+    it('should trigger fetchTypeCounts when ownership filter changes', async () => {
+      const mockEntities: Entity[] = [];
+      vi.mocked(api.getEntities).mockResolvedValue(mockEntities);
+
+      useEntityStore.getState().setFilters({ ownership: 'mine' });
+
+      // Wait for async fetch to complete
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Should call getEntities twice: once for entities, once for counts
+      expect(api.getEntities).toHaveBeenCalledTimes(2);
+    });
+
+    it('should trigger fetchTypeCounts when department_id filter changes', async () => {
+      const mockEntities: Entity[] = [];
+      vi.mocked(api.getEntities).mockResolvedValue(mockEntities);
+
+      useEntityStore.getState().setFilters({ department_id: 1 });
+
+      // Wait for async fetch to complete
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Should call getEntities twice: once for entities, once for counts
+      expect(api.getEntities).toHaveBeenCalledTimes(2);
+    });
+
+    it('should trigger fetchTypeCounts when search filter changes', async () => {
+      const mockEntities: Entity[] = [];
+      vi.mocked(api.getEntities).mockResolvedValue(mockEntities);
+
+      useEntityStore.getState().setFilters({ search: 'test' });
+
+      // Wait for async fetch to complete
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Should call getEntities twice: once for entities, once for counts
+      expect(api.getEntities).toHaveBeenCalledTimes(2);
+    });
+
+    it('should NOT trigger fetchTypeCounts when only type filter changes', async () => {
+      const mockEntities: Entity[] = [];
+      vi.mocked(api.getEntities).mockResolvedValue(mockEntities);
+
+      useEntityStore.getState().setFilters({ type: 'candidate' });
+
+      // Wait for async fetch to complete
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Should call getEntities only once (for entities, not for counts)
+      expect(api.getEntities).toHaveBeenCalledTimes(1);
+    });
+
+    it('should keep typeCounts stable when switching type tabs', async () => {
+      // Set initial counts
+      useEntityStore.setState({
+        typeCounts: {
+          all: 4,
+          candidate: 2,
+          client: 1,
+          contractor: 0,
+          lead: 0,
+          partner: 0,
+          custom: 1,
+        },
+      });
+
+      const mockFilteredEntities: Entity[] = [
+        {
+          id: 1,
+          type: 'candidate',
+          name: 'Candidate 1',
+          status: 'new',
+          tags: [],
+          extra_data: {},
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+      ];
+
+      vi.mocked(api.getEntities).mockResolvedValue(mockFilteredEntities);
+
+      // Switch to candidate type
+      useEntityStore.getState().setFilters({ type: 'candidate' });
+
+      // Wait for async fetch to complete
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // typeCounts should remain unchanged
+      expect(useEntityStore.getState().typeCounts).toEqual({
+        all: 4,
+        candidate: 2,
+        client: 1,
+        contractor: 0,
+        lead: 0,
+        partner: 0,
+        custom: 1,
+      });
+
+      // entities should be filtered
+      expect(useEntityStore.getState().entities).toEqual(mockFilteredEntities);
+    });
+  });
+
+  describe('clearFilters with typeCounts', () => {
+    it('should trigger fetchTypeCounts when clearing filters', async () => {
+      const mockEntities: Entity[] = [];
+      vi.mocked(api.getEntities).mockResolvedValue(mockEntities);
+
+      useEntityStore.setState({
+        filters: { type: 'candidate' as const, ownership: 'mine' as const },
+      });
+
+      useEntityStore.getState().clearFilters();
+
+      // Wait for async fetch to complete
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Should call getEntities twice: once for entities, once for counts
+      expect(api.getEntities).toHaveBeenCalledTimes(2);
     });
   });
 });
