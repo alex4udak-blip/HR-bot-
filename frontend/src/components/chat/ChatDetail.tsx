@@ -264,14 +264,14 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
     return canDeleteResource({
       owner_id: chat.owner_id,
       is_mine: chat.is_mine ?? (chat.owner_id === user?.id),
-      access_level: chat.access_level
+      access_level: chat.access_level ?? undefined
     });
   };
   const canEdit = () => {
     return canEditResource({
       owner_id: chat.owner_id,
       is_mine: chat.is_mine ?? (chat.owner_id === user?.id),
-      access_level: chat.access_level
+      access_level: chat.access_level ?? undefined
     });
   };
 

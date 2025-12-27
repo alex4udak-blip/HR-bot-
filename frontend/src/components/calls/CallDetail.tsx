@@ -39,7 +39,7 @@ export default function CallDetail({ call }: CallDetailProps) {
     return canEditResource({
       owner_id: call.owner_id,
       is_mine: call.is_mine ?? (call.owner_id === user?.id),
-      access_level: call.access_level
+      access_level: call.access_level ?? undefined
     });
   };
 
