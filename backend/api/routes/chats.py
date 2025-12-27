@@ -318,9 +318,25 @@ async def get_chats(
     )
     chats_with_criteria = {row[0] for row in criteria_result.fetchall()}
 
+    # Batch query: Get shared access for current user
+    shared_access_result = await db.execute(
+        select(SharedAccess.resource_id, SharedAccess.access_level)
+        .where(
+            SharedAccess.resource_type == ResourceType.chat,
+            SharedAccess.resource_id.in_(chat_ids),
+            SharedAccess.shared_with_id == user.id,
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+        )
+    )
+    shared_access_map = {row[0]: row[1].value for row in shared_access_result.fetchall()}
+
     # Build response using the pre-fetched data
     response = []
     for chat in chats:
+        is_mine = chat.owner_id == user.id
+        is_shared = chat.id in shared_access_map
+        access_level = shared_access_map.get(chat.id) if is_shared else ('full' if is_mine else None)
+
         response.append(ChatResponse(
             id=chat.id,
             telegram_chat_id=chat.telegram_chat_id,
@@ -339,6 +355,9 @@ async def get_chats(
             last_activity=chat.last_activity,
             created_at=chat.created_at,
             has_criteria=chat.id in chats_with_criteria,
+            is_mine=is_mine,
+            is_shared=is_shared,
+            access_level=access_level,
         ))
 
     return response
@@ -380,6 +399,21 @@ async def get_chat(
         select(ChatCriteria.id).where(ChatCriteria.chat_id == chat.id)
     )
 
+    # Get shared access info for this user
+    is_mine = chat.owner_id == user.id
+    shared_access_result = await db.execute(
+        select(SharedAccess.access_level)
+        .where(
+            SharedAccess.resource_type == ResourceType.chat,
+            SharedAccess.resource_id == chat.id,
+            SharedAccess.shared_with_id == user.id,
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+        )
+    )
+    shared_access = shared_access_result.scalar_one_or_none()
+    is_shared = shared_access is not None
+    access_level = shared_access.value if shared_access else ('full' if is_mine else None)
+
     return ChatResponse(
         id=chat.id,
         telegram_chat_id=chat.telegram_chat_id,
@@ -398,6 +432,9 @@ async def get_chat(
         last_activity=chat.last_activity,
         created_at=chat.created_at,
         has_criteria=has_crit.scalar() is not None,
+        is_mine=is_mine,
+        is_shared=is_shared,
+        access_level=access_level,
     )
 
 

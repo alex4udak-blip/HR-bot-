@@ -59,8 +59,10 @@ export interface Chat {
   entity_id?: number;
   entity_name?: string;
   is_active: boolean;
+  // Permission fields
+  is_mine?: boolean;
   is_shared?: boolean;
-  shared_access_level?: 'view' | 'edit' | 'full';
+  access_level?: 'view' | 'edit' | 'full' | null;
   messages_count: number;
   participants_count: number;
   last_activity?: string;
@@ -292,8 +294,10 @@ export interface CallRecording {
   source_url?: string;
   bot_name: string;
   status: CallStatus;
+  // Permission fields
+  is_mine?: boolean;
   is_shared?: boolean;
-  shared_access_level?: 'view' | 'edit' | 'full';
+  access_level?: 'view' | 'edit' | 'full' | null;
   duration_seconds?: number;
   audio_file_path?: string;
   transcript?: string;

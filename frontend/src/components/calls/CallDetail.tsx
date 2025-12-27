@@ -22,6 +22,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useCallStore } from '@/stores/callStore';
 import { useEntityStore } from '@/stores/entityStore';
+import { useAuthStore } from '@/stores/authStore';
 import type { CallRecording } from '@/types';
 
 interface CallDetailProps {
@@ -31,6 +32,16 @@ interface CallDetailProps {
 export default function CallDetail({ call }: CallDetailProps) {
   const { reprocessCall, updateCall, loading } = useCallStore();
   const { entities, fetchEntities } = useEntityStore();
+  const { user, canEditResource } = useAuthStore();
+
+  // Permission check for editing
+  const canEdit = () => {
+    return canEditResource({
+      owner_id: call.owner_id,
+      is_mine: call.is_mine ?? (call.owner_id === user?.id),
+      access_level: call.access_level
+    });
+  };
 
   const [activeTab, setActiveTab] = useState<'transcript' | 'summary' | 'actions'>('summary');
   const [copied, setCopied] = useState(false);
@@ -334,14 +345,16 @@ export default function CallDetail({ call }: CallDetailProps) {
                 <p className="text-sm text-red-300/60 mt-1">{call.error_message}</p>
               )}
             </div>
-            <button
-              onClick={handleReprocess}
-              disabled={loading}
-              className="px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors flex items-center gap-2"
-            >
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-              Повторить
-            </button>
+            {canEdit() && (
+              <button
+                onClick={handleReprocess}
+                disabled={loading}
+                className="px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors flex items-center gap-2"
+              >
+                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                Повторить
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -422,7 +435,7 @@ export default function CallDetail({ call }: CallDetailProps) {
             <p className="text-lg font-semibold text-white truncate min-w-0">
               {call.entity_name || 'Не связан'}
             </p>
-            {!isEditing && (
+            {!isEditing && canEdit() && (
               <button
                 onClick={() => setIsEditing(true)}
                 className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-all flex-shrink-0"
@@ -502,7 +515,7 @@ export default function CallDetail({ call }: CallDetailProps) {
               <p className="text-white font-medium">{call.title}</p>
             </div>
           )}
-          {!isEditing && (
+          {!isEditing && canEdit() && (
             <button
               onClick={() => setIsEditing(true)}
               className="px-4 py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors flex items-center gap-2"
@@ -554,15 +567,17 @@ export default function CallDetail({ call }: CallDetailProps) {
                 {/* Action buttons for analysis */}
                 {(call.summary || (call.key_points && call.key_points.length > 0) || (call.action_items && call.action_items.length > 0)) && (
                   <div className="flex justify-end gap-2 flex-wrap">
-                    <button
-                      onClick={handleReprocess}
-                      disabled={loading}
-                      className="px-3 py-2 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 transition-colors flex items-center gap-2 flex-shrink-0"
-                      title="Переанализировать с обновлённым AI промптом"
-                    >
-                      <RefreshCw size={16} className={clsx('text-purple-400 flex-shrink-0', loading && 'animate-spin')} />
-                      <span className="text-sm text-purple-400 whitespace-nowrap">Переанализировать</span>
-                    </button>
+                    {canEdit() && (
+                      <button
+                        onClick={handleReprocess}
+                        disabled={loading}
+                        className="px-3 py-2 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 transition-colors flex items-center gap-2 flex-shrink-0"
+                        title="Переанализировать с обновлённым AI промптом"
+                      >
+                        <RefreshCw size={16} className={clsx('text-purple-400 flex-shrink-0', loading && 'animate-spin')} />
+                        <span className="text-sm text-purple-400 whitespace-nowrap">Переанализировать</span>
+                      </button>
+                    )}
                     <button
                       onClick={handleExportAnalysis}
                       className="px-3 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 transition-colors flex items-center gap-2 flex-shrink-0"
