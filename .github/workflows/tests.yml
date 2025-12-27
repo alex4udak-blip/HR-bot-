@@ -49,6 +49,7 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test_db
           SECRET_KEY: test-secret-key-for-ci
+          SUPERADMIN_PASSWORD: test-superadmin-password
           TESTING: "true"
         run: |
           cd backend
