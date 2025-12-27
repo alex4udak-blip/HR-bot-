@@ -469,14 +469,29 @@ class ExternalLinkProcessor:
                                     else:
                                         logger.warning(f"No speakers list found in transcript_data. Available keys: {list(transcript_data.keys())}")
 
+                                    # Try meeting_attendees for participant names (may have display names)
+                                    meeting_attendees = transcript_data.get('meeting_attendees', []) or []
+                                    if meeting_attendees:
+                                        logger.info(f"Fireflies meeting_attendees ({len(meeting_attendees)}): {meeting_attendees}")
+
+                                    # Try analytics for speaker stats (name, duration, word_count)
+                                    analytics = transcript_data.get('analytics', {})
+                                    analytics_speakers = []
+                                    if isinstance(analytics, dict):
+                                        # Analytics may have speaker-level data
+                                        analytics_speakers = analytics.get('speakers', []) or analytics.get('speaker_analytics', []) or []
+                                        if analytics_speakers:
+                                            logger.info(f"Fireflies analytics speakers ({len(analytics_speakers)}): {analytics_speakers}")
+
                                     # Build speaker ID → name mapping
                                     speaker_map = {}
-                                    # Try speakers list first (usually has id and name)
+
+                                    # Source 1: speakers list (usually has id and name)
                                     for sp in speakers_info:
                                         sp_id = sp.get('id') or sp.get('speaker_id') or sp.get('speakerId')
                                         sp_name = sp.get('name') or sp.get('displayName') or sp.get('speaker_name')
                                         sp_email = sp.get('email')
-                                        if sp_id:
+                                        if sp_id is not None:
                                             # Include email in name if available for matching
                                             if sp_name and sp_email:
                                                 speaker_map[str(sp_id)] = f"{sp_name} ({sp_email})"
@@ -485,6 +500,24 @@ class ExternalLinkProcessor:
                                         # Also map by name in case sentence uses name directly
                                         if sp_name:
                                             speaker_map[sp_name] = sp_name if not sp_email else f"{sp_name} ({sp_email})"
+
+                                    # Source 2: analytics speakers (may have name, duration, word_count)
+                                    for asp in analytics_speakers:
+                                        asp_id = asp.get('speaker_id') or asp.get('speakerId') or asp.get('id')
+                                        asp_name = asp.get('name') or asp.get('displayName')
+                                        if asp_id is not None and asp_name and asp_name != 'Speaker':
+                                            if str(asp_id) not in speaker_map:
+                                                speaker_map[str(asp_id)] = asp_name
+
+                                    # Source 3: meeting_attendees (may have displayName, name, email)
+                                    for idx, att in enumerate(meeting_attendees):
+                                        if isinstance(att, dict):
+                                            att_name = att.get('displayName') or att.get('name') or att.get('email')
+                                            att_email = att.get('email')
+                                            if att_name:
+                                                # Map by index as some systems use index-based speaker IDs
+                                                if str(idx) not in speaker_map:
+                                                    speaker_map[str(idx)] = f"{att_name} ({att_email})" if att_email and att_email != att_name else att_name
 
                                     # Also use participants list
                                     for i, p in enumerate(participants):
@@ -916,27 +949,58 @@ class ExternalLinkProcessor:
                                     []
                                 )
 
-                                logger.info(f"[HTTP] speakers_info count: {len(speakers_info)}, participants count: {len(participants)}")
+                                # Also get meeting_attendees and analytics
+                                meeting_attendees = transcript_data.get('meeting_attendees', []) or []
+                                analytics = transcript_data.get('analytics', {})
+                                analytics_speakers = []
+                                if isinstance(analytics, dict):
+                                    analytics_speakers = analytics.get('speakers', []) or analytics.get('speaker_analytics', []) or []
+
+                                logger.info(f"[HTTP] speakers_info count: {len(speakers_info)}, participants count: {len(participants)}, meeting_attendees: {len(meeting_attendees)}, analytics_speakers: {len(analytics_speakers)}")
                                 if speakers_info:
                                     logger.info(f"[HTTP] speakers_info: {speakers_info}")
+                                if analytics_speakers:
+                                    logger.info(f"[HTTP] analytics_speakers: {analytics_speakers}")
 
                                 speaker_map = {}
+
+                                # Source 1: speakers list
                                 for sp in speakers_info:
                                     sp_id = sp.get('id') or sp.get('speaker_id') or sp.get('speakerId')
                                     sp_name = sp.get('name') or sp.get('displayName') or sp.get('speaker_name')
                                     sp_email = sp.get('email')
-                                    if sp_id:
+                                    if sp_id is not None:
                                         speaker_map[str(sp_id)] = f"{sp_name} ({sp_email})" if sp_name and sp_email else (sp_name or f"Speaker {sp_id}")
                                     if sp_name:
                                         speaker_map[sp_name] = f"{sp_name} ({sp_email})" if sp_email else sp_name
+
+                                # Source 2: analytics speakers
+                                for asp in analytics_speakers:
+                                    asp_id = asp.get('speaker_id') or asp.get('speakerId') or asp.get('id')
+                                    asp_name = asp.get('name') or asp.get('displayName')
+                                    if asp_id is not None and asp_name and asp_name != 'Speaker':
+                                        if str(asp_id) not in speaker_map:
+                                            speaker_map[str(asp_id)] = asp_name
+
+                                # Source 3: meeting_attendees
+                                for idx, att in enumerate(meeting_attendees):
+                                    if isinstance(att, dict):
+                                        att_name = att.get('displayName') or att.get('name') or att.get('email')
+                                        att_email = att.get('email')
+                                        if att_name and str(idx) not in speaker_map:
+                                            speaker_map[str(idx)] = f"{att_name} ({att_email})" if att_email and att_email != att_name else att_name
+
+                                # Source 4: participants
                                 for i, p in enumerate(participants):
                                     if isinstance(p, dict):
                                         p_id = p.get('id') or p.get('participantId') or str(i)
                                         p_name = p.get('name') or p.get('displayName') or p.get('email', f'Participant {i+1}')
                                         p_email = p.get('email')
-                                        speaker_map[str(p_id)] = f"{p_name} ({p_email})" if p_email and not p_name.endswith(')') else p_name
+                                        if str(p_id) not in speaker_map:
+                                            speaker_map[str(p_id)] = f"{p_name} ({p_email})" if p_email and not p_name.endswith(')') else p_name
                                     elif isinstance(p, str):
-                                        speaker_map[str(i)] = p
+                                        if str(i) not in speaker_map:
+                                            speaker_map[str(i)] = p
 
                                 logger.info(f"[HTTP] Built speaker_map: {speaker_map}")
 
