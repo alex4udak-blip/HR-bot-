@@ -683,8 +683,28 @@ class TestFirefliesProcessing:
         # Mock the page elements to return transcript text (must be > 100 chars total)
         mock_element1 = AsyncMock()
         mock_element1.text_content = AsyncMock(return_value="John: Hello everyone, welcome to our meeting today. Let's discuss the quarterly results.")
+        # Add evaluate mock for speaker extraction (new DOM traversal code)
+        mock_element1.evaluate = AsyncMock(return_value={
+            'speaker': 'John',
+            'timestamp': '00:15',
+            'startSec': 15.0,
+            'endSec': 25.0
+        })
+        mock_element1.evaluate_handle = AsyncMock(return_value=AsyncMock())
+        mock_element1.query_selector = AsyncMock(return_value=None)
+        mock_element1.get_attribute = AsyncMock(return_value=None)
+
         mock_element2 = AsyncMock()
         mock_element2.text_content = AsyncMock(return_value="Jane: Thanks John. I have prepared some slides about our progress on the new product launch.")
+        mock_element2.evaluate = AsyncMock(return_value={
+            'speaker': 'Jane',
+            'timestamp': '00:30',
+            'startSec': 30.0,
+            'endSec': 45.0
+        })
+        mock_element2.evaluate_handle = AsyncMock(return_value=AsyncMock())
+        mock_element2.query_selector = AsyncMock(return_value=None)
+        mock_element2.get_attribute = AsyncMock(return_value=None)
 
         # Mock page with multiple transcript elements
         mock_page = AsyncMock()
@@ -693,10 +713,26 @@ class TestFirefliesProcessing:
         mock_page.wait_for_timeout = AsyncMock(return_value=None)
         mock_page.query_selector = AsyncMock(return_value=None)  # No title element
         mock_page.query_selector_all = AsyncMock(return_value=[mock_element1, mock_element2])
+        # Add content mock for __NEXT_DATA__ extraction
+        mock_page.content = AsyncMock(return_value='<html><body><div>Test</div></body></html>')
+        mock_page.url = "https://app.fireflies.ai/view/ABC123xyz"
+        mock_page.title = AsyncMock(return_value="Test Meeting")
+        # Mock page.evaluate for stats extraction
+        mock_page.evaluate = AsyncMock(return_value={
+            'duration': '14:31',
+            'durationSeconds': 871,
+            'speakerStats': [],
+            'speakerNames': [],
+            'debug': {}
+        })
+
+        # Mock browser context
+        mock_context = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
 
         # Mock browser
         mock_browser = AsyncMock()
-        mock_browser.new_page = AsyncMock(return_value=mock_page)
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
         mock_browser.close = AsyncMock(return_value=None)
 
         # Mock chromium
@@ -910,6 +946,13 @@ class TestFirefliesUpdatedParsing:
         mock_element.text_content = AsyncMock(return_value="Hello, this is a test!")  # 24 chars
         mock_element.get_attribute = AsyncMock(return_value=None)
         mock_element.query_selector = AsyncMock(return_value=None)
+        mock_element.evaluate = AsyncMock(return_value={
+            'speaker': 'Speaker',
+            'timestamp': None,
+            'startSec': 0.0,
+            'endSec': 5.0
+        })
+        mock_element.evaluate_handle = AsyncMock(return_value=AsyncMock())
 
         mock_page = AsyncMock()
         mock_page.goto = AsyncMock(return_value=None)
@@ -917,9 +960,22 @@ class TestFirefliesUpdatedParsing:
         mock_page.wait_for_timeout = AsyncMock(return_value=None)
         mock_page.query_selector = AsyncMock(return_value=None)
         mock_page.query_selector_all = AsyncMock(return_value=[mock_element])
+        mock_page.content = AsyncMock(return_value='<html><body><div>Test</div></body></html>')
+        mock_page.url = url
+        mock_page.title = AsyncMock(return_value="Short Meeting")
+        mock_page.evaluate = AsyncMock(return_value={
+            'duration': '00:30',
+            'durationSeconds': 30,
+            'speakerStats': [],
+            'speakerNames': [],
+            'debug': {}
+        })
+
+        mock_context = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
 
         mock_browser = AsyncMock()
-        mock_browser.new_page = AsyncMock(return_value=mock_page)
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
         mock_browser.close = AsyncMock(return_value=None)
 
         mock_chromium = MagicMock()
@@ -1036,6 +1092,13 @@ class TestFirefliesUpdatedParsing:
             'data-start': '0',
             'data-end': '5'
         }.get(attr))
+        mock_element1.evaluate = AsyncMock(return_value={
+            'speaker': 'John Smith',
+            'timestamp': '00:00',
+            'startSec': 0.0,
+            'endSec': 5.0
+        })
+        mock_element1.evaluate_handle = AsyncMock(return_value=AsyncMock())
 
         # Mock nested speaker element
         mock_speaker_el = AsyncMock()
@@ -1049,6 +1112,13 @@ class TestFirefliesUpdatedParsing:
             'data-start': '6',
             'data-end': '12'
         }.get(attr))
+        mock_element2.evaluate = AsyncMock(return_value={
+            'speaker': 'Jane Doe',
+            'timestamp': '00:06',
+            'startSec': 6.0,
+            'endSec': 12.0
+        })
+        mock_element2.evaluate_handle = AsyncMock(return_value=AsyncMock())
 
         mock_speaker_el2 = AsyncMock()
         mock_speaker_el2.text_content = AsyncMock(return_value="Jane Doe")
@@ -1060,9 +1130,22 @@ class TestFirefliesUpdatedParsing:
         mock_page.wait_for_timeout = AsyncMock(return_value=None)
         mock_page.query_selector = AsyncMock(return_value=None)  # No title
         mock_page.query_selector_all = AsyncMock(return_value=[mock_element1, mock_element2])
+        mock_page.content = AsyncMock(return_value='<html><body><div>Test</div></body></html>')
+        mock_page.url = url
+        mock_page.title = AsyncMock(return_value="Meeting with Speakers")
+        mock_page.evaluate = AsyncMock(return_value={
+            'duration': '00:15',
+            'durationSeconds': 15,
+            'speakerStats': [],
+            'speakerNames': [],
+            'debug': {}
+        })
+
+        mock_context = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
 
         mock_browser = AsyncMock()
-        mock_browser.new_page = AsyncMock(return_value=mock_page)
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
         mock_browser.close = AsyncMock(return_value=None)
 
         mock_chromium = MagicMock()
@@ -1126,6 +1209,13 @@ class TestFirefliesUpdatedParsing:
                 mock_el.text_content = AsyncMock(return_value="This is a modern Fireflies transcript from 2024.")
                 mock_el.get_attribute = AsyncMock(return_value=None)
                 mock_el.query_selector = AsyncMock(return_value=None)
+                mock_el.evaluate = AsyncMock(return_value={
+                    'speaker': 'ModernSpeaker',
+                    'timestamp': '00:00',
+                    'startSec': 0.0,
+                    'endSec': 10.0
+                })
+                mock_el.evaluate_handle = AsyncMock(return_value=AsyncMock())
                 return [mock_el]
             return []
 
@@ -1135,9 +1225,22 @@ class TestFirefliesUpdatedParsing:
         mock_page.wait_for_timeout = AsyncMock(return_value=None)
         mock_page.query_selector = AsyncMock(return_value=None)
         mock_page.query_selector_all = mock_query_selector_all
+        mock_page.content = AsyncMock(return_value='<html><body><div>Test</div></body></html>')
+        mock_page.url = url
+        mock_page.title = AsyncMock(return_value="Modern Meeting")
+        mock_page.evaluate = AsyncMock(return_value={
+            'duration': '10:00',
+            'durationSeconds': 600,
+            'speakerStats': [],
+            'speakerNames': [],
+            'debug': {}
+        })
+
+        mock_context = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
 
         mock_browser = AsyncMock()
-        mock_browser.new_page = AsyncMock(return_value=mock_page)
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
         mock_browser.close = AsyncMock(return_value=None)
 
         mock_chromium = MagicMock()
@@ -1369,12 +1472,8 @@ class TestFirefliesSpeakerIdMapping:
 
         mock_analysis = {"summary": "Interview", "action_items": [], "key_points": []}
 
-        class MockPlaywrightModule:
-            @property
-            def async_playwright(self):
-                raise ImportError("Playwright not installed")
-
-        with patch.dict('sys.modules', {'playwright': MagicMock(), 'playwright.async_api': MockPlaywrightModule()}), \
+        # Mock ensure_playwright_installed to return False so HTTP fallback is used
+        with patch('api.services.external_links.ensure_playwright_installed', AsyncMock(return_value=False)), \
              patch.object(processor, '_get_session', return_value=mock_session), \
              patch('api.services.external_links.call_processor._init_clients'), \
              patch('api.services.external_links.call_processor._analyze', return_value=mock_analysis):
@@ -1523,20 +1622,16 @@ class TestAsyncFirefliesProcessing:
         mock_db.refresh = AsyncMock()
 
         # Mock the context manager
-        async def mock_session_context():
-            return mock_db
-
         mock_session_cm = MagicMock()
         mock_session_cm.__aenter__ = AsyncMock(return_value=mock_db)
         mock_session_cm.__aexit__ = AsyncMock(return_value=None)
 
-        with patch('api.services.external_links.AsyncSessionLocal', return_value=mock_session_cm):
+        with patch('api.database.AsyncSessionLocal', return_value=mock_session_cm):
             result = await processor.create_pending_call(
                 url="https://app.fireflies.ai/view/TEST123",
                 organization_id=1,
                 owner_id=1,
                 source_type=CallSource.fireflies,
-                department_id=None,
                 entity_id=None,
                 title="Test Call"
             )
@@ -1559,7 +1654,7 @@ class TestAsyncFirefliesProcessing:
         mock_session_cm.__aenter__ = AsyncMock(return_value=mock_db)
         mock_session_cm.__aexit__ = AsyncMock(return_value=None)
 
-        with patch('api.services.external_links.AsyncSessionLocal', return_value=mock_session_cm):
+        with patch('api.database.AsyncSessionLocal', return_value=mock_session_cm):
             await processor._update_progress(123, 50, "Processing...")
 
         # Verify execute was called with update statement
@@ -1605,9 +1700,10 @@ class TestAsyncFirefliesProcessing:
             call.status = CallStatus.done
             return call
 
-        with patch('api.services.external_links.AsyncSessionLocal', return_value=mock_session_cm), \
+        with patch('api.database.AsyncSessionLocal', return_value=mock_session_cm), \
              patch.object(processor, '_update_progress', side_effect=mock_update_progress), \
-             patch.object(processor, '_process_fireflies', side_effect=mock_process_fireflies):
+             patch.object(processor, '_process_fireflies', side_effect=mock_process_fireflies), \
+             patch.object(processor, '_broadcast_call_failed_safe', AsyncMock()):
 
             await processor.process_fireflies_async(123)
 
@@ -1631,8 +1727,9 @@ class TestAsyncFirefliesProcessing:
         mock_session_cm.__aenter__ = AsyncMock(return_value=mock_db)
         mock_session_cm.__aexit__ = AsyncMock(return_value=None)
 
-        with patch('api.services.external_links.AsyncSessionLocal', return_value=mock_session_cm), \
-             patch.object(processor, '_update_progress', AsyncMock()):
+        with patch('api.database.AsyncSessionLocal', return_value=mock_session_cm), \
+             patch.object(processor, '_update_progress', AsyncMock()), \
+             patch.object(processor, '_broadcast_call_failed_safe', AsyncMock()):
 
             # Should not raise exception
             await processor.process_fireflies_async(999)
@@ -1665,9 +1762,10 @@ class TestAsyncFirefliesProcessing:
         async def mock_process_fireflies_error(call, url, call_id):
             raise Exception("Test error")
 
-        with patch('api.services.external_links.AsyncSessionLocal', return_value=mock_session_cm), \
+        with patch('api.database.AsyncSessionLocal', return_value=mock_session_cm), \
              patch.object(processor, '_update_progress', AsyncMock()), \
-             patch.object(processor, '_process_fireflies', side_effect=mock_process_fireflies_error):
+             patch.object(processor, '_process_fireflies', side_effect=mock_process_fireflies_error), \
+             patch.object(processor, '_broadcast_call_failed_safe', AsyncMock()):
 
             await processor.process_fireflies_async(123)
 
@@ -1703,6 +1801,13 @@ class TestProgressStages:
         mock_element.text_content = AsyncMock(return_value="This is a sufficiently long transcript for testing purposes.")
         mock_element.get_attribute = AsyncMock(return_value=None)
         mock_element.query_selector = AsyncMock(return_value=None)
+        mock_element.evaluate = AsyncMock(return_value={
+            'speaker': 'TestSpeaker',
+            'timestamp': '00:00',
+            'startSec': 0.0,
+            'endSec': 5.0
+        })
+        mock_element.evaluate_handle = AsyncMock(return_value=AsyncMock())
 
         mock_page = AsyncMock()
         mock_page.goto = AsyncMock(return_value=None)
@@ -1710,6 +1815,16 @@ class TestProgressStages:
         mock_page.wait_for_timeout = AsyncMock(return_value=None)
         mock_page.query_selector = AsyncMock(return_value=None)
         mock_page.query_selector_all = AsyncMock(return_value=[mock_element])
+        mock_page.content = AsyncMock(return_value='<html><body><div>Test</div></body></html>')
+        mock_page.url = url
+        mock_page.title = AsyncMock(return_value="Test Meeting")
+        mock_page.evaluate = AsyncMock(return_value={
+            'duration': '05:00',
+            'durationSeconds': 300,
+            'speakerStats': [],
+            'speakerNames': [],
+            'debug': {}
+        })
 
         mock_context = AsyncMock()
         mock_context.new_page = AsyncMock(return_value=mock_page)
