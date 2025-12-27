@@ -11,17 +11,55 @@ import {
   X,
   Phone,
   Building2,
-  Shield
+  Shield,
+  UserCog,
+  UserPlus,
+  type LucideIcon
 } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import BackgroundEffects from './BackgroundEffects';
 import clsx from 'clsx';
 
+// Icon mapping for dynamic menu
+const iconMap: Record<string, LucideIcon> = {
+  LayoutDashboard,
+  MessageSquare,
+  Users,
+  Phone,
+  Building2,
+  UserCog,
+  UserPlus,
+  Settings,
+  Shield,
+  Trash2,
+};
+
+// Localized labels
+const labelMap: Record<string, string> = {
+  'Dashboard': 'Главная',
+  'Chats': 'Чаты',
+  'Contacts': 'Контакты',
+  'Calls': 'Созвоны',
+  'Departments': 'Департаменты',
+  'Users': 'Пользователи',
+  'Invite': 'Приглашения',
+  'Settings': 'Настройки',
+  'Admin Panel': 'Симулятор ролей',
+  'Trash': 'Корзина',
+};
+
 export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { user, logout, isImpersonating, exitImpersonation } = useAuthStore();
+  const { user, logout, isImpersonating, exitImpersonation, menuItems, fetchPermissions, customRoleName } = useAuthStore();
   const navigate = useNavigate();
+
+  // Fetch permissions on mount
+  useEffect(() => {
+    if (user) {
+      fetchPermissions();
+    }
+  }, [user?.id]);
 
   const handleExitImpersonation = async () => {
     try {
@@ -31,7 +69,18 @@ export default function Layout() {
     }
   };
 
+  // Use dynamic menu from backend if available, otherwise fall back to static menu
   const navItems = useMemo(() => {
+    // If we have menu items from backend, use them
+    if (menuItems && menuItems.length > 0) {
+      return menuItems.map(item => ({
+        path: item.path === '/' ? '/dashboard' : item.path,
+        icon: iconMap[item.icon] || LayoutDashboard,
+        label: labelMap[item.label] || item.label,
+      }));
+    }
+
+    // Fallback to static menu
     const items = [
       { path: '/dashboard', icon: LayoutDashboard, label: 'Главная' },
       { path: '/chats', icon: MessageSquare, label: 'Чаты' },
@@ -46,7 +95,6 @@ export default function Layout() {
     }
 
     // Добавляем пункты для superadmin и org owner
-    // Members and regular admins should NOT see Departments
     if (user?.role === 'superadmin' || user?.org_role === 'owner') {
       items.push({ path: '/departments', icon: Building2, label: 'Департаменты' });
       items.push({ path: '/settings', icon: Settings, label: 'Настройки' });
@@ -58,7 +106,7 @@ export default function Layout() {
     }
 
     return items;
-  }, [user?.role, user?.org_role]);
+  }, [menuItems, user?.role, user?.org_role]);
 
   const handleLogout = () => {
     logout();
@@ -107,6 +155,11 @@ export default function Layout() {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">{user?.name}</p>
               <p className="text-xs text-dark-400 truncate">{user?.email}</p>
+              {customRoleName && (
+                <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-accent-500/20 text-accent-400 rounded-full">
+                  {customRoleName}
+                </span>
+              )}
             </div>
           </div>
           <button

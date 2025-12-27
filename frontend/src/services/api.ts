@@ -1110,4 +1110,36 @@ export const getPermissionAuditLogs = async (params?: {
   return data;
 };
 
+// User Effective Permissions API
+export interface EffectivePermissions {
+  permissions: Record<string, boolean>;
+  source: 'custom_role' | 'org_role' | 'default';
+  custom_role_id: number | null;
+  custom_role_name: string | null;
+  base_role: string;
+}
+
+export interface MenuItem {
+  id: string;
+  label: string;
+  path: string;
+  icon: string;
+  required_permission?: string;
+  superadmin_only: boolean;
+}
+
+export interface MenuConfig {
+  items: MenuItem[];
+}
+
+export const getMyPermissions = async (): Promise<EffectivePermissions> => {
+  const { data } = await api.get('/admin/me/permissions');
+  return data;
+};
+
+export const getMyMenu = async (): Promise<MenuConfig> => {
+  const { data } = await api.get('/admin/me/menu');
+  return data;
+};
+
 export default api;

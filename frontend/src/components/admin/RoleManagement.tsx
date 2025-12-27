@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -14,9 +14,7 @@ import {
   History,
   ChevronDown,
   ChevronRight,
-  Save,
-  ToggleLeft,
-  ToggleRight
+  Save
 } from 'lucide-react';
 import {
   getCustomRoles,
@@ -27,10 +25,8 @@ import {
   removeRolePermission,
   getUsers,
   assignCustomRole,
-  unassignCustomRole,
   getPermissionAuditLogs,
-  type CustomRole,
-  type PermissionAuditLog
+  type CustomRole
 } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
@@ -327,16 +323,6 @@ function UserAssignmentDialog({ role, onClose }: UserAssignmentDialogProps) {
     },
   });
 
-  const unassignMutation = useMutation({
-    mutationFn: (userId: number) => unassignCustomRole(role.id, userId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['custom-roles'] });
-      toast.success('User removed from role');
-    },
-    onError: () => {
-      toast.error('Failed to remove user');
-    },
-  });
 
   return (
     <Dialog.Root open onOpenChange={onClose}>
