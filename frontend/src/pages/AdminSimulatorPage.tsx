@@ -146,14 +146,20 @@ export default function AdminSimulatorPage() {
   }, []);
 
   // Функции для работы с sandbox
+  // Helper to extract error message from API errors
+  const getErrorMessage = (error: unknown, fallback: string): string => {
+    const axiosError = error as { response?: { data?: { detail?: string } } };
+    return axiosError.response?.data?.detail || fallback;
+  };
+
   const fetchSandboxStatus = async () => {
     try {
       const response = await api.get('/admin/sandbox/status');
       setSandboxStatus(response.data);
       setSandboxError(null);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching sandbox status:', error);
-      setSandboxError(error.response?.data?.detail || 'Ошибка загрузки статуса sandbox');
+      setSandboxError(getErrorMessage(error, 'Ошибка загрузки статуса sandbox'));
     }
   };
 
@@ -164,9 +170,9 @@ export default function AdminSimulatorPage() {
       await api.post('/admin/sandbox/create');
       // Re-fetch status to get proper SandboxStatus format
       await fetchSandboxStatus();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating sandbox:', error);
-      setSandboxError(error.response?.data?.detail || 'Ошибка создания sandbox');
+      setSandboxError(getErrorMessage(error, 'Ошибка создания sandbox'));
     } finally {
       setSandboxLoading(false);
     }
@@ -181,25 +187,36 @@ export default function AdminSimulatorPage() {
     try {
       await api.delete('/admin/sandbox');
       setSandboxStatus({ exists: false });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting sandbox:', error);
-      setSandboxError(error.response?.data?.detail || 'Ошибка удаления sandbox');
+      setSandboxError(getErrorMessage(error, 'Ошибка удаления sandbox'));
     } finally {
       setSandboxLoading(false);
     }
   };
 
   const switchToUser = async (email: string) => {
+    // Validate sandbox exists before switching
+    if (!sandboxStatus?.exists) {
+      setSandboxError('Sandbox не существует. Сначала создайте sandbox.');
+      return;
+    }
+
     setSandboxLoading(true);
     setSandboxError(null);
     try {
-      await api.post(`/admin/sandbox/switch/${encodeURIComponent(email)}`);
-      // Cookie is set by backend via Set-Cookie header
-      // Reload page to apply new session
-      window.location.href = '/';
-    } catch (error: any) {
+      const response = await api.post(`/admin/sandbox/switch/${encodeURIComponent(email)}`);
+      // Verify response was successful before redirecting
+      if (response.status === 200) {
+        // Cookie is set by backend via Set-Cookie header
+        // Reload page to apply new session
+        window.location.href = '/';
+      } else {
+        throw new Error('Неожиданный ответ сервера');
+      }
+    } catch (error: unknown) {
       console.error('Error switching user:', error);
-      setSandboxError(error.response?.data?.detail || 'Ошибка переключения пользователя');
+      setSandboxError(getErrorMessage(error, 'Ошибка переключения пользователя'));
       setSandboxLoading(false);
     }
   };
@@ -962,7 +979,7 @@ export default function AdminSimulatorPage() {
                   <span className="font-semibold">Департамент</span>
                 </div>
                 <p className="text-white">
-                  {sandboxStatus.department_name} <span className="text-white/40">(ID: {sandboxStatus.department_id})</span>
+                  {sandboxStatus.department_name || 'Sandbox Test Department'} <span className="text-white/40">(ID: {sandboxStatus.department_id ?? 'N/A'})</span>
                 </p>
               </div>
 
@@ -979,7 +996,7 @@ export default function AdminSimulatorPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {sandboxStatus.users.map((user) => (
+                      {sandboxStatus.users?.map((user) => (
                         <tr key={user.email} className="border-b border-white/5 hover:bg-white/5">
                           <td className="py-3 px-4">
                             <span className="text-white font-mono text-sm">{user.email}</span>

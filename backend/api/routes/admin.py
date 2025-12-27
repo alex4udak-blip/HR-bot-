@@ -157,14 +157,20 @@ class SandboxSwitchRequest(BaseModel):
     user_id: int
 
 
+class SandboxStatsInfo(BaseModel):
+    """Statistics about sandbox resources"""
+    contacts: int = 0
+    chats: int = 0
+    calls: int = 0
+
+
 class SandboxStatusResponse(BaseModel):
     """Response for sandbox status check"""
     exists: bool
     department_id: Optional[int] = None
+    department_name: Optional[str] = None
     users: List[Dict[str, Any]] = []
-    entity_count: int = 0
-    chat_count: int = 0
-    call_count: int = 0
+    stats: Optional[SandboxStatsInfo] = None
 
 
 # ==================== Helper Functions ====================
@@ -1694,7 +1700,7 @@ async def delete_sandbox(
     }
 
 
-@router.get("/sandbox/status")
+@router.get("/sandbox/status", response_model=SandboxStatusResponse)
 async def get_sandbox_status(
     org_id: Optional[int] = Query(None, description="Organization ID (optional, auto-detects if not provided)"),
     superadmin: User = Depends(get_superadmin),
