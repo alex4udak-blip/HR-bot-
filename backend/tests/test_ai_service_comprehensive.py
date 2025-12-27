@@ -97,13 +97,14 @@ class TestHistoryLimiting:
         """Test that chat_stream limits history to MAX_HISTORY_MESSAGES."""
         service = AIService()
 
-        # Create 50 history messages (more than MAX_HISTORY_MESSAGES = 40)
+        # Create 100 history messages (50 user + 50 assistant, more than MAX_HISTORY_MESSAGES = 40)
         large_history = []
         for i in range(50):
             large_history.extend([
                 {"role": "user", "content": f"User message {i}"},
                 {"role": "assistant", "content": f"Assistant message {i}"}
             ])
+        # Total: 100 messages (indices 0-99)
 
         mock_client = MagicMock()
 
@@ -136,8 +137,9 @@ class TestHistoryLimiting:
             # Should have 40 history + 1 new = 41 total
             assert len(api_messages) == 41
 
-            # Should include only last 40 from history
-            assert api_messages[0]['content'] == "User message 45"
+            # Should include only last 40 from history (indices 60-99)
+            # Index 60 = "User message 30" (message at iteration i=30)
+            assert api_messages[0]['content'] == "User message 30"
 
     @pytest.mark.asyncio
     async def test_entity_ai_limits_history(self):

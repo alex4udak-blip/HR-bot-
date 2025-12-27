@@ -389,11 +389,14 @@ class AIService:
 
         lines = ["Критерии оценки (название | вес 1-10 | описание):"]
         for c in criteria:
+            name = c.get("name", "Unnamed")
+            if not name:  # Skip criteria without name
+                continue
             weight = c.get("weight", 5)
             desc = c.get("description", "")
             category = c.get("category", "")
             cat_emoji = {"red_flags": "🚩", "green_flags": "✅"}.get(category, "📋")
-            lines.append(f"- {cat_emoji} {c['name']} | {weight}/10 | {desc}")
+            lines.append(f"- {cat_emoji} {name} | {weight}/10 | {desc}")
         return "\n".join(lines)
 
     def _build_system_prompt(
