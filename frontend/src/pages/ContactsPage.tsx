@@ -378,6 +378,7 @@ export default function ContactsPage() {
             accessibleEntities.map((entity) => {
               const Icon = getEntityIcon(entity.type);
               const isSelected = currentEntity?.id === entity.id;
+              const isCompact = !!currentEntity; // Sidebar is narrow when entity is selected
 
               return (
                 <motion.div
@@ -386,7 +387,8 @@ export default function ContactsPage() {
                   animate={{ opacity: 1, y: 0 }}
                   onClick={() => handleSelectEntity(entity.id)}
                   className={clsx(
-                    'p-4 rounded-xl cursor-pointer transition-all group overflow-hidden',
+                    'rounded-xl cursor-pointer transition-all group overflow-hidden',
+                    isCompact ? 'p-3' : 'p-4',
                     entity.is_transferred
                       ? 'bg-white/3 border border-white/5 opacity-60'
                       : isSelected
@@ -394,100 +396,125 @@ export default function ContactsPage() {
                       : 'bg-white/5 border border-white/5 hover:bg-white/10'
                   )}
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-center gap-3">
                     <div className={clsx(
-                      'p-2 rounded-lg',
+                      'rounded-lg flex-shrink-0',
+                      isCompact ? 'p-1.5' : 'p-2',
                       isSelected ? 'bg-cyan-500/30' : 'bg-white/10'
                     )}>
-                      <Icon size={20} className={isSelected ? 'text-cyan-400' : 'text-white/60'} />
+                      <Icon size={isCompact ? 16 : 20} className={isSelected ? 'text-cyan-400' : 'text-white/60'} />
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <h3 className="font-medium text-white truncate">{entity.name}</h3>
-                        {entity.is_transferred && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300">
+                        <h3 className={clsx('font-medium text-white truncate', isCompact && 'text-sm')}>{entity.name}</h3>
+                        {!isCompact && entity.is_transferred && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 flex-shrink-0">
                             Передан
                           </span>
                         )}
-                        <span className={clsx('text-xs px-2 py-0.5 rounded-full', STATUS_COLORS[entity.status])}>
-                          {STATUS_LABELS[entity.status]}
-                        </span>
-                      </div>
-
-                      {(entity.company || entity.position) && (
-                        <p className="text-sm text-white/60 truncate mt-1">
-                          {entity.position}{entity.position && entity.company && ' @ '}{entity.company}
-                        </p>
-                      )}
-
-                      <div className="flex items-center gap-4 mt-2 text-xs text-white/40">
-                        {entity.is_transferred && entity.transferred_to_name && (
-                          <span className="flex items-center gap-1 text-orange-400">
-                            <ArrowRightLeft size={12} />
-                            Передан → {entity.transferred_to_name}
-                          </span>
-                        )}
-                        {entity.is_shared && entity.owner_name && !entity.is_transferred && (
-                          <span className="flex items-center gap-1 text-purple-400">
-                            <Share size={12} />
-                            {entity.access_level === 'view' ? 'Просмотр' : entity.access_level === 'edit' ? 'Редактирование' : 'Полный доступ'} от {entity.owner_name}
-                          </span>
-                        )}
-                        {entity.chats_count !== undefined && entity.chats_count > 0 && (
-                          <span className="flex items-center gap-1">
-                            <MessageSquare size={12} />
-                            {entity.chats_count} чатов
-                          </span>
-                        )}
-                        {entity.calls_count !== undefined && entity.calls_count > 0 && (
-                          <span className="flex items-center gap-1">
-                            <Phone size={12} />
-                            {entity.calls_count} звонков
+                        {!isCompact && (
+                          <span className={clsx('text-xs px-2 py-0.5 rounded-full flex-shrink-0', STATUS_COLORS[entity.status])}>
+                            {STATUS_LABELS[entity.status]}
                           </span>
                         )}
                       </div>
+
+                      {/* Compact mode: show minimal info */}
+                      {isCompact ? (
+                        <div className="flex items-center gap-2 mt-0.5 text-xs text-white/40">
+                          {entity.chats_count !== undefined && entity.chats_count > 0 && (
+                            <span className="flex items-center gap-1">
+                              <MessageSquare size={10} />
+                              {entity.chats_count}
+                            </span>
+                          )}
+                          {entity.calls_count !== undefined && entity.calls_count > 0 && (
+                            <span className="flex items-center gap-1">
+                              <Phone size={10} />
+                              {entity.calls_count}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          {(entity.company || entity.position) && (
+                            <p className="text-sm text-white/60 truncate mt-1">
+                              {entity.position}{entity.position && entity.company && ' @ '}{entity.company}
+                            </p>
+                          )}
+
+                          <div className="flex items-center gap-4 mt-2 text-xs text-white/40">
+                            {entity.is_transferred && entity.transferred_to_name && (
+                              <span className="flex items-center gap-1 text-orange-400">
+                                <ArrowRightLeft size={12} />
+                                Передан → {entity.transferred_to_name}
+                              </span>
+                            )}
+                            {entity.is_shared && entity.owner_name && !entity.is_transferred && (
+                              <span className="flex items-center gap-1 text-purple-400">
+                                <Share size={12} />
+                                {entity.access_level === 'view' ? 'Просмотр' : entity.access_level === 'edit' ? 'Редактирование' : 'Полный доступ'} от {entity.owner_name}
+                              </span>
+                            )}
+                            {entity.chats_count !== undefined && entity.chats_count > 0 && (
+                              <span className="flex items-center gap-1">
+                                <MessageSquare size={12} />
+                                {entity.chats_count} чатов
+                              </span>
+                            )}
+                            {entity.calls_count !== undefined && entity.calls_count > 0 && (
+                              <span className="flex items-center gap-1">
+                                <Phone size={12} />
+                                {entity.calls_count} звонков
+                              </span>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </div>
 
-                    {/* Quick Actions */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                      {canTransfer(entity) && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleTransfer(entity);
-                          }}
-                          className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
-                          title="Передать"
-                        >
-                          <ArrowRightLeft size={14} />
-                        </button>
-                      )}
-                      {canEdit(entity) && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEdit(entity);
-                          }}
-                          className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
-                          title="Редактировать"
-                        >
-                          <Edit size={14} />
-                        </button>
-                      )}
-                      {canDelete(entity) && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(entity);
-                          }}
-                          className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400"
-                          title="Удалить"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </div>
+                    {/* Quick Actions - only in full mode */}
+                    {!isCompact && (
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 flex-shrink-0">
+                        {canTransfer(entity) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTransfer(entity);
+                            }}
+                            className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
+                            title="Передать"
+                          >
+                            <ArrowRightLeft size={14} />
+                          </button>
+                        )}
+                        {canEdit(entity) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEdit(entity);
+                            }}
+                            className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
+                            title="Редактировать"
+                          >
+                            <Edit size={14} />
+                          </button>
+                        )}
+                        {canDelete(entity) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(entity);
+                            }}
+                            className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400"
+                            title="Удалить"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               );
