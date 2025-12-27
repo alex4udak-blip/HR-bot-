@@ -349,7 +349,8 @@ async def list_entities(
         )
         dept_memberships = list(dept_memberships_result.scalars().all())
         user_dept_ids = [dm.department_id for dm in dept_memberships]
-        lead_dept_ids = [dm.department_id for dm in dept_memberships if dm.role == DeptRole.lead]
+        # Only lead and sub_admin can see all department entities
+        admin_dept_ids = [dm.department_id for dm in dept_memberships if dm.role in (DeptRole.lead, DeptRole.sub_admin)]
 
         # Shared entities query
         shared_ids_query = select(SharedAccess.resource_id).where(
@@ -379,14 +380,15 @@ async def list_entities(
             if user_role == OrgRole.owner:
                 query = select(Entity).where(Entity.org_id == org.id)
             else:
-                # Own entities + shared with me + entities in user's departments
+                # Own entities + shared with me + department entities (for admins only)
                 conditions = [
                     Entity.created_by == current_user.id,
                     Entity.id.in_(shared_ids_query)
                 ]
-                # Department members can view all entities in their departments
-                if user_dept_ids:
-                    conditions.append(Entity.department_id.in_(user_dept_ids))
+                # Only lead/sub_admin can view all entities in their departments
+                # Regular members see only their own entities + shared
+                if admin_dept_ids:
+                    conditions.append(Entity.department_id.in_(admin_dept_ids))
 
                 query = select(Entity).where(
                     Entity.org_id == org.id,
@@ -516,21 +518,21 @@ async def list_entities(
         )
         shared_call_ids = set(shared_calls_result.scalars().all())
 
-        # Get departments where user is lead
-        lead_dept_result = await db.execute(
+        # Get departments where user is lead or sub_admin
+        admin_dept_result = await db.execute(
             select(DepartmentMember.department_id).where(
                 DepartmentMember.user_id == current_user.id,
-                DepartmentMember.role == DeptRole.lead
+                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
             )
         )
-        lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
+        admin_dept_ids = [r for r in admin_dept_result.scalars().all()]
 
-        # Get user IDs in departments where current user is lead
+        # Get user IDs in departments where current user is lead/sub_admin
         dept_member_ids = set()
-        if lead_dept_ids:
+        if admin_dept_ids:
             dept_members_result = await db.execute(
                 select(DepartmentMember.user_id).where(
-                    DepartmentMember.department_id.in_(lead_dept_ids)
+                    DepartmentMember.department_id.in_(admin_dept_ids)
                 )
             )
             dept_member_ids = set(dept_members_result.scalars().all())
@@ -746,21 +748,21 @@ async def get_entity(
         )
         shared_call_ids = set(shared_calls_result.scalars().all())
 
-        # Get departments where user is lead
-        lead_dept_result = await db.execute(
+        # Get departments where user is lead or sub_admin
+        admin_dept_result = await db.execute(
             select(DepartmentMember.department_id).where(
                 DepartmentMember.user_id == current_user.id,
-                DepartmentMember.role == DeptRole.lead
+                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
             )
         )
-        lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
+        admin_dept_ids = [r for r in admin_dept_result.scalars().all()]
 
-        # Get user IDs in departments where current user is lead
+        # Get user IDs in departments where current user is lead/sub_admin
         dept_member_ids = set()
-        if lead_dept_ids:
+        if admin_dept_ids:
             dept_members_result = await db.execute(
                 select(DepartmentMember.user_id).where(
-                    DepartmentMember.department_id.in_(lead_dept_ids)
+                    DepartmentMember.department_id.in_(admin_dept_ids)
                 )
             )
             dept_member_ids = set(dept_members_result.scalars().all())
