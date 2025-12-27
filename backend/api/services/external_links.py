@@ -783,46 +783,125 @@ class ExternalLinkProcessor:
                                     if elements and len(elements) > 0:
                                         logger.info(f"Found {len(elements)} elements with selector: {selector}")
 
+                                        # Log first element's HTML structure to understand DOM
+                                        if elements:
+                                            try:
+                                                first_outer = await elements[0].evaluate('el => el.outerHTML.substring(0, 500)')
+                                                logger.info(f"First element HTML preview: {first_outer}")
+                                                # Also check parent structure
+                                                parent_outer = await elements[0].evaluate('el => el.parentElement ? el.parentElement.outerHTML.substring(0, 800) : "no parent"')
+                                                logger.info(f"Parent element HTML preview: {parent_outer}")
+                                            except Exception as e:
+                                                logger.debug(f"Could not log element HTML: {e}")
+
                                         for el in elements:
                                             # Try multiple approaches to find speaker name
                                             speaker_name = "Speaker"
                                             timestamp_text = None
 
                                             try:
-                                                # Approach 1: Look in parent container for speaker name
-                                                # Fireflies structure: parent has speaker info, child has text
-                                                parent = await el.evaluate_handle('el => el.parentElement')
-                                                if parent:
-                                                    # Try to find speaker name in parent's children
-                                                    for sp_selector in [
-                                                        '[class*="speaker"]', '[class*="Speaker"]',
-                                                        '[class*="name"]', '[class*="Name"]',
-                                                        '[class*="author"]', '[class*="Author"]',
-                                                        '[class*="user"]', '[class*="User"]',
-                                                        'span[class*="css-"]'  # React dynamic classes
-                                                    ]:
-                                                        try:
-                                                            sp_el = await parent.query_selector(sp_selector)
-                                                            if sp_el:
-                                                                sp_text = await sp_el.text_content()
-                                                                if sp_text and sp_text.strip() and len(sp_text.strip()) < 50:
-                                                                    # Check if it looks like a name (not the transcript text)
-                                                                    sp_text = sp_text.strip()
-                                                                    if sp_text != speaker_name and not sp_text.startswith('Speaker'):
-                                                                        speaker_name = sp_text
-                                                                        break
-                                                        except Exception:
-                                                            pass
+                                                # NEW Approach 0: Use JavaScript to traverse DOM and find speaker
+                                                # Fireflies structure: speaker name is in a header row above or beside text
+                                                speaker_info = await el.evaluate('''el => {
+                                                    // Look for speaker name in various DOM locations
+                                                    let result = {speaker: null, timestamp: null};
 
-                                                    # Also look for timestamp in parent
-                                                    for time_selector in ['[class*="time"]', '[class*="Time"]', '[class*="timestamp"]', 'time']:
-                                                        try:
-                                                            time_el = await parent.query_selector(time_selector)
-                                                            if time_el:
-                                                                timestamp_text = await time_el.text_content()
-                                                                break
-                                                        except Exception:
-                                                            pass
+                                                    // Try parent and grandparent containers
+                                                    let container = el.parentElement;
+                                                    for (let i = 0; i < 5 && container; i++) {
+                                                        // Look for speaker name element
+                                                        const nameSelectors = [
+                                                            '[class*="SpeakerName"]', '[class*="speakerName"]', '[class*="speaker-name"]',
+                                                            '[class*="UserName"]', '[class*="userName"]', '[class*="user-name"]',
+                                                            '[class*="AuthorName"]', '[class*="author"]',
+                                                            'a[href*="mailto"]',  // Sometimes name is a mailto link
+                                                            '.speaker-label', '.name-label'
+                                                        ];
+
+                                                        for (const sel of nameSelectors) {
+                                                            const nameEl = container.querySelector(sel);
+                                                            if (nameEl) {
+                                                                const text = nameEl.textContent?.trim();
+                                                                if (text && text.length < 50 && !text.includes('Speaker')) {
+                                                                    result.speaker = text;
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+
+                                                        // Look for timestamp (like "01:15")
+                                                        const timeSelectors = ['[class*="time"]', '[class*="Time"]', 'time', '[class*="stamp"]'];
+                                                        for (const sel of timeSelectors) {
+                                                            const timeEl = container.querySelector(sel);
+                                                            if (timeEl) {
+                                                                const timeText = timeEl.textContent?.trim();
+                                                                if (timeText && /^\d{1,2}:\d{2}/.test(timeText)) {
+                                                                    result.timestamp = timeText;
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+
+                                                        if (result.speaker) break;
+                                                        container = container.parentElement;
+                                                    }
+
+                                                    // If still no speaker, look at previous siblings
+                                                    if (!result.speaker) {
+                                                        let sibling = el.previousElementSibling;
+                                                        for (let i = 0; i < 3 && sibling; i++) {
+                                                            const text = sibling.textContent?.trim();
+                                                            // Check if it looks like a speaker name (short, no numbers at start)
+                                                            if (text && text.length < 40 && text.length > 1 && !/^\d/.test(text) && !text.includes('Speaker')) {
+                                                                result.speaker = text.split('\\n')[0].trim();  // Take first line only
+                                                                break;
+                                                            }
+                                                            sibling = sibling.previousElementSibling;
+                                                        }
+                                                    }
+
+                                                    return result;
+                                                }''')
+
+                                                if speaker_info.get('speaker'):
+                                                    speaker_name = speaker_info['speaker']
+                                                if speaker_info.get('timestamp'):
+                                                    timestamp_text = speaker_info['timestamp']
+
+                                                # Approach 1: Look in parent container for speaker name (fallback)
+                                                if speaker_name == "Speaker":
+                                                    parent = await el.evaluate_handle('el => el.parentElement')
+                                                    if parent:
+                                                        # Try to find speaker name in parent's children
+                                                        for sp_selector in [
+                                                            '[class*="speaker"]', '[class*="Speaker"]',
+                                                            '[class*="name"]', '[class*="Name"]',
+                                                            '[class*="author"]', '[class*="Author"]',
+                                                            '[class*="user"]', '[class*="User"]',
+                                                            'span[class*="css-"]'  # React dynamic classes
+                                                        ]:
+                                                            try:
+                                                                sp_el = await parent.query_selector(sp_selector)
+                                                                if sp_el:
+                                                                    sp_text = await sp_el.text_content()
+                                                                    if sp_text and sp_text.strip() and len(sp_text.strip()) < 50:
+                                                                        sp_text = sp_text.strip()
+                                                                        if sp_text != speaker_name and not sp_text.startswith('Speaker'):
+                                                                            speaker_name = sp_text
+                                                                            break
+                                                            except Exception:
+                                                                pass
+
+                                                        # Also look for timestamp in parent
+                                                        if not timestamp_text:
+                                                            for time_selector in ['[class*="time"]', '[class*="Time"]', '[class*="timestamp"]', 'time']:
+                                                                try:
+                                                                    time_el = await parent.query_selector(time_selector)
+                                                                    if time_el:
+                                                                        timestamp_text = await time_el.text_content()
+                                                                        break
+                                                                except Exception:
+                                                                    pass
 
                                                 # Approach 2: Look in previous sibling
                                                 if speaker_name == "Speaker":
@@ -922,6 +1001,126 @@ class ExternalLinkProcessor:
                                 # Progress: Transcript extracted
                                 if call_id:
                                     await self._update_progress(call_id, 50, "Транскрипт извлечён, обработка спикеров...")
+
+                        # Extract duration and speaker statistics from the page
+                        try:
+                            stats = await page.evaluate('''() => {
+                                let result = {
+                                    duration: null,
+                                    durationSeconds: null,
+                                    speakerStats: []
+                                };
+
+                                // Try to find duration (format: "MM:SS" or "HH:MM:SS")
+                                // Look in player controls, metadata sections, etc.
+                                const durationSelectors = [
+                                    '[class*="duration"]', '[class*="Duration"]',
+                                    '[class*="time-total"]', '[class*="total-time"]',
+                                    '[class*="audio-duration"]', '[class*="video-duration"]',
+                                    '[class*="player"] [class*="time"]',
+                                    'time', '[datetime]'
+                                ];
+
+                                for (const sel of durationSelectors) {
+                                    const els = document.querySelectorAll(sel);
+                                    for (const el of els) {
+                                        const text = el.textContent?.trim();
+                                        // Match MM:SS or HH:MM:SS pattern
+                                        const match = text?.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+                                        if (match) {
+                                            result.duration = text;
+                                            // Convert to seconds
+                                            if (match[3]) {
+                                                // HH:MM:SS
+                                                result.durationSeconds = parseInt(match[1])*3600 + parseInt(match[2])*60 + parseInt(match[3]);
+                                            } else {
+                                                // MM:SS
+                                                result.durationSeconds = parseInt(match[1])*60 + parseInt(match[2]);
+                                            }
+                                            break;
+                                        }
+                                    }
+                                    if (result.duration) break;
+                                }
+
+                                // Also try to find "/ MM:SS" pattern (common in players like "00:00 / 14:31")
+                                if (!result.duration) {
+                                    const allText = document.body.innerText;
+                                    const playerMatch = allText.match(/\d{1,2}:\d{2}\s*\/\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+                                    if (playerMatch) {
+                                        if (playerMatch[3]) {
+                                            result.duration = `${playerMatch[1]}:${playerMatch[2]}:${playerMatch[3]}`;
+                                            result.durationSeconds = parseInt(playerMatch[1])*3600 + parseInt(playerMatch[2])*60 + parseInt(playerMatch[3]);
+                                        } else {
+                                            result.duration = `${playerMatch[1]}:${playerMatch[2]}`;
+                                            result.durationSeconds = parseInt(playerMatch[1])*60 + parseInt(playerMatch[2]);
+                                        }
+                                    }
+                                }
+
+                                // Look for speaker talktime statistics
+                                // Fireflies shows: Speaker Name | WPM | TALKTIME%
+                                const talktimeSelectors = [
+                                    '[class*="talktime"]', '[class*="Talktime"]', '[class*="talk-time"]',
+                                    '[class*="speaker-stat"]', '[class*="SpeakerStat"]',
+                                    '[class*="analytics"]', '[class*="Analytics"]'
+                                ];
+
+                                // Find speaker stats container
+                                for (const sel of talktimeSelectors) {
+                                    const container = document.querySelector(sel);
+                                    if (container) {
+                                        // Look for individual speaker rows
+                                        const rows = container.querySelectorAll('[class*="row"], [class*="item"], [class*="speaker"], tr, li');
+                                        for (const row of rows) {
+                                            const text = row.textContent?.trim();
+                                            // Try to extract name, WPM, and percentage
+                                            // Pattern like: "Inna I. 23 55%"
+                                            const wpmMatch = text?.match(/(.+?)\s+(\d+)\s*(?:WPM|wpm)?\s*(\d+)\s*%/);
+                                            if (wpmMatch) {
+                                                result.speakerStats.push({
+                                                    name: wpmMatch[1].trim(),
+                                                    wpm: parseInt(wpmMatch[2]),
+                                                    talktimePercent: parseInt(wpmMatch[3])
+                                                });
+                                            }
+                                        }
+                                        if (result.speakerStats.length > 0) break;
+                                    }
+                                }
+
+                                // Alternative: Look for speaker names with percentages nearby
+                                if (result.speakerStats.length === 0) {
+                                    const percentEls = document.querySelectorAll('[class*="percent"], [class*="Percent"]');
+                                    for (const el of percentEls) {
+                                        const parent = el.closest('[class*="speaker"], [class*="row"], [class*="item"]');
+                                        if (parent) {
+                                            const text = parent.textContent?.trim();
+                                            const match = text?.match(/(.+?)\s+(\d+)\s*%/);
+                                            if (match) {
+                                                result.speakerStats.push({
+                                                    name: match[1].replace(/\d+\s*(?:WPM|wpm)?/, '').trim(),
+                                                    talktimePercent: parseInt(match[2])
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+
+                                return result;
+                            }''')
+
+                            if stats:
+                                if stats.get('duration'):
+                                    logger.info(f"Extracted duration: {stats['duration']} ({stats.get('durationSeconds')} seconds)")
+                                    call.duration_seconds = stats.get('durationSeconds')
+                                if stats.get('speakerStats'):
+                                    logger.info(f"Extracted speaker stats: {stats['speakerStats']}")
+                                    # Store in call metadata or update speaker_stats later
+                                    if not hasattr(call, '_fireflies_speaker_stats'):
+                                        call._fireflies_speaker_stats = stats['speakerStats']
+                        except Exception as stats_err:
+                            logger.warning(f"Could not extract duration/stats: {stats_err}")
 
                         await browser.close()
 
@@ -1258,6 +1457,23 @@ class ExternalLinkProcessor:
                 from .call_processor import calculate_speaker_stats, identify_participant_roles
                 call.speaker_stats = calculate_speaker_stats(call.speakers)
                 logger.info(f"Calculated speaker stats for {len(call.speaker_stats)} speakers")
+
+                # If we have Fireflies speaker stats with WPM and talktime, merge them
+                fireflies_stats = getattr(call, '_fireflies_speaker_stats', None)
+                if fireflies_stats:
+                    logger.info(f"Merging Fireflies speaker stats: {fireflies_stats}")
+                    for ff_stat in fireflies_stats:
+                        ff_name = ff_stat.get('name', '').lower()
+                        # Find matching speaker in calculated stats
+                        for speaker_name, stats in call.speaker_stats.items():
+                            if ff_name and (ff_name in speaker_name.lower() or speaker_name.lower() in ff_name):
+                                # Update with Fireflies data
+                                if ff_stat.get('wpm'):
+                                    stats['wpm'] = ff_stat['wpm']
+                                if ff_stat.get('talktimePercent'):
+                                    stats['talktime_percent'] = ff_stat['talktimePercent']
+                                logger.info(f"Updated speaker '{speaker_name}' with Fireflies stats: wpm={ff_stat.get('wpm')}, talktime={ff_stat.get('talktimePercent')}%")
+                                break
 
             logger.info(f"Fireflies transcript processed successfully: {len(call.transcript)} chars")
 
