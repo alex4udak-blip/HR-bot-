@@ -103,6 +103,11 @@ async def init_database():
     await run_migration(engine, "ALTER TYPE deptrole ADD VALUE IF NOT EXISTS 'sub_admin'", "Add sub_admin to deptrole enum")
     await run_migration(engine, "ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'sub_admin'", "Add sub_admin to userrole enum")
 
+    # Step 2.2: Add lowercase role values to userrole enum (for migration)
+    # PostgreSQL enum might have uppercase values - add lowercase versions
+    for role_val in ['superadmin', 'admin', 'sub_admin']:
+        await run_migration(engine, f"ALTER TYPE userrole ADD VALUE IF NOT EXISTS '{role_val}'", f"Add {role_val} to userrole enum")
+
     # Step 3: Create all tables
     logger.info("Creating tables with create_all...")
     try:
@@ -112,6 +117,12 @@ async def init_database():
     except Exception as e:
         logger.error(f"Error creating tables: {e}")
         return
+
+    # Step 3.1: Convert existing uppercase role values to lowercase (critical fix)
+    # This must run after tables are created to update existing data
+    await run_migration(engine, "UPDATE users SET role = 'superadmin' WHERE role::text = 'SUPERADMIN'", "Convert SUPERADMIN to superadmin")
+    await run_migration(engine, "UPDATE users SET role = 'admin' WHERE role::text = 'ADMIN'", "Convert ADMIN to admin")
+    await run_migration(engine, "UPDATE users SET role = 'sub_admin' WHERE role::text = 'SUB_ADMIN'", "Convert SUB_ADMIN to sub_admin")
 
     # Step 4: Create call_recordings table if not exists (preserves existing data)
     logger.info("=== SETTING UP call_recordings TABLE ===")
