@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, keepPreviousData } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import App from './App';
@@ -14,6 +14,7 @@ const queryClient = new QueryClient({
       refetchOnMount: true, // Refetch on component mount if stale
       refetchOnWindowFocus: false, // Disable to prevent flickering on tab switch
       retry: 1,
+      placeholderData: keepPreviousData, // Keep old data while fetching new - prevents blank screen flicker
     },
   },
 });
