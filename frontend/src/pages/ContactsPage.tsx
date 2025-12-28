@@ -617,7 +617,7 @@ export default function ContactsPage() {
         {currentEntity && showAIPanel && (
           <motion.div
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 400, opacity: 1 }}
+            animate={{ width: 480, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
             className="hidden xl:flex flex-col border-l border-white/5 glass overflow-hidden"
