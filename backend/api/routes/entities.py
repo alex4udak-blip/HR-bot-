@@ -5,6 +5,9 @@ from typing import Optional, List, Literal
 from datetime import datetime
 from pydantic import BaseModel
 import re
+import logging
+
+logger = logging.getLogger("hr-analyzer.entities")
 
 from ..database import get_db
 from ..models.database import (
