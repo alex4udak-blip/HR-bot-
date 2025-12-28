@@ -459,6 +459,37 @@ async def check_playwright_status():
         logger.error(f"✗ Playwright check failed: {type(e).__name__}: {e}")
 
 
+def run_alembic_migrations_sync():
+    """Run Alembic migrations synchronously on startup."""
+    import subprocess
+
+    backend_dir = Path(__file__).parent
+
+    try:
+        result = subprocess.run(
+            ["alembic", "upgrade", "head"],
+            cwd=backend_dir,
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+
+        if result.returncode == 0:
+            logger.info("Alembic migrations applied successfully")
+            if result.stdout:
+                for line in result.stdout.strip().split('\n'):
+                    if line:
+                        logger.info(f"  {line}")
+        else:
+            logger.warning(f"Alembic: {result.stderr or 'unknown error'}")
+    except FileNotFoundError:
+        logger.warning("Alembic not found in PATH, skipping migrations")
+    except subprocess.TimeoutExpired:
+        logger.error("Alembic migration timed out")
+    except Exception as e:
+        logger.warning(f"Alembic migration skipped: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup - initialize database (wait for it to complete)
@@ -468,6 +499,12 @@ async def lifespan(app: FastAPI):
         logger.error("Database initialization timed out")
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
+
+    # Run Alembic migrations after init_database
+    try:
+        await asyncio.get_event_loop().run_in_executor(None, run_alembic_migrations_sync)
+    except Exception as e:
+        logger.warning(f"Alembic migration failed: {e}")
 
     # Check Playwright status (for Fireflies link processing)
     try:

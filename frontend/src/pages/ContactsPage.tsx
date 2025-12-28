@@ -247,7 +247,7 @@ export default function ContactsPage() {
   };
 
   return (
-    <div className="h-full flex">
+    <div className="h-full flex overflow-hidden">
       {/* Sidebar - Entity List */}
       <motion.div
         initial={{ opacity: 0, x: -20 }}
@@ -617,10 +617,10 @@ export default function ContactsPage() {
         {currentEntity && showAIPanel && (
           <motion.div
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 420, opacity: 1 }}
+            animate={{ width: 'auto', opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="hidden xl:flex flex-col h-full border-l border-white/5 bg-black/20 overflow-hidden flex-shrink-0"
+            className="hidden xl:flex flex-col h-full border-l border-white/5 bg-black/20 overflow-hidden flex-shrink-0 w-[340px] 2xl:w-[420px] max-w-[40vw]"
           >
             <div className="p-4 border-b border-white/5 flex items-center justify-between flex-shrink-0">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">

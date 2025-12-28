@@ -10,9 +10,9 @@ import './index.css';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 5, // 5 seconds - data is fresh for 5 seconds
-      refetchOnMount: true, // Always refetch on component mount
-      refetchOnWindowFocus: true, // Refetch when window regains focus
+      staleTime: 1000 * 30, // 30 seconds - data is fresh for 30 seconds (prevents flickering)
+      refetchOnMount: true, // Refetch on component mount if stale
+      refetchOnWindowFocus: false, // Disable to prevent flickering on tab switch
       retry: 1,
     },
   },

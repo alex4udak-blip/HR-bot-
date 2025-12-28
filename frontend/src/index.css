@@ -283,6 +283,32 @@ body {
 }
 
 /* ============================================
+   REDUCED MOTION - Disable heavy animations
+   for users who prefer reduced motion
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+  .premium-bg,
+  .aurora,
+  .aurora::before,
+  .aurora::after,
+  .light-rays,
+  .light-rays::before,
+  .light-rays::after,
+  .floating-orb,
+  .particle,
+  .grid-pattern {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .aurora,
+  .particles,
+  .light-rays {
+    display: none !important;
+  }
+}
+
+/* ============================================
    PREMIUM GLASSMORPHISM
    ============================================ */
 .glass {
