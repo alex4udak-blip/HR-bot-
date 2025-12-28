@@ -348,6 +348,11 @@ async def init_database():
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entity_transfers_from_department_id ON entity_transfers(from_department_id)", "Index entity_transfers.from_department_id")
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entity_transfers_to_department_id ON entity_transfers(to_department_id)", "Index entity_transfers.to_department_id")
 
+    # Transfer cancel functionality columns
+    await run_migration(engine, "ALTER TABLE entity_transfers ADD COLUMN IF NOT EXISTS copy_entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL", "Add copy_entity_id to entity_transfers")
+    await run_migration(engine, "ALTER TABLE entity_transfers ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP", "Add cancelled_at to entity_transfers")
+    await run_migration(engine, "ALTER TABLE entity_transfers ADD COLUMN IF NOT EXISTS cancel_deadline TIMESTAMP", "Add cancel_deadline to entity_transfers")
+
     logger.info("=== DEPARTMENTS TABLES READY ===")
 
     # Note: sub_admin enum values are now added in Step 2.1 (early in init to avoid timeout issues)
