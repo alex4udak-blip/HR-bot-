@@ -1278,13 +1278,16 @@ async def transfer_entity(
         call.owner_id = data.to_user_id
 
     # === STEP 6: Create transfer record ===
+    from datetime import timedelta
     transfer = EntityTransfer(
         entity_id=entity_id,
         from_user_id=current_user.id,
         to_user_id=data.to_user_id,
         from_department_id=from_dept_id,
         to_department_id=data.to_department_id,
-        comment=data.comment
+        comment=data.comment,
+        copy_entity_id=entity_copy.id,
+        cancel_deadline=datetime.utcnow() + timedelta(hours=1)
     )
     db.add(transfer)
 
@@ -1298,8 +1301,133 @@ async def transfer_entity(
         "original_entity_id": entity.id,
         "copy_entity_id": entity_copy.id,
         "transferred_chats": len(chats),
-        "transferred_calls": len(calls)
+        "transferred_calls": len(calls),
+        "cancel_deadline": transfer.cancel_deadline.isoformat() if transfer.cancel_deadline else None
     }
+
+
+@router.post("/transfers/{transfer_id}/cancel")
+async def cancel_transfer(
+    transfer_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Cancel a transfer within the allowed time window (1 hour).
+    Reverts the entity, chats and calls back to original owner.
+    """
+    current_user = await db.merge(current_user)
+
+    # Get transfer record
+    result = await db.execute(
+        select(EntityTransfer).where(EntityTransfer.id == transfer_id)
+    )
+    transfer = result.scalar_one_or_none()
+
+    if not transfer:
+        raise HTTPException(404, "Transfer not found")
+
+    # Check if user is the one who made the transfer or superadmin
+    if transfer.from_user_id != current_user.id and current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "Only the person who transferred can cancel")
+
+    # Check if already cancelled
+    if transfer.cancelled_at:
+        raise HTTPException(400, "Transfer already cancelled")
+
+    # Check if within cancellation window
+    if transfer.cancel_deadline and datetime.utcnow() > transfer.cancel_deadline:
+        raise HTTPException(400, "Cancellation window expired (1 hour)")
+
+    # Get the original entity
+    entity_result = await db.execute(
+        select(Entity).where(Entity.id == transfer.entity_id)
+    )
+    entity = entity_result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # === STEP 1: Revert entity ownership ===
+    entity.created_by = transfer.from_user_id
+    if transfer.from_department_id:
+        entity.department_id = transfer.from_department_id
+    entity.updated_at = datetime.utcnow()
+
+    # === STEP 2: Revert all chats ownership ===
+    chats_result = await db.execute(
+        select(Chat).where(Chat.entity_id == transfer.entity_id)
+    )
+    chats = list(chats_result.scalars().all())
+    for chat in chats:
+        chat.owner_id = transfer.from_user_id
+
+    # === STEP 3: Revert all calls ownership ===
+    calls_result = await db.execute(
+        select(CallRecording).where(CallRecording.entity_id == transfer.entity_id)
+    )
+    calls = list(calls_result.scalars().all())
+    for call in calls:
+        call.owner_id = transfer.from_user_id
+
+    # === STEP 4: Delete the frozen copy ===
+    if transfer.copy_entity_id:
+        copy_result = await db.execute(
+            select(Entity).where(Entity.id == transfer.copy_entity_id)
+        )
+        copy_entity = copy_result.scalar_one_or_none()
+        if copy_entity:
+            await db.delete(copy_entity)
+
+    # === STEP 5: Mark transfer as cancelled ===
+    transfer.cancelled_at = datetime.utcnow()
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "entity_id": entity.id,
+        "reverted_chats": len(chats),
+        "reverted_calls": len(calls)
+    }
+
+
+@router.get("/transfers/pending")
+async def get_pending_transfers(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get transfers that can still be cancelled (made by current user within 1 hour)."""
+    current_user = await db.merge(current_user)
+
+    result = await db.execute(
+        select(EntityTransfer)
+        .options(
+            selectinload(EntityTransfer.entity),
+            selectinload(EntityTransfer.to_user)
+        )
+        .where(
+            EntityTransfer.from_user_id == current_user.id,
+            EntityTransfer.cancelled_at.is_(None),
+            EntityTransfer.cancel_deadline > datetime.utcnow()
+        )
+        .order_by(EntityTransfer.created_at.desc())
+    )
+    transfers = result.scalars().all()
+
+    return [
+        {
+            "id": t.id,
+            "entity_id": t.entity_id,
+            "entity_name": t.entity.name if t.entity else None,
+            "to_user_id": t.to_user_id,
+            "to_user_name": t.to_user.name if t.to_user else None,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "cancel_deadline": t.cancel_deadline.isoformat() if t.cancel_deadline else None,
+            "time_remaining_seconds": (t.cancel_deadline - datetime.utcnow()).total_seconds() if t.cancel_deadline else 0
+        }
+        for t in transfers
+    ]
 
 
 @router.post("/{entity_id}/link-chat/{chat_id}")

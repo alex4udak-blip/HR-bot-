@@ -401,8 +401,13 @@ class EntityTransfer(Base):
     to_department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
     comment = Column(Text, nullable=True)
     created_at = Column(DateTime, default=func.now())
+    # For cancel functionality
+    copy_entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    cancel_deadline = Column(DateTime, nullable=True)  # Usually created_at + 1 hour
 
-    entity = relationship("Entity", back_populates="transfers")
+    entity = relationship("Entity", back_populates="transfers", foreign_keys=[entity_id])
+    copy_entity = relationship("Entity", foreign_keys=[copy_entity_id])
     from_user = relationship("User", foreign_keys=[from_user_id])
     to_user = relationship("User", foreign_keys=[to_user_id])
     from_department = relationship("Department", foreign_keys=[from_department_id])
