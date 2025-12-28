@@ -48,52 +48,71 @@ body {
 }
 
 /* ============================================
-   FLOATING ORBS - MORE VISIBLE
+   FLOATING ORBS - OPTIMIZED (no filter blur)
+   Using soft gradients instead of blur for GPU efficiency
    ============================================ */
 .floating-orb {
   position: absolute;
   border-radius: 50%;
   pointer-events: none;
   will-change: transform;
+  contain: strict;
+  transform: translateZ(0);
 }
 
 .orb-1 {
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, rgba(12, 165, 235, 0.5) 0%, rgba(12, 165, 235, 0.15) 40%, transparent 70%);
+  width: 700px;
+  height: 700px;
+  background: radial-gradient(circle,
+    rgba(12, 165, 235, 0.25) 0%,
+    rgba(12, 165, 235, 0.15) 20%,
+    rgba(12, 165, 235, 0.08) 40%,
+    rgba(12, 165, 235, 0.03) 60%,
+    transparent 80%);
   top: -15%;
   left: -10%;
-  filter: blur(40px);
   animation: floatOrb1 12s ease-in-out infinite;
 }
 
 .orb-2 {
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.5) 0%, rgba(139, 92, 246, 0.15) 40%, transparent 70%);
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle,
+    rgba(139, 92, 246, 0.25) 0%,
+    rgba(139, 92, 246, 0.15) 20%,
+    rgba(139, 92, 246, 0.08) 40%,
+    rgba(139, 92, 246, 0.03) 60%,
+    transparent 80%);
   bottom: -10%;
   right: -10%;
-  filter: blur(50px);
   animation: floatOrb2 15s ease-in-out infinite;
 }
 
 .orb-3 {
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(6, 182, 212, 0.4) 0%, rgba(6, 182, 212, 0.1) 40%, transparent 70%);
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle,
+    rgba(6, 182, 212, 0.2) 0%,
+    rgba(6, 182, 212, 0.12) 20%,
+    rgba(6, 182, 212, 0.06) 40%,
+    rgba(6, 182, 212, 0.02) 60%,
+    transparent 80%);
   top: 50%;
   left: 40%;
-  filter: blur(45px);
   animation: floatOrb3 18s ease-in-out infinite;
 }
 
 .orb-4 {
-  width: 350px;
-  height: 350px;
-  background: radial-gradient(circle, rgba(236, 72, 153, 0.35) 0%, rgba(236, 72, 153, 0.08) 50%, transparent 70%);
+  width: 450px;
+  height: 450px;
+  background: radial-gradient(circle,
+    rgba(236, 72, 153, 0.18) 0%,
+    rgba(236, 72, 153, 0.1) 20%,
+    rgba(236, 72, 153, 0.05) 40%,
+    rgba(236, 72, 153, 0.02) 60%,
+    transparent 80%);
   top: 20%;
   right: 15%;
-  filter: blur(35px);
   animation: floatOrb4 20s ease-in-out infinite;
 }
 
@@ -124,7 +143,8 @@ body {
 }
 
 /* ============================================
-   AURORA EFFECT - EXTENDED RAYS
+   AURORA EFFECT - OPTIMIZED (no filter blur)
+   Using soft gradients instead of blur for GPU efficiency
    ============================================ */
 .aurora {
   position: fixed;
@@ -133,9 +153,11 @@ body {
   height: 200%;
   z-index: -2;
   overflow: hidden;
-  opacity: 0.6;
+  opacity: 0.5;
   mix-blend-mode: screen;
-  filter: blur(60px);
+  contain: strict;
+  transform: translateZ(0);
+  /* NO filter: blur() - causes constant GPU recalculation */
 }
 
 .aurora::before,
@@ -144,27 +166,34 @@ body {
   position: absolute;
   width: 200%;
   height: 200%;
-  background: radial-gradient(circle at 50% 50%, rgba(12, 165, 235, 0.08), rgba(139, 92, 246, 0.06), rgba(6, 182, 212, 0.07), transparent 70%); /* fallback */
+  /* Soft aurora using wide gradient bands instead of blur */
   background: conic-gradient(
     from 0deg at 50% 50%,
     transparent 0deg,
-    rgba(12, 165, 235, 0.08) 20deg,
-    rgba(12, 165, 235, 0.2) 45deg,
-    rgba(12, 165, 235, 0.08) 70deg,
+    rgba(12, 165, 235, 0.02) 10deg,
+    rgba(12, 165, 235, 0.06) 25deg,
+    rgba(12, 165, 235, 0.12) 45deg,
+    rgba(12, 165, 235, 0.06) 65deg,
+    rgba(12, 165, 235, 0.02) 80deg,
     transparent 90deg,
     transparent 120deg,
-    rgba(139, 92, 246, 0.06) 140deg,
-    rgba(139, 92, 246, 0.15) 165deg,
-    rgba(139, 92, 246, 0.06) 190deg,
+    rgba(139, 92, 246, 0.02) 130deg,
+    rgba(139, 92, 246, 0.05) 150deg,
+    rgba(139, 92, 246, 0.1) 165deg,
+    rgba(139, 92, 246, 0.05) 180deg,
+    rgba(139, 92, 246, 0.02) 195deg,
     transparent 210deg,
     transparent 240deg,
-    rgba(6, 182, 212, 0.07) 260deg,
-    rgba(6, 182, 212, 0.18) 285deg,
-    rgba(6, 182, 212, 0.07) 310deg,
+    rgba(6, 182, 212, 0.02) 250deg,
+    rgba(6, 182, 212, 0.06) 270deg,
+    rgba(6, 182, 212, 0.12) 285deg,
+    rgba(6, 182, 212, 0.06) 300deg,
+    rgba(6, 182, 212, 0.02) 320deg,
     transparent 330deg,
     transparent 360deg
-  ); /* modern browsers */
+  );
   animation: auroraRotate 45s linear infinite;
+  will-change: transform;
 }
 
 .aurora::before {
