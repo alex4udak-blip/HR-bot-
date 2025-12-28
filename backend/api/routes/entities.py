@@ -1665,28 +1665,43 @@ async def share_entity(
     shared_calls = 0
 
     if data.auto_share_related:
-        # Find all chats linked to this entity
+        # Find all chats and calls linked to this entity
         chats_result = await db.execute(
             select(Chat).where(Chat.entity_id == entity_id, Chat.org_id == org.id)
         )
         chats = chats_result.scalars().all()
+        chat_ids = [c.id for c in chats]
 
-        for chat in chats:
-            # Check if already shared
-            existing_chat_share_result = await db.execute(
-                select(SharedAccess).where(
-                    SharedAccess.resource_type == ResourceType.chat,
-                    SharedAccess.resource_id == chat.id,
-                    SharedAccess.shared_with_id == data.shared_with_id
-                )
+        calls_result = await db.execute(
+            select(CallRecording).where(CallRecording.entity_id == entity_id, CallRecording.org_id == org.id)
+        )
+        calls = calls_result.scalars().all()
+        call_ids = [c.id for c in calls]
+
+        # Batch fetch all existing shares for this user (avoid N+1 queries)
+        existing_shares_result = await db.execute(
+            select(SharedAccess).where(
+                SharedAccess.shared_with_id == data.shared_with_id,
+                ((SharedAccess.resource_type == ResourceType.chat) & (SharedAccess.resource_id.in_(chat_ids))) |
+                ((SharedAccess.resource_type == ResourceType.call) & (SharedAccess.resource_id.in_(call_ids)))
             )
-            existing_chat_share = existing_chat_share_result.scalar_one_or_none()
+        ) if chat_ids or call_ids else None
 
-            if existing_chat_share:
+        # Build lookup dict: (resource_type, resource_id) -> SharedAccess
+        existing_shares_map = {}
+        if existing_shares_result:
+            for share in existing_shares_result.scalars().all():
+                existing_shares_map[(share.resource_type, share.resource_id)] = share
+
+        # Process chats
+        for chat in chats:
+            key = (ResourceType.chat, chat.id)
+            if key in existing_shares_map:
                 # Update existing
-                existing_chat_share.access_level = data.access_level
-                existing_chat_share.expires_at = data.expires_at
-                existing_chat_share.shared_by_id = current_user.id
+                existing_share = existing_shares_map[key]
+                existing_share.access_level = data.access_level
+                existing_share.expires_at = data.expires_at
+                existing_share.shared_by_id = current_user.id
             else:
                 # Create new share for chat
                 chat_share = SharedAccess(
@@ -1701,28 +1716,15 @@ async def share_entity(
                 db.add(chat_share)
                 shared_chats += 1
 
-        # Find all calls linked to this entity
-        calls_result = await db.execute(
-            select(CallRecording).where(CallRecording.entity_id == entity_id, CallRecording.org_id == org.id)
-        )
-        calls = calls_result.scalars().all()
-
+        # Process calls
         for call in calls:
-            # Check if already shared
-            existing_call_share_result = await db.execute(
-                select(SharedAccess).where(
-                    SharedAccess.resource_type == ResourceType.call,
-                    SharedAccess.resource_id == call.id,
-                    SharedAccess.shared_with_id == data.shared_with_id
-                )
-            )
-            existing_call_share = existing_call_share_result.scalar_one_or_none()
-
-            if existing_call_share:
+            key = (ResourceType.call, call.id)
+            if key in existing_shares_map:
                 # Update existing
-                existing_call_share.access_level = data.access_level
-                existing_call_share.expires_at = data.expires_at
-                existing_call_share.shared_by_id = current_user.id
+                existing_share = existing_shares_map[key]
+                existing_share.access_level = data.access_level
+                existing_share.expires_at = data.expires_at
+                existing_share.shared_by_id = current_user.id
             else:
                 # Create new share for call
                 call_share = SharedAccess(
