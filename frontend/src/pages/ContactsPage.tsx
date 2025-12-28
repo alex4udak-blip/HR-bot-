@@ -531,7 +531,7 @@ export default function ContactsPage() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
-            className="flex-1 flex flex-col"
+            className="flex-1 flex flex-col min-w-0"
           >
             {/* Header */}
             <div className="p-4 border-b border-white/5 flex items-center gap-4">
