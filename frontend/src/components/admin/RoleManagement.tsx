@@ -463,6 +463,29 @@ export default function RoleManagement() {
     },
   });
 
+  // Create personal role for a user and assign it
+  const createPersonalRoleMutation = useMutation({
+    mutationFn: async ({ userName, baseRole, userId }: { userName: string; baseRole: string; userId: number }) => {
+      const role = await createCustomRole({
+        name: `Роль: ${userName}`,
+        description: `Персональная роль для ${userName}`,
+        base_role: baseRole,
+      });
+      await assignCustomRole(role.id, userId);
+      return role;
+    },
+    onSuccess: (role) => {
+      queryClient.invalidateQueries({ queryKey: ['custom-roles'] });
+      queryClient.invalidateQueries({ queryKey: ['org-members'] });
+      toast.success('Персональная роль создана');
+      // Open permission editor for the new role
+      setPermissionRole(role);
+    },
+    onError: () => {
+      toast.error('Не удалось создать роль');
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: () => createCustomRole(newRole),
     onSuccess: () => {
@@ -661,34 +684,51 @@ export default function RoleManagement() {
                         <div className="flex flex-col gap-1">
                           <span className="text-xs text-dark-500">Кастомная роль</span>
                           {!isCurrentUser ? (
-                            <select
-                              value={member.custom_role_id || ''}
-                              onChange={(e) => {
-                                const newRoleId = e.target.value ? Number(e.target.value) : null;
-                                if (newRoleId && !member.custom_role_id) {
-                                  // Assign new role
-                                  assignRoleMutation.mutate({ roleId: newRoleId, userId: member.user_id });
-                                } else if (newRoleId && member.custom_role_id) {
-                                  // Change role: unassign old, assign new
-                                  unassignRoleMutation.mutate(
-                                    { roleId: member.custom_role_id, userId: member.user_id },
-                                    { onSuccess: () => assignRoleMutation.mutate({ roleId: newRoleId, userId: member.user_id }) }
-                                  );
-                                } else if (!newRoleId && member.custom_role_id) {
-                                  // Remove role
-                                  unassignRoleMutation.mutate({ roleId: member.custom_role_id, userId: member.user_id });
-                                }
-                              }}
-                              disabled={assignRoleMutation.isPending || unassignRoleMutation.isPending}
-                              className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm min-w-[140px]"
-                            >
-                              <option value="">— Нет —</option>
-                              {roles.filter(r => r.is_active).map(role => (
-                                <option key={role.id} value={role.id}>
-                                  {role.name}
-                                </option>
-                              ))}
-                            </select>
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={member.custom_role_id || ''}
+                                onChange={(e) => {
+                                  const newRoleId = e.target.value ? Number(e.target.value) : null;
+                                  if (newRoleId && !member.custom_role_id) {
+                                    // Assign new role
+                                    assignRoleMutation.mutate({ roleId: newRoleId, userId: member.user_id });
+                                  } else if (newRoleId && member.custom_role_id) {
+                                    // Change role: unassign old, assign new
+                                    unassignRoleMutation.mutate(
+                                      { roleId: member.custom_role_id, userId: member.user_id },
+                                      { onSuccess: () => assignRoleMutation.mutate({ roleId: newRoleId, userId: member.user_id }) }
+                                    );
+                                  } else if (!newRoleId && member.custom_role_id) {
+                                    // Remove role
+                                    unassignRoleMutation.mutate({ roleId: member.custom_role_id, userId: member.user_id });
+                                  }
+                                }}
+                                disabled={assignRoleMutation.isPending || unassignRoleMutation.isPending}
+                                className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm min-w-[140px]"
+                              >
+                                <option value="">— Нет —</option>
+                                {roles.filter(r => r.is_active).map(role => (
+                                  <option key={role.id} value={role.id}>
+                                    {role.name}
+                                  </option>
+                                ))}
+                              </select>
+                              {/* Quick create personal role button */}
+                              {!member.custom_role_id && (
+                                <button
+                                  onClick={() => createPersonalRoleMutation.mutate({
+                                    userName: member.user_name,
+                                    baseRole: member.role,
+                                    userId: member.user_id
+                                  })}
+                                  disabled={createPersonalRoleMutation.isPending}
+                                  title="Создать персональную роль"
+                                  className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors disabled:opacity-50"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
                           ) : (
                             <span className={clsx(
                               'px-3 py-1.5 rounded-lg text-sm',
@@ -701,10 +741,22 @@ export default function RoleManagement() {
                       </div>
                     </div>
 
-                    {/* Custom role info */}
-                    {member.custom_role_name && (
-                      <div className="mt-3 pt-3 border-t border-white/5 text-xs text-dark-400">
-                        Кастомная роль <span className="text-purple-400">{member.custom_role_name}</span> переопределяет права базовой роли
+                    {/* Custom role info and edit button */}
+                    {member.custom_role_id && member.custom_role_name && (
+                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
+                        <span className="text-xs text-dark-400">
+                          Кастомная роль <span className="text-purple-400">{member.custom_role_name}</span> переопределяет права базовой роли
+                        </span>
+                        <button
+                          onClick={() => {
+                            const role = roles.find(r => r.id === member.custom_role_id);
+                            if (role) setPermissionRole(role);
+                          }}
+                          className="text-xs px-3 py-1 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors flex items-center gap-1"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          Настроить права
+                        </button>
                       </div>
                     )}
                   </motion.div>
