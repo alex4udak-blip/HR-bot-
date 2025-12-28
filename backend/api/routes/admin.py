@@ -3118,29 +3118,37 @@ async def get_my_permissions(
             base_role=custom_role.base_role
         )
 
-    # No custom role - check department role first, then fall back to user role
+    # No custom role - use standard role permissions
     user_role = current_user.role.value if current_user.role else "member"
     effective_role = user_role
     source = "user_role"
 
-    # Check if user is a department lead/sub_admin - this takes priority over user role
-    dept_member_query = await db.execute(
-        select(DepartmentMember)
-        .where(DepartmentMember.user_id == current_user.id)
-        .order_by(
-            # Prioritize lead > sub_admin > member
-            DepartmentMember.role.desc()
+    # For users with basic "member" role, check if they have elevated department role
+    # Don't override superadmin/admin/sub_admin - they already have high permissions
+    if user_role == "member":
+        # Check if user is a department lead/sub_admin
+        from sqlalchemy import case
+        dept_member_query = await db.execute(
+            select(DepartmentMember)
+            .where(DepartmentMember.user_id == current_user.id)
+            .order_by(
+                # Proper priority: lead=1, sub_admin=2, member=3
+                case(
+                    (DepartmentMember.role == DeptRole.lead, 1),
+                    (DepartmentMember.role == DeptRole.sub_admin, 2),
+                    else_=3
+                )
+            )
+            .limit(1)
         )
-        .limit(1)
-    )
-    dept_member = dept_member_query.scalar_one_or_none()
+        dept_member = dept_member_query.scalar_one_or_none()
 
-    if dept_member and dept_member.role:
-        dept_role = dept_member.role.value if hasattr(dept_member.role, 'value') else dept_member.role
-        # Department roles (lead, sub_admin) can override user role if they grant more permissions
-        if dept_role in ["lead", "sub_admin"]:
-            effective_role = dept_role
-            source = "dept_role"
+        if dept_member and dept_member.role:
+            dept_role = dept_member.role.value if hasattr(dept_member.role, 'value') else dept_member.role
+            # Department roles (lead, sub_admin) can override member role
+            if dept_role in ["lead", "sub_admin"]:
+                effective_role = dept_role
+                source = "dept_role"
 
     permissions = get_role_permissions(effective_role)
 
