@@ -487,6 +487,34 @@ export default function RoleManagement() {
     },
   });
 
+  // Toggle permission directly in matrix
+  const togglePermissionMutation = useMutation({
+    mutationFn: async ({ roleId, permission, currentValue, baseValue }: {
+      roleId: number;
+      permission: string;
+      currentValue: boolean;
+      baseValue: boolean;
+    }) => {
+      // If current value equals base value and we're changing it, set the override
+      // If current value differs from base and we're changing back to base, remove the override
+      const newValue = !currentValue;
+      if (newValue === baseValue) {
+        // Remove override - go back to base role default
+        await removeRolePermission(roleId, permission);
+      } else {
+        // Set override
+        await setRolePermission(roleId, permission, newValue);
+      }
+      return { roleId, permission, newValue };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['custom-roles'] });
+    },
+    onError: () => {
+      toast.error('Не удалось изменить право');
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: () => createCustomRole(newRole),
     onSuccess: () => {
@@ -830,6 +858,20 @@ export default function RoleManagement() {
       {/* Matrix Tab - Permission Matrix */}
       {activeTab === 'matrix' && (
         <div className="space-y-4">
+          {/* Info about base roles */}
+          <div className="glass rounded-xl p-4 border border-amber-500/20 bg-amber-500/5">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm text-amber-400 font-medium">Базовые роли (Владелец, Админ, Участник) имеют фиксированные права</p>
+                <p className="text-xs text-dark-400 mt-1">
+                  Чтобы изменить права пользователя - назначьте ему кастомную роль на вкладке "Пользователи".
+                  Кастомные роли можно редактировать прямо в матрице (клик на ячейку).
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div className="glass rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[800px]">
@@ -889,49 +931,69 @@ export default function RoleManagement() {
                         </td>
                         {/* Owner */}
                         <td className="p-4 text-center">
-                          <div className={clsx(
-                            'inline-flex items-center justify-center w-6 h-6 rounded',
-                            ownerHas ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                          )}>
+                          <div
+                            className={clsx(
+                              'inline-flex items-center justify-center w-6 h-6 rounded cursor-not-allowed opacity-70',
+                              ownerHas ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                            )}
+                            title="Базовая роль - нельзя изменить. Создайте кастомную роль."
+                          >
                             {ownerHas ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
                           </div>
                         </td>
                         {/* Admin */}
                         <td className="p-4 text-center">
-                          <div className={clsx(
-                            'inline-flex items-center justify-center w-6 h-6 rounded',
-                            adminHas ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                          )}>
+                          <div
+                            className={clsx(
+                              'inline-flex items-center justify-center w-6 h-6 rounded cursor-not-allowed opacity-70',
+                              adminHas ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                            )}
+                            title="Базовая роль - нельзя изменить. Создайте кастомную роль."
+                          >
                             {adminHas ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
                           </div>
                         </td>
                         {/* Member */}
                         <td className="p-4 text-center">
-                          <div className={clsx(
-                            'inline-flex items-center justify-center w-6 h-6 rounded',
-                            memberHas ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                          )}>
+                          <div
+                            className={clsx(
+                              'inline-flex items-center justify-center w-6 h-6 rounded cursor-not-allowed opacity-70',
+                              memberHas ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                            )}
+                            title="Базовая роль - нельзя изменить. Создайте кастомную роль."
+                          >
                             {memberHas ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
                           </div>
                         </td>
                         {/* Custom roles */}
                         {roles.filter(r => r.is_active).map(role => {
                           const override = role.permission_overrides?.find(o => o.permission === perm.id);
-                          const hasPermission = override ? override.allowed :
-                            (role.base_role === 'owner' ? true :
-                             role.base_role === 'admin' ? adminHas :
-                             memberHas);
+                          // Calculate base value from the role's base_role
+                          const baseValue = role.base_role === 'owner' ? true :
+                            role.base_role === 'admin' ? adminHas :
+                            memberHas;
+                          const hasPermission = override ? override.allowed : baseValue;
+                          const isToggling = togglePermissionMutation.isPending &&
+                            togglePermissionMutation.variables?.roleId === role.id &&
+                            togglePermissionMutation.variables?.permission === perm.id;
 
                           return (
                             <td key={role.id} className="p-4 text-center">
                               <button
-                                onClick={() => setPermissionRole(role)}
+                                onClick={() => togglePermissionMutation.mutate({
+                                  roleId: role.id,
+                                  permission: perm.id,
+                                  currentValue: hasPermission,
+                                  baseValue
+                                })}
+                                disabled={isToggling}
                                 className={clsx(
                                   'inline-flex items-center justify-center w-6 h-6 rounded cursor-pointer hover:ring-2 hover:ring-purple-400/50 transition-all',
                                   hasPermission ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400',
-                                  override && 'ring-1 ring-purple-400/30'
+                                  override && 'ring-1 ring-purple-400/30',
+                                  isToggling && 'opacity-50 animate-pulse'
                                 )}
-                                title={override ? 'Переопределено (клик для редактирования)' : 'Унаследовано от базовой роли (клик для редактирования)'}
+                                title={`${hasPermission ? 'Разрешено' : 'Запрещено'}${override ? ' (переопределено)' : ' (по умолчанию)'} - клик для изменения`}
                               >
                                 {hasPermission ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
                               </button>
