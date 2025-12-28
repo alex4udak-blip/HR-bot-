@@ -900,16 +900,16 @@ function AddMemberForm({
 
   return (
     <div className="p-3 mb-4 rounded-lg bg-white/5 border border-white/10 flex-shrink-0">
-      <div className="flex gap-2 mb-2">
+      <div className="flex flex-col sm:flex-row gap-2 mb-2">
         <select
           value={userId}
           onChange={(e) => setUserId(e.target.value ? Number(e.target.value) : '')}
-          className="flex-1 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm"
+          className="flex-1 min-w-0 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm truncate"
         >
           <option value="">Выберите пользователя</option>
           {availableMembers.map((m) => (
             <option key={m.user_id} value={m.user_id}>
-              {m.user_name} ({m.user_email})
+              {m.user_name}
             </option>
           ))}
         </select>
@@ -917,7 +917,7 @@ function AddMemberForm({
           <select
             value={role}
             onChange={(e) => setRole(e.target.value as DeptRole)}
-            className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm"
+            className="w-full sm:w-auto px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm flex-shrink-0"
           >
             <option value="lead">Руководитель</option>
             <option value="sub_admin">Саб-админ</option>
@@ -927,7 +927,7 @@ function AddMemberForm({
           <select
             value={role}
             onChange={(e) => setRole(e.target.value as DeptRole)}
-            className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm"
+            className="w-full sm:w-auto px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm flex-shrink-0"
           >
             <option value="sub_admin">Саб-админ</option>
             <option value="member">Участник</option>

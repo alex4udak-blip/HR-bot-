@@ -757,7 +757,7 @@ function InviteMemberModal({
                         style={{ backgroundColor: dept.color || '#06b6d4' }}
                       />
                       <span className="text-white text-sm flex-1">{dept.name}</span>
-                      {/* Only owner can set lead role in departments */}
+                      {/* Owner/superadmin can set department role */}
                       {selected && isOwner && (
                         <select
                           value={selected.role}
@@ -766,6 +766,7 @@ function InviteMemberModal({
                           className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-white text-xs"
                         >
                           <option value="member">Участник</option>
+                          <option value="sub_admin">Саб-админ</option>
                           <option value="lead">Руководитель</option>
                         </select>
                       )}
