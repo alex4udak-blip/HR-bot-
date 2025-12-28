@@ -263,8 +263,8 @@ export default function EntityAI({ entity }: EntityAIProps) {
       )}
 
       {/* Quick Actions */}
-      <div className="pb-3 border-b border-white/5 flex-shrink-0">
-        <div className="flex flex-wrap gap-1.5">
+      <div className="pb-3 border-b border-white/5 flex-shrink-0 overflow-x-auto">
+        <div className="flex gap-1.5 min-w-max pb-1">
           {QUICK_ACTIONS.map(action => {
             const Icon = action.icon;
             return (
