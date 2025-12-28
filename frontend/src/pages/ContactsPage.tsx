@@ -620,8 +620,7 @@ export default function ContactsPage() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.2 }}
-            className="hidden xl:flex flex-col h-full border-l border-white/5 bg-black/20 overflow-hidden flex-shrink-0 w-[300px] 2xl:w-[380px]"
-            style={{ maxWidth: 'min(380px, 30vw)' }}
+            className="hidden xl:flex flex-col h-full border-l border-white/5 bg-black/20 overflow-hidden flex-shrink-0 w-[420px] 2xl:w-[520px]"
           >
             <div className="p-4 border-b border-white/5 flex items-center justify-between flex-shrink-0">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">
