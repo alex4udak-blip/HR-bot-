@@ -247,7 +247,7 @@ export default function ContactsPage() {
   };
 
   return (
-    <div className="h-full flex overflow-hidden">
+    <div className="h-full flex">
       {/* Sidebar - Entity List */}
       <motion.div
         initial={{ opacity: 0, x: -20 }}
@@ -612,16 +612,15 @@ export default function ContactsPage() {
         )}
       </AnimatePresence>
 
-      {/* AI Panel - Right Column */}
+      {/* AI Panel - Right Column - EXACT same as ChatsPage */}
       <AnimatePresence>
         {currentEntity && showAIPanel && (
           <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 400, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="hidden xl:flex flex-col h-full border-l border-white/5 bg-black/20 overflow-hidden flex-shrink-0"
-            style={{ width: 'min(420px, 35vw)', minWidth: '280px' }}
+            className="hidden xl:flex flex-col border-l border-white/5 glass overflow-hidden"
           >
             <div className="p-4 border-b border-white/5 flex items-center justify-between flex-shrink-0">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -642,7 +641,7 @@ export default function ContactsPage() {
         )}
       </AnimatePresence>
 
-      {/* Mobile AI Panel */}
+      {/* Mobile AI Panel - EXACT same as ChatsPage */}
       <AnimatePresence>
         {currentEntity && showAIPanel && (
           <motion.div
@@ -650,16 +649,16 @@ export default function ContactsPage() {
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="xl:hidden fixed inset-0 z-50 bg-gray-900/98 backdrop-blur-sm flex flex-col"
+            className="xl:hidden fixed inset-0 z-50 glass flex flex-col"
           >
-            <div className="p-4 border-b border-white/5 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+            <div className="flex items-center justify-between p-4 border-b border-white/5">
+              <h3 className="font-semibold text-white flex items-center gap-2">
                 <Bot size={20} className="text-cyan-400" />
-                AI Ассистент - {currentEntity.name}
+                AI Ассистент
               </h3>
               <button
                 onClick={() => setShowAIPanel(false)}
-                className="p-2 rounded-lg hover:bg-white/10 text-white/60"
+                className="p-2 rounded-lg hover:bg-white/5"
               >
                 <X size={20} />
               </button>
