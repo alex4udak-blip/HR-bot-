@@ -75,7 +75,10 @@ export default function App() {
         <Route path="users" element={<UsersPage />} />
         <Route path="departments" element={<DepartmentsPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="admin" element={<Navigate to="/admin/simulator" replace />} />
         <Route path="admin/simulator" element={<AdminSimulatorPage />} />
+        {/* Catch-all for unknown routes */}
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>
   );
