@@ -16,7 +16,8 @@ import {
   Copy,
   Check,
   Clock,
-  Send
+  Send,
+  Sparkles
 } from 'lucide-react';
 import { getUsers, createUser, deleteUser, getOrgMembers, removeMember, updateMemberRole, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, createInvitation, getInvitations, revokeInvitation, type Department, type DeptRole, type Invitation } from '@/services/api';
 import type { OrgMember, OrgRole, Organization } from '@/services/api';
@@ -868,15 +869,51 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
       className="space-y-6"
     >
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <p className="text-white/60">Системные пользователи ({users.length})</p>
-        <Dialog.Root open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <Dialog.Trigger asChild>
-            <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500 text-white hover:bg-cyan-600">
-              <Plus className="w-5 h-5" />
-              Создать
-            </button>
-          </Dialog.Trigger>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              if (!confirm('Очистить висящие расшаривания чатов/звонков?\n\nЭто удалит shares для чатов/звонков, у которых нет активного share на контакт.')) return;
+              try {
+                const token = localStorage.getItem('token');
+                // First dry run
+                const dryRes = await fetch('/api/sharing/cleanup/orphaned', {
+                  method: 'DELETE',
+                  headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const dryData = await dryRes.json();
+
+                if (dryData.orphaned_chat_shares === 0 && dryData.orphaned_call_shares === 0) {
+                  toast.success('Нет висящих расшариваний');
+                  return;
+                }
+
+                if (!confirm(`Найдено:\n- Чатов: ${dryData.orphaned_chat_shares}\n- Звонков: ${dryData.orphaned_call_shares}\n\nУдалить?`)) return;
+
+                // Actually delete
+                const res = await fetch('/api/sharing/cleanup/orphaned?dry_run=false', {
+                  method: 'DELETE',
+                  headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+                toast.success(`Удалено: ${data.deleted?.chats || 0} чатов, ${data.deleted?.calls || 0} звонков`);
+              } catch (e) {
+                toast.error('Ошибка очистки');
+              }
+            }}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 text-sm"
+          >
+            <Sparkles className="w-4 h-4" />
+            Cleanup
+          </button>
+          <Dialog.Root open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <Dialog.Trigger asChild>
+              <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500 text-white hover:bg-cyan-600">
+                <Plus className="w-5 h-5" />
+                Создать
+              </button>
+            </Dialog.Trigger>
           <Dialog.Portal>
             <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
             <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-y-auto bg-gray-900 border border-white/10 rounded-xl p-6 z-50">
@@ -953,7 +990,8 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
               </Dialog.Close>
             </Dialog.Content>
           </Dialog.Portal>
-        </Dialog.Root>
+          </Dialog.Root>
+        </div>
       </div>
 
       {/* Users List */}

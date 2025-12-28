@@ -614,7 +614,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
 
       {/* Tabs */}
       <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-        <Tabs.List className="flex border-b border-white/5 px-4">
+        <Tabs.List className="flex border-b border-white/5 px-4 overflow-x-auto scrollbar-none">
           {tabs.map((tab) => (
             <Tabs.Trigger
               key={tab.id}
