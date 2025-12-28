@@ -297,6 +297,25 @@ def get_role_permissions(role: str, context: Optional[Dict[str, Any]] = None) ->
             "can_access_admin_panel": True,
         }
 
+    elif role == "lead" or role == DeptRole.lead.value:
+        # LEAD has full department-wide permissions (similar to admin within department)
+        # Context: same_department (bool)
+        same_department = context.get("same_department", True)
+
+        return {
+            "can_view_all_orgs": False,
+            "can_delete_users": False,
+            "can_share_resources": same_department,  # Within dept + cross-dept leads
+            "can_transfer_resources": True,  # Can transfer within department
+            "can_manage_departments": False,  # Cannot create/delete departments
+            "can_create_users": True,  # Can invite to their department
+            "can_edit_org_settings": False,
+            "can_view_all_dept_data": True,  # All data in their department
+            "can_manage_dept_members": True,  # Add/remove members in their dept
+            "can_impersonate_users": False,
+            "can_access_admin_panel": True,
+        }
+
     elif role == "sub_admin" or role == UserRole.sub_admin.value or role == DeptRole.sub_admin.value:
         # SUB_ADMIN has limited department permissions
         # Context: same_department (bool), is_dept_admin (bool)
@@ -3099,16 +3118,38 @@ async def get_my_permissions(
             base_role=custom_role.base_role
         )
 
-    # No custom role - use standard role permissions
+    # No custom role - check department role first, then fall back to user role
     user_role = current_user.role.value if current_user.role else "member"
-    permissions = get_role_permissions(user_role)
+    effective_role = user_role
+    source = "user_role"
+
+    # Check if user is a department lead/sub_admin - this takes priority over user role
+    dept_member_query = await db.execute(
+        select(DepartmentMember)
+        .where(DepartmentMember.user_id == current_user.id)
+        .order_by(
+            # Prioritize lead > sub_admin > member
+            DepartmentMember.role.desc()
+        )
+        .limit(1)
+    )
+    dept_member = dept_member_query.scalar_one_or_none()
+
+    if dept_member and dept_member.role:
+        dept_role = dept_member.role.value if hasattr(dept_member.role, 'value') else dept_member.role
+        # Department roles (lead, sub_admin) can override user role if they grant more permissions
+        if dept_role in ["lead", "sub_admin"]:
+            effective_role = dept_role
+            source = "dept_role"
+
+    permissions = get_role_permissions(effective_role)
 
     return EffectivePermissionsResponse(
         permissions=permissions,
-        source="org_role",
+        source=source,
         custom_role_id=None,
         custom_role_name=None,
-        base_role=user_role
+        base_role=effective_role
     )
 
 
@@ -3174,8 +3215,8 @@ async def get_my_menu(
             # For basic "can_view_*" permissions, default to True for non-members
             if not has_permission:
                 if item.required_permission.startswith("can_view_"):
-                    # Allow if user is admin or higher
-                    if permissions_response.base_role in ["superadmin", "owner", "admin", "sub_admin"]:
+                    # Allow if user is admin or higher (including department lead)
+                    if permissions_response.base_role in ["superadmin", "owner", "admin", "sub_admin", "lead"]:
                         has_permission = True
                 if not has_permission:
                     continue
