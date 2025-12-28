@@ -794,21 +794,22 @@ async def add_department_member(
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
 
-    # Check permissions - owner, lead, or sub_admin of THIS department
-    is_owner = await is_org_owner(current_user, org, db)
+    # Check permissions - org admin/owner, lead, or sub_admin of THIS department
+    is_org_admin = await is_org_admin_or_owner(current_user, org, db)
     is_lead = await is_dept_lead(current_user, department_id, db)
     is_sub_admin = await is_dept_admin(current_user, department_id, db) and not is_lead
 
-    if not is_owner and not is_lead and not is_sub_admin:
+    if not is_org_admin and not is_lead and not is_sub_admin:
         raise HTTPException(status_code=403, detail="Permission denied")
 
     # Only org owner can add leads
+    is_owner = await is_org_owner(current_user, org, db)
     if data.role == DeptRole.lead and not is_owner:
         raise HTTPException(status_code=403, detail="Only org owners can add department leads")
 
-    # Only org owner or department lead can add sub_admins
-    if data.role == DeptRole.sub_admin and not is_owner and not is_lead:
-        raise HTTPException(status_code=403, detail="Only org owners or department leads can add sub_admins")
+    # Org admin/owner or department lead can add sub_admins
+    if data.role == DeptRole.sub_admin and not is_org_admin and not is_lead:
+        raise HTTPException(status_code=403, detail="Only org admins/owners or department leads can add sub_admins")
 
     # Verify user exists and is in org
     result = await db.execute(
@@ -874,20 +875,21 @@ async def update_department_member(
     if not org:
         raise HTTPException(status_code=403, detail="No organization access")
 
-    is_owner = await is_org_owner(current_user, org, db)
+    is_org_admin = await is_org_admin_or_owner(current_user, org, db)
     is_lead = await is_dept_lead(current_user, department_id, db)
     is_sub_admin = await is_dept_admin(current_user, department_id, db) and not is_lead
 
-    if not is_owner and not is_lead and not is_sub_admin:
+    if not is_org_admin and not is_lead and not is_sub_admin:
         raise HTTPException(status_code=403, detail="Permission denied")
 
     # Only org owner can set lead role
+    is_owner = await is_org_owner(current_user, org, db)
     if data.role == DeptRole.lead and not is_owner:
         raise HTTPException(status_code=403, detail="Only org owners can set lead role")
 
-    # Only org owner or department lead can set sub_admin role
-    if data.role == DeptRole.sub_admin and not is_owner and not is_lead:
-        raise HTTPException(status_code=403, detail="Only org owners or department leads can set sub_admin role")
+    # Org admin/owner or department lead can set sub_admin role
+    if data.role == DeptRole.sub_admin and not is_org_admin and not is_lead:
+        raise HTTPException(status_code=403, detail="Only org admins/owners or department leads can set sub_admin role")
 
     result = await db.execute(
         select(DepartmentMember).where(
@@ -926,7 +928,7 @@ async def remove_department_member(
     """Remove member from department.
 
     Permissions:
-    - Org owner: can remove anyone
+    - Org admin/owner: can remove anyone except leads (only owner can remove leads)
     - Department lead: can remove sub_admins and members
     - Department sub_admin: can remove only members
     """
@@ -935,11 +937,11 @@ async def remove_department_member(
     if not org:
         raise HTTPException(status_code=403, detail="No organization access")
 
-    is_owner = await is_org_owner(current_user, org, db)
+    is_org_admin = await is_org_admin_or_owner(current_user, org, db)
     is_lead = await is_dept_lead(current_user, department_id, db)
     is_sub_admin = await is_dept_admin(current_user, department_id, db) and not is_lead
 
-    if not is_owner and not is_lead and not is_sub_admin:
+    if not is_org_admin and not is_lead and not is_sub_admin:
         raise HTTPException(status_code=403, detail="Permission denied")
 
     # Wrap in explicit transaction to prevent race conditions when checking last lead
