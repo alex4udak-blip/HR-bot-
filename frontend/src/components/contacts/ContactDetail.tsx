@@ -152,18 +152,19 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
       {/* Contact Info Card */}
-      <div className="glass rounded-xl p-6 border border-white/10">
-        <div className="flex items-start gap-4">
-          <div className="w-16 h-16 aspect-square rounded-xl bg-gradient-to-br from-cyan-500/30 to-purple-500/30 flex items-center justify-center flex-shrink-0 border border-white/10">
-            <User size={32} className="text-white" />
+      <div className="glass rounded-xl p-4 sm:p-6 border border-white/10">
+        <div className="flex items-start gap-3 sm:gap-4">
+          <div className="w-12 h-12 sm:w-16 sm:h-16 aspect-square rounded-xl bg-gradient-to-br from-cyan-500/30 to-purple-500/30 flex items-center justify-center flex-shrink-0 border border-white/10">
+            <User size={24} className="text-white sm:hidden" />
+            <User size={32} className="text-white hidden sm:block" />
           </div>
 
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 mb-2">
-              <h2 className="text-2xl font-bold text-white truncate">{entity.name}</h2>
-              <span className={clsx('text-sm px-3 py-1 rounded-full flex-shrink-0 whitespace-nowrap', STATUS_COLORS[entity.status])}>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
+              <h2 className="text-lg sm:text-2xl font-bold text-white truncate max-w-full">{entity.name}</h2>
+              <span className={clsx('text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1 rounded-full flex-shrink-0 whitespace-nowrap', STATUS_COLORS[entity.status])}>
                 {STATUS_LABELS[entity.status]}
               </span>
             </div>
@@ -292,29 +293,31 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
       </div>
 
       {/* Tabs */}
-      <div className="glass rounded-xl p-1.5 flex flex-wrap gap-1 border border-white/10">
+      <div className="glass rounded-xl p-1 sm:p-1.5 flex flex-wrap gap-1 border border-white/10 overflow-x-auto">
         {[
           { id: 'overview', label: 'Обзор' },
-          { id: 'chats', label: `Чаты (${entity.chats?.length || 0})` },
-          { id: 'calls', label: `Звонки (${entity.calls?.length || 0})` },
+          { id: 'chats', label: `Чаты (${entity.chats?.length || 0})`, shortLabel: `Чаты` },
+          { id: 'calls', label: `Звонки (${entity.calls?.length || 0})`, shortLabel: `Звонки` },
           { id: 'criteria', label: 'Критерии', icon: Target },
           { id: 'reports', label: 'Отчёты', icon: Download },
           { id: 'history', label: 'История' }
         ].map((tab) => {
           const Icon = 'icon' in tab ? tab.icon : null;
+          const shortLabel = 'shortLabel' in tab ? tab.shortLabel : tab.label;
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as typeof activeTab)}
               className={clsx(
-                'px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-1.5',
+                'px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-1.5',
                 activeTab === tab.id
                   ? 'bg-cyan-500/20 text-cyan-400 shadow-sm'
                   : 'text-white/60 hover:bg-white/5 hover:text-white/80'
               )}
             >
               {Icon && <Icon size={14} className="flex-shrink-0" />}
-              <span className={clsx(Icon && 'hidden sm:inline')}>{tab.label}</span>
+              <span className={clsx(Icon && 'hidden sm:inline', 'sm:hidden')}>{shortLabel}</span>
+              <span className="hidden sm:inline">{tab.label}</span>
             </button>
           );
         })}
@@ -327,7 +330,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
             {/* AI Assistant - only show if showAIInOverview is true */}
             {showAIInOverview && <EntityAI entity={entity} />}
 
-            <div className={clsx("grid grid-cols-1 xl:grid-cols-2 gap-4 items-start", showAIInOverview && "mt-6")}>
+            <div className={clsx("grid grid-cols-1 2xl:grid-cols-2 gap-4 items-start", showAIInOverview && "mt-6")}>
             {/* Recent Chats */}
             <div className="glass rounded-xl p-4 h-fit border border-white/10">
               <div className="flex items-center justify-between gap-2 mb-4">
