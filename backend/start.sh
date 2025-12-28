@@ -12,7 +12,10 @@ python -m alembic current || echo "No current version (fresh database)"
 
 echo ""
 echo "Upgrading to head..."
-python -m alembic upgrade head
+python -m alembic upgrade head || {
+    echo "Single head failed, trying 'heads' (multiple branches)..."
+    python -m alembic upgrade heads
+}
 
 echo ""
 echo "Migration complete. Current version:"
