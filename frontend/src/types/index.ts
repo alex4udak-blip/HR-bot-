@@ -138,6 +138,13 @@ export interface ChatCriteria {
   updated_at: string;
 }
 
+export interface EntityCriteria {
+  id: number;
+  entity_id: number;
+  criteria: Criterion[];
+  updated_at: string;
+}
+
 export interface AIMessage {
   role: 'user' | 'assistant';
   content: string;
