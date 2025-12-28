@@ -14,7 +14,11 @@ import {
   History,
   ChevronDown,
   ChevronRight,
-  Save
+  Save,
+  Crown,
+  User,
+  UserCog,
+  Grid3X3
 } from 'lucide-react';
 import {
   getCustomRoles,
@@ -25,8 +29,12 @@ import {
   removeRolePermission,
   getUsers,
   assignCustomRole,
+  unassignCustomRole,
   getPermissionAuditLogs,
-  type CustomRole
+  getOrgMembers,
+  updateMemberRole,
+  type CustomRole,
+  type OrgRole
 } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
@@ -378,6 +386,13 @@ function UserAssignmentDialog({ role, onClose }: UserAssignmentDialogProps) {
   );
 }
 
+// Org role configuration
+const ORG_ROLE_CONFIG: Record<OrgRole, { label: string; icon: typeof Crown; color: string }> = {
+  owner: { label: 'Владелец', icon: Crown, color: 'text-yellow-400 bg-yellow-500/20' },
+  admin: { label: 'Администратор', icon: Shield, color: 'text-cyan-400 bg-cyan-500/20' },
+  member: { label: 'Участник', icon: User, color: 'text-white/60 bg-white/10' },
+};
+
 export default function RoleManagement() {
   const { user } = useAuthStore();
   const queryClient = useQueryClient();
@@ -386,6 +401,7 @@ export default function RoleManagement() {
   const [permissionRole, setPermissionRole] = useState<CustomRole | null>(null);
   const [userAssignRole, setUserAssignRole] = useState<CustomRole | null>(null);
   const [showAuditLog, setShowAuditLog] = useState(false);
+  const [activeTab, setActiveTab] = useState<'roles' | 'users' | 'matrix'>('users');
 
   const [newRole, setNewRole] = useState({
     name: '',
@@ -398,10 +414,105 @@ export default function RoleManagement() {
     queryFn: getCustomRoles,
   });
 
+  const { data: orgMembers = [], isLoading: membersLoading } = useQuery({
+    queryKey: ['org-members'],
+    queryFn: getOrgMembers,
+  });
+
   const { data: auditLogs = [] } = useQuery({
     queryKey: ['permission-audit-logs'],
     queryFn: () => getPermissionAuditLogs({ limit: 50 }),
     enabled: showAuditLog,
+  });
+
+  // Mutation for changing org role
+  const changeOrgRoleMutation = useMutation({
+    mutationFn: ({ userId, role }: { userId: number; role: OrgRole }) =>
+      updateMemberRole(userId, role),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['org-members'] });
+      toast.success('Роль изменена');
+    },
+    onError: () => {
+      toast.error('Не удалось изменить роль');
+    },
+  });
+
+  // Mutation for assigning custom role
+  const assignRoleMutation = useMutation({
+    mutationFn: ({ roleId, userId }: { roleId: number; userId: number }) =>
+      assignCustomRole(roleId, userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['org-members'] });
+      toast.success('Кастомная роль назначена');
+    },
+    onError: () => {
+      toast.error('Не удалось назначить роль');
+    },
+  });
+
+  // Mutation for removing custom role
+  const unassignRoleMutation = useMutation({
+    mutationFn: ({ roleId, userId }: { roleId: number; userId: number }) =>
+      unassignCustomRole(roleId, userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['org-members'] });
+      toast.success('Кастомная роль снята');
+    },
+    onError: () => {
+      toast.error('Не удалось снять роль');
+    },
+  });
+
+  // Create personal role for a user and assign it
+  const createPersonalRoleMutation = useMutation({
+    mutationFn: async ({ userName, baseRole, userId }: { userName: string; baseRole: string; userId: number }) => {
+      const role = await createCustomRole({
+        name: `Роль: ${userName}`,
+        description: `Персональная роль для ${userName}`,
+        base_role: baseRole,
+      });
+      await assignCustomRole(role.id, userId);
+      return role;
+    },
+    onSuccess: (role) => {
+      queryClient.invalidateQueries({ queryKey: ['custom-roles'] });
+      queryClient.invalidateQueries({ queryKey: ['org-members'] });
+      toast.success('Персональная роль создана');
+      // Open permission editor for the new role
+      setPermissionRole(role);
+    },
+    onError: () => {
+      toast.error('Не удалось создать роль');
+    },
+  });
+
+  // Toggle permission directly in matrix
+  const togglePermissionMutation = useMutation({
+    mutationFn: async ({ roleId, permission, currentValue, baseValue }: {
+      roleId: number;
+      permission: string;
+      currentValue: boolean;
+      baseValue: boolean;
+    }) => {
+      // If current value equals base value and we're changing it, set the override
+      // If current value differs from base and we're changing back to base, remove the override
+      const newValue = !currentValue;
+      if (newValue === baseValue) {
+        // Remove override - go back to base role default
+        await removeRolePermission(roleId, permission);
+      } else {
+        // Set override
+        await setRolePermission(roleId, permission, newValue);
+      }
+      return { roleId, permission, newValue };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['custom-roles'] });
+    },
+    onError: () => {
+      toast.error('Не удалось изменить право');
+    },
   });
 
   const createMutation = useMutation({
@@ -464,11 +575,11 @@ export default function RoleManagement() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">
-            <Shield className="w-6 h-6 text-accent-400" />
-            Настройка ролей
+            <UserCog className="w-6 h-6 text-accent-400" />
+            Управление ролями и пользователями
           </h2>
           <p className="text-sm text-dark-400 mt-1">
-            Создание и управление кастомными ролями с тонкой настройкой прав
+            Настройка ролей пользователей и создание кастомных ролей
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -482,41 +593,457 @@ export default function RoleManagement() {
             <History className="w-5 h-5" />
             Журнал
           </button>
-          <button
-            onClick={() => setIsCreateDialogOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent-500 text-white hover:bg-accent-600 transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            Новая роль
-          </button>
+          {activeTab === 'roles' && (
+            <button
+              onClick={() => setIsCreateDialogOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent-500 text-white hover:bg-accent-600 transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              Новая роль
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Roles Grid */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="w-8 h-8 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-white/10 pb-2">
+        <button
+          onClick={() => setActiveTab('users')}
+          className={clsx(
+            'flex items-center gap-2 px-4 py-2 rounded-t-lg transition-colors',
+            activeTab === 'users'
+              ? 'bg-accent-500/20 text-accent-400 border-b-2 border-accent-400'
+              : 'text-dark-400 hover:text-white hover:bg-white/5'
+          )}
+        >
+          <Users className="w-5 h-5" />
+          Пользователи ({orgMembers.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('roles')}
+          className={clsx(
+            'flex items-center gap-2 px-4 py-2 rounded-t-lg transition-colors',
+            activeTab === 'roles'
+              ? 'bg-accent-500/20 text-accent-400 border-b-2 border-accent-400'
+              : 'text-dark-400 hover:text-white hover:bg-white/5'
+          )}
+        >
+          <Shield className="w-5 h-5" />
+          Кастомные роли ({roles.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('matrix')}
+          className={clsx(
+            'flex items-center gap-2 px-4 py-2 rounded-t-lg transition-colors',
+            activeTab === 'matrix'
+              ? 'bg-accent-500/20 text-accent-400 border-b-2 border-accent-400'
+              : 'text-dark-400 hover:text-white hover:bg-white/5'
+          )}
+        >
+          <Grid3X3 className="w-5 h-5" />
+          Матрица прав
+        </button>
+      </div>
+
+      {/* Users Tab */}
+      {activeTab === 'users' && (
+        <div className="space-y-4">
+          {membersLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="w-8 h-8 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : orgMembers.length === 0 ? (
+            <div className="glass rounded-xl p-8 text-center">
+              <Users className="w-12 h-12 mx-auto text-dark-500 mb-3" />
+              <p className="text-dark-400">Нет пользователей</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {orgMembers.map((member) => {
+                const roleConfig = ORG_ROLE_CONFIG[member.role];
+                const RoleIcon = roleConfig?.icon || User;
+                const isCurrentUser = member.user_id === user?.id;
+
+                return (
+                  <motion.div
+                    key={member.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={clsx(
+                      'glass rounded-xl p-4 border transition-colors',
+                      isCurrentUser ? 'border-accent-500/30' : 'border-white/5'
+                    )}
+                  >
+                    <div className="flex items-center justify-between flex-wrap gap-4">
+                      {/* User info */}
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className={clsx('p-2 rounded-lg', roleConfig?.color || 'bg-white/10')}>
+                          <RoleIcon className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-medium text-white truncate">{member.user_name}</h3>
+                            {isCurrentUser && (
+                              <span className="text-xs px-2 py-0.5 bg-accent-500/20 text-accent-400 rounded-full">
+                                Это вы
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-dark-400 truncate">{member.user_email}</p>
+                        </div>
+                      </div>
+
+                      {/* Role controls */}
+                      <div className="flex items-center gap-3 flex-wrap">
+                        {/* Base org role */}
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs text-dark-500">Базовая роль</span>
+                          {!isCurrentUser && member.role !== 'owner' ? (
+                            <select
+                              value={member.role}
+                              onChange={(e) => changeOrgRoleMutation.mutate({
+                                userId: member.user_id,
+                                role: e.target.value as OrgRole
+                              })}
+                              disabled={changeOrgRoleMutation.isPending}
+                              className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm min-w-[140px]"
+                            >
+                              <option value="admin">Администратор</option>
+                              <option value="member">Участник</option>
+                            </select>
+                          ) : (
+                            <span className={clsx(
+                              'px-3 py-1.5 rounded-lg text-sm',
+                              roleConfig?.color || 'bg-white/10'
+                            )}>
+                              {roleConfig?.label || member.role}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Custom role */}
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs text-dark-500">Кастомная роль</span>
+                          {!isCurrentUser ? (
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={member.custom_role_id || ''}
+                                onChange={(e) => {
+                                  const newRoleId = e.target.value ? Number(e.target.value) : null;
+                                  if (newRoleId && !member.custom_role_id) {
+                                    // Assign new role
+                                    assignRoleMutation.mutate({ roleId: newRoleId, userId: member.user_id });
+                                  } else if (newRoleId && member.custom_role_id) {
+                                    // Change role: unassign old, assign new
+                                    unassignRoleMutation.mutate(
+                                      { roleId: member.custom_role_id, userId: member.user_id },
+                                      { onSuccess: () => assignRoleMutation.mutate({ roleId: newRoleId, userId: member.user_id }) }
+                                    );
+                                  } else if (!newRoleId && member.custom_role_id) {
+                                    // Remove role
+                                    unassignRoleMutation.mutate({ roleId: member.custom_role_id, userId: member.user_id });
+                                  }
+                                }}
+                                disabled={assignRoleMutation.isPending || unassignRoleMutation.isPending}
+                                className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm min-w-[140px]"
+                              >
+                                <option value="">— Нет —</option>
+                                {roles.filter(r => r.is_active).map(role => (
+                                  <option key={role.id} value={role.id}>
+                                    {role.name}
+                                  </option>
+                                ))}
+                              </select>
+                              {/* Quick create personal role button */}
+                              {!member.custom_role_id && (
+                                <button
+                                  onClick={() => createPersonalRoleMutation.mutate({
+                                    userName: member.user_name,
+                                    baseRole: member.role,
+                                    userId: member.user_id
+                                  })}
+                                  disabled={createPersonalRoleMutation.isPending}
+                                  title="Создать персональную роль"
+                                  className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors disabled:opacity-50"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <span className={clsx(
+                              'px-3 py-1.5 rounded-lg text-sm',
+                              member.custom_role_name ? 'bg-purple-500/20 text-purple-400' : 'bg-white/5 text-dark-500'
+                            )}>
+                              {member.custom_role_name || '— Нет —'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Custom role info and edit button */}
+                    {member.custom_role_id && member.custom_role_name && (
+                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
+                        <span className="text-xs text-dark-400">
+                          Кастомная роль <span className="text-purple-400">{member.custom_role_name}</span> переопределяет права базовой роли
+                        </span>
+                        <button
+                          onClick={() => {
+                            const role = roles.find(r => r.id === member.custom_role_id);
+                            if (role) setPermissionRole(role);
+                          }}
+                          className="text-xs px-3 py-1 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors flex items-center gap-1"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          Настроить права
+                        </button>
+                      </div>
+                    )}
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Hint about custom roles */}
+          {roles.length === 0 && (
+            <div className="glass rounded-xl p-4 border border-amber-500/20 bg-amber-500/5">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-amber-400 font-medium">Кастомных ролей пока нет</p>
+                  <p className="text-xs text-dark-400 mt-1">
+                    Перейдите на вкладку "Кастомные роли" чтобы создать роль с тонкой настройкой прав доступа
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      ) : roles.length === 0 ? (
-        <div className="glass rounded-xl p-8 text-center">
-          <Shield className="w-12 h-12 mx-auto text-dark-500 mb-3" />
-          <p className="text-dark-400">Кастомных ролей пока нет</p>
-          <p className="text-sm text-dark-500 mt-1">
-            Создайте первую кастомную роль для начала работы
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {roles.map(role => (
-            <RoleCard
-              key={role.id}
-              role={role}
-              onEdit={setEditingRole}
-              onDelete={handleDelete}
-              onManagePermissions={setPermissionRole}
-              onManageUsers={setUserAssignRole}
-            />
-          ))}
+      )}
+
+      {/* Roles Tab - Roles Grid */}
+      {activeTab === 'roles' && (
+        <>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="w-8 h-8 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : roles.length === 0 ? (
+            <div className="glass rounded-xl p-8 text-center">
+              <Shield className="w-12 h-12 mx-auto text-dark-500 mb-3" />
+              <p className="text-dark-400">Кастомных ролей пока нет</p>
+              <p className="text-sm text-dark-500 mt-1">
+                Создайте первую кастомную роль для начала работы
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {roles.map(role => (
+                <RoleCard
+                  key={role.id}
+                  role={role}
+                  onEdit={setEditingRole}
+                  onDelete={handleDelete}
+                  onManagePermissions={setPermissionRole}
+                  onManageUsers={setUserAssignRole}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Matrix Tab - Permission Matrix */}
+      {activeTab === 'matrix' && (
+        <div className="space-y-4">
+          {/* Info about base roles */}
+          <div className="glass rounded-xl p-4 border border-amber-500/20 bg-amber-500/5">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm text-amber-400 font-medium">Базовые роли (Владелец, Админ, Участник) имеют фиксированные права</p>
+                <p className="text-xs text-dark-400 mt-1">
+                  Чтобы изменить права пользователя - назначьте ему кастомную роль на вкладке "Пользователи".
+                  Кастомные роли можно редактировать прямо в матрице (клик на ячейку).
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[800px]">
+                <thead>
+                  <tr className="border-b border-white/10">
+                    <th className="text-left p-4 text-sm font-medium text-dark-400 sticky left-0 bg-dark-900/95 backdrop-blur z-10">
+                      Право доступа
+                    </th>
+                    {/* Base roles */}
+                    <th className="p-4 text-center min-w-[100px]">
+                      <div className="flex flex-col items-center gap-1">
+                        <Crown className="w-4 h-4 text-yellow-400" />
+                        <span className="text-xs text-yellow-400">Владелец</span>
+                      </div>
+                    </th>
+                    <th className="p-4 text-center min-w-[100px]">
+                      <div className="flex flex-col items-center gap-1">
+                        <Shield className="w-4 h-4 text-cyan-400" />
+                        <span className="text-xs text-cyan-400">Админ</span>
+                      </div>
+                    </th>
+                    <th className="p-4 text-center min-w-[100px]">
+                      <div className="flex flex-col items-center gap-1">
+                        <User className="w-4 h-4 text-white/60" />
+                        <span className="text-xs text-white/60">Участник</span>
+                      </div>
+                    </th>
+                    {/* Custom roles */}
+                    {roles.filter(r => r.is_active).map(role => (
+                      <th key={role.id} className="p-4 text-center min-w-[100px]">
+                        <div className="flex flex-col items-center gap-1">
+                          <Shield className="w-4 h-4 text-purple-400" />
+                          <span className="text-xs text-purple-400 truncate max-w-[80px]" title={role.name}>
+                            {role.name}
+                          </span>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {AVAILABLE_PERMISSIONS.map((perm, idx) => {
+                    // Get permission values for each role
+                    const ownerHas = true; // Owner has all permissions
+                    const adminHas = ['can_view_all_users', 'can_invite_users', 'can_create_departments',
+                      'can_manage_dept_members', 'can_create_resources', 'can_share_resources',
+                      'can_transfer_resources', 'can_delete_resources'].includes(perm.id);
+                    const memberHas = ['can_create_resources'].includes(perm.id);
+
+                    return (
+                      <tr key={perm.id} className={idx % 2 === 0 ? 'bg-white/[0.02]' : ''}>
+                        <td className="p-4 sticky left-0 bg-dark-900/95 backdrop-blur z-10">
+                          <div>
+                            <span className="text-sm text-white">{perm.label}</span>
+                            <span className="text-xs text-dark-500 ml-2">({perm.category})</span>
+                          </div>
+                        </td>
+                        {/* Owner */}
+                        <td className="p-4 text-center">
+                          <div
+                            className={clsx(
+                              'inline-flex items-center justify-center w-6 h-6 rounded cursor-not-allowed opacity-70',
+                              ownerHas ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                            )}
+                            title="Базовая роль - нельзя изменить. Создайте кастомную роль."
+                          >
+                            {ownerHas ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                          </div>
+                        </td>
+                        {/* Admin */}
+                        <td className="p-4 text-center">
+                          <div
+                            className={clsx(
+                              'inline-flex items-center justify-center w-6 h-6 rounded cursor-not-allowed opacity-70',
+                              adminHas ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                            )}
+                            title="Базовая роль - нельзя изменить. Создайте кастомную роль."
+                          >
+                            {adminHas ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                          </div>
+                        </td>
+                        {/* Member */}
+                        <td className="p-4 text-center">
+                          <div
+                            className={clsx(
+                              'inline-flex items-center justify-center w-6 h-6 rounded cursor-not-allowed opacity-70',
+                              memberHas ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                            )}
+                            title="Базовая роль - нельзя изменить. Создайте кастомную роль."
+                          >
+                            {memberHas ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                          </div>
+                        </td>
+                        {/* Custom roles */}
+                        {roles.filter(r => r.is_active).map(role => {
+                          const override = role.permission_overrides?.find(o => o.permission === perm.id);
+                          // Calculate base value from the role's base_role
+                          const baseValue = role.base_role === 'owner' ? true :
+                            role.base_role === 'admin' ? adminHas :
+                            memberHas;
+                          const hasPermission = override ? override.allowed : baseValue;
+                          const isToggling = togglePermissionMutation.isPending &&
+                            togglePermissionMutation.variables?.roleId === role.id &&
+                            togglePermissionMutation.variables?.permission === perm.id;
+
+                          return (
+                            <td key={role.id} className="p-4 text-center">
+                              <button
+                                onClick={() => togglePermissionMutation.mutate({
+                                  roleId: role.id,
+                                  permission: perm.id,
+                                  currentValue: hasPermission,
+                                  baseValue
+                                })}
+                                disabled={isToggling}
+                                className={clsx(
+                                  'inline-flex items-center justify-center w-6 h-6 rounded cursor-pointer hover:ring-2 hover:ring-purple-400/50 transition-all',
+                                  hasPermission ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400',
+                                  override && 'ring-1 ring-purple-400/30',
+                                  isToggling && 'opacity-50 animate-pulse'
+                                )}
+                                title={`${hasPermission ? 'Разрешено' : 'Запрещено'}${override ? ' (переопределено)' : ' (по умолчанию)'} - клик для изменения`}
+                              >
+                                {hasPermission ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Legend */}
+          <div className="flex items-center gap-6 text-xs text-dark-400">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-green-500/20 flex items-center justify-center">
+                <Check className="w-3 h-3 text-green-400" />
+              </div>
+              <span>Разрешено</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-red-500/20 flex items-center justify-center">
+                <X className="w-3 h-3 text-red-400" />
+              </div>
+              <span>Запрещено</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-green-500/20 ring-1 ring-purple-400/30 flex items-center justify-center">
+                <Check className="w-3 h-3 text-green-400" />
+              </div>
+              <span>Переопределено</span>
+            </div>
+          </div>
+
+          {roles.length === 0 && (
+            <div className="glass rounded-xl p-4 border border-amber-500/20 bg-amber-500/5">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-amber-400 font-medium">Создайте кастомную роль</p>
+                  <p className="text-xs text-dark-400 mt-1">
+                    Базовые роли (Владелец, Админ, Участник) имеют фиксированные права.
+                    Создайте кастомную роль чтобы настроить права под ваши нужды.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -689,6 +689,8 @@ export interface OrgMember {
   role: OrgRole;
   invited_by_name?: string;
   created_at: string;
+  custom_role_id?: number;
+  custom_role_name?: string;
 }
 
 export interface InviteMemberRequest {

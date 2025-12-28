@@ -22,7 +22,8 @@ from ..models.database import (
     User, UserRole, Organization, OrgMember, OrgRole,
     Entity, Chat, CallRecording, AnalysisHistory,
     AIConversation, EntityTransfer, Invitation, CriteriaPreset,
-    Department, DepartmentMember, DeptRole, SharedAccess
+    Department, DepartmentMember, DeptRole, SharedAccess,
+    UserCustomRole, CustomRole
 )
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, hash_password
 
@@ -60,6 +61,8 @@ class OrgMemberResponse(BaseModel):
     role: str
     invited_by_name: Optional[str] = None
     created_at: datetime
+    custom_role_id: Optional[int] = None
+    custom_role_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -212,6 +215,24 @@ async def list_organization_members(
         for inviter in inviters_result.scalars().all():
             inviter_names[inviter.id] = inviter.name
 
+    # Pre-fetch custom role assignments for all members
+    user_ids = [m.user_id for m in members]
+    custom_roles_map = {}
+    if user_ids:
+        custom_roles_result = await db.execute(
+            select(UserCustomRole, CustomRole)
+            .join(CustomRole, CustomRole.id == UserCustomRole.custom_role_id)
+            .where(
+                UserCustomRole.user_id.in_(user_ids),
+                CustomRole.is_active == True
+            )
+        )
+        for assignment, role in custom_roles_result.all():
+            custom_roles_map[assignment.user_id] = {
+                "id": role.id,
+                "name": role.name
+            }
+
     return [
         OrgMemberResponse(
             id=m.id,
@@ -220,7 +241,9 @@ async def list_organization_members(
             user_name=m.user.name,
             role=m.role.value,
             invited_by_name=inviter_names.get(m.invited_by) if m.invited_by else None,
-            created_at=m.created_at
+            created_at=m.created_at,
+            custom_role_id=custom_roles_map.get(m.user_id, {}).get("id"),
+            custom_role_name=custom_roles_map.get(m.user_id, {}).get("name")
         )
         for m in members
     ]

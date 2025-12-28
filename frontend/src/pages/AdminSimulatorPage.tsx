@@ -456,7 +456,7 @@ export default function AdminSimulatorPage() {
   const testResult = testScenario();
 
   return (
-    <div className="h-full overflow-y-auto p-6 bg-dark-950 min-h-screen">
+    <div className="h-full overflow-y-auto p-6 bg-dark-900 min-h-screen">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
