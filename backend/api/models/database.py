@@ -375,7 +375,7 @@ class Entity(Base):
     transferred_to = relationship("User", foreign_keys=[transferred_to_id])
     chats = relationship("Chat", back_populates="entity")
     calls = relationship("CallRecording", back_populates="entity")
-    transfers = relationship("EntityTransfer", back_populates="entity")
+    transfers = relationship("EntityTransfer", back_populates="entity", primaryjoin="Entity.id==EntityTransfer.entity_id")
     analyses = relationship("AnalysisHistory", back_populates="entity")
     ai_conversations = relationship("EntityAIConversation", back_populates="entity", cascade="all, delete-orphan")
     ai_analyses = relationship("EntityAnalysis", back_populates="entity", cascade="all, delete-orphan")
