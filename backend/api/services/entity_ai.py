@@ -297,6 +297,52 @@ class EntityAIService:
         async for text in self.chat_stream(prompt, entity, chats, calls, []):
             yield text
 
+    async def generate_entity_report(
+        self,
+        entity: Entity,
+        chats: List[Chat],
+        calls: List[CallRecording],
+        criteria: List[dict],
+        report_type: str = "full_analysis"
+    ) -> str:
+        """Generate comprehensive report for entity (non-streaming for file generation)"""
+        context = self._build_entity_context(entity, chats, calls)
+
+        # Build report prompt
+        report_prompt = ENTITY_QUICK_ACTIONS.get(report_type, ENTITY_QUICK_ACTIONS["full_analysis"])
+
+        # Add criteria if present
+        if criteria:
+            criteria_text = "\n\n## Критерии оценки:\n"
+            for c in criteria:
+                criteria_text += f"- **{c.get('name', 'Критерий')}** (вес: {c.get('weight', 5)}/10): {c.get('description', '')}\n"
+            report_prompt += f"\n\n{criteria_text}\nОцени контакт по указанным критериям."
+
+        system_text = self._build_system_prompt(context)
+
+        # Use Prompt Caching for system prompt
+        system = [
+            {
+                "type": "text",
+                "text": system_text,
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
+
+        logger.info(f"Generating entity report '{report_type}' for entity {entity.id}")
+
+        try:
+            response = await self.client.messages.create(
+                model=self.model,
+                max_tokens=8192,
+                system=system,
+                messages=[{"role": "user", "content": report_prompt}]
+            )
+            return response.content[0].text
+        except Exception as e:
+            logger.error(f"Entity report generation error: {e}")
+            raise
+
     def get_available_actions(self) -> List[dict]:
         """Get list of available quick actions"""
         return [

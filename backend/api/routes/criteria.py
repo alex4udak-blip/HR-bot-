@@ -4,10 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 
 from ..database import get_db
-from ..models.database import User, UserRole, Chat, CriteriaPreset, ChatCriteria
+from ..models.database import User, UserRole, Chat, CriteriaPreset, ChatCriteria, Entity, EntityCriteria
 from ..models.schemas import (
     CriteriaPresetCreate, CriteriaPresetResponse,
-    ChatCriteriaUpdate, ChatCriteriaResponse
+    ChatCriteriaUpdate, ChatCriteriaResponse,
+    EntityCriteriaUpdate, EntityCriteriaResponse
 )
 from ..services.auth import get_current_user
 
@@ -172,6 +173,81 @@ async def update_chat_criteria(
     return ChatCriteriaResponse(
         id=criteria.id,
         chat_id=criteria.chat_id,
+        criteria=criteria.criteria,
+        updated_at=criteria.updated_at,
+    )
+
+
+# ============ ENTITY CRITERIA ============
+
+@router.get("/entities/{entity_id}", response_model=EntityCriteriaResponse)
+async def get_entity_criteria(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    user = await db.merge(user)
+    # Check access
+    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    if user.role != UserRole.superadmin and entity.created_by != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    result = await db.execute(select(EntityCriteria).where(EntityCriteria.entity_id == entity_id))
+    criteria = result.scalar_one_or_none()
+
+    if not criteria:
+        # Return empty criteria
+        return EntityCriteriaResponse(
+            id=0,
+            entity_id=entity_id,
+            criteria=[],
+            updated_at=entity.created_at,
+        )
+
+    return EntityCriteriaResponse(
+        id=criteria.id,
+        entity_id=criteria.entity_id,
+        criteria=criteria.criteria,
+        updated_at=criteria.updated_at,
+    )
+
+
+@router.put("/entities/{entity_id}", response_model=EntityCriteriaResponse)
+async def update_entity_criteria(
+    entity_id: int,
+    data: EntityCriteriaUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    user = await db.merge(user)
+    # Check access
+    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    if user.role != UserRole.superadmin and entity.created_by != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    result = await db.execute(select(EntityCriteria).where(EntityCriteria.entity_id == entity_id))
+    criteria = result.scalar_one_or_none()
+
+    criteria_data = [c.model_dump() for c in data.criteria]
+
+    if criteria:
+        criteria.criteria = criteria_data
+    else:
+        criteria = EntityCriteria(entity_id=entity_id, criteria=criteria_data)
+        db.add(criteria)
+
+    await db.commit()
+    await db.refresh(criteria)
+
+    return EntityCriteriaResponse(
+        id=criteria.id,
+        entity_id=criteria.entity_id,
         criteria=criteria.criteria,
         updated_at=criteria.updated_at,
     )
