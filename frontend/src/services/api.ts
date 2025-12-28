@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type {
   User, Chat, Message, Participant, CriteriaPreset,
-  ChatCriteria, AIConversation, AnalysisResult, Stats, AuthResponse,
+  ChatCriteria, EntityCriteria, AIConversation, AnalysisResult, Stats, AuthResponse,
   Entity, EntityWithRelations, EntityType, EntityStatus,
   CallRecording, CallStatus
 } from '@/types';
@@ -519,12 +519,12 @@ export const getEntityStatsByStatus = async (type?: EntityType): Promise<Record<
 };
 
 // Entity Criteria
-export const getEntityCriteria = async (entityId: number): Promise<ChatCriteria> => {
+export const getEntityCriteria = async (entityId: number): Promise<EntityCriteria> => {
   const { data } = await api.get(`/criteria/entities/${entityId}`);
   return data;
 };
 
-export const updateEntityCriteria = async (entityId: number, criteria: { name: string; description: string; weight: number; category: string }[]): Promise<ChatCriteria> => {
+export const updateEntityCriteria = async (entityId: number, criteria: { name: string; description: string; weight: number; category: string }[]): Promise<EntityCriteria> => {
   const { data } = await api.put(`/criteria/entities/${entityId}`, { criteria });
   return data;
 };
