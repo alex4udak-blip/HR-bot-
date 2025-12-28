@@ -17,7 +17,8 @@ import {
   Save,
   Crown,
   User,
-  UserCog
+  UserCog,
+  Grid3X3
 } from 'lucide-react';
 import {
   getCustomRoles,
@@ -400,7 +401,7 @@ export default function RoleManagement() {
   const [permissionRole, setPermissionRole] = useState<CustomRole | null>(null);
   const [userAssignRole, setUserAssignRole] = useState<CustomRole | null>(null);
   const [showAuditLog, setShowAuditLog] = useState(false);
-  const [activeTab, setActiveTab] = useState<'roles' | 'users'>('users');
+  const [activeTab, setActiveTab] = useState<'roles' | 'users' | 'matrix'>('users');
 
   const [newRole, setNewRole] = useState({
     name: '',
@@ -601,6 +602,18 @@ export default function RoleManagement() {
         >
           <Shield className="w-5 h-5" />
           Кастомные роли ({roles.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('matrix')}
+          className={clsx(
+            'flex items-center gap-2 px-4 py-2 rounded-t-lg transition-colors',
+            activeTab === 'matrix'
+              ? 'bg-accent-500/20 text-accent-400 border-b-2 border-accent-400'
+              : 'text-dark-400 hover:text-white hover:bg-white/5'
+          )}
+        >
+          <Grid3X3 className="w-5 h-5" />
+          Матрица прав
         </button>
       </div>
 
@@ -812,6 +825,164 @@ export default function RoleManagement() {
             </div>
           )}
         </>
+      )}
+
+      {/* Matrix Tab - Permission Matrix */}
+      {activeTab === 'matrix' && (
+        <div className="space-y-4">
+          <div className="glass rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[800px]">
+                <thead>
+                  <tr className="border-b border-white/10">
+                    <th className="text-left p-4 text-sm font-medium text-dark-400 sticky left-0 bg-dark-900/95 backdrop-blur z-10">
+                      Право доступа
+                    </th>
+                    {/* Base roles */}
+                    <th className="p-4 text-center min-w-[100px]">
+                      <div className="flex flex-col items-center gap-1">
+                        <Crown className="w-4 h-4 text-yellow-400" />
+                        <span className="text-xs text-yellow-400">Владелец</span>
+                      </div>
+                    </th>
+                    <th className="p-4 text-center min-w-[100px]">
+                      <div className="flex flex-col items-center gap-1">
+                        <Shield className="w-4 h-4 text-cyan-400" />
+                        <span className="text-xs text-cyan-400">Админ</span>
+                      </div>
+                    </th>
+                    <th className="p-4 text-center min-w-[100px]">
+                      <div className="flex flex-col items-center gap-1">
+                        <User className="w-4 h-4 text-white/60" />
+                        <span className="text-xs text-white/60">Участник</span>
+                      </div>
+                    </th>
+                    {/* Custom roles */}
+                    {roles.filter(r => r.is_active).map(role => (
+                      <th key={role.id} className="p-4 text-center min-w-[100px]">
+                        <div className="flex flex-col items-center gap-1">
+                          <Shield className="w-4 h-4 text-purple-400" />
+                          <span className="text-xs text-purple-400 truncate max-w-[80px]" title={role.name}>
+                            {role.name}
+                          </span>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {AVAILABLE_PERMISSIONS.map((perm, idx) => {
+                    // Get permission values for each role
+                    const ownerHas = true; // Owner has all permissions
+                    const adminHas = ['can_view_all_users', 'can_invite_users', 'can_create_departments',
+                      'can_manage_dept_members', 'can_create_resources', 'can_share_resources',
+                      'can_transfer_resources', 'can_delete_resources'].includes(perm.id);
+                    const memberHas = ['can_create_resources'].includes(perm.id);
+
+                    return (
+                      <tr key={perm.id} className={idx % 2 === 0 ? 'bg-white/[0.02]' : ''}>
+                        <td className="p-4 sticky left-0 bg-dark-900/95 backdrop-blur z-10">
+                          <div>
+                            <span className="text-sm text-white">{perm.label}</span>
+                            <span className="text-xs text-dark-500 ml-2">({perm.category})</span>
+                          </div>
+                        </td>
+                        {/* Owner */}
+                        <td className="p-4 text-center">
+                          <div className={clsx(
+                            'inline-flex items-center justify-center w-6 h-6 rounded',
+                            ownerHas ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                          )}>
+                            {ownerHas ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                          </div>
+                        </td>
+                        {/* Admin */}
+                        <td className="p-4 text-center">
+                          <div className={clsx(
+                            'inline-flex items-center justify-center w-6 h-6 rounded',
+                            adminHas ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                          )}>
+                            {adminHas ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                          </div>
+                        </td>
+                        {/* Member */}
+                        <td className="p-4 text-center">
+                          <div className={clsx(
+                            'inline-flex items-center justify-center w-6 h-6 rounded',
+                            memberHas ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                          )}>
+                            {memberHas ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                          </div>
+                        </td>
+                        {/* Custom roles */}
+                        {roles.filter(r => r.is_active).map(role => {
+                          const override = role.permission_overrides?.find(o => o.permission === perm.id);
+                          const hasPermission = override ? override.allowed :
+                            (role.base_role === 'owner' ? true :
+                             role.base_role === 'admin' ? adminHas :
+                             memberHas);
+
+                          return (
+                            <td key={role.id} className="p-4 text-center">
+                              <button
+                                onClick={() => setPermissionRole(role)}
+                                className={clsx(
+                                  'inline-flex items-center justify-center w-6 h-6 rounded cursor-pointer hover:ring-2 hover:ring-purple-400/50 transition-all',
+                                  hasPermission ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400',
+                                  override && 'ring-1 ring-purple-400/30'
+                                )}
+                                title={override ? 'Переопределено (клик для редактирования)' : 'Унаследовано от базовой роли (клик для редактирования)'}
+                              >
+                                {hasPermission ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Legend */}
+          <div className="flex items-center gap-6 text-xs text-dark-400">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-green-500/20 flex items-center justify-center">
+                <Check className="w-3 h-3 text-green-400" />
+              </div>
+              <span>Разрешено</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-red-500/20 flex items-center justify-center">
+                <X className="w-3 h-3 text-red-400" />
+              </div>
+              <span>Запрещено</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-green-500/20 ring-1 ring-purple-400/30 flex items-center justify-center">
+                <Check className="w-3 h-3 text-green-400" />
+              </div>
+              <span>Переопределено</span>
+            </div>
+          </div>
+
+          {roles.length === 0 && (
+            <div className="glass rounded-xl p-4 border border-amber-500/20 bg-amber-500/5">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-amber-400 font-medium">Создайте кастомную роль</p>
+                  <p className="text-xs text-dark-400 mt-1">
+                    Базовые роли (Владелец, Админ, Участник) имеют фиксированные права.
+                    Создайте кастомную роль чтобы настроить права под ваши нужды.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Audit Log Panel */}
