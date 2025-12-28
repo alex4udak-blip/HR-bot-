@@ -2840,7 +2840,7 @@ async def assign_custom_role_to_user(
     existing_result = await db.execute(
         select(UserCustomRole)
         .where(UserCustomRole.user_id == user_id)
-        .where(UserCustomRole.custom_role_id == role_id)
+        .where(UserCustomRole.role_id == role_id)
     )
     existing = existing_result.scalar_one_or_none()
 
@@ -2931,7 +2931,7 @@ async def remove_custom_role_from_user(
     assignment_result = await db.execute(
         select(UserCustomRole)
         .where(UserCustomRole.user_id == user_id)
-        .where(UserCustomRole.custom_role_id == role_id)
+        .where(UserCustomRole.role_id == role_id)
     )
     assignment = assignment_result.scalar_one_or_none()
 

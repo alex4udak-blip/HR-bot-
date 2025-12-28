@@ -221,7 +221,7 @@ async def list_organization_members(
     if user_ids:
         custom_roles_result = await db.execute(
             select(UserCustomRole, CustomRole)
-            .join(CustomRole, CustomRole.id == UserCustomRole.custom_role_id)
+            .join(CustomRole, CustomRole.id == UserCustomRole.role_id)
             .where(
                 UserCustomRole.user_id.in_(user_ids),
                 CustomRole.is_active == True
