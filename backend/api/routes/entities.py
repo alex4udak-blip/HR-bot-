@@ -791,13 +791,19 @@ async def get_entity(
         )
         calls = calls_result.scalars().all()
 
-    transfers_result = await db.execute(
-        select(EntityTransfer).where(EntityTransfer.entity_id == entity_id).order_by(EntityTransfer.created_at.desc())
-    )
+    # Get transfers - wrap in try/except in case new columns don't exist yet
+    try:
+        transfers_result = await db.execute(
+            select(EntityTransfer).where(EntityTransfer.entity_id == entity_id).order_by(EntityTransfer.created_at.desc())
+        )
+        transfers = transfers_result.scalars().all()
+    except Exception as e:
+        logger.warning(f"Could not fetch transfers (migration may be pending): {e}")
+        transfers = []
+
     analyses_result = await db.execute(
         select(AnalysisHistory).where(AnalysisHistory.entity_id == entity_id).order_by(AnalysisHistory.created_at.desc())
     )
-    transfers = transfers_result.scalars().all()
     analyses = analyses_result.scalars().all()
 
     # Get department info for entity
