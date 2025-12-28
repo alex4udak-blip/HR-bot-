@@ -915,11 +915,24 @@ export default function RoleManagement() {
                 <tbody className="divide-y divide-white/5">
                   {AVAILABLE_PERMISSIONS.map((perm, idx) => {
                     // Get permission values for each role
-                    const ownerHas = true; // Owner has all permissions
-                    const adminHas = ['can_view_all_users', 'can_invite_users', 'can_create_departments',
-                      'can_manage_dept_members', 'can_create_resources', 'can_share_resources',
-                      'can_transfer_resources', 'can_delete_resources'].includes(perm.id);
-                    const memberHas = ['can_create_resources'].includes(perm.id);
+                    // Владелец - всё
+                    const ownerHas = true;
+                    // Админ - управление своим департаментом, НЕ может создавать новые департаменты
+                    const adminHas = [
+                      'can_view_all_users',      // видит пользователей своего департамента
+                      'can_invite_users',        // приглашает в свой департамент
+                      'can_manage_dept_members', // управляет участниками своего департамента
+                      'can_create_resources',    // создаёт ресурсы
+                      'can_share_resources',     // расшаривает
+                      'can_transfer_resources',  // передаёт
+                      'can_delete_resources'     // удаляет
+                    ].includes(perm.id);
+                    // Участник - работа со своими ресурсами, расшаривание/передача внутри департамента
+                    const memberHas = [
+                      'can_create_resources',    // создаёт свои ресурсы
+                      'can_share_resources',     // расшаривает внутри департамента
+                      'can_transfer_resources'   // передаёт внутри департамента
+                    ].includes(perm.id);
 
                     return (
                       <tr key={perm.id} className={idx % 2 === 0 ? 'bg-white/[0.02]' : ''}>
