@@ -248,6 +248,36 @@ async def create_user(
         else:
             dept_role = DeptRole.member
 
+        # Get department to find its organization
+        from ..models.database import Department, OrgRole
+        dept_result = await db.execute(select(Department).where(Department.id == data.department_id))
+        dept = dept_result.scalar_one_or_none()
+
+        if dept and dept.org_id:
+            # Check if user is already an org member
+            existing_org_member = await db.execute(
+                select(OrgMember).where(
+                    OrgMember.org_id == dept.org_id,
+                    OrgMember.user_id == user.id
+                )
+            )
+            if not existing_org_member.scalar_one_or_none():
+                # Add user to organization with appropriate role
+                if user_role == UserRole.admin:
+                    org_role = OrgRole.admin
+                elif user_role == UserRole.sub_admin:
+                    org_role = OrgRole.admin  # sub_admin is still org admin level
+                else:
+                    org_role = OrgRole.member
+
+                org_member = OrgMember(
+                    org_id=dept.org_id,
+                    user_id=user.id,
+                    role=org_role
+                )
+                db.add(org_member)
+
+        # Add to department
         dept_member = DepartmentMember(
             department_id=data.department_id,
             user_id=user.id,
