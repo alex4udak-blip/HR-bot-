@@ -565,40 +565,40 @@ export default function ContactsPage() {
                 <button
                   onClick={() => setShowAIPanel(!showAIPanel)}
                   className={clsx(
-                    'px-3 py-2 rounded-lg flex items-center gap-2 transition-colors',
+                    'p-2 sm:px-3 sm:py-2 rounded-lg flex items-center gap-2 transition-colors',
                     showAIPanel
                       ? 'bg-cyan-500/20 text-cyan-400'
                       : 'bg-white/5 hover:bg-white/10 text-white/60'
                   )}
                 >
                   <Bot size={16} />
-                  AI
+                  <span className="hidden sm:inline">AI</span>
                 </button>
                 {canShare(currentEntity as Entity) && (
                   <button
                     onClick={() => setShowShareModal(true)}
-                    className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
+                    className="p-2 sm:px-3 sm:py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
                   >
                     <Share2 size={16} />
-                    Поделиться
+                    <span className="hidden sm:inline">Поделиться</span>
                   </button>
                 )}
                 {canTransfer(currentEntity as Entity) && (
                   <button
                     onClick={() => handleTransfer(currentEntity as Entity)}
-                    className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
+                    className="p-2 sm:px-3 sm:py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
                   >
                     <ArrowRightLeft size={16} />
-                    Передать
+                    <span className="hidden sm:inline">Передать</span>
                   </button>
                 )}
                 {canEdit(currentEntity as Entity) && (
                   <button
                     onClick={() => handleEdit(currentEntity as Entity)}
-                    className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
+                    className="p-2 sm:px-3 sm:py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
                   >
                     <Edit size={16} />
-                    Редактировать
+                    <span className="hidden sm:inline">Редактировать</span>
                   </button>
                 )}
               </div>
@@ -616,11 +616,12 @@ export default function ContactsPage() {
       <AnimatePresence>
         {currentEntity && showAIPanel && (
           <motion.div
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 'auto', opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.2 }}
-            className="hidden xl:flex flex-col h-full border-l border-white/5 bg-black/20 overflow-hidden flex-shrink-0 w-[340px] 2xl:w-[420px] max-w-[40vw]"
+            className="hidden xl:flex flex-col h-full border-l border-white/5 bg-black/20 overflow-hidden flex-shrink-0 w-[300px] 2xl:w-[380px]"
+            style={{ maxWidth: 'min(380px, 30vw)' }}
           >
             <div className="p-4 border-b border-white/5 flex items-center justify-between flex-shrink-0">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -648,8 +649,8 @@ export default function ContactsPage() {
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
-            transition={{ duration: 0.2 }}
-            className="xl:hidden fixed inset-0 z-50 bg-gray-900/95 flex flex-col"
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className="xl:hidden fixed inset-0 z-50 bg-gray-900/98 backdrop-blur-sm flex flex-col"
           >
             <div className="p-4 border-b border-white/5 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -669,6 +670,16 @@ export default function ContactsPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Mobile Floating AI Button */}
+      {currentEntity && !showAIPanel && (
+        <button
+          onClick={() => setShowAIPanel(true)}
+          className="xl:hidden fixed bottom-4 right-4 p-4 rounded-full bg-cyan-500 text-white shadow-lg shadow-cyan-500/30 z-40"
+        >
+          <Bot size={24} />
+        </button>
+      )}
 
       {/* Create/Edit Modal */}
       <AnimatePresence>
