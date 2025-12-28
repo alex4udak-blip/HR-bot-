@@ -449,10 +449,11 @@ async def update_share(
 @router.delete("/{share_id}")
 async def revoke_share(
     share_id: int,
+    cascade: bool = Query(True, description="Also revoke related chats/calls when revoking entity share"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Revoke a share"""
+    """Revoke a share. For entities, also revokes related chat/call shares by default."""
     current_user = await db.merge(current_user)
 
     result = await db.execute(select(SharedAccess).where(SharedAccess.id == share_id))
@@ -467,11 +468,63 @@ async def revoke_share(
 
     # Store share info before deletion
     shared_with_id = share.shared_with_id
+    resource_type = share.resource_type
+    resource_id = share.resource_id
     revoke_data = {
         "share_id": share.id,
-        "resource_type": share.resource_type.value,
-        "resource_id": share.resource_id
+        "resource_type": resource_type.value,
+        "resource_id": resource_id
     }
+
+    # CASCADE: If this is an entity share, also delete related chat/call shares
+    related_deleted = {"chats": 0, "calls": 0}
+    if resource_type == ResourceType.entity and cascade:
+        # Get the entity to find its org_id
+        entity_result = await db.execute(
+            select(Entity).where(Entity.id == resource_id)
+        )
+        entity = entity_result.scalar_one_or_none()
+
+        if entity:
+            # Find all chats linked to this entity
+            chats_result = await db.execute(
+                select(Chat).where(Chat.entity_id == resource_id, Chat.org_id == entity.org_id)
+            )
+            linked_chats = chats_result.scalars().all()
+
+            # Delete shares for linked chats
+            for chat in linked_chats:
+                chat_share_result = await db.execute(
+                    select(SharedAccess).where(
+                        SharedAccess.resource_type == ResourceType.chat,
+                        SharedAccess.resource_id == chat.id,
+                        SharedAccess.shared_with_id == shared_with_id
+                    )
+                )
+                chat_share = chat_share_result.scalar_one_or_none()
+                if chat_share:
+                    await db.delete(chat_share)
+                    related_deleted["chats"] += 1
+
+            # Find all calls linked to this entity
+            calls_result = await db.execute(
+                select(CallRecording).where(CallRecording.entity_id == resource_id, CallRecording.org_id == entity.org_id)
+            )
+            linked_calls = calls_result.scalars().all()
+
+            # Delete shares for linked calls
+            for call in linked_calls:
+                call_share_result = await db.execute(
+                    select(SharedAccess).where(
+                        SharedAccess.resource_type == ResourceType.call,
+                        SharedAccess.resource_id == call.id,
+                        SharedAccess.shared_with_id == shared_with_id
+                    )
+                )
+                call_share = call_share_result.scalar_one_or_none()
+                if call_share:
+                    await db.delete(call_share)
+                    related_deleted["calls"] += 1
 
     await db.delete(share)
     await db.commit()
@@ -479,7 +532,10 @@ async def revoke_share(
     # Broadcast share.revoked event to the user who had access
     await broadcast_share_revoked(shared_with_id, revoke_data)
 
-    return {"success": True}
+    return {
+        "success": True,
+        "related_revoked": related_deleted
+    }
 
 
 @router.get("/my-shares", response_model=List[ShareResponse])
@@ -698,3 +754,99 @@ async def get_sharable_users(
         ))
 
     return response
+
+
+@router.delete("/cleanup/orphaned")
+async def cleanup_orphaned_shares(
+    user_id: Optional[int] = Query(None, description="Clean up for specific user only"),
+    dry_run: bool = Query(True, description="If true, only count without deleting"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Clean up orphaned chat/call shares that don't have a parent entity share.
+
+    This happens when an entity share was deleted but the cascade delete failed
+    or was added before cascade delete was implemented.
+
+    Only superadmin can run this endpoint.
+    """
+    if current_user.role != UserRole.superadmin:
+        raise HTTPException(status_code=403, detail="Only superadmin can clean up orphaned shares")
+
+    # Find all entity shares
+    entity_shares_query = select(SharedAccess).where(
+        SharedAccess.resource_type == ResourceType.entity
+    )
+    if user_id:
+        entity_shares_query = entity_shares_query.where(SharedAccess.shared_with_id == user_id)
+
+    entity_shares_result = await db.execute(entity_shares_query)
+    entity_shares = entity_shares_result.scalars().all()
+
+    # Build a set of (entity_id, shared_with_id) tuples that have valid shares
+    valid_entity_user_pairs = set()
+    for es in entity_shares:
+        valid_entity_user_pairs.add((es.resource_id, es.shared_with_id))
+
+    # Find orphaned chat shares
+    chat_shares_query = select(SharedAccess).where(
+        SharedAccess.resource_type == ResourceType.chat
+    )
+    if user_id:
+        chat_shares_query = chat_shares_query.where(SharedAccess.shared_with_id == user_id)
+
+    chat_shares_result = await db.execute(chat_shares_query)
+    chat_shares = chat_shares_result.scalars().all()
+
+    orphaned_chats = []
+    for cs in chat_shares:
+        # Get the chat to find its entity_id
+        chat_result = await db.execute(select(Chat).where(Chat.id == cs.resource_id))
+        chat = chat_result.scalar_one_or_none()
+
+        if chat and chat.entity_id:
+            # Check if there's a valid entity share for this user
+            if (chat.entity_id, cs.shared_with_id) not in valid_entity_user_pairs:
+                orphaned_chats.append(cs)
+
+    # Find orphaned call shares
+    call_shares_query = select(SharedAccess).where(
+        SharedAccess.resource_type == ResourceType.call
+    )
+    if user_id:
+        call_shares_query = call_shares_query.where(SharedAccess.shared_with_id == user_id)
+
+    call_shares_result = await db.execute(call_shares_query)
+    call_shares = call_shares_result.scalars().all()
+
+    orphaned_calls = []
+    for cs in call_shares:
+        # Get the call to find its entity_id
+        call_result = await db.execute(select(CallRecording).where(CallRecording.id == cs.resource_id))
+        call = call_result.scalar_one_or_none()
+
+        if call and call.entity_id:
+            # Check if there's a valid entity share for this user
+            if (call.entity_id, cs.shared_with_id) not in valid_entity_user_pairs:
+                orphaned_calls.append(cs)
+
+    # Delete if not dry run
+    deleted_count = {"chats": 0, "calls": 0}
+    if not dry_run:
+        for share in orphaned_chats:
+            await db.delete(share)
+            deleted_count["chats"] += 1
+
+        for share in orphaned_calls:
+            await db.delete(share)
+            deleted_count["calls"] += 1
+
+        await db.commit()
+
+    return {
+        "dry_run": dry_run,
+        "orphaned_chat_shares": len(orphaned_chats),
+        "orphaned_call_shares": len(orphaned_calls),
+        "deleted": deleted_count if not dry_run else None
+    }

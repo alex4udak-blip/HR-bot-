@@ -9,20 +9,16 @@ import httpx
 from ..database import get_db
 from ..models.database import User, UserRole, Chat, Message
 from ..models.schemas import MessageResponse, ParticipantResponse
-from ..services.auth import get_current_user, get_current_user_optional, get_user_from_token
+from ..services.auth import get_current_user, get_current_user_optional, get_user_from_token, get_user_org
 from ..services.transcription import transcription_service
 from ..config import settings
+# Import the proper can_access_chat that checks SharedAccess
+from .chats import can_access_chat as can_access_chat_full
 
 # Uploads directory for imported media
 UPLOADS_DIR = Path(__file__).parent.parent.parent / "uploads"
 
 router = APIRouter()
-
-
-def can_access_chat(user: User, chat: Chat) -> bool:
-    if user.role == UserRole.superadmin:
-        return True
-    return chat.owner_id == user.id
 
 
 @router.get("/{chat_id}/messages", response_model=List[MessageResponse])
@@ -35,11 +31,15 @@ async def get_messages(
     content_type: str = Query(None),
 ):
     user = await db.merge(user)
+    org = await get_user_org(user, db)
+    org_id = org.id if org else None
+
     result = await db.execute(select(Chat).where(Chat.id == chat_id))
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    # Use the full can_access_chat that checks SharedAccess
+    if not await can_access_chat_full(user, chat, org_id, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     query = select(Message).where(Message.chat_id == chat_id)
@@ -78,11 +78,14 @@ async def get_participants(
     user: User = Depends(get_current_user),
 ):
     user = await db.merge(user)
+    org = await get_user_org(user, db)
+    org_id = org.id if org else None
+
     result = await db.execute(select(Chat).where(Chat.id == chat_id))
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    if not await can_access_chat_full(user, chat, org_id, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Group by telegram_user_id only, take max of other fields to avoid duplicates
@@ -208,13 +211,16 @@ async def get_local_file(
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     # Verify user has access to this chat
+    org = await get_user_org(user, db)
+    org_id = org.id if org else None
+
     result = await db.execute(
         select(Chat).where(Chat.id == chat_id, Chat.deleted_at.is_(None))
     )
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    if not await can_access_chat_full(user, chat, org_id, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Build file path and verify it exists
@@ -311,6 +317,8 @@ async def transcribe_message(
     Updates the message content with the transcription.
     """
     user = await db.merge(user)
+    org = await get_user_org(user, db)
+    org_id = org.id if org else None
 
     # Get message
     result = await db.execute(select(Message).where(Message.id == message_id))
@@ -325,7 +333,7 @@ async def transcribe_message(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    if not await can_access_chat_full(user, chat, org_id, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Get file bytes - either from local file or from Telegram
@@ -423,6 +431,8 @@ async def transcribe_all_media(
     logger = logging.getLogger("hr-analyzer")
 
     user = await db.merge(user)
+    org = await get_user_org(user, db)
+    org_id = org.id if org else None
 
     # Verify user has access to the chat
     result = await db.execute(
@@ -431,7 +441,7 @@ async def transcribe_all_media(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    if not await can_access_chat_full(user, chat, org_id, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Find all messages that need transcription
