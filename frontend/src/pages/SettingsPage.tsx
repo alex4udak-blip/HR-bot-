@@ -78,7 +78,7 @@ export default function SettingsPage() {
   const { data: presets = [], isLoading } = useQuery({
     queryKey: ['criteria-presets'],
     queryFn: getCriteriaPresets,
-    refetchOnMount: 'always',
+    staleTime: 60000, // Consider data stale after 60 seconds
   });
 
   const createMutation = useMutation({

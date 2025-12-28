@@ -35,7 +35,7 @@ export default function DashboardPage() {
   const { data: stats, isLoading } = useQuery({
     queryKey: ['stats'],
     queryFn: getStats,
-    refetchOnMount: 'always', // Always fetch fresh stats when navigating to dashboard
+    staleTime: 30000, // Consider data stale after 30 seconds
   });
 
   if (isLoading || !stats) {

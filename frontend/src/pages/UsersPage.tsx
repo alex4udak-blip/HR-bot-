@@ -819,7 +819,7 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
     queryKey: ['users'],
     queryFn: getUsers,
     enabled: currentUser?.role === 'superadmin',
-    refetchOnMount: 'always',
+    staleTime: 30000, // Consider data stale after 30 seconds
   });
 
   const createMutation = useMutation({

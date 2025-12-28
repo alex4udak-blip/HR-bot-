@@ -69,8 +69,8 @@ export default function ChatsPage() {
   const { data: chats = [], isLoading, dataUpdatedAt, refetch, isFetching } = useQuery({
     queryKey: ['chats'],
     queryFn: getChats,
-    refetchInterval: 30000, // Auto-refresh every 30 seconds
-    refetchOnMount: 'always', // Always fetch fresh data when navigating to this page
+    refetchInterval: 60000, // Auto-refresh every 60 seconds (reduced for performance)
+    staleTime: 30000, // Consider data stale after 30 seconds
   });
 
   // Sync chats to store when data changes (use dataUpdatedAt to trigger on any update)

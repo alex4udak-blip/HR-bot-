@@ -256,7 +256,7 @@ class Message(Base):
     content = Column(Text, nullable=False)
     content_type = Column(String(50), nullable=False, index=True)  # text, voice, video_note, document, photo, etc
     file_id = Column(String(255), nullable=True)  # Telegram Bot API file_id
-    file_path = Column(String(512), nullable=True)  # Local file path for imported media
+    file_path = Column(String(512), nullable=True, index=True)  # Local file path for imported media
     file_name = Column(String(255), nullable=True)
     # Document parsing metadata
     document_metadata = Column(JSON, nullable=True)  # {file_type, pages_count, sheets, etc}
@@ -366,7 +366,7 @@ class Entity(Base):
 
     # Transfer tracking fields
     is_transferred = Column(Boolean, default=False, index=True)
-    transferred_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    transferred_to_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     transferred_at = Column(DateTime, nullable=True)
 
     organization = relationship("Organization", back_populates="entities")
@@ -538,6 +538,8 @@ class SharedAccess(Base):
 
     __table_args__ = (
         UniqueConstraint('resource_type', 'resource_id', 'shared_with_id', 'shared_by_id', name='uq_shared_access_resource_user'),
+        # Composite index for fast permission lookups
+        Index('ix_shared_access_user_resource', 'shared_with_id', 'resource_type', 'resource_id'),
     )
 
     shared_by = relationship("User", foreign_keys=[shared_by_id])
