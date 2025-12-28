@@ -518,6 +518,35 @@ export const getEntityStatsByStatus = async (type?: EntityType): Promise<Record<
   return data;
 };
 
+// Entity Criteria
+export const getEntityCriteria = async (entityId: number): Promise<ChatCriteria> => {
+  const { data } = await api.get(`/criteria/entities/${entityId}`);
+  return data;
+};
+
+export const updateEntityCriteria = async (entityId: number, criteria: { name: string; description: string; weight: number; category: string }[]): Promise<ChatCriteria> => {
+  const { data } = await api.put(`/criteria/entities/${entityId}`, { criteria });
+  return data;
+};
+
+// Entity Report Download
+export const downloadEntityReport = async (entityId: number, reportType: string, format: string): Promise<Blob> => {
+  const response = await fetch(`/api/entities/${entityId}/report`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify({ report_type: reportType, format }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  return response.blob();
+};
+
 // === CALLS ===
 
 export const getCalls = async (params?: {

@@ -10,7 +10,7 @@ Provides:
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -22,10 +22,11 @@ import logging
 from ..database import get_db
 from ..models.database import (
     User, UserRole, Entity, Chat, Message, CallRecording,
-    EntityAIConversation
+    EntityAIConversation, EntityCriteria, AnalysisHistory
 )
 from ..services.auth import get_current_user
 from ..services.entity_ai import entity_ai_service
+from ..services.reports import generate_pdf_report, generate_docx_report
 
 logger = logging.getLogger("hr-analyzer.entity-ai-routes")
 
@@ -35,6 +36,11 @@ router = APIRouter()
 class EntityAIMessageRequest(BaseModel):
     message: Optional[str] = None
     quick_action: Optional[str] = None
+
+
+class EntityReportRequest(BaseModel):
+    report_type: str = "full_analysis"
+    format: str = "pdf"  # pdf, docx, markdown
 
 
 async def get_entity_with_data(db: AsyncSession, entity_id: int):
@@ -485,3 +491,106 @@ async def batch_update_entity_summaries(
         "updated": updated,
         "errors": errors
     }
+
+
+@router.post("/entities/{entity_id}/report")
+async def generate_entity_report(
+    entity_id: int,
+    request: EntityReportRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Generate downloadable report for entity.
+
+    Generates a comprehensive report analyzing all chats and calls
+    associated with this entity.
+    """
+    from ..services.cache import format_messages_optimized
+
+    user = await db.merge(user)
+
+    # Get entity with all data
+    entity, chats, calls = await get_entity_with_data(db, entity_id)
+
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    if not await can_access_entity(user, entity, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get criteria if exists
+    result = await db.execute(
+        select(EntityCriteria).where(EntityCriteria.entity_id == entity_id)
+    )
+    criteria_obj = result.scalar_one_or_none()
+    criteria = criteria_obj.criteria if criteria_obj else []
+
+    # Build content for analysis
+    content_parts = []
+
+    # Add entity info
+    content_parts.append(f"# Контакт: {entity.name}")
+    if entity.company:
+        content_parts.append(f"Компания: {entity.company}")
+    if entity.position:
+        content_parts.append(f"Должность: {entity.position}")
+    if entity.ai_summary:
+        content_parts.append(f"\n## Общее резюме\n{entity.ai_summary}")
+
+    # Add chat messages
+    for chat in chats:
+        if hasattr(chat, 'messages') and chat.messages:
+            messages = sorted(chat.messages, key=lambda m: m.timestamp)[-100:]
+            content_parts.append(f"\n## Чат: {chat.title}\n{format_messages_optimized(messages, max_per_message=500)}")
+
+    # Add call summaries
+    for call in calls:
+        call_info = f"\n## Звонок: {call.title or 'Без названия'}"
+        if call.summary:
+            call_info += f"\n{call.summary}"
+        content_parts.append(call_info)
+
+    content = "\n\n".join(content_parts)
+
+    if not content:
+        raise HTTPException(status_code=400, detail="No data to generate report")
+
+    # Generate report using AI
+    report_content = await entity_ai_service.generate_entity_report(
+        entity, chats, calls, criteria, request.report_type
+    )
+
+    # Save to analysis history
+    analysis = AnalysisHistory(
+        entity_id=entity_id,
+        user_id=user.id,
+        result=report_content,
+        report_type=request.report_type,
+        report_format=request.format,
+        criteria_used=criteria,
+    )
+    db.add(analysis)
+    await db.commit()
+
+    # Generate file
+    title = entity.name
+
+    if request.format == "pdf":
+        file_bytes = generate_pdf_report(title, report_content, entity.name)
+        return Response(
+            content=file_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="report_{entity_id}.pdf"'}
+        )
+    elif request.format == "docx":
+        file_bytes = generate_docx_report(title, report_content, entity.name)
+        return Response(
+            content=file_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="report_{entity_id}.docx"'}
+        )
+    else:
+        return Response(
+            content=report_content,
+            media_type="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="report_{entity_id}.md"'}
+        )

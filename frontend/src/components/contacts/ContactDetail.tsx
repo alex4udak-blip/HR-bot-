@@ -16,13 +16,16 @@ import {
   Link2,
   X,
   Loader2,
-  AtSign
+  AtSign,
+  Download,
+  Target
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import type { EntityWithRelations, Chat, CallRecording } from '@/types';
 import { STATUS_LABELS, STATUS_COLORS, CALL_STATUS_LABELS, CALL_STATUS_COLORS } from '@/types';
 import EntityAI from './EntityAI';
+import CriteriaPanelEntity from './CriteriaPanelEntity';
 import * as api from '@/services/api';
 import { useEntityStore } from '@/stores/entityStore';
 
@@ -33,13 +36,14 @@ interface ContactDetailProps {
 
 export default function ContactDetail({ entity, showAIInOverview = true }: ContactDetailProps) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'overview' | 'chats' | 'calls' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'chats' | 'calls' | 'history' | 'criteria' | 'reports'>('overview');
   const [showLinkChatModal, setShowLinkChatModal] = useState(false);
   const [showLinkCallModal, setShowLinkCallModal] = useState(false);
   const [unlinkedChats, setUnlinkedChats] = useState<Chat[]>([]);
   const [unlinkedCalls, setUnlinkedCalls] = useState<CallRecording[]>([]);
   const [loadingLink, setLoadingLink] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
+  const [downloadingReport, setDownloadingReport] = useState<string | null>(null);
   const { fetchEntity } = useEntityStore();
 
   // Load unlinked chats when modal opens
@@ -123,6 +127,28 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleDownloadReport = async (format: string) => {
+    if (downloadingReport) return;
+
+    setDownloadingReport(format);
+    try {
+      const blob = await api.downloadEntityReport(entity.id, 'full_analysis', format);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report_${entity.name}_${entity.id}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Отчёт скачан');
+    } catch {
+      toast.error('Ошибка скачивания');
+    } finally {
+      setDownloadingReport(null);
+    }
   };
 
   return (
@@ -271,21 +297,27 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
           { id: 'overview', label: 'Обзор' },
           { id: 'chats', label: `Чаты (${entity.chats?.length || 0})` },
           { id: 'calls', label: `Звонки (${entity.calls?.length || 0})` },
+          { id: 'criteria', label: 'Критерии', icon: Target },
+          { id: 'reports', label: 'Отчёты', icon: Download },
           { id: 'history', label: 'История' }
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as typeof activeTab)}
-            className={clsx(
-              'px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap',
-              activeTab === tab.id
-                ? 'bg-cyan-500/20 text-cyan-400 shadow-sm'
-                : 'text-white/60 hover:bg-white/5 hover:text-white/80'
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
+        ].map((tab) => {
+          const Icon = 'icon' in tab ? tab.icon : null;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as typeof activeTab)}
+              className={clsx(
+                'px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-1.5',
+                activeTab === tab.id
+                  ? 'bg-cyan-500/20 text-cyan-400 shadow-sm'
+                  : 'text-white/60 hover:bg-white/5 hover:text-white/80'
+              )}
+            >
+              {Icon && <Icon size={14} className="flex-shrink-0" />}
+              <span className={clsx(Icon && 'hidden sm:inline')}>{tab.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Tab Content */}
@@ -543,6 +575,69 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   <p>История пуста</p>
                 </div>
               )}
+          </div>
+        )}
+
+        {activeTab === 'criteria' && (
+          <div className="glass rounded-xl border border-white/10 overflow-hidden">
+            <CriteriaPanelEntity entityId={entity.id} />
+          </div>
+        )}
+
+        {activeTab === 'reports' && (
+          <div className="glass rounded-xl border border-white/10 p-4">
+            <div className="space-y-4">
+              <div className="glass-light rounded-xl p-4">
+                <h3 className="font-semibold mb-3">Создать отчёт</h3>
+                <p className="text-sm text-dark-400 mb-4">
+                  Скачайте полный аналитический отчёт по этому контакту
+                </p>
+                {downloadingReport && (
+                  <div className="flex items-center gap-2 mb-4 p-3 rounded-lg bg-accent-500/10 text-accent-400">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-sm">Генерация отчёта... Это может занять до минуты</span>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleDownloadReport('pdf')}
+                    disabled={!!downloadingReport}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50 disabled:cursor-wait transition-colors"
+                  >
+                    {downloadingReport === 'pdf' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
+                    PDF
+                  </button>
+                  <button
+                    onClick={() => handleDownloadReport('docx')}
+                    disabled={!!downloadingReport}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 disabled:opacity-50 disabled:cursor-wait transition-colors"
+                  >
+                    {downloadingReport === 'docx' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
+                    DOCX
+                  </button>
+                  <button
+                    onClick={() => handleDownloadReport('markdown')}
+                    disabled={!!downloadingReport}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-wait transition-colors"
+                  >
+                    {downloadingReport === 'markdown' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
+                    Markdown
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

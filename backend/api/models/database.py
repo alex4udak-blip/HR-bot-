@@ -296,6 +296,17 @@ class ChatCriteria(Base):
     chat = relationship("Chat", back_populates="criteria")
 
 
+class EntityCriteria(Base):
+    __tablename__ = "entity_criteria"
+
+    id = Column(Integer, primary_key=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), unique=True, nullable=False)
+    criteria = Column(JSON, nullable=False)  # [{name, weight, description, category}]
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    entity = relationship("Entity", back_populates="criteria")
+
+
 class AIConversation(Base):
     __tablename__ = "ai_conversations"
 
@@ -368,6 +379,7 @@ class Entity(Base):
     analyses = relationship("AnalysisHistory", back_populates="entity")
     ai_conversations = relationship("EntityAIConversation", back_populates="entity", cascade="all, delete-orphan")
     ai_analyses = relationship("EntityAnalysis", back_populates="entity", cascade="all, delete-orphan")
+    criteria = relationship("EntityCriteria", back_populates="entity", uselist=False, cascade="all, delete-orphan")
 
     # AI Long-term Memory
     # Auto-updated summary of all interactions with this entity

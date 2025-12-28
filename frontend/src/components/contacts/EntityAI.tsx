@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Bot,
-  Send,
+  SendHorizontal,
   FileSearch,
   AlertTriangle,
   GitCompare,
@@ -263,74 +263,74 @@ export default function EntityAI({ entity }: EntityAIProps) {
       )}
 
       {/* Quick Actions */}
-      <div className="flex flex-wrap gap-1.5 mb-4 flex-shrink-0">
-        {QUICK_ACTIONS.map(action => {
-          const Icon = action.icon;
-          return (
-            <button
-              key={action.id}
-              onClick={() => sendMessage(undefined, action.id)}
-              disabled={loading}
-              title={action.label}
-              className={clsx(
-                'flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs transition-colors whitespace-nowrap',
-                loading
-                  ? 'bg-white/5 text-white/30 cursor-not-allowed'
-                  : 'bg-white/5 hover:bg-white/10 text-white/80 hover:text-white'
-              )}
-            >
-              <Icon size={12} className="flex-shrink-0" />
-              <span className="truncate max-w-[70px]">{action.label}</span>
-            </button>
-          );
-        })}
-        {/* Memory buttons */}
-        <button
-          onClick={() => setShowMemory(!showMemory)}
-          className={clsx(
-            'flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs transition-colors whitespace-nowrap',
-            memory?.summary
-              ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-400'
-              : 'bg-white/5 hover:bg-white/10 text-white/60'
-          )}
-          title={memory?.summary ? 'Показать память AI' : 'Память AI пуста'}
-        >
-          <Brain size={12} className="flex-shrink-0" />
-          <span className="hidden sm:inline">Память</span>
-          {memory?.key_events && memory.key_events.length > 0 && (
-            <span className="bg-purple-500/30 text-purple-300 text-[10px] px-1 rounded">
-              {memory.key_events.length}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={updateMemory}
-          disabled={updatingMemory || !hasData}
-          className={clsx(
-            'flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs transition-colors whitespace-nowrap',
-            updatingMemory || !hasData
-              ? 'bg-white/5 text-white/30 cursor-not-allowed'
-              : 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400'
-          )}
-          title="Обновить память AI (резюме + события)"
-        >
-          {updatingMemory ? (
-            <Loader2 size={12} className="flex-shrink-0 animate-spin" />
-          ) : (
-            <RefreshCw size={12} className="flex-shrink-0" />
-          )}
-          <span className="hidden sm:inline">{updatingMemory ? 'Обновление...' : 'Обновить'}</span>
-        </button>
-        {messages.length > 0 && (
+      <div className="pb-3 border-b border-white/5 flex-shrink-0">
+        <div className="flex flex-wrap gap-1.5">
+          {QUICK_ACTIONS.map(action => {
+            const Icon = action.icon;
+            return (
+              <button
+                key={action.id}
+                onClick={() => sendMessage(undefined, action.id)}
+                disabled={loading}
+                title={action.label}
+                className={clsx(
+                  'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium glass-light hover:bg-white/10 transition-colors',
+                  loading && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                <Icon size={14} className="flex-shrink-0 text-accent-400" />
+                <span className="hidden sm:inline">{action.label}</span>
+              </button>
+            );
+          })}
+          {/* Memory buttons */}
           <button
-            onClick={clearHistory}
-            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400/80 hover:text-red-400 transition-colors whitespace-nowrap"
-            title="Очистить историю"
+            onClick={() => setShowMemory(!showMemory)}
+            className={clsx(
+              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors',
+              memory?.summary
+                ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-400'
+                : 'glass-light hover:bg-white/10 text-white/60'
+            )}
+            title={memory?.summary ? 'Показать память AI' : 'Память AI пуста'}
           >
-            <Trash2 size={12} className="flex-shrink-0" />
-            <span className="hidden sm:inline">Очистить</span>
+            <Brain size={14} className="flex-shrink-0" />
+            <span className="hidden sm:inline">Память</span>
+            {memory?.key_events && memory.key_events.length > 0 && (
+              <span className="bg-purple-500/30 text-purple-300 text-[10px] px-1.5 rounded-full">
+                {memory.key_events.length}
+              </span>
+            )}
           </button>
-        )}
+          <button
+            onClick={updateMemory}
+            disabled={updatingMemory || !hasData}
+            className={clsx(
+              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors',
+              updatingMemory || !hasData
+                ? 'opacity-50 cursor-not-allowed glass-light'
+                : 'bg-accent-500/20 hover:bg-accent-500/30 text-accent-400'
+            )}
+            title="Обновить память AI (резюме + события)"
+          >
+            {updatingMemory ? (
+              <Loader2 size={14} className="flex-shrink-0 animate-spin" />
+            ) : (
+              <RefreshCw size={14} className="flex-shrink-0" />
+            )}
+            <span className="hidden sm:inline">{updatingMemory ? 'Обновление...' : 'Обновить'}</span>
+          </button>
+          {messages.length > 0 && (
+            <button
+              onClick={clearHistory}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
+              title="Очистить историю"
+            >
+              <Trash2 size={14} className="flex-shrink-0" />
+              <span className="hidden sm:inline">Очистить</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Memory Panel */}
@@ -419,28 +419,26 @@ export default function EntityAI({ entity }: EntityAIProps) {
       </div>
 
       {/* Input */}
-      <div className="flex gap-2 flex-shrink-0">
-        <input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Задайте вопрос о контакте..."
-          disabled={loading}
-          className="flex-1 min-w-0 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50 disabled:opacity-50 transition-colors"
-        />
-        <button
-          onClick={() => sendMessage(input)}
-          disabled={loading || !input.trim()}
-          aria-label="Send"
-          className={clsx(
-            'px-4 py-2 rounded-lg transition-colors flex items-center gap-2 flex-shrink-0',
-            loading || !input.trim()
-              ? 'bg-white/5 text-white/30 cursor-not-allowed'
-              : 'bg-cyan-500 hover:bg-cyan-600 text-white'
-          )}
-        >
-          <Send size={18} />
-        </button>
+      <div className="pt-4 border-t border-white/5 flex-shrink-0">
+        <div className="flex gap-2">
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Задайте вопрос о контакте..."
+            rows={1}
+            disabled={loading}
+            className="flex-1 glass-light rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent-500/50 disabled:opacity-50 min-w-0"
+          />
+          <button
+            onClick={() => sendMessage(input)}
+            disabled={loading || !input.trim()}
+            aria-label="Send"
+            className="w-11 h-11 flex items-center justify-center rounded-xl bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+          >
+            <SendHorizontal className="w-5 h-5" />
+          </button>
+        </div>
       </div>
     </div>
   );

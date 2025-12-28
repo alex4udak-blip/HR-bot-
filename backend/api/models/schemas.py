@@ -229,6 +229,21 @@ class ChatCriteriaResponse(BaseModel):
         from_attributes = True
 
 
+# Entity Criteria
+class EntityCriteriaUpdate(BaseModel):
+    criteria: List[CriterionItem]
+
+
+class EntityCriteriaResponse(BaseModel):
+    id: int
+    entity_id: int
+    criteria: List[dict]
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # AI Chat
 class AIMessageRequest(BaseModel):
     message: Optional[str] = None
