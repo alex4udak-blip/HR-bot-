@@ -352,6 +352,11 @@ def get_role_permissions(role: str, context: Optional[Dict[str, Any]] = None) ->
             "can_manage_dept_members": False,
             "can_impersonate_users": False,
             "can_access_admin_panel": False,
+            # Basic view permissions - member can see their OWN data
+            "can_view_chats": True,  # Own chats
+            "can_view_contacts": True,  # Own contacts
+            "can_view_calls": True,  # Own calls
+            "can_view_departments": True,  # See their department
         }
 
     # Unknown role - no permissions
