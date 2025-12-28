@@ -3,7 +3,7 @@
 Adds entity_criteria table for storing evaluation criteria per entity.
 
 Revision ID: add_entity_criteria
-Revises: add_member_to_userrole
+Revises: add_performance_indexes
 Create Date: 2025-12-28
 """
 from alembic import op
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = 'add_entity_criteria'
-down_revision = 'add_member_to_userrole'
+down_revision = 'add_performance_indexes'  # Fixed: was add_member_to_userrole, merged with performance_indexes branch
 branch_labels = None
 depends_on = None
 

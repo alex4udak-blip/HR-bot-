@@ -466,6 +466,7 @@ def run_alembic_migrations_sync():
     backend_dir = Path(__file__).parent
 
     try:
+        # First try 'head' (single head expected)
         result = subprocess.run(
             ["alembic", "upgrade", "head"],
             cwd=backend_dir,
@@ -480,6 +481,20 @@ def run_alembic_migrations_sync():
                 for line in result.stdout.strip().split('\n'):
                     if line:
                         logger.info(f"  {line}")
+        elif "Multiple head" in result.stderr:
+            # Fallback: if multiple heads, try 'heads' to apply all
+            logger.warning("Multiple Alembic heads detected, trying 'heads'...")
+            result = subprocess.run(
+                ["alembic", "upgrade", "heads"],
+                cwd=backend_dir,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            if result.returncode == 0:
+                logger.info("Alembic migrations applied (multiple heads)")
+            else:
+                logger.error(f"Alembic: {result.stderr or 'unknown error'}")
         else:
             logger.warning(f"Alembic: {result.stderr or 'unknown error'}")
     except FileNotFoundError:
