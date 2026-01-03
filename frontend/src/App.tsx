@@ -63,6 +63,15 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
+  // Performance mode is ON by default (saves battery/CPU)
+  // Only disable if user explicitly enabled animations
+  useEffect(() => {
+    const animationsEnabled = localStorage.getItem('animations-enabled');
+    if (animationsEnabled !== 'true') {
+      document.body.classList.add('performance-mode');
+    }
+  }, []);
+
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />

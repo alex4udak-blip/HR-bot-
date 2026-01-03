@@ -42,6 +42,9 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [animationsEnabled, setAnimationsEnabled] = useState(() =>
+    localStorage.getItem('animations-enabled') === 'true'
+  );
   const { user, setUser, isSuperAdmin } = useAuthStore();
   const queryClient = useQueryClient();
 
@@ -744,6 +747,43 @@ export default function SettingsPage() {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+
+        {/* Performance Settings */}
+        <div className="glass rounded-2xl p-6 mt-6">
+          <h2 className="text-lg font-semibold mb-4">Производительность</h2>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Анимации фона</p>
+                <p className="text-xs text-dark-400">Aurora, частицы и другие эффекты (увеличивает нагрузку на CPU/GPU)</p>
+              </div>
+              <button
+                onClick={() => {
+                  const newValue = !animationsEnabled;
+                  setAnimationsEnabled(newValue);
+                  if (newValue) {
+                    document.body.classList.remove('performance-mode');
+                  } else {
+                    document.body.classList.add('performance-mode');
+                  }
+                  localStorage.setItem('animations-enabled', newValue ? 'true' : 'false');
+                  toast.success(newValue ? 'Анимации включены' : 'Анимации отключены');
+                }}
+                className={clsx(
+                  'relative w-12 h-6 rounded-full transition-colors',
+                  animationsEnabled ? 'bg-accent-500' : 'bg-white/10'
+                )}
+              >
+                <span
+                  className={clsx(
+                    'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
+                    animationsEnabled ? 'translate-x-7' : 'translate-x-1'
+                  )}
+                />
+              </button>
             </div>
           </div>
         </div>
