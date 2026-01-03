@@ -338,12 +338,14 @@ body {
 }
 
 /* ============================================
-   PREMIUM GLASSMORPHISM
+   PREMIUM GLASSMORPHISM - OPTIMIZED
+   No backdrop-filter blur for better performance
+   Using layered backgrounds for glass effect
    ============================================ */
 .glass {
-  background: rgba(12, 12, 20, 0.8);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  background:
+    linear-gradient(135deg, rgba(20, 20, 35, 0.95) 0%, rgba(12, 12, 20, 0.98) 100%);
+  /* backdrop-filter removed - causes GPU heating */
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.5),
@@ -352,16 +354,16 @@ body {
 }
 
 .glass-light {
-  background: rgba(25, 25, 45, 0.6);
-  backdrop-filter: blur(16px) saturate(150%);
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  background:
+    linear-gradient(135deg, rgba(30, 30, 50, 0.9) 0%, rgba(25, 25, 45, 0.92) 100%);
+  /* backdrop-filter removed - causes GPU heating */
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .glass-card {
-  background: rgba(18, 18, 30, 0.7);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  background:
+    linear-gradient(135deg, rgba(22, 22, 38, 0.93) 0%, rgba(18, 18, 30, 0.95) 100%);
+  /* backdrop-filter removed - causes GPU heating */
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.4),
@@ -636,15 +638,22 @@ body {
 }
 
 /* ============================================
-   NOISE TEXTURE
+   NOISE TEXTURE - OPTIMIZED
+   Using CSS pattern instead of SVG feTurbulence
+   feTurbulence is CPU-intensive, this is static
    ============================================ */
 .noise-overlay {
   position: fixed;
   inset: 0;
   z-index: 9999;
   pointer-events: none;
-  opacity: 0.02;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  opacity: 0.015;
+  /* Lightweight CSS noise pattern - no SVG filter overhead */
+  background-image:
+    repeating-radial-gradient(circle at 17% 32%, rgba(255,255,255,0.03) 0px, transparent 1px),
+    repeating-radial-gradient(circle at 83% 67%, rgba(255,255,255,0.02) 0px, transparent 1px),
+    repeating-radial-gradient(circle at 51% 11%, rgba(255,255,255,0.03) 0px, transparent 1px);
+  background-size: 3px 3px, 5px 5px, 7px 7px;
 }
 
 /* ============================================
@@ -686,4 +695,25 @@ body {
 }
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* ============================================
+   PAUSE ANIMATIONS WHEN TAB NOT VISIBLE
+   Saves CPU/GPU when user switches tabs
+   ============================================ */
+body.animations-paused .premium-bg,
+body.animations-paused .aurora,
+body.animations-paused .aurora::before,
+body.animations-paused .aurora::after,
+body.animations-paused .floating-orb,
+body.animations-paused .particle,
+body.animations-paused .grid-pattern,
+body.animations-paused .light-rays::before,
+body.animations-paused .btn-premium,
+body.animations-paused .shimmer,
+body.animations-paused .gradient-text,
+body.animations-paused .stat-card::before,
+body.animations-paused .pulse-glow,
+body.animations-paused .typing-cursor::after {
+  animation-play-state: paused !important;
 }

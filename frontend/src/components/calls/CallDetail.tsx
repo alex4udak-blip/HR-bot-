@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileText,
@@ -49,6 +49,14 @@ export default function CallDetail({ call }: CallDetailProps) {
   const [editTitle, setEditTitle] = useState(call.title || '');
   const [editEntityId, setEditEntityId] = useState<number | null>(call.entity_id || null);
   const [saving, setSaving] = useState(false);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Cleanup timeout on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
 
   // Fetch entities for dropdown
   useEffect(() => {
@@ -67,7 +75,8 @@ export default function CallDetail({ call }: CallDetailProps) {
     navigator.clipboard.writeText(text);
     setCopied(true);
     toast.success('Скопировано');
-    setTimeout(() => setCopied(false), 2000);
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
   };
 
   const handleReprocess = async () => {
