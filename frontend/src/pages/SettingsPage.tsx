@@ -42,8 +42,8 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [performanceMode, setPerformanceMode] = useState(() =>
-    localStorage.getItem('performance-mode') === 'true'
+  const [animationsEnabled, setAnimationsEnabled] = useState(() =>
+    localStorage.getItem('animations-enabled') === 'true'
   );
   const { user, setUser, isSuperAdmin } = useAuthStore();
   const queryClient = useQueryClient();
@@ -757,30 +757,30 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium">Режим энергосбережения</p>
-                <p className="text-xs text-dark-400">Отключает фоновые анимации для снижения нагрузки на CPU/GPU</p>
+                <p className="text-sm font-medium">Анимации фона</p>
+                <p className="text-xs text-dark-400">Aurora, частицы и другие эффекты (увеличивает нагрузку на CPU/GPU)</p>
               </div>
               <button
                 onClick={() => {
-                  const newValue = !performanceMode;
-                  setPerformanceMode(newValue);
+                  const newValue = !animationsEnabled;
+                  setAnimationsEnabled(newValue);
                   if (newValue) {
-                    document.body.classList.add('performance-mode');
-                  } else {
                     document.body.classList.remove('performance-mode');
+                  } else {
+                    document.body.classList.add('performance-mode');
                   }
-                  localStorage.setItem('performance-mode', newValue ? 'true' : 'false');
-                  toast.success(newValue ? 'Режим энергосбережения включён' : 'Режим энергосбережения выключен');
+                  localStorage.setItem('animations-enabled', newValue ? 'true' : 'false');
+                  toast.success(newValue ? 'Анимации включены' : 'Анимации отключены');
                 }}
                 className={clsx(
                   'relative w-12 h-6 rounded-full transition-colors',
-                  performanceMode ? 'bg-accent-500' : 'bg-white/10'
+                  animationsEnabled ? 'bg-accent-500' : 'bg-white/10'
                 )}
               >
                 <span
                   className={clsx(
                     'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                    performanceMode ? 'translate-x-7' : 'translate-x-1'
+                    animationsEnabled ? 'translate-x-7' : 'translate-x-1'
                   )}
                 />
               </button>

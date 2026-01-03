@@ -63,10 +63,11 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
-  // Restore performance mode from localStorage on app load
+  // Performance mode is ON by default (saves battery/CPU)
+  // Only disable if user explicitly enabled animations
   useEffect(() => {
-    const performanceMode = localStorage.getItem('performance-mode');
-    if (performanceMode === 'true') {
+    const animationsEnabled = localStorage.getItem('animations-enabled');
+    if (animationsEnabled !== 'true') {
       document.body.classList.add('performance-mode');
     }
   }, []);
