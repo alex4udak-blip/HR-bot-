@@ -717,3 +717,33 @@ body.animations-paused .pulse-glow,
 body.animations-paused .typing-cursor::after {
   animation-play-state: paused !important;
 }
+
+/* ============================================
+   PERFORMANCE MODE - Disables all animations
+   For users who want minimal CPU/GPU usage
+   ============================================ */
+body.performance-mode .premium-bg {
+  animation: none !important;
+  background-position: 50% 50% !important;
+}
+
+body.performance-mode .aurora,
+body.performance-mode .particles,
+body.performance-mode .light-rays,
+body.performance-mode .floating-orb,
+body.performance-mode .grid-pattern {
+  display: none !important;
+}
+
+body.performance-mode .btn-premium,
+body.performance-mode .shimmer,
+body.performance-mode .gradient-text,
+body.performance-mode .stat-card::before,
+body.performance-mode .pulse-glow {
+  animation: none !important;
+}
+
+body.performance-mode .glass-card:hover {
+  transform: none !important;
+  transition: none !important;
+}

@@ -63,6 +63,14 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
+  // Restore performance mode from localStorage on app load
+  useEffect(() => {
+    const performanceMode = localStorage.getItem('performance-mode');
+    if (performanceMode === 'true') {
+      document.body.classList.add('performance-mode');
+    }
+  }, []);
+
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
