@@ -29,9 +29,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             position="top-right"
             toastOptions={{
               style: {
-                background: 'rgba(29, 29, 40, 0.9)',
+                background: 'linear-gradient(135deg, rgba(35, 35, 50, 0.97) 0%, rgba(29, 29, 40, 0.98) 100%)',
                 color: '#ebebef',
-                backdropFilter: 'blur(12px)',
+                /* backdropFilter removed - causes GPU heating */
                 border: '1px solid rgba(255, 255, 255, 0.08)',
               },
             }}

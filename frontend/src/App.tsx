@@ -49,6 +49,20 @@ export default function App() {
       .finally(() => setLoading(false));
   }, [setUser, setLoading]);
 
+  // Pause animations when tab is not visible to save CPU/GPU
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        document.body.classList.add('animations-paused');
+      } else {
+        document.body.classList.remove('animations-paused');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />

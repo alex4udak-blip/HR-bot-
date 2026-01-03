@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -56,14 +56,23 @@ export default function ChatsPage() {
   const [showAIPanel, setShowAIPanel] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const { selectedChatId, setSelectedChatId, setChats } = useChatStore();
   const { isSuperAdmin, isOwner, user } = useAuthStore();
+
+  // Cleanup timeout on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
 
   const handleCopyUsername = () => {
     navigator.clipboard.writeText(BOT_USERNAME);
     setCopied(true);
     toast.success('Скопировано!');
-    setTimeout(() => setCopied(false), 2000);
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
   };
 
   const { data: chats = [], isLoading, dataUpdatedAt, refetch, isFetching } = useQuery({

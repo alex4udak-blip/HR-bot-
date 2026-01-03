@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -390,6 +390,14 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
 // Invitation Card Component
 function InvitationCard({ invitation, onRevoke }: { invitation: Invitation; onRevoke: () => void }) {
   const [copied, setCopied] = useState(false);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Cleanup timeout on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
 
   const inviteUrl = `${window.location.origin}${invitation.invitation_url}`;
   const isExpired = invitation.expires_at && new Date(invitation.expires_at) < new Date();
@@ -399,7 +407,8 @@ function InvitationCard({ invitation, onRevoke }: { invitation: Invitation; onRe
       await navigator.clipboard.writeText(inviteUrl);
       setCopied(true);
       toast.success('Ссылка скопирована');
-      setTimeout(() => setCopied(false), 2000);
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.error('Не удалось скопировать');
     }
@@ -502,6 +511,14 @@ function InviteMemberModal({
   const [copied, setCopied] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [selectedDepartments, setSelectedDepartments] = useState<{ id: number; role: DeptRole }[]>([]);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Cleanup timeout on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
 
   // Load departments on mount - filter for non-owners
   useEffect(() => {
@@ -565,7 +582,8 @@ function InviteMemberModal({
       await navigator.clipboard.writeText(inviteUrl);
       setCopied(true);
       toast.success('Ссылка скопирована');
-      setTimeout(() => setCopied(false), 2000);
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.error('Не удалось скопировать');
     }
