@@ -539,6 +539,7 @@ export default function SettingsPage() {
 
         {/* Account Info */}
         {activeTab === 'general' && (
+        <>
         <div className="glass rounded-2xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Аккаунт</h2>
@@ -787,6 +788,7 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+        </>
         )}
       </motion.div>
     </div>
