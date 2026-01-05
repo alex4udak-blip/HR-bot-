@@ -89,6 +89,10 @@ class CallProcessor:
                 call.action_items = analysis.get("action_items")
                 call.key_points = analysis.get("key_points")
 
+                # Use formatted transcript with speaker labels if available
+                if analysis.get("formatted_transcript"):
+                    call.transcript = analysis.get("formatted_transcript")
+
                 # Done!
                 call.status = CallStatus.done
                 call.processed_at = datetime.utcnow()
@@ -379,6 +383,11 @@ class CallProcessor:
 - Все идеи и предложения
 - Все договорённости и задачи
 
+ТАКЖЕ: Преобразуй эту часть транскрипта в диалог с указанием спикеров:
+- Определи спикеров по контексту (вопросы vs ответы)
+- Используй роли: "HR:", "Кандидат:", "Менеджер:", "Спикер 1:", "Спикер 2:"
+- Сохрани ВСЕ слова, только добавь метки спикеров
+
 Часть транскрипта:
 ---
 {chunk}
@@ -392,7 +401,8 @@ class CallProcessor:
   "action_items": ["задача 1", "задача 2", ...],
   "profiles": ["если обсуждались роли/кандидаты - все характеристики"],
   "decisions": ["решение 1", "решение 2", ...],
-  "open_questions": ["нерешённый вопрос 1", ...]
+  "open_questions": ["нерешённый вопрос 1", ...],
+  "formatted_transcript": "HR: реплика...\\nКандидат: реплика..."
 }}"""
 
             try:
@@ -425,6 +435,7 @@ class CallProcessor:
         all_profiles = []
         all_decisions = []
         all_open_questions = []
+        all_formatted_transcripts = []
 
         for analysis in chunk_analyses:
             all_topics.extend(analysis.get("topics", []))
@@ -434,6 +445,8 @@ class CallProcessor:
             all_profiles.extend(analysis.get("profiles", []))
             all_decisions.extend(analysis.get("decisions", []))
             all_open_questions.extend(analysis.get("open_questions", []))
+            if analysis.get("formatted_transcript"):
+                all_formatted_transcripts.append(analysis.get("formatted_transcript"))
 
         # Now create final synthesis
         synthesis_prompt = f"""На основе анализа ВСЕХ частей длинного созвона ({total_length} символов, {len(chunk_analyses)} частей), создай ФИНАЛЬНЫЙ ИСЧЕРПЫВАЮЩИЙ анализ.
@@ -506,16 +519,24 @@ class CallProcessor:
             start = text.find('{')
             end = text.rfind('}') + 1
             if start != -1 and end > start:
-                return json.loads(text[start:end])
+                result = json.loads(text[start:end])
+                # Add combined formatted transcript from all chunks
+                if all_formatted_transcripts:
+                    result["formatted_transcript"] = "\n\n".join(all_formatted_transcripts)
+                return result
         except Exception as e:
             logger.error(f"Synthesis failed: {e}")
 
         # Fallback: just concatenate key points
-        return {
+        result = {
             "summary": f"Длинный созвон ({total_length} символов). Темы: " + ", ".join(all_topics[:10]),
             "key_points": all_key_points[:25],
             "action_items": all_action_items[:15]
         }
+        # Add combined formatted transcript even in fallback
+        if all_formatted_transcripts:
+            result["formatted_transcript"] = "\n\n".join(all_formatted_transcripts)
+        return result
 
     async def _analyze_single(self, transcript: str) -> dict:
         """Analyze a single (short) transcript."""
@@ -579,6 +600,15 @@ class CallProcessor:
 ## ACTION_ITEMS:
 Все задачи с ответственными и сроками.
 
+## FORMATTED_TRANSCRIPT (Транскрипт с разделением по спикерам):
+Преобразуй транскрипт в читаемый диалог с указанием спикеров.
+ВАЖНО:
+- Определи спикеров по контексту (вопросы vs ответы, стиль речи)
+- Используй понятные роли: "HR:", "Кандидат:", "Менеджер:", "Спикер 1:", "Спикер 2:" и т.д.
+- Каждая реплика с новой строки
+- Сохрани ВСЕ слова из оригинала, только добавь метки спикеров
+- Формат: "Спикер: текст реплики"
+
 Транскрипт:
 ---
 {transcript}
@@ -588,7 +618,8 @@ class CallProcessor:
 {{
   "summary": "Полное форматированное резюме со ВСЕМИ разделами (используй **жирный** для заголовков, \\n для переносов)",
   "key_points": ["Детальный пункт 1", "Детальный пункт 2", ...],
-  "action_items": ["Задача: кто, что, когда", ...]
+  "action_items": ["Задача: кто, что, когда", ...],
+  "formatted_transcript": "HR: Хорошо, давай перейдем к твоему опыту...\\nКандидат: Да, я сейчас студент...\\nHR: А ты учишься очно?\\nКандидат: Вечерняя форма..."
 }}"""
 
         try:
