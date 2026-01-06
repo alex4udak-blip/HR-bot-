@@ -21,6 +21,8 @@ export interface User {
   is_impersonating?: boolean;
   original_user_id?: number;
   original_user_name?: string;
+  // Password reset flag
+  must_change_password?: boolean;
 }
 
 export type ChatTypeId = 'work' | 'hr' | 'project' | 'client' | 'contractor' | 'sales' | 'support' | 'custom';

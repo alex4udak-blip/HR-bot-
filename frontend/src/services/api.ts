@@ -61,6 +61,26 @@ export const deleteUser = async (id: number): Promise<void> => {
   await api.delete(`/users/${id}`);
 };
 
+export interface PasswordResetResponse {
+  message: string;
+  temporary_password: string;
+  user_email: string;
+}
+
+export const adminResetPassword = async (userId: number, newPassword?: string): Promise<PasswordResetResponse> => {
+  const { data } = await api.post(`/admin/users/${userId}/reset-password`,
+    newPassword ? { new_password: newPassword } : {}
+  );
+  return data;
+};
+
+export const changePassword = async (currentPassword: string, newPassword: string): Promise<void> => {
+  await api.post('/auth/change-password', {
+    current_password: currentPassword,
+    new_password: newPassword
+  });
+};
+
 export interface UserProfileUpdate {
   name?: string;
   telegram_username?: string;

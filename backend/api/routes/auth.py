@@ -122,7 +122,8 @@ async def login(
         role=authenticated_user.role.value, telegram_id=authenticated_user.telegram_id,
         telegram_username=authenticated_user.telegram_username,
         is_active=authenticated_user.is_active, created_at=authenticated_user.created_at,
-        chats_count=0  # Skip lazy loading for login
+        chats_count=0,  # Skip lazy loading for login
+        must_change_password=authenticated_user.must_change_password or False
     )
 
 
@@ -156,7 +157,8 @@ async def get_me(user: User = Depends(get_current_user)):
         role=user.role.value, telegram_id=user.telegram_id,
         telegram_username=user.telegram_username,
         is_active=user.is_active, created_at=user.created_at,
-        chats_count=0  # Skip lazy loading
+        chats_count=0,  # Skip lazy loading
+        must_change_password=user.must_change_password or False
     )
 
 
@@ -179,6 +181,8 @@ async def change_password(
     user.password_hash = hash_password(password_request.new_password)
     # Increment token_version to invalidate all existing tokens
     user.token_version += 1
+    # Clear the must_change_password flag if it was set
+    user.must_change_password = False
     await db.commit()
     return {"message": "Password changed"}
 
