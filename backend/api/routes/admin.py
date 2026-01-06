@@ -105,6 +105,18 @@ class UserDetailResponse(BaseModel):
     locked_until: Optional[datetime]
 
 
+class AdminPasswordResetRequest(BaseModel):
+    """Request to reset user password by admin"""
+    new_password: Optional[str] = None  # If not provided, generate random password
+
+
+class AdminPasswordResetResponse(BaseModel):
+    """Response for password reset"""
+    message: str
+    temporary_password: str
+    user_email: str
+
+
 class SandboxCreateRequest(BaseModel):
     """Request to create sandbox"""
     org_id: Optional[int] = None  # If not provided, use first available organization
@@ -1237,6 +1249,64 @@ async def get_user_details(
         token_version=user.token_version,
         failed_login_attempts=user.failed_login_attempts,
         locked_until=user.locked_until,
+    )
+
+
+@router.post("/users/{user_id}/reset-password", response_model=AdminPasswordResetResponse)
+async def admin_reset_user_password(
+    user_id: int,
+    request_body: Optional[AdminPasswordResetRequest] = None,
+    superadmin: User = Depends(get_superadmin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Reset a user's password (SUPERADMIN only).
+
+    - If new_password is provided, sets that password
+    - If not provided, generates a random temporary password
+    - Sets must_change_password flag so user must change on next login
+    - Invalidates all existing sessions (increments token_version)
+
+    Returns the temporary password so admin can share it with the user.
+    """
+    import secrets
+    import string
+
+    # Get user
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Cannot reset superadmin password through this endpoint
+    if user.role == UserRole.superadmin and user.id != superadmin.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot reset another superadmin's password"
+        )
+
+    # Generate or use provided password
+    if request_body and request_body.new_password:
+        new_password = request_body.new_password
+    else:
+        # Generate random 12-character password
+        alphabet = string.ascii_letters + string.digits
+        new_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+
+    # Update user
+    user.password_hash = hash_password(new_password)
+    user.must_change_password = True
+    user.token_version += 1  # Invalidate existing sessions
+    user.failed_login_attempts = 0  # Reset login attempts
+    user.locked_until = None  # Unlock account
+
+    await db.commit()
+
+    return AdminPasswordResetResponse(
+        message=f"Password reset successfully for {user.email}",
+        temporary_password=new_password,
+        user_email=user.email
     )
 
 

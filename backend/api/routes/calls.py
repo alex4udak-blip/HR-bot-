@@ -751,7 +751,7 @@ async def recalculate_call_stats(
 
     # Calculate speaker stats
     from ..services.call_processor import calculate_speaker_stats
-    call.speaker_stats = calculate_speaker_stats(call.speakers)
+    call.speaker_stats = calculate_speaker_stats(call.speakers, call.duration_seconds)
 
     await db.commit()
     await db.refresh(call)

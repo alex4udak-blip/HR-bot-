@@ -89,6 +89,7 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: datetime
     chats_count: int = 0
+    must_change_password: bool = False
 
     class Config:
         from_attributes = True

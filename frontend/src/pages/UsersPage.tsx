@@ -17,9 +17,10 @@ import {
   Check,
   Clock,
   Send,
-  Sparkles
+  Sparkles,
+  Key
 } from 'lucide-react';
-import { getUsers, createUser, deleteUser, getOrgMembers, removeMember, updateMemberRole, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, createInvitation, getInvitations, revokeInvitation, type Department, type DeptRole, type Invitation } from '@/services/api';
+import { getUsers, createUser, deleteUser, adminResetPassword, getOrgMembers, removeMember, updateMemberRole, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, createInvitation, getInvitations, revokeInvitation, type Department, type DeptRole, type Invitation } from '@/services/api';
 import type { OrgMember, OrgRole, Organization } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
@@ -832,6 +833,8 @@ function InviteMemberModal({
 function SystemUsers({ currentUser }: { currentUser: any }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', password: '', name: '', role: 'admin' });
+  const [passwordResetResult, setPasswordResetResult] = useState<{ email: string; password: string } | null>(null);
+  const [copiedPassword, setCopiedPassword] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: users = [], isLoading } = useQuery({
@@ -862,6 +865,17 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
     },
     onError: () => {
       toast.error('Ошибка удаления');
+    },
+  });
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: (userId: number) => adminResetPassword(userId),
+    onSuccess: (data) => {
+      setPasswordResetResult({ email: data.user_email, password: data.temporary_password });
+      toast.success('Пароль сброшен');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Ошибка сброса пароля');
     },
   });
 
@@ -1056,22 +1070,85 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
                   <p className="text-sm text-white/40 truncate">{user.email}</p>
                 </div>
                 {user.id !== currentUser?.id && (
-                  <button
-                    onClick={() => {
-                      if (confirm('Удалить пользователя?')) {
-                        deleteMutation.mutate(user.id);
-                      }
-                    }}
-                    className="p-2 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        if (confirm(`Сбросить пароль для ${user.email}?\n\nБудет сгенерирован временный пароль.`)) {
+                          resetPasswordMutation.mutate(user.id);
+                        }
+                      }}
+                      disabled={resetPasswordMutation.isPending}
+                      className="p-2 rounded-lg text-white/40 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors disabled:opacity-50"
+                      title="Сбросить пароль"
+                    >
+                      <Key className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm('Удалить пользователя?')) {
+                          deleteMutation.mutate(user.id);
+                        }
+                      }}
+                      className="p-2 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
                 )}
               </motion.div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Password Reset Result Dialog */}
+      <Dialog.Root open={!!passwordResetResult} onOpenChange={(open) => !open && setPasswordResetResult(null)}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
+          <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-gray-900 border border-white/10 rounded-xl p-6 z-50">
+            <Dialog.Title className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+              <Key className="text-cyan-400" />
+              Пароль сброшен
+            </Dialog.Title>
+            {passwordResetResult && (
+              <div className="space-y-4">
+                <p className="text-white/60 text-sm">
+                  Временный пароль для <span className="text-white font-medium">{passwordResetResult.email}</span>:
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 bg-white/5 border border-white/10 rounded-lg py-3 px-4 text-cyan-400 font-mono text-lg">
+                    {passwordResetResult.password}
+                  </code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(passwordResetResult.password);
+                      setCopiedPassword(true);
+                      setTimeout(() => setCopiedPassword(false), 2000);
+                      toast.success('Пароль скопирован');
+                    }}
+                    className="p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                  >
+                    {copiedPassword ? <Check className="w-5 h-5 text-green-400" /> : <Copy className="w-5 h-5 text-white/60" />}
+                  </button>
+                </div>
+                <p className="text-yellow-400/80 text-sm bg-yellow-500/10 rounded-lg p-3">
+                  ⚠️ Пользователь должен будет сменить пароль при следующем входе
+                </p>
+                <Dialog.Close asChild>
+                  <button className="w-full py-2.5 rounded-lg bg-cyan-500 text-white hover:bg-cyan-600">
+                    Закрыть
+                  </button>
+                </Dialog.Close>
+              </div>
+            )}
+            <Dialog.Close asChild>
+              <button className="absolute top-4 right-4 p-2 rounded-lg hover:bg-white/5 text-white/60">
+                <X className="w-5 h-5" />
+              </button>
+            </Dialog.Close>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </motion.div>
   );
 }

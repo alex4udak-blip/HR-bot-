@@ -206,6 +206,8 @@ class User(Base):
     # Brute force protection
     failed_login_attempts = Column(Integer, default=0)
     locked_until = Column(DateTime, nullable=True)
+    # Password reset by admin
+    must_change_password = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())
 
     chats = relationship("Chat", back_populates="owner")
