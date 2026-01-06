@@ -1779,7 +1779,7 @@ class ExternalLinkProcessor:
             # Calculate speaker stats and participant roles for AI context
             if call.speakers:
                 from .call_processor import calculate_speaker_stats, identify_participant_roles
-                call.speaker_stats = calculate_speaker_stats(call.speakers)
+                call.speaker_stats = calculate_speaker_stats(call.speakers, call.duration_seconds)
                 logger.info(f"Calculated speaker stats for {len(call.speaker_stats)} speakers")
 
                 # If we have Fireflies speaker stats with WPM and talktime, merge them

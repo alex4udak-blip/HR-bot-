@@ -667,12 +667,13 @@ SEGMENT_DURATION = 600
 SHORT_CALL_THRESHOLD = 1800
 
 
-def calculate_speaker_stats(speakers: list) -> dict:
+def calculate_speaker_stats(speakers: list, call_duration_seconds: int = None) -> dict:
     """
     Calculate statistics for each speaker from call segments.
 
     Args:
         speakers: List of speaker segments [{speaker, start, end, text}, ...]
+        call_duration_seconds: Optional total call duration for validation
 
     Returns:
         Dict mapping speaker name to stats
@@ -690,6 +691,8 @@ def calculate_speaker_stats(speakers: list) -> dict:
         (segment.get("start", 0) or 0) > 0 or (segment.get("end", 0) or 0) > 0
         for segment in speakers
     )
+
+    total_chars_all = sum(len(segment.get("text", "") or "") for segment in speakers)
 
     for segment in speakers:
         speaker = segment.get("speaker", "Unknown")
@@ -727,6 +730,22 @@ def calculate_speaker_stats(speakers: list) -> dict:
         if has_real_timestamps:
             stats[speaker]["first_speak_time"] = min(stats[speaker]["first_speak_time"], start)
             stats[speaker]["last_speak_time"] = max(stats[speaker]["last_speak_time"], end)
+
+    # Validation: check if timestamps-based calculation is reasonable
+    total_seconds_all = sum(s["total_seconds"] for s in stats.values())
+
+    # If we have call duration and calculated time is unreasonably short (<10% of call),
+    # fall back to text-based estimation
+    min_expected_speaking = (call_duration_seconds or 0) * 0.3  # Expect at least 30% speaking time
+    if has_real_timestamps and call_duration_seconds and total_seconds_all < min_expected_speaking:
+        logger.warning(f"Timestamp-based speaker stats ({total_seconds_all:.0f}s) too low for {call_duration_seconds}s call, using text estimation")
+        # Recalculate using text-based estimation
+        for speaker, data in stats.items():
+            text_duration = data["total_chars"] / CHARS_PER_SECOND
+            data["total_seconds"] = text_duration
+            data["talktime_seconds"] = text_duration
+            data["estimated"] = True
+        total_seconds_all = sum(s["total_seconds"] for s in stats.values())
 
     # Calculate averages, percentages, and WPM
     total_seconds_all = sum(s["total_seconds"] for s in stats.values())
@@ -803,7 +822,7 @@ async def identify_participant_roles(call, db) -> dict:
             }
 
     # Try to match speakers to roles by email
-    speaker_stats = calculate_speaker_stats(call.speakers)
+    speaker_stats = calculate_speaker_stats(call.speakers, call.duration_seconds)
 
     for speaker_name in speaker_stats.keys():
         # Extract email from speaker name if present
@@ -857,7 +876,7 @@ async def process_call_for_ai(call, db, force_reprocess: bool = False):
 
     # Calculate speaker stats
     if call.speakers:
-        call.speaker_stats = calculate_speaker_stats(call.speakers)
+        call.speaker_stats = calculate_speaker_stats(call.speakers, call.duration_seconds)
         logger.debug(f"Calculated stats for {len(call.speaker_stats)} speakers")
 
     # Identify participant roles
