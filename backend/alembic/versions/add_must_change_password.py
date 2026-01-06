@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'add_must_change_pwd'
-down_revision = 'add_user_security_cols'
+down_revision = 'add_entity_criteria'
 branch_labels = None
 depends_on = None
 
