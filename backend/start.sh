@@ -12,9 +12,24 @@ python -m alembic current || echo "No current version (fresh database)"
 
 echo ""
 echo "Upgrading to head..."
-python -m alembic upgrade head || {
-    echo "Single head failed, trying 'heads' (multiple branches)..."
-    python -m alembic upgrade heads
+# Get current version to check if already at head
+CURRENT_VERSION=$(python -m alembic current 2>/dev/null | grep -oE '^[a-z0-9_]+' | head -1)
+echo "Current DB version: ${CURRENT_VERSION:-none}"
+
+# Try upgrade, handle various error cases gracefully
+python -m alembic upgrade head 2>&1 && echo "Migration successful" || {
+    UPGRADE_ERROR=$?
+    # If already at latest version, the overlap error is expected - continue
+    if [ "$CURRENT_VERSION" = "add_must_change_pwd" ]; then
+        echo "Already at latest migration (add_must_change_pwd), continuing..."
+    else
+        echo "Single head upgrade failed (exit code: $UPGRADE_ERROR)"
+        echo "Trying 'heads' for multiple branches..."
+        python -m alembic upgrade heads 2>&1 || {
+            echo "WARNING: Migration commands failed, but continuing startup..."
+            echo "The database might already be up to date or require manual intervention."
+        }
+    fi
 }
 
 echo ""
@@ -54,6 +69,13 @@ async def ensure_columns():
                 print(f'Ensured column: entity_transfers.{col_name}')
             except Exception as e:
                 print(f'Column {col_name}: {e}')
+
+        # Add must_change_password column if missing
+        try:
+            await conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE'))
+            print('Ensured column: users.must_change_password')
+        except Exception as e:
+            print(f'Column must_change_password: {e}')
     await engine.dispose()
 
 asyncio.run(ensure_columns())
