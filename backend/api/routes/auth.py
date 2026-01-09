@@ -179,8 +179,11 @@ async def change_password(
         raise HTTPException(status_code=400, detail=error_message)
 
     user.password_hash = hash_password(password_request.new_password)
-    # Increment token_version to invalidate all existing tokens
-    user.token_version += 1
+    # Only invalidate tokens if this is a voluntary password change
+    # If must_change_password was True (admin reset), user just logged in with fresh token
+    # so we don't need to invalidate it
+    if not user.must_change_password:
+        user.token_version += 1
     # Clear the must_change_password flag if it was set
     user.must_change_password = False
     await db.commit()
