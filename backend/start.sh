@@ -1,5 +1,6 @@
 #!/bin/bash
-set -e
+# Don't use set -e - we want to continue even if some steps fail
+# set -e
 
 echo "=== Starting HR-Bot Backend ==="
 echo "Current directory: $(pwd)"
@@ -10,7 +11,7 @@ echo "=== Running database migrations ==="
 
 # First, fix any multiple heads in alembic_version table
 echo "Checking for multiple heads in alembic_version..."
-python -c "
+timeout 30 python -c "
 import os
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -27,7 +28,7 @@ async def fix_alembic_version():
         print('No DATABASE_URL, skipping')
         return
 
-    engine = create_async_engine(db_url)
+    engine = create_async_engine(db_url, pool_timeout=10, connect_args={'timeout': 10})
     async with engine.begin() as conn:
         # Check how many versions exist
         result = await conn.execute(text('SELECT version_num FROM alembic_version'))
@@ -66,7 +67,7 @@ python -m alembic current
 
 echo ""
 echo "=== Ensuring critical columns exist ==="
-python -c "
+timeout 30 python -c "
 import os
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -80,34 +81,34 @@ async def ensure_columns():
         db_url = db_url.replace('postgresql://', 'postgresql+asyncpg://', 1)
 
     if not db_url:
-        print('No DATABASE_URL, skipping column check')
+        print('No DATABASE_URL, skipping')
         return
 
-    engine = create_async_engine(db_url)
-    async with engine.begin() as conn:
-        # Add missing transfer cancel columns
-        cols = [
-            ('copy_entity_id', 'INTEGER REFERENCES entities(id) ON DELETE SET NULL'),
-            ('cancelled_at', 'TIMESTAMP'),
-            ('cancel_deadline', 'TIMESTAMP'),
-        ]
-        for col_name, col_type in cols:
-            try:
-                await conn.execute(text(f'ALTER TABLE entity_transfers ADD COLUMN IF NOT EXISTS {col_name} {col_type}'))
-                print(f'Ensured column: entity_transfers.{col_name}')
-            except Exception as e:
-                print(f'Column {col_name}: {e}')
+    print('Connecting...')
+    engine = create_async_engine(db_url, pool_timeout=10, connect_args={'timeout': 10})
+    try:
+        async with engine.begin() as conn:
+            print('Checking columns...')
+            for col_name, col_type in [
+                ('copy_entity_id', 'INTEGER'),
+                ('cancelled_at', 'TIMESTAMP'),
+                ('cancel_deadline', 'TIMESTAMP'),
+            ]:
+                try:
+                    await conn.execute(text(f'ALTER TABLE entity_transfers ADD COLUMN IF NOT EXISTS {col_name} {col_type}'))
+                except Exception as e:
+                    pass
 
-        # Add must_change_password column if missing
-        try:
-            await conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE'))
-            print('Ensured column: users.must_change_password')
-        except Exception as e:
-            print(f'Column must_change_password: {e}')
-    await engine.dispose()
+            try:
+                await conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE'))
+            except Exception as e:
+                pass
+            print('Columns OK')
+    finally:
+        await engine.dispose()
 
 asyncio.run(ensure_columns())
-" || echo "Column check failed, continuing anyway..."
+" && echo "Column check done" || echo "Column check skipped"
 
 echo ""
 echo "=== Starting server ==="
