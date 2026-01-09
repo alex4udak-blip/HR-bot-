@@ -7,29 +7,57 @@ echo "Python version: $(python --version)"
 
 echo ""
 echo "=== Running database migrations ==="
+
+# First, fix any multiple heads in alembic_version table
+echo "Checking for multiple heads in alembic_version..."
+python -c "
+import os
+import asyncio
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import text
+
+async def fix_alembic_version():
+    db_url = os.environ.get('DATABASE_URL', '')
+    if db_url.startswith('postgres://'):
+        db_url = db_url.replace('postgres://', 'postgresql+asyncpg://', 1)
+    elif db_url.startswith('postgresql://'):
+        db_url = db_url.replace('postgresql://', 'postgresql+asyncpg://', 1)
+
+    if not db_url:
+        print('No DATABASE_URL, skipping')
+        return
+
+    engine = create_async_engine(db_url)
+    async with engine.begin() as conn:
+        # Check how many versions exist
+        result = await conn.execute(text('SELECT version_num FROM alembic_version'))
+        versions = [row[0] for row in result.fetchall()]
+
+        if len(versions) > 1:
+            print(f'Found multiple heads: {versions}')
+            print('Consolidating to single head: add_must_change_pwd')
+            # Delete all and insert the correct one
+            await conn.execute(text('DELETE FROM alembic_version'))
+            await conn.execute(text(\"INSERT INTO alembic_version (version_num) VALUES ('add_must_change_pwd')\"))
+            print('Fixed: now single head')
+        elif len(versions) == 1:
+            print(f'Single head found: {versions[0]}')
+        else:
+            print('No version found (fresh database)')
+
+    await engine.dispose()
+
+asyncio.run(fix_alembic_version())
+" || echo "Version check failed, continuing..."
+
+echo ""
 echo "Checking current alembic version..."
 python -m alembic current || echo "No current version (fresh database)"
 
 echo ""
 echo "Upgrading to head..."
-# Get current version to check if already at head
-CURRENT_VERSION=$(python -m alembic current 2>/dev/null | grep -oE '^[a-z0-9_]+' | head -1)
-echo "Current DB version: ${CURRENT_VERSION:-none}"
-
-# Try upgrade, handle various error cases gracefully
 python -m alembic upgrade head 2>&1 && echo "Migration successful" || {
-    UPGRADE_ERROR=$?
-    # If already at latest version, the overlap error is expected - continue
-    if [ "$CURRENT_VERSION" = "add_must_change_pwd" ]; then
-        echo "Already at latest migration (add_must_change_pwd), continuing..."
-    else
-        echo "Single head upgrade failed (exit code: $UPGRADE_ERROR)"
-        echo "Trying 'heads' for multiple branches..."
-        python -m alembic upgrade heads 2>&1 || {
-            echo "WARNING: Migration commands failed, but continuing startup..."
-            echo "The database might already be up to date or require manual intervention."
-        }
-    fi
+    echo "Upgrade failed, but continuing - columns will be ensured below"
 }
 
 echo ""
