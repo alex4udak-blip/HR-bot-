@@ -7,6 +7,18 @@ import { useAuthStore } from '@/stores/authStore';
 import { login, changePassword } from '@/services/api';
 import BackgroundEffects from '@/components/BackgroundEffects';
 
+// Helper to extract error message from API response
+const getErrorMessage = (error: any, fallback: string): string => {
+  const detail = error?.response?.data?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  // Pydantic validation error returns array of {type, loc, msg, input, ctx}
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail[0]?.msg || fallback;
+  }
+  return fallback;
+};
+
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -35,7 +47,7 @@ export default function LoginPage() {
         navigate('/dashboard');
       }
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Ошибка авторизации');
+      toast.error(getErrorMessage(error, 'Ошибка авторизации'));
     } finally {
       setLoading(false);
     }
@@ -64,7 +76,7 @@ export default function LoginPage() {
       toast.success('Пароль успешно изменён!');
       navigate('/dashboard');
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Ошибка смены пароля');
+      toast.error(getErrorMessage(error, 'Ошибка смены пароля'));
     } finally {
       setLoading(false);
     }
