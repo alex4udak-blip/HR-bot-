@@ -55,7 +55,8 @@ async def require_invitation_access(
     user_dept_ids = {dm.department_id for dm in dept_memberships}
 
     # Check if user is lead/sub_admin in any department
-    is_dept_lead = any(dm.role in (DeptRole.lead, DeptRole.sub_admin) for dm in dept_memberships)
+    # Use string comparison since dm.role comes from DB as string
+    is_dept_lead = any(dm.role in ("lead", "sub_admin") for dm in dept_memberships)
 
     # Allow org owner, org admin, OR department lead/sub_admin
     if org_role in (OrgRole.owner, OrgRole.admin):

@@ -957,11 +957,12 @@ async def remove_department_member(
             raise HTTPException(status_code=404, detail="Member not found")
 
         # Sub_admin can only remove regular members
-        if is_sub_admin and member.role in (DeptRole.lead, DeptRole.sub_admin):
+        # Use string comparison since member.role comes from DB as string
+        if is_sub_admin and member.role in ("lead", "sub_admin"):
             raise HTTPException(status_code=403, detail="Sub-admins can only remove regular members")
 
         # Don't allow removing the last lead
-        if member.role == DeptRole.lead:
+        if member.role == "lead":
             leads_result = await db.execute(
                 select(DepartmentMember).where(
                     DepartmentMember.department_id == department_id,

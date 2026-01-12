@@ -450,7 +450,8 @@ async def is_department_admin(user: User, dept_id: int, db: AsyncSession) -> boo
     if not member:
         return False
 
-    return member.role in (DeptRole.lead, DeptRole.sub_admin)
+    # Use string comparison since member.role comes from DB as string
+    return member.role in ("lead", "sub_admin")
 
 
 async def get_user_departments(user: User, db: AsyncSession) -> list:
@@ -529,7 +530,8 @@ async def can_view_in_department(user: User, resource_owner_id: int, resource_de
         return False
 
     # Department admins (lead/sub_admin) can view all resources in their department
-    if member.role in (DeptRole.lead, DeptRole.sub_admin):
+    # Use string comparison since member.role comes from DB as string
+    if member.role in ("lead", "sub_admin"):
         return True
 
     # Regular members can only view their own resources

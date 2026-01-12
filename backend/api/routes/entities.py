@@ -353,7 +353,8 @@ async def list_entities(
         dept_memberships = list(dept_memberships_result.scalars().all())
         user_dept_ids = [dm.department_id for dm in dept_memberships]
         # Only lead and sub_admin can see all department entities
-        admin_dept_ids = [dm.department_id for dm in dept_memberships if dm.role in (DeptRole.lead, DeptRole.sub_admin)]
+        # Use string comparison since dm.role comes from DB as string
+        admin_dept_ids = [dm.department_id for dm in dept_memberships if dm.role in ("lead", "sub_admin")]
 
         # Shared entities query
         shared_ids_query = select(SharedAccess.resource_id).where(
@@ -1197,7 +1198,8 @@ async def transfer_entity(
         can_transfer = True
     else:
         # Check department-based permissions
-        has_sub_admin = any(dm.role == DeptRole.sub_admin for dm in from_dept_memberships)
+        # Use string comparison since dm.role comes from DB as string
+        has_sub_admin = any(dm.role == "sub_admin" for dm in from_dept_memberships)
 
         if has_sub_admin or from_user_role == OrgRole.admin:
             # SUB_ADMIN and ADMIN can transfer to:
@@ -1208,7 +1210,7 @@ async def transfer_entity(
                 can_transfer = True
             else:
                 # Check if target is admin/sub_admin of any department
-                is_target_admin = any(dm.role in [DeptRole.sub_admin, DeptRole.lead] for dm in to_dept_memberships)
+                is_target_admin = any(dm.role in ("sub_admin", "lead") for dm in to_dept_memberships)
                 if is_target_admin or to_user_role == OrgRole.admin:
                     can_transfer = True
         else:
