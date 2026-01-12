@@ -539,9 +539,48 @@ class CallProcessor:
             result["formatted_transcript"] = "\n\n".join(all_formatted_transcripts)
         return result
 
+    def _is_already_formatted(self, transcript: str) -> bool:
+        """Check if transcript already has timestamps and speaker labels (e.g., from Fireflies)."""
+        import re
+        # Pattern: [00:00] or [00:00:00] followed by speaker name
+        pattern = r'\[\d{2}:\d{2}(:\d{2})?\]\s*[^:]+:'
+        # Check first 500 chars for pattern
+        matches = re.findall(pattern, transcript[:500])
+        return len(matches) >= 2  # At least 2 matches = formatted transcript
+
     async def _analyze_single(self, transcript: str) -> dict:
         """Analyze a single (short) transcript."""
-        prompt = f"""Ты опытный бизнес-аналитик с безупречным вниманием к деталям. Твоя задача - создать ИСЧЕРПЫВАЮЩИЙ анализ созвона.
+        # Check if transcript is already formatted (from Fireflies/bot)
+        is_formatted = self._is_already_formatted(transcript)
+
+        if is_formatted:
+            # Simplified prompt for already formatted transcripts (Fireflies bot)
+            prompt = f"""Проанализируй транскрипт созвона и создай структурированное резюме.
+
+Транскрипт уже содержит временные метки и имена спикеров.
+
+Создай анализ:
+
+1. **СУТЬ РАЗГОВОРА** - главная цель и результат встречи (2-3 предложения)
+2. **ОСНОВНАЯ ТЕМА** - о чём шла речь
+3. **КЛЮЧЕВЫЕ МОМЕНТЫ** - важные детали, решения, договорённости
+4. **ЗАДАЧИ** - что нужно сделать, кому, когда
+
+Транскрипт:
+---
+{transcript}
+---
+
+Ответь ТОЛЬКО валидным JSON:
+{{
+  "summary": "**СУТЬ РАЗГОВОРА:**\\nТекст...\\n\\n**ОСНОВНАЯ ТЕМА:**\\nТекст...\\n\\n**КЛЮЧЕВЫЕ МОМЕНТЫ:**\\n• Пункт 1\\n• Пункт 2",
+  "key_points": ["Ключевой момент 1", "Ключевой момент 2"],
+  "action_items": ["Задача 1", "Задача 2"]
+}}"""
+            logger.info(f"Using simplified prompt for already formatted transcript ({len(transcript)} chars)")
+        else:
+            # Full prompt for raw transcripts (uploaded files)
+            prompt = f"""Ты опытный бизнес-аналитик с безупречным вниманием к деталям. Твоя задача - создать ИСЧЕРПЫВАЮЩИЙ анализ созвона.
 
 КРИТИЧЕСКИ ВАЖНО:
 - Прочитай ВЕСЬ транскрипт от начала до конца
