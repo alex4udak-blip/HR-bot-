@@ -457,11 +457,11 @@ export default function ContactsPage() {
                                 {entity.access_level === 'view' ? 'Просмотр' : entity.access_level === 'edit' ? 'Редактирование' : 'Полный доступ'} от {entity.owner_name}
                               </span>
                             )}
-                            {/* Show owner for department-visible entities (not shared, not mine) */}
-                            {!entity.is_shared && !entity.is_mine && entity.owner_name && !entity.is_transferred && (
-                              <span className="flex items-center gap-1 text-white/40" title={`Владелец: ${entity.owner_name}`}>
+                            {/* Show owner for all non-owned entities (for superadmin, org owner, dept admins) */}
+                            {!entity.is_mine && entity.owner_name && !entity.is_transferred && !entity.is_shared && (
+                              <span className="flex items-center gap-1 text-blue-400" title={`Владелец: ${entity.owner_name}`}>
                                 <User size={12} />
-                                {entity.owner_name}
+                                <span className="text-white/40">Владелец:</span> {entity.owner_name}
                               </span>
                             )}
                             {entity.chats_count !== undefined && entity.chats_count > 0 && (

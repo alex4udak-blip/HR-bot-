@@ -95,13 +95,19 @@ export default function ChatList({ chats, selectedId, onSelect }: ChatListProps)
                   </span>
                   {/* Show owner info if not my chat */}
                   {!chat.is_mine && chat.owner_name && (
-                    <span className="flex items-center gap-1 flex-shrink-0 text-xs text-dark-500" title={`Владелец: ${chat.owner_name}`}>
+                    <span className="flex items-center gap-1 flex-shrink-0 text-xs" title={`Владелец: ${chat.owner_name}`}>
                       {chat.is_shared ? (
-                        <Share2 className="w-3 h-3 text-accent-400" />
+                        <>
+                          <Share2 className="w-3 h-3 text-accent-400" />
+                          <span className="text-accent-400 truncate max-w-[100px]">{chat.owner_name}</span>
+                        </>
                       ) : (
-                        <User className="w-3 h-3" />
+                        <>
+                          <User className="w-3 h-3 text-blue-400" />
+                          <span className="text-dark-500">Владелец:</span>
+                          <span className="text-blue-400 truncate max-w-[100px]">{chat.owner_name}</span>
+                        </>
                       )}
-                      <span className="truncate max-w-[100px]">{chat.owner_name}</span>
                     </span>
                   )}
                 </div>

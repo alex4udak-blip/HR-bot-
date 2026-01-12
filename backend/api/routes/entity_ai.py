@@ -431,7 +431,7 @@ async def batch_update_entity_summaries(
             result = await db.execute(
                 select(DepartmentMember).where(
                     DepartmentMember.user_id == user.id,
-                    DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+                    DepartmentMember.role.in_(["lead", "sub_admin"])
                 )
             )
             if result.scalar_one_or_none():

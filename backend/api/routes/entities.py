@@ -522,10 +522,11 @@ async def list_entities(
         shared_call_ids = set(shared_calls_result.scalars().all())
 
         # Get departments where user is lead or sub_admin
+        # Use string values to avoid enum serialization issues
         admin_dept_result = await db.execute(
             select(DepartmentMember.department_id).where(
                 DepartmentMember.user_id == current_user.id,
-                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+                DepartmentMember.role.in_(["lead", "sub_admin"])
             )
         )
         admin_dept_ids = [r for r in admin_dept_result.scalars().all()]
@@ -752,10 +753,11 @@ async def get_entity(
         shared_call_ids = set(shared_calls_result.scalars().all())
 
         # Get departments where user is lead or sub_admin
+        # Use string values to avoid enum serialization issues
         admin_dept_result = await db.execute(
             select(DepartmentMember.department_id).where(
                 DepartmentMember.user_id == current_user.id,
-                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+                DepartmentMember.role.in_(["lead", "sub_admin"])
             )
         )
         admin_dept_ids = [r for r in admin_dept_result.scalars().all()]
