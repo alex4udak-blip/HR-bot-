@@ -11,9 +11,8 @@ from ..models.database import User, UserRole, Chat, Message
 from ..models.schemas import MessageResponse, ParticipantResponse
 from ..services.auth import get_current_user, get_current_user_optional, get_user_from_token, get_user_org
 from ..services.transcription import transcription_service
+from ..services.permissions import PermissionService
 from ..config import settings
-# Import the proper can_access_chat that checks SharedAccess
-from .chats import can_access_chat as can_access_chat_full
 
 # Uploads directory for imported media
 UPLOADS_DIR = Path(__file__).parent.parent.parent / "uploads"
@@ -38,8 +37,9 @@ async def get_messages(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    # Use the full can_access_chat that checks SharedAccess
-    if not await can_access_chat_full(user, chat, org_id, db):
+    # Use PermissionService for access check
+    permission_service = PermissionService(db)
+    if not await permission_service.can_access_resource(user, chat, org_id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     query = select(Message).where(Message.chat_id == chat_id)
@@ -85,7 +85,8 @@ async def get_participants(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not await can_access_chat_full(user, chat, org_id, db):
+    permission_service = PermissionService(db)
+    if not await permission_service.can_access_resource(user, chat, org_id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Group by telegram_user_id only, take max of other fields to avoid duplicates
@@ -220,7 +221,8 @@ async def get_local_file(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not await can_access_chat_full(user, chat, org_id, db):
+    permission_service = PermissionService(db)
+    if not await permission_service.can_access_resource(user, chat, org_id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Build file path and verify it exists
@@ -333,7 +335,8 @@ async def transcribe_message(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not await can_access_chat_full(user, chat, org_id, db):
+    permission_service = PermissionService(db)
+    if not await permission_service.can_access_resource(user, chat, org_id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Get file bytes - either from local file or from Telegram
@@ -441,7 +444,8 @@ async def transcribe_all_media(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not await can_access_chat_full(user, chat, org_id, db):
+    permission_service = PermissionService(db)
+    if not await permission_service.can_access_resource(user, chat, org_id):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Find all messages that need transcription
