@@ -278,6 +278,16 @@ async def get_chats(
                 )
                 dept_member_ids = [r for r in dept_members_result.scalars().all()]
 
+            # Get entity IDs that belong to user's departments (for entity-based access)
+            dept_entity_ids = []
+            if lead_dept_ids:
+                dept_entities_result = await db.execute(
+                    select(Entity.id).where(
+                        Entity.department_id.in_(lead_dept_ids)
+                    )
+                )
+                dept_entity_ids = [r for r in dept_entities_result.scalars().all()]
+
             # Build access conditions
             conditions = [Chat.owner_id == user.id]  # Own records
 
@@ -286,6 +296,10 @@ async def get_chats(
 
             if dept_member_ids:
                 conditions.append(Chat.owner_id.in_(dept_member_ids))  # Dept members' records
+
+            # Also show chats linked to entities in user's departments
+            if dept_entity_ids:
+                conditions.append(Chat.entity_id.in_(dept_entity_ids))  # Chats linked to dept entities
 
             query = query.where(or_(*conditions))
         # org owner sees all in org (no additional filter)
