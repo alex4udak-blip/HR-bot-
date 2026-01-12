@@ -380,8 +380,8 @@ async def update_member_role(
         raise HTTPException(status_code=400, detail="Invalid role")
 
     # Only owner can change to/from owner
-    # Use string comparison since membership.role comes from DB as string
-    if (new_role == OrgRole.owner or membership.role == "owner") and current_role != "owner":
+    # Use enum comparison since membership.role comes from DB as OrgRole enum
+    if (new_role == OrgRole.owner or membership.role == OrgRole.owner) and current_role != "owner":
         raise HTTPException(status_code=403, detail="Only owner can manage owner roles")
 
     membership.role = new_role
@@ -421,13 +421,13 @@ async def remove_member(
     if current_user.role == UserRole.superadmin:
         pass  # No restrictions for superadmin
     # Owner can remove admins and members, but not other owners
-    # Use string comparison since roles come from DB as strings
+    # Use enum comparison since roles come from DB as OrgRole enum
     elif current_role == "owner":
-        if membership.role == "owner":
+        if membership.role == OrgRole.owner:
             raise HTTPException(status_code=403, detail="Cannot remove other owners")
     # Admin can only remove members (not other admins or owners)
     elif current_role == "admin":
-        if membership.role in ("owner", "admin"):
+        if membership.role in (OrgRole.owner, OrgRole.admin):
             raise HTTPException(status_code=403, detail="Admins can only remove members")
     else:
         raise HTTPException(status_code=403, detail="No permission to remove members")

@@ -87,12 +87,12 @@ async def is_org_owner(user: User, org: Organization, db: AsyncSession) -> bool:
     if user.role == UserRole.superadmin:
         return True
 
-    # Use string value for SQL comparison
+    # Use enum value for SQL comparison
     result = await db.execute(
         select(OrgMember).where(
             OrgMember.org_id == org.id,
             OrgMember.user_id == user.id,
-            OrgMember.role == "owner"
+            OrgMember.role == OrgRole.owner
         )
     )
     return result.scalar_one_or_none() is not None
@@ -182,12 +182,12 @@ async def list_departments(
     is_superadmin = current_user.role == UserRole.superadmin
     is_owner = False
     if not is_superadmin:
-        # Use string value for SQL comparison
+        # Use enum value for SQL comparison
         owner_result = await db.execute(
             select(OrgMember).where(
                 OrgMember.org_id == org.id,
                 OrgMember.user_id == current_user.id,
-                OrgMember.role == "owner"
+                OrgMember.role == OrgRole.owner
             )
         )
         is_owner = owner_result.scalar_one_or_none() is not None

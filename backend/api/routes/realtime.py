@@ -375,11 +375,11 @@ async def get_users_with_resource_access(
         user_ids.add(owner_id)
 
     # 2. Org owners and admins
-    # Use string value for SQL comparison
+    # Use enum value for SQL comparison
     org_admins_result = await db.execute(
         select(OrgMember.user_id).where(
             OrgMember.org_id == org_id,
-            OrgMember.role == "owner"
+            OrgMember.role == OrgRole.owner
         )
     )
     for uid in org_admins_result.scalars().all():
