@@ -403,3 +403,179 @@ class TestCrossOrgDepartments:
 
         assert response.status_code in [403, 404], \
             f"User should not access department from other org. Got {response.status_code}"
+
+
+class TestDepartmentAdminEntityVisibility:
+    """Test that department admins can see entities created by department members."""
+
+    @pytest.mark.asyncio
+    async def test_dept_lead_sees_entities_created_by_dept_members(
+        self, db_session, client, admin_user, admin_token, second_user, second_user_token,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """
+        Test that department lead can see entities created by regular department members.
+        This tests the fix for entities without department_id but created by dept members.
+        """
+        from api.models.database import Entity, EntityType, EntityStatus
+
+        # Add admin_user as lead of the department
+        lead_membership = DepartmentMember(
+            department_id=department.id,
+            user_id=admin_user.id,
+            role=DeptRole.lead,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(lead_membership)
+
+        # Add second_user as member of the same department
+        member_membership = DepartmentMember(
+            department_id=department.id,
+            user_id=second_user.id,
+            role=DeptRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(member_membership)
+        await db_session.commit()
+
+        # second_user creates an entity WITHOUT department_id
+        entity_no_dept = Entity(
+            org_id=organization.id,
+            department_id=None,  # No department assignment
+            created_by=second_user.id,
+            name="Entity by Dept Member",
+            email="member-entity@test.com",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(entity_no_dept)
+        await db_session.commit()
+        await db_session.refresh(entity_no_dept)
+
+        # Department lead should see this entity because owner is in their department
+        response = await client.get(
+            "/api/entities",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        entity_ids = [e["id"] for e in data]
+
+        assert entity_no_dept.id in entity_ids, \
+            "Department lead should see entities created by department members, even without department_id"
+
+    @pytest.mark.asyncio
+    async def test_dept_sub_admin_sees_entities_created_by_dept_members(
+        self, db_session, client, admin_user, admin_token, second_user,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """
+        Test that department sub_admin can see entities created by department members.
+        """
+        from api.models.database import Entity, EntityType, EntityStatus
+
+        # Add admin_user as sub_admin of the department
+        sub_admin_membership = DepartmentMember(
+            department_id=department.id,
+            user_id=admin_user.id,
+            role=DeptRole.sub_admin,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(sub_admin_membership)
+
+        # Add second_user as member of the same department
+        member_membership = DepartmentMember(
+            department_id=department.id,
+            user_id=second_user.id,
+            role=DeptRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(member_membership)
+        await db_session.commit()
+
+        # second_user creates an entity WITHOUT department_id
+        entity_no_dept = Entity(
+            org_id=organization.id,
+            department_id=None,
+            created_by=second_user.id,
+            name="Entity for Sub Admin Test",
+            email="subadmin-test@test.com",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(entity_no_dept)
+        await db_session.commit()
+        await db_session.refresh(entity_no_dept)
+
+        # Sub_admin should see this entity
+        response = await client.get(
+            "/api/entities",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        entity_ids = [e["id"] for e in data]
+
+        assert entity_no_dept.id in entity_ids, \
+            "Department sub_admin should see entities created by department members"
+
+    @pytest.mark.asyncio
+    async def test_regular_member_cannot_see_other_members_entities(
+        self, db_session, client, admin_user, admin_token, second_user, second_user_token,
+        organization, department, get_auth_headers, org_owner, org_member
+    ):
+        """
+        Test that regular department member cannot see entities created by other members.
+        Only lead/sub_admin should have this privilege.
+        """
+        from api.models.database import Entity, EntityType, EntityStatus
+
+        # Both are regular members
+        member1 = DepartmentMember(
+            department_id=department.id,
+            user_id=admin_user.id,
+            role=DeptRole.member,  # Regular member, not lead
+            created_at=datetime.utcnow()
+        )
+        db_session.add(member1)
+
+        member2 = DepartmentMember(
+            department_id=department.id,
+            user_id=second_user.id,
+            role=DeptRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(member2)
+        await db_session.commit()
+
+        # second_user creates an entity
+        entity = Entity(
+            org_id=organization.id,
+            department_id=None,
+            created_by=second_user.id,
+            name="Private Entity",
+            email="private@test.com",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(entity)
+        await db_session.commit()
+        await db_session.refresh(entity)
+
+        # admin_user (regular member) should NOT see this entity
+        response = await client.get(
+            "/api/entities",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        entity_ids = [e["id"] for e in data]
+
+        assert entity.id not in entity_ids, \
+            "Regular department member should NOT see entities created by other members"
