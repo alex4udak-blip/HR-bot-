@@ -26,7 +26,7 @@ import asyncio
 from ..database import get_db
 from ..models.database import (
     User, UserRole, Entity, Chat, CallRecording,
-    SharedAccess, ResourceType, DepartmentMember, DeptRole, OrganizationMember, OrgRole
+    SharedAccess, ResourceType, DepartmentMember, DeptRole, OrgMember, OrgRole
 )
 from ..services.auth import get_user_from_token
 
@@ -376,9 +376,9 @@ async def get_users_with_resource_access(
 
     # 2. Org owners and admins
     org_admins_result = await db.execute(
-        select(OrganizationMember.user_id).where(
-            OrganizationMember.org_id == org_id,
-            OrganizationMember.role == OrgRole.owner
+        select(OrgMember.user_id).where(
+            OrgMember.org_id == org_id,
+            OrgMember.role == OrgRole.owner
         )
     )
     for uid in org_admins_result.scalars().all():
@@ -386,10 +386,10 @@ async def get_users_with_resource_access(
 
     # 3. Superadmins in org
     superadmins_result = await db.execute(
-        select(OrganizationMember.user_id).join(
-            User, User.id == OrganizationMember.user_id
+        select(OrgMember.user_id).join(
+            User, User.id == OrgMember.user_id
         ).where(
-            OrganizationMember.org_id == org_id,
+            OrgMember.org_id == org_id,
             User.role == UserRole.superadmin
         )
     )
