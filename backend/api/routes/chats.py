@@ -11,7 +11,10 @@ import os
 import shutil
 import uuid
 import asyncio
+import logging
 from html.parser import HTMLParser
+
+logger = logging.getLogger("hr-analyzer.chats")
 
 # Uploads directory for imported media
 UPLOADS_DIR = Path(__file__).parent.parent.parent / "uploads"
@@ -273,6 +276,9 @@ async def get_chats(
             )
             lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
 
+            # DEBUG: Log user's department admin status
+            logger.info(f"get_chats: user={user.id} ({user.email}), org_role={user_role}, lead_dept_ids={lead_dept_ids}")
+
             # Get user IDs in departments where current user is lead
             dept_member_ids = []
             if lead_dept_ids:
@@ -282,6 +288,7 @@ async def get_chats(
                     )
                 )
                 dept_member_ids = [r for r in dept_members_result.scalars().all()]
+                logger.info(f"get_chats: dept_member_ids={dept_member_ids}")
 
             # Get entity IDs that belong to user's departments (for entity-based access)
             dept_entity_ids = []
