@@ -425,7 +425,8 @@ class CallProcessor:
     async def _combine_chunk_analyses(self, chunk_analyses: list, total_length: int) -> dict:
         """Combine multiple chunk analyses into a final comprehensive analysis."""
         if not chunk_analyses:
-            return {"summary": "Analysis failed", "key_points": [], "action_items": []}
+            logger.error(f"No chunk analyses available for {total_length} char transcript")
+            return {"summary": "Ошибка анализа: не удалось обработать чанки транскрипта. Попробуйте переанализировать позже.", "key_points": [], "action_items": []}
 
         # Collect all data from chunks
         all_topics = []
@@ -635,13 +636,26 @@ class CallProcessor:
             start = text.find('{')
             end = text.rfind('}') + 1
             if start != -1 and end > start:
-                return json.loads(text[start:end])
+                try:
+                    result = json.loads(text[start:end])
+                    logger.info(f"Successfully parsed Claude analysis response")
+                    return result
+                except json.JSONDecodeError as json_err:
+                    logger.error(f"Failed to parse JSON from Claude response: {json_err}")
+                    logger.error(f"Claude response text (first 500 chars): {text[:500]}")
+                    # Re-raise to trigger the outer exception handler
+                    raise
+            else:
+                logger.error(f"No JSON found in Claude response. Response (first 500 chars): {text[:500]}")
+                raise ValueError("No valid JSON in Claude response")
 
         except Exception as e:
-            logger.error(f"Analysis failed: {e}")
+            logger.error(f"Analysis failed: {e}", exc_info=True)
 
+        # Return error message instead of transcript as fallback
+        # This makes it clear that analysis failed rather than showing transcript as summary
         return {
-            "summary": transcript[:500] + "..." if len(transcript) > 500 else transcript,
+            "summary": "Ошибка анализа: не удалось обработать транскрипт. Попробуйте переанализировать позже.",
             "key_points": [],
             "action_items": []
         }
