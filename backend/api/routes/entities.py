@@ -405,6 +405,8 @@ async def list_entities(
                         conditions.append(Entity.created_by.in_(dept_member_ids))
                     # Also show entities explicitly assigned to admin's departments
                     conditions.append(Entity.department_id.in_(admin_dept_ids))
+                    if dept_user_ids:
+                        conditions.append(Entity.created_by.in_(dept_user_ids))
 
                 query = select(Entity).where(
                     Entity.org_id == org.id,
