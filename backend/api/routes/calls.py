@@ -88,26 +88,41 @@ async def can_access_call(user: User, call: CallRecording, user_org_id: int = No
     if call.owner_id == user.id:
         return True
 
-    # 4. Department-based access (ADMIN/SUB_ADMIN/MEMBER)
-    # For calls, we check if linked entity is in user's department
-    if db and call.entity_id:
-        # Get the entity to check its department
-        entity_result = await db.execute(
-            select(Entity).where(Entity.id == call.entity_id)
-        )
-        entity = entity_result.scalar_one_or_none()
-
-        if entity and entity.department_id:
-            # Check if user can view based on department membership
-            from ..services.auth import can_view_in_department
-            dept_can_view = await can_view_in_department(
-                user,
-                resource_owner_id=call.owner_id,
-                resource_dept_id=entity.department_id,
-                db=db
+    # 4. Department-based access (LEAD/SUB_ADMIN)
+    # Access granted if:
+    # a) Call is linked to an entity in user's department, OR
+    # b) Call owner is a member of user's department
+    if db:
+        # Get departments where user is lead or sub_admin
+        lead_dept_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == user.id,
+                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
             )
-            if dept_can_view:
-                return True
+        )
+        lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
+
+        if lead_dept_ids:
+            # a) Check if call is linked to entity in user's department
+            if call.entity_id:
+                entity_result = await db.execute(
+                    select(Entity).where(Entity.id == call.entity_id)
+                )
+                entity = entity_result.scalar_one_or_none()
+
+                if entity and entity.department_id in lead_dept_ids:
+                    return True
+
+            # b) Check if call owner is a member of user's department
+            if call.owner_id:
+                owner_dept_result = await db.execute(
+                    select(DepartmentMember.department_id).where(
+                        DepartmentMember.user_id == call.owner_id,
+                        DepartmentMember.department_id.in_(lead_dept_ids)
+                    )
+                )
+                if owner_dept_result.scalar_one_or_none():
+                    return True
 
     # 5. Check SharedAccess for explicitly shared calls
     if db:
@@ -286,6 +301,16 @@ async def list_calls(
                 )
                 dept_member_ids = [r for r in dept_members_result.scalars().all()]
 
+            # Get entity IDs that belong to user's departments (for entity-based access)
+            dept_entity_ids = []
+            if lead_dept_ids:
+                dept_entities_result = await db.execute(
+                    select(Entity.id).where(
+                        Entity.department_id.in_(lead_dept_ids)
+                    )
+                )
+                dept_entity_ids = [r for r in dept_entities_result.scalars().all()]
+
             # Build access conditions
             conditions = [CallRecording.owner_id == current_user.id]  # Own records
 
@@ -294,6 +319,10 @@ async def list_calls(
 
             if dept_member_ids:
                 conditions.append(CallRecording.owner_id.in_(dept_member_ids))  # Dept members' records
+
+            # Also show calls linked to entities in user's departments
+            if dept_entity_ids:
+                conditions.append(CallRecording.entity_id.in_(dept_entity_ids))  # Calls linked to dept entities
 
             query = query.where(or_(*conditions))
         # org owner sees all in org (no additional filter)
