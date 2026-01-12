@@ -428,7 +428,7 @@ async def is_owner(user: User, org_id: int, db: AsyncSession) -> bool:
         return False  # Superadmin is not owner, it's higher
 
     user_role = await get_user_org_role(user, org_id, db)
-    return user_role == OrgRole.owner
+    return user_role == "owner"
 
 
 async def is_department_admin(user: User, dept_id: int, db: AsyncSession) -> bool:
@@ -450,7 +450,8 @@ async def is_department_admin(user: User, dept_id: int, db: AsyncSession) -> boo
     if not member:
         return False
 
-    return member.role in (DeptRole.lead, DeptRole.sub_admin)
+    # Use string comparison since member.role comes from DB as string
+    return member.role in ("lead", "sub_admin")
 
 
 async def get_user_departments(user: User, db: AsyncSession) -> list:
@@ -529,7 +530,8 @@ async def can_view_in_department(user: User, resource_owner_id: int, resource_de
         return False
 
     # Department admins (lead/sub_admin) can view all resources in their department
-    if member.role in (DeptRole.lead, DeptRole.sub_admin):
+    # Use string comparison since member.role comes from DB as string
+    if member.role in ("lead", "sub_admin"):
         return True
 
     # Regular members can only view their own resources
@@ -645,7 +647,7 @@ async def can_share_to(
     from_user_role = await get_user_org_role(from_user, from_user_org_id, db)
 
     # OWNER can share with anyone in their organization
-    if from_user_role == OrgRole.owner:
+    if from_user_role == "owner":
         # Check that to_user is in the same organization
         to_user_org = await get_user_org(to_user, db)
         return to_user_org and to_user_org.id == from_user_org_id
@@ -661,13 +663,13 @@ async def can_share_to(
     # 1. Their department members
     # 2. Admins of other departments
     # 3. OWNER/SUPERADMIN
-    if from_user_role == OrgRole.admin:
+    if from_user_role == "admin":
         # Can share with OWNER or SUPERADMIN
-        if to_user_org_role == OrgRole.owner or to_user.role == UserRole.superadmin:
+        if to_user_org_role == "owner" or to_user.role == UserRole.superadmin:
             return True
 
         # Can share with other admins
-        if to_user_org_role == OrgRole.admin:
+        if to_user_org_role == "admin":
             return True
 
         # Can share within their departments
@@ -706,11 +708,11 @@ async def can_share_to(
 
     if from_dept_admin_ids:
         # Can share with OWNER or SUPERADMIN
-        if to_user_org_role == OrgRole.owner or to_user.role == UserRole.superadmin:
+        if to_user_org_role == "owner" or to_user.role == UserRole.superadmin:
             return True
 
         # Can share with OrgRole.admin
-        if to_user_org_role == OrgRole.admin:
+        if to_user_org_role == "admin":
             return True
 
         # Can share with other department leads/sub_admins
@@ -736,7 +738,7 @@ async def can_share_to(
         return bool(from_dept_admin_ids & to_dept_ids)
 
     # MEMBER can only share within their department
-    if from_user_role == OrgRole.member:
+    if from_user_role == "member":
         # Get from_user's departments
         from_depts_result = await db.execute(
             select(DepartmentMember.department_id).where(

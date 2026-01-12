@@ -55,10 +55,11 @@ async def require_invitation_access(
     user_dept_ids = {dm.department_id for dm in dept_memberships}
 
     # Check if user is lead/sub_admin in any department
-    is_dept_lead = any(dm.role in (DeptRole.lead, DeptRole.sub_admin) for dm in dept_memberships)
+    # Use string comparison since dm.role comes from DB as string
+    is_dept_lead = any(dm.role in ("lead", "sub_admin") for dm in dept_memberships)
 
     # Allow org owner, org admin, OR department lead/sub_admin
-    if org_role in (OrgRole.owner, OrgRole.admin):
+    if org_role in ("owner", "admin"):
         return user, org, org_role, is_dept_lead, user_dept_ids
 
     if is_dept_lead:
@@ -144,7 +145,7 @@ async def create_invitation(
         invite_org_role = OrgRole.member
 
     # Only owner can create owner/admin invites
-    if invite_org_role in (OrgRole.owner, OrgRole.admin) and role != OrgRole.owner:
+    if invite_org_role in ("owner", "admin") and role != "owner":
         raise HTTPException(status_code=403, detail="Only owner can create owner/admin invitations")
 
     # Check if email is already a member of the organization
@@ -162,7 +163,7 @@ async def create_invitation(
                 raise HTTPException(status_code=400, detail="User is already a member of this organization")
 
     # Non-owners can only invite to their own departments
-    if role != OrgRole.owner and data.department_ids:
+    if role != "owner" and data.department_ids:
         for dept_info in data.department_ids:
             dept_id = dept_info.get("id")
             if dept_id and dept_id not in user_dept_ids:
@@ -172,7 +173,7 @@ async def create_invitation(
                 )
 
     # Department leads (not org admins) MUST specify at least one department
-    if role not in (OrgRole.owner, OrgRole.admin) and is_dept_lead:
+    if role not in ("owner", "admin") and is_dept_lead:
         if not data.department_ids:
             raise HTTPException(
                 status_code=400,
@@ -235,7 +236,7 @@ async def list_invitations(
     query = select(Invitation).where(Invitation.org_id == org.id)
 
     # Non-owners can only see invitations they created
-    if role != OrgRole.owner:
+    if role != "owner":
         query = query.where(Invitation.invited_by_id == user.id)
 
     if not include_used:
@@ -459,7 +460,7 @@ async def revoke_invitation(
         raise HTTPException(status_code=404, detail="Invitation not found")
 
     # Admin can only revoke their own invitations
-    if role != OrgRole.owner and invitation.invited_by_id != user.id:
+    if role != "owner" and invitation.invited_by_id != user.id:
         raise HTTPException(status_code=403, detail="You can only revoke your own invitations")
 
     await db.delete(invitation)

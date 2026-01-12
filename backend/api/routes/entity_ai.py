@@ -423,7 +423,7 @@ async def batch_update_entity_summaries(
         org = await get_user_org(user, db)
         if org:
             org_role = await get_user_org_role(user, org.id, db)
-            if org_role in (OrgRole.owner, OrgRole.admin):
+            if org_role in ("owner", "admin"):
                 is_admin = True
 
         # Check department role

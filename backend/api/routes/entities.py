@@ -353,7 +353,8 @@ async def list_entities(
         dept_memberships = list(dept_memberships_result.scalars().all())
         user_dept_ids = [dm.department_id for dm in dept_memberships]
         # Only lead and sub_admin can see all department entities
-        admin_dept_ids = [dm.department_id for dm in dept_memberships if dm.role in (DeptRole.lead, DeptRole.sub_admin)]
+        # Use string comparison since dm.role comes from DB as string
+        admin_dept_ids = [dm.department_id for dm in dept_memberships if dm.role in ("lead", "sub_admin")]
 
         # Shared entities query
         shared_ids_query = select(SharedAccess.resource_id).where(
@@ -380,7 +381,7 @@ async def list_entities(
             # All entities user can see: own + shared + department entities
             # Org owner see all
             user_role = await get_user_org_role(current_user, org.id, db)
-            if user_role == OrgRole.owner:
+            if user_role == "owner":
                 query = select(Entity).where(Entity.org_id == org.id)
             else:
                 # Own entities + shared with me + department entities (for admins only)
@@ -484,7 +485,7 @@ async def list_entities(
     # Superadmin and org owner see all counts, others see only accessible counts
     user_role = await get_user_org_role(current_user, org.id, db) if org else None
 
-    if current_user.role == UserRole.superadmin or user_role == OrgRole.owner:
+    if current_user.role == UserRole.superadmin or user_role == "owner":
         # Full access - count all chats/calls
         chats_counts_result = await db.execute(
             select(Chat.entity_id, func.count(Chat.id))
@@ -721,7 +722,7 @@ async def get_entity(
     user_role = await get_user_org_role(current_user, org.id, db)
 
     # Superadmin and org owner see all chats/calls
-    if current_user.role == UserRole.superadmin or user_role == OrgRole.owner:
+    if current_user.role == UserRole.superadmin or user_role == "owner":
         chats_result = await db.execute(
             select(Chat).where(Chat.entity_id == entity_id)
         )
@@ -977,7 +978,7 @@ async def update_entity(
         can_edit = True
     else:
         user_role = await get_user_org_role(current_user, org.id, db)
-        if user_role == OrgRole.owner:
+        if user_role == "owner":
             can_edit = True
         elif entity.created_by == current_user.id:
             can_edit = True  # Owner of record
@@ -1094,7 +1095,7 @@ async def delete_entity(
         can_delete = True
     else:
         user_role = await get_user_org_role(current_user, org.id, db)
-        if user_role == OrgRole.owner:
+        if user_role == "owner":
             can_delete = True
         elif entity.created_by == current_user.id:
             can_delete = True  # Owner of record
@@ -1192,14 +1193,15 @@ async def transfer_entity(
 
     # Check transfer permissions based on roles
     can_transfer = False
-    if current_user.role == UserRole.superadmin or from_user_role == OrgRole.owner:
+    if current_user.role == UserRole.superadmin or from_user_role == "owner":
         # SUPERADMIN and OWNER can transfer to anyone
         can_transfer = True
     else:
         # Check department-based permissions
-        has_sub_admin = any(dm.role == DeptRole.sub_admin for dm in from_dept_memberships)
+        # Use string comparison since dm.role comes from DB as string
+        has_sub_admin = any(dm.role == "sub_admin" for dm in from_dept_memberships)
 
-        if has_sub_admin or from_user_role == OrgRole.admin:
+        if has_sub_admin or from_user_role == "admin":
             # SUB_ADMIN and ADMIN can transfer to:
             # 1. Anyone in their own department
             # 2. Admins/sub_admins of other departments
@@ -1208,8 +1210,8 @@ async def transfer_entity(
                 can_transfer = True
             else:
                 # Check if target is admin/sub_admin of any department
-                is_target_admin = any(dm.role in [DeptRole.sub_admin, DeptRole.lead] for dm in to_dept_memberships)
-                if is_target_admin or to_user_role == OrgRole.admin:
+                is_target_admin = any(dm.role in ("sub_admin", "lead") for dm in to_dept_memberships)
+                if is_target_admin or to_user_role == "admin":
                     can_transfer = True
         else:
             # MEMBER can only transfer within their own department
@@ -1605,7 +1607,7 @@ async def share_entity(
         can_share = True
     else:
         user_role = await get_user_org_role(current_user, org.id, db)
-        if user_role == OrgRole.owner:
+        if user_role == "owner":
             can_share = True
         elif entity.created_by == current_user.id:
             can_share = True  # Owner of entity

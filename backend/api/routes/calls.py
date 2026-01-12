@@ -166,7 +166,7 @@ async def check_call_modification_access(
 
     # Org owner can do anything in their org
     user_role = await get_user_org_role(user, user_org_id, db)
-    if user_role == OrgRole.owner:
+    if user_role == "owner":
         return True
 
     # Call owner can do anything
@@ -272,7 +272,7 @@ async def list_calls(
         # - Others: own + shared + dept lead sees dept members' records
         user_role = await get_user_org_role(current_user, org.id, db)
 
-        if user_role != OrgRole.owner:
+        if user_role != "owner":
             # Get IDs of recordings shared with current user
             shared_result = await db.execute(
                 select(SharedAccess.resource_id).where(
@@ -347,8 +347,17 @@ async def list_calls(
     if not calls:
         return []
 
-    # Get call IDs for batch query
+    # Get call IDs and owner IDs for batch queries
     call_ids = [call.id for call in calls]
+    owner_ids = list(set(call.owner_id for call in calls if call.owner_id))
+
+    # Batch query: Get owner names
+    owner_names_map = {}
+    if owner_ids:
+        owner_result = await db.execute(
+            select(User.id, User.name).where(User.id.in_(owner_ids))
+        )
+        owner_names_map = {row[0]: row[1] for row in owner_result.fetchall()}
 
     # Batch query: Get shared access for current user
     shared_access_result = await db.execute(
@@ -365,6 +374,7 @@ async def list_calls(
     response = []
     for call in calls:
         entity_name = call.entity.name if call.entity else None
+        owner_name = owner_names_map.get(call.owner_id) if call.owner_id else None
         is_mine = call.owner_id == current_user.id
         is_shared = call.id in shared_access_map
         access_level = shared_access_map.get(call.id) if is_shared else ('full' if is_mine else None)
@@ -374,6 +384,7 @@ async def list_calls(
             "title": call.title,
             "entity_id": call.entity_id,
             "owner_id": call.owner_id,
+            "owner_name": owner_name,
             "source_type": call.source_type,
             "source_url": call.source_url,
             "bot_name": call.bot_name,
@@ -1234,7 +1245,7 @@ async def share_call(
         can_share = True
     else:
         user_role = await get_user_org_role(current_user, org.id, db)
-        if user_role == OrgRole.owner:
+        if user_role == "owner":
             can_share = True
         elif call.owner_id == current_user.id:
             can_share = True  # Owner of call

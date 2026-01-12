@@ -12,7 +12,8 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
-  Link2
+  Link2,
+  User
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -362,6 +363,14 @@ export default function CallsPage() {
                         <span className="flex-shrink-0">{formatDate(call.created_at)}</span>
                         {call.entity_name && call.title && (
                           <span className="text-cyan-400/60 truncate min-w-0">• {call.entity_name}</span>
+                        )}
+                        {/* Show owner for non-owned calls */}
+                        {!call.is_mine && call.owner_name && (
+                          <span className="flex items-center gap-1 text-blue-400 flex-shrink-0" title={`Владелец: ${call.owner_name}`}>
+                            <User size={12} />
+                            <span className="text-white/40">Владелец:</span>
+                            <span className="truncate max-w-[80px]">{call.owner_name}</span>
+                          </span>
                         )}
                       </div>
 
