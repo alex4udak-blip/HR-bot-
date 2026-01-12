@@ -86,27 +86,42 @@ async def can_access_chat(user: User, chat: Chat, user_org_id: int = None, db: A
     if chat.owner_id == user.id:
         return True
 
-    # 4. Department-based access (ADMIN/SUB_ADMIN/MEMBER)
-    # For chats, we check if linked entity is in user's department
-    if db and chat.entity_id:
-        # Get the entity to check its department
-        from ..models.database import Entity
-        entity_result = await db.execute(
-            select(Entity).where(Entity.id == chat.entity_id)
-        )
-        entity = entity_result.scalar_one_or_none()
-
-        if entity and entity.department_id:
-            # Check if user can view based on department membership
-            from ..services.auth import can_view_in_department
-            dept_can_view = await can_view_in_department(
-                user,
-                resource_owner_id=chat.owner_id,
-                resource_dept_id=entity.department_id,
-                db=db
+    # 4. Department-based access (LEAD/SUB_ADMIN)
+    # Access granted if:
+    # a) Chat is linked to an entity in user's department, OR
+    # b) Chat owner is a member of user's department
+    if db:
+        # Get departments where user is lead or sub_admin
+        lead_dept_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == user.id,
+                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
             )
-            if dept_can_view:
-                return True
+        )
+        lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
+
+        if lead_dept_ids:
+            # a) Check if chat is linked to entity in user's department
+            if chat.entity_id:
+                from ..models.database import Entity
+                entity_result = await db.execute(
+                    select(Entity).where(Entity.id == chat.entity_id)
+                )
+                entity = entity_result.scalar_one_or_none()
+
+                if entity and entity.department_id in lead_dept_ids:
+                    return True
+
+            # b) Check if chat owner is a member of user's department
+            if chat.owner_id:
+                owner_dept_result = await db.execute(
+                    select(DepartmentMember.department_id).where(
+                        DepartmentMember.user_id == chat.owner_id,
+                        DepartmentMember.department_id.in_(lead_dept_ids)
+                    )
+                )
+                if owner_dept_result.scalar_one_or_none():
+                    return True
 
     # 5. Check SharedAccess for explicitly shared chats
     if db:
