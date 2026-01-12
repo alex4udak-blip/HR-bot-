@@ -929,6 +929,11 @@ async def reprocess_call(
     if not has_audio and not has_transcript and not has_fireflies:
         raise HTTPException(400, "No data to process")
 
+    # If we have fireflies_id but no transcript, we can't re-analyze
+    # (fireflies_id alone is just a reference, we need actual transcript text)
+    if has_fireflies and not has_transcript and not has_audio:
+        raise HTTPException(400, "No data to process")
+
     # Reset status
     call.status = CallStatus.analyzing
     call.error_message = None
@@ -938,25 +943,46 @@ async def reprocess_call(
         # Re-analyze existing transcript with Claude
         from ..services.call_processor import call_processor
 
+        # IMPORTANT: Save values to local variables BEFORE creating closure
+        # to avoid issues with detached SQLAlchemy objects after session closes
+        call_id_for_task = call.id
+        transcript_for_task = call.transcript or ""
+        speakers_for_task = call.speakers if call.speakers else []
+
+        logger.info(f"Starting reanalysis for call {call_id_for_task}, "
+                    f"transcript length: {len(transcript_for_task)}, "
+                    f"speakers count: {len(speakers_for_task)}, "
+                    f"has_fireflies: {has_fireflies}")
+
         async def reanalyze_transcript():
             try:
-                # Get speaker segments from database
-                speakers = call.speakers if call.speakers else []
-                transcript = call.transcript or ""
+                if not transcript_for_task:
+                    # No transcript to analyze - mark as failed
+                    logger.warning(f"Call {call_id_for_task} has no transcript to re-analyze")
+                    async with AsyncSessionLocal() as db2:
+                        result2 = await db2.execute(
+                            select(CallRecording).where(CallRecording.id == call_id_for_task)
+                        )
+                        call2 = result2.scalar_one_or_none()
+                        if call2:
+                            call2.status = CallStatus.failed
+                            call2.error_message = "No transcript available for re-analysis"
+                            await db2.commit()
+                    return
 
-                if transcript:
-                    await call_processor.analyze_transcript(
-                        call_id=call.id,
-                        transcript=transcript,
-                        speakers=speakers
-                    )
-                    logger.info(f"Call {call_id} re-analyzed successfully")
+                logger.info(f"Calling analyze_transcript for call {call_id_for_task}")
+                await call_processor.analyze_transcript(
+                    call_id=call_id_for_task,
+                    transcript=transcript_for_task,
+                    speakers=speakers_for_task
+                )
+                logger.info(f"Call {call_id_for_task} re-analyzed successfully")
             except Exception as e:
-                logger.error(f"Failed to re-analyze call {call_id}: {e}")
+                logger.error(f"Failed to re-analyze call {call_id_for_task}: {e}", exc_info=True)
                 # Mark as failed
                 async with AsyncSessionLocal() as db2:
                     result2 = await db2.execute(
-                        select(CallRecording).where(CallRecording.id == call_id)
+                        select(CallRecording).where(CallRecording.id == call_id_for_task)
                     )
                     call2 = result2.scalar_one_or_none()
                     if call2:

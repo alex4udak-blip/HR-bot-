@@ -3628,6 +3628,58 @@ class TestReprocessCallAdvanced:
         data = response.json()
         assert data["success"] is True
 
+    @pytest.mark.asyncio
+    async def test_reprocess_call_with_fireflies_id_uses_local_variables(
+        self, db_session, client, admin_user, admin_token, call_recording,
+        get_auth_headers, org_owner
+    ):
+        """Test that reprocess correctly captures values for background task."""
+        # Set up Fireflies data
+        call_recording.fireflies_transcript_id = "ff-test-123"
+        call_recording.transcript = "[00:00] Speaker 1: Test transcript from Fireflies bot"
+        call_recording.speakers = [
+            {"speaker": "Speaker 1", "start": 0, "end": 5, "text": "Test transcript from Fireflies bot"}
+        ]
+        call_recording.status = CallStatus.done
+        await db_session.commit()
+
+        response = await client.post(
+            f"/api/calls/{call_recording.id}/reprocess",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["status"] == CallStatus.analyzing.value
+
+        # Verify call is in analyzing state
+        await db_session.refresh(call_recording)
+        assert call_recording.status == CallStatus.analyzing
+
+    @pytest.mark.asyncio
+    async def test_reprocess_call_with_empty_transcript_and_fireflies_id(
+        self, db_session, client, admin_user, admin_token, call_recording,
+        get_auth_headers, org_owner
+    ):
+        """Test reprocessing call with fireflies_id but empty transcript returns error."""
+        # Set up Fireflies ID but no transcript
+        call_recording.fireflies_transcript_id = "ff-test-456"
+        call_recording.transcript = None
+        call_recording.speakers = None
+        call_recording.audio_file_path = None
+        await db_session.commit()
+
+        response = await client.post(
+            f"/api/calls/{call_recording.id}/reprocess",
+            headers=get_auth_headers(admin_token)
+        )
+
+        # Should return 400 since there's no actual data to process
+        # (fireflies_id alone without transcript is not enough)
+        assert response.status_code == 400
+        assert "No data to process" in response.json()["detail"]
+
 
 # ============================================================================
 # CALL SHARING ADVANCED SCENARIOS
