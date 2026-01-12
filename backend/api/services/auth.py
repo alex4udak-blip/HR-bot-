@@ -623,7 +623,8 @@ async def can_share_to(
 
     Logic:
     - MEMBER → only within their department
-    - ADMIN/SUB_ADMIN → their department + admins of other departments + OWNER/SUPERADMIN
+    - OrgRole.ADMIN → their department + admins of other departments + OWNER/SUPERADMIN
+    - DeptRole.lead/sub_admin → their department + leads/sub_admins of other departments + OrgRole.admin + OWNER/SUPERADMIN
     - OWNER → anyone in organization
     - SUPERADMIN → anyone
 
@@ -688,6 +689,51 @@ async def can_share_to(
 
         # Check if they share at least one department
         return bool(from_dept_ids & to_dept_ids)
+
+    # Check if from_user is a department lead/sub_admin
+    # DeptRole.lead and DeptRole.sub_admin can share like OrgRole.admin:
+    # - Within their department
+    # - With leads/sub_admins of other departments
+    # - With OrgRole.admin
+    # - With OWNER/SUPERADMIN
+    from_dept_admin_result = await db.execute(
+        select(DepartmentMember.department_id).where(
+            DepartmentMember.user_id == from_user.id,
+            DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+        )
+    )
+    from_dept_admin_ids = set(from_dept_admin_result.scalars().all())
+
+    if from_dept_admin_ids:
+        # Can share with OWNER or SUPERADMIN
+        if to_user_org_role == OrgRole.owner or to_user.role == UserRole.superadmin:
+            return True
+
+        # Can share with OrgRole.admin
+        if to_user_org_role == OrgRole.admin:
+            return True
+
+        # Can share with other department leads/sub_admins
+        to_dept_admin_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == to_user.id,
+                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+            )
+        )
+        to_dept_admin_ids = set(to_dept_admin_result.scalars().all())
+        if to_dept_admin_ids:
+            return True
+
+        # Can share within their departments
+        to_depts_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == to_user.id
+            )
+        )
+        to_dept_ids = set(to_depts_result.scalars().all())
+
+        # Check if to_user is in any of from_user's admin departments
+        return bool(from_dept_admin_ids & to_dept_ids)
 
     # MEMBER can only share within their department
     if from_user_role == OrgRole.member:
