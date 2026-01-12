@@ -11,7 +11,10 @@ import os
 import shutil
 import uuid
 import asyncio
+import logging
 from html.parser import HTMLParser
+
+logger = logging.getLogger("hr-analyzer.chats")
 
 # Uploads directory for imported media
 UPLOADS_DIR = Path(__file__).parent.parent.parent / "uploads"
@@ -92,10 +95,11 @@ async def can_access_chat(user: User, chat: Chat, user_org_id: int = None, db: A
     # b) Chat owner is a member of user's department
     if db:
         # Get departments where user is lead or sub_admin
+        # Use string values to avoid enum serialization issues
         lead_dept_result = await db.execute(
             select(DepartmentMember.department_id).where(
                 DepartmentMember.user_id == user.id,
-                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+                DepartmentMember.role.in_(["lead", "sub_admin"])
             )
         )
         lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
@@ -265,13 +269,17 @@ async def get_chats(
             shared_chat_ids = [r for r in shared_result.scalars().all()]
 
             # Get departments where user is lead or sub_admin
+            # Use string values for comparison to avoid enum serialization issues
             lead_dept_result = await db.execute(
                 select(DepartmentMember.department_id).where(
                     DepartmentMember.user_id == user.id,
-                    DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+                    DepartmentMember.role.in_(["lead", "sub_admin"])
                 )
             )
             lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
+
+            # DEBUG: Log user's department admin status
+            logger.info(f"get_chats: user={user.id} ({user.email}), org_role={user_role}, lead_dept_ids={lead_dept_ids}")
 
             # Get user IDs in departments where current user is lead
             dept_member_ids = []
@@ -282,6 +290,7 @@ async def get_chats(
                     )
                 )
                 dept_member_ids = [r for r in dept_members_result.scalars().all()]
+                logger.info(f"get_chats: dept_member_ids={dept_member_ids}")
 
             # Get entity IDs that belong to user's departments (for entity-based access)
             dept_entity_ids = []

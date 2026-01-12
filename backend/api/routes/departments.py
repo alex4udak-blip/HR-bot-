@@ -118,7 +118,7 @@ async def is_dept_lead(user: User, department_id: int, db: AsyncSession) -> bool
         select(DepartmentMember).where(
             DepartmentMember.department_id == department_id,
             DepartmentMember.user_id == user.id,
-            DepartmentMember.role == DeptRole.lead
+            DepartmentMember.role == "lead"  # Use string value
         )
     )
     return result.scalar_one_or_none() is not None
@@ -133,7 +133,7 @@ async def is_dept_admin(user: User, department_id: int, db: AsyncSession) -> boo
         select(DepartmentMember).where(
             DepartmentMember.department_id == department_id,
             DepartmentMember.user_id == user.id,
-            DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+            DepartmentMember.role.in_(["lead", "sub_admin"])
         )
     )
     return result.scalar_one_or_none() is not None
@@ -965,7 +965,7 @@ async def remove_department_member(
             leads_result = await db.execute(
                 select(DepartmentMember).where(
                     DepartmentMember.department_id == department_id,
-                    DepartmentMember.role == DeptRole.lead
+                    DepartmentMember.role == "lead"  # Use string value
                 )
             )
             leads_count = len(list(leads_result.scalars().all()))

@@ -94,10 +94,11 @@ async def can_access_call(user: User, call: CallRecording, user_org_id: int = No
     # b) Call owner is a member of user's department
     if db:
         # Get departments where user is lead or sub_admin
+        # Use string values to avoid enum serialization issues
         lead_dept_result = await db.execute(
             select(DepartmentMember.department_id).where(
                 DepartmentMember.user_id == user.id,
-                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+                DepartmentMember.role.in_(["lead", "sub_admin"])
             )
         )
         lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
@@ -283,10 +284,11 @@ async def list_calls(
             shared_call_ids = [r for r in shared_result.scalars().all()]
 
             # Get departments where user is lead or sub_admin
+            # Use string values to avoid enum serialization issues
             lead_dept_result = await db.execute(
                 select(DepartmentMember.department_id).where(
                     DepartmentMember.user_id == current_user.id,
-                    DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+                    DepartmentMember.role.in_(["lead", "sub_admin"])
                 )
             )
             lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
