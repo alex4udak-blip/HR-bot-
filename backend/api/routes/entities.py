@@ -392,15 +392,18 @@ async def list_entities(
                 # Only lead/sub_admin can view all entities in their departments
                 # Regular members see only their own entities + shared
                 if admin_dept_ids:
-                    # Get all users from departments where current user is admin
-                    dept_users_result = await db.execute(
+                    # Get all user IDs from admin's departments
+                    dept_member_ids_result = await db.execute(
                         select(DepartmentMember.user_id).where(
                             DepartmentMember.department_id.in_(admin_dept_ids)
                         )
                     )
-                    dept_user_ids = [row[0] for row in dept_users_result.fetchall()]
+                    dept_member_ids = [r for r in dept_member_ids_result.scalars().all()]
 
-                    # Include entities by department_id OR by owner being in the department
+                    # Show entities created by department members (even without department_id)
+                    if dept_member_ids:
+                        conditions.append(Entity.created_by.in_(dept_member_ids))
+                    # Also show entities explicitly assigned to admin's departments
                     conditions.append(Entity.department_id.in_(admin_dept_ids))
                     if dept_user_ids:
                         conditions.append(Entity.created_by.in_(dept_user_ids))
