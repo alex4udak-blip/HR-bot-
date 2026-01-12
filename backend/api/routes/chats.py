@@ -547,8 +547,8 @@ async def update_chat(
         has_criteria=False,
     )
 
-    # Broadcast update to all connected clients in the organization
-    await broadcast_chat_updated(org.id, response.model_dump())
+    # Broadcast update to users with access only
+    await broadcast_chat_updated(org.id, response.model_dump(), db=db)
 
     return response
 
@@ -630,12 +630,16 @@ async def delete_chat(
     if not can_delete:
         raise HTTPException(status_code=403, detail="No delete permission for this chat")
 
+    # Save owner_id and entity_id before commit for broadcast
+    owner_id = chat.owner_id
+    entity_id = chat.entity_id
+
     # Soft delete - just set deleted_at timestamp
     chat.deleted_at = datetime.utcnow()
     await db.commit()
 
-    # Broadcast delete to all connected clients in the organization
-    await broadcast_chat_deleted(org.id, chat_id)
+    # Broadcast delete to users with access only
+    await broadcast_chat_deleted(org.id, chat_id, owner_id=owner_id, entity_id=entity_id, db=db)
 
 
 @router.get("/deleted/list", response_model=List[ChatResponse])
