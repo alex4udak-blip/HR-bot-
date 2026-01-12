@@ -293,14 +293,26 @@ async def get_chats(
                 logger.info(f"get_chats: dept_member_ids={dept_member_ids}")
 
             # Get entity IDs that belong to user's departments (for entity-based access)
+            # Include entities with department_id AND entities created by department members
             dept_entity_ids = []
             if lead_dept_ids:
+                # Entities explicitly assigned to department
                 dept_entities_result = await db.execute(
                     select(Entity.id).where(
                         Entity.department_id.in_(lead_dept_ids)
                     )
                 )
                 dept_entity_ids = [r for r in dept_entities_result.scalars().all()]
+
+                # Also include entities created by department members (even without department_id)
+                if dept_member_ids:
+                    member_entities_result = await db.execute(
+                        select(Entity.id).where(
+                            Entity.created_by.in_(dept_member_ids)
+                        )
+                    )
+                    member_entity_ids = [r for r in member_entities_result.scalars().all()]
+                    dept_entity_ids = list(set(dept_entity_ids + member_entity_ids))
 
             # Build access conditions
             conditions = [Chat.owner_id == user.id]  # Own records
