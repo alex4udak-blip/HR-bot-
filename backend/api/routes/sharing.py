@@ -12,7 +12,8 @@ from ..models.database import (
     User, UserRole, SharedAccess, ResourceType, AccessLevel,
     Chat, Entity, CallRecording, OrgMember
 )
-from ..services.auth import get_current_user, get_user_org, can_share_to
+from ..services.auth import get_current_user, get_user_org
+from ..services.permissions import PermissionService
 from .realtime import broadcast_share_created, broadcast_share_revoked
 
 router = APIRouter()
@@ -81,75 +82,6 @@ async def resource_exists(resource_type: ResourceType, resource_id: int, db: Asy
         result = await db.execute(select(CallRecording).where(CallRecording.id == resource_id))
         return result.scalar_one_or_none() is not None
     return False
-
-
-async def can_share_resource(user: User, resource_type: ResourceType, resource_id: int, db: AsyncSession) -> bool:
-    """Check if user can share a resource (must own it or have full access)"""
-    if user.role == UserRole.superadmin:
-        return True
-
-    # Check ownership
-    if resource_type == ResourceType.chat:
-        result = await db.execute(select(Chat).where(Chat.id == resource_id))
-        resource = result.scalar_one_or_none()
-        if resource and resource.owner_id == user.id:
-            return True
-    elif resource_type == ResourceType.entity:
-        result = await db.execute(select(Entity).where(Entity.id == resource_id))
-        resource = result.scalar_one_or_none()
-        if resource and resource.created_by == user.id:
-            return True
-    elif resource_type == ResourceType.call:
-        result = await db.execute(select(CallRecording).where(CallRecording.id == resource_id))
-        resource = result.scalar_one_or_none()
-        if resource and resource.owner_id == user.id:
-            return True
-
-    # Check if user has full access via sharing
-    result = await db.execute(
-        select(SharedAccess).where(
-            SharedAccess.resource_type == resource_type,
-            SharedAccess.resource_id == resource_id,
-            SharedAccess.shared_with_id == user.id,
-            SharedAccess.access_level == AccessLevel.full,
-            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
-        )
-    )
-    return result.scalar_one_or_none() is not None
-
-
-async def has_access_to_resource(user: User, resource_type: ResourceType, resource_id: int, db: AsyncSession) -> bool:
-    """Check if user has any access to a resource"""
-    if user.role == UserRole.superadmin:
-        return True
-
-    # Check ownership
-    if resource_type == ResourceType.chat:
-        result = await db.execute(select(Chat).where(Chat.id == resource_id))
-        resource = result.scalar_one_or_none()
-        if resource and resource.owner_id == user.id:
-            return True
-    elif resource_type == ResourceType.entity:
-        result = await db.execute(select(Entity).where(Entity.id == resource_id))
-        resource = result.scalar_one_or_none()
-        if resource and resource.created_by == user.id:
-            return True
-    elif resource_type == ResourceType.call:
-        result = await db.execute(select(CallRecording).where(CallRecording.id == resource_id))
-        resource = result.scalar_one_or_none()
-        if resource and resource.owner_id == user.id:
-            return True
-
-    # Check shared access
-    result = await db.execute(
-        select(SharedAccess).where(
-            SharedAccess.resource_type == resource_type,
-            SharedAccess.resource_id == resource_id,
-            SharedAccess.shared_with_id == user.id,
-            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
-        )
-    )
-    return result.scalar_one_or_none() is not None
 
 
 async def get_resource_name(resource_type: ResourceType, resource_id: int, db: AsyncSession) -> Optional[str]:
@@ -226,7 +158,9 @@ async def share_resource(
         raise HTTPException(status_code=404, detail="Resource not found")
 
     # Check if user can share this resource
-    if not await can_share_resource(current_user, data.resource_type, data.resource_id, db):
+    permissions = PermissionService(db)
+    resource = await permissions._load_resource(data.resource_type.value, data.resource_id)
+    if not resource or not await permissions.can_access_resource(current_user, resource, "share"):
         raise HTTPException(status_code=403, detail="You don't have permission to share this resource")
 
     # Check if target user exists
@@ -246,7 +180,7 @@ async def share_resource(
     # - OWNER can share with anyone in their organization
     # - ADMIN can share with their department + other admins + owner
     # - MEMBER can only share within their department
-    if not await can_share_to(current_user, target_user, current_user_org.id if current_user_org else 0, db):
+    if not await permissions.can_share_to(current_user, target_user, current_user_org.id if current_user_org else 0):
         raise HTTPException(
             status_code=403,
             detail="Невозможно предоставить доступ этому пользователю (пользователь не находится в вашей организации или отделе)"
@@ -644,7 +578,8 @@ async def get_resource_shares(
     current_user = await db.merge(current_user)
 
     # Check if user has access to this resource
-    if not await has_access_to_resource(current_user, resource_type, resource_id, db):
+    permissions = PermissionService(db)
+    if not await permissions.can_access(current_user, resource_type.value, resource_id, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     query = select(SharedAccess).options(
