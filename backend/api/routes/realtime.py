@@ -15,15 +15,19 @@ Architecture:
 """
 
 from datetime import datetime
-from typing import Dict, Set, Optional, Any
+from typing import Dict, Set, Optional, Any, List
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, or_
 import json
 import logging
 import asyncio
 
 from ..database import get_db
-from ..models.database import User
+from ..models.database import (
+    User, UserRole, Entity, Chat, CallRecording,
+    SharedAccess, ResourceType, DepartmentMember, DeptRole, OrganizationMember, OrgRole
+)
 from ..services.auth import get_user_from_token
 
 logger = logging.getLogger("hr-analyzer.realtime")
@@ -124,6 +128,39 @@ class ConnectionManager:
                     except Exception as e:
                         logger.warning(f"Failed to send to user {user_id}: {e}")
                         disconnected.append((websocket, user_id))
+
+        # Clean up disconnected clients
+        for websocket, user_id in disconnected:
+            await self.disconnect(websocket, user_id)
+
+    async def broadcast_to_users(self, user_ids: List[int], event_type: str, payload: Dict[str, Any]):
+        """Broadcast an event to specific users only.
+
+        Args:
+            user_ids: List of user IDs to send to
+            event_type: Event type (e.g., "chat.updated")
+            payload: Event payload data
+        """
+        if not user_ids:
+            return
+
+        event = {
+            "type": event_type,
+            "payload": payload,
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+        message = json.dumps(event)
+
+        disconnected = []
+        async with self._lock:
+            for user_id in user_ids:
+                if user_id in self.active_connections:
+                    for websocket in list(self.active_connections[user_id]):
+                        try:
+                            await websocket.send_text(message)
+                        except Exception as e:
+                            logger.warning(f"Failed to send to user {user_id}: {e}")
+                            disconnected.append((websocket, user_id))
 
         # Clean up disconnected clients
         for websocket, user_id in disconnected:
@@ -302,47 +339,210 @@ async def websocket_endpoint(
             pass
 
 
-# Helper functions for broadcasting events from other routes
+# ============================================================================
+# ACCESS CONTROL FOR BROADCASTS
+# ============================================================================
 
-async def broadcast_entity_created(org_id: int, entity_data: Dict[str, Any]):
-    """Broadcast entity.created event to organization."""
-    await manager.broadcast_to_org(org_id, "entity.created", entity_data)
+async def get_users_with_resource_access(
+    db: AsyncSession,
+    org_id: int,
+    resource_type: ResourceType,
+    resource_id: int,
+    owner_id: int,
+    entity_id: Optional[int] = None
+) -> List[int]:
+    """Get list of user IDs who have access to a resource.
+
+    Access is granted to:
+    1. Resource owner
+    2. Org owners
+    3. Superadmins in org
+    4. Users with SharedAccess
+    5. Dept leads/sub_admins if owner or linked entity is in their department
+
+    Args:
+        db: Database session
+        org_id: Organization ID
+        resource_type: Type of resource (chat, call, entity)
+        resource_id: Resource ID
+        owner_id: Owner of the resource
+        entity_id: Optional entity ID the resource is linked to
+    """
+    user_ids = set()
+
+    # 1. Resource owner always has access
+    if owner_id:
+        user_ids.add(owner_id)
+
+    # 2. Org owners and admins
+    org_admins_result = await db.execute(
+        select(OrganizationMember.user_id).where(
+            OrganizationMember.org_id == org_id,
+            OrganizationMember.role == OrgRole.owner
+        )
+    )
+    for uid in org_admins_result.scalars().all():
+        user_ids.add(uid)
+
+    # 3. Superadmins in org
+    superadmins_result = await db.execute(
+        select(OrganizationMember.user_id).join(
+            User, User.id == OrganizationMember.user_id
+        ).where(
+            OrganizationMember.org_id == org_id,
+            User.role == UserRole.superadmin
+        )
+    )
+    for uid in superadmins_result.scalars().all():
+        user_ids.add(uid)
+
+    # 4. Users with SharedAccess
+    shared_result = await db.execute(
+        select(SharedAccess.shared_with_id).where(
+            SharedAccess.resource_type == resource_type,
+            SharedAccess.resource_id == resource_id,
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+        )
+    )
+    for uid in shared_result.scalars().all():
+        user_ids.add(uid)
+
+    # 5. Dept leads/sub_admins - check through owner's department
+    if owner_id:
+        # Get departments owner belongs to
+        owner_depts_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == owner_id
+            )
+        )
+        owner_dept_ids = [r for r in owner_depts_result.scalars().all()]
+
+        if owner_dept_ids:
+            # Get leads/sub_admins of those departments
+            dept_leads_result = await db.execute(
+                select(DepartmentMember.user_id).where(
+                    DepartmentMember.department_id.in_(owner_dept_ids),
+                    DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+                )
+            )
+            for uid in dept_leads_result.scalars().all():
+                user_ids.add(uid)
+
+    # 6. Dept leads/sub_admins - check through linked entity's department
+    if entity_id:
+        entity_result = await db.execute(
+            select(Entity.department_id).where(Entity.id == entity_id)
+        )
+        entity_dept_id = entity_result.scalar_one_or_none()
+
+        if entity_dept_id:
+            dept_leads_result = await db.execute(
+                select(DepartmentMember.user_id).where(
+                    DepartmentMember.department_id == entity_dept_id,
+                    DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+                )
+            )
+            for uid in dept_leads_result.scalars().all():
+                user_ids.add(uid)
+
+    return list(user_ids)
 
 
-async def broadcast_entity_updated(org_id: int, entity_data: Dict[str, Any]):
-    """Broadcast entity.updated event to organization."""
-    await manager.broadcast_to_org(org_id, "entity.updated", entity_data)
+# ============================================================================
+# BROADCAST HELPER FUNCTIONS
+# ============================================================================
+
+async def broadcast_entity_created(org_id: int, entity_data: Dict[str, Any], db: AsyncSession = None):
+    """Broadcast entity.created event to users with access."""
+    if db and entity_data.get("id") and entity_data.get("owner_id"):
+        user_ids = await get_users_with_resource_access(
+            db, org_id, ResourceType.entity,
+            entity_data["id"], entity_data["owner_id"],
+            entity_id=None  # Entity itself doesn't have parent entity
+        )
+        await manager.broadcast_to_users(user_ids, "entity.created", entity_data)
+    else:
+        # Fallback to org broadcast if no db
+        await manager.broadcast_to_org(org_id, "entity.created", entity_data)
 
 
-async def broadcast_entity_deleted(org_id: int, entity_id: int):
-    """Broadcast entity.deleted event to organization."""
-    await manager.broadcast_to_org(org_id, "entity.deleted", {
-        "id": entity_id,
-        "resource_type": "entity"
-    })
+async def broadcast_entity_updated(org_id: int, entity_data: Dict[str, Any], db: AsyncSession = None):
+    """Broadcast entity.updated event to users with access."""
+    if db and entity_data.get("id") and entity_data.get("owner_id"):
+        user_ids = await get_users_with_resource_access(
+            db, org_id, ResourceType.entity,
+            entity_data["id"], entity_data["owner_id"],
+            entity_id=None
+        )
+        await manager.broadcast_to_users(user_ids, "entity.updated", entity_data)
+    else:
+        await manager.broadcast_to_org(org_id, "entity.updated", entity_data)
 
 
-async def broadcast_chat_message(org_id: int, message_data: Dict[str, Any]):
-    """Broadcast chat.message event to organization."""
+async def broadcast_entity_deleted(org_id: int, entity_id: int, owner_id: int = None, db: AsyncSession = None):
+    """Broadcast entity.deleted event to users with access."""
+    payload = {"id": entity_id, "resource_type": "entity"}
+    if db and owner_id:
+        user_ids = await get_users_with_resource_access(
+            db, org_id, ResourceType.entity, entity_id, owner_id
+        )
+        await manager.broadcast_to_users(user_ids, "entity.deleted", payload)
+    else:
+        await manager.broadcast_to_org(org_id, "entity.deleted", payload)
+
+
+async def broadcast_chat_message(org_id: int, message_data: Dict[str, Any], db: AsyncSession = None):
+    """Broadcast chat.message event to users with access."""
+    chat_id = message_data.get("chat_id")
+    if db and chat_id:
+        # Get chat to find owner and entity_id
+        chat_result = await db.execute(select(Chat).where(Chat.id == chat_id))
+        chat = chat_result.scalar_one_or_none()
+        if chat:
+            user_ids = await get_users_with_resource_access(
+                db, org_id, ResourceType.chat, chat_id, chat.owner_id, chat.entity_id
+            )
+            await manager.broadcast_to_users(user_ids, "chat.message", message_data)
+            return
     await manager.broadcast_to_org(org_id, "chat.message", message_data)
 
 
-async def broadcast_chat_created(org_id: int, chat_data: Dict[str, Any]):
-    """Broadcast chat.created event to organization."""
-    await manager.broadcast_to_org(org_id, "chat.created", chat_data)
+async def broadcast_chat_created(org_id: int, chat_data: Dict[str, Any], db: AsyncSession = None):
+    """Broadcast chat.created event to users with access."""
+    if db and chat_data.get("id") and chat_data.get("owner_id"):
+        user_ids = await get_users_with_resource_access(
+            db, org_id, ResourceType.chat,
+            chat_data["id"], chat_data["owner_id"],
+            entity_id=chat_data.get("entity_id")
+        )
+        await manager.broadcast_to_users(user_ids, "chat.created", chat_data)
+    else:
+        await manager.broadcast_to_org(org_id, "chat.created", chat_data)
 
 
-async def broadcast_chat_updated(org_id: int, chat_data: Dict[str, Any]):
-    """Broadcast chat.updated event to organization."""
-    await manager.broadcast_to_org(org_id, "chat.updated", chat_data)
+async def broadcast_chat_updated(org_id: int, chat_data: Dict[str, Any], db: AsyncSession = None):
+    """Broadcast chat.updated event to users with access."""
+    if db and chat_data.get("id") and chat_data.get("owner_id"):
+        user_ids = await get_users_with_resource_access(
+            db, org_id, ResourceType.chat,
+            chat_data["id"], chat_data["owner_id"],
+            entity_id=chat_data.get("entity_id")
+        )
+        await manager.broadcast_to_users(user_ids, "chat.updated", chat_data)
+    else:
+        await manager.broadcast_to_org(org_id, "chat.updated", chat_data)
 
 
-async def broadcast_chat_deleted(org_id: int, chat_id: int):
-    """Broadcast chat.deleted event to organization."""
-    await manager.broadcast_to_org(org_id, "chat.deleted", {
-        "id": chat_id,
-        "resource_type": "chat"
-    })
+async def broadcast_chat_deleted(org_id: int, chat_id: int, owner_id: int = None, entity_id: int = None, db: AsyncSession = None):
+    """Broadcast chat.deleted event to users with access."""
+    payload = {"id": chat_id, "resource_type": "chat"}
+    if db and owner_id:
+        user_ids = await get_users_with_resource_access(
+            db, org_id, ResourceType.chat, chat_id, owner_id, entity_id
+        )
+        await manager.broadcast_to_users(user_ids, "chat.deleted", payload)
+    else:
+        await manager.broadcast_to_org(org_id, "chat.deleted", payload)
 
 
 async def broadcast_share_created(user_id: int, share_data: Dict[str, Any]):
