@@ -327,6 +327,24 @@ async def broadcast_chat_message(org_id: int, message_data: Dict[str, Any]):
     await manager.broadcast_to_org(org_id, "chat.message", message_data)
 
 
+async def broadcast_chat_created(org_id: int, chat_data: Dict[str, Any]):
+    """Broadcast chat.created event to organization."""
+    await manager.broadcast_to_org(org_id, "chat.created", chat_data)
+
+
+async def broadcast_chat_updated(org_id: int, chat_data: Dict[str, Any]):
+    """Broadcast chat.updated event to organization."""
+    await manager.broadcast_to_org(org_id, "chat.updated", chat_data)
+
+
+async def broadcast_chat_deleted(org_id: int, chat_id: int):
+    """Broadcast chat.deleted event to organization."""
+    await manager.broadcast_to_org(org_id, "chat.deleted", {
+        "id": chat_id,
+        "resource_type": "chat"
+    })
+
+
 async def broadcast_share_created(user_id: int, share_data: Dict[str, Any]):
     """Broadcast share.created event to specific user."""
     await manager.broadcast_to_user(user_id, "share.created", share_data)

@@ -43,6 +43,10 @@ interface UseWebSocketOptions {
   onEntityCreated?: (data: Record<string, unknown>) => void;
   onEntityUpdated?: (data: Record<string, unknown>) => void;
   onEntityDeleted?: (data: { id: number }) => void;
+  onChatCreated?: (data: Record<string, unknown>) => void;
+  onChatUpdated?: (data: Record<string, unknown>) => void;
+  onChatDeleted?: (data: { id: number }) => void;
+  onChatMessage?: (data: Record<string, unknown>) => void;
   autoReconnect?: boolean;
   reconnectInterval?: number;
 }
@@ -55,6 +59,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     onEntityCreated,
     onEntityUpdated,
     onEntityDeleted,
+    onChatCreated,
+    onChatUpdated,
+    onChatDeleted,
+    onChatMessage,
     autoReconnect = true,
     reconnectInterval = 3000,
   } = options;
@@ -162,6 +170,22 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
               onEntityDeleted?.(data.payload as unknown as { id: number });
               break;
 
+            case 'chat.created':
+              onChatCreated?.(data.payload);
+              break;
+
+            case 'chat.updated':
+              onChatUpdated?.(data.payload);
+              break;
+
+            case 'chat.deleted':
+              onChatDeleted?.(data.payload as unknown as { id: number });
+              break;
+
+            case 'chat.message':
+              onChatMessage?.(data.payload);
+              break;
+
             default:
               console.log('[WebSocket] Unknown event type:', data.type);
           }
@@ -174,7 +198,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       setError(err instanceof Error ? err : new Error('Failed to connect'));
       setStatus('error');
     }
-  }, [user, autoReconnect, reconnectInterval, onCallProgress, onCallCompleted, onCallFailed, onEntityCreated, onEntityUpdated, onEntityDeleted]);
+  }, [user, autoReconnect, reconnectInterval, onCallProgress, onCallCompleted, onCallFailed, onEntityCreated, onEntityUpdated, onEntityDeleted, onChatCreated, onChatUpdated, onChatDeleted, onChatMessage]);
 
   const disconnect = useCallback(() => {
     isManualClose.current = true;

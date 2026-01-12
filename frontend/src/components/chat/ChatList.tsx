@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import {
   MessageSquare, Users, UserCheck, FolderKanban, Building2,
-  Briefcase, DollarSign, Headphones, Settings
+  Briefcase, DollarSign, Headphones, Settings, User, Share2
 } from 'lucide-react';
 import type { Chat, ChatTypeId } from '@/types';
 import clsx from 'clsx';
@@ -93,6 +93,17 @@ export default function ChatList({ chats, selectedId, onSelect }: ChatListProps)
                     <Users className="w-3.5 h-3.5" />
                     {chat.participants_count}
                   </span>
+                  {/* Show owner info if not my chat */}
+                  {!chat.is_mine && chat.owner_name && (
+                    <span className="flex items-center gap-1 flex-shrink-0 text-xs text-dark-500" title={`Владелец: ${chat.owner_name}`}>
+                      {chat.is_shared ? (
+                        <Share2 className="w-3 h-3 text-accent-400" />
+                      ) : (
+                        <User className="w-3 h-3" />
+                      )}
+                      <span className="truncate max-w-[100px]">{chat.owner_name}</span>
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

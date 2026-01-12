@@ -34,6 +34,7 @@ from ..services.chat_types import (
 )
 from ..services.transcription import transcription_service
 from ..services.documents import document_parser
+from .realtime import broadcast_chat_updated, broadcast_chat_deleted
 
 router = APIRouter()
 
@@ -233,7 +234,8 @@ async def get_chats(
 
         # Salesforce-style access control:
         # - Org Owner: see all in organization
-        # - Others: own + shared + dept lead sees dept members' records
+        # - Dept Lead/Sub_admin: see dept members' records + entity-linked chats
+        # - Others: own + shared
         user_role = await get_user_org_role(user, org.id, db)
 
         if user_role != OrgRole.owner:
@@ -266,6 +268,16 @@ async def get_chats(
                 )
                 dept_member_ids = [r for r in dept_members_result.scalars().all()]
 
+            # Get entity IDs that belong to user's departments (for entity-based access)
+            dept_entity_ids = []
+            if lead_dept_ids:
+                dept_entities_result = await db.execute(
+                    select(Entity.id).where(
+                        Entity.department_id.in_(lead_dept_ids)
+                    )
+                )
+                dept_entity_ids = [r for r in dept_entities_result.scalars().all()]
+
             # Build access conditions
             conditions = [Chat.owner_id == user.id]  # Own records
 
@@ -274,6 +286,10 @@ async def get_chats(
 
             if dept_member_ids:
                 conditions.append(Chat.owner_id.in_(dept_member_ids))  # Dept members' records
+
+            # Also show chats linked to entities in user's departments
+            if dept_entity_ids:
+                conditions.append(Chat.entity_id.in_(dept_entity_ids))  # Chats linked to dept entities
 
             query = query.where(or_(*conditions))
         # org owner sees all in org (no additional filter)
@@ -496,7 +512,7 @@ async def update_chat(
     else:
         entity_name = None
 
-    return ChatResponse(
+    response = ChatResponse(
         id=chat.id,
         telegram_chat_id=chat.telegram_chat_id,
         title=chat.title,
@@ -515,6 +531,11 @@ async def update_chat(
         created_at=chat.created_at,
         has_criteria=False,
     )
+
+    # Broadcast update to all connected clients in the organization
+    await broadcast_chat_updated(org.id, response.model_dump())
+
+    return response
 
 
 @router.delete("/{chat_id}/messages", status_code=204)
@@ -597,6 +618,9 @@ async def delete_chat(
     # Soft delete - just set deleted_at timestamp
     chat.deleted_at = datetime.utcnow()
     await db.commit()
+
+    # Broadcast delete to all connected clients in the organization
+    await broadcast_chat_deleted(org.id, chat_id)
 
 
 @router.get("/deleted/list", response_model=List[ChatResponse])
