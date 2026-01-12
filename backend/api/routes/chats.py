@@ -81,17 +81,6 @@ async def can_access_chat(user: User, chat: Chat, user_org_id: int = None, db: A
             return False
         return True
 
-    # 2b. ORG ADMIN - has full data access in organization (same as owner for viewing)
-    if db and user_org_id:
-        from ..services.auth import get_user_org_role
-        from ..models.database import OrgRole
-        org_role = await get_user_org_role(user, user_org_id, db)
-        if org_role == OrgRole.admin:
-            # Check if chat was created by SUPERADMIN (private content restriction)
-            if await was_created_by_superadmin(chat, db):
-                return False
-            return True
-
     # 3. Chat owner has full access
     if chat.owner_id == user.id:
         return True
@@ -244,11 +233,11 @@ async def get_chats(
 
         # Salesforce-style access control:
         # - Org Owner: see all in organization
-        # - Org Admin: see all in organization (full data access)
-        # - Others: own + shared + dept lead sees dept members' records
+        # - Dept Lead/Sub_admin: see dept members' records + entity-linked chats
+        # - Others: own + shared
         user_role = await get_user_org_role(user, org.id, db)
 
-        if user_role not in [OrgRole.owner, OrgRole.admin]:
+        if user_role != OrgRole.owner:
             # Get IDs of chats shared with current user
             shared_result = await db.execute(
                 select(SharedAccess.resource_id).where(
