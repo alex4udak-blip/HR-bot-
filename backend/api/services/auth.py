@@ -450,8 +450,9 @@ async def is_department_admin(user: User, dept_id: int, db: AsyncSession) -> boo
     if not member:
         return False
 
-    # Use string comparison since member.role comes from DB as string
-    return member.role in ("lead", "sub_admin")
+    # Use enum comparison since member.role comes from DB as DeptRole enum
+    from ..models.database import DeptRole
+    return member.role in (DeptRole.lead, DeptRole.sub_admin)
 
 
 async def get_user_departments(user: User, db: AsyncSession) -> list:
@@ -530,8 +531,9 @@ async def can_view_in_department(user: User, resource_owner_id: int, resource_de
         return False
 
     # Department admins (lead/sub_admin) can view all resources in their department
-    # Use string comparison since member.role comes from DB as string
-    if member.role in ("lead", "sub_admin"):
+    # Use enum comparison since member.role comes from DB as DeptRole enum
+    from ..models.database import DeptRole
+    if member.role in (DeptRole.lead, DeptRole.sub_admin):
         return True
 
     # Regular members can only view their own resources
@@ -579,7 +581,7 @@ async def get_department_admin(user: User, db: AsyncSession) -> Optional[Departm
         .join(DepartmentMember, DepartmentMember.department_id == Department.id)
         .where(
             DepartmentMember.user_id == user.id,
-            DepartmentMember.role.in_(["lead", "sub_admin"])
+            DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
         )
         .limit(1)  # Admin should only have one department
     )
@@ -698,10 +700,11 @@ async def can_share_to(
     # - With leads/sub_admins of other departments
     # - With OrgRole.admin
     # - With OWNER/SUPERADMIN
+    from ..models.database import DeptRole as DeptRoleEnum
     from_dept_admin_result = await db.execute(
         select(DepartmentMember.department_id).where(
             DepartmentMember.user_id == from_user.id,
-            DepartmentMember.role.in_(["lead", "sub_admin"])
+            DepartmentMember.role.in_([DeptRoleEnum.lead, DeptRoleEnum.sub_admin])
         )
     )
     from_dept_admin_ids = set(from_dept_admin_result.scalars().all())
@@ -719,7 +722,7 @@ async def can_share_to(
         to_dept_admin_result = await db.execute(
             select(DepartmentMember.department_id).where(
                 DepartmentMember.user_id == to_user.id,
-                DepartmentMember.role.in_(["lead", "sub_admin"])
+                DepartmentMember.role.in_([DeptRoleEnum.lead, DeptRoleEnum.sub_admin])
             )
         )
         to_dept_admin_ids = set(to_dept_admin_result.scalars().all())

@@ -3208,10 +3208,10 @@ async def get_my_permissions(
             .where(DepartmentMember.user_id == current_user.id)
             .order_by(
                 # Proper priority: lead=1, sub_admin=2, member=3
-                # Use string values to avoid enum serialization issues
+                # Use enum values for proper PostgreSQL enum comparison
                 case(
-                    (DepartmentMember.role == "lead", 1),
-                    (DepartmentMember.role == "sub_admin", 2),
+                    (DepartmentMember.role == DeptRole.lead, 1),
+                    (DepartmentMember.role == DeptRole.sub_admin, 2),
                     else_=3
                 )
             )

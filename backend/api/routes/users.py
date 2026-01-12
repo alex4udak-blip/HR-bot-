@@ -145,7 +145,7 @@ async def get_users(
             .where(
                 DepartmentMember.department_id != dept_member.department_id,
                 User.role.in_([UserRole.admin, UserRole.sub_admin]),
-                DepartmentMember.role.in_(["lead", "sub_admin"])
+                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
             )
             .order_by(User.created_at.desc())
         )
