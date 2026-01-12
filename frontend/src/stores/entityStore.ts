@@ -43,6 +43,11 @@ interface EntityState {
   clearFilters: () => void;
   clearCurrentEntity: () => void;
   clearError: () => void;
+
+  // WebSocket handlers
+  handleEntityCreated: (data: Record<string, unknown>) => void;
+  handleEntityUpdated: (data: Record<string, unknown>) => void;
+  handleEntityDeleted: (data: { id: number }) => void;
 }
 
 const initialTypeCounts: TypeCounts = {
@@ -220,5 +225,89 @@ export const useEntityStore = create<EntityState>((set, get) => ({
 
   clearCurrentEntity: () => set({ currentEntity: null }),
 
-  clearError: () => set({ error: null })
+  clearError: () => set({ error: null }),
+
+  // WebSocket handlers for real-time updates
+  handleEntityCreated: (data: Record<string, unknown>) => {
+    const entity = data as unknown as Entity;
+    console.log('[EntityStore] Entity created via WebSocket:', entity.id, entity.name);
+
+    set((state) => {
+      // Check if entity already exists (avoid duplicates)
+      if (state.entities.some((e) => e.id === entity.id)) {
+        return state;
+      }
+
+      // Check if entity matches current filters
+      const { filters } = state;
+      let shouldAdd = true;
+
+      if (filters.type && entity.type !== filters.type) {
+        shouldAdd = false;
+      }
+      if (filters.status && entity.status !== filters.status) {
+        shouldAdd = false;
+      }
+      if (filters.search && !entity.name.toLowerCase().includes(filters.search.toLowerCase())) {
+        shouldAdd = false;
+      }
+
+      if (shouldAdd) {
+        return {
+          entities: [entity, ...state.entities],
+          typeCounts: {
+            ...state.typeCounts,
+            all: state.typeCounts.all + 1,
+            [entity.type as keyof Omit<TypeCounts, 'all'>]:
+              (state.typeCounts[entity.type as keyof Omit<TypeCounts, 'all'>] || 0) + 1,
+          },
+        };
+      }
+
+      // Update counts even if not visible (entity created but filtered out)
+      return {
+        typeCounts: {
+          ...state.typeCounts,
+          all: state.typeCounts.all + 1,
+          [entity.type as keyof Omit<TypeCounts, 'all'>]:
+            (state.typeCounts[entity.type as keyof Omit<TypeCounts, 'all'>] || 0) + 1,
+        },
+      };
+    });
+  },
+
+  handleEntityUpdated: (data: Record<string, unknown>) => {
+    const entity = data as unknown as Entity;
+    console.log('[EntityStore] Entity updated via WebSocket:', entity.id, entity.name);
+
+    set((state) => ({
+      entities: state.entities.map((e) => (e.id === entity.id ? { ...e, ...entity } : e)),
+      currentEntity:
+        state.currentEntity?.id === entity.id
+          ? { ...state.currentEntity, ...entity }
+          : state.currentEntity,
+    }));
+  },
+
+  handleEntityDeleted: (data: { id: number }) => {
+    console.log('[EntityStore] Entity deleted via WebSocket:', data.id);
+
+    set((state) => {
+      const deletedEntity = state.entities.find((e) => e.id === data.id);
+      if (!deletedEntity) {
+        return state;
+      }
+
+      return {
+        entities: state.entities.filter((e) => e.id !== data.id),
+        currentEntity: state.currentEntity?.id === data.id ? null : state.currentEntity,
+        typeCounts: {
+          ...state.typeCounts,
+          all: Math.max(0, state.typeCounts.all - 1),
+          [deletedEntity.type as keyof Omit<TypeCounts, 'all'>]:
+            Math.max(0, (state.typeCounts[deletedEntity.type as keyof Omit<TypeCounts, 'all'>] || 0) - 1),
+        },
+      };
+    });
+  },
 }));

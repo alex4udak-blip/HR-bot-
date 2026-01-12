@@ -34,6 +34,7 @@ from ..services.chat_types import (
 )
 from ..services.transcription import transcription_service
 from ..services.documents import document_parser
+from .realtime import broadcast_chat_updated, broadcast_chat_deleted
 
 router = APIRouter()
 
@@ -511,7 +512,7 @@ async def update_chat(
     else:
         entity_name = None
 
-    return ChatResponse(
+    response = ChatResponse(
         id=chat.id,
         telegram_chat_id=chat.telegram_chat_id,
         title=chat.title,
@@ -530,6 +531,11 @@ async def update_chat(
         created_at=chat.created_at,
         has_criteria=False,
     )
+
+    # Broadcast update to all connected clients in the organization
+    await broadcast_chat_updated(org.id, response.model_dump())
+
+    return response
 
 
 @router.delete("/{chat_id}/messages", status_code=204)
@@ -612,6 +618,9 @@ async def delete_chat(
     # Soft delete - just set deleted_at timestamp
     chat.deleted_at = datetime.utcnow()
     await db.commit()
+
+    # Broadcast delete to all connected clients in the organization
+    await broadcast_chat_deleted(org.id, chat_id)
 
 
 @router.get("/deleted/list", response_model=List[ChatResponse])
