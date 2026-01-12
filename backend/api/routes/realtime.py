@@ -423,7 +423,7 @@ async def get_users_with_resource_access(
             dept_leads_result = await db.execute(
                 select(DepartmentMember.user_id).where(
                     DepartmentMember.department_id.in_(owner_dept_ids),
-                    DepartmentMember.role.in_(["lead", "sub_admin"])
+                    DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
                 )
             )
             for uid in dept_leads_result.scalars().all():
@@ -440,7 +440,7 @@ async def get_users_with_resource_access(
             dept_leads_result = await db.execute(
                 select(DepartmentMember.user_id).where(
                     DepartmentMember.department_id == entity_dept_id,
-                    DepartmentMember.role.in_(["lead", "sub_admin"])
+                    DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
                 )
             )
             for uid in dept_leads_result.scalars().all():

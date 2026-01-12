@@ -119,7 +119,7 @@ async def is_dept_lead(user: User, department_id: int, db: AsyncSession) -> bool
         select(DepartmentMember).where(
             DepartmentMember.department_id == department_id,
             DepartmentMember.user_id == user.id,
-            DepartmentMember.role == "lead"  # Use string value
+            DepartmentMember.role == DeptRole.lead
         )
     )
     return result.scalar_one_or_none() is not None
@@ -134,7 +134,7 @@ async def is_dept_admin(user: User, department_id: int, db: AsyncSession) -> boo
         select(DepartmentMember).where(
             DepartmentMember.department_id == department_id,
             DepartmentMember.user_id == user.id,
-            DepartmentMember.role.in_(["lead", "sub_admin"])
+            DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
         )
     )
     return result.scalar_one_or_none() is not None
@@ -959,16 +959,16 @@ async def remove_department_member(
             raise HTTPException(status_code=404, detail="Member not found")
 
         # Sub_admin can only remove regular members
-        # Use string comparison since member.role comes from DB as string
-        if is_sub_admin and member.role in ("lead", "sub_admin"):
+        # Use enum comparison since member.role comes from DB as DeptRole enum
+        if is_sub_admin and member.role in (DeptRole.lead, DeptRole.sub_admin):
             raise HTTPException(status_code=403, detail="Sub-admins can only remove regular members")
 
         # Don't allow removing the last lead
-        if member.role == "lead":
+        if member.role == DeptRole.lead:
             leads_result = await db.execute(
                 select(DepartmentMember).where(
                     DepartmentMember.department_id == department_id,
-                    DepartmentMember.role == "lead"  # Use string value
+                    DepartmentMember.role == DeptRole.lead
                 )
             )
             leads_count = len(list(leads_result.scalars().all()))

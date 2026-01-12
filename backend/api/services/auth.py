@@ -579,7 +579,7 @@ async def get_department_admin(user: User, db: AsyncSession) -> Optional[Departm
         .join(DepartmentMember, DepartmentMember.department_id == Department.id)
         .where(
             DepartmentMember.user_id == user.id,
-            DepartmentMember.role.in_(["lead", "sub_admin"])
+            DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
         )
         .limit(1)  # Admin should only have one department
     )
@@ -698,10 +698,11 @@ async def can_share_to(
     # - With leads/sub_admins of other departments
     # - With OrgRole.admin
     # - With OWNER/SUPERADMIN
+    from ..models.database import DeptRole as DeptRoleEnum
     from_dept_admin_result = await db.execute(
         select(DepartmentMember.department_id).where(
             DepartmentMember.user_id == from_user.id,
-            DepartmentMember.role.in_(["lead", "sub_admin"])
+            DepartmentMember.role.in_([DeptRoleEnum.lead, DeptRoleEnum.sub_admin])
         )
     )
     from_dept_admin_ids = set(from_dept_admin_result.scalars().all())
@@ -719,7 +720,7 @@ async def can_share_to(
         to_dept_admin_result = await db.execute(
             select(DepartmentMember.department_id).where(
                 DepartmentMember.user_id == to_user.id,
-                DepartmentMember.role.in_(["lead", "sub_admin"])
+                DepartmentMember.role.in_([DeptRoleEnum.lead, DeptRoleEnum.sub_admin])
             )
         )
         to_dept_admin_ids = set(to_dept_admin_result.scalars().all())

@@ -353,8 +353,8 @@ async def list_entities(
         dept_memberships = list(dept_memberships_result.scalars().all())
         user_dept_ids = [dm.department_id for dm in dept_memberships]
         # Only lead and sub_admin can see all department entities
-        # Use string comparison since dm.role comes from DB as string
-        admin_dept_ids = [dm.department_id for dm in dept_memberships if dm.role in ("lead", "sub_admin")]
+        # Use enum comparison since dm.role comes from DB as DeptRole enum
+        admin_dept_ids = [dm.department_id for dm in dept_memberships if dm.role in (DeptRole.lead, DeptRole.sub_admin)]
 
         # Shared entities query
         shared_ids_query = select(SharedAccess.resource_id).where(
@@ -527,7 +527,7 @@ async def list_entities(
         admin_dept_result = await db.execute(
             select(DepartmentMember.department_id).where(
                 DepartmentMember.user_id == current_user.id,
-                DepartmentMember.role.in_(["lead", "sub_admin"])
+                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
             )
         )
         admin_dept_ids = [r for r in admin_dept_result.scalars().all()]
@@ -758,7 +758,7 @@ async def get_entity(
         admin_dept_result = await db.execute(
             select(DepartmentMember.department_id).where(
                 DepartmentMember.user_id == current_user.id,
-                DepartmentMember.role.in_(["lead", "sub_admin"])
+                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
             )
         )
         admin_dept_ids = [r for r in admin_dept_result.scalars().all()]
@@ -1198,8 +1198,8 @@ async def transfer_entity(
         can_transfer = True
     else:
         # Check department-based permissions
-        # Use string comparison since dm.role comes from DB as string
-        has_sub_admin = any(dm.role == "sub_admin" for dm in from_dept_memberships)
+        # Use enum comparison since dm.role comes from DB as DeptRole enum
+        has_sub_admin = any(dm.role == DeptRole.sub_admin for dm in from_dept_memberships)
 
         if has_sub_admin or from_user_role == "admin":
             # SUB_ADMIN and ADMIN can transfer to:
@@ -1210,7 +1210,7 @@ async def transfer_entity(
                 can_transfer = True
             else:
                 # Check if target is admin/sub_admin of any department
-                is_target_admin = any(dm.role in ("sub_admin", "lead") for dm in to_dept_memberships)
+                is_target_admin = any(dm.role in (DeptRole.sub_admin, DeptRole.lead) for dm in to_dept_memberships)
                 if is_target_admin or to_user_role == "admin":
                     can_transfer = True
         else:
