@@ -9,7 +9,7 @@ from sqlalchemy.orm.attributes import flag_modified
 import json
 
 from ..database import get_db
-from ..models.database import User, UserRole, Chat, Message, ChatCriteria, AIConversation, AnalysisHistory
+from ..models.database import User, Chat, Message, ChatCriteria, AIConversation, AnalysisHistory
 from ..models.schemas import (
     AIMessageRequest, AIConversationResponse, AnalysisResponse,
     AnalyzeRequest, ReportRequest
@@ -17,14 +17,9 @@ from ..models.schemas import (
 from ..services.auth import get_current_user
 from ..services.ai import ai_service
 from ..services.reports import generate_pdf_report, generate_docx_report
+from ..services.permissions import PermissionService
 
 router = APIRouter()
-
-
-def can_access_chat(user: User, chat: Chat) -> bool:
-    if user.role == UserRole.superadmin:
-        return True
-    return chat.owner_id == user.id
 
 
 async def get_chat_context(db: AsyncSession, chat_id: int):
@@ -61,7 +56,8 @@ async def ai_message(
     chat, messages, criteria = await get_chat_context(db, chat_id)
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(user, chat, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Validate that at least one of message or quick_action is provided
@@ -176,7 +172,8 @@ async def get_ai_history(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(user, chat, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = await db.execute(
@@ -215,7 +212,8 @@ async def clear_ai_history(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(user, chat, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Delete conversation for this user and chat
@@ -243,7 +241,8 @@ async def analyze_chat(
     chat, messages, criteria = await get_chat_context(db, chat_id)
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(user, chat, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     chat_type = chat.chat_type.value if chat.chat_type else "hr"
@@ -283,7 +282,8 @@ async def get_analysis_history(
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(user, chat, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = await db.execute(
@@ -313,7 +313,8 @@ async def generate_report_file(
     chat, messages, criteria = await get_chat_context(db, chat_id)
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if not can_access_chat(user, chat):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(user, chat, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     chat_type = chat.chat_type.value if chat.chat_type else "hr"

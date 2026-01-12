@@ -18,6 +18,7 @@ from ..models.database import (
     DepartmentMember, DeptRole, SharedAccess, ResourceType, AccessLevel
 )
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to
+from ..services.permissions import PermissionService
 from datetime import datetime as dt
 
 router = APIRouter()
@@ -40,160 +41,6 @@ class ShareRequest(BaseModel):
     access_level: AccessLevel = AccessLevel.view
     note: Optional[str] = None
     expires_at: Optional[datetime] = None
-
-
-# === Access Control Helpers ===
-
-async def can_access_call(user: User, call: CallRecording, user_org_id: int = None, db: AsyncSession = None) -> bool:
-    """Check if user can access this call based on new role hierarchy.
-
-    Hierarchy:
-    1. SUPERADMIN - sees EVERYTHING without exceptions
-    2. OWNER - sees everything in organization, BUT NOT private content created by SUPERADMIN
-    3. ADMIN (lead) - sees all calls in their department
-    4. SUB_ADMIN - same as ADMIN for viewing
-    5. MEMBER - sees only THEIR OWN calls
-
-    Args:
-        user: Current user
-        call: Call to check access for
-        user_org_id: User's organization ID (required for org-based access)
-        db: Database session (required for role checks and SharedAccess)
-    """
-    from ..services.auth import is_superadmin, is_owner
-
-    # 1. SUPERADMIN - has access to EVERYTHING
-    if is_superadmin(user):
-        return True
-
-    # Check org membership if org_id is provided
-    if user_org_id and call.org_id != user_org_id:
-        return False
-
-    # 2. OWNER - has access to everything in organization, EXCEPT private content created by SUPERADMIN
-    if db and user_org_id and await is_owner(user, user_org_id, db):
-        # Check if call was created by SUPERADMIN (private content restriction)
-        # Note: For calls, owner_id is the user who initiated/uploaded the call
-        if call.owner_id:
-            owner_result = await db.execute(
-                select(User).where(User.id == call.owner_id)
-            )
-            owner = owner_result.scalar_one_or_none()
-            if owner and owner.role == UserRole.superadmin:
-                # OWNER cannot access private SUPERADMIN content
-                return False
-        return True
-
-    # 3. Call owner has full access
-    if call.owner_id == user.id:
-        return True
-
-    # 4. Department-based access (LEAD/SUB_ADMIN)
-    # Access granted if:
-    # a) Call is linked to an entity in user's department, OR
-    # b) Call owner is a member of user's department
-    if db:
-        # Get departments where user is lead or sub_admin
-        # Use enum values for proper PostgreSQL enum comparison
-        lead_dept_result = await db.execute(
-            select(DepartmentMember.department_id).where(
-                DepartmentMember.user_id == user.id,
-                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
-            )
-        )
-        lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
-
-        if lead_dept_ids:
-            # a) Check if call is linked to entity in user's department
-            if call.entity_id:
-                entity_result = await db.execute(
-                    select(Entity).where(Entity.id == call.entity_id)
-                )
-                entity = entity_result.scalar_one_or_none()
-
-                if entity and entity.department_id in lead_dept_ids:
-                    return True
-
-            # b) Check if call owner is a member of user's department
-            if call.owner_id:
-                owner_dept_result = await db.execute(
-                    select(DepartmentMember.department_id).where(
-                        DepartmentMember.user_id == call.owner_id,
-                        DepartmentMember.department_id.in_(lead_dept_ids)
-                    )
-                )
-                if owner_dept_result.scalar_one_or_none():
-                    return True
-
-    # 5. Check SharedAccess for explicitly shared calls
-    if db:
-        shared_result = await db.execute(
-            select(SharedAccess).where(
-                SharedAccess.resource_type == ResourceType.call,
-                SharedAccess.resource_id == call.id,
-                SharedAccess.shared_with_id == user.id,
-                or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
-            )
-        )
-        if shared_result.scalar_one_or_none():
-            return True
-
-    return False
-
-
-async def check_call_modification_access(
-    user: User,
-    call: CallRecording,
-    user_org_id: int,
-    db: AsyncSession,
-    require_full: bool = False
-) -> bool:
-    """Check if user has permission to modify this call.
-
-    Args:
-        user: Current user
-        call: Call to check access for
-        user_org_id: User's organization ID
-        db: Database session
-        require_full: If True, require 'full' access level. If False, 'edit' or 'full' is enough.
-
-    Returns:
-        True if user has required access level, False otherwise
-    """
-    # Superadmin can do anything
-    if user.role == UserRole.superadmin:
-        return True
-
-    # Org owner can do anything in their org
-    user_role = await get_user_org_role(user, user_org_id, db)
-    if user_role == "owner":
-        return True
-
-    # Call owner can do anything
-    if call.owner_id == user.id:
-        return True
-
-    # Check SharedAccess
-    shared_result = await db.execute(
-        select(SharedAccess).where(
-            SharedAccess.resource_type == ResourceType.call,
-            SharedAccess.resource_id == call.id,
-            SharedAccess.shared_with_id == user.id,
-            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
-        )
-    )
-    shared_access = shared_result.scalar_one_or_none()
-
-    if not shared_access:
-        return False
-
-    # Check access level
-    if require_full:
-        # Only 'full' access allowed
-        return shared_access.access_level == AccessLevel.full
-    else:
-        # 'edit' or 'full' access allowed
-        return shared_access.access_level in (AccessLevel.edit, AccessLevel.full)
 
 
 # === Pydantic Schemas ===
@@ -575,7 +422,8 @@ async def get_call(
         raise HTTPException(404, "Call not found")
 
     # Check if user has access to view this call
-    if not await can_access_call(current_user, call, org.id, db):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(current_user, call, "read"):
         raise HTTPException(403, "Access denied")
 
     entity_name = None
@@ -641,7 +489,8 @@ async def get_call_status(
         raise HTTPException(404, "Call not found")
 
     # Check if user has access to view this call
-    if not await can_access_call(current_user, call, org.id, db):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(current_user, call, "read"):
         raise HTTPException(403, "Access denied")
 
     return {
@@ -679,7 +528,8 @@ async def download_transcript(
         raise HTTPException(404, "Call not found")
 
     # Check if user has access to view this call
-    if not await can_access_call(current_user, call, org.id, db):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(current_user, call, "read"):
         raise HTTPException(403, "Access denied")
 
     # Check if transcript exists
@@ -728,7 +578,8 @@ async def download_audio(
         raise HTTPException(404, "Call not found")
 
     # Check if user has access to view this call
-    if not await can_access_call(current_user, call, org.id, db):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(current_user, call, "read"):
         raise HTTPException(403, "Access denied")
 
     # Check if audio file exists
@@ -797,7 +648,8 @@ async def recalculate_call_stats(
         raise HTTPException(404, "Call not found")
 
     # Check if user has access to edit this call
-    if not await can_access_call(current_user, call, org.id, db):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(current_user, call, "read"):
         raise HTTPException(403, "Access denied")
 
     if not call.speakers:
@@ -842,7 +694,8 @@ async def stop_recording(
         raise HTTPException(404, "Call not found")
 
     # Check if user has full access (destructive operation)
-    if not await check_call_modification_access(current_user, call, org.id, db, require_full=True):
+    permissions = PermissionService(db)
+    if not await permissions.can_modify(current_user, call, require_full=True):
         raise HTTPException(403, "No permission to stop this recording")
 
     if call.status != CallStatus.recording:
@@ -886,7 +739,8 @@ async def delete_call(
         raise HTTPException(404, "Call not found")
 
     # Check if user has full access (destructive operation)
-    if not await check_call_modification_access(current_user, call, org.id, db, require_full=True):
+    permissions = PermissionService(db)
+    if not await permissions.can_modify(current_user, call, require_full=True):
         raise HTTPException(403, "No delete permission for this call")
 
     # Delete the audio file if it exists
@@ -937,7 +791,8 @@ async def link_call_to_entity(
         raise HTTPException(404, "Call not found")
 
     # Check if user has edit or full access
-    if not await check_call_modification_access(current_user, call, org.id, db, require_full=False):
+    permissions = PermissionService(db)
+    if not await permissions.can_modify(current_user, call, require_full=False):
         raise HTTPException(403, "No permission to link this call")
 
     call.entity_id = entity_id
@@ -972,7 +827,8 @@ async def reprocess_call(
         raise HTTPException(404, "Call not found")
 
     # Check if user has edit or full access
-    if not await check_call_modification_access(current_user, call, org.id, db, require_full=False):
+    permissions = PermissionService(db)
+    if not await permissions.can_modify(current_user, call, require_full=False):
         raise HTTPException(403, "No permission to reprocess this call")
 
     # Check what we have to reprocess
@@ -1082,7 +938,8 @@ async def update_call(
         raise HTTPException(404, "Call not found")
 
     # Check if user has edit or full access
-    if not await check_call_modification_access(current_user, call, org.id, db, require_full=False):
+    permissions = PermissionService(db)
+    if not await permissions.can_modify(current_user, call, require_full=False):
         raise HTTPException(403, "No edit permission for this call")
 
     # Update title if provided
@@ -1257,7 +1114,7 @@ async def share_call(
         can_share = True
     else:
         user_role = await get_user_org_role(current_user, org.id, db)
-        if user_role == "owner":
+        if user_role == OrgRole.owner:
             can_share = True
         elif call.owner_id == current_user.id:
             can_share = True  # Owner of call

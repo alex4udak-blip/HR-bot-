@@ -27,6 +27,7 @@ from ..models.database import (
 from ..services.auth import get_current_user
 from ..services.entity_ai import entity_ai_service
 from ..services.reports import generate_pdf_report, generate_docx_report
+from ..services.permissions import PermissionService
 
 logger = logging.getLogger("hr-analyzer.entity-ai-routes")
 
@@ -77,28 +78,6 @@ async def get_entity_with_data(db: AsyncSession, entity_id: int):
     return entity, chats, calls
 
 
-async def can_access_entity(user: User, entity: Entity, db: AsyncSession) -> bool:
-    """Check if user can access entity.
-
-    Uses the proper role hierarchy:
-    1. SUPERADMIN - sees everything
-    2. OWNER - sees everything in org (except superadmin private content)
-    3. ADMIN/SUB_ADMIN - sees department data
-    4. MEMBER - sees own resources and shared
-    """
-    from .entities import check_entity_access
-
-    # Get org_id from entity
-    org_id = entity.org_id
-    if not org_id:
-        # Fallback: only owner or superadmin can access
-        if user.role == UserRole.superadmin:
-            return True
-        return entity.created_by == user.id
-
-    return await check_entity_access(entity, user, org_id, db)
-
-
 @router.get("/entities/{entity_id}/ai/actions")
 async def get_available_actions(
     entity_id: int,
@@ -116,7 +95,8 @@ async def get_available_actions(
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
 
-    if not await can_access_entity(user, entity, db):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(user, entity, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     return {
@@ -139,7 +119,8 @@ async def entity_ai_message(
 
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if not await can_access_entity(user, entity, db):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(user, entity, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Validate request
@@ -253,7 +234,8 @@ async def get_entity_ai_history(
     entity = result.scalar_one_or_none()
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if not await can_access_entity(user, entity, db):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(user, entity, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Get conversation
@@ -287,7 +269,8 @@ async def clear_entity_ai_history(
     entity = result.scalar_one_or_none()
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if not await can_access_entity(user, entity, db):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(user, entity, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Delete conversation
@@ -327,7 +310,8 @@ async def update_entity_ai_summary(
 
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if not await can_access_entity(user, entity, db):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(user, entity, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Build content for summarization
@@ -379,7 +363,8 @@ async def get_entity_ai_memory(
 
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if not await can_access_entity(user, entity, db):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(user, entity, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     return {
@@ -514,7 +499,8 @@ async def generate_entity_report(
 
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if not await can_access_entity(user, entity, db):
+    permissions = PermissionService(db)
+    if not await permissions.can_access_resource(user, entity, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Get criteria if exists
