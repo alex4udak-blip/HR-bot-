@@ -120,7 +120,7 @@ async def require_org_admin(
         return user, org, OrgRole.owner
 
     role = await get_user_org_role(user, org.id, db)
-    if role not in (OrgRole.owner, OrgRole.admin):
+    if role not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
     return user, org, role
 
@@ -133,7 +133,7 @@ async def require_org_owner(
     """Require user to be org owner."""
     user = await db.merge(user)
     role = await get_user_org_role(user, org.id, db)
-    if role != OrgRole.owner:
+    if role != "owner":
         raise HTTPException(status_code=403, detail="Owner access required")
     return user, org
 
@@ -293,7 +293,7 @@ async def invite_member(
         member_role = OrgRole.member
 
     # Only owner can add other owners
-    if member_role == OrgRole.owner and role != OrgRole.owner:
+    if member_role == OrgRole.owner and role != "owner":
         raise HTTPException(status_code=403, detail="Only owner can add owners")
 
     # Create membership
@@ -315,7 +315,7 @@ async def invite_member(
             dept_role = DeptRole.member
 
         # Only org admins/owners can set lead role
-        if dept_role == DeptRole.lead and role not in (OrgRole.owner, OrgRole.admin):
+        if dept_role == DeptRole.lead and role not in ("owner", "admin"):
             dept_role = DeptRole.member
 
         for dept_id in data.department_ids:
@@ -380,7 +380,8 @@ async def update_member_role(
         raise HTTPException(status_code=400, detail="Invalid role")
 
     # Only owner can change to/from owner
-    if (new_role == OrgRole.owner or membership.role == OrgRole.owner) and current_role != OrgRole.owner:
+    # Use string comparison since membership.role comes from DB as string
+    if (new_role == OrgRole.owner or membership.role == "owner") and current_role != "owner":
         raise HTTPException(status_code=403, detail="Only owner can manage owner roles")
 
     membership.role = new_role
@@ -420,12 +421,13 @@ async def remove_member(
     if current_user.role == UserRole.superadmin:
         pass  # No restrictions for superadmin
     # Owner can remove admins and members, but not other owners
-    elif current_role == OrgRole.owner:
-        if membership.role == OrgRole.owner:
+    # Use string comparison since roles come from DB as strings
+    elif current_role == "owner":
+        if membership.role == "owner":
             raise HTTPException(status_code=403, detail="Cannot remove other owners")
     # Admin can only remove members (not other admins or owners)
-    elif current_role == OrgRole.admin:
-        if membership.role in (OrgRole.owner, OrgRole.admin):
+    elif current_role == "admin":
+        if membership.role in ("owner", "admin"):
             raise HTTPException(status_code=403, detail="Admins can only remove members")
     else:
         raise HTTPException(status_code=403, detail="No permission to remove members")

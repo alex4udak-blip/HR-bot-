@@ -166,7 +166,7 @@ async def check_call_modification_access(
 
     # Org owner can do anything in their org
     user_role = await get_user_org_role(user, user_org_id, db)
-    if user_role == OrgRole.owner:
+    if user_role == "owner":
         return True
 
     # Call owner can do anything
@@ -272,7 +272,7 @@ async def list_calls(
         # - Others: own + shared + dept lead sees dept members' records
         user_role = await get_user_org_role(current_user, org.id, db)
 
-        if user_role != OrgRole.owner:
+        if user_role != "owner":
             # Get IDs of recordings shared with current user
             shared_result = await db.execute(
                 select(SharedAccess.resource_id).where(
@@ -1245,7 +1245,7 @@ async def share_call(
         can_share = True
     else:
         user_role = await get_user_org_role(current_user, org.id, db)
-        if user_role == OrgRole.owner:
+        if user_role == "owner":
             can_share = True
         elif call.owner_id == current_user.id:
             can_share = True  # Owner of call

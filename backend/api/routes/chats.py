@@ -168,7 +168,7 @@ async def check_chat_modification_access(
 
     # Org owner can do anything in their org
     user_role = await get_user_org_role(user, user_org_id, db)
-    if user_role == OrgRole.owner:
+    if user_role == "owner":
         return True
 
     # Chat owner can do anything
@@ -257,7 +257,7 @@ async def get_chats(
         # - Others: own + shared
         user_role = await get_user_org_role(user, org.id, db)
 
-        if user_role != OrgRole.owner:
+        if user_role != "owner":
             # Get IDs of chats shared with current user
             shared_result = await db.execute(
                 select(SharedAccess.resource_id).where(
@@ -618,7 +618,7 @@ async def delete_chat(
         can_delete = True
     else:
         user_role = await get_user_org_role(user, org.id, db)
-        if user_role == OrgRole.owner:
+        if user_role == "owner":
             can_delete = True
         elif chat.owner_id == user.id:
             can_delete = True  # Owner of chat
@@ -1967,7 +1967,7 @@ async def share_chat(
         can_share = True
     else:
         user_role = await get_user_org_role(current_user, org.id, db)
-        if user_role == OrgRole.owner:
+        if user_role == "owner":
             can_share = True
         elif chat.owner_id == current_user.id:
             can_share = True  # Owner of chat
