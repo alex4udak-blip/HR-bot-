@@ -2109,6 +2109,103 @@ import mimetypes
 ENTITY_FILES_DIR = Path(__file__).parent.parent.parent / "uploads" / "entity_files"
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 
+# Allowed file extensions whitelist (security: prevent executable uploads)
+ALLOWED_EXTENSIONS = {
+    # Documents
+    '.pdf', '.doc', '.docx', '.odt', '.rtf', '.txt',
+    # Spreadsheets
+    '.xls', '.xlsx', '.ods', '.csv',
+    # Images
+    '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg',
+    # Archives
+    '.zip', '.rar', '.7z', '.tar', '.gz',
+    # Presentations
+    '.ppt', '.pptx', '.odp',
+}
+
+# MIME type whitelist for content validation
+ALLOWED_MIME_TYPES = {
+    # Documents
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.oasis.opendocument.text',
+    'application/rtf',
+    'text/plain',
+    # Spreadsheets
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'text/csv',
+    # Images
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/bmp',
+    'image/webp',
+    'image/svg+xml',
+    # Archives
+    'application/zip',
+    'application/x-rar-compressed',
+    'application/x-7z-compressed',
+    'application/x-tar',
+    'application/gzip',
+    # Presentations
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.oasis.opendocument.presentation',
+    # Generic (fallback for unknown but allowed extensions)
+    'application/octet-stream',
+}
+
+# Dangerous patterns in filenames
+DANGEROUS_PATTERNS = [
+    '.exe', '.bat', '.cmd', '.sh', '.ps1', '.vbs', '.js', '.jar',
+    '.msi', '.dll', '.scr', '.com', '.pif', '.application', '.gadget',
+    '.hta', '.cpl', '.msc', '.wsf', '.wsh', '.reg', '.inf', '.lnk',
+]
+
+
+def validate_file_upload(filename: str, content_type: str) -> tuple[bool, str]:
+    """
+    Validate uploaded file for security.
+    Returns (is_valid, error_message).
+    """
+    if not filename:
+        return False, "Filename is required"
+
+    # Normalize filename to lowercase for checks
+    filename_lower = filename.lower()
+
+    # Check for null bytes (path traversal attack)
+    if '\x00' in filename:
+        return False, "Invalid filename"
+
+    # Check for path traversal attempts
+    if '..' in filename or '/' in filename or '\\' in filename:
+        return False, "Invalid filename"
+
+    # Check for dangerous double extensions (e.g., resume.pdf.exe)
+    for pattern in DANGEROUS_PATTERNS:
+        if pattern in filename_lower:
+            return False, f"File type not allowed: {pattern}"
+
+    # Get and validate extension
+    extension = Path(filename_lower).suffix
+    if not extension:
+        return False, "File must have an extension"
+
+    if extension not in ALLOWED_EXTENSIONS:
+        return False, f"File type '{extension}' is not allowed. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+
+    # Validate MIME type if provided
+    if content_type and content_type not in ALLOWED_MIME_TYPES:
+        # Log suspicious MIME type but allow if extension is valid
+        # (MIME types can be spoofed, but extensions we control)
+        logger.warning(f"Suspicious MIME type {content_type} for file {filename}")
+
+    return True, ""
+
 
 class EntityFileResponse(BaseModel):
     """Response schema for entity file."""
@@ -2237,13 +2334,21 @@ async def upload_entity_file(
     except ValueError:
         file_type_enum = EntityFileType.other
 
+    # Get original filename and validate
+    original_name = file.filename or "unnamed_file"
+    content_type = file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+
+    # SECURITY: Validate file type before reading content
+    is_valid, error_msg = validate_file_upload(original_name, content_type)
+    if not is_valid:
+        raise HTTPException(400, error_msg)
+
     # Create directory if not exists
     entity_files_dir = ENTITY_FILES_DIR / str(entity_id)
     entity_files_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate unique filename to avoid collisions
-    original_name = file.filename or "unnamed_file"
-    file_extension = Path(original_name).suffix
+    file_extension = Path(original_name.lower()).suffix
     unique_name = f"{uuid.uuid4().hex}{file_extension}"
     file_path = entity_files_dir / unique_name
 
@@ -2255,10 +2360,21 @@ async def upload_entity_file(
     if file_size > MAX_FILE_SIZE:
         raise HTTPException(400, f"File too large. Maximum size is {MAX_FILE_SIZE // (1024 * 1024)}MB")
 
+    # SECURITY: Additional content-based validation for PDFs and images
+    # Check magic bytes to ensure file content matches extension
+    if file_extension == '.pdf' and not content.startswith(b'%PDF'):
+        raise HTTPException(400, "Invalid PDF file: content does not match PDF format")
+    elif file_extension in {'.jpg', '.jpeg'} and not content.startswith(b'\xff\xd8\xff'):
+        raise HTTPException(400, "Invalid JPEG file: content does not match JPEG format")
+    elif file_extension == '.png' and not content.startswith(b'\x89PNG'):
+        raise HTTPException(400, "Invalid PNG file: content does not match PNG format")
+    elif file_extension == '.zip' and not content.startswith(b'PK'):
+        raise HTTPException(400, "Invalid ZIP file: content does not match ZIP format")
+
     file_path.write_bytes(content)
 
-    # Detect MIME type
-    mime_type = file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+    # Use validated MIME type
+    mime_type = content_type
 
     # Create database record
     entity_file = EntityFile(

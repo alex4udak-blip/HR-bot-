@@ -36,10 +36,10 @@ async def fix_alembic_version():
 
         if len(versions) > 1:
             print(f'Found multiple heads: {versions}')
-            print('Consolidating to single head: add_entity_salary')
+            print('Consolidating to single head: fix_callsource_and_fk_constraints')
             # Delete all and insert the correct one
             await conn.execute(text('DELETE FROM alembic_version'))
-            await conn.execute(text(\"INSERT INTO alembic_version (version_num) VALUES ('add_entity_salary')\"))
+            await conn.execute(text(\"INSERT INTO alembic_version (version_num) VALUES ('fix_callsource_and_fk_constraints')\"))
             print('Fixed: now single head')
         elif len(versions) == 1:
             print(f'Single head found: {versions[0]}')
@@ -56,9 +56,9 @@ echo "Checking current alembic version..."
 python -m alembic current || echo "No current version (fresh database)"
 
 echo ""
-echo "Upgrading to latest migration (add_entity_salary)..."
+echo "Upgrading to latest migration (fix_callsource_and_fk_constraints)..."
 # First try specific target, then heads if that fails
-python -m alembic upgrade add_entity_salary 2>&1 && echo "Migration successful" || {
+python -m alembic upgrade fix_callsource_and_fk_constraints 2>&1 && echo "Migration successful" || {
     echo "Specific target failed, trying 'heads'..."
     python -m alembic upgrade heads 2>&1 && echo "Migration with heads successful" || {
         echo "Upgrade failed, but continuing - tables will be created by SQLAlchemy"

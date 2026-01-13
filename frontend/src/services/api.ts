@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import type {
   User, Chat, Message, Participant, CriteriaPreset,
   ChatCriteria, EntityCriteria, AIConversation, AnalysisResult, Stats, AuthResponse,
@@ -7,18 +7,104 @@ import type {
   Vacancy, VacancyStatus, VacancyApplication, ApplicationStage, KanbanBoard, VacancyStats
 } from '@/types';
 
+// API Configuration
+const API_TIMEOUT = 30000; // 30 seconds
+const MAX_RETRIES = 3;
+const RETRY_DELAY_BASE = 1000; // 1 second, will be exponentially increased
+
+// Error types that should trigger retry
+const RETRYABLE_ERRORS = ['ECONNABORTED', 'ETIMEDOUT', 'ENOTFOUND', 'ENETUNREACH', 'ECONNRESET'];
+const RETRYABLE_STATUS_CODES = [408, 429, 500, 502, 503, 504];
+
 const api = axios.create({
   baseURL: '/api',
   headers: {
     'Content-Type': 'application/json',
   },
   withCredentials: true,  // Send cookies with requests (httpOnly cookie authentication)
+  timeout: API_TIMEOUT,   // Request timeout
 });
 
-// Response interceptor - redirect to login on 401
+/**
+ * Sleep for specified milliseconds
+ */
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Check if an error should trigger a retry
+ */
+const shouldRetry = (error: AxiosError): boolean => {
+  // Network errors
+  if (error.code && RETRYABLE_ERRORS.includes(error.code)) {
+    return true;
+  }
+  // HTTP status codes that are retryable
+  if (error.response?.status && RETRYABLE_STATUS_CODES.includes(error.response.status)) {
+    return true;
+  }
+  return false;
+};
+
+/**
+ * Execute request with retry logic
+ */
+const executeWithRetry = async <T>(
+  requestFn: () => Promise<T>,
+  retries = MAX_RETRIES
+): Promise<T> => {
+  let lastError: AxiosError | null = null;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await requestFn();
+    } catch (error) {
+      lastError = error as AxiosError;
+
+      // Don't retry for certain conditions
+      if (!shouldRetry(lastError)) {
+        throw lastError;
+      }
+
+      // Don't retry if we've exhausted retries
+      if (attempt === retries) {
+        throw lastError;
+      }
+
+      // Exponential backoff: 1s, 2s, 4s
+      const delay = RETRY_DELAY_BASE * Math.pow(2, attempt);
+      console.warn(`Request failed, retrying in ${delay}ms (attempt ${attempt + 1}/${retries})`, lastError.message);
+      await sleep(delay);
+    }
+  }
+
+  throw lastError;
+};
+
+// Request interceptor - add retry metadata
+api.interceptors.request.use(
+  (config) => {
+    // Add request timestamp for debugging
+    (config as AxiosRequestConfig & { metadata?: { startTime: number } }).metadata = { startTime: Date.now() };
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response interceptor - handle errors
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
+  (response) => {
+    // Log slow requests in development
+    const config = response.config as AxiosRequestConfig & { metadata?: { startTime: number } };
+    if (config.metadata?.startTime) {
+      const duration = Date.now() - config.metadata.startTime;
+      if (duration > 5000) {
+        console.warn(`Slow API request: ${config.method?.toUpperCase()} ${config.url} took ${duration}ms`);
+      }
+    }
+    return response;
+  },
+  (error: AxiosError) => {
+    // Handle 401 - redirect to login
     if (error.response?.status === 401) {
       // Cookie is invalid or expired - redirect to login
       // But only if we're not already on the login page (prevents infinite refresh loop)
@@ -26,6 +112,17 @@ api.interceptors.response.use(
         window.location.href = '/login';
       }
     }
+
+    // Handle 403 - permission denied
+    if (error.response?.status === 403) {
+      console.error('Permission denied:', error.config?.url);
+    }
+
+    // Handle timeout
+    if (error.code === 'ECONNABORTED') {
+      console.error('Request timeout:', error.config?.url);
+    }
+
     return Promise.reject(error);
   }
 );
