@@ -529,6 +529,42 @@ async def init_database():
 
     logger.info("=== DEPARTMENT FEATURES TABLE READY ===")
 
+    # Step 11.1: Enable vacancies feature org-wide by default for all organizations
+    logger.info("=== ENABLING VACANCIES FEATURE ===")
+    try:
+        async with engine.begin() as conn:
+            # Get all organization IDs
+            orgs_result = await conn.execute(text("SELECT id FROM organizations"))
+            org_ids = [row[0] for row in orgs_result.fetchall()]
+
+            for org_id in org_ids:
+                # Check if vacancies feature already exists for this org (org-wide setting)
+                check_result = await conn.execute(
+                    text("""
+                        SELECT id FROM department_features
+                        WHERE org_id = :org_id
+                        AND feature_name = 'vacancies'
+                        AND department_id IS NULL
+                    """),
+                    {"org_id": org_id}
+                )
+                existing = check_result.fetchone()
+
+                if not existing:
+                    # Enable vacancies org-wide
+                    await conn.execute(
+                        text("""
+                            INSERT INTO department_features (org_id, department_id, feature_name, enabled, created_at, updated_at)
+                            VALUES (:org_id, NULL, 'vacancies', TRUE, NOW(), NOW())
+                        """),
+                        {"org_id": org_id}
+                    )
+                    logger.info(f"Enabled vacancies feature for org_id={org_id}")
+
+        logger.info("=== VACANCIES FEATURE ENABLED ===")
+    except Exception as e:
+        logger.warning(f"Enable vacancies feature: {e}")
+
     # Step 12: Create superadmin and default organization
     try:
         async with AsyncSessionLocal() as db:
