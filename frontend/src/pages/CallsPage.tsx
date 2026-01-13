@@ -34,9 +34,7 @@ export default function CallsPage() {
   const {
     user,
     canEditResource,
-    canDeleteResource,
-    isSuperAdmin,
-    isOwner
+    canDeleteResource
   } = useAuthStore();
 
   const {

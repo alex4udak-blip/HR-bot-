@@ -74,7 +74,6 @@ export default function ContactsPage() {
   const [selectedEntityForTransfer, setSelectedEntityForTransfer] = useState<Entity | null>(null);
 
   const {
-    user,
     canEditResource,
     canDeleteResource,
     canShareResource,

@@ -25,7 +25,6 @@ import {
 import toast from 'react-hot-toast';
 import { getChats } from '@/services/api';
 import { useChatStore } from '@/stores/chatStore';
-import { useAuthStore } from '@/stores/authStore';
 import ChatList from '@/components/chat/ChatList';
 import ChatDetail from '@/components/chat/ChatDetail';
 import AIPanel from '@/components/chat/AIPanel';
@@ -58,7 +57,6 @@ export default function ChatsPage() {
   const [copied, setCopied] = useState(false);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const { selectedChatId, setSelectedChatId, setChats } = useChatStore();
-  const { isSuperAdmin, isOwner, user } = useAuthStore();
 
   // Cleanup timeout on unmount to prevent memory leaks
   useEffect(() => {
