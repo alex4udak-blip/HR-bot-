@@ -39,6 +39,7 @@ class ParseVacancyResponse(BaseModel):
     success: bool
     data: Optional[ParsedVacancy] = None
     source: Optional[str] = None
+    method: Optional[str] = None  # "api" or "ai"
     error: Optional[str] = None
 
 
@@ -167,12 +168,13 @@ async def parse_vacancy_url(request: UrlRequest):
     Parse vacancy from URL.
 
     Supported sources:
-    - hh.ru (HeadHunter)
+    - hh.ru (HeadHunter) - uses official API when possible
     - linkedin.com/jobs
     - superjob.ru
     - career.habr.com
 
-    Returns structured vacancy data extracted using AI.
+    Returns structured vacancy data extracted using API or AI.
+    The `method` field indicates whether "api" or "ai" was used for parsing.
     """
     try:
         url = request.url.strip()
@@ -186,12 +188,13 @@ async def parse_vacancy_url(request: UrlRequest):
         source = detect_source(url)
         logger.info(f"Parsing vacancy from URL: {url} (source: {source})")
 
-        vacancy = await parse_vacancy_from_url(url)
+        vacancy, method = await parse_vacancy_from_url(url)
 
         return ParseVacancyResponse(
             success=True,
             data=vacancy,
-            source=source
+            source=source,
+            method=method
         )
 
     except HTTPException:

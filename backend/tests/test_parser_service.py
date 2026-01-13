@@ -350,19 +350,22 @@ class TestURLParsing:
             "salary_currency": "RUB"
         }
 
-        with patch('api.services.parser.fetch_url_content', new_callable=AsyncMock) as mock_fetch:
-            with patch('api.services.parser._get_ai_client') as mock_client:
-                mock_fetch.return_value = mock_html
+        with patch('api.services.parser.parse_vacancy_via_api', new_callable=AsyncMock) as mock_api:
+            mock_api.return_value = None  # Force fallback to AI
+            with patch('api.services.parser.fetch_url_content', new_callable=AsyncMock) as mock_fetch:
+                with patch('api.services.parser._get_ai_client') as mock_client:
+                    mock_fetch.return_value = mock_html
 
-                mock_message = MagicMock()
-                mock_message.content = [MagicMock(text=json.dumps(mock_ai_response))]
-                mock_client.return_value.messages.create = AsyncMock(return_value=mock_message)
+                    mock_message = MagicMock()
+                    mock_message.content = [MagicMock(text=json.dumps(mock_ai_response))]
+                    mock_client.return_value.messages.create = AsyncMock(return_value=mock_message)
 
-                result = await parse_vacancy_from_url("https://hh.ru/vacancy/456")
+                    result, method = await parse_vacancy_from_url("https://hh.ru/vacancy/456")
 
-                assert result.title == "Backend Developer"
-                assert result.source_url == "https://hh.ru/vacancy/456"
-                assert result.salary_min == 200000
+                    assert result.title == "Backend Developer"
+                    assert result.source_url == "https://hh.ru/vacancy/456"
+                    assert result.salary_min == 200000
+                    assert method == "ai"
 
     @pytest.mark.asyncio
     async def test_parse_url_empty_content(self):
@@ -374,6 +377,42 @@ class TestURLParsing:
                 await parse_resume_from_url("https://example.com/empty")
 
             assert "extract text" in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_parse_vacancy_from_hh_via_api(self):
+        """Test vacancy parsing from hh.ru URL using the API."""
+        from api.services.hh_api import HHVacancy
+
+        mock_hh_vacancy = HHVacancy(
+            id="12345678",
+            title="Senior Python Developer",
+            description="We are looking for an experienced developer",
+            salary_min=200000,
+            salary_max=350000,
+            salary_currency="RUB",
+            location="Moscow",
+            company_name="TechCorp",
+            employment_type="full-time",
+            experience_level="senior",
+            skills=["Python", "FastAPI", "PostgreSQL"],
+            source_url="https://hh.ru/vacancy/12345678"
+        )
+
+        with patch('api.services.parser.parse_vacancy_via_api', new_callable=AsyncMock) as mock_api:
+            mock_api.return_value = mock_hh_vacancy
+
+            result, method = await parse_vacancy_from_url("https://hh.ru/vacancy/12345678")
+
+            assert result.title == "Senior Python Developer"
+            assert result.salary_min == 200000
+            assert result.salary_max == 350000
+            assert result.salary_currency == "RUB"
+            assert result.location == "Moscow"
+            assert result.company_name == "TechCorp"
+            assert result.employment_type == "full-time"
+            assert result.experience_level == "senior"
+            assert result.requirements == "Python, FastAPI, PostgreSQL"
+            assert method == "api"
 
 
 # ============================================================================
@@ -756,11 +795,12 @@ class TestURLParsingExtended:
                 mock_message.content = [MagicMock(text=json.dumps(mock_ai_response))]
                 mock_client.return_value.messages.create = AsyncMock(return_value=mock_message)
 
-                result = await parse_vacancy_from_url("https://superjob.ru/vakansii/python-123")
+                result, method = await parse_vacancy_from_url("https://superjob.ru/vakansii/python-123")
 
                 assert result.title == "Python Developer"
                 assert result.company_name == "IT Company"
                 assert result.salary_min == 100000
+                assert method == "ai"  # SuperJob uses AI parsing
 
     @pytest.mark.asyncio
     async def test_parse_vacancy_from_habr_url(self):
@@ -791,10 +831,11 @@ class TestURLParsingExtended:
                 mock_message.content = [MagicMock(text=json.dumps(mock_ai_response))]
                 mock_client.return_value.messages.create = AsyncMock(return_value=mock_message)
 
-                result = await parse_vacancy_from_url("https://career.habr.com/vacancies/123")
+                result, method = await parse_vacancy_from_url("https://career.habr.com/vacancies/123")
 
                 assert result.title == "Go Developer"
                 assert result.location == "Remote"
+                assert method == "ai"  # Habr uses AI parsing
 
 
 # ============================================================================
@@ -964,18 +1005,20 @@ class TestErrorHandlingEdgeCases:
         """Test handling when AI returns invalid JSON."""
         mock_html = "<html><body><h1>Test</h1></body></html>"
 
-        with patch('api.services.parser.fetch_url_content', new_callable=AsyncMock) as mock_fetch:
-            with patch('api.services.parser._get_ai_client') as mock_client:
-                mock_fetch.return_value = mock_html
+        with patch('api.services.parser.parse_vacancy_via_api', new_callable=AsyncMock) as mock_api:
+            mock_api.return_value = None  # Force fallback to AI
+            with patch('api.services.parser.fetch_url_content', new_callable=AsyncMock) as mock_fetch:
+                with patch('api.services.parser._get_ai_client') as mock_client:
+                    mock_fetch.return_value = mock_html
 
-                mock_message = MagicMock()
-                # Return invalid JSON
-                mock_message.content = [MagicMock(text="This is not valid JSON at all")]
-                mock_client.return_value.messages.create = AsyncMock(return_value=mock_message)
+                    mock_message = MagicMock()
+                    # Return invalid JSON
+                    mock_message.content = [MagicMock(text="This is not valid JSON at all")]
+                    mock_client.return_value.messages.create = AsyncMock(return_value=mock_message)
 
-                # The parser should raise an error for invalid JSON
-                with pytest.raises(Exception):
-                    await parse_vacancy_from_url("https://hh.ru/vacancy/456")
+                    # The parser should raise an error for invalid JSON
+                    with pytest.raises(Exception):
+                        await parse_vacancy_from_url("https://hh.ru/vacancy/456")
 
     def test_extract_text_empty_html(self):
         """Test text extraction from empty HTML."""
