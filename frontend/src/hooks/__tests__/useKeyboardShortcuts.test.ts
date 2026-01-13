@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useKeyboardShortcuts } from '../useKeyboardShortcuts';
-import type { KeyboardShortcut } from '../useKeyboardShortcuts';
+import { useKeyboardShortcuts, formatShortcut, CATEGORY_LABELS } from '../useKeyboardShortcuts';
+import type { KeyboardShortcut, ShortcutCategory } from '../useKeyboardShortcuts';
 
 /**
  * Tests for useKeyboardShortcuts hook
- * Verifies keyboard shortcut handling with modifiers, input exclusions, and cross-platform support
+ * Verifies keyboard shortcut handling with modifiers, input exclusions, sequences, and cross-platform support
  */
 
 describe('useKeyboardShortcuts', () => {
@@ -14,11 +14,13 @@ describe('useKeyboardShortcuts', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllGlobals();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   /**
@@ -398,6 +400,100 @@ describe('useKeyboardShortcuts', () => {
     });
   });
 
+  describe('Sequence shortcuts', () => {
+    it('should trigger handler for two-key sequence', () => {
+      const shortcuts: KeyboardShortcut[] = [
+        { key: 'c', sequence: ['g', 'c'], handler: mockHandler },
+      ];
+
+      renderHook(() => useKeyboardShortcuts(shortcuts));
+
+      // Press 'g'
+      act(() => {
+        dispatchKeyEvent('g');
+      });
+      expect(mockHandler).not.toHaveBeenCalled();
+
+      // Press 'c' within timeout
+      act(() => {
+        dispatchKeyEvent('c');
+      });
+      expect(mockHandler).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not trigger if sequence times out', () => {
+      const shortcuts: KeyboardShortcut[] = [
+        { key: 'c', sequence: ['g', 'c'], handler: mockHandler },
+      ];
+
+      renderHook(() => useKeyboardShortcuts(shortcuts));
+
+      // Press 'g'
+      act(() => {
+        dispatchKeyEvent('g');
+      });
+
+      // Wait for timeout
+      act(() => {
+        vi.advanceTimersByTime(1100);
+      });
+
+      // Press 'c' after timeout
+      act(() => {
+        dispatchKeyEvent('c');
+      });
+
+      expect(mockHandler).not.toHaveBeenCalled();
+    });
+
+    it('should not trigger for incomplete sequence', () => {
+      const shortcuts: KeyboardShortcut[] = [
+        { key: 'c', sequence: ['g', 'c'], handler: mockHandler },
+      ];
+
+      renderHook(() => useKeyboardShortcuts(shortcuts));
+
+      // Press only 'g'
+      act(() => {
+        dispatchKeyEvent('g');
+      });
+
+      expect(mockHandler).not.toHaveBeenCalled();
+    });
+
+    it('should handle multiple sequence shortcuts', () => {
+      const handler1 = vi.fn();
+      const handler2 = vi.fn();
+
+      const shortcuts: KeyboardShortcut[] = [
+        { key: 'c', sequence: ['g', 'c'], handler: handler1 },
+        { key: 'v', sequence: ['g', 'v'], handler: handler2 },
+      ];
+
+      renderHook(() => useKeyboardShortcuts(shortcuts));
+
+      // Trigger first sequence
+      act(() => {
+        dispatchKeyEvent('g');
+        dispatchKeyEvent('c');
+      });
+      expect(handler1).toHaveBeenCalledTimes(1);
+      expect(handler2).not.toHaveBeenCalled();
+
+      // Reset and trigger second sequence
+      act(() => {
+        vi.advanceTimersByTime(1100);
+      });
+
+      act(() => {
+        dispatchKeyEvent('g');
+        dispatchKeyEvent('v');
+      });
+      expect(handler1).toHaveBeenCalledTimes(1);
+      expect(handler2).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('Cleanup', () => {
     it('should remove event listener on unmount', () => {
       const removeEventListenerSpy = vi.spyOn(window, 'removeEventListener');
@@ -459,5 +555,84 @@ describe('useKeyboardShortcuts', () => {
 
       expect(preventDefaultSpy).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('formatShortcut', () => {
+  beforeEach(() => {
+    vi.stubGlobal('navigator', { platform: 'Win32' });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('should format simple key', () => {
+    const shortcut: KeyboardShortcut = { key: 'n', handler: () => {} };
+    expect(formatShortcut(shortcut)).toBe('N');
+  });
+
+  it('should format key with Ctrl modifier (Windows)', () => {
+    const shortcut: KeyboardShortcut = { key: 'n', ctrlOrCmd: true, handler: () => {} };
+    expect(formatShortcut(shortcut)).toBe('Ctrl+N');
+  });
+
+  it('should format key with Shift modifier', () => {
+    const shortcut: KeyboardShortcut = { key: 'n', shift: true, handler: () => {} };
+    expect(formatShortcut(shortcut)).toBe('Shift+N');
+  });
+
+  it('should format key with multiple modifiers', () => {
+    const shortcut: KeyboardShortcut = { key: 'n', ctrlOrCmd: true, shift: true, handler: () => {} };
+    expect(formatShortcut(shortcut)).toBe('Ctrl+Shift+N');
+  });
+
+  it('should format sequence shortcuts', () => {
+    const shortcut: KeyboardShortcut = { key: 'c', sequence: ['g', 'c'], handler: () => {} };
+    expect(formatShortcut(shortcut)).toContain('G');
+    expect(formatShortcut(shortcut)).toContain('C');
+  });
+
+  it('should format special keys', () => {
+    const escShortcut: KeyboardShortcut = { key: 'Escape', handler: () => {} };
+    expect(formatShortcut(escShortcut)).toBe('Esc');
+
+    const enterShortcut: KeyboardShortcut = { key: 'Enter', handler: () => {} };
+    expect(formatShortcut(enterShortcut)).toContain('↵');
+
+    const spaceShortcut: KeyboardShortcut = { key: ' ', handler: () => {} };
+    expect(formatShortcut(spaceShortcut)).toBe('Space');
+  });
+
+  it('should format arrow keys', () => {
+    const upShortcut: KeyboardShortcut = { key: 'ArrowUp', handler: () => {} };
+    expect(formatShortcut(upShortcut)).toBe('↑');
+
+    const downShortcut: KeyboardShortcut = { key: 'ArrowDown', handler: () => {} };
+    expect(formatShortcut(downShortcut)).toBe('↓');
+  });
+});
+
+describe('CATEGORY_LABELS', () => {
+  it('should have labels for all categories', () => {
+    const categories: ShortcutCategory[] = [
+      'navigation',
+      'actions',
+      'candidates',
+      'vacancies',
+      'kanban',
+      'general',
+    ];
+
+    categories.forEach(category => {
+      expect(CATEGORY_LABELS[category]).toBeDefined();
+      expect(typeof CATEGORY_LABELS[category]).toBe('string');
+    });
+  });
+
+  it('should have Russian labels', () => {
+    expect(CATEGORY_LABELS.navigation).toBe('Навигация');
+    expect(CATEGORY_LABELS.actions).toBe('Действия');
+    expect(CATEGORY_LABELS.general).toBe('Общие');
   });
 });

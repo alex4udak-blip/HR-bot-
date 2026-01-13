@@ -16,14 +16,15 @@ import {
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-import type { Vacancy, VacancyApplication, ApplicationStage } from '@/types';
+import type { Vacancy, VacancyApplication, ApplicationStage, CompatibilityScore } from '@/types';
 import { APPLICATION_STAGE_LABELS, APPLICATION_STAGE_COLORS } from '@/types';
 import { useVacancyStore } from '@/stores/vacancyStore';
-import { updateApplication } from '@/services/api';
+import { updateApplication, calculateCompatibilityScore } from '@/services/api';
 import AddCandidateModal from './AddCandidateModal';
 import ApplicationDetailModal from './ApplicationDetailModal';
-import { KanbanCardSkeleton, Skeleton, NoCandidatesEmpty, ConfirmDialog, ErrorMessage } from '@/components/ui';
+import { KanbanCardSkeleton, Skeleton, EmptyKanban, ConfirmDialog, ErrorMessage } from '@/components/ui';
 import { OnboardingTooltip } from '@/components/onboarding';
+import CompatibilityBadge from '@/components/CompatibilityBadge';
 
 interface KanbanBoardProps {
   vacancy: Vacancy;
@@ -62,6 +63,13 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     application: VacancyApplication | null;
   }>({ open: false, application: null });
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // AI Scoring state - tracks loading and errors per application
+  const [scoringState, setScoringState] = useState<Record<number, {
+    loading: boolean;
+    error: string | null;
+    score: CompatibilityScore | null;
+  }>>({});
 
   const {
     kanbanBoard,
@@ -287,6 +295,48 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     navigate(`/contacts/${app.entity_id}`);
   };
 
+  // Handle AI score calculation
+  const handleCalculateScore = useCallback(async (app: VacancyApplication) => {
+    // Set loading state
+    setScoringState(prev => ({
+      ...prev,
+      [app.id]: { loading: true, error: null, score: prev[app.id]?.score || null }
+    }));
+
+    try {
+      const response = await calculateCompatibilityScore({
+        entity_id: app.entity_id,
+        vacancy_id: app.vacancy_id
+      });
+
+      setScoringState(prev => ({
+        ...prev,
+        [app.id]: { loading: false, error: null, score: response.score }
+      }));
+
+      if (!response.cached) {
+        toast.success('AI скоринг рассчитан');
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Ошибка расчёта скора';
+      setScoringState(prev => ({
+        ...prev,
+        [app.id]: { loading: false, error: errorMessage, score: null }
+      }));
+      toast.error('Не удалось рассчитать AI скор');
+    }
+  }, []);
+
+  // Get score state for an application
+  const getScoreState = useCallback((app: VacancyApplication) => {
+    const state = scoringState[app.id];
+    return {
+      score: state?.score || app.compatibility_score || null,
+      isLoading: state?.loading || false,
+      error: state?.error || null
+    };
+  }, [scoringState]);
+
   if (kanbanLoading) {
     return (
       <div className="h-full flex flex-col">
@@ -354,7 +404,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
           </button>
         </div>
         <div className="flex-1 flex items-center justify-center">
-          <NoCandidatesEmpty onAdd={() => setShowAddCandidate(true)} />
+          <EmptyKanban onAddFromBase={() => setShowAddCandidate(true)} />
         </div>
         {showAddCandidate && (
           <AddCandidateModal
@@ -547,6 +597,20 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                             {/* Footer */}
                             <div className="flex items-center justify-between mt-3 pt-2 border-t border-white/5 ml-6">
                               <div className="flex items-center gap-2">
+                                {/* AI Compatibility Badge */}
+                                {(() => {
+                                  const { score, isLoading, error } = getScoreState(app);
+                                  return (
+                                    <CompatibilityBadge
+                                      score={score}
+                                      isLoading={isLoading}
+                                      error={error}
+                                      onCalculate={() => handleCalculateScore(app)}
+                                      size="sm"
+                                      showDetails={true}
+                                    />
+                                  );
+                                })()}
                                 {app.rating && (
                                   <div className="flex items-center gap-0.5 text-yellow-400">
                                     <Star className="w-3 h-3 fill-current" />

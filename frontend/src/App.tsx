@@ -7,6 +7,7 @@ import InvitePage from '@/pages/InvitePage';
 import DashboardPage from '@/pages/DashboardPage';
 import ChatsPage from '@/pages/ChatsPage';
 import ContactsPage from '@/pages/ContactsPage';
+import CandidatesPage from '@/pages/CandidatesPage';
 import CallsPage from '@/pages/CallsPage';
 import TrashPage from '@/pages/TrashPage';
 import UsersPage from '@/pages/UsersPage';
@@ -87,8 +88,9 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route index element={<Navigate to="/candidates" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="candidates" element={<CandidatesPage />} />
         <Route path="chats" element={<ChatsPage />} />
         <Route path="chats/:chatId" element={<ChatsPage />} />
         <Route path="contacts" element={<ContactsPage />} />

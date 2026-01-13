@@ -8,7 +8,6 @@ import {
   Building2,
   Briefcase,
   ArrowRightLeft,
-  Clock,
   FileText,
   ChevronRight,
   Tag,
@@ -21,17 +20,21 @@ import {
   Target,
   Plus,
   FolderOpen,
-  DollarSign
+  DollarSign,
+  AlertTriangle
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import type { EntityWithRelations, Chat, CallRecording } from '@/types';
+import { EmptyChats, EmptyCalls, EmptyHistory } from '@/components/ui';
 import { STATUS_LABELS, STATUS_COLORS, CALL_STATUS_LABELS, CALL_STATUS_COLORS, formatSalary } from '@/types';
 import EntityAI from './EntityAI';
 import CriteriaPanelEntity from './CriteriaPanelEntity';
 import AddToVacancyModal from '../entities/AddToVacancyModal';
 import EntityVacancies from '../entities/EntityVacancies';
+import RecommendedVacancies from '../entities/RecommendedVacancies';
 import EntityFiles from '../entities/EntityFiles';
+import RedFlagsPanel from '../entities/RedFlagsPanel';
 import * as api from '@/services/api';
 import { useEntityStore } from '@/stores/entityStore';
 import { FeatureGatedButton } from '@/components/auth/FeatureGate';
@@ -44,7 +47,7 @@ interface ContactDetailProps {
 
 export default function ContactDetail({ entity, showAIInOverview = true }: ContactDetailProps) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'overview' | 'chats' | 'calls' | 'vacancies' | 'files' | 'history' | 'criteria' | 'reports'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'chats' | 'calls' | 'vacancies' | 'files' | 'history' | 'criteria' | 'reports' | 'red-flags'>('overview');
   const [showLinkChatModal, setShowLinkChatModal] = useState(false);
   const [showLinkCallModal, setShowLinkCallModal] = useState(false);
   const [showAddToVacancyModal, setShowAddToVacancyModal] = useState(false);
@@ -322,12 +325,17 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
           { id: 'files', label: 'Файлы', icon: FolderOpen },
           { id: 'criteria', label: 'Критерии', icon: Target },
           { id: 'reports', label: 'Отчёты', icon: Download },
+          { id: 'red-flags', label: 'Red Flags', icon: AlertTriangle, onlyForCandidates: true },
           { id: 'history', label: 'История' }
         ]
         .filter((tab) => {
           // Filter out tabs that require features the user doesn't have access to
           if ('requiresFeature' in tab && tab.requiresFeature) {
             return canAccessFeature(tab.requiresFeature);
+          }
+          // Filter out tabs that are only for candidates
+          if ('onlyForCandidates' in tab && tab.onlyForCandidates) {
+            return entity.type === 'candidate';
           }
           return true;
         })
@@ -393,7 +401,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   ))}
                 </div>
               ) : (
-                <p className="text-white/40 text-sm">Нет связанных чатов</p>
+                <EmptyChats onLink={() => setShowLinkChatModal(true)} />
               )}
             </div>
 
@@ -433,9 +441,24 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   ))}
                 </div>
               ) : (
-                <p className="text-white/40 text-sm">Нет записей звонков</p>
+                <EmptyCalls onLink={() => setShowLinkCallModal(true)} />
               )}
             </div>
+
+            {/* Recommended Vacancies - only for candidates */}
+            {entity.type === 'candidate' && (
+              <div className="glass rounded-xl p-4 xl:col-span-2 h-fit border border-white/10">
+                <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
+                  <Target size={18} className="text-purple-400" />
+                  Подходящие вакансии
+                </h3>
+                <RecommendedVacancies
+                  entityId={entity.id}
+                  entityName={entity.name}
+                  onApply={() => setVacanciesKey(prev => prev + 1)}
+                />
+              </div>
+            )}
 
             {/* Transfer History */}
             <div className="glass rounded-xl p-4 xl:col-span-2 h-fit border border-white/10">
@@ -493,10 +516,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </motion.div>
               ))
             ) : (
-              <div className="text-center py-8 text-white/40">
-                <MessageSquare className="mx-auto mb-2" size={40} />
-                <p>Нет связанных чатов</p>
-              </div>
+              <EmptyChats onLink={() => setShowLinkChatModal(true)} />
             )}
           </div>
         )}
@@ -539,10 +559,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </motion.div>
               ))
             ) : (
-              <div className="text-center py-8 text-white/40">
-                <Phone className="mx-auto mb-2" size={40} />
-                <p>Нет записей звонков</p>
-              </div>
+              <EmptyCalls onLink={() => setShowLinkCallModal(true)} />
             )}
           </div>
         )}
@@ -636,10 +653,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
             {(!entity.transfers || entity.transfers.length === 0) &&
               (!entity.analyses || entity.analyses.length === 0) && (
-                <div className="text-center py-8 text-white/40">
-                  <Clock className="mx-auto mb-2" size={40} />
-                  <p>История пуста</p>
-                </div>
+                <EmptyHistory />
               )}
           </div>
         )}
@@ -704,6 +718,21 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'red-flags' && entity.type === 'candidate' && (
+          <div className="glass rounded-xl border border-white/10 p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <AlertTriangle size={18} className="text-red-400" />
+              <h3 className="text-base font-semibold text-white">
+                Анализ Red Flags
+              </h3>
+            </div>
+            <p className="text-sm text-white/60 mb-4">
+              Автоматическая проверка кандидата на потенциальные тревожные сигналы с использованием AI-анализа.
+            </p>
+            <RedFlagsPanel entityId={entity.id} />
           </div>
         )}
       </div>

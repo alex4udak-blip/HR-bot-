@@ -19,17 +19,6 @@ vi.mock('react-hot-toast', () => ({
   },
 }));
 
-// Mock framer-motion to avoid animation issues in tests
-vi.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, onClick, className, ...props }: React.PropsWithChildren<Record<string, unknown>>) => (
-      <div onClick={onClick as React.MouseEventHandler} className={className as string} {...props}>
-        {children}
-      </div>
-    ),
-  },
-}));
-
 import {
   parseResumeFromUrl,
   parseResumeFromFile,

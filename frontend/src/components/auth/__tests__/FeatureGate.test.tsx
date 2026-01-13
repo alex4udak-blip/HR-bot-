@@ -88,7 +88,7 @@ describe('FeatureGate', () => {
 
       const button = screen.getByText('Add Vacancy');
       expect(button).toBeDisabled();
-      expect(button).toHaveAttribute('title', "You don't have access to this feature");
+      expect(button).toHaveAttribute('title', "У вас нет доступа к этой функции");
     });
 
     it('should show custom disabled tooltip when provided', () => {
@@ -356,7 +356,7 @@ describe('FeatureGatedButton', () => {
       );
 
       const button = screen.getByRole('button');
-      expect(button).toHaveAttribute('title', "You don't have access to this feature");
+      expect(button).toHaveAttribute('title', "У вас нет доступа к этой функции");
     });
 
     it('should show custom disabled tooltip', () => {
