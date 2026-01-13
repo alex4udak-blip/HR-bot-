@@ -64,7 +64,7 @@ export function FeatureGate({
   feature,
   children,
   fallbackMode = 'disable',
-  disabledTooltip = "You don't have access to this feature",
+  disabledTooltip = "У вас нет доступа к этой функции",
   fallback = null,
   disabledClassName,
 }: FeatureGateProps): ReactElement | null {
@@ -173,7 +173,7 @@ export interface FeatureGatedButtonProps
 
 export function FeatureGatedButton({
   feature,
-  disabledTooltip = "You don't have access to this feature",
+  disabledTooltip = "У вас нет доступа к этой функции",
   children,
   className,
   disabled,

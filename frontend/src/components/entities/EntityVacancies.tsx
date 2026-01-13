@@ -27,7 +27,7 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
         setApplications(data);
       } catch (err) {
         console.error('Failed to load entity vacancies:', err);
-        setError('Failed to load vacancies');
+        setError('Не удалось загрузить вакансии');
       } finally {
         setLoading(false);
       }
@@ -58,7 +58,7 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
     return (
       <EmptyState
         icon={Briefcase}
-        title="Loading error"
+        title="Ошибка загрузки"
         description={error}
         size="sm"
       />

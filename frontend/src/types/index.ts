@@ -573,15 +573,15 @@ export const VACANCY_STATUS_COLORS: Record<VacancyStatus, string> = {
 };
 
 export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = {
-  applied: 'Applied',
-  screening: 'Screening',
-  phone_screen: 'Phone Screen',
-  interview: 'Interview',
-  assessment: 'Assessment',
-  offer: 'Offer',
-  hired: 'Hired',
-  rejected: 'Rejected',
-  withdrawn: 'Withdrawn'
+  applied: 'Отклик',
+  screening: 'Скрининг',
+  phone_screen: 'Телефонный скрининг',
+  interview: 'Собеседование',
+  assessment: 'Тестирование',
+  offer: 'Оффер',
+  hired: 'Принят',
+  rejected: 'Отклонён',
+  withdrawn: 'Отозван'
 };
 
 export const APPLICATION_STAGE_COLORS: Record<ApplicationStage, string> = {
