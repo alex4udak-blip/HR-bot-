@@ -507,7 +507,29 @@ async def init_database():
 
     logger.info("=== ENTITY FILES TABLE READY ===")
 
-    # Step 11: Create superadmin and default organization
+    # Step 11: Department Features for feature access control
+    logger.info("=== SETTING UP DEPARTMENT FEATURES ===")
+
+    # Create department_features table
+    create_department_features = """
+        CREATE TABLE IF NOT EXISTS department_features (
+            id SERIAL PRIMARY KEY,
+            org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            department_id INTEGER REFERENCES departments(id) ON DELETE CASCADE,
+            feature_name VARCHAR(50) NOT NULL,
+            enabled BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(org_id, department_id, feature_name)
+        )
+    """
+    await run_migration(engine, create_department_features, "Create department_features table")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_department_features_org_id ON department_features(org_id)", "Index department_features.org_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_department_features_lookup ON department_features(org_id, feature_name)", "Index department_features lookup")
+
+    logger.info("=== DEPARTMENT FEATURES TABLE READY ===")
+
+    # Step 12: Create superadmin and default organization
     try:
         async with AsyncSessionLocal() as db:
             await create_superadmin_if_not_exists(db)

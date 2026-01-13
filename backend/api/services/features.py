@@ -61,8 +61,9 @@ async def can_access_feature(
     if not user:
         return False
 
-    # Superadmin has access to everything
-    if user.role == UserRole.superadmin:
+    # Superadmin has access to everything (handle both enum and string comparison)
+    user_role = user.role.value if hasattr(user.role, 'value') else str(user.role)
+    if user_role == "superadmin" or user.role == UserRole.superadmin:
         return True
 
     # Check if user is owner in the organization
@@ -73,8 +74,10 @@ async def can_access_feature(
         )
     )
     org_member = org_member_result.scalar()
-    if org_member and org_member.role == OrgRole.owner:
-        return True
+    if org_member:
+        org_role = org_member.role.value if hasattr(org_member.role, 'value') else str(org_member.role)
+        if org_role == "owner" or org_member.role == OrgRole.owner:
+            return True
 
     # 2. Default features are always available
     if feature_name in DEFAULT_FEATURES:
