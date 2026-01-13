@@ -24,7 +24,8 @@ import {
   getCriteriaPresets,
   getDefaultCriteria,
   setDefaultCriteria,
-  createCriteriaPreset
+  createCriteriaPreset,
+  seedUniversalPresets
 } from '@/services/api';
 import type { Criterion, ChatTypeId } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
@@ -120,6 +121,21 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
     },
     onError: () => {
       toast.error('Ошибка сохранения шаблона');
+    },
+  });
+
+  const seedUniversalMutation = useMutation({
+    mutationFn: seedUniversalPresets,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['criteria-presets'] });
+      if (data.created.length > 0) {
+        toast.success(`Загружено ${data.created.length} универсальных шаблонов`);
+      } else {
+        toast.success('Все универсальные шаблоны уже загружены');
+      }
+    },
+    onError: () => {
+      toast.error('Ошибка загрузки шаблонов');
     },
   });
 
@@ -285,6 +301,18 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
             >
               <Bookmark className="w-3.5 h-3.5" />
               <span>Сохр. шаблон</span>
+            </button>
+          )}
+
+          {isSuperAdmin() && globalPresets.length === 0 && (
+            <button
+              onClick={() => seedUniversalMutation.mutate()}
+              disabled={seedUniversalMutation.isPending}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg glass-light text-xs hover:bg-white/10 transition-colors text-green-400"
+              title="Загрузить универсальные шаблоны"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>{seedUniversalMutation.isPending ? '...' : 'Загрузить шаблоны'}</span>
             </button>
           )}
         </div>
