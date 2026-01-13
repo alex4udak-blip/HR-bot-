@@ -723,6 +723,18 @@ async def lifespan(app: FastAPI):
     # Start cleanup task for old deleted chats
     cleanup_task = asyncio.create_task(cleanup_deleted_chats_task())
 
+    # Log all registered routes for debugging
+    logger.info("=== REGISTERED API ROUTES ===")
+    vacancy_routes = []
+    for route in app.routes:
+        if hasattr(route, 'path') and '/vacancies' in route.path:
+            methods = list(route.methods) if hasattr(route, 'methods') and route.methods else ['?']
+            vacancy_routes.append(f"{methods} {route.path}")
+            logger.info(f"VACANCY ROUTE: {methods} {route.path}")
+    logger.info(f"Total vacancy routes found: {len(vacancy_routes)}")
+    if len(vacancy_routes) == 0:
+        logger.error("!!! NO VACANCY ROUTES REGISTERED - CHECK IMPORT ERRORS !!!")
+
     yield
 
     # Shutdown
