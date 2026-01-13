@@ -8,7 +8,8 @@ import {
   Plus,
   Trash2,
   Edit,
-  ExternalLink
+  ExternalLink,
+  Users
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -18,6 +19,7 @@ import { APPLICATION_STAGE_LABELS, APPLICATION_STAGE_COLORS } from '@/types';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import AddCandidateModal from './AddCandidateModal';
 import ApplicationDetailModal from './ApplicationDetailModal';
+import { KanbanCardSkeleton, Skeleton } from '@/components/ui';
 
 interface KanbanBoardProps {
   vacancy: Vacancy;
@@ -95,8 +97,30 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
 
   if (kanbanLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
+      <div className="h-full flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <div className="flex items-center gap-4">
+            <Skeleton variant="text" className="h-6 w-32" />
+            <Skeleton variant="text" className="h-4 w-24" />
+          </div>
+          <Skeleton variant="rounded" className="h-9 w-40" />
+        </div>
+        <div className="flex-1 overflow-x-auto overflow-y-hidden p-4">
+          <div className="flex gap-4 h-full min-w-max">
+            {VISIBLE_STAGES.slice(0, 5).map((stage) => (
+              <div key={stage} className="w-72 flex-shrink-0 flex flex-col rounded-xl border border-white/10 bg-white/5">
+                <div className="p-3 border-b border-white/10">
+                  <Skeleton variant="text" className="h-5 w-24" />
+                </div>
+                <div className="flex-1 p-2 space-y-2">
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <KanbanCardSkeleton key={i} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -275,8 +299,9 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
 
                   {/* Empty state */}
                   {apps.length === 0 && (
-                    <div className="h-24 flex items-center justify-center text-white/20 text-sm">
-                      Пусто
+                    <div className="h-24 flex flex-col items-center justify-center text-white/20 text-sm">
+                      <Users className="w-6 h-6 mb-1" />
+                      <span>Пусто</span>
                     </div>
                   )}
                 </div>

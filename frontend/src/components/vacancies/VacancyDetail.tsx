@@ -20,10 +20,12 @@ import type { Vacancy } from '@/types';
 import {
   EMPLOYMENT_TYPES,
   EXPERIENCE_LEVELS,
-  APPLICATION_STAGE_LABELS
+  APPLICATION_STAGE_LABELS,
+  formatSalary
 } from '@/types';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import AddCandidateModal from './AddCandidateModal';
+import { NoCandidatesEmpty } from '@/components/ui';
 
 interface VacancyDetailProps {
   vacancy: Vacancy;
@@ -36,17 +38,6 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
   useEffect(() => {
     fetchKanbanBoard(vacancy.id);
   }, [vacancy.id, fetchKanbanBoard]);
-
-  const formatSalary = (min?: number, max?: number, currency = 'RUB') => {
-    if (!min && !max) return 'Не указана';
-    const formatter = new Intl.NumberFormat('ru-RU');
-    if (min && max) {
-      return `${formatter.format(min)} - ${formatter.format(max)} ${currency}`;
-    }
-    if (min) return `от ${formatter.format(min)} ${currency}`;
-    if (max) return `до ${formatter.format(max)} ${currency}`;
-    return 'Не указана';
-  };
 
   const formatDate = (date?: string) => {
     if (!date) return 'Не указана';
@@ -196,16 +187,7 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
                   );
                 })
               ) : (
-                <div className="text-center py-8 text-white/40">
-                  <Users className="w-12 h-12 mx-auto mb-2" />
-                  <p>Пока нет кандидатов</p>
-                  <button
-                    onClick={() => setShowAddCandidate(true)}
-                    className="mt-2 text-blue-400 hover:text-blue-300"
-                  >
-                    Добавить первого
-                  </button>
-                </div>
+                <NoCandidatesEmpty onAdd={() => setShowAddCandidate(true)} />
               )}
             </div>
           </div>

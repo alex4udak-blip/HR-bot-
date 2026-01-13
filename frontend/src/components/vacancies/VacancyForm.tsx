@@ -7,33 +7,38 @@ import type { Vacancy, VacancyStatus, User } from '@/types';
 import { VACANCY_STATUS_LABELS, EMPLOYMENT_TYPES, EXPERIENCE_LEVELS } from '@/types';
 import { getDepartments, getUsers } from '@/services/api';
 import type { Department } from '@/services/api';
+import { CurrencySelect } from '@/components/ui';
 
 interface VacancyFormProps {
   vacancy?: Vacancy;
+  prefillData?: Partial<Vacancy>;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function VacancyForm({ vacancy, onClose, onSuccess }: VacancyFormProps) {
+export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }: VacancyFormProps) {
   const { createVacancy, updateVacancy } = useVacancyStore();
   const [loading, setLoading] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<User[]>([]);
 
+  // Use prefillData when creating new vacancy, vacancy when editing
+  const initialData = vacancy || prefillData;
+
   const [formData, setFormData] = useState({
-    title: vacancy?.title || '',
-    description: vacancy?.description || '',
-    requirements: vacancy?.requirements || '',
-    responsibilities: vacancy?.responsibilities || '',
-    salary_min: vacancy?.salary_min || '',
-    salary_max: vacancy?.salary_max || '',
-    salary_currency: vacancy?.salary_currency || 'RUB',
-    location: vacancy?.location || '',
-    employment_type: vacancy?.employment_type || '',
-    experience_level: vacancy?.experience_level || '',
+    title: initialData?.title || '',
+    description: initialData?.description || '',
+    requirements: initialData?.requirements || '',
+    responsibilities: initialData?.responsibilities || '',
+    salary_min: initialData?.salary_min || '',
+    salary_max: initialData?.salary_max || '',
+    salary_currency: initialData?.salary_currency || 'RUB',
+    location: initialData?.location || '',
+    employment_type: initialData?.employment_type || '',
+    experience_level: initialData?.experience_level || '',
     status: vacancy?.status || 'draft' as VacancyStatus,
     priority: vacancy?.priority || 0,
-    tags: vacancy?.tags.join(', ') || '',
+    tags: initialData?.tags?.join(', ') || '',
     department_id: vacancy?.department_id || '',
     hiring_manager_id: vacancy?.hiring_manager_id || '',
   });
@@ -251,15 +256,11 @@ export default function VacancyForm({ vacancy, onClose, onSuccess }: VacancyForm
               </div>
               <div>
                 <label className="block text-sm text-white/60 mb-1">Валюта</label>
-                <select
+                <CurrencySelect
                   value={formData.salary_currency}
-                  onChange={(e) => setFormData({ ...formData, salary_currency: e.target.value })}
-                  className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500"
-                >
-                  <option value="RUB">RUB</option>
-                  <option value="USD">USD</option>
-                  <option value="EUR">EUR</option>
-                </select>
+                  onChange={(currency) => setFormData({ ...formData, salary_currency: currency })}
+                  className="w-full"
+                />
               </div>
             </div>
 
