@@ -36,6 +36,37 @@ class LinkTelegramRequest(BaseModel):
     telegram_username: Optional[str] = None
 
 
+# Refresh Token Endpoints
+class RefreshTokenResponse(BaseModel):
+    """Response after successful token refresh."""
+    message: str = "Token refreshed successfully"
+
+
+class SessionResponse(BaseModel):
+    """Information about an active session (refresh token)."""
+    id: int
+    device_name: Optional[str]
+    ip_address: Optional[str]
+    created_at: datetime
+    expires_at: datetime
+    is_current: bool = False  # True if this is the session making the request
+
+    class Config:
+        from_attributes = True
+
+
+class SessionsListResponse(BaseModel):
+    """List of active sessions for the current user."""
+    sessions: List["SessionResponse"]
+    total: int
+
+
+class LogoutAllResponse(BaseModel):
+    """Response after revoking all refresh tokens."""
+    message: str
+    revoked_count: int
+
+
 # Users
 class UserCreate(BaseModel):
     email: EmailStr
@@ -320,3 +351,4 @@ class StatsResponse(BaseModel):
 
 # Update forward refs
 TokenResponse.model_rebuild()
+SessionsListResponse.model_rebuild()

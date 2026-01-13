@@ -188,6 +188,25 @@ export interface AuthResponse {
   user: User;
 }
 
+// Session types for auth sessions management
+export interface Session {
+  id: string;
+  user_agent: string;
+  ip_address: string;
+  created_at: string;
+  last_activity: string;
+  is_current: boolean;
+}
+
+export interface SessionsResponse {
+  sessions: Session[];
+}
+
+export interface RefreshTokenResponse {
+  success: boolean;
+  message?: string;
+}
+
 // === Entity Types ===
 
 export type EntityType = 'candidate' | 'client' | 'contractor' | 'lead' | 'partner' | 'custom';

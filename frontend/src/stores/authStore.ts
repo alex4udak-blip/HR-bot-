@@ -1,6 +1,17 @@
 import { create } from 'zustand';
-import type { User } from '@/types';
-import { getMyPermissions, getMyMenu, getMyFeatures, type MenuItem } from '@/services/api';
+import type { User, Session } from '@/types';
+import {
+  getMyPermissions,
+  getMyMenu,
+  getMyFeatures,
+  type MenuItem,
+  getSessions,
+  logoutAllDevices as apiLogoutAllDevices,
+  revokeSession as apiRevokeSession
+} from '@/services/api';
+
+// Polling interval for feature updates (30 seconds)
+const FEATURE_POLL_INTERVAL = 30000;
 
 interface AuthState {
   user: User | null;
@@ -14,6 +25,11 @@ interface AuthState {
   permissionsLoading: boolean;
   // Features
   features: string[];
+  // Sessions
+  sessions: Session[];
+  sessionsLoading: boolean;
+  // Polling
+  featurePollingInterval: ReturnType<typeof setInterval> | null;
   setUser: (user: User | null) => void;
   setLoading: (loading: boolean) => void;
   logout: () => void;
@@ -22,6 +38,12 @@ interface AuthState {
   hasPermission: (permission: string) => boolean;
   // Features
   hasFeature: (feature: string) => boolean;
+  startFeaturePolling: () => void;
+  stopFeaturePolling: () => void;
+  // Sessions
+  fetchSessions: () => Promise<void>;
+  logoutAllDevices: () => Promise<{ sessions_revoked: number }>;
+  revokeSession: (sessionId: string) => Promise<void>;
   // Impersonation
   impersonate: (userId: number) => Promise<void>;
   exitImpersonation: () => Promise<void>;
@@ -52,15 +74,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   permissionsLoading: false,
   // Features state
   features: [],
+  // Sessions state
+  sessions: [],
+  sessionsLoading: false,
+  // Polling state
+  featurePollingInterval: null,
   setUser: (user) => {
     set({ user });
-    // Fetch permissions when user is set
+    // Fetch permissions and start polling when user is set
     if (user) {
       get().fetchPermissions();
+      get().startFeaturePolling();
+    } else {
+      get().stopFeaturePolling();
     }
   },
   setLoading: (isLoading) => set({ isLoading }),
   logout: () => {
+    // Stop polling before clearing user
+    get().stopFeaturePolling();
     // Cookie is cleared by the /auth/logout endpoint
     set({
       user: null,
@@ -70,6 +102,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       customRoleName: null,
       menuItems: [],
       features: [],
+      sessions: [],
+      sessionsLoading: false,
+      featurePollingInterval: null,
     });
   },
 
@@ -130,6 +165,103 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     // Check if feature is in the user's available features
     return features.includes(feature);
+  },
+
+  // Start polling for feature updates
+  startFeaturePolling: () => {
+    const { featurePollingInterval } = get();
+
+    // Don't start if already polling
+    if (featurePollingInterval) return;
+
+    const interval = setInterval(async () => {
+      const { user } = get();
+      if (!user) {
+        get().stopFeaturePolling();
+        return;
+      }
+
+      try {
+        // Only fetch features (lighter than full fetchPermissions)
+        const featuresData = await getMyFeatures();
+        const currentFeatures = get().features;
+
+        // Only update if features have changed
+        const featuresChanged =
+          featuresData.features.length !== currentFeatures.length ||
+          featuresData.features.some(f => !currentFeatures.includes(f)) ||
+          currentFeatures.some(f => !featuresData.features.includes(f));
+
+        if (featuresChanged) {
+          set({ features: featuresData.features });
+          console.log('Features updated via polling:', featuresData.features);
+        }
+      } catch (error) {
+        // Silently fail - don't interrupt user experience for background polling
+        console.debug('Feature polling failed:', error);
+      }
+    }, FEATURE_POLL_INTERVAL);
+
+    set({ featurePollingInterval: interval });
+  },
+
+  // Stop polling for feature updates
+  stopFeaturePolling: () => {
+    const { featurePollingInterval } = get();
+    if (featurePollingInterval) {
+      clearInterval(featurePollingInterval);
+      set({ featurePollingInterval: null });
+    }
+  },
+
+  // Fetch all active sessions for the current user
+  fetchSessions: async () => {
+    const { user } = get();
+    if (!user) return;
+
+    set({ sessionsLoading: true });
+    try {
+      const sessions = await getSessions();
+      set({ sessions, sessionsLoading: false });
+    } catch (error) {
+      console.error('Failed to fetch sessions:', error);
+      set({ sessionsLoading: false });
+    }
+  },
+
+  // Logout from all devices (invalidate all refresh tokens)
+  logoutAllDevices: async () => {
+    const { user } = get();
+    if (!user) {
+      throw new Error('Not authenticated');
+    }
+
+    try {
+      const result = await apiLogoutAllDevices();
+      // Clear local sessions after successful logout
+      set({ sessions: [] });
+      return { sessions_revoked: result.sessions_revoked };
+    } catch (error) {
+      console.error('Failed to logout all devices:', error);
+      throw error;
+    }
+  },
+
+  // Revoke a specific session
+  revokeSession: async (sessionId: string) => {
+    const { user, sessions } = get();
+    if (!user) {
+      throw new Error('Not authenticated');
+    }
+
+    try {
+      await apiRevokeSession(sessionId);
+      // Remove the session from local state
+      set({ sessions: sessions.filter(s => s.id !== sessionId) });
+    } catch (error) {
+      console.error('Failed to revoke session:', error);
+      throw error;
+    }
   },
 
   // Impersonate a user

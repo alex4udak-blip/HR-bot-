@@ -6,6 +6,12 @@ import {
   formatSalary,
   getCurrencyDropdownOptions,
   CURRENCY_OPTIONS,
+  convertCurrency,
+  convertToBaseCurrency,
+  getSalaryForComparison,
+  FALLBACK_RATES_TO_RUB,
+  DEFAULT_BASE_CURRENCY,
+  type ExchangeRates,
 } from '../currency';
 
 describe('Currency Utilities', () => {
@@ -310,6 +316,153 @@ describe('Currency Utilities', () => {
 
     it('should have 10 currencies', () => {
       expect(CURRENCY_OPTIONS).toHaveLength(10);
+    });
+  });
+
+  describe('convertCurrency', () => {
+    const sampleRates: ExchangeRates = {
+      RUB: 1.0,
+      USD: 90.0,
+      EUR: 98.0,
+      GBP: 115.0,
+    };
+
+    it('should return same amount when converting to same currency', () => {
+      expect(convertCurrency(100, 'USD', 'USD', sampleRates)).toBe(100);
+    });
+
+    it('should convert USD to RUB correctly', () => {
+      const result = convertCurrency(100, 'USD', 'RUB', sampleRates);
+      expect(result).toBe(9000);
+    });
+
+    it('should convert RUB to USD correctly', () => {
+      const result = convertCurrency(9000, 'RUB', 'USD', sampleRates);
+      expect(result).toBe(100);
+    });
+
+    it('should convert between non-base currencies', () => {
+      // 100 EUR * 98 / 90 = 108.89 USD
+      const result = convertCurrency(100, 'EUR', 'USD', sampleRates);
+      expect(result).toBeCloseTo(108.89, 1);
+    });
+
+    it('should return null for unknown from currency', () => {
+      const result = convertCurrency(100, 'XXX', 'RUB', sampleRates);
+      expect(result).toBeNull();
+    });
+
+    it('should return null for unknown to currency', () => {
+      const result = convertCurrency(100, 'USD', 'XXX', sampleRates);
+      expect(result).toBeNull();
+    });
+
+    it('should handle zero amount', () => {
+      expect(convertCurrency(0, 'USD', 'RUB', sampleRates)).toBe(0);
+    });
+
+    it('should handle negative amounts', () => {
+      expect(convertCurrency(-100, 'USD', 'RUB', sampleRates)).toBe(-9000);
+    });
+
+    it('should round to 2 decimal places', () => {
+      const result = convertCurrency(99.99, 'USD', 'RUB', sampleRates);
+      // 99.99 * 90 = 8999.1
+      expect(result).toBe(8999.1);
+    });
+  });
+
+  describe('convertToBaseCurrency', () => {
+    const sampleRates: ExchangeRates = {
+      RUB: 1.0,
+      USD: 90.0,
+      EUR: 98.0,
+    };
+
+    it('should convert to RUB by default', () => {
+      const result = convertToBaseCurrency(100, 'USD', sampleRates);
+      expect(result).toBe(9000);
+    });
+
+    it('should convert RUB to RUB as-is', () => {
+      const result = convertToBaseCurrency(100, 'RUB', sampleRates);
+      expect(result).toBe(100);
+    });
+
+    it('should convert to custom base currency', () => {
+      // 100 RUB * 1 / 90 = 1.11 USD
+      const result = convertToBaseCurrency(100, 'RUB', sampleRates, 'USD');
+      expect(result).toBeCloseTo(1.11, 1);
+    });
+  });
+
+  describe('getSalaryForComparison', () => {
+    const sampleRates: ExchangeRates = {
+      RUB: 1.0,
+      USD: 90.0,
+      EUR: 98.0,
+    };
+
+    it('should return max salary converted to base currency', () => {
+      // 5000 USD max salary = 450000 RUB
+      const result = getSalaryForComparison(3000, 5000, 'USD', sampleRates);
+      expect(result).toBe(450000);
+    });
+
+    it('should return min salary if max not available', () => {
+      // 3000 USD min salary = 270000 RUB
+      const result = getSalaryForComparison(3000, undefined, 'USD', sampleRates);
+      expect(result).toBe(270000);
+    });
+
+    it('should return 0 if no salary specified', () => {
+      const result = getSalaryForComparison(undefined, undefined, 'USD', sampleRates);
+      expect(result).toBe(0);
+    });
+
+    it('should return 0 if null salary specified', () => {
+      const result = getSalaryForComparison(null, null, 'USD', sampleRates);
+      expect(result).toBe(0);
+    });
+
+    it('should return RUB salaries as-is when base is RUB', () => {
+      const result = getSalaryForComparison(100000, 200000, 'RUB', sampleRates);
+      expect(result).toBe(200000);
+    });
+
+    it('should handle EUR salaries', () => {
+      // 1000 EUR * 98 = 98000 RUB
+      const result = getSalaryForComparison(500, 1000, 'EUR', sampleRates);
+      expect(result).toBe(98000);
+    });
+  });
+
+  describe('FALLBACK_RATES_TO_RUB', () => {
+    it('should have all supported currencies', () => {
+      const currencies = ['RUB', 'USD', 'EUR', 'KZT', 'UAH', 'BYN', 'GEL', 'AED', 'TRY', 'GBP'];
+      currencies.forEach((currency) => {
+        expect(FALLBACK_RATES_TO_RUB[currency]).toBeDefined();
+        expect(FALLBACK_RATES_TO_RUB[currency]).toBeGreaterThan(0);
+      });
+    });
+
+    it('should have RUB rate as 1', () => {
+      expect(FALLBACK_RATES_TO_RUB.RUB).toBe(1.0);
+    });
+
+    it('should have reasonable USD rate (between 50 and 150 RUB)', () => {
+      expect(FALLBACK_RATES_TO_RUB.USD).toBeGreaterThan(50);
+      expect(FALLBACK_RATES_TO_RUB.USD).toBeLessThan(150);
+    });
+
+    it('should have reasonable EUR rate (higher than USD)', () => {
+      expect(FALLBACK_RATES_TO_RUB.EUR).toBeGreaterThan(FALLBACK_RATES_TO_RUB.USD);
+    });
+  });
+
+  describe('DEFAULT_BASE_CURRENCY', () => {
+    it('should be RUB', () => {
+      expect(DEFAULT_BASE_CURRENCY).toBe('RUB');
     });
   });
 });

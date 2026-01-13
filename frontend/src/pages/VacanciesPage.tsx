@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { useKeyboardShortcuts } from '@/hooks';
+import { useKeyboardShortcuts, useCurrencyRates } from '@/hooks';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -131,6 +131,9 @@ export default function VacanciesPage() {
     clearError
   } = useVacancyStore();
 
+  // Currency rates for salary conversion during filtering
+  const { getComparableSalary, isLoading: ratesLoading } = useCurrencyRates();
+
   // Modal state check for keyboard shortcut handlers
   const isAnyModalOpen = showCreateModal || !!editingVacancy || showParserModal;
 
@@ -144,6 +147,7 @@ export default function VacanciesPage() {
   }, [quickFilters]);
 
   // Filter vacancies based on quick filters
+  // Note: Salary ranges are in RUB, so we convert vacancy salaries to RUB for comparison
   const filteredVacancies = useMemo(() => {
     return vacancies.filter((vacancy) => {
       // Status filter
@@ -151,13 +155,25 @@ export default function VacanciesPage() {
         return false;
       }
 
-      // Salary range filter
+      // Salary range filter (with currency conversion)
       if (quickFilters.salaryRange !== 'any') {
         const salaryConfig = SALARY_RANGES.find(s => s.id === quickFilters.salaryRange);
         if (salaryConfig) {
-          const vacancySalary = vacancy.salary_max || vacancy.salary_min || 0;
-          if (salaryConfig.min !== undefined && vacancySalary < salaryConfig.min) return false;
-          if (salaryConfig.max !== undefined && vacancySalary > salaryConfig.max) return false;
+          // Convert vacancy salary to RUB for comparison
+          // This allows comparing salaries across different currencies
+          const vacancySalaryInRUB = getComparableSalary(
+            vacancy.salary_min,
+            vacancy.salary_max,
+            vacancy.salary_currency || 'RUB'
+          );
+
+          if (vacancySalaryInRUB === 0) {
+            // No salary specified - exclude from salary filter
+            return false;
+          }
+
+          if (salaryConfig.min !== undefined && vacancySalaryInRUB < salaryConfig.min) return false;
+          if (salaryConfig.max !== undefined && vacancySalaryInRUB > salaryConfig.max) return false;
         }
       }
 
@@ -174,7 +190,7 @@ export default function VacanciesPage() {
 
       return true;
     });
-  }, [vacancies, quickFilters]);
+  }, [vacancies, quickFilters, getComparableSalary]);
 
   // Sync quick filters to URL
   useEffect(() => {

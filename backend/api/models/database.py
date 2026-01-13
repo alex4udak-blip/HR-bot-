@@ -248,6 +248,7 @@ class User(Base):
     analyses = relationship("AnalysisHistory", back_populates="user")
     org_memberships = relationship("OrgMember", foreign_keys="OrgMember.user_id", back_populates="user", cascade="all, delete-orphan")
     department_memberships = relationship("DepartmentMember", back_populates="user", cascade="all, delete-orphan")
+    refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
 
 
 class Chat(Base):
@@ -811,6 +812,36 @@ class DepartmentFeature(Base):
     department = relationship("Department")
 
 
+class FeatureAuditLog(Base):
+    """Audit log for feature access changes.
+
+    Tracks who changed feature access settings, when, and what was changed.
+    Used for compliance and debugging access issues.
+    """
+    __tablename__ = "feature_audit_logs"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    changed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    feature_name = Column(String(50), nullable=False)
+    action = Column(String(20), nullable=False)  # 'enable', 'disable', 'delete'
+    department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True)
+    # NULL department_id means org-wide change
+    old_value = Column(Boolean, nullable=True)  # Previous enabled state
+    new_value = Column(Boolean, nullable=True)  # New enabled state
+    details = Column(JSON, nullable=True)  # Additional context (e.g., affected department names)
+    created_at = Column(DateTime, default=func.now(), index=True)
+
+    __table_args__ = (
+        Index('ix_feature_audit_logs_lookup', 'org_id', 'feature_name', 'created_at'),
+    )
+
+    # Relationships
+    organization = relationship("Organization")
+    changed_by_user = relationship("User", foreign_keys=[changed_by])
+    department = relationship("Department")
+
+
 class EntityFile(Base):
     """Files attached to an entity (resumes, certificates, etc.)"""
     __tablename__ = "entity_files"
@@ -831,3 +862,28 @@ class EntityFile(Base):
     entity = relationship("Entity", back_populates="files")
     organization = relationship("Organization")
     uploader = relationship("User")
+
+
+class RefreshToken(Base):
+    """Refresh tokens for secure session management.
+
+    Refresh tokens are stored with hashed values for security.
+    They allow obtaining new access tokens without re-authentication.
+    """
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True)
+    token_hash = Column(String(255), nullable=False, unique=True, index=True)  # SHA-256 hash of token
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_name = Column(String(255), nullable=True)  # e.g., "Chrome on Windows", "Mobile App"
+    ip_address = Column(String(45), nullable=True)  # IPv6 support
+    expires_at = Column(DateTime, nullable=False, index=True)
+    created_at = Column(DateTime, default=func.now())
+    revoked_at = Column(DateTime, nullable=True)  # NULL = not revoked, set = revoked
+
+    __table_args__ = (
+        Index('ix_refresh_tokens_user_expires', 'user_id', 'expires_at'),
+    )
+
+    # Relationships
+    user = relationship("User", back_populates="refresh_tokens")
