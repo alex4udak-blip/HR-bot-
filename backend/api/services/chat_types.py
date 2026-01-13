@@ -245,6 +245,73 @@ def get_default_criteria(chat_type: str) -> List[Dict[str, Any]]:
     return config.get("default_criteria", [])
 
 
+# Universal preset templates that work across all chat types
+UNIVERSAL_PRESETS: List[Dict[str, Any]] = [
+    {
+        "name": "Коммуникация",
+        "description": "Оценка коммуникативных навыков",
+        "criteria": [
+            {"name": "Ясность изложения", "description": "Насколько понятно и структурированно излагает мысли", "weight": 8, "category": "basic"},
+            {"name": "Активное слушание", "description": "Отвечает по существу, учитывает контекст", "weight": 7, "category": "basic"},
+            {"name": "Тон общения", "description": "Вежливость, профессионализм в коммуникации", "weight": 7, "category": "basic"},
+            {"name": "Агрессивность", "description": "Грубость, конфликтность в общении", "weight": 8, "category": "red_flags"},
+            {"name": "Конструктивность", "description": "Предлагает решения, а не только критикует", "weight": 6, "category": "green_flags"},
+        ],
+    },
+    {
+        "name": "Профессионализм",
+        "description": "Оценка профессионального поведения",
+        "criteria": [
+            {"name": "Ответственность", "description": "Выполнение обязательств, соблюдение сроков", "weight": 9, "category": "basic"},
+            {"name": "Компетентность", "description": "Уровень знаний и навыков в своей области", "weight": 8, "category": "basic"},
+            {"name": "Самоорганизация", "description": "Умение планировать и управлять временем", "weight": 7, "category": "basic"},
+            {"name": "Перекладывание ответственности", "description": "Обвинение других в своих ошибках", "weight": 8, "category": "red_flags"},
+            {"name": "Инициативность", "description": "Предлагает идеи, берёт дополнительные задачи", "weight": 7, "category": "green_flags"},
+        ],
+    },
+    {
+        "name": "Результативность",
+        "description": "Оценка эффективности и результатов",
+        "criteria": [
+            {"name": "Качество работы", "description": "Уровень качества выполненных задач", "weight": 9, "category": "basic"},
+            {"name": "Скорость выполнения", "description": "Своевременность выполнения задач", "weight": 7, "category": "basic"},
+            {"name": "Достижение целей", "description": "Выполнение поставленных KPI и целей", "weight": 8, "category": "basic"},
+            {"name": "Срыв сроков", "description": "Регулярное нарушение дедлайнов", "weight": 9, "category": "red_flags"},
+            {"name": "Превышение ожиданий", "description": "Результат лучше, чем ожидалось", "weight": 7, "category": "green_flags"},
+        ],
+    },
+    {
+        "name": "Soft Skills",
+        "description": "Оценка межличностных навыков",
+        "criteria": [
+            {"name": "Работа в команде", "description": "Умение сотрудничать с другими", "weight": 8, "category": "basic"},
+            {"name": "Эмоциональный интеллект", "description": "Понимание и управление эмоциями", "weight": 7, "category": "basic"},
+            {"name": "Адаптивность", "description": "Гибкость при изменениях", "weight": 7, "category": "basic"},
+            {"name": "Конфликтность", "description": "Склонность к созданию конфликтов", "weight": 8, "category": "red_flags"},
+            {"name": "Лидерские качества", "description": "Способность вести за собой других", "weight": 6, "category": "green_flags"},
+            {"name": "Обучаемость", "description": "Скорость усвоения новой информации", "weight": 7, "category": "potential"},
+        ],
+    },
+    {
+        "name": "Потенциал роста",
+        "description": "Оценка потенциала развития",
+        "criteria": [
+            {"name": "Мотивация", "description": "Желание развиваться и достигать большего", "weight": 8, "category": "potential"},
+            {"name": "Обучаемость", "description": "Скорость освоения нового материала", "weight": 8, "category": "potential"},
+            {"name": "Амбициозность", "description": "Стремление к карьерному росту", "weight": 7, "category": "potential"},
+            {"name": "Креативность", "description": "Способность генерировать новые идеи", "weight": 6, "category": "potential"},
+            {"name": "Ограниченность мышления", "description": "Нежелание выходить за рамки привычного", "weight": 7, "category": "red_flags"},
+            {"name": "Стратегическое мышление", "description": "Умение видеть перспективу", "weight": 7, "category": "green_flags"},
+        ],
+    },
+]
+
+
+def get_universal_presets() -> List[Dict[str, Any]]:
+    """Get universal preset templates that work across all chat types."""
+    return UNIVERSAL_PRESETS
+
+
 def get_system_prompt_for_type(chat_type: str, custom_description: str = None) -> str:
     """Get AI system prompt based on chat type."""
     config = get_chat_type_config(chat_type)

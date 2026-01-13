@@ -11,15 +11,20 @@ import {
   Target,
   TrendingUp,
   Globe,
-  RotateCcw
+  RotateCcw,
+  Bookmark,
+  User,
+  X
 } from 'lucide-react';
 import * as Select from '@radix-ui/react-select';
+import * as Dialog from '@radix-ui/react-dialog';
 import {
   getChatCriteria,
   updateChatCriteria,
   getCriteriaPresets,
   getDefaultCriteria,
-  setDefaultCriteria
+  setDefaultCriteria,
+  createCriteriaPreset
 } from '@/services/api';
 import type { Criterion, ChatTypeId } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
@@ -55,6 +60,8 @@ const categoryLabels = {
 export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) {
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [templateName, setTemplateName] = useState('');
   const queryClient = useQueryClient();
   const { isSuperAdmin } = useAuthStore();
 
@@ -96,6 +103,33 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
       toast.error('Ошибка сохранения');
     },
   });
+
+  const saveAsTemplateMutation = useMutation({
+    mutationFn: (name: string) => createCriteriaPreset({
+      name,
+      description: `Личный шаблон критериев`,
+      criteria: criteria,
+      category: 'basic',
+      is_global: false,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['criteria-presets'] });
+      setSaveDialogOpen(false);
+      setTemplateName('');
+      toast.success('Шаблон сохранён');
+    },
+    onError: () => {
+      toast.error('Ошибка сохранения шаблона');
+    },
+  });
+
+  const handleSaveAsTemplate = () => {
+    if (!templateName.trim()) {
+      toast.error('Введите название шаблона');
+      return;
+    }
+    saveAsTemplateMutation.mutate(templateName.trim());
+  };
 
   const handleLoadDefaults = async () => {
     if (!chatType) return;
@@ -155,57 +189,104 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
     );
   }
 
+  // Group presets by global vs personal
+  const globalPresets = presets.filter(p => p.is_global);
+  const personalPresets = presets.filter(p => !p.is_global);
+
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-4 space-y-4 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <h3 className="font-semibold">Критерии оценки</h3>
-          <p className="text-sm text-dark-400 truncate">
-            {criteria.length} {criteria.length === 1 ? 'критерий' : criteria.length < 5 ? 'критерия' : 'критериев'}
-          </p>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="font-semibold text-sm sm:text-base">Критерии оценки</h3>
+            <p className="text-xs sm:text-sm text-dark-400">
+              {criteria.length} {criteria.length === 1 ? 'критерий' : criteria.length < 5 ? 'критерия' : 'критериев'}
+            </p>
+          </div>
+          <button
+            onClick={handleAddCriterion}
+            className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 text-xs sm:text-sm transition-colors flex-shrink-0"
+          >
+            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="hidden sm:inline">Добавить</span>
+            <span className="sm:hidden">+</span>
+          </button>
         </div>
-        <div className="flex gap-2 flex-shrink-0 flex-wrap">
+
+        {/* Buttons row */}
+        <div className="flex gap-2 flex-wrap">
           {chatType && (
             <button
               onClick={handleLoadDefaults}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg glass-light text-sm hover:bg-white/10 transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg glass-light text-xs hover:bg-white/10 transition-colors"
               title="Загрузить критерии по умолчанию"
             >
-              <RotateCcw className="w-4 h-4" />
-              По умолчанию
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>По умолч.</span>
             </button>
           )}
-          {presets.length > 0 && (
+
+          {(globalPresets.length > 0 || personalPresets.length > 0) && (
             <Select.Root onValueChange={handleApplyPreset}>
-              <Select.Trigger className="flex items-center gap-2 px-3 py-2 rounded-lg glass-light text-sm hover:bg-white/10 transition-colors">
-                <Select.Value placeholder="Шаблон" />
-                <ChevronDown className="w-4 h-4" />
+              <Select.Trigger className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg glass-light text-xs hover:bg-white/10 transition-colors">
+                <Bookmark className="w-3.5 h-3.5" />
+                <Select.Value placeholder="Шаблоны" />
+                <ChevronDown className="w-3 h-3" />
               </Select.Trigger>
               <Select.Portal>
-                <Select.Content className="glass rounded-xl overflow-hidden shadow-xl z-50">
+                <Select.Content className="glass rounded-xl overflow-hidden shadow-xl z-50 max-w-[280px]">
                   <Select.Viewport className="p-1">
-                    {presets.map((preset) => (
-                      <Select.Item
-                        key={preset.id}
-                        value={String(preset.id)}
-                        className="px-3 py-2 rounded-lg cursor-pointer hover:bg-white/10 text-sm outline-none"
-                      >
-                        <Select.ItemText>{preset.name}</Select.ItemText>
-                      </Select.Item>
-                    ))}
+                    {globalPresets.length > 0 && (
+                      <>
+                        <div className="px-3 py-1.5 text-xs text-dark-500 flex items-center gap-1.5">
+                          <Globe className="w-3 h-3" />
+                          Общие шаблоны
+                        </div>
+                        {globalPresets.map((preset) => (
+                          <Select.Item
+                            key={preset.id}
+                            value={String(preset.id)}
+                            className="px-3 py-2 rounded-lg cursor-pointer hover:bg-white/10 text-xs outline-none truncate"
+                          >
+                            <Select.ItemText>{preset.name}</Select.ItemText>
+                          </Select.Item>
+                        ))}
+                      </>
+                    )}
+                    {personalPresets.length > 0 && (
+                      <>
+                        <div className="px-3 py-1.5 text-xs text-dark-500 flex items-center gap-1.5 mt-1 border-t border-white/10 pt-2">
+                          <User className="w-3 h-3" />
+                          Мои шаблоны
+                        </div>
+                        {personalPresets.map((preset) => (
+                          <Select.Item
+                            key={preset.id}
+                            value={String(preset.id)}
+                            className="px-3 py-2 rounded-lg cursor-pointer hover:bg-white/10 text-xs outline-none truncate"
+                          >
+                            <Select.ItemText>{preset.name}</Select.ItemText>
+                          </Select.Item>
+                        ))}
+                      </>
+                    )}
                   </Select.Viewport>
                 </Select.Content>
               </Select.Portal>
             </Select.Root>
           )}
-          <button
-            onClick={handleAddCriterion}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 text-sm transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Добавить
-          </button>
+
+          {criteria.length > 0 && (
+            <button
+              onClick={() => setSaveDialogOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg glass-light text-xs hover:bg-white/10 transition-colors text-accent-400"
+              title="Сохранить как личный шаблон"
+            >
+              <Bookmark className="w-3.5 h-3.5" />
+              <span>Сохр. шаблон</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -232,13 +313,13 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: -20 }}
-                  className="glass-light rounded-xl p-4 space-y-3"
+                  className="glass-light rounded-xl p-3 space-y-2 overflow-hidden"
                 >
-                  <div className="flex items-start gap-3">
-                    <div className={clsx('p-2 rounded-lg flex-shrink-0', colorClass)}>
-                      <Icon className="w-4 h-4" />
+                  <div className="flex items-start gap-2">
+                    <div className={clsx('p-1.5 rounded-lg flex-shrink-0', colorClass)}>
+                      <Icon className="w-3.5 h-3.5" />
                     </div>
-                    <div className="flex-1 min-w-0 space-y-3">
+                    <div className="flex-1 min-w-0 space-y-2 overflow-hidden">
                       <input
                         type="text"
                         value={criterion.name}
@@ -246,7 +327,7 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
                           handleUpdateCriterion(index, { name: e.target.value })
                         }
                         placeholder="Название критерия"
-                        className="w-full bg-transparent border-b border-white/10 pb-1 text-sm font-medium focus:outline-none focus:border-accent-500"
+                        className="w-full bg-transparent border-b border-white/10 pb-1 text-xs sm:text-sm font-medium focus:outline-none focus:border-accent-500"
                       />
                       <textarea
                         value={criterion.description}
@@ -255,11 +336,10 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
                         }
                         placeholder="Описание..."
                         rows={2}
-                        className="w-full bg-transparent text-sm text-dark-300 resize-none focus:outline-none"
+                        className="w-full bg-transparent text-xs text-dark-300 resize-none focus:outline-none"
                       />
-                      <div className="flex items-center gap-4 flex-wrap">
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className="text-xs text-dark-500">Категория:</span>
+                      <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                        <div className="flex items-center gap-1.5">
                           <select
                             value={criterion.category}
                             onChange={(e) =>
@@ -267,7 +347,7 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
                                 category: e.target.value as Criterion['category'],
                               })
                             }
-                            className="bg-dark-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-accent-500"
+                            className="bg-dark-800 rounded-lg px-1.5 py-1 text-[10px] sm:text-xs focus:outline-none focus:ring-1 focus:ring-accent-500"
                           >
                             {Object.entries(categoryLabels).map(([value, label]) => (
                               <option key={value} value={value}>
@@ -276,8 +356,8 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
                             ))}
                           </select>
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className="text-xs text-dark-500">Вес:</span>
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <span className="text-[10px] sm:text-xs text-dark-500">Вес:</span>
                           <input
                             type="range"
                             min="1"
@@ -288,7 +368,7 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
                                 weight: parseInt(e.target.value),
                               })
                             }
-                            className="w-20 accent-accent-500"
+                            className="flex-1 min-w-[60px] max-w-[100px] accent-accent-500"
                           />
                           <span className="text-xs font-medium w-4">{criterion.weight}</span>
                         </div>
@@ -296,9 +376,9 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
                     </div>
                     <button
                       onClick={() => handleRemoveCriterion(index)}
-                      className="p-2 rounded-lg text-dark-400 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0"
+                      className="p-1.5 rounded-lg text-dark-400 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </motion.div>
@@ -336,17 +416,64 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
           <button
             onClick={() => saveAsDefaultMutation.mutate()}
             disabled={saveAsDefaultMutation.isPending}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl glass-light text-sm hover:bg-white/10 disabled:opacity-50 transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl glass-light text-xs sm:text-sm hover:bg-white/10 disabled:opacity-50 transition-colors"
             title={`Сохранить как критерии по умолчанию для всех чатов типа "${chatType}"`}
           >
-            <Globe className="w-4 h-4" />
-            {saveAsDefaultMutation.isPending ? 'Сохранение...' : 'Сохранить как глобальные'}
+            <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            {saveAsDefaultMutation.isPending ? 'Сохранение...' : 'Глобальные для типа'}
           </button>
-          <p className="text-xs text-dark-500 text-center mt-1">
-            Эти критерии будут применяться ко всем новым чатам типа «{chatType}»
+          <p className="text-[10px] sm:text-xs text-dark-500 text-center mt-1">
+            Для всех новых чатов типа «{chatType}»
           </p>
         </motion.div>
       )}
+
+      {/* Save Template Dialog */}
+      <Dialog.Root open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
+          <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 glass rounded-2xl p-6 w-[90%] max-w-md z-50 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <Dialog.Title className="text-lg font-semibold">
+                Сохранить шаблон
+              </Dialog.Title>
+              <Dialog.Close className="p-2 rounded-lg hover:bg-white/10 transition-colors">
+                <X className="w-4 h-4" />
+              </Dialog.Close>
+            </div>
+
+            <Dialog.Description className="text-sm text-dark-400 mb-4">
+              Шаблон будет доступен только вам и может применяться к любому чату
+            </Dialog.Description>
+
+            <input
+              type="text"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              placeholder="Название шаблона..."
+              className="w-full bg-dark-800/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500 mb-4"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveAsTemplate();
+              }}
+            />
+
+            <div className="flex gap-3">
+              <Dialog.Close className="flex-1 px-4 py-2.5 rounded-xl glass-light text-sm hover:bg-white/10 transition-colors">
+                Отмена
+              </Dialog.Close>
+              <button
+                onClick={handleSaveAsTemplate}
+                disabled={saveAsTemplateMutation.isPending || !templateName.trim()}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-accent-500 text-white text-sm hover:bg-accent-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              >
+                <Bookmark className="w-4 h-4" />
+                {saveAsTemplateMutation.isPending ? 'Сохранение...' : 'Сохранить'}
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }
