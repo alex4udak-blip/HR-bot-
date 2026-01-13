@@ -21,7 +21,8 @@ import {
   Share2,
   FolderOpen,
   Share,
-  Globe
+  Globe,
+  Upload
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -29,13 +30,14 @@ import { useEntityStore } from '@/stores/entityStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { EntityType, Entity } from '@/types';
 import { ENTITY_TYPES, STATUS_LABELS, STATUS_COLORS } from '@/types';
-import type { OwnershipFilter, Department } from '@/services/api';
+import type { OwnershipFilter, Department, ParsedResume } from '@/services/api';
 import { getDepartments } from '@/services/api';
 import ContactForm from '@/components/contacts/ContactForm';
 import TransferModal from '@/components/contacts/TransferModal';
 import ContactDetail from '@/components/contacts/ContactDetail';
 import EntityAI from '@/components/contacts/EntityAI';
 import ShareModal from '@/components/common/ShareModal';
+import ParserModal from '@/components/parser/ParserModal';
 
 // Ownership filter options
 const OWNERSHIP_FILTERS: { id: OwnershipFilter; name: string; icon: typeof FolderOpen; description: string }[] = [
@@ -70,8 +72,10 @@ export default function ContactsPage() {
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showAIPanel, setShowAIPanel] = useState(false);
+  const [showParserModal, setShowParserModal] = useState(false);
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [selectedEntityForTransfer, setSelectedEntityForTransfer] = useState<Entity | null>(null);
+  const [prefillData, setPrefillData] = useState<Partial<Entity> | null>(null);
 
   const {
     canEditResource,
@@ -222,6 +226,33 @@ export default function ContactsPage() {
     setShowCreateModal(true);
   };
 
+  const handleParsedResume = (data: ParsedResume) => {
+    // Convert parsed resume to prefill data for the form
+    const prefill: Partial<Entity> = {
+      type: 'candidate',
+      name: data.name || '',
+      email: data.email,
+      phone: data.phone,
+      telegram_usernames: data.telegram ? [data.telegram] : [],
+      company: data.company,
+      position: data.position,
+      tags: data.skills || [],
+      extra_data: {
+        experience_years: data.experience_years,
+        salary_min: data.salary_min,
+        salary_max: data.salary_max,
+        salary_currency: data.salary_currency,
+        location: data.location,
+        summary: data.summary,
+        source_url: data.source_url,
+      },
+    };
+    setPrefillData(prefill);
+    setShowParserModal(false);
+    setShowCreateModal(true);
+    toast.success('Данные распознаны');
+  };
+
   // Backend already filters entities by access control (ownership, department, sharing)
   // No additional filtering needed on frontend
   const accessibleEntities = entities;
@@ -256,15 +287,25 @@ export default function ContactsPage() {
         <div className="p-4 border-b border-white/5">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-xl font-semibold text-white">Контакты</h1>
-            <button
-              onClick={() => {
-                setEditingEntity(null);
-                setShowCreateModal(true);
-              }}
-              className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors"
-            >
-              <Plus size={20} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowParserModal(true)}
+                className="p-2 rounded-lg bg-white/5 text-white/60 hover:bg-white/10 transition-colors"
+                title="Импорт резюме"
+              >
+                <Upload size={20} />
+              </button>
+              <button
+                onClick={() => {
+                  setEditingEntity(null);
+                  setPrefillData(null);
+                  setShowCreateModal(true);
+                }}
+                className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors"
+              >
+                <Plus size={20} />
+              </button>
+            </div>
           </div>
 
           {/* Search */}
@@ -687,19 +728,33 @@ export default function ContactsPage() {
         {showCreateModal && (
           <ContactForm
             entity={editingEntity}
+            prefillData={prefillData || undefined}
             defaultType={typeFilter === 'all' ? undefined : typeFilter}
             onClose={() => {
               setShowCreateModal(false);
               setEditingEntity(null);
+              setPrefillData(null);
             }}
             onSuccess={(entity) => {
               setShowCreateModal(false);
               setEditingEntity(null);
+              setPrefillData(null);
               toast.success(editingEntity ? 'Контакт обновлён' : 'Контакт создан');
               if (!editingEntity) {
                 navigate(`/contacts/${entity.id}`);
               }
             }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Parser Modal */}
+      <AnimatePresence>
+        {showParserModal && (
+          <ParserModal
+            type="resume"
+            onClose={() => setShowParserModal(false)}
+            onParsed={(data) => handleParsedResume(data as ParsedResume)}
           />
         )}
       </AnimatePresence>

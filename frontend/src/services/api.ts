@@ -1434,4 +1434,57 @@ export const downloadEntityFile = async (entityId: number, fileId: number): Prom
   return response.blob();
 };
 
+// === PARSER API ===
+
+export interface ParsedResume {
+  name?: string;
+  email?: string;
+  phone?: string;
+  telegram?: string;
+  position?: string;
+  company?: string;
+  experience_years?: number;
+  skills: string[];
+  salary_min?: number;
+  salary_max?: number;
+  salary_currency: string;
+  location?: string;
+  summary?: string;
+  source_url?: string;
+}
+
+export interface ParsedVacancy {
+  title: string;
+  description?: string;
+  requirements?: string;
+  responsibilities?: string;
+  salary_min?: number;
+  salary_max?: number;
+  salary_currency: string;
+  location?: string;
+  employment_type?: string;
+  experience_level?: string;
+  company_name?: string;
+  source_url?: string;
+}
+
+export const parseResumeFromUrl = async (url: string): Promise<ParsedResume> => {
+  const { data } = await api.post('/parser/resume/url', { url });
+  return data;
+};
+
+export const parseResumeFromFile = async (file: File): Promise<ParsedResume> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await api.post('/parser/resume/file', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+  return data;
+};
+
+export const parseVacancyFromUrl = async (url: string): Promise<ParsedVacancy> => {
+  const { data } = await api.post('/parser/vacancy/url', { url });
+  return data;
+};
+
 export default api;
