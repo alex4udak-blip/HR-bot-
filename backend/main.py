@@ -778,13 +778,48 @@ app.include_router(invitations.router, prefix="/api/invitations", tags=["invitat
 app.include_router(realtime.router, tags=["realtime"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(external_links.router, tags=["external-links"])
-app.include_router(vacancies.router, prefix="/api/vacancies", tags=["vacancies"])
-app.include_router(parser.router, prefix="/api/parser", tags=["parser"])
+
+# Register vacancies and parser routers with explicit logging
+logger.info("=== REGISTERING VACANCIES ROUTER ===")
+try:
+    app.include_router(vacancies.router, prefix="/api/vacancies", tags=["vacancies"])
+    logger.info("Vacancies router registered successfully at /api/vacancies")
+except Exception as e:
+    logger.error(f"FAILED to register vacancies router: {e}")
+    raise
+
+logger.info("=== REGISTERING PARSER ROUTER ===")
+try:
+    app.include_router(parser.router, prefix="/api/parser", tags=["parser"])
+    logger.info("Parser router registered successfully at /api/parser")
+except Exception as e:
+    logger.error(f"FAILED to register parser router: {e}")
+    raise
 
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+@app.get("/debug/routes")
+async def debug_routes():
+    """Debug endpoint to list all registered routes."""
+    routes = []
+    for route in app.routes:
+        if hasattr(route, 'methods') and hasattr(route, 'path'):
+            routes.append({
+                "path": route.path,
+                "methods": list(route.methods) if route.methods else [],
+                "name": route.name
+            })
+    # Filter to show only vacancy routes
+    vacancy_routes = [r for r in routes if '/vacancies' in r['path'] or '/api/vacancy' in r['path']]
+    return {
+        "total_routes": len(routes),
+        "vacancy_routes": vacancy_routes,
+        "vacancy_count": len(vacancy_routes)
+    }
 
 
 @app.get("/health/playwright")
