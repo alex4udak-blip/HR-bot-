@@ -13,9 +13,7 @@ import {
   Edit,
   Trash2,
   LayoutGrid,
-  List,
-  Filter,
-  X
+  List
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -24,8 +22,7 @@ import type { Vacancy, VacancyStatus } from '@/types';
 import {
   VACANCY_STATUS_LABELS,
   VACANCY_STATUS_COLORS,
-  EMPLOYMENT_TYPES,
-  EXPERIENCE_LEVELS
+  EMPLOYMENT_TYPES
 } from '@/types';
 import { getDepartments } from '@/services/api';
 import type { Department } from '@/services/api';
@@ -182,7 +179,7 @@ export default function VacanciesPage() {
           {viewMode === 'kanban' ? (
             <KanbanBoard vacancy={currentVacancy} />
           ) : (
-            <VacancyDetail vacancy={currentVacancy} onEdit={() => setEditingVacancy(currentVacancy)} />
+            <VacancyDetail vacancy={currentVacancy} />
           )}
         </div>
       </div>

@@ -9,7 +9,6 @@ import {
   Calendar,
   Users,
   Plus,
-  ChevronRight,
   Star,
   Tag,
   FileText,
@@ -17,28 +16,22 @@ import {
   XCircle,
   TrendingUp
 } from 'lucide-react';
-import clsx from 'clsx';
-import toast from 'react-hot-toast';
-import type { Vacancy, Entity } from '@/types';
+import type { Vacancy } from '@/types';
 import {
-  VACANCY_STATUS_LABELS,
-  VACANCY_STATUS_COLORS,
   EMPLOYMENT_TYPES,
   EXPERIENCE_LEVELS,
   APPLICATION_STAGE_LABELS
 } from '@/types';
 import { useVacancyStore } from '@/stores/vacancyStore';
-import { getEntities } from '@/services/api';
 import AddCandidateModal from './AddCandidateModal';
 
 interface VacancyDetailProps {
   vacancy: Vacancy;
-  onEdit: () => void;
 }
 
-export default function VacancyDetail({ vacancy, onEdit }: VacancyDetailProps) {
+export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
   const [showAddCandidate, setShowAddCandidate] = useState(false);
-  const { fetchKanbanBoard, kanbanBoard } = useVacancyStore();
+  const { fetchKanbanBoard } = useVacancyStore();
 
   useEffect(() => {
     fetchKanbanBoard(vacancy.id);

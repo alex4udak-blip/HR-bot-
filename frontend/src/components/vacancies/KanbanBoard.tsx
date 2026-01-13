@@ -1,15 +1,11 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  User,
   Mail,
   Phone,
-  MoreVertical,
   Star,
-  MessageSquare,
   Clock,
   Plus,
-  ChevronDown,
   Trash2,
   Edit,
   ExternalLink

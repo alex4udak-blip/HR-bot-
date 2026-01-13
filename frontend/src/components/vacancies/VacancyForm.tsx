@@ -2,12 +2,11 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { X, Save, Briefcase } from 'lucide-react';
 import toast from 'react-hot-toast';
-import clsx from 'clsx';
 import { useVacancyStore } from '@/stores/vacancyStore';
-import type { Vacancy, VacancyStatus } from '@/types';
+import type { Vacancy, VacancyStatus, User } from '@/types';
 import { VACANCY_STATUS_LABELS, EMPLOYMENT_TYPES, EXPERIENCE_LEVELS } from '@/types';
 import { getDepartments, getUsers } from '@/services/api';
-import type { Department, User } from '@/services/api';
+import type { Department } from '@/services/api';
 
 interface VacancyFormProps {
   vacancy?: Vacancy;

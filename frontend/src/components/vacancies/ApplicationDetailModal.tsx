@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Save, Star, Calendar, ExternalLink, Trash2 } from 'lucide-react';
+import { X, Save, Star, ExternalLink, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import type { VacancyApplication, ApplicationStage } from '@/types';
-import { APPLICATION_STAGE_LABELS, APPLICATION_STAGE_COLORS } from '@/types';
+import { APPLICATION_STAGE_LABELS } from '@/types';
 
 interface ApplicationDetailModalProps {
   application: VacancyApplication;
