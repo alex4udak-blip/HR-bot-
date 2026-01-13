@@ -1866,3 +1866,511 @@ async def get_entity_chat_participants(
     participants.sort(key=lambda p: p["name"])
 
     return participants
+
+
+# === Entity-Vacancy Integration API ===
+
+class EntityVacancyApplicationResponse(BaseModel):
+    """Response schema for vacancy application from entity perspective."""
+    id: int
+    vacancy_id: int
+    vacancy_title: str
+    vacancy_status: str
+    stage: str
+    rating: Optional[int] = None
+    notes: Optional[str] = None
+    source: Optional[str] = None
+    applied_at: datetime
+    last_stage_change_at: datetime
+    department_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ApplyToVacancyRequest(BaseModel):
+    """Request schema for applying entity to vacancy."""
+    vacancy_id: int
+    source: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.get("/{entity_id}/vacancies")
+async def get_entity_vacancies(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all vacancies a candidate/entity has applied to.
+    Returns a list of VacancyApplication with vacancy details.
+    """
+    from ..models.database import VacancyApplication, Vacancy, VacancyStatus
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Get entity
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check if user has access to view this entity
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(404, "Entity not found")
+
+    # Get all vacancy applications for this entity
+    apps_result = await db.execute(
+        select(VacancyApplication)
+        .where(VacancyApplication.entity_id == entity_id)
+        .order_by(VacancyApplication.applied_at.desc())
+    )
+    applications = apps_result.scalars().all()
+
+    if not applications:
+        return []
+
+    # Get vacancy IDs for batch query
+    vacancy_ids = [app.vacancy_id for app in applications]
+
+    # Batch fetch vacancies
+    vacancies_result = await db.execute(
+        select(Vacancy).where(Vacancy.id.in_(vacancy_ids))
+    )
+    vacancies_map = {v.id: v for v in vacancies_result.scalars().all()}
+
+    # Get department names
+    dept_ids = [v.department_id for v in vacancies_map.values() if v.department_id]
+    dept_names = {}
+    if dept_ids:
+        depts_result = await db.execute(
+            select(Department).where(Department.id.in_(dept_ids))
+        )
+        dept_names = {d.id: d.name for d in depts_result.scalars().all()}
+
+    # Build response
+    response = []
+    for app in applications:
+        vacancy = vacancies_map.get(app.vacancy_id)
+        if vacancy:
+            response.append(EntityVacancyApplicationResponse(
+                id=app.id,
+                vacancy_id=app.vacancy_id,
+                vacancy_title=vacancy.title,
+                vacancy_status=vacancy.status.value if vacancy.status else "unknown",
+                stage=app.stage.value if app.stage else "applied",
+                rating=app.rating,
+                notes=app.notes,
+                source=app.source,
+                applied_at=app.applied_at,
+                last_stage_change_at=app.last_stage_change_at,
+                department_name=dept_names.get(vacancy.department_id) if vacancy.department_id else None
+            ))
+
+    return response
+
+
+@router.post("/{entity_id}/apply-to-vacancy")
+async def apply_entity_to_vacancy(
+    entity_id: int,
+    data: ApplyToVacancyRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Quick add entity to a vacancy pipeline.
+    Creates a VacancyApplication linking entity to vacancy.
+    """
+    from ..models.database import VacancyApplication, Vacancy, ApplicationStage
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Get entity
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check if user has edit access to this entity
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=AccessLevel.edit)
+    if not has_access:
+        raise HTTPException(403, "No edit permission for this entity")
+
+    # Get vacancy
+    vacancy_result = await db.execute(
+        select(Vacancy).where(Vacancy.id == data.vacancy_id)
+    )
+    vacancy = vacancy_result.scalar_one_or_none()
+
+    if not vacancy:
+        raise HTTPException(404, "Vacancy not found")
+
+    # Check if entity is already applied to this vacancy
+    existing_result = await db.execute(
+        select(VacancyApplication).where(
+            VacancyApplication.vacancy_id == data.vacancy_id,
+            VacancyApplication.entity_id == entity_id
+        )
+    )
+    existing = existing_result.scalar_one_or_none()
+
+    if existing:
+        raise HTTPException(400, "Entity already applied to this vacancy")
+
+    # Get max stage_order for the applied stage
+    max_order_result = await db.execute(
+        select(func.max(VacancyApplication.stage_order))
+        .where(
+            VacancyApplication.vacancy_id == data.vacancy_id,
+            VacancyApplication.stage == ApplicationStage.applied
+        )
+    )
+    max_order = max_order_result.scalar() or 0
+
+    # Create application
+    application = VacancyApplication(
+        vacancy_id=data.vacancy_id,
+        entity_id=entity_id,
+        stage=ApplicationStage.applied,
+        stage_order=max_order + 1,
+        source=data.source,
+        notes=data.notes,
+        created_by=current_user.id
+    )
+
+    db.add(application)
+    await db.commit()
+    await db.refresh(application)
+
+    logger.info(f"Entity {entity_id} applied to vacancy {data.vacancy_id} by user {current_user.id}")
+
+    return {
+        "success": True,
+        "application_id": application.id,
+        "entity_id": entity_id,
+        "vacancy_id": data.vacancy_id,
+        "vacancy_title": vacancy.title,
+        "stage": application.stage.value
+    }
+
+
+# === Entity Files API ===
+
+from pathlib import Path
+from fastapi import UploadFile, File, Form
+from fastapi.responses import FileResponse
+import os
+import uuid
+import mimetypes
+
+# Uploads directory for entity files
+ENTITY_FILES_DIR = Path(__file__).parent.parent.parent / "uploads" / "entities"
+
+
+class EntityFileResponse(BaseModel):
+    """Response schema for entity file."""
+    id: int
+    entity_id: int
+    file_type: str
+    file_name: str
+    file_size: Optional[int] = None
+    mime_type: Optional[str] = None
+    description: Optional[str] = None
+    uploaded_by: Optional[int] = None
+    uploader_name: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/{entity_id}/files")
+async def get_entity_files(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all files attached to an entity.
+    Returns a list of EntityFile with metadata.
+    """
+    from ..models.database import EntityFile, EntityFileType
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Get entity
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check if user has access to view this entity
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(404, "Entity not found")
+
+    # Get all files for this entity
+    files_result = await db.execute(
+        select(EntityFile)
+        .where(EntityFile.entity_id == entity_id)
+        .order_by(EntityFile.created_at.desc())
+    )
+    files = files_result.scalars().all()
+
+    if not files:
+        return []
+
+    # Get uploader names
+    uploader_ids = [f.uploaded_by for f in files if f.uploaded_by]
+    uploader_names = {}
+    if uploader_ids:
+        uploaders_result = await db.execute(
+            select(User).where(User.id.in_(uploader_ids))
+        )
+        uploader_names = {u.id: u.name for u in uploaders_result.scalars().all()}
+
+    # Build response
+    response = []
+    for f in files:
+        response.append(EntityFileResponse(
+            id=f.id,
+            entity_id=f.entity_id,
+            file_type=f.file_type.value if f.file_type else "other",
+            file_name=f.file_name,
+            file_size=f.file_size,
+            mime_type=f.mime_type,
+            description=f.description,
+            uploaded_by=f.uploaded_by,
+            uploader_name=uploader_names.get(f.uploaded_by) if f.uploaded_by else None,
+            created_at=f.created_at
+        ))
+
+    return response
+
+
+@router.post("/{entity_id}/files")
+async def upload_entity_file(
+    entity_id: int,
+    file: UploadFile = File(...),
+    file_type: str = Form("other"),
+    description: str = Form(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Upload a file for an entity.
+    Saves file to uploads/entities/{entity_id}/ and creates EntityFile record.
+    """
+    from ..models.database import EntityFile, EntityFileType
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Get entity
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check if user has edit access to this entity
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=AccessLevel.edit)
+    if not has_access:
+        raise HTTPException(403, "No edit permission for this entity")
+
+    # Parse file_type enum
+    try:
+        file_type_enum = EntityFileType(file_type)
+    except ValueError:
+        file_type_enum = EntityFileType.other
+
+    # Create directory if not exists
+    entity_files_dir = ENTITY_FILES_DIR / str(entity_id)
+    entity_files_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate unique filename to avoid collisions
+    original_name = file.filename or "unnamed_file"
+    file_extension = Path(original_name).suffix
+    unique_name = f"{uuid.uuid4().hex}{file_extension}"
+    file_path = entity_files_dir / unique_name
+
+    # Read and save file
+    content = await file.read()
+    file_size = len(content)
+    file_path.write_bytes(content)
+
+    # Detect MIME type
+    mime_type = file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+
+    # Create database record
+    entity_file = EntityFile(
+        entity_id=entity_id,
+        file_type=file_type_enum,
+        file_name=original_name,
+        file_path=str(file_path),
+        file_size=file_size,
+        mime_type=mime_type,
+        description=description,
+        uploaded_by=current_user.id
+    )
+
+    db.add(entity_file)
+    await db.commit()
+    await db.refresh(entity_file)
+
+    logger.info(f"Uploaded file {original_name} for entity {entity_id} by user {current_user.id}")
+
+    return EntityFileResponse(
+        id=entity_file.id,
+        entity_id=entity_file.entity_id,
+        file_type=entity_file.file_type.value if entity_file.file_type else "other",
+        file_name=entity_file.file_name,
+        file_size=entity_file.file_size,
+        mime_type=entity_file.mime_type,
+        description=entity_file.description,
+        uploaded_by=entity_file.uploaded_by,
+        uploader_name=current_user.name,
+        created_at=entity_file.created_at
+    )
+
+
+@router.delete("/{entity_id}/files/{file_id}")
+async def delete_entity_file(
+    entity_id: int,
+    file_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete a file from an entity.
+    Removes file from disk and deletes EntityFile record.
+    """
+    from ..models.database import EntityFile
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Get entity
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check if user has edit access to this entity
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=AccessLevel.edit)
+    if not has_access:
+        raise HTTPException(403, "No edit permission for this entity")
+
+    # Get file record
+    file_result = await db.execute(
+        select(EntityFile).where(
+            EntityFile.id == file_id,
+            EntityFile.entity_id == entity_id
+        )
+    )
+    entity_file = file_result.scalar_one_or_none()
+
+    if not entity_file:
+        raise HTTPException(404, "File not found")
+
+    # Delete file from disk
+    file_path = Path(entity_file.file_path)
+    if file_path.exists():
+        try:
+            file_path.unlink()
+            logger.info(f"Deleted file from disk: {file_path}")
+        except OSError as e:
+            logger.warning(f"Failed to delete file from disk: {e}")
+
+    # Delete database record
+    await db.delete(entity_file)
+    await db.commit()
+
+    logger.info(f"Deleted file {file_id} from entity {entity_id} by user {current_user.id}")
+
+    return {"success": True, "file_id": file_id}
+
+
+@router.get("/{entity_id}/files/{file_id}/download")
+async def download_entity_file(
+    entity_id: int,
+    file_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Download a file from an entity.
+    Returns the file as a FileResponse.
+    """
+    from ..models.database import EntityFile
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Get entity
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check if user has access to view this entity
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(404, "Entity not found")
+
+    # Get file record
+    file_result = await db.execute(
+        select(EntityFile).where(
+            EntityFile.id == file_id,
+            EntityFile.entity_id == entity_id
+        )
+    )
+    entity_file = file_result.scalar_one_or_none()
+
+    if not entity_file:
+        raise HTTPException(404, "File not found")
+
+    # Check if file exists on disk
+    file_path = Path(entity_file.file_path)
+    if not file_path.exists():
+        raise HTTPException(404, "File not found on disk")
+
+    # Return file
+    return FileResponse(
+        path=file_path,
+        filename=entity_file.file_name,
+        media_type=entity_file.mime_type or "application/octet-stream"
+    )

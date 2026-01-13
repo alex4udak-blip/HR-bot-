@@ -458,14 +458,40 @@ async def init_database():
 
     logger.info("=== VACANCIES TABLES READY ===")
 
-    # Step 10: Create superadmin and default organization
+    # Step 10: Entity files for document attachments
+    logger.info("=== SETTING UP ENTITY FILES ===")
+
+    # Create entity file type enum
+    await run_migration(engine, "CREATE TYPE entityfiletype AS ENUM ('resume', 'cover_letter', 'test_assignment', 'certificate', 'portfolio', 'other')", "Create entityfiletype enum")
+
+    # Create entity_files table
+    create_entity_files = """
+        CREATE TABLE IF NOT EXISTS entity_files (
+            id SERIAL PRIMARY KEY,
+            entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+            file_type entityfiletype DEFAULT 'other',
+            file_name VARCHAR(255) NOT NULL,
+            file_path VARCHAR(500) NOT NULL,
+            file_size INTEGER,
+            mime_type VARCHAR(100),
+            description VARCHAR(500),
+            uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """
+    await run_migration(engine, create_entity_files, "Create entity_files table")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entity_files_entity_id ON entity_files(entity_id)", "Index entity_files.entity_id")
+
+    logger.info("=== ENTITY FILES TABLE READY ===")
+
+    # Step 11: Create superadmin and default organization
     try:
         async with AsyncSessionLocal() as db:
             await create_superadmin_if_not_exists(db)
     except Exception as e:
         logger.warning(f"Superadmin creation: {e}")
 
-    # Step 10: Fix chats with NULL org_id - assign them to the default organization
+    # Step 12: Fix chats with NULL org_id - assign them to the default organization
     logger.info("=== FIXING CHATS WITH NULL ORG_ID ===")
     try:
         async with engine.begin() as conn:

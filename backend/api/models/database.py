@@ -78,6 +78,16 @@ class ApplicationStage(str, enum.Enum):
     withdrawn = "withdrawn"       # Candidate withdrew
 
 
+class EntityFileType(str, enum.Enum):
+    """Type of file attached to an entity"""
+    resume = "resume"
+    cover_letter = "cover_letter"
+    test_assignment = "test_assignment"
+    certificate = "certificate"
+    portfolio = "portfolio"
+    other = "other"
+
+
 class CallSource(str, enum.Enum):
     meet = "meet"
     zoom = "zoom"
@@ -404,6 +414,7 @@ class Entity(Base):
     ai_conversations = relationship("EntityAIConversation", back_populates="entity", cascade="all, delete-orphan")
     ai_analyses = relationship("EntityAnalysis", back_populates="entity", cascade="all, delete-orphan")
     criteria = relationship("EntityCriteria", back_populates="entity", uselist=False, cascade="all, delete-orphan")
+    files = relationship("EntityFile", back_populates="entity", cascade="all, delete-orphan")
 
     # AI Long-term Memory
     # Auto-updated summary of all interactions with this entity
@@ -763,3 +774,53 @@ class VacancyApplication(Base):
     vacancy = relationship("Vacancy", back_populates="applications")
     entity = relationship("Entity")
     created_by_user = relationship("User", foreign_keys=[created_by])
+
+
+class DepartmentFeature(Base):
+    """Controls which features are available to which departments.
+
+    Features can be enabled/disabled at:
+    - Organization level (department_id is NULL): applies to all departments as default
+    - Department level (department_id is set): overrides org-wide setting for specific department
+
+    Feature names include: 'vacancies', 'ai_analysis', 'calls', etc.
+    Default features (chats, contacts, dashboard) are always available.
+    """
+    __tablename__ = "department_features"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    department_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), nullable=True, index=True)
+    # If department_id is NULL, it's an org-wide default
+    feature_name = Column(String(50), nullable=False)  # "vacancies", "calls", "ai_analysis", etc
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('org_id', 'department_id', 'feature_name', name='uq_dept_feature'),
+        Index('ix_department_features_lookup', 'org_id', 'feature_name'),
+    )
+
+    organization = relationship("Organization")
+    department = relationship("Department")
+
+
+class EntityFile(Base):
+    """File attached to an entity (resume, cover letter, test assignment, etc.)"""
+    __tablename__ = "entity_files"
+
+    id = Column(Integer, primary_key=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_type = Column(SQLEnum(EntityFileType), default=EntityFileType.other)
+    file_name = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    file_size = Column(Integer, nullable=True)  # Size in bytes
+    mime_type = Column(String(100), nullable=True)
+    description = Column(String(500), nullable=True)
+    uploaded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    entity = relationship("Entity", back_populates="files")
+    uploader = relationship("User")
