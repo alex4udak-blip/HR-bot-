@@ -403,9 +403,12 @@ export default function EntityAI({ entity }: EntityAIProps) {
           >
             {msg.role === 'assistant' ? (
               <div className="relative">
+                <div className="prose prose-invert prose-sm max-w-none break-words overflow-wrap-anywhere">
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                </div>
                 <button
                   onClick={() => handleCopy(i, msg.content)}
-                  className="absolute -top-1 -right-1 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute -bottom-1 -right-1 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"
                   title="Копировать"
                 >
                   {copiedIdx === i ? (
@@ -414,9 +417,6 @@ export default function EntityAI({ entity }: EntityAIProps) {
                     <Copy size={14} className="text-white/60" />
                   )}
                 </button>
-                <div className="prose prose-invert prose-sm max-w-none break-words overflow-wrap-anywhere">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
-                </div>
               </div>
             ) : (
               <div className="prose prose-invert prose-sm max-w-none break-words overflow-wrap-anywhere">
