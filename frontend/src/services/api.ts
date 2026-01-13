@@ -68,13 +68,7 @@ const redirectToLogin = (): void => {
 
 // API Configuration
 const API_TIMEOUT = 30000; // 30 seconds
-const MAX_RETRIES = 3;
-const RETRY_DELAY_BASE = 1000; // 1 second, will be exponentially increased
 const MUTATION_DEBOUNCE_MS = 300; // Debounce time for mutation requests
-
-// Error types that should trigger retry
-const RETRYABLE_ERRORS = ['ECONNABORTED', 'ETIMEDOUT', 'ENOTFOUND', 'ENETUNREACH', 'ECONNRESET'];
-const RETRYABLE_STATUS_CODES = [408, 429, 500, 502, 503, 504];
 
 // ============================================================
 // REQUEST DEDUPLICATION & DEBOUNCE SYSTEM
@@ -261,61 +255,6 @@ const api = axios.create({
   withCredentials: true,  // Send cookies with requests (httpOnly cookie authentication)
   timeout: API_TIMEOUT,   // Request timeout
 });
-
-/**
- * Sleep for specified milliseconds
- */
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-/**
- * Check if an error should trigger a retry
- */
-const shouldRetry = (error: AxiosError): boolean => {
-  // Network errors
-  if (error.code && RETRYABLE_ERRORS.includes(error.code)) {
-    return true;
-  }
-  // HTTP status codes that are retryable
-  if (error.response?.status && RETRYABLE_STATUS_CODES.includes(error.response.status)) {
-    return true;
-  }
-  return false;
-};
-
-/**
- * Execute request with retry logic
- */
-const executeWithRetry = async <T>(
-  requestFn: () => Promise<T>,
-  retries = MAX_RETRIES
-): Promise<T> => {
-  let lastError: AxiosError | null = null;
-
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await requestFn();
-    } catch (error) {
-      lastError = error as AxiosError;
-
-      // Don't retry for certain conditions
-      if (!shouldRetry(lastError)) {
-        throw lastError;
-      }
-
-      // Don't retry if we've exhausted retries
-      if (attempt === retries) {
-        throw lastError;
-      }
-
-      // Exponential backoff: 1s, 2s, 4s
-      const delay = RETRY_DELAY_BASE * Math.pow(2, attempt);
-      console.warn(`Request failed, retrying in ${delay}ms (attempt ${attempt + 1}/${retries})`, lastError.message);
-      await sleep(delay);
-    }
-  }
-
-  throw lastError;
-};
 
 // Request interceptor - add retry metadata
 api.interceptors.request.use(
