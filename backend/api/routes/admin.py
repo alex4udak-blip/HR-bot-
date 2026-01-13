@@ -307,6 +307,12 @@ def get_role_permissions(role: str, context: Optional[Dict[str, Any]] = None) ->
             "can_manage_dept_members": is_dept_admin,  # Add/remove members in their dept
             "can_impersonate_users": False,
             "can_access_admin_panel": True,
+            # View permissions
+            "can_view_chats": True,
+            "can_view_contacts": True,
+            "can_view_calls": True,
+            "can_view_vacancies": True,
+            "can_view_departments": True,
         }
 
     elif role == "lead" or role == DeptRole.lead.value:
@@ -326,6 +332,12 @@ def get_role_permissions(role: str, context: Optional[Dict[str, Any]] = None) ->
             "can_manage_dept_members": True,  # Add/remove members in their dept
             "can_impersonate_users": False,
             "can_access_admin_panel": True,
+            # View permissions
+            "can_view_chats": True,
+            "can_view_contacts": True,
+            "can_view_calls": True,
+            "can_view_vacancies": True,
+            "can_view_departments": True,
         }
 
     elif role == "sub_admin" or role == UserRole.sub_admin.value or role == DeptRole.sub_admin.value:
@@ -346,6 +358,12 @@ def get_role_permissions(role: str, context: Optional[Dict[str, Any]] = None) ->
             "can_manage_dept_members": False,  # Cannot manage members
             "can_impersonate_users": False,
             "can_access_admin_panel": True,
+            # View permissions
+            "can_view_chats": True,
+            "can_view_contacts": True,
+            "can_view_calls": True,
+            "can_view_vacancies": True,
+            "can_view_departments": True,
         }
 
     elif role == "member" or role == OrgRole.member.value or role == DeptRole.member.value:
