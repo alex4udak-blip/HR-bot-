@@ -14,7 +14,8 @@ import {
   RotateCcw,
   Bookmark,
   User,
-  X
+  X,
+  Settings
 } from 'lucide-react';
 import * as Select from '@radix-ui/react-select';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -25,6 +26,7 @@ import {
   getDefaultCriteria,
   setDefaultCriteria,
   createCriteriaPreset,
+  deleteCriteriaPreset,
   seedUniversalPresets
 } from '@/services/api';
 import type { Criterion, ChatTypeId } from '@/types';
@@ -62,6 +64,7 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [managePresetsOpen, setManagePresetsOpen] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const queryClient = useQueryClient();
   const { isSuperAdmin } = useAuthStore();
@@ -136,6 +139,17 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
     },
     onError: () => {
       toast.error('Ошибка загрузки шаблонов');
+    },
+  });
+
+  const deletePresetMutation = useMutation({
+    mutationFn: deleteCriteriaPreset,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['criteria-presets'] });
+      toast.success('Шаблон удалён');
+    },
+    onError: () => {
+      toast.error('Ошибка удаления шаблона');
     },
   });
 
@@ -293,6 +307,17 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
             </Select.Root>
           )}
 
+          {/* Manage presets button */}
+          {(globalPresets.length > 0 || personalPresets.length > 0 || isSuperAdmin()) && (
+            <button
+              onClick={() => setManagePresetsOpen(true)}
+              className="p-1.5 rounded-lg glass-light hover:bg-white/10 transition-colors text-dark-400 hover:text-white"
+              title="Управление шаблонами"
+            >
+              <Settings className="w-3.5 h-3.5" />
+            </button>
+          )}
+
           {criteria.length > 0 && (
             <button
               onClick={() => setSaveDialogOpen(true)}
@@ -304,15 +329,15 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
             </button>
           )}
 
-          {isSuperAdmin() && globalPresets.length === 0 && (
+          {isSuperAdmin() && globalPresets.length < 6 && !(globalPresets.length > 0 || personalPresets.length > 0) && (
             <button
               onClick={() => seedUniversalMutation.mutate()}
               disabled={seedUniversalMutation.isPending}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg glass-light text-xs hover:bg-white/10 transition-colors text-green-400"
-              title="Загрузить универсальные шаблоны"
+              title="Загрузить универсальные шаблоны (6 шт)"
             >
               <Globe className="w-3.5 h-3.5" />
-              <span>{seedUniversalMutation.isPending ? '...' : 'Загрузить шаблоны'}</span>
+              <span>{seedUniversalMutation.isPending ? '...' : '+ Шаблоны'}</span>
             </button>
           )}
         </div>
@@ -499,6 +524,112 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
                 {saveAsTemplateMutation.isPending ? 'Сохранение...' : 'Сохранить'}
               </button>
             </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* Manage Presets Dialog */}
+      <Dialog.Root open={managePresetsOpen} onOpenChange={setManagePresetsOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
+          <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 glass rounded-2xl p-6 w-[90%] max-w-md z-50 shadow-xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <Dialog.Title className="text-lg font-semibold">
+                Управление шаблонами
+              </Dialog.Title>
+              <Dialog.Close className="p-2 rounded-lg hover:bg-white/10 transition-colors">
+                <X className="w-4 h-4" />
+              </Dialog.Close>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-4">
+              {/* Global presets */}
+              {globalPresets.length > 0 && (
+                <div>
+                  <div className="text-xs text-dark-500 flex items-center gap-1.5 mb-2">
+                    <Globe className="w-3 h-3" />
+                    Общие шаблоны
+                  </div>
+                  <div className="space-y-2">
+                    {globalPresets.map((preset) => (
+                      <div
+                        key={preset.id}
+                        className="flex items-center justify-between glass-light rounded-lg p-3"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{preset.name}</p>
+                          {preset.description && (
+                            <p className="text-xs text-dark-400 truncate">{preset.description}</p>
+                          )}
+                        </div>
+                        {isSuperAdmin() && (
+                          <button
+                            onClick={() => deletePresetMutation.mutate(preset.id)}
+                            disabled={deletePresetMutation.isPending}
+                            className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors ml-2 flex-shrink-0"
+                            title="Удалить шаблон"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Personal presets */}
+              {personalPresets.length > 0 && (
+                <div>
+                  <div className="text-xs text-dark-500 flex items-center gap-1.5 mb-2">
+                    <User className="w-3 h-3" />
+                    Мои шаблоны
+                  </div>
+                  <div className="space-y-2">
+                    {personalPresets.map((preset) => (
+                      <div
+                        key={preset.id}
+                        className="flex items-center justify-between glass-light rounded-lg p-3"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{preset.name}</p>
+                          {preset.description && (
+                            <p className="text-xs text-dark-400 truncate">{preset.description}</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => deletePresetMutation.mutate(preset.id)}
+                          disabled={deletePresetMutation.isPending}
+                          className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors ml-2 flex-shrink-0"
+                          title="Удалить шаблон"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {globalPresets.length === 0 && personalPresets.length === 0 && (
+                <div className="text-center py-8 text-dark-400">
+                  <p>Нет сохранённых шаблонов</p>
+                </div>
+              )}
+            </div>
+
+            {isSuperAdmin() && globalPresets.length < 6 && (
+              <div className="pt-4 border-t border-white/10 mt-4">
+                <button
+                  onClick={() => seedUniversalMutation.mutate()}
+                  disabled={seedUniversalMutation.isPending}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50 transition-colors"
+                >
+                  <Globe className="w-4 h-4" />
+                  {seedUniversalMutation.isPending ? 'Загрузка...' : 'Загрузить универсальные шаблоны'}
+                </button>
+              </div>
+            )}
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
