@@ -132,7 +132,7 @@ export default function VacanciesPage() {
   } = useVacancyStore();
 
   // Currency rates for salary conversion during filtering
-  const { getComparableSalary, isLoading: ratesLoading } = useCurrencyRates();
+  const { getComparableSalary } = useCurrencyRates();
 
   // Modal state check for keyboard shortcut handlers
   const isAnyModalOpen = showCreateModal || !!editingVacancy || showParserModal;
