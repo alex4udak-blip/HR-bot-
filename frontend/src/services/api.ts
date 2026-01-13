@@ -174,6 +174,31 @@ export const updateChatCriteria = async (chatId: number, criteria: { name: strin
   return data;
 };
 
+// Default criteria by chat type
+export interface DefaultCriteriaResponse {
+  chat_type: string;
+  criteria: { name: string; description: string; weight: number; category: string }[];
+  is_custom: boolean;
+  preset_id: number | null;
+}
+
+export const getDefaultCriteria = async (chatType: string): Promise<DefaultCriteriaResponse> => {
+  const { data } = await api.get(`/criteria/defaults/${chatType}`);
+  return data;
+};
+
+export const setDefaultCriteria = async (
+  chatType: string,
+  criteria: { name: string; description: string; weight: number; category: string }[]
+): Promise<DefaultCriteriaResponse> => {
+  const { data } = await api.put(`/criteria/defaults/${chatType}`, { criteria });
+  return data;
+};
+
+export const resetDefaultCriteria = async (chatType: string): Promise<void> => {
+  await api.delete(`/criteria/defaults/${chatType}`);
+};
+
 // AI
 export const getAIHistory = async (chatId: number): Promise<AIConversation> => {
   const { data } = await api.get(`/chats/${chatId}/ai/history`);

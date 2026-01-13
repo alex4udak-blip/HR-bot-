@@ -863,7 +863,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
 
         {/* Criteria Tab */}
         <Tabs.Content value="criteria" className="flex-1 overflow-y-auto">
-          <CriteriaPanel chatId={chat.id} />
+          <CriteriaPanel chatId={chat.id} chatType={chat.chat_type} />
         </Tabs.Content>
 
         {/* Reports Tab */}

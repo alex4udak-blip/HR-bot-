@@ -8,44 +8,55 @@ import {
   ChevronDown,
   AlertCircle,
   CheckCircle,
-  Target
+  Target,
+  TrendingUp,
+  Globe,
+  RotateCcw
 } from 'lucide-react';
 import * as Select from '@radix-ui/react-select';
 import {
   getChatCriteria,
   updateChatCriteria,
-  getCriteriaPresets
+  getCriteriaPresets,
+  getDefaultCriteria,
+  setDefaultCriteria
 } from '@/services/api';
-import type { Criterion } from '@/types';
+import type { Criterion, ChatTypeId } from '@/types';
+import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
 interface CriteriaPanelProps {
   chatId: number;
+  chatType?: ChatTypeId;
 }
 
 const categoryIcons = {
   basic: Target,
   red_flags: AlertCircle,
   green_flags: CheckCircle,
+  potential: TrendingUp,
 };
 
 const categoryColors = {
   basic: 'text-blue-400 bg-blue-500/20',
   red_flags: 'text-red-400 bg-red-500/20',
   green_flags: 'text-green-400 bg-green-500/20',
+  potential: 'text-purple-400 bg-purple-500/20',
 };
 
 const categoryLabels = {
   basic: 'Основные',
   red_flags: 'Негативные',
   green_flags: 'Позитивные',
+  potential: 'Потенциал',
 };
 
-export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
+export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) {
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
   const queryClient = useQueryClient();
+  const { isSuperAdmin } = useAuthStore();
 
   const { data: chatCriteria, isLoading } = useQuery({
     queryKey: ['chat-criteria', chatId],
@@ -74,6 +85,33 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
       toast.error('Ошибка сохранения');
     },
   });
+
+  const saveAsDefaultMutation = useMutation({
+    mutationFn: () => setDefaultCriteria(chatType!, criteria),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['default-criteria', chatType] });
+      toast.success('Сохранено как критерии по умолчанию');
+    },
+    onError: () => {
+      toast.error('Ошибка сохранения');
+    },
+  });
+
+  const handleLoadDefaults = async () => {
+    if (!chatType) return;
+    try {
+      const defaults = await getDefaultCriteria(chatType);
+      if (defaults.criteria.length > 0) {
+        setCriteria(defaults.criteria as Criterion[]);
+        setHasChanges(true);
+        toast.success(defaults.is_custom ? 'Загружены пользовательские критерии' : 'Загружены стандартные критерии');
+      } else {
+        toast.error('Нет критериев по умолчанию для этого типа');
+      }
+    } catch {
+      toast.error('Ошибка загрузки критериев');
+    }
+  };
 
   const handleAddCriterion = () => {
     setCriteria([
@@ -127,7 +165,17 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
             {criteria.length} {criteria.length === 1 ? 'критерий' : criteria.length < 5 ? 'критерия' : 'критериев'}
           </p>
         </div>
-        <div className="flex gap-2 flex-shrink-0">
+        <div className="flex gap-2 flex-shrink-0 flex-wrap">
+          {chatType && (
+            <button
+              onClick={handleLoadDefaults}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg glass-light text-sm hover:bg-white/10 transition-colors"
+              title="Загрузить критерии по умолчанию"
+            >
+              <RotateCcw className="w-4 h-4" />
+              По умолчанию
+            </button>
+          )}
           {presets.length > 0 && (
             <Select.Root onValueChange={handleApplyPreset}>
               <Select.Trigger className="flex items-center gap-2 px-3 py-2 rounded-lg glass-light text-sm hover:bg-white/10 transition-colors">
@@ -260,12 +308,12 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
         </AnimatePresence>
       </div>
 
-      {/* Save Button */}
+      {/* Save Buttons */}
       {hasChanges && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="sticky bottom-0 pt-4"
+          className="sticky bottom-0 pt-4 space-y-2"
         >
           <button
             onClick={() => saveMutation.mutate()}
@@ -275,6 +323,28 @@ export default function CriteriaPanel({ chatId }: CriteriaPanelProps) {
             <Save className="w-4 h-4" />
             {saveMutation.isPending ? 'Сохранение...' : 'Сохранить'}
           </button>
+        </motion.div>
+      )}
+
+      {/* Save as Default Button - Superadmin only */}
+      {isSuperAdmin() && chatType && criteria.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="pt-2 border-t border-white/10"
+        >
+          <button
+            onClick={() => saveAsDefaultMutation.mutate()}
+            disabled={saveAsDefaultMutation.isPending}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl glass-light text-sm hover:bg-white/10 disabled:opacity-50 transition-colors"
+            title={`Сохранить как критерии по умолчанию для всех чатов типа "${chatType}"`}
+          >
+            <Globe className="w-4 h-4" />
+            {saveAsDefaultMutation.isPending ? 'Сохранение...' : 'Сохранить как глобальные'}
+          </button>
+          <p className="text-xs text-dark-500 text-center mt-1">
+            Эти критерии будут применяться ко всем новым чатам типа «{chatType}»
+          </p>
         </motion.div>
       )}
     </div>
