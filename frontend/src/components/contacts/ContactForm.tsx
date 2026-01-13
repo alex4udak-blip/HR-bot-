@@ -8,6 +8,7 @@ import { ENTITY_TYPES, STATUS_LABELS } from '@/types';
 
 interface ContactFormProps {
   entity?: Entity | null;
+  prefillData?: Partial<Entity>;
   defaultType?: EntityType;
   onClose: () => void;
   onSuccess: (entity: Entity) => void;
@@ -22,22 +23,25 @@ const ENTITY_TYPE_OPTIONS: { id: EntityType; icon: typeof User }[] = [
   { id: 'custom', icon: User },
 ];
 
-export default function ContactForm({ entity, defaultType, onClose, onSuccess }: ContactFormProps) {
+export default function ContactForm({ entity, prefillData, defaultType, onClose, onSuccess }: ContactFormProps) {
   const { createEntity, updateEntity, loading } = useEntityStore();
 
+  // Use prefillData when creating new entity, entity when editing
+  const initialData = entity || prefillData;
+
   const [formData, setFormData] = useState({
-    type: (entity?.type || defaultType || 'candidate') as EntityType,
-    name: entity?.name || '',
+    type: (initialData?.type || defaultType || 'candidate') as EntityType,
+    name: initialData?.name || '',
     status: (entity?.status || 'new') as EntityStatus,
-    phone: entity?.phone || '',
-    email: entity?.email || '',
+    phone: initialData?.phone || '',
+    email: initialData?.email || '',
     // Multiple identifiers (comma-separated in UI, array in API)
-    telegram_usernames: entity?.telegram_usernames?.join(', ') || '',
-    emails: entity?.emails?.join(', ') || '',
-    phones: entity?.phones?.join(', ') || '',
-    company: entity?.company || '',
-    position: entity?.position || '',
-    tags: entity?.tags?.join(', ') || ''
+    telegram_usernames: initialData?.telegram_usernames?.join(', ') || '',
+    emails: initialData?.emails?.join(', ') || '',
+    phones: initialData?.phones?.join(', ') || '',
+    company: initialData?.company || '',
+    position: initialData?.position || '',
+    tags: initialData?.tags?.join(', ') || ''
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});

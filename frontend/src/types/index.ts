@@ -238,6 +238,10 @@ export interface Entity {
   updated_at: string;
   chats_count?: number;
   calls_count?: number;
+  // Expected salary for candidates
+  expected_salary_min?: number;
+  expected_salary_max?: number;
+  expected_salary_currency?: string;
 }
 
 export interface EntityWithRelations extends Entity {
@@ -608,3 +612,35 @@ export const EXPERIENCE_LEVELS = [
   { value: 'lead', label: 'Lead' },
   { value: 'manager', label: 'Manager' }
 ];
+
+// === Multi-currency Support ===
+
+export const CURRENCIES = [
+  { code: 'RUB', symbol: '₽', name: 'Российский рубль' },
+  { code: 'USD', symbol: '$', name: 'Доллар США' },
+  { code: 'EUR', symbol: '€', name: 'Евро' },
+  { code: 'KZT', symbol: '₸', name: 'Казахстанский тенге' },
+  { code: 'UAH', symbol: '₴', name: 'Украинская гривна' },
+  { code: 'BYN', symbol: 'Br', name: 'Белорусский рубль' },
+  { code: 'GEL', symbol: '₾', name: 'Грузинский лари' },
+  { code: 'AED', symbol: 'د.إ', name: 'Дирхам ОАЭ' },
+  { code: 'TRY', symbol: '₺', name: 'Турецкая лира' },
+  { code: 'GBP', symbol: '£', name: 'Фунт стерлингов' },
+] as const;
+
+export type CurrencyCode = typeof CURRENCIES[number]['code'];
+
+export const formatSalary = (
+  min?: number,
+  max?: number,
+  currency: CurrencyCode | string = 'RUB'
+): string => {
+  const curr = CURRENCIES.find(c => c.code === currency);
+  const symbol = curr?.symbol || currency;
+  const formatter = new Intl.NumberFormat('ru-RU');
+
+  if (min && max) return `${formatter.format(min)} - ${formatter.format(max)} ${symbol}`;
+  if (min) return `от ${formatter.format(min)} ${symbol}`;
+  if (max) return `до ${formatter.format(max)} ${symbol}`;
+  return 'Не указана';
+};

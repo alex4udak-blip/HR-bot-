@@ -807,14 +807,15 @@ class DepartmentFeature(Base):
 
 
 class EntityFile(Base):
-    """File attached to an entity (resume, cover letter, test assignment, etc.)"""
+    """Files attached to an entity (resumes, certificates, etc.)"""
     __tablename__ = "entity_files"
 
     id = Column(Integer, primary_key=True)
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     file_type = Column(SQLEnum(EntityFileType), default=EntityFileType.other)
     file_name = Column(String(255), nullable=False)
-    file_path = Column(String(500), nullable=False)
+    file_path = Column(String(512), nullable=False)
     file_size = Column(Integer, nullable=True)  # Size in bytes
     mime_type = Column(String(100), nullable=True)
     description = Column(String(500), nullable=True)
@@ -823,4 +824,5 @@ class EntityFile(Base):
 
     # Relationships
     entity = relationship("Entity", back_populates="files")
+    organization = relationship("Organization")
     uploader = relationship("User")

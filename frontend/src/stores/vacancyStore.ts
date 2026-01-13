@@ -45,6 +45,7 @@ interface VacancyState {
 
   // Actions - Applications
   addCandidateToVacancy: (vacancyId: number, entityId: number, source?: string) => Promise<VacancyApplication>;
+  addCandidateFromEntity: (entityId: number, vacancyId: number, source?: string) => Promise<VacancyApplication>;
   updateApplication: (applicationId: number, data: api.ApplicationUpdate) => Promise<void>;
   removeApplication: (applicationId: number) => Promise<void>;
 
@@ -269,6 +270,37 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
       return application;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to add candidate';
+      set({ error: message });
+      throw err;
+    }
+  },
+
+  addCandidateFromEntity: async (entityId, vacancyId, source) => {
+    try {
+      const application = await api.applyEntityToVacancy(entityId, vacancyId, source);
+
+      // Refresh kanban if viewing this vacancy
+      const { kanbanBoard } = get();
+      if (kanbanBoard?.vacancy_id === vacancyId) {
+        get().fetchKanbanBoard(vacancyId);
+      }
+
+      // Update vacancy applications count
+      set((state) => ({
+        vacancies: state.vacancies.map((v) =>
+          v.id === vacancyId
+            ? { ...v, applications_count: v.applications_count + 1 }
+            : v
+        ),
+        currentVacancy:
+          state.currentVacancy?.id === vacancyId
+            ? { ...state.currentVacancy, applications_count: state.currentVacancy.applications_count + 1 }
+            : state.currentVacancy
+      }));
+
+      return application;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to add candidate from entity';
       set({ error: message });
       throw err;
     }

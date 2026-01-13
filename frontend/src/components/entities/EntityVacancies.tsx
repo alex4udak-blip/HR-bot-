@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Briefcase, Clock, ExternalLink, Loader2 } from 'lucide-react';
+import { Briefcase, Clock, ExternalLink } from 'lucide-react';
 import clsx from 'clsx';
 import { getEntityVacancies } from '@/services/api';
 import type { VacancyApplication } from '@/types';
 import { APPLICATION_STAGE_LABELS, APPLICATION_STAGE_COLORS } from '@/types';
+import { ListSkeleton, EmptyState } from '@/components/ui';
 
 interface EntityVacanciesProps {
   entityId: number;
@@ -50,29 +51,28 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
-      </div>
-    );
+    return <ListSkeleton count={3} />;
   }
 
   if (error) {
     return (
-      <div className="text-center py-12 text-white/40">
-        <Briefcase className="mx-auto mb-2" size={40} />
-        <p>{error}</p>
-      </div>
+      <EmptyState
+        icon={Briefcase}
+        title="Ошибка загрузки"
+        description={error}
+        size="sm"
+      />
     );
   }
 
   if (applications.length === 0) {
     return (
-      <div className="text-center py-12 text-white/40">
-        <Briefcase className="mx-auto mb-2" size={40} />
-        <p>Нет связанных вакансий</p>
-        <p className="text-sm mt-1">Добавьте кандидата в вакансию</p>
-      </div>
+      <EmptyState
+        icon={Briefcase}
+        title="Нет связанных вакансий"
+        description="Добавьте кандидата в вакансию"
+        size="sm"
+      />
     );
   }
 

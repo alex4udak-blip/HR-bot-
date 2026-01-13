@@ -13,7 +13,8 @@ import {
   Edit,
   Trash2,
   LayoutGrid,
-  List
+  List,
+  Upload
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -22,13 +23,22 @@ import type { Vacancy, VacancyStatus } from '@/types';
 import {
   VACANCY_STATUS_LABELS,
   VACANCY_STATUS_COLORS,
-  EMPLOYMENT_TYPES
+  EMPLOYMENT_TYPES,
+  formatSalary
 } from '@/types';
 import { getDepartments } from '@/services/api';
-import type { Department } from '@/services/api';
+import type { Department, ParsedVacancy } from '@/services/api';
 import VacancyForm from '@/components/vacancies/VacancyForm';
 import VacancyDetail from '@/components/vacancies/VacancyDetail';
 import KanbanBoard from '@/components/vacancies/KanbanBoard';
+import ParserModal from '@/components/parser/ParserModal';
+import {
+  ContextMenu,
+  createVacancyContextMenu,
+  NoVacanciesEmpty,
+  VacancyCardSkeleton,
+  KeyboardShortcuts
+} from '@/components/ui';
 
 const STATUS_FILTERS: { id: VacancyStatus | 'all'; name: string }[] = [
   { id: 'all', name: 'Все' },
@@ -50,6 +60,8 @@ export default function VacanciesPage() {
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingVacancy, setEditingVacancy] = useState<Vacancy | null>(null);
+  const [showParserModal, setShowParserModal] = useState(false);
+  const [prefillData, setPrefillData] = useState<Partial<Vacancy> | null>(null);
 
   const {
     vacancies,
@@ -119,15 +131,43 @@ export default function VacanciesPage() {
     }
   };
 
-  const formatSalary = (min?: number, max?: number, currency = 'RUB') => {
-    if (!min && !max) return null;
-    const formatter = new Intl.NumberFormat('ru-RU');
-    if (min && max) {
-      return `${formatter.format(min)} - ${formatter.format(max)} ${currency}`;
+  const handleCopyLink = (vacancy: Vacancy) => {
+    const url = `${window.location.origin}/vacancies/${vacancy.id}`;
+    navigator.clipboard.writeText(url);
+    toast.success('Ссылка скопирована');
+  };
+
+  const handleKeyboardShortcut = (key: string) => {
+    if (key === 'N') {
+      setShowCreateModal(true);
+    } else if (key === 'K' && currentVacancy) {
+      setViewMode(viewMode === 'list' ? 'kanban' : 'list');
     }
-    if (min) return `от ${formatter.format(min)} ${currency}`;
-    if (max) return `до ${formatter.format(max)} ${currency}`;
-    return null;
+  };
+
+  const getSalaryDisplay = (vacancy: Vacancy) => {
+    if (!vacancy.salary_min && !vacancy.salary_max) return null;
+    return formatSalary(vacancy.salary_min, vacancy.salary_max, vacancy.salary_currency);
+  };
+
+  const handleParsedVacancy = (data: ParsedVacancy) => {
+    // Convert parsed vacancy to prefill data for the form
+    const prefill: Partial<Vacancy> = {
+      title: data.title,
+      description: data.description,
+      requirements: data.requirements,
+      responsibilities: data.responsibilities,
+      salary_min: data.salary_min,
+      salary_max: data.salary_max,
+      salary_currency: data.salary_currency || 'RUB',
+      location: data.location,
+      employment_type: data.employment_type,
+      experience_level: data.experience_level,
+    };
+    setPrefillData(prefill);
+    setShowParserModal(false);
+    setShowCreateModal(true);
+    toast.success('Данные распознаны');
   };
 
   // Detail view
@@ -196,13 +236,25 @@ export default function VacanciesPage() {
             <Briefcase className="w-7 h-7 text-blue-400" />
             Вакансии
           </h1>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            Новая вакансия
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowParserModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
+            >
+              <Upload className="w-4 h-4" />
+              Импорт
+            </button>
+            <button
+              onClick={() => {
+                setPrefillData(null);
+                setShowCreateModal(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              Новая вакансия
+            </button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -256,100 +308,107 @@ export default function VacanciesPage() {
       {/* Vacancies list */}
       <div className="flex-1 overflow-auto p-4">
         {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <VacancyCardSkeleton key={i} />
+            ))}
           </div>
         ) : vacancies.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-white/40">
-            <Briefcase className="w-16 h-16 mb-4" />
-            <p className="text-lg">Нет вакансий</p>
-            <p className="text-sm">Создайте первую вакансию</p>
-          </div>
+          <NoVacanciesEmpty onCreate={() => setShowCreateModal(true)} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <AnimatePresence mode="popLayout">
               {vacancies.map((vacancy) => (
-                <motion.div
+                <ContextMenu
                   key={vacancy.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  onClick={() => handleVacancyClick(vacancy)}
-                  className="p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl cursor-pointer transition-colors group"
+                  items={createVacancyContextMenu(
+                    () => handleVacancyClick(vacancy),
+                    () => setEditingVacancy(vacancy),
+                    () => handleDelete(vacancy),
+                    () => handleCopyLink(vacancy)
+                  )}
                 >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-lg truncate">{vacancy.title}</h3>
-                      <span className={clsx('text-xs px-2 py-0.5 rounded-full', VACANCY_STATUS_COLORS[vacancy.status])}>
-                        {VACANCY_STATUS_LABELS[vacancy.status]}
-                      </span>
-                    </div>
-                    {vacancy.priority > 0 && (
-                      <span className={clsx(
-                        'text-xs px-2 py-0.5 rounded-full',
-                        vacancy.priority === 2 ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'
-                      )}>
-                        {vacancy.priority === 2 ? 'Срочно' : 'Важно'}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Info */}
-                  <div className="space-y-2 text-sm text-white/60">
-                    {vacancy.location && (
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-4 h-4" />
-                        <span>{vacancy.location}</span>
-                      </div>
-                    )}
-                    {formatSalary(vacancy.salary_min, vacancy.salary_max, vacancy.salary_currency) && (
-                      <div className="flex items-center gap-2">
-                        <DollarSign className="w-4 h-4" />
-                        <span>{formatSalary(vacancy.salary_min, vacancy.salary_max, vacancy.salary_currency)}</span>
-                      </div>
-                    )}
-                    {vacancy.employment_type && (
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4" />
-                        <span>{EMPLOYMENT_TYPES.find(t => t.value === vacancy.employment_type)?.label || vacancy.employment_type}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Stats */}
-                  <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Users className="w-4 h-4 text-blue-400" />
-                      <span>{vacancy.applications_count} кандидатов</span>
-                    </div>
-                    {Object.keys(vacancy.stage_counts).length > 0 && (
-                      <div className="flex items-center gap-1">
-                        {Object.entries(vacancy.stage_counts).slice(0, 3).map(([stage, count]) => (
-                          <span key={stage} className="text-xs px-1.5 py-0.5 bg-white/5 rounded">
-                            {count}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Tags */}
-                  {vacancy.tags.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-1">
-                      {vacancy.tags.slice(0, 4).map((tag) => (
-                        <span key={tag} className="text-xs px-2 py-0.5 bg-white/5 rounded-full">
-                          {tag}
+                  <motion.div
+                    layout
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    onClick={() => handleVacancyClick(vacancy)}
+                    className="p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl cursor-pointer transition-colors group"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-lg truncate">{vacancy.title}</h3>
+                        <span className={clsx('text-xs px-2 py-0.5 rounded-full', VACANCY_STATUS_COLORS[vacancy.status])}>
+                          {VACANCY_STATUS_LABELS[vacancy.status]}
                         </span>
-                      ))}
-                      {vacancy.tags.length > 4 && (
-                        <span className="text-xs px-2 py-0.5 text-white/40">
-                          +{vacancy.tags.length - 4}
+                      </div>
+                      {vacancy.priority > 0 && (
+                        <span className={clsx(
+                          'text-xs px-2 py-0.5 rounded-full',
+                          vacancy.priority === 2 ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'
+                        )}>
+                          {vacancy.priority === 2 ? 'Срочно' : 'Важно'}
                         </span>
                       )}
                     </div>
-                  )}
-                </motion.div>
+
+                    {/* Info */}
+                    <div className="space-y-2 text-sm text-white/60">
+                      {vacancy.location && (
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-4 h-4" />
+                          <span>{vacancy.location}</span>
+                        </div>
+                      )}
+                      {getSalaryDisplay(vacancy) && (
+                        <div className="flex items-center gap-2">
+                          <DollarSign className="w-4 h-4" />
+                          <span>{getSalaryDisplay(vacancy)}</span>
+                        </div>
+                      )}
+                      {vacancy.employment_type && (
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4" />
+                          <span>{EMPLOYMENT_TYPES.find(t => t.value === vacancy.employment_type)?.label || vacancy.employment_type}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Stats */}
+                    <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Users className="w-4 h-4 text-blue-400" />
+                        <span>{vacancy.applications_count} кандидатов</span>
+                      </div>
+                      {Object.keys(vacancy.stage_counts).length > 0 && (
+                        <div className="flex items-center gap-1">
+                          {Object.entries(vacancy.stage_counts).slice(0, 3).map(([stage, count]) => (
+                            <span key={stage} className="text-xs px-1.5 py-0.5 bg-white/5 rounded">
+                              {count}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tags */}
+                    {vacancy.tags.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1">
+                        {vacancy.tags.slice(0, 4).map((tag) => (
+                          <span key={tag} className="text-xs px-2 py-0.5 bg-white/5 rounded-full">
+                            {tag}
+                          </span>
+                        ))}
+                        {vacancy.tags.length > 4 && (
+                          <span className="text-xs px-2 py-0.5 text-white/40">
+                            +{vacancy.tags.length - 4}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </motion.div>
+                </ContextMenu>
               ))}
             </AnimatePresence>
           </div>
@@ -361,18 +420,43 @@ export default function VacanciesPage() {
         {(showCreateModal || editingVacancy) && (
           <VacancyForm
             vacancy={editingVacancy || undefined}
+            prefillData={prefillData || undefined}
             onClose={() => {
               setShowCreateModal(false);
               setEditingVacancy(null);
+              setPrefillData(null);
             }}
             onSuccess={() => {
               setShowCreateModal(false);
               setEditingVacancy(null);
+              setPrefillData(null);
               fetchVacancies();
             }}
           />
         )}
       </AnimatePresence>
+
+      {/* Parser Modal */}
+      <AnimatePresence>
+        {showParserModal && (
+          <ParserModal
+            type="vacancy"
+            onClose={() => setShowParserModal(false)}
+            onParsed={(data) => handleParsedVacancy(data as ParsedVacancy)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Keyboard Shortcuts */}
+      <KeyboardShortcuts
+        onShortcut={handleKeyboardShortcut}
+        shortcuts={[
+          { key: '?', description: 'Показать горячие клавиши', global: true },
+          { key: 'Esc', description: 'Закрыть модальное окно', global: true },
+          { key: '/', description: 'Фокус на поиск', global: true },
+          { key: 'N', description: 'Создать вакансию' },
+        ]}
+      />
     </div>
   );
 }
