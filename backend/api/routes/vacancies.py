@@ -1,0 +1,914 @@
+"""
+API routes for vacancy management and candidate pipeline (Kanban board).
+"""
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select, func, or_, and_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from typing import Optional, List, Literal
+from datetime import datetime
+from pydantic import BaseModel
+import logging
+
+logger = logging.getLogger("hr-analyzer.vacancies")
+
+from ..database import get_db
+from ..models.database import (
+    Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
+    Entity, EntityType, User, Organization, Department
+)
+from ..services.auth import get_current_user, get_user_org
+
+router = APIRouter()
+
+
+# === Pydantic Schemas ===
+
+class VacancyCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    requirements: Optional[str] = None
+    responsibilities: Optional[str] = None
+    salary_min: Optional[int] = None
+    salary_max: Optional[int] = None
+    salary_currency: str = "RUB"
+    location: Optional[str] = None
+    employment_type: Optional[str] = None
+    experience_level: Optional[str] = None
+    status: VacancyStatus = VacancyStatus.draft
+    priority: int = 0
+    tags: List[str] = []
+    extra_data: dict = {}
+    department_id: Optional[int] = None
+    hiring_manager_id: Optional[int] = None
+    closes_at: Optional[datetime] = None
+
+
+class VacancyUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    requirements: Optional[str] = None
+    responsibilities: Optional[str] = None
+    salary_min: Optional[int] = None
+    salary_max: Optional[int] = None
+    salary_currency: Optional[str] = None
+    location: Optional[str] = None
+    employment_type: Optional[str] = None
+    experience_level: Optional[str] = None
+    status: Optional[VacancyStatus] = None
+    priority: Optional[int] = None
+    tags: Optional[List[str]] = None
+    extra_data: Optional[dict] = None
+    department_id: Optional[int] = None
+    hiring_manager_id: Optional[int] = None
+    closes_at: Optional[datetime] = None
+
+
+class VacancyResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    requirements: Optional[str] = None
+    responsibilities: Optional[str] = None
+    salary_min: Optional[int] = None
+    salary_max: Optional[int] = None
+    salary_currency: str = "RUB"
+    location: Optional[str] = None
+    employment_type: Optional[str] = None
+    experience_level: Optional[str] = None
+    status: VacancyStatus
+    priority: int = 0
+    tags: List[str] = []
+    extra_data: dict = {}
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
+    hiring_manager_id: Optional[int] = None
+    hiring_manager_name: Optional[str] = None
+    created_by: Optional[int] = None
+    published_at: Optional[datetime] = None
+    closes_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    applications_count: int = 0
+    # Stage counts for quick overview
+    stage_counts: dict = {}
+
+    class Config:
+        from_attributes = True
+
+
+class ApplicationCreate(BaseModel):
+    vacancy_id: int
+    entity_id: int
+    stage: ApplicationStage = ApplicationStage.applied
+    rating: Optional[int] = None
+    notes: Optional[str] = None
+    source: Optional[str] = None
+
+
+class ApplicationUpdate(BaseModel):
+    stage: Optional[ApplicationStage] = None
+    stage_order: Optional[int] = None
+    rating: Optional[int] = None
+    notes: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    next_interview_at: Optional[datetime] = None
+
+
+class ApplicationResponse(BaseModel):
+    id: int
+    vacancy_id: int
+    vacancy_title: Optional[str] = None
+    entity_id: int
+    entity_name: Optional[str] = None
+    entity_type: Optional[EntityType] = None
+    entity_email: Optional[str] = None
+    entity_phone: Optional[str] = None
+    entity_position: Optional[str] = None
+    stage: ApplicationStage
+    stage_order: int = 0
+    rating: Optional[int] = None
+    notes: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    source: Optional[str] = None
+    next_interview_at: Optional[datetime] = None
+    applied_at: datetime
+    last_stage_change_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class KanbanColumn(BaseModel):
+    stage: ApplicationStage
+    title: str
+    applications: List[ApplicationResponse]
+    count: int
+
+
+class KanbanBoard(BaseModel):
+    vacancy_id: int
+    vacancy_title: str
+    columns: List[KanbanColumn]
+    total_count: int
+
+
+class BulkStageUpdate(BaseModel):
+    application_ids: List[int]
+    stage: ApplicationStage
+
+
+# === Vacancy CRUD Endpoints ===
+
+@router.get("/", response_model=List[VacancyResponse])
+async def list_vacancies(
+    status: Optional[VacancyStatus] = None,
+    department_id: Optional[int] = None,
+    search: Optional[str] = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List all vacancies with optional filters."""
+    org = await get_user_org(current_user, db)
+
+    query = select(Vacancy).where(Vacancy.org_id == org.id if org else True)
+
+    if status:
+        query = query.where(Vacancy.status == status)
+    if department_id:
+        query = query.where(Vacancy.department_id == department_id)
+    if search:
+        search_term = f"%{search}%"
+        query = query.where(
+            or_(
+                Vacancy.title.ilike(search_term),
+                Vacancy.description.ilike(search_term),
+                Vacancy.location.ilike(search_term)
+            )
+        )
+
+    query = query.order_by(Vacancy.priority.desc(), Vacancy.created_at.desc())
+    query = query.offset(skip).limit(limit)
+
+    result = await db.execute(query)
+    vacancies = result.scalars().all()
+
+    # Enrich with counts and related data
+    responses = []
+    for vacancy in vacancies:
+        # Get department name
+        dept_name = None
+        if vacancy.department_id:
+            dept_result = await db.execute(
+                select(Department.name).where(Department.id == vacancy.department_id)
+            )
+            dept_name = dept_result.scalar()
+
+        # Get hiring manager name
+        manager_name = None
+        if vacancy.hiring_manager_id:
+            manager_result = await db.execute(
+                select(User.name).where(User.id == vacancy.hiring_manager_id)
+            )
+            manager_name = manager_result.scalar()
+
+        # Get application counts by stage
+        stage_counts_result = await db.execute(
+            select(
+                VacancyApplication.stage,
+                func.count(VacancyApplication.id)
+            )
+            .where(VacancyApplication.vacancy_id == vacancy.id)
+            .group_by(VacancyApplication.stage)
+        )
+        stage_counts = {str(row[0].value): row[1] for row in stage_counts_result.all()}
+
+        total_apps = sum(stage_counts.values())
+
+        responses.append(VacancyResponse(
+            id=vacancy.id,
+            title=vacancy.title,
+            description=vacancy.description,
+            requirements=vacancy.requirements,
+            responsibilities=vacancy.responsibilities,
+            salary_min=vacancy.salary_min,
+            salary_max=vacancy.salary_max,
+            salary_currency=vacancy.salary_currency or "RUB",
+            location=vacancy.location,
+            employment_type=vacancy.employment_type,
+            experience_level=vacancy.experience_level,
+            status=vacancy.status,
+            priority=vacancy.priority or 0,
+            tags=vacancy.tags or [],
+            extra_data=vacancy.extra_data or {},
+            department_id=vacancy.department_id,
+            department_name=dept_name,
+            hiring_manager_id=vacancy.hiring_manager_id,
+            hiring_manager_name=manager_name,
+            created_by=vacancy.created_by,
+            published_at=vacancy.published_at,
+            closes_at=vacancy.closes_at,
+            created_at=vacancy.created_at,
+            updated_at=vacancy.updated_at,
+            applications_count=total_apps,
+            stage_counts=stage_counts
+        ))
+
+    return responses
+
+
+@router.post("/", response_model=VacancyResponse, status_code=201)
+async def create_vacancy(
+    data: VacancyCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new vacancy."""
+    org = await get_user_org(current_user, db)
+
+    vacancy = Vacancy(
+        org_id=org.id if org else None,
+        title=data.title,
+        description=data.description,
+        requirements=data.requirements,
+        responsibilities=data.responsibilities,
+        salary_min=data.salary_min,
+        salary_max=data.salary_max,
+        salary_currency=data.salary_currency,
+        location=data.location,
+        employment_type=data.employment_type,
+        experience_level=data.experience_level,
+        status=data.status,
+        priority=data.priority,
+        tags=data.tags,
+        extra_data=data.extra_data,
+        department_id=data.department_id,
+        hiring_manager_id=data.hiring_manager_id,
+        closes_at=data.closes_at,
+        created_by=current_user.id,
+        published_at=datetime.utcnow() if data.status == VacancyStatus.open else None
+    )
+
+    db.add(vacancy)
+    await db.commit()
+    await db.refresh(vacancy)
+
+    logger.info(f"Created vacancy {vacancy.id}: {vacancy.title}")
+
+    return VacancyResponse(
+        id=vacancy.id,
+        title=vacancy.title,
+        description=vacancy.description,
+        requirements=vacancy.requirements,
+        responsibilities=vacancy.responsibilities,
+        salary_min=vacancy.salary_min,
+        salary_max=vacancy.salary_max,
+        salary_currency=vacancy.salary_currency or "RUB",
+        location=vacancy.location,
+        employment_type=vacancy.employment_type,
+        experience_level=vacancy.experience_level,
+        status=vacancy.status,
+        priority=vacancy.priority or 0,
+        tags=vacancy.tags or [],
+        extra_data=vacancy.extra_data or {},
+        department_id=vacancy.department_id,
+        hiring_manager_id=vacancy.hiring_manager_id,
+        created_by=vacancy.created_by,
+        published_at=vacancy.published_at,
+        closes_at=vacancy.closes_at,
+        created_at=vacancy.created_at,
+        updated_at=vacancy.updated_at,
+        applications_count=0,
+        stage_counts={}
+    )
+
+
+@router.get("/{vacancy_id}", response_model=VacancyResponse)
+async def get_vacancy(
+    vacancy_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a single vacancy by ID."""
+    result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id)
+    )
+    vacancy = result.scalar()
+
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Get department name
+    dept_name = None
+    if vacancy.department_id:
+        dept_result = await db.execute(
+            select(Department.name).where(Department.id == vacancy.department_id)
+        )
+        dept_name = dept_result.scalar()
+
+    # Get hiring manager name
+    manager_name = None
+    if vacancy.hiring_manager_id:
+        manager_result = await db.execute(
+            select(User.name).where(User.id == vacancy.hiring_manager_id)
+        )
+        manager_name = manager_result.scalar()
+
+    # Get application counts by stage
+    stage_counts_result = await db.execute(
+        select(
+            VacancyApplication.stage,
+            func.count(VacancyApplication.id)
+        )
+        .where(VacancyApplication.vacancy_id == vacancy.id)
+        .group_by(VacancyApplication.stage)
+    )
+    stage_counts = {str(row[0].value): row[1] for row in stage_counts_result.all()}
+    total_apps = sum(stage_counts.values())
+
+    return VacancyResponse(
+        id=vacancy.id,
+        title=vacancy.title,
+        description=vacancy.description,
+        requirements=vacancy.requirements,
+        responsibilities=vacancy.responsibilities,
+        salary_min=vacancy.salary_min,
+        salary_max=vacancy.salary_max,
+        salary_currency=vacancy.salary_currency or "RUB",
+        location=vacancy.location,
+        employment_type=vacancy.employment_type,
+        experience_level=vacancy.experience_level,
+        status=vacancy.status,
+        priority=vacancy.priority or 0,
+        tags=vacancy.tags or [],
+        extra_data=vacancy.extra_data or {},
+        department_id=vacancy.department_id,
+        department_name=dept_name,
+        hiring_manager_id=vacancy.hiring_manager_id,
+        hiring_manager_name=manager_name,
+        created_by=vacancy.created_by,
+        published_at=vacancy.published_at,
+        closes_at=vacancy.closes_at,
+        created_at=vacancy.created_at,
+        updated_at=vacancy.updated_at,
+        applications_count=total_apps,
+        stage_counts=stage_counts
+    )
+
+
+@router.put("/{vacancy_id}", response_model=VacancyResponse)
+async def update_vacancy(
+    vacancy_id: int,
+    data: VacancyUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a vacancy."""
+    result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id)
+    )
+    vacancy = result.scalar()
+
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Update fields
+    update_data = data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(vacancy, field, value)
+
+    # Set published_at when status changes to open
+    if data.status == VacancyStatus.open and not vacancy.published_at:
+        vacancy.published_at = datetime.utcnow()
+
+    await db.commit()
+    await db.refresh(vacancy)
+
+    logger.info(f"Updated vacancy {vacancy.id}")
+
+    # Return full response
+    return await get_vacancy(vacancy_id, db, current_user)
+
+
+@router.delete("/{vacancy_id}", status_code=204)
+async def delete_vacancy(
+    vacancy_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a vacancy."""
+    result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id)
+    )
+    vacancy = result.scalar()
+
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    await db.delete(vacancy)
+    await db.commit()
+
+    logger.info(f"Deleted vacancy {vacancy_id}")
+
+
+# === Application Endpoints ===
+
+@router.get("/{vacancy_id}/applications", response_model=List[ApplicationResponse])
+async def list_applications(
+    vacancy_id: int,
+    stage: Optional[ApplicationStage] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List all applications for a vacancy."""
+    # Verify vacancy exists
+    vacancy_result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id)
+    )
+    if not vacancy_result.scalar():
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    query = (
+        select(VacancyApplication)
+        .where(VacancyApplication.vacancy_id == vacancy_id)
+        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
+    )
+
+    if stage:
+        query = query.where(VacancyApplication.stage == stage)
+
+    result = await db.execute(query)
+    applications = result.scalars().all()
+
+    responses = []
+    for app in applications:
+        # Get entity info
+        entity_result = await db.execute(
+            select(Entity).where(Entity.id == app.entity_id)
+        )
+        entity = entity_result.scalar()
+
+        responses.append(ApplicationResponse(
+            id=app.id,
+            vacancy_id=app.vacancy_id,
+            entity_id=app.entity_id,
+            entity_name=entity.name if entity else None,
+            entity_type=entity.type if entity else None,
+            entity_email=entity.email if entity else None,
+            entity_phone=entity.phone if entity else None,
+            entity_position=entity.position if entity else None,
+            stage=app.stage,
+            stage_order=app.stage_order or 0,
+            rating=app.rating,
+            notes=app.notes,
+            rejection_reason=app.rejection_reason,
+            source=app.source,
+            next_interview_at=app.next_interview_at,
+            applied_at=app.applied_at,
+            last_stage_change_at=app.last_stage_change_at,
+            updated_at=app.updated_at
+        ))
+
+    return responses
+
+
+@router.post("/{vacancy_id}/applications", response_model=ApplicationResponse, status_code=201)
+async def create_application(
+    vacancy_id: int,
+    data: ApplicationCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Add a candidate to a vacancy pipeline."""
+    # Verify vacancy exists
+    vacancy_result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id)
+    )
+    vacancy = vacancy_result.scalar()
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Verify entity exists
+    entity_result = await db.execute(
+        select(Entity).where(Entity.id == data.entity_id)
+    )
+    entity = entity_result.scalar()
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+
+    # Check for existing application
+    existing = await db.execute(
+        select(VacancyApplication).where(
+            VacancyApplication.vacancy_id == vacancy_id,
+            VacancyApplication.entity_id == data.entity_id
+        )
+    )
+    if existing.scalar():
+        raise HTTPException(
+            status_code=400,
+            detail="Candidate already applied to this vacancy"
+        )
+
+    # Get max stage_order for this stage
+    max_order_result = await db.execute(
+        select(func.max(VacancyApplication.stage_order))
+        .where(
+            VacancyApplication.vacancy_id == vacancy_id,
+            VacancyApplication.stage == data.stage
+        )
+    )
+    max_order = max_order_result.scalar() or 0
+
+    application = VacancyApplication(
+        vacancy_id=vacancy_id,
+        entity_id=data.entity_id,
+        stage=data.stage,
+        stage_order=max_order + 1,
+        rating=data.rating,
+        notes=data.notes,
+        source=data.source,
+        created_by=current_user.id
+    )
+
+    db.add(application)
+    await db.commit()
+    await db.refresh(application)
+
+    logger.info(f"Created application {application.id} for vacancy {vacancy_id}")
+
+    return ApplicationResponse(
+        id=application.id,
+        vacancy_id=application.vacancy_id,
+        entity_id=application.entity_id,
+        entity_name=entity.name,
+        entity_type=entity.type,
+        entity_email=entity.email,
+        entity_phone=entity.phone,
+        entity_position=entity.position,
+        stage=application.stage,
+        stage_order=application.stage_order or 0,
+        rating=application.rating,
+        notes=application.notes,
+        rejection_reason=application.rejection_reason,
+        source=application.source,
+        next_interview_at=application.next_interview_at,
+        applied_at=application.applied_at,
+        last_stage_change_at=application.last_stage_change_at,
+        updated_at=application.updated_at
+    )
+
+
+@router.put("/applications/{application_id}", response_model=ApplicationResponse)
+async def update_application(
+    application_id: int,
+    data: ApplicationUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update an application (move stage, add notes, etc.)."""
+    result = await db.execute(
+        select(VacancyApplication).where(VacancyApplication.id == application_id)
+    )
+    application = result.scalar()
+
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    # Track stage change
+    if data.stage and data.stage != application.stage:
+        application.last_stage_change_at = datetime.utcnow()
+
+        # Update stage_order for the new stage
+        max_order_result = await db.execute(
+            select(func.max(VacancyApplication.stage_order))
+            .where(
+                VacancyApplication.vacancy_id == application.vacancy_id,
+                VacancyApplication.stage == data.stage
+            )
+        )
+        max_order = max_order_result.scalar() or 0
+        application.stage_order = max_order + 1
+
+    # Update fields
+    update_data = data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        if field != 'stage_order' or data.stage_order is not None:  # Don't override auto-calculated order
+            setattr(application, field, value)
+
+    await db.commit()
+    await db.refresh(application)
+
+    # Get entity info
+    entity_result = await db.execute(
+        select(Entity).where(Entity.id == application.entity_id)
+    )
+    entity = entity_result.scalar()
+
+    # Get vacancy title
+    vacancy_result = await db.execute(
+        select(Vacancy.title).where(Vacancy.id == application.vacancy_id)
+    )
+    vacancy_title = vacancy_result.scalar()
+
+    logger.info(f"Updated application {application.id}, stage: {application.stage}")
+
+    return ApplicationResponse(
+        id=application.id,
+        vacancy_id=application.vacancy_id,
+        vacancy_title=vacancy_title,
+        entity_id=application.entity_id,
+        entity_name=entity.name if entity else None,
+        entity_type=entity.type if entity else None,
+        entity_email=entity.email if entity else None,
+        entity_phone=entity.phone if entity else None,
+        entity_position=entity.position if entity else None,
+        stage=application.stage,
+        stage_order=application.stage_order or 0,
+        rating=application.rating,
+        notes=application.notes,
+        rejection_reason=application.rejection_reason,
+        source=application.source,
+        next_interview_at=application.next_interview_at,
+        applied_at=application.applied_at,
+        last_stage_change_at=application.last_stage_change_at,
+        updated_at=application.updated_at
+    )
+
+
+@router.delete("/applications/{application_id}", status_code=204)
+async def delete_application(
+    application_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Remove a candidate from a vacancy pipeline."""
+    result = await db.execute(
+        select(VacancyApplication).where(VacancyApplication.id == application_id)
+    )
+    application = result.scalar()
+
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    await db.delete(application)
+    await db.commit()
+
+    logger.info(f"Deleted application {application_id}")
+
+
+# === Kanban Board Endpoints ===
+
+@router.get("/{vacancy_id}/kanban", response_model=KanbanBoard)
+async def get_kanban_board(
+    vacancy_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get Kanban board data for a vacancy."""
+    # Verify vacancy exists
+    vacancy_result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id)
+    )
+    vacancy = vacancy_result.scalar()
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Define stage order and titles
+    stage_config = [
+        (ApplicationStage.applied, "Отклики"),
+        (ApplicationStage.screening, "Скрининг"),
+        (ApplicationStage.phone_screen, "Телефонное интервью"),
+        (ApplicationStage.interview, "Интервью"),
+        (ApplicationStage.assessment, "Тестовое задание"),
+        (ApplicationStage.offer, "Оффер"),
+        (ApplicationStage.hired, "Наняты"),
+        (ApplicationStage.rejected, "Отклонены"),
+        (ApplicationStage.withdrawn, "Отозвали заявку"),
+    ]
+
+    # Get all applications
+    apps_result = await db.execute(
+        select(VacancyApplication)
+        .where(VacancyApplication.vacancy_id == vacancy_id)
+        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
+    )
+    all_apps = apps_result.scalars().all()
+
+    # Get entity info for all applications
+    entity_ids = [app.entity_id for app in all_apps]
+    entities_map = {}
+    if entity_ids:
+        entities_result = await db.execute(
+            select(Entity).where(Entity.id.in_(entity_ids))
+        )
+        for entity in entities_result.scalars().all():
+            entities_map[entity.id] = entity
+
+    # Build columns
+    columns = []
+    total_count = 0
+
+    for stage, title in stage_config:
+        stage_apps = [app for app in all_apps if app.stage == stage]
+
+        app_responses = []
+        for app in stage_apps:
+            entity = entities_map.get(app.entity_id)
+            app_responses.append(ApplicationResponse(
+                id=app.id,
+                vacancy_id=app.vacancy_id,
+                vacancy_title=vacancy.title,
+                entity_id=app.entity_id,
+                entity_name=entity.name if entity else None,
+                entity_type=entity.type if entity else None,
+                entity_email=entity.email if entity else None,
+                entity_phone=entity.phone if entity else None,
+                entity_position=entity.position if entity else None,
+                stage=app.stage,
+                stage_order=app.stage_order or 0,
+                rating=app.rating,
+                notes=app.notes,
+                rejection_reason=app.rejection_reason,
+                source=app.source,
+                next_interview_at=app.next_interview_at,
+                applied_at=app.applied_at,
+                last_stage_change_at=app.last_stage_change_at,
+                updated_at=app.updated_at
+            ))
+
+        columns.append(KanbanColumn(
+            stage=stage,
+            title=title,
+            applications=app_responses,
+            count=len(app_responses)
+        ))
+        total_count += len(app_responses)
+
+    return KanbanBoard(
+        vacancy_id=vacancy.id,
+        vacancy_title=vacancy.title,
+        columns=columns,
+        total_count=total_count
+    )
+
+
+@router.post("/applications/bulk-move", response_model=List[ApplicationResponse])
+async def bulk_move_applications(
+    data: BulkStageUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Move multiple applications to a new stage."""
+    if not data.application_ids:
+        return []
+
+    result = await db.execute(
+        select(VacancyApplication).where(
+            VacancyApplication.id.in_(data.application_ids)
+        )
+    )
+    applications = result.scalars().all()
+
+    if not applications:
+        raise HTTPException(status_code=404, detail="No applications found")
+
+    # Get the vacancy_id from first application
+    vacancy_id = applications[0].vacancy_id
+
+    # Get max stage_order for the new stage
+    max_order_result = await db.execute(
+        select(func.max(VacancyApplication.stage_order))
+        .where(
+            VacancyApplication.vacancy_id == vacancy_id,
+            VacancyApplication.stage == data.stage
+        )
+    )
+    max_order = max_order_result.scalar() or 0
+
+    now = datetime.utcnow()
+    for i, app in enumerate(applications):
+        app.stage = data.stage
+        app.stage_order = max_order + i + 1
+        app.last_stage_change_at = now
+
+    await db.commit()
+
+    # Build response
+    entity_ids = [app.entity_id for app in applications]
+    entities_result = await db.execute(
+        select(Entity).where(Entity.id.in_(entity_ids))
+    )
+    entities_map = {e.id: e for e in entities_result.scalars().all()}
+
+    responses = []
+    for app in applications:
+        entity = entities_map.get(app.entity_id)
+        responses.append(ApplicationResponse(
+            id=app.id,
+            vacancy_id=app.vacancy_id,
+            entity_id=app.entity_id,
+            entity_name=entity.name if entity else None,
+            entity_type=entity.type if entity else None,
+            entity_email=entity.email if entity else None,
+            entity_phone=entity.phone if entity else None,
+            entity_position=entity.position if entity else None,
+            stage=app.stage,
+            stage_order=app.stage_order or 0,
+            rating=app.rating,
+            notes=app.notes,
+            rejection_reason=app.rejection_reason,
+            source=app.source,
+            next_interview_at=app.next_interview_at,
+            applied_at=app.applied_at,
+            last_stage_change_at=app.last_stage_change_at,
+            updated_at=app.updated_at
+        ))
+
+    logger.info(f"Bulk moved {len(applications)} applications to stage {data.stage}")
+
+    return responses
+
+
+# === Stats Endpoints ===
+
+@router.get("/stats/overview")
+async def get_vacancies_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get overview statistics for vacancies."""
+    org = await get_user_org(current_user, db)
+    org_filter = Vacancy.org_id == org.id if org else True
+
+    # Total vacancies by status
+    status_counts = await db.execute(
+        select(Vacancy.status, func.count(Vacancy.id))
+        .where(org_filter)
+        .group_by(Vacancy.status)
+    )
+
+    # Total applications by stage
+    stage_counts = await db.execute(
+        select(VacancyApplication.stage, func.count(VacancyApplication.id))
+        .join(Vacancy)
+        .where(org_filter)
+        .group_by(VacancyApplication.stage)
+    )
+
+    # Applications this week
+    from datetime import timedelta
+    week_ago = datetime.utcnow() - timedelta(days=7)
+    apps_this_week = await db.execute(
+        select(func.count(VacancyApplication.id))
+        .join(Vacancy)
+        .where(org_filter, VacancyApplication.applied_at >= week_ago)
+    )
+
+    return {
+        "vacancies_by_status": {str(row[0].value): row[1] for row in status_counts.all()},
+        "applications_by_stage": {str(row[0].value): row[1] for row in stage_counts.all()},
+        "applications_this_week": apps_this_week.scalar() or 0
+    }

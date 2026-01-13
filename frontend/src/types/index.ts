@@ -465,3 +465,146 @@ export const CALL_STATUS_COLORS: Record<CallStatus, string> = {
   done: 'bg-green-500/20 text-green-300',
   failed: 'bg-red-500/20 text-red-300'
 };
+
+// === Vacancy Types ===
+
+export type VacancyStatus = 'draft' | 'open' | 'paused' | 'closed' | 'cancelled';
+
+export type ApplicationStage =
+  | 'applied'
+  | 'screening'
+  | 'phone_screen'
+  | 'interview'
+  | 'assessment'
+  | 'offer'
+  | 'hired'
+  | 'rejected'
+  | 'withdrawn';
+
+export interface Vacancy {
+  id: number;
+  title: string;
+  description?: string;
+  requirements?: string;
+  responsibilities?: string;
+  salary_min?: number;
+  salary_max?: number;
+  salary_currency: string;
+  location?: string;
+  employment_type?: string;
+  experience_level?: string;
+  status: VacancyStatus;
+  priority: number;
+  tags: string[];
+  extra_data: Record<string, unknown>;
+  department_id?: number;
+  department_name?: string;
+  hiring_manager_id?: number;
+  hiring_manager_name?: string;
+  created_by?: number;
+  published_at?: string;
+  closes_at?: string;
+  created_at: string;
+  updated_at: string;
+  applications_count: number;
+  stage_counts: Record<string, number>;
+}
+
+export interface VacancyApplication {
+  id: number;
+  vacancy_id: number;
+  vacancy_title?: string;
+  entity_id: number;
+  entity_name?: string;
+  entity_type?: EntityType;
+  entity_email?: string;
+  entity_phone?: string;
+  entity_position?: string;
+  stage: ApplicationStage;
+  stage_order: number;
+  rating?: number;
+  notes?: string;
+  rejection_reason?: string;
+  source?: string;
+  next_interview_at?: string;
+  applied_at: string;
+  last_stage_change_at: string;
+  updated_at: string;
+}
+
+export interface KanbanColumn {
+  stage: ApplicationStage;
+  title: string;
+  applications: VacancyApplication[];
+  count: number;
+}
+
+export interface KanbanBoard {
+  vacancy_id: number;
+  vacancy_title: string;
+  columns: KanbanColumn[];
+  total_count: number;
+}
+
+export interface VacancyStats {
+  vacancies_by_status: Record<string, number>;
+  applications_by_stage: Record<string, number>;
+  applications_this_week: number;
+}
+
+export const VACANCY_STATUS_LABELS: Record<VacancyStatus, string> = {
+  draft: 'Черновик',
+  open: 'Открыта',
+  paused: 'На паузе',
+  closed: 'Закрыта',
+  cancelled: 'Отменена'
+};
+
+export const VACANCY_STATUS_COLORS: Record<VacancyStatus, string> = {
+  draft: 'bg-gray-500/20 text-gray-300',
+  open: 'bg-green-500/20 text-green-300',
+  paused: 'bg-yellow-500/20 text-yellow-300',
+  closed: 'bg-blue-500/20 text-blue-300',
+  cancelled: 'bg-red-500/20 text-red-300'
+};
+
+export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = {
+  applied: 'Отклики',
+  screening: 'Скрининг',
+  phone_screen: 'Телефонное интервью',
+  interview: 'Интервью',
+  assessment: 'Тестовое задание',
+  offer: 'Оффер',
+  hired: 'Наняты',
+  rejected: 'Отклонены',
+  withdrawn: 'Отозвали заявку'
+};
+
+export const APPLICATION_STAGE_COLORS: Record<ApplicationStage, string> = {
+  applied: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  screening: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+  phone_screen: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+  interview: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+  assessment: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+  offer: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+  hired: 'bg-green-500/20 text-green-300 border-green-500/30',
+  rejected: 'bg-red-500/20 text-red-300 border-red-500/30',
+  withdrawn: 'bg-gray-500/20 text-gray-300 border-gray-500/30'
+};
+
+export const EMPLOYMENT_TYPES = [
+  { value: 'full-time', label: 'Полная занятость' },
+  { value: 'part-time', label: 'Частичная занятость' },
+  { value: 'contract', label: 'Контракт' },
+  { value: 'remote', label: 'Удалённая работа' },
+  { value: 'hybrid', label: 'Гибрид' }
+];
+
+export const EXPERIENCE_LEVELS = [
+  { value: 'intern', label: 'Стажёр' },
+  { value: 'junior', label: 'Junior' },
+  { value: 'middle', label: 'Middle' },
+  { value: 'senior', label: 'Senior' },
+  { value: 'lead', label: 'Lead' },
+  { value: 'manager', label: 'Manager' }
+];
