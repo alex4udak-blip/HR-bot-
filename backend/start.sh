@@ -36,10 +36,10 @@ async def fix_alembic_version():
 
         if len(versions) > 1:
             print(f'Found multiple heads: {versions}')
-            print('Consolidating to single head: fix_callsource_and_fk_constraints')
+            print('Consolidating to single head: add_feature_audit_logs')
             # Delete all and insert the correct one
             await conn.execute(text('DELETE FROM alembic_version'))
-            await conn.execute(text(\"INSERT INTO alembic_version (version_num) VALUES ('fix_callsource_and_fk_constraints')\"))
+            await conn.execute(text(\"INSERT INTO alembic_version (version_num) VALUES ('add_feature_audit_logs')\"))
             print('Fixed: now single head')
         elif len(versions) == 1:
             print(f'Single head found: {versions[0]}')
@@ -56,9 +56,9 @@ echo "Checking current alembic version..."
 python -m alembic current || echo "No current version (fresh database)"
 
 echo ""
-echo "Upgrading to latest migration (fix_callsource_and_fk_constraints)..."
+echo "Upgrading to latest migration (add_feature_audit_logs)..."
 # First try specific target, then heads if that fails
-python -m alembic upgrade fix_callsource_and_fk_constraints 2>&1 && echo "Migration successful" || {
+python -m alembic upgrade add_feature_audit_logs 2>&1 && echo "Migration successful" || {
     echo "Specific target failed, trying 'heads'..."
     python -m alembic upgrade heads 2>&1 && echo "Migration with heads successful" || {
         echo "Upgrade failed, but continuing - tables will be created by SQLAlchemy"
@@ -319,6 +319,50 @@ async def ensure_critical_tables():
                 print('department_features table created!')
             else:
                 print('department_features table exists')
+
+            # Create refresh_tokens table if missing
+            if 'refresh_tokens' not in existing_tables:
+                print('Creating refresh_tokens table...')
+                await conn.execute(text('''
+                    CREATE TABLE IF NOT EXISTS refresh_tokens (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        token_hash VARCHAR(64) NOT NULL UNIQUE,
+                        device_name VARCHAR(255),
+                        ip_address VARCHAR(45),
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        expires_at TIMESTAMP NOT NULL,
+                        revoked_at TIMESTAMP
+                    )
+                '''))
+                await conn.execute(text('CREATE INDEX IF NOT EXISTS ix_refresh_tokens_user_id ON refresh_tokens(user_id)'))
+                await conn.execute(text('CREATE INDEX IF NOT EXISTS ix_refresh_tokens_token_hash ON refresh_tokens(token_hash)'))
+                print('refresh_tokens table created!')
+            else:
+                print('refresh_tokens table exists')
+
+            # Create feature_audit_logs table if missing
+            if 'feature_audit_logs' not in existing_tables:
+                print('Creating feature_audit_logs table...')
+                await conn.execute(text('''
+                    CREATE TABLE IF NOT EXISTS feature_audit_logs (
+                        id SERIAL PRIMARY KEY,
+                        org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                        changed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                        feature_name VARCHAR(50) NOT NULL,
+                        action VARCHAR(20) NOT NULL,
+                        department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
+                        old_value BOOLEAN,
+                        new_value BOOLEAN,
+                        details JSONB,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                '''))
+                await conn.execute(text('CREATE INDEX IF NOT EXISTS ix_feature_audit_logs_org_id ON feature_audit_logs(org_id)'))
+                await conn.execute(text('CREATE INDEX IF NOT EXISTS ix_feature_audit_logs_changed_by ON feature_audit_logs(changed_by)'))
+                print('feature_audit_logs table created!')
+            else:
+                print('feature_audit_logs table exists')
 
             print('All critical tables verified!')
     except Exception as e:

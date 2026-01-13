@@ -1,15 +1,17 @@
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Tuple
+import secrets
+import hashlib
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update, and_
 from fastapi import Depends, HTTPException, status, Cookie, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from ..config import get_settings
 from ..database import get_db
-from ..models.database import User, UserRole, Organization, OrgMember, OrgRole, Entity, Chat, CallRecording, Department, DepartmentMember
+from ..models.database import User, UserRole, Organization, OrgMember, OrgRole, Entity, Chat, CallRecording, Department, DepartmentMember, RefreshToken
 
 settings = get_settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -762,3 +764,326 @@ async def can_share_to(
         return bool(from_dept_ids & to_dept_ids)
 
     return False
+
+
+# ============================================================================
+# REFRESH TOKEN MANAGEMENT
+# ============================================================================
+
+# Token configuration
+ACCESS_TOKEN_EXPIRE_MINUTES = 15  # Short-lived access tokens (15 minutes)
+REFRESH_TOKEN_EXPIRE_DAYS = 7     # Long-lived refresh tokens (7 days)
+
+
+def _hash_token(token: str) -> str:
+    """Create SHA-256 hash of a token for secure storage."""
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+
+def _generate_refresh_token() -> str:
+    """Generate a cryptographically secure refresh token."""
+    return secrets.token_urlsafe(64)
+
+
+async def create_refresh_token(
+    db: AsyncSession,
+    user_id: int,
+    device_name: Optional[str] = None,
+    ip_address: Optional[str] = None
+) -> str:
+    """Create a new refresh token for a user.
+
+    Args:
+        db: Database session
+        user_id: ID of the user to create token for
+        device_name: Optional device/browser identifier (e.g., "Chrome on Windows")
+        ip_address: Optional IP address of the client
+
+    Returns:
+        The raw refresh token (only returned once, stored as hash)
+
+    SECURITY: The raw token is returned only once. We store only the hash.
+    """
+    raw_token = _generate_refresh_token()
+    token_hash = _hash_token(raw_token)
+    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+
+    refresh_token = RefreshToken(
+        token_hash=token_hash,
+        user_id=user_id,
+        device_name=device_name,
+        ip_address=ip_address,
+        expires_at=expires_at,
+        created_at=datetime.utcnow()
+    )
+    db.add(refresh_token)
+    await db.commit()
+
+    return raw_token
+
+
+async def validate_refresh_token(
+    db: AsyncSession,
+    token: str
+) -> Optional[int]:
+    """Validate a refresh token and return the user_id if valid.
+
+    Args:
+        db: Database session
+        token: Raw refresh token to validate
+
+    Returns:
+        User ID if token is valid, None otherwise
+
+    A token is valid if:
+    - It exists in the database (hash matches)
+    - It has not expired
+    - It has not been revoked
+    """
+    token_hash = _hash_token(token)
+
+    result = await db.execute(
+        select(RefreshToken).where(
+            and_(
+                RefreshToken.token_hash == token_hash,
+                RefreshToken.expires_at > datetime.utcnow(),
+                RefreshToken.revoked_at.is_(None)
+            )
+        )
+    )
+    refresh_token = result.scalar_one_or_none()
+
+    if refresh_token:
+        return refresh_token.user_id
+    return None
+
+
+async def get_refresh_token_record(
+    db: AsyncSession,
+    token: str
+) -> Optional[RefreshToken]:
+    """Get the RefreshToken record for a given token.
+
+    Args:
+        db: Database session
+        token: Raw refresh token
+
+    Returns:
+        RefreshToken record if found and valid, None otherwise
+    """
+    token_hash = _hash_token(token)
+
+    result = await db.execute(
+        select(RefreshToken).where(
+            and_(
+                RefreshToken.token_hash == token_hash,
+                RefreshToken.expires_at > datetime.utcnow(),
+                RefreshToken.revoked_at.is_(None)
+            )
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def revoke_refresh_token(
+    db: AsyncSession,
+    token: str
+) -> bool:
+    """Revoke a specific refresh token.
+
+    Args:
+        db: Database session
+        token: Raw refresh token to revoke
+
+    Returns:
+        True if token was found and revoked, False otherwise
+    """
+    token_hash = _hash_token(token)
+
+    result = await db.execute(
+        select(RefreshToken).where(
+            and_(
+                RefreshToken.token_hash == token_hash,
+                RefreshToken.revoked_at.is_(None)
+            )
+        )
+    )
+    refresh_token = result.scalar_one_or_none()
+
+    if refresh_token:
+        refresh_token.revoked_at = datetime.utcnow()
+        await db.commit()
+        return True
+    return False
+
+
+async def revoke_all_user_tokens(
+    db: AsyncSession,
+    user_id: int
+) -> int:
+    """Revoke all refresh tokens for a user.
+
+    Args:
+        db: Database session
+        user_id: ID of the user whose tokens to revoke
+
+    Returns:
+        Number of tokens revoked
+    """
+    result = await db.execute(
+        select(RefreshToken).where(
+            and_(
+                RefreshToken.user_id == user_id,
+                RefreshToken.revoked_at.is_(None)
+            )
+        )
+    )
+    tokens = result.scalars().all()
+    count = len(tokens)
+
+    if count > 0:
+        await db.execute(
+            update(RefreshToken)
+            .where(
+                and_(
+                    RefreshToken.user_id == user_id,
+                    RefreshToken.revoked_at.is_(None)
+                )
+            )
+            .values(revoked_at=datetime.utcnow())
+        )
+        await db.commit()
+
+    return count
+
+
+async def rotate_refresh_token(
+    db: AsyncSession,
+    old_token: str,
+    device_name: Optional[str] = None,
+    ip_address: Optional[str] = None
+) -> Optional[Tuple[str, int]]:
+    """Rotate a refresh token: revoke old one, create new one.
+
+    This is the recommended way to refresh tokens. It provides:
+    - Automatic token rotation for better security
+    - Detection of token reuse (if old token is already revoked)
+
+    Args:
+        db: Database session
+        old_token: Current refresh token to rotate
+        device_name: Optional device identifier for the new token
+        ip_address: Optional IP address for the new token
+
+    Returns:
+        Tuple of (new_token, user_id) if successful, None otherwise
+
+    SECURITY: If a revoked token is presented, it indicates potential token theft.
+    The user should be notified and all their tokens revoked.
+    """
+    old_token_hash = _hash_token(old_token)
+
+    # Check if token exists but is already revoked (potential theft)
+    result = await db.execute(
+        select(RefreshToken).where(RefreshToken.token_hash == old_token_hash)
+    )
+    existing_token = result.scalar_one_or_none()
+
+    if existing_token:
+        if existing_token.revoked_at is not None:
+            # Token was already revoked! This is suspicious.
+            # Revoke ALL tokens for this user as a security measure
+            await revoke_all_user_tokens(db, existing_token.user_id)
+            return None
+
+        if existing_token.expires_at <= datetime.utcnow():
+            # Token has expired
+            return None
+
+        # Valid token - revoke it and create new one
+        existing_token.revoked_at = datetime.utcnow()
+        user_id = existing_token.user_id
+
+        # Optionally preserve device info if not provided
+        if device_name is None:
+            device_name = existing_token.device_name
+
+        new_token = await create_refresh_token(
+            db,
+            user_id=user_id,
+            device_name=device_name,
+            ip_address=ip_address
+        )
+
+        return new_token, user_id
+
+    return None
+
+
+async def get_user_sessions(
+    db: AsyncSession,
+    user_id: int
+) -> list[RefreshToken]:
+    """Get all active (non-expired, non-revoked) sessions for a user.
+
+    Args:
+        db: Database session
+        user_id: ID of the user
+
+    Returns:
+        List of active RefreshToken records
+    """
+    result = await db.execute(
+        select(RefreshToken).where(
+            and_(
+                RefreshToken.user_id == user_id,
+                RefreshToken.expires_at > datetime.utcnow(),
+                RefreshToken.revoked_at.is_(None)
+            )
+        ).order_by(RefreshToken.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def cleanup_expired_tokens(db: AsyncSession) -> int:
+    """Delete expired refresh tokens from the database.
+
+    This should be run periodically (e.g., daily) to clean up old tokens.
+
+    Args:
+        db: Database session
+
+    Returns:
+        Number of tokens deleted
+    """
+    from sqlalchemy import delete
+
+    result = await db.execute(
+        delete(RefreshToken).where(
+            RefreshToken.expires_at <= datetime.utcnow()
+        ).returning(RefreshToken.id)
+    )
+    deleted = len(result.fetchall())
+    await db.commit()
+    return deleted
+
+
+def create_short_lived_access_token(user_id: int, token_version: int = 0) -> str:
+    """Create a short-lived access token (15 minutes).
+
+    This is used in conjunction with refresh tokens for the new auth flow.
+
+    Args:
+        user_id: ID of the user
+        token_version: Token version for invalidation on password change
+
+    Returns:
+        JWT access token string
+    """
+    return create_access_token(
+        data={
+            "sub": str(user_id),
+            "token_version": token_version
+        },
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )

@@ -1,20 +1,257 @@
-import axios, { AxiosError, AxiosRequestConfig } from 'axios';
+import axios, { AxiosError, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import type {
   User, Chat, Message, Participant, CriteriaPreset,
   ChatCriteria, EntityCriteria, AIConversation, AnalysisResult, Stats, AuthResponse,
   Entity, EntityWithRelations, EntityType, EntityStatus,
   CallRecording, CallStatus,
-  Vacancy, VacancyStatus, VacancyApplication, ApplicationStage, KanbanBoard, VacancyStats
+  Vacancy, VacancyStatus, VacancyApplication, ApplicationStage, KanbanBoard, VacancyStats,
+  Session, RefreshTokenResponse
 } from '@/types';
+
+// ============================================================
+// REFRESH TOKEN MANAGEMENT
+// ============================================================
+
+/**
+ * Flag to indicate if a token refresh is currently in progress
+ */
+let isRefreshing = false;
+
+/**
+ * Queue of requests waiting for token refresh to complete
+ */
+let failedQueue: Array<{
+  resolve: (value?: unknown) => void;
+  reject: (reason?: unknown) => void;
+  config: InternalAxiosRequestConfig;
+}> = [];
+
+/**
+ * Process the queue of failed requests after token refresh
+ */
+const processQueue = (error: Error | null): void => {
+  failedQueue.forEach(({ resolve, reject, config }) => {
+    if (error) {
+      reject(error);
+    } else {
+      // Retry the request
+      resolve(api(config));
+    }
+  });
+  failedQueue = [];
+};
+
+/**
+ * Silently attempt to refresh the access token
+ * Returns true if successful, false otherwise
+ */
+const attemptTokenRefresh = async (): Promise<boolean> => {
+  try {
+    const response = await axios.post('/api/auth/refresh', {}, {
+      withCredentials: true, // Send cookies
+    });
+    return response.status === 200;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Redirect to login page (used after refresh token failure)
+ */
+const redirectToLogin = (): void => {
+  // Clear any stored state before redirecting
+  if (window.location.pathname !== '/login' && !window.location.pathname.startsWith('/invite')) {
+    window.location.href = '/login';
+  }
+};
 
 // API Configuration
 const API_TIMEOUT = 30000; // 30 seconds
 const MAX_RETRIES = 3;
 const RETRY_DELAY_BASE = 1000; // 1 second, will be exponentially increased
+const MUTATION_DEBOUNCE_MS = 300; // Debounce time for mutation requests
 
 // Error types that should trigger retry
 const RETRYABLE_ERRORS = ['ECONNABORTED', 'ETIMEDOUT', 'ENOTFOUND', 'ENETUNREACH', 'ECONNRESET'];
 const RETRYABLE_STATUS_CODES = [408, 429, 500, 502, 503, 504];
+
+// ============================================================
+// REQUEST DEDUPLICATION & DEBOUNCE SYSTEM
+// ============================================================
+
+/**
+ * Map to store pending GET requests for deduplication
+ * Key: method + url + serialized params
+ * Value: Promise of the request
+ */
+const pendingRequests = new Map<string, Promise<AxiosResponse>>();
+
+/**
+ * Map to store active AbortControllers for streaming requests
+ * Key: unique request identifier
+ * Value: AbortController instance
+ */
+const activeStreamControllers = new Map<string, AbortController>();
+
+/**
+ * Map to track last mutation timestamps for debouncing
+ * Key: method + url
+ * Value: timestamp of last mutation
+ */
+const mutationTimestamps = new Map<string, number>();
+
+/**
+ * Generate a unique key for request deduplication
+ */
+const generateRequestKey = (
+  method: string,
+  url: string,
+  params?: Record<string, unknown>
+): string => {
+  const sortedParams = params ? JSON.stringify(params, Object.keys(params).sort()) : '';
+  return `${method.toUpperCase()}:${url}:${sortedParams}`;
+};
+
+/**
+ * Check if a mutation request should be debounced (prevent double-click)
+ * Returns true if the request should proceed, false if it should be blocked
+ */
+const shouldAllowMutation = (method: string, url: string): boolean => {
+  const key = `${method.toUpperCase()}:${url}`;
+  const now = Date.now();
+  const lastTimestamp = mutationTimestamps.get(key);
+
+  if (lastTimestamp && now - lastTimestamp < MUTATION_DEBOUNCE_MS) {
+    console.warn(`Mutation debounced: ${method.toUpperCase()} ${url} (too fast, ${now - lastTimestamp}ms since last request)`);
+    return false;
+  }
+
+  mutationTimestamps.set(key, now);
+  return true;
+};
+
+/**
+ * Cleanup old mutation timestamps periodically (prevent memory leaks)
+ */
+const cleanupMutationTimestamps = () => {
+  const now = Date.now();
+  const staleThreshold = 60000; // 1 minute
+
+  mutationTimestamps.forEach((timestamp, key) => {
+    if (now - timestamp > staleThreshold) {
+      mutationTimestamps.delete(key);
+    }
+  });
+};
+
+// Run cleanup every 5 minutes
+setInterval(cleanupMutationTimestamps, 300000);
+
+/**
+ * Wrapper for GET requests with deduplication
+ * If the same request is already in flight, returns the existing Promise
+ */
+const deduplicatedGet = async <T>(
+  url: string,
+  config?: AxiosRequestConfig
+): Promise<AxiosResponse<T>> => {
+  const requestKey = generateRequestKey('GET', url, config?.params);
+
+  // Check if identical request is already in flight
+  const pendingRequest = pendingRequests.get(requestKey);
+  if (pendingRequest) {
+    console.debug(`Request deduplicated: GET ${url}`);
+    return pendingRequest as Promise<AxiosResponse<T>>;
+  }
+
+  // Create new request and store it
+  const requestPromise = api.get<T>(url, config);
+  pendingRequests.set(requestKey, requestPromise as Promise<AxiosResponse>);
+
+  try {
+    const response = await requestPromise;
+    return response;
+  } finally {
+    // Remove from pending requests after completion (success or error)
+    pendingRequests.delete(requestKey);
+  }
+};
+
+/**
+ * Wrapper for mutation requests with debounce protection
+ * Throws error if request is too fast (double-click protection)
+ */
+const debouncedMutation = async <T>(
+  method: 'post' | 'put' | 'patch' | 'delete',
+  url: string,
+  data?: unknown,
+  config?: AxiosRequestConfig
+): Promise<AxiosResponse<T>> => {
+  if (!shouldAllowMutation(method, url)) {
+    throw new Error('Request debounced: too many rapid requests');
+  }
+
+  switch (method) {
+    case 'post':
+      return api.post<T>(url, data, config);
+    case 'put':
+      return api.put<T>(url, data, config);
+    case 'patch':
+      return api.patch<T>(url, data, config);
+    case 'delete':
+      return api.delete<T>(url, config);
+    default:
+      throw new Error(`Unknown method: ${method}`);
+  }
+};
+
+/**
+ * Create an AbortController for a streaming request
+ * Returns the controller and a cleanup function
+ */
+export const createStreamController = (streamId: string): {
+  controller: AbortController;
+  cleanup: () => void;
+} => {
+  // Abort any existing stream with the same ID
+  const existingController = activeStreamControllers.get(streamId);
+  if (existingController) {
+    existingController.abort();
+    activeStreamControllers.delete(streamId);
+  }
+
+  const controller = new AbortController();
+  activeStreamControllers.set(streamId, controller);
+
+  const cleanup = () => {
+    controller.abort();
+    activeStreamControllers.delete(streamId);
+  };
+
+  return { controller, cleanup };
+};
+
+/**
+ * Abort all active streaming requests (useful for cleanup)
+ */
+export const abortAllStreams = (): void => {
+  activeStreamControllers.forEach((controller, streamId) => {
+    console.debug(`Aborting stream: ${streamId}`);
+    controller.abort();
+  });
+  activeStreamControllers.clear();
+};
+
+/**
+ * Get the count of pending requests (for debugging/monitoring)
+ */
+export const getPendingRequestsCount = (): number => pendingRequests.size;
+
+/**
+ * Get the count of active streams (for debugging/monitoring)
+ */
+export const getActiveStreamsCount = (): number => activeStreamControllers.size;
 
 const api = axios.create({
   baseURL: '/api',
@@ -90,7 +327,7 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor - handle errors
+// Response interceptor - handle errors with automatic token refresh
 api.interceptors.response.use(
   (response) => {
     // Log slow requests in development
@@ -103,13 +340,61 @@ api.interceptors.response.use(
     }
     return response;
   },
-  (error: AxiosError) => {
-    // Handle 401 - redirect to login
+  async (error: AxiosError) => {
+    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean; _skipRefresh?: boolean };
+
+    // Handle 401 - Unauthorized (token expired or invalid)
     if (error.response?.status === 401) {
-      // Cookie is invalid or expired - redirect to login
-      // But only if we're not already on the login page (prevents infinite refresh loop)
-      if (window.location.pathname !== '/login' && !window.location.pathname.startsWith('/invite')) {
-        window.location.href = '/login';
+      // Skip refresh logic for certain endpoints
+      const skipRefreshUrls = ['/auth/login', '/auth/refresh', '/auth/logout', '/invitations/validate', '/invitations/accept'];
+      const shouldSkipRefresh = originalRequest._skipRefresh ||
+        skipRefreshUrls.some(url => originalRequest.url?.includes(url));
+
+      // Skip refresh if on login/invite page
+      const isAuthPage = window.location.pathname === '/login' || window.location.pathname.startsWith('/invite');
+
+      if (shouldSkipRefresh || isAuthPage) {
+        return Promise.reject(error);
+      }
+
+      // If this request has already been retried, redirect to login
+      if (originalRequest._retry) {
+        redirectToLogin();
+        return Promise.reject(error);
+      }
+
+      // If already refreshing, queue this request
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject, config: originalRequest });
+        });
+      }
+
+      // Mark that we're refreshing
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        // Attempt to refresh the token (silently, no error shown to user)
+        const refreshSuccess = await attemptTokenRefresh();
+
+        if (refreshSuccess) {
+          // Token refreshed successfully, process queued requests and retry original
+          processQueue(null);
+          return api(originalRequest);
+        } else {
+          // Refresh failed - redirect to login
+          processQueue(new Error('Token refresh failed'));
+          redirectToLogin();
+          return Promise.reject(error);
+        }
+      } catch (refreshError) {
+        // Refresh threw an error - redirect to login
+        processQueue(refreshError instanceof Error ? refreshError : new Error('Token refresh failed'));
+        redirectToLogin();
+        return Promise.reject(error);
+      } finally {
+        isRefreshing = false;
       }
     }
 
@@ -127,7 +412,7 @@ api.interceptors.response.use(
   }
 );
 
-// Auth
+// Auth (no deduplication for auth - always fresh)
 export const login = async (email: string, password: string): Promise<User> => {
   // Backend returns User directly (cookie is set via Set-Cookie header)
   const { data } = await api.post('/auth/login', { email, password });
@@ -140,23 +425,61 @@ export const register = async (email: string, password: string, name: string): P
 };
 
 export const getCurrentUser = async (): Promise<User> => {
-  const { data } = await api.get('/auth/me');
+  // Use deduplication for getCurrentUser as it's called frequently
+  const { data } = await deduplicatedGet<User>('/auth/me');
+  return data;
+};
+
+/**
+ * Refresh the access token using the refresh token stored in httpOnly cookie.
+ * This is called automatically by the interceptor on 401 errors.
+ * @returns RefreshTokenResponse with success status
+ */
+export const refreshToken = async (): Promise<RefreshTokenResponse> => {
+  const { data } = await api.post<RefreshTokenResponse>('/auth/refresh', {});
+  return data;
+};
+
+/**
+ * Logout from all devices by invalidating all refresh tokens.
+ * This will force re-login on all devices.
+ */
+export const logoutAllDevices = async (): Promise<{ success: boolean; sessions_revoked: number }> => {
+  const { data } = await api.post<{ success: boolean; sessions_revoked: number }>('/auth/logout-all', {});
+  return data;
+};
+
+/**
+ * Get all active sessions for the current user.
+ * @returns List of active sessions with device info and last activity
+ */
+export const getSessions = async (): Promise<Session[]> => {
+  const { data } = await deduplicatedGet<Session[]>('/auth/sessions');
+  return data;
+};
+
+/**
+ * Revoke a specific session by its ID.
+ * @param sessionId - The ID of the session to revoke
+ */
+export const revokeSession = async (sessionId: string): Promise<{ success: boolean }> => {
+  const { data } = await api.delete<{ success: boolean }>(`/auth/sessions/${sessionId}`);
   return data;
 };
 
 // Users
 export const getUsers = async (): Promise<User[]> => {
-  const { data } = await api.get('/users');
+  const { data } = await deduplicatedGet<User[]>('/users');
   return data;
 };
 
 export const createUser = async (userData: { email: string; password: string; name: string; role: string }): Promise<User> => {
-  const { data } = await api.post('/users', userData);
+  const { data } = await debouncedMutation<User>('post', '/users', userData);
   return data;
 };
 
 export const deleteUser = async (id: number): Promise<void> => {
-  await api.delete(`/users/${id}`);
+  await debouncedMutation<void>('delete', `/users/${id}`);
 };
 
 export interface PasswordResetResponse {
@@ -193,12 +516,12 @@ export const updateUserProfile = async (data: UserProfileUpdate): Promise<User> 
 
 // Chats
 export const getChats = async (): Promise<Chat[]> => {
-  const { data } = await api.get('/chats');
+  const { data } = await deduplicatedGet<Chat[]>('/chats');
   return data;
 };
 
 export const getChat = async (id: number): Promise<Chat> => {
-  const { data } = await api.get(`/chats/${id}`);
+  const { data } = await deduplicatedGet<Chat>(`/chats/${id}`);
   return data;
 };
 
@@ -208,67 +531,67 @@ export const updateChat = async (id: number, updates: {
   entity_id?: number;
   is_active?: boolean;
 }): Promise<Chat> => {
-  const { data } = await api.patch(`/chats/${id}`, updates);
+  const { data } = await debouncedMutation<Chat>('patch', `/chats/${id}`, updates);
   return data;
 };
 
 export const deleteChat = async (id: number): Promise<void> => {
-  await api.delete(`/chats/${id}`);
+  await debouncedMutation<void>('delete', `/chats/${id}`);
 };
 
 export const getDeletedChats = async (): Promise<Chat[]> => {
-  const { data } = await api.get('/chats/deleted/list');
+  const { data } = await deduplicatedGet<Chat[]>('/chats/deleted/list');
   return data;
 };
 
 export const restoreChat = async (id: number): Promise<void> => {
-  await api.post(`/chats/${id}/restore`);
+  await debouncedMutation<void>('post', `/chats/${id}/restore`);
 };
 
 export const permanentDeleteChat = async (id: number): Promise<void> => {
-  await api.delete(`/chats/${id}/permanent`);
+  await debouncedMutation<void>('delete', `/chats/${id}/permanent`);
 };
 
 // Messages
 export const getMessages = async (chatId: number, page = 1, limit = 1000, contentType?: string): Promise<Message[]> => {
-  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
-  if (contentType) params.append('content_type', contentType);
-  const { data } = await api.get(`/chats/${chatId}/messages?${params}`);
+  const params: Record<string, string> = { page: String(page), limit: String(limit) };
+  if (contentType) params.content_type = contentType;
+  const { data } = await deduplicatedGet<Message[]>(`/chats/${chatId}/messages`, { params });
   return data;
 };
 
 export const getParticipants = async (chatId: number): Promise<Participant[]> => {
-  const { data } = await api.get(`/chats/${chatId}/participants`);
+  const { data } = await deduplicatedGet<Participant[]>(`/chats/${chatId}/participants`);
   return data;
 };
 
 export const transcribeMessage = async (messageId: number): Promise<{ success: boolean; transcription: string; message_id: number }> => {
-  const { data } = await api.post(`/chats/messages/${messageId}/transcribe`);
+  const { data } = await debouncedMutation<{ success: boolean; transcription: string; message_id: number }>('post', `/chats/messages/${messageId}/transcribe`);
   return data;
 };
 
 // Criteria
 export const getCriteriaPresets = async (): Promise<CriteriaPreset[]> => {
-  const { data } = await api.get('/criteria/presets');
+  const { data } = await deduplicatedGet<CriteriaPreset[]>('/criteria/presets');
   return data;
 };
 
 export const createCriteriaPreset = async (preset: Omit<CriteriaPreset, 'id' | 'created_at' | 'created_by'>): Promise<CriteriaPreset> => {
-  const { data } = await api.post('/criteria/presets', preset);
+  const { data } = await debouncedMutation<CriteriaPreset>('post', '/criteria/presets', preset);
   return data;
 };
 
 export const deleteCriteriaPreset = async (id: number): Promise<void> => {
-  await api.delete(`/criteria/presets/${id}`);
+  await debouncedMutation<void>('delete', `/criteria/presets/${id}`);
 };
 
 export const getChatCriteria = async (chatId: number): Promise<ChatCriteria> => {
-  const { data } = await api.get(`/criteria/chats/${chatId}`);
+  const { data } = await deduplicatedGet<ChatCriteria>(`/criteria/chats/${chatId}`);
   return data;
 };
 
 export const updateChatCriteria = async (chatId: number, criteria: { name: string; description: string; weight: number; category: string }[]): Promise<ChatCriteria> => {
-  const { data } = await api.put(`/criteria/chats/${chatId}`, { criteria });
+  const { data } = await debouncedMutation<ChatCriteria>('put', `/criteria/chats/${chatId}`, { criteria });
   return data;
 };
 
@@ -281,7 +604,7 @@ export interface DefaultCriteriaResponse {
 }
 
 export const getDefaultCriteria = async (chatType: string): Promise<DefaultCriteriaResponse> => {
-  const { data } = await api.get(`/criteria/defaults/${chatType}`);
+  const { data } = await deduplicatedGet<DefaultCriteriaResponse>(`/criteria/defaults/${chatType}`);
   return data;
 };
 
@@ -289,134 +612,233 @@ export const setDefaultCriteria = async (
   chatType: string,
   criteria: { name: string; description: string; weight: number; category: string }[]
 ): Promise<DefaultCriteriaResponse> => {
-  const { data } = await api.put(`/criteria/defaults/${chatType}`, { criteria });
+  const { data } = await debouncedMutation<DefaultCriteriaResponse>('put', `/criteria/defaults/${chatType}`, { criteria });
   return data;
 };
 
 export const resetDefaultCriteria = async (chatType: string): Promise<void> => {
-  await api.delete(`/criteria/defaults/${chatType}`);
+  await debouncedMutation<void>('delete', `/criteria/defaults/${chatType}`);
 };
 
 export const seedUniversalPresets = async (): Promise<{ message: string; created: string[] }> => {
-  const { data } = await api.post('/criteria/presets/seed-universal');
+  const { data } = await debouncedMutation<{ message: string; created: string[] }>('post', '/criteria/presets/seed-universal');
   return data;
 };
 
 // AI
 export const getAIHistory = async (chatId: number): Promise<AIConversation> => {
-  const { data } = await api.get(`/chats/${chatId}/ai/history`);
+  const { data } = await deduplicatedGet<AIConversation>(`/chats/${chatId}/ai/history`);
   return data;
 };
 
 export const clearAIHistory = async (chatId: number): Promise<void> => {
-  await api.delete(`/chats/${chatId}/ai/history`);
+  await debouncedMutation<void>('delete', `/chats/${chatId}/ai/history`);
 };
 
 export const getAnalysisHistory = async (chatId: number): Promise<AnalysisResult[]> => {
-  const { data } = await api.get(`/chats/${chatId}/analysis-history`);
+  const { data } = await deduplicatedGet<AnalysisResult[]>(`/chats/${chatId}/analysis-history`);
   return data;
 };
 
 // Stats
 export const getStats = async (): Promise<Stats> => {
-  const { data } = await api.get('/stats');
+  const { data } = await deduplicatedGet<Stats>('/stats');
   return data;
 };
 
-// Streaming helpers
+// Streaming helpers with AbortController support
+
+export interface StreamOptions {
+  onChunk: (chunk: string) => void;
+  onDone: () => void;
+  onError?: (error: Error) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Internal helper to process SSE stream
+ */
+const processSSEStream = async (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  onChunk: (chunk: string) => void,
+  onDone: () => void,
+  signal?: AbortSignal
+): Promise<void> => {
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      // Check if aborted
+      if (signal?.aborted) {
+        await reader.cancel();
+        return;
+      }
+
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+
+      // Keep the last incomplete line in buffer
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          if (data === '[DONE]') {
+            onDone();
+          } else {
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.content) {
+                onChunk(parsed.content);
+              }
+            } catch {
+              // Ignore parse errors for incomplete chunks
+            }
+          }
+        }
+      }
+    }
+
+    // Process remaining buffer
+    if (buffer.startsWith('data: ')) {
+      const data = buffer.slice(6);
+      if (data === '[DONE]') {
+        onDone();
+      } else {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.content) {
+            onChunk(parsed.content);
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+};
+
+/**
+ * Stream AI message with AbortController support
+ * Returns a cleanup function to abort the request
+ */
 export const streamAIMessage = async (
   chatId: number,
   message: string,
   onChunk: (chunk: string) => void,
-  onDone: () => void
-) => {
-  const response = await fetch(`/api/chats/${chatId}/ai/message`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',  // Send cookies with request
-    body: JSON.stringify({ message }),
-  });
+  onDone: () => void,
+  signal?: AbortSignal
+): Promise<() => void> => {
+  const streamId = `ai-message-${chatId}-${Date.now()}`;
+  const { controller, cleanup } = createStreamController(streamId);
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Ошибка сервера' }));
-    throw new Error(error.detail || 'Ошибка AI');
-  }
+  // Use provided signal or create our own
+  const effectiveSignal = signal || controller.signal;
 
-  const reader = response.body?.getReader();
-  if (!reader) return;
+  try {
+    const response = await fetch(`/api/chats/${chatId}/ai/message`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ message }),
+      signal: effectiveSignal,
+    });
 
-  const decoder = new TextDecoder();
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    const text = decoder.decode(value);
-    const lines = text.split('\n');
-
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6);
-        if (data === '[DONE]') {
-          onDone();
-        } else {
-          try {
-            const parsed = JSON.parse(data);
-            onChunk(parsed.content);
-          } catch {}
-        }
-      }
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Ошибка сервера' }));
+      throw new Error(error.detail || 'Ошибка AI');
     }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      cleanup();
+      return cleanup;
+    }
+
+    // Process stream in background
+    processSSEStream(reader, onChunk, onDone, effectiveSignal)
+      .catch((error) => {
+        if (error.name !== 'AbortError') {
+          console.error('Stream processing error:', error);
+        }
+      })
+      .finally(cleanup);
+
+    return cleanup;
+  } catch (error) {
+    cleanup();
+    if ((error as Error).name === 'AbortError') {
+      console.debug('AI message stream aborted');
+      return cleanup;
+    }
+    throw error;
   }
 };
 
+/**
+ * Stream quick action with AbortController support
+ * Returns a cleanup function to abort the request
+ */
 export const streamQuickAction = async (
   chatId: number,
   action: string,
   onChunk: (chunk: string) => void,
-  onDone: () => void
-) => {
-  const response = await fetch(`/api/chats/${chatId}/ai/message`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',  // Send cookies with request
-    body: JSON.stringify({ quick_action: action }),
-  });
+  onDone: () => void,
+  signal?: AbortSignal
+): Promise<() => void> => {
+  const streamId = `quick-action-${chatId}-${action}-${Date.now()}`;
+  const { controller, cleanup } = createStreamController(streamId);
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Ошибка сервера' }));
-    throw new Error(error.detail || 'Ошибка AI');
-  }
+  // Use provided signal or create our own
+  const effectiveSignal = signal || controller.signal;
 
-  const reader = response.body?.getReader();
-  if (!reader) return;
+  try {
+    const response = await fetch(`/api/chats/${chatId}/ai/message`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ quick_action: action }),
+      signal: effectiveSignal,
+    });
 
-  const decoder = new TextDecoder();
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    const text = decoder.decode(value);
-    const lines = text.split('\n');
-
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6);
-        if (data === '[DONE]') {
-          onDone();
-        } else {
-          try {
-            const parsed = JSON.parse(data);
-            onChunk(parsed.content);
-          } catch {}
-        }
-      }
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Ошибка сервера' }));
+      throw new Error(error.detail || 'Ошибка AI');
     }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      cleanup();
+      return cleanup;
+    }
+
+    // Process stream in background
+    processSSEStream(reader, onChunk, onDone, effectiveSignal)
+      .catch((error) => {
+        if (error.name !== 'AbortError') {
+          console.error('Stream processing error:', error);
+        }
+      })
+      .finally(cleanup);
+
+    return cleanup;
+  } catch (error) {
+    cleanup();
+    if ((error as Error).name === 'AbortError') {
+      console.debug('Quick action stream aborted');
+      return cleanup;
+    }
+    throw error;
   }
 };
 
@@ -587,18 +1009,18 @@ export const getEntities = async (params?: {
   limit?: number;
   offset?: number;
 }): Promise<Entity[]> => {
-  const searchParams = new URLSearchParams();
+  const searchParams: Record<string, string> = {};
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) searchParams.set(key, String(value));
+      if (value !== undefined) searchParams[key] = String(value);
     });
   }
-  const { data } = await api.get(`/entities?${searchParams}`);
+  const { data } = await deduplicatedGet<Entity[]>('/entities', { params: searchParams });
   return data;
 };
 
 export const getEntity = async (id: number): Promise<EntityWithRelations> => {
-  const { data } = await api.get(`/entities/${id}`);
+  const { data } = await deduplicatedGet<EntityWithRelations>(`/entities/${id}`);
   return data;
 };
 
@@ -615,7 +1037,7 @@ export const createEntity = async (entityData: {
   extra_data?: Record<string, unknown>;
   department_id?: number;
 }): Promise<Entity> => {
-  const { data } = await api.post('/entities', entityData);
+  const { data } = await debouncedMutation<Entity>('post', '/entities', entityData);
   return data;
 };
 
@@ -630,50 +1052,50 @@ export const updateEntity = async (id: number, updates: {
   extra_data?: Record<string, unknown>;
   department_id?: number | null;
 }): Promise<Entity> => {
-  const { data } = await api.put(`/entities/${id}`, updates);
+  const { data } = await debouncedMutation<Entity>('put', `/entities/${id}`, updates);
   return data;
 };
 
 export const deleteEntity = async (id: number): Promise<void> => {
-  await api.delete(`/entities/${id}`);
+  await debouncedMutation<void>('delete', `/entities/${id}`);
 };
 
-export const transferEntity = async (entityId: number, data: {
+export const transferEntity = async (entityId: number, transferData: {
   to_user_id: number;
   to_department_id?: number;
   comment?: string;
 }): Promise<{ success: boolean; transfer_id: number }> => {
-  const response = await api.post(`/entities/${entityId}/transfer`, data);
-  return response.data;
+  const { data } = await debouncedMutation<{ success: boolean; transfer_id: number }>('post', `/entities/${entityId}/transfer`, transferData);
+  return data;
 };
 
 export const linkChatToEntity = async (entityId: number, chatId: number): Promise<void> => {
-  await api.post(`/entities/${entityId}/link-chat/${chatId}`);
+  await debouncedMutation<void>('post', `/entities/${entityId}/link-chat/${chatId}`);
 };
 
 export const unlinkChatFromEntity = async (entityId: number, chatId: number): Promise<void> => {
-  await api.delete(`/entities/${entityId}/unlink-chat/${chatId}`);
+  await debouncedMutation<void>('delete', `/entities/${entityId}/unlink-chat/${chatId}`);
 };
 
 export const getEntityStatsByType = async (): Promise<Record<string, number>> => {
-  const { data } = await api.get('/entities/stats/by-type');
+  const { data } = await deduplicatedGet<Record<string, number>>('/entities/stats/by-type');
   return data;
 };
 
 export const getEntityStatsByStatus = async (type?: EntityType): Promise<Record<string, number>> => {
-  const params = type ? `?type=${type}` : '';
-  const { data } = await api.get(`/entities/stats/by-status${params}`);
+  const params = type ? { type } : undefined;
+  const { data } = await deduplicatedGet<Record<string, number>>('/entities/stats/by-status', { params });
   return data;
 };
 
 // Entity Criteria
 export const getEntityCriteria = async (entityId: number): Promise<EntityCriteria> => {
-  const { data } = await api.get(`/criteria/entities/${entityId}`);
+  const { data } = await deduplicatedGet<EntityCriteria>(`/criteria/entities/${entityId}`);
   return data;
 };
 
 export const updateEntityCriteria = async (entityId: number, criteria: { name: string; description: string; weight: number; category: string }[]): Promise<EntityCriteria> => {
-  const { data } = await api.put(`/criteria/entities/${entityId}`, { criteria });
+  const { data } = await debouncedMutation<EntityCriteria>('put', `/criteria/entities/${entityId}`, { criteria });
   return data;
 };
 
@@ -703,18 +1125,18 @@ export const getCalls = async (params?: {
   limit?: number;
   offset?: number;
 }): Promise<CallRecording[]> => {
-  const searchParams = new URLSearchParams();
+  const searchParams: Record<string, string> = {};
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) searchParams.set(key, String(value));
+      if (value !== undefined) searchParams[key] = String(value);
     });
   }
-  const { data } = await api.get(`/calls?${searchParams}`);
+  const { data } = await deduplicatedGet<CallRecording[]>('/calls', { params: searchParams });
   return data;
 };
 
 export const getCall = async (id: number): Promise<CallRecording> => {
-  const { data } = await api.get(`/calls/${id}`);
+  const { data } = await deduplicatedGet<CallRecording>(`/calls/${id}`);
   return data;
 };
 
@@ -742,13 +1164,13 @@ export const uploadCallRecording = async (
   return response.json();
 };
 
-export const startCallBot = async (data: {
+export const startCallBot = async (botData: {
   source_url: string;
   bot_name?: string;
   entity_id?: number;
 }): Promise<{ id: number; status: string }> => {
-  const response = await api.post('/calls/start-bot', data);
-  return response.data;
+  const { data } = await debouncedMutation<{ id: number; status: string }>('post', '/calls/start-bot', botData);
+  return data;
 };
 
 export const getCallStatus = async (
@@ -761,33 +1183,34 @@ export const getCallStatus = async (
   progress?: number;
   progress_stage?: string;
 }> => {
+  // Don't deduplicate status calls - they need fresh data each time
   const { data } = await api.get(`/calls/${id}/status`, { signal });
   return data;
 };
 
 export const stopCallRecording = async (id: number): Promise<void> => {
-  await api.post(`/calls/${id}/stop`);
+  await debouncedMutation<void>('post', `/calls/${id}/stop`);
 };
 
 export const deleteCall = async (id: number): Promise<void> => {
-  await api.delete(`/calls/${id}`);
+  await debouncedMutation<void>('delete', `/calls/${id}`);
 };
 
 export const linkCallToEntity = async (callId: number, entityId: number): Promise<void> => {
-  await api.post(`/calls/${callId}/link-entity/${entityId}`);
+  await debouncedMutation<void>('post', `/calls/${callId}/link-entity/${entityId}`);
 };
 
 export const reprocessCall = async (id: number): Promise<{ success: boolean; status: string }> => {
-  const { data } = await api.post(`/calls/${id}/reprocess`);
+  const { data } = await debouncedMutation<{ success: boolean; status: string }>('post', `/calls/${id}/reprocess`);
   return data;
 };
 
 export const updateCall = async (
   id: number,
-  data: { title?: string; entity_id?: number }
+  callData: { title?: string; entity_id?: number }
 ): Promise<{ id: number; title?: string; entity_id?: number; entity_name?: string; success: boolean }> => {
-  const { data: result } = await api.patch(`/calls/${id}`, data);
-  return result;
+  const { data } = await debouncedMutation<{ id: number; title?: string; entity_id?: number; entity_name?: string; success: boolean }>('patch', `/calls/${id}`, callData);
+  return data;
 };
 
 
@@ -809,17 +1232,17 @@ export interface ProcessURLResponse {
 }
 
 export const detectExternalLinkType = async (url: string): Promise<DetectLinkTypeResponse> => {
-  const { data } = await api.get(`/external/detect-type?url=${encodeURIComponent(url)}`);
+  const { data } = await deduplicatedGet<DetectLinkTypeResponse>('/external/detect-type', { params: { url } });
   return data;
 };
 
-export const processExternalURL = async (data: {
+export const processExternalURL = async (urlData: {
   url: string;
   title?: string;
   entity_id?: number;
 }): Promise<ProcessURLResponse> => {
-  const { data: result } = await api.post('/external/process-url', data);
-  return result;
+  const { data } = await debouncedMutation<ProcessURLResponse>('post', '/external/process-url', urlData);
+  return data;
 };
 
 export const getExternalProcessingStatus = async (callId: number): Promise<{
@@ -830,6 +1253,7 @@ export const getExternalProcessingStatus = async (callId: number): Promise<{
   error_message?: string;
   title?: string;
 }> => {
+  // Don't deduplicate status calls - they need fresh data each time
   const { data } = await api.get(`/external/status/${callId}`);
   return data;
 };
@@ -841,7 +1265,13 @@ export const getSupportedExternalTypes = async (): Promise<{
     examples: string[];
   }>;
 }> => {
-  const { data } = await api.get('/external/supported-types');
+  const { data } = await deduplicatedGet<{
+    supported_types: Array<{
+      type: string;
+      description: string;
+      examples: string[];
+    }>;
+  }>('/external/supported-types');
   return data;
 };
 
@@ -880,32 +1310,32 @@ export interface InviteMemberRequest {
 }
 
 export const getCurrentOrganization = async (): Promise<Organization> => {
-  const { data } = await api.get('/organizations/current');
+  const { data } = await deduplicatedGet<Organization>('/organizations/current');
   return data;
 };
 
 export const getOrgMembers = async (): Promise<OrgMember[]> => {
-  const { data } = await api.get('/organizations/current/members');
+  const { data } = await deduplicatedGet<OrgMember[]>('/organizations/current/members');
   return data;
 };
 
-export const inviteMember = async (data: InviteMemberRequest): Promise<OrgMember> => {
-  const { data: result } = await api.post('/organizations/current/members', data);
-  return result;
+export const inviteMember = async (memberData: InviteMemberRequest): Promise<OrgMember> => {
+  const { data } = await debouncedMutation<OrgMember>('post', '/organizations/current/members', memberData);
+  return data;
 };
 
 export const updateMemberRole = async (userId: number, role: OrgRole): Promise<{ success: boolean }> => {
-  const { data } = await api.patch(`/organizations/current/members/${userId}/role`, { role });
+  const { data } = await debouncedMutation<{ success: boolean }>('patch', `/organizations/current/members/${userId}/role`, { role });
   return data;
 };
 
 export const removeMember = async (userId: number): Promise<{ success: boolean }> => {
-  const { data } = await api.delete(`/organizations/current/members/${userId}`);
+  const { data } = await debouncedMutation<{ success: boolean }>('delete', `/organizations/current/members/${userId}`);
   return data;
 };
 
 export const getMyOrgRole = async (): Promise<{ role: OrgRole }> => {
-  const { data } = await api.get('/organizations/current/my-role');
+  const { data } = await deduplicatedGet<{ role: OrgRole }>('/organizations/current/my-role');
   return data;
 };
 
@@ -949,35 +1379,35 @@ export interface UserSimple {
   department_role?: string;
 }
 
-export const shareResource = async (data: ShareRequest): Promise<ShareResponse> => {
-  const { data: result } = await api.post('/sharing', data);
-  return result;
+export const shareResource = async (shareData: ShareRequest): Promise<ShareResponse> => {
+  const { data } = await debouncedMutation<ShareResponse>('post', '/sharing', shareData);
+  return data;
 };
 
 export const revokeShare = async (shareId: number): Promise<{ success: boolean }> => {
-  const { data } = await api.delete(`/sharing/${shareId}`);
+  const { data } = await debouncedMutation<{ success: boolean }>('delete', `/sharing/${shareId}`);
   return data;
 };
 
 export const getMyShares = async (resourceType?: ResourceType): Promise<ShareResponse[]> => {
-  const params = resourceType ? `?resource_type=${resourceType}` : '';
-  const { data } = await api.get(`/sharing/my-shares${params}`);
+  const params = resourceType ? { resource_type: resourceType } : undefined;
+  const { data } = await deduplicatedGet<ShareResponse[]>('/sharing/my-shares', { params });
   return data;
 };
 
 export const getSharedWithMe = async (resourceType?: ResourceType): Promise<ShareResponse[]> => {
-  const params = resourceType ? `?resource_type=${resourceType}` : '';
-  const { data } = await api.get(`/sharing/shared-with-me${params}`);
+  const params = resourceType ? { resource_type: resourceType } : undefined;
+  const { data } = await deduplicatedGet<ShareResponse[]>('/sharing/shared-with-me', { params });
   return data;
 };
 
 export const getResourceShares = async (resourceType: ResourceType, resourceId: number): Promise<ShareResponse[]> => {
-  const { data } = await api.get(`/sharing/resource/${resourceType}/${resourceId}`);
+  const { data } = await deduplicatedGet<ShareResponse[]>(`/sharing/resource/${resourceType}/${resourceId}`);
   return data;
 };
 
 export const getSharableUsers = async (): Promise<UserSimple[]> => {
-  const { data } = await api.get('/sharing/users');
+  const { data } = await deduplicatedGet<UserSimple[]>('/sharing/users');
   return data;
 };
 
@@ -1064,12 +1494,12 @@ export const getDepartments = async (parentId?: number | null): Promise<Departme
   if (parentId !== undefined && parentId !== null) {
     params.parent_id = String(parentId);
   }
-  const { data } = await api.get('/departments', { params });
+  const { data } = await deduplicatedGet<Department[]>('/departments', { params });
   return data;
 };
 
 export const getDepartment = async (id: number): Promise<Department> => {
-  const { data } = await api.get(`/departments/${id}`);
+  const { data } = await deduplicatedGet<Department>(`/departments/${id}`);
   return data;
 };
 
@@ -1079,7 +1509,7 @@ export const createDepartment = async (dept: {
   color?: string;
   parent_id?: number;
 }): Promise<Department> => {
-  const { data } = await api.post('/departments', dept);
+  const { data } = await debouncedMutation<Department>('post', '/departments', dept);
   return data;
 };
 
@@ -1089,38 +1519,38 @@ export const updateDepartment = async (id: number, updates: {
   color?: string;
   is_active?: boolean;
 }): Promise<Department> => {
-  const { data } = await api.patch(`/departments/${id}`, updates);
+  const { data } = await debouncedMutation<Department>('patch', `/departments/${id}`, updates);
   return data;
 };
 
 export const deleteDepartment = async (id: number): Promise<void> => {
-  await api.delete(`/departments/${id}`);
+  await debouncedMutation<void>('delete', `/departments/${id}`);
 };
 
 export const getDepartmentMembers = async (departmentId: number): Promise<DepartmentMember[]> => {
-  const { data } = await api.get(`/departments/${departmentId}/members`);
+  const { data } = await deduplicatedGet<DepartmentMember[]>(`/departments/${departmentId}/members`);
   return data;
 };
 
-export const addDepartmentMember = async (departmentId: number, data: {
+export const addDepartmentMember = async (departmentId: number, memberData: {
   user_id: number;
   role?: DeptRole;
 }): Promise<DepartmentMember> => {
-  const { data: result } = await api.post(`/departments/${departmentId}/members`, data);
-  return result;
+  const { data } = await debouncedMutation<DepartmentMember>('post', `/departments/${departmentId}/members`, memberData);
+  return data;
 };
 
 export const updateDepartmentMember = async (departmentId: number, userId: number, role: DeptRole): Promise<DepartmentMember> => {
-  const { data } = await api.patch(`/departments/${departmentId}/members/${userId}`, { role });
+  const { data } = await debouncedMutation<DepartmentMember>('patch', `/departments/${departmentId}/members/${userId}`, { role });
   return data;
 };
 
 export const removeDepartmentMember = async (departmentId: number, userId: number): Promise<void> => {
-  await api.delete(`/departments/${departmentId}/members/${userId}`);
+  await debouncedMutation<void>('delete', `/departments/${departmentId}/members/${userId}`);
 };
 
 export const getMyDepartments = async (): Promise<Department[]> => {
-  const { data } = await api.get('/departments/my/departments');
+  const { data } = await deduplicatedGet<Department[]>('/departments/my/departments');
   return data;
 };
 
@@ -1165,34 +1595,34 @@ export interface AcceptInvitationResponse {
   telegram_bind_url?: string;
 }
 
-export const createInvitation = async (data: {
+export const createInvitation = async (inviteData: {
   email?: string;
   name?: string;
   org_role?: OrgRole;
   department_ids?: { id: number; role: DeptRole }[];
   expires_in_days?: number;
 }): Promise<Invitation> => {
-  const { data: result } = await api.post('/invitations', data);
-  return result;
+  const { data } = await debouncedMutation<Invitation>('post', '/invitations', inviteData);
+  return data;
 };
 
 export const getInvitations = async (includeUsed: boolean = false): Promise<Invitation[]> => {
-  const { data } = await api.get(`/invitations?include_used=${includeUsed}`);
+  const { data } = await deduplicatedGet<Invitation[]>('/invitations', { params: { include_used: includeUsed } });
   return data;
 };
 
 export const validateInvitation = async (token: string): Promise<InvitationValidation> => {
-  const { data } = await api.get(`/invitations/validate/${token}`);
+  const { data } = await deduplicatedGet<InvitationValidation>(`/invitations/validate/${token}`);
   return data;
 };
 
-export const acceptInvitation = async (token: string, data: AcceptInvitationRequest): Promise<AcceptInvitationResponse> => {
-  const { data: result } = await api.post(`/invitations/accept/${token}`, data);
-  return result;
+export const acceptInvitation = async (token: string, acceptData: AcceptInvitationRequest): Promise<AcceptInvitationResponse> => {
+  const { data } = await debouncedMutation<AcceptInvitationResponse>('post', `/invitations/accept/${token}`, acceptData);
+  return data;
 };
 
 export const revokeInvitation = async (id: number): Promise<{ success: boolean }> => {
-  const { data } = await api.delete(`/invitations/${id}`);
+  const { data } = await debouncedMutation<{ success: boolean }>('delete', `/invitations/${id}`);
   return data;
 };
 
@@ -1229,12 +1659,12 @@ export interface PermissionAuditLog {
 }
 
 export const getCustomRoles = async (): Promise<CustomRole[]> => {
-  const { data } = await api.get('/admin/custom-roles');
+  const { data } = await deduplicatedGet<CustomRole[]>('/admin/custom-roles');
   return data;
 };
 
 export const getCustomRole = async (id: number): Promise<CustomRole> => {
-  const { data } = await api.get(`/admin/custom-roles/${id}`);
+  const { data } = await deduplicatedGet<CustomRole>(`/admin/custom-roles/${id}`);
   return data;
 };
 
@@ -1244,7 +1674,7 @@ export const createCustomRole = async (roleData: {
   base_role: string;
   org_id?: number;
 }): Promise<CustomRole> => {
-  const { data } = await api.post('/admin/custom-roles', roleData);
+  const { data } = await debouncedMutation<CustomRole>('post', '/admin/custom-roles', roleData);
   return data;
 };
 
@@ -1253,30 +1683,30 @@ export const updateCustomRole = async (id: number, updates: {
   description?: string;
   is_active?: boolean;
 }): Promise<CustomRole> => {
-  const { data } = await api.patch(`/admin/custom-roles/${id}`, updates);
+  const { data } = await debouncedMutation<CustomRole>('patch', `/admin/custom-roles/${id}`, updates);
   return data;
 };
 
 export const deleteCustomRole = async (id: number): Promise<void> => {
-  await api.delete(`/admin/custom-roles/${id}`);
+  await debouncedMutation<void>('delete', `/admin/custom-roles/${id}`);
 };
 
 export const setRolePermission = async (roleId: number, permission: string, allowed: boolean): Promise<PermissionOverride> => {
-  const { data } = await api.post(`/admin/custom-roles/${roleId}/permissions`, { permission, allowed });
+  const { data } = await debouncedMutation<PermissionOverride>('post', `/admin/custom-roles/${roleId}/permissions`, { permission, allowed });
   return data;
 };
 
 export const removeRolePermission = async (roleId: number, permission: string): Promise<void> => {
-  await api.delete(`/admin/custom-roles/${roleId}/permissions/${permission}`);
+  await debouncedMutation<void>('delete', `/admin/custom-roles/${roleId}/permissions/${permission}`);
 };
 
 export const assignCustomRole = async (roleId: number, userId: number): Promise<{ success: boolean }> => {
-  const { data } = await api.post(`/admin/custom-roles/${roleId}/assign/${userId}`);
+  const { data } = await debouncedMutation<{ success: boolean }>('post', `/admin/custom-roles/${roleId}/assign/${userId}`);
   return data;
 };
 
 export const unassignCustomRole = async (roleId: number, userId: number): Promise<{ success: boolean }> => {
-  const { data } = await api.delete(`/admin/custom-roles/${roleId}/assign/${userId}`);
+  const { data } = await debouncedMutation<{ success: boolean }>('delete', `/admin/custom-roles/${roleId}/assign/${userId}`);
   return data;
 };
 
@@ -1285,7 +1715,7 @@ export const getPermissionAuditLogs = async (params?: {
   limit?: number;
   offset?: number;
 }): Promise<PermissionAuditLog[]> => {
-  const { data } = await api.get('/admin/permission-audit-logs', { params });
+  const { data } = await deduplicatedGet<PermissionAuditLog[]>('/admin/permission-audit-logs', { params });
   return data;
 };
 
@@ -1317,17 +1747,91 @@ export interface UserFeatures {
 }
 
 export const getMyPermissions = async (): Promise<EffectivePermissions> => {
-  const { data } = await api.get('/admin/me/permissions');
+  const { data } = await deduplicatedGet<EffectivePermissions>('/admin/me/permissions');
   return data;
 };
 
 export const getMyMenu = async (): Promise<MenuConfig> => {
-  const { data } = await api.get('/admin/me/menu');
+  const { data } = await deduplicatedGet<MenuConfig>('/admin/me/menu');
   return data;
 };
 
 export const getMyFeatures = async (): Promise<UserFeatures> => {
-  const { data } = await api.get('/admin/me/features');
+  const { data } = await deduplicatedGet<UserFeatures>('/admin/me/features');
+  return data;
+};
+
+
+// === CURRENCY ===
+
+export interface ExchangeRatesResponse {
+  rates: Record<string, number>;
+  base_currency: string;
+  last_updated: string | null;
+  is_fallback: boolean;
+  supported_currencies: string[];
+}
+
+export interface CurrencyConversionRequest {
+  amount: number;
+  from_currency: string;
+  to_currency: string;
+}
+
+export interface CurrencyConversionResponse {
+  original_amount: number;
+  from_currency: string;
+  to_currency: string;
+  converted_amount: number;
+  rate: number;
+}
+
+export interface SupportedCurrency {
+  code: string;
+  name: string;
+  symbol: string;
+}
+
+export interface SupportedCurrenciesResponse {
+  currencies: SupportedCurrency[];
+  default_base: string;
+}
+
+/**
+ * Get exchange rates for all supported currencies.
+ * @param base - Base currency for rates (default: RUB)
+ * @param refresh - Force refresh from API (bypass cache)
+ * @returns Exchange rates relative to base currency
+ */
+export const getExchangeRates = async (
+  base: string = 'RUB',
+  refresh: boolean = false
+): Promise<ExchangeRatesResponse> => {
+  const params: Record<string, string> = { base };
+  if (refresh) params.refresh = 'true';
+  const { data } = await deduplicatedGet<ExchangeRatesResponse>('/currency/rates', { params });
+  return data;
+};
+
+/**
+ * Convert an amount between currencies using the API.
+ * @param request - Conversion request with amount and currencies
+ * @returns Converted amount and rate
+ */
+export const convertCurrencyApi = async (
+  request: CurrencyConversionRequest
+): Promise<CurrencyConversionResponse> => {
+  // Currency conversion can be called frequently, no debounce needed
+  const { data } = await api.post('/currency/convert', request);
+  return data;
+};
+
+/**
+ * Get list of supported currencies.
+ * @returns List of supported currencies with names and symbols
+ */
+export const getSupportedCurrencies = async (): Promise<SupportedCurrenciesResponse> => {
+  const { data } = await deduplicatedGet<SupportedCurrenciesResponse>('/currency/supported');
   return data;
 };
 
@@ -1401,64 +1905,64 @@ export interface ApplicationUpdate {
 }
 
 export const getVacancies = async (filters?: VacancyFilters): Promise<Vacancy[]> => {
-  const params = new URLSearchParams();
+  const params: Record<string, string> = {};
   if (filters) {
     Object.entries(filters).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) params.set(key, String(value));
+      if (value !== undefined && value !== null) params[key] = String(value);
     });
   }
-  const { data } = await api.get(`/vacancies?${params}`);
+  const { data } = await deduplicatedGet<Vacancy[]>('/vacancies', { params });
   return data;
 };
 
 export const getVacancy = async (id: number): Promise<Vacancy> => {
-  const { data } = await api.get(`/vacancies/${id}`);
+  const { data } = await deduplicatedGet<Vacancy>(`/vacancies/${id}`);
   return data;
 };
 
 export const createVacancy = async (vacancyData: VacancyCreate): Promise<Vacancy> => {
-  const { data } = await api.post('/vacancies', vacancyData);
+  const { data } = await debouncedMutation<Vacancy>('post', '/vacancies', vacancyData);
   return data;
 };
 
 export const updateVacancy = async (id: number, updates: VacancyUpdate): Promise<Vacancy> => {
-  const { data } = await api.put(`/vacancies/${id}`, updates);
+  const { data } = await debouncedMutation<Vacancy>('put', `/vacancies/${id}`, updates);
   return data;
 };
 
 export const deleteVacancy = async (id: number): Promise<void> => {
-  await api.delete(`/vacancies/${id}`);
+  await debouncedMutation<void>('delete', `/vacancies/${id}`);
 };
 
 // Vacancy Applications
 export const getApplications = async (vacancyId: number, stage?: ApplicationStage): Promise<VacancyApplication[]> => {
-  const params = stage ? `?stage=${stage}` : '';
-  const { data } = await api.get(`/vacancies/${vacancyId}/applications${params}`);
+  const params = stage ? { stage } : undefined;
+  const { data } = await deduplicatedGet<VacancyApplication[]>(`/vacancies/${vacancyId}/applications`, { params });
   return data;
 };
 
 export const createApplication = async (vacancyId: number, applicationData: ApplicationCreate): Promise<VacancyApplication> => {
-  const { data } = await api.post(`/vacancies/${vacancyId}/applications`, applicationData);
+  const { data } = await debouncedMutation<VacancyApplication>('post', `/vacancies/${vacancyId}/applications`, applicationData);
   return data;
 };
 
 export const updateApplication = async (applicationId: number, updates: ApplicationUpdate): Promise<VacancyApplication> => {
-  const { data } = await api.put(`/vacancies/applications/${applicationId}`, updates);
+  const { data } = await debouncedMutation<VacancyApplication>('put', `/vacancies/applications/${applicationId}`, updates);
   return data;
 };
 
 export const deleteApplication = async (applicationId: number): Promise<void> => {
-  await api.delete(`/vacancies/applications/${applicationId}`);
+  await debouncedMutation<void>('delete', `/vacancies/applications/${applicationId}`);
 };
 
 // Kanban Board
 export const getKanbanBoard = async (vacancyId: number): Promise<KanbanBoard> => {
-  const { data } = await api.get(`/vacancies/${vacancyId}/kanban`);
+  const { data } = await deduplicatedGet<KanbanBoard>(`/vacancies/${vacancyId}/kanban`);
   return data;
 };
 
 export const bulkMoveApplications = async (applicationIds: number[], stage: ApplicationStage): Promise<VacancyApplication[]> => {
-  const { data } = await api.post('/vacancies/applications/bulk-move', {
+  const { data } = await debouncedMutation<VacancyApplication[]>('post', '/vacancies/applications/bulk-move', {
     application_ids: applicationIds,
     stage
   });
@@ -1467,13 +1971,13 @@ export const bulkMoveApplications = async (applicationIds: number[], stage: Appl
 
 // Vacancy Stats
 export const getVacancyStats = async (): Promise<VacancyStats> => {
-  const { data } = await api.get('/vacancies/stats/overview');
+  const { data } = await deduplicatedGet<VacancyStats>('/vacancies/stats/overview');
   return data;
 };
 
 // Entity-Vacancy integration
 export const getEntityVacancies = async (entityId: number): Promise<VacancyApplication[]> => {
-  const { data } = await api.get(`/entities/${entityId}/vacancies`);
+  const { data } = await deduplicatedGet<VacancyApplication[]>(`/entities/${entityId}/vacancies`);
   return data;
 };
 
@@ -1482,7 +1986,7 @@ export const applyEntityToVacancy = async (
   vacancyId: number,
   source?: string
 ): Promise<VacancyApplication> => {
-  const { data } = await api.post(`/entities/${entityId}/apply-to-vacancy`, {
+  const { data } = await debouncedMutation<VacancyApplication>('post', `/entities/${entityId}/apply-to-vacancy`, {
     vacancy_id: vacancyId,
     source
   });
@@ -1504,7 +2008,7 @@ export interface EntityFile {
 }
 
 export const getEntityFiles = async (entityId: number): Promise<EntityFile[]> => {
-  const { data } = await api.get(`/entities/${entityId}/files`);
+  const { data } = await deduplicatedGet<EntityFile[]>(`/entities/${entityId}/files`);
   return data;
 };
 
@@ -1526,7 +2030,7 @@ export const uploadEntityFile = async (
 };
 
 export const deleteEntityFile = async (entityId: number, fileId: number): Promise<void> => {
-  await api.delete(`/entities/${entityId}/files/${fileId}`);
+  await debouncedMutation<void>('delete', `/entities/${entityId}/files/${fileId}`);
 };
 
 export const downloadEntityFile = async (entityId: number, fileId: number): Promise<Blob> => {
@@ -1576,7 +2080,7 @@ export interface ParsedVacancy {
 }
 
 export const parseResumeFromUrl = async (url: string): Promise<ParsedResume> => {
-  const { data } = await api.post('/parser/resume/url', { url });
+  const { data } = await debouncedMutation<ParsedResume>('post', '/parser/resume/url', { url });
   return data;
 };
 
@@ -1590,7 +2094,7 @@ export const parseResumeFromFile = async (file: File): Promise<ParsedResume> => 
 };
 
 export const parseVacancyFromUrl = async (url: string): Promise<ParsedVacancy> => {
-  const { data } = await api.post('/parser/vacancy/url', { url });
+  const { data } = await debouncedMutation<ParsedVacancy>('post', '/parser/vacancy/url', { url });
   return data;
 };
 
@@ -1622,7 +2126,7 @@ export interface SetFeatureAccessRequest {
 }
 
 export const getFeatureSettings = async (): Promise<FeatureSettingsResponse> => {
-  const { data } = await api.get('/admin/features');
+  const { data } = await deduplicatedGet<FeatureSettingsResponse>('/admin/features');
   return data;
 };
 
@@ -1630,7 +2134,7 @@ export const setFeatureAccess = async (
   featureName: string,
   request: SetFeatureAccessRequest
 ): Promise<FeatureSettingsResponse> => {
-  const { data } = await api.put(`/admin/features/${featureName}`, request);
+  const { data } = await debouncedMutation<FeatureSettingsResponse>('put', `/admin/features/${featureName}`, request);
   return data;
 };
 
@@ -1641,7 +2145,33 @@ export const deleteFeatureSetting = async (
   const params = departmentId !== undefined && departmentId !== null
     ? `?department_id=${departmentId}`
     : '';
-  const { data } = await api.delete(`/admin/features/${featureName}${params}`);
+  const { data } = await debouncedMutation<{ success: boolean }>('delete', `/admin/features/${featureName}${params}`);
+  return data;
+};
+
+// Feature Audit Logs
+export interface FeatureAuditLog {
+  id: number;
+  org_id: number;
+  changed_by: number | null;
+  changed_by_name: string | null;
+  changed_by_email: string | null;
+  feature_name: string;
+  action: string;  // 'enable', 'disable', 'delete'
+  department_id: number | null;
+  department_name: string | null;
+  old_value: boolean | null;
+  new_value: boolean | null;
+  details: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export const getFeatureAuditLogs = async (params?: {
+  feature_name?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<FeatureAuditLog[]> => {
+  const { data } = await deduplicatedGet<FeatureAuditLog[]>('/admin/features/audit-logs', { params });
   return data;
 };
 

@@ -14,7 +14,7 @@ from ..models.database import (
     DepartmentMember, ImpersonationLog, Entity, EntityType, EntityStatus,
     Chat, ChatType, Message, CallRecording, CallSource, CallStatus,
     SharedAccess, ResourceType, AccessLevel, CustomRole, RolePermissionOverride,
-    UserCustomRole, PermissionAuditLog
+    UserCustomRole, PermissionAuditLog, DepartmentFeature, FeatureAuditLog
 )
 from ..services.auth import get_superadmin, get_current_user, create_access_token, create_impersonation_token, hash_password, get_user_org
 from ..services.features import can_access_feature, get_user_features, get_org_features as get_org_features_service, set_department_feature, bulk_set_department_features, RESTRICTED_FEATURES, ALL_FEATURES
@@ -268,6 +268,23 @@ class SetFeatureAccessRequest(BaseModel):
 class UserFeaturesResponse(BaseModel):
     """Response for user's available features"""
     features: List[str]
+
+
+class FeatureAuditLogResponse(BaseModel):
+    """Response for feature audit log entry"""
+    id: int
+    org_id: int
+    changed_by: Optional[int] = None
+    changed_by_name: Optional[str] = None
+    changed_by_email: Optional[str] = None
+    feature_name: str
+    action: str
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
+    old_value: Optional[bool] = None
+    new_value: Optional[bool] = None
+    details: Optional[Dict[str, Any]] = None
+    created_at: datetime
 
 
 # ==================== Helper Functions ====================
@@ -3530,7 +3547,8 @@ async def set_feature_access(
             detail=f"Неизвестная функция: {feature_name}. Доступные функции: {ALL_FEATURES}"
         )
 
-    # Validate department IDs if provided
+    # Validate department IDs if provided and collect department names for audit
+    department_names: Dict[int, str] = {}
     if request_data.department_ids:
         for dept_id in request_data.department_ids:
             dept_result = await db.execute(
@@ -3539,11 +3557,38 @@ async def set_feature_access(
                     Department.org_id == org.id
                 )
             )
-            if not dept_result.scalar():
+            dept = dept_result.scalar()
+            if not dept:
                 raise HTTPException(
                     status_code=404,
                     detail=f"Отдел с ID {dept_id} не найден в организации"
                 )
+            department_names[dept_id] = dept.name
+
+    # Get current settings for audit log (to record old values)
+    old_settings: Dict[Optional[int], Optional[bool]] = {}
+    if request_data.department_ids:
+        for dept_id in request_data.department_ids:
+            existing_result = await db.execute(
+                select(DepartmentFeature).where(
+                    DepartmentFeature.org_id == org.id,
+                    DepartmentFeature.feature_name == feature_name,
+                    DepartmentFeature.department_id == dept_id
+                )
+            )
+            existing = existing_result.scalar()
+            old_settings[dept_id] = existing.enabled if existing else None
+    else:
+        # Org-wide setting
+        existing_result = await db.execute(
+            select(DepartmentFeature).where(
+                DepartmentFeature.org_id == org.id,
+                DepartmentFeature.feature_name == feature_name,
+                DepartmentFeature.department_id.is_(None)
+            )
+        )
+        existing = existing_result.scalar()
+        old_settings[None] = existing.enabled if existing else None
 
     # Set feature access
     try:
@@ -3556,6 +3601,46 @@ async def set_feature_access(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # Create audit log entries
+    action = "enable" if request_data.enabled else "disable"
+    if request_data.department_ids:
+        # Department-specific changes
+        for dept_id in request_data.department_ids:
+            audit_log = FeatureAuditLog(
+                org_id=org.id,
+                changed_by=current_user.id,
+                feature_name=feature_name,
+                action=action,
+                department_id=dept_id,
+                old_value=old_settings.get(dept_id),
+                new_value=request_data.enabled,
+                details={
+                    "department_name": department_names.get(dept_id),
+                    "changed_by_name": current_user.name,
+                    "changed_by_email": current_user.email
+                }
+            )
+            db.add(audit_log)
+    else:
+        # Org-wide change
+        audit_log = FeatureAuditLog(
+            org_id=org.id,
+            changed_by=current_user.id,
+            feature_name=feature_name,
+            action=action,
+            department_id=None,
+            old_value=old_settings.get(None),
+            new_value=request_data.enabled,
+            details={
+                "scope": "organization-wide",
+                "changed_by_name": current_user.name,
+                "changed_by_email": current_user.email
+            }
+        )
+        db.add(audit_log)
+
+    await db.commit()
 
     # Return updated feature settings
     features = await get_org_features_service(db, org.id)
@@ -3586,8 +3671,6 @@ async def delete_feature_setting(
     Returns:
         Success message
     """
-    from ..models.database import DepartmentFeature
-
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(status_code=404, detail="Организация не найдена")
@@ -3610,7 +3693,7 @@ async def delete_feature_setting(
                 detail="Только владелец организации может удалять настройки функций"
             )
 
-    # Find and delete the feature setting
+    # Find the feature setting
     query = select(DepartmentFeature).where(
         DepartmentFeature.org_id == org.id,
         DepartmentFeature.feature_name == feature_name
@@ -3622,15 +3705,144 @@ async def delete_feature_setting(
         query = query.where(DepartmentFeature.department_id.is_(None))
 
     result = await db.execute(query)
-    feature = result.scalar()
+    feature_setting = result.scalar()
 
-    if not feature:
+    if not feature_setting:
         raise HTTPException(
             status_code=404,
             detail="Настройка функции не найдена"
         )
 
-    await db.delete(feature)
+    # Get department name for audit log if department-specific
+    department_name = None
+    if department_id is not None:
+        dept_result = await db.execute(
+            select(Department).where(Department.id == department_id)
+        )
+        dept = dept_result.scalar()
+        department_name = dept.name if dept else None
+
+    # Create audit log entry before deletion
+    audit_log = FeatureAuditLog(
+        org_id=org.id,
+        changed_by=current_user.id,
+        feature_name=feature_name,
+        action="delete",
+        department_id=department_id,
+        old_value=feature_setting.enabled,
+        new_value=None,
+        details={
+            "scope": "department" if department_id else "organization-wide",
+            "department_name": department_name,
+            "changed_by_name": current_user.name,
+            "changed_by_email": current_user.email
+        }
+    )
+    db.add(audit_log)
+
+    await db.delete(feature_setting)
     await db.commit()
 
     return {"message": "Настройка функции успешно удалена"}
+
+
+@router.get("/features/audit-logs", response_model=List[FeatureAuditLogResponse])
+async def get_feature_audit_logs(
+    feature_name: Optional[str] = Query(None, description="Filter by feature name"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of logs to return"),
+    offset: int = Query(0, ge=0, description="Number of logs to skip"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get feature audit logs for the organization.
+
+    Returns audit trail of feature access changes including who made changes,
+    when they were made, and what was changed.
+
+    Only accessible by superadmin and organization owners.
+
+    Args:
+        feature_name: Optional filter by specific feature
+        limit: Maximum number of logs to return (default 50, max 200)
+        offset: Offset for pagination
+
+    Returns:
+        List of feature audit log entries
+    """
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Организация не найдена")
+
+    # Check if user has permission to view audit logs (superadmin or owner only)
+    is_superadmin = current_user.role == UserRole.superadmin
+
+    if not is_superadmin:
+        org_member_result = await db.execute(
+            select(OrgMember).where(
+                OrgMember.user_id == current_user.id,
+                OrgMember.org_id == org.id
+            )
+        )
+        org_member = org_member_result.scalar()
+
+        if not org_member or org_member.role != OrgRole.owner:
+            raise HTTPException(
+                status_code=403,
+                detail="Только владелец организации может просматривать журнал изменений функций"
+            )
+
+    # Build query
+    query = select(FeatureAuditLog).where(
+        FeatureAuditLog.org_id == org.id
+    )
+
+    if feature_name:
+        query = query.where(FeatureAuditLog.feature_name == feature_name)
+
+    query = query.order_by(FeatureAuditLog.created_at.desc()).offset(offset).limit(limit)
+
+    result = await db.execute(query)
+    logs = result.scalars().all()
+
+    # Build response with user and department names
+    response = []
+    for log in logs:
+        # Get changed_by user info
+        changed_by_name = None
+        changed_by_email = None
+        if log.changed_by:
+            user_result = await db.execute(
+                select(User).where(User.id == log.changed_by)
+            )
+            user = user_result.scalar()
+            if user:
+                changed_by_name = user.name
+                changed_by_email = user.email
+
+        # Get department name
+        department_name = None
+        if log.department_id:
+            dept_result = await db.execute(
+                select(Department).where(Department.id == log.department_id)
+            )
+            dept = dept_result.scalar()
+            if dept:
+                department_name = dept.name
+
+        response.append(FeatureAuditLogResponse(
+            id=log.id,
+            org_id=log.org_id,
+            changed_by=log.changed_by,
+            changed_by_name=changed_by_name,
+            changed_by_email=changed_by_email,
+            feature_name=log.feature_name,
+            action=log.action,
+            department_id=log.department_id,
+            department_name=department_name,
+            old_value=log.old_value,
+            new_value=log.new_value,
+            details=log.details,
+            created_at=log.created_at
+        ))
+
+    return response

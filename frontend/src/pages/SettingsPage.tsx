@@ -70,7 +70,7 @@ export default function SettingsPage() {
   const [animationsEnabled, setAnimationsEnabled] = useState(() =>
     localStorage.getItem('animations-enabled') === 'true'
   );
-  const { user, setUser, isSuperAdmin } = useAuthStore();
+  const { user, setUser, isSuperAdmin, fetchPermissions } = useAuthStore();
   const queryClient = useQueryClient();
 
   // Profile editing state
@@ -168,8 +168,10 @@ export default function SettingsPage() {
   const featureMutation = useMutation({
     mutationFn: ({ featureName, request }: { featureName: string; request: { department_ids?: number[] | null; enabled: boolean } }) =>
       setFeatureAccess(featureName, request),
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['feature-settings'] });
+      // Sync user's features after changing feature settings
+      await fetchPermissions();
       toast.success('Feature settings updated');
     },
     onError: (error: Error) => {
@@ -180,8 +182,10 @@ export default function SettingsPage() {
   const deleteFeatureMutation = useMutation({
     mutationFn: ({ featureName, departmentId }: { featureName: string; departmentId?: number | null }) =>
       deleteFeatureSetting(featureName, departmentId),
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['feature-settings'] });
+      // Sync user's features after removing feature setting
+      await fetchPermissions();
       toast.success('Feature setting removed');
     },
     onError: (error: Error) => {

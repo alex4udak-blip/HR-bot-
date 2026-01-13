@@ -1,10 +1,29 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAuthStore } from '../authStore';
-import type { User } from '@/types';
+import type { User, Session } from '@/types';
+import * as api from '@/services/api';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
+
+// Mock API functions
+vi.mock('@/services/api', async () => {
+  const actual = await vi.importActual('@/services/api');
+  return {
+    ...actual,
+    getMyPermissions: vi.fn().mockResolvedValue({
+      permissions: {},
+      source: 'default',
+      custom_role_name: null,
+    }),
+    getMyMenu: vi.fn().mockResolvedValue({ items: [] }),
+    getMyFeatures: vi.fn().mockResolvedValue({ features: [] }),
+    getSessions: vi.fn(),
+    logoutAllDevices: vi.fn(),
+    revokeSession: vi.fn(),
+  };
+});
 
 describe('authStore', () => {
   beforeEach(() => {
@@ -13,8 +32,18 @@ describe('authStore', () => {
       user: null,
       isLoading: true,
       originalUser: null,
+      permissions: {},
+      permissionsSource: null,
+      customRoleName: null,
+      menuItems: [],
+      permissionsLoading: false,
+      features: [],
+      sessions: [],
+      sessionsLoading: false,
+      featurePollingInterval: null,
     });
     mockFetch.mockClear();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
@@ -1008,6 +1037,215 @@ describe('authStore', () => {
       expect(
         useAuthStore.getState().canShareResource({ owner_id: 2, access_level: 'view' })
       ).toBe(false);
+    });
+  });
+
+  describe('sessions management', () => {
+    const mockSessions: Session[] = [
+      {
+        id: 'session-1',
+        user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        ip_address: '192.168.1.1',
+        created_at: '2024-01-01T10:00:00Z',
+        last_activity: '2024-01-01T12:00:00Z',
+        is_current: true,
+      },
+      {
+        id: 'session-2',
+        user_agent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)',
+        ip_address: '192.168.1.2',
+        created_at: '2024-01-01T08:00:00Z',
+        last_activity: '2024-01-01T11:00:00Z',
+        is_current: false,
+      },
+    ];
+
+    describe('fetchSessions', () => {
+      it('should not fetch sessions when user is null', async () => {
+        useAuthStore.setState({ user: null });
+
+        await useAuthStore.getState().fetchSessions();
+
+        expect(api.getSessions).not.toHaveBeenCalled();
+        expect(useAuthStore.getState().sessions).toEqual([]);
+      });
+
+      it('should fetch and set sessions successfully', async () => {
+        const mockUser: User = {
+          id: 1,
+          email: 'test@test.com',
+          name: 'Test User',
+          role: 'admin',
+          created_at: '2024-01-01T00:00:00Z',
+        };
+
+        useAuthStore.setState({ user: mockUser });
+        vi.mocked(api.getSessions).mockResolvedValueOnce(mockSessions);
+
+        await useAuthStore.getState().fetchSessions();
+
+        expect(api.getSessions).toHaveBeenCalled();
+        expect(useAuthStore.getState().sessions).toEqual(mockSessions);
+        expect(useAuthStore.getState().sessionsLoading).toBe(false);
+      });
+
+      it('should set sessionsLoading to true while fetching', async () => {
+        const mockUser: User = {
+          id: 1,
+          email: 'test@test.com',
+          name: 'Test User',
+          role: 'admin',
+          created_at: '2024-01-01T00:00:00Z',
+        };
+
+        useAuthStore.setState({ user: mockUser });
+
+        let loadingDuringFetch = false;
+        vi.mocked(api.getSessions).mockImplementationOnce(async () => {
+          loadingDuringFetch = useAuthStore.getState().sessionsLoading;
+          return mockSessions;
+        });
+
+        await useAuthStore.getState().fetchSessions();
+
+        expect(loadingDuringFetch).toBe(true);
+        expect(useAuthStore.getState().sessionsLoading).toBe(false);
+      });
+
+      it('should handle fetch sessions failure', async () => {
+        const mockUser: User = {
+          id: 1,
+          email: 'test@test.com',
+          name: 'Test User',
+          role: 'admin',
+          created_at: '2024-01-01T00:00:00Z',
+        };
+
+        useAuthStore.setState({ user: mockUser });
+        vi.mocked(api.getSessions).mockRejectedValueOnce(new Error('Network error'));
+
+        await useAuthStore.getState().fetchSessions();
+
+        expect(useAuthStore.getState().sessions).toEqual([]);
+        expect(useAuthStore.getState().sessionsLoading).toBe(false);
+      });
+    });
+
+    describe('logoutAllDevices', () => {
+      it('should throw error if not authenticated', async () => {
+        useAuthStore.setState({ user: null });
+
+        await expect(useAuthStore.getState().logoutAllDevices()).rejects.toThrow(
+          'Not authenticated'
+        );
+      });
+
+      it('should successfully logout from all devices', async () => {
+        const mockUser: User = {
+          id: 1,
+          email: 'test@test.com',
+          name: 'Test User',
+          role: 'admin',
+          created_at: '2024-01-01T00:00:00Z',
+        };
+
+        useAuthStore.setState({ user: mockUser, sessions: mockSessions });
+        vi.mocked(api.logoutAllDevices).mockResolvedValueOnce({
+          success: true,
+          sessions_revoked: 2,
+        });
+
+        const result = await useAuthStore.getState().logoutAllDevices();
+
+        expect(api.logoutAllDevices).toHaveBeenCalled();
+        expect(result.sessions_revoked).toBe(2);
+        expect(useAuthStore.getState().sessions).toEqual([]);
+      });
+
+      it('should handle logout all devices failure', async () => {
+        const mockUser: User = {
+          id: 1,
+          email: 'test@test.com',
+          name: 'Test User',
+          role: 'admin',
+          created_at: '2024-01-01T00:00:00Z',
+        };
+
+        useAuthStore.setState({ user: mockUser, sessions: mockSessions });
+        vi.mocked(api.logoutAllDevices).mockRejectedValueOnce(new Error('Server error'));
+
+        await expect(useAuthStore.getState().logoutAllDevices()).rejects.toThrow(
+          'Server error'
+        );
+        // Sessions should not be cleared on failure
+        expect(useAuthStore.getState().sessions).toEqual(mockSessions);
+      });
+    });
+
+    describe('revokeSession', () => {
+      it('should throw error if not authenticated', async () => {
+        useAuthStore.setState({ user: null });
+
+        await expect(useAuthStore.getState().revokeSession('session-1')).rejects.toThrow(
+          'Not authenticated'
+        );
+      });
+
+      it('should successfully revoke a session', async () => {
+        const mockUser: User = {
+          id: 1,
+          email: 'test@test.com',
+          name: 'Test User',
+          role: 'admin',
+          created_at: '2024-01-01T00:00:00Z',
+        };
+
+        useAuthStore.setState({ user: mockUser, sessions: mockSessions });
+        vi.mocked(api.revokeSession).mockResolvedValueOnce({ success: true });
+
+        await useAuthStore.getState().revokeSession('session-2');
+
+        expect(api.revokeSession).toHaveBeenCalledWith('session-2');
+        expect(useAuthStore.getState().sessions).toHaveLength(1);
+        expect(useAuthStore.getState().sessions[0].id).toBe('session-1');
+      });
+
+      it('should handle revoke session failure', async () => {
+        const mockUser: User = {
+          id: 1,
+          email: 'test@test.com',
+          name: 'Test User',
+          role: 'admin',
+          created_at: '2024-01-01T00:00:00Z',
+        };
+
+        useAuthStore.setState({ user: mockUser, sessions: mockSessions });
+        vi.mocked(api.revokeSession).mockRejectedValueOnce(new Error('Session not found'));
+
+        await expect(useAuthStore.getState().revokeSession('session-3')).rejects.toThrow(
+          'Session not found'
+        );
+        // Sessions should not be modified on failure
+        expect(useAuthStore.getState().sessions).toEqual(mockSessions);
+      });
+    });
+
+    describe('logout clears sessions', () => {
+      it('should clear sessions on logout', () => {
+        const mockUser: User = {
+          id: 1,
+          email: 'test@test.com',
+          name: 'Test User',
+          role: 'admin',
+          created_at: '2024-01-01T00:00:00Z',
+        };
+
+        useAuthStore.setState({ user: mockUser, sessions: mockSessions, sessionsLoading: true });
+        useAuthStore.getState().logout();
+
+        expect(useAuthStore.getState().sessions).toEqual([]);
+        expect(useAuthStore.getState().sessionsLoading).toBe(false);
+      });
     });
   });
 });

@@ -6,8 +6,8 @@ from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing import Optional, List, Literal
-from datetime import datetime
-from pydantic import BaseModel
+from datetime import datetime, timezone
+from pydantic import BaseModel, field_validator, model_validator
 import logging
 
 logger = logging.getLogger("hr-analyzer.vacancies")
@@ -80,22 +80,69 @@ class VacancyCreate(BaseModel):
     hiring_manager_id: Optional[int] = None
     closes_at: Optional[datetime] = None
 
-    @property
-    def model_post_init(self, __context):
-        """Validate salary range after initialization."""
-        pass
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str) -> str:
+        """Validate title is not empty and has at least 3 characters."""
+        if not v or not v.strip():
+            raise ValueError("title cannot be empty")
+        if len(v.strip()) < 3:
+            raise ValueError("title must be at least 3 characters long")
+        return v.strip()
 
-    def __init__(self, **data):
-        super().__init__(**data)
-        # Validate salary range
+    @field_validator("salary_min", "salary_max")
+    @classmethod
+    def validate_salary_positive(cls, v: Optional[int]) -> Optional[int]:
+        """Validate salary values are non-negative."""
+        if v is not None and v < 0:
+            raise ValueError("salary cannot be negative")
+        return v
+
+    @field_validator("priority")
+    @classmethod
+    def validate_priority(cls, v: int) -> int:
+        """Validate priority is in range 0-2."""
+        if v < 0 or v > 2:
+            raise ValueError("priority must be between 0 and 2")
+        return v
+
+    @field_validator("closes_at")
+    @classmethod
+    def validate_closes_at(cls, v: Optional[datetime]) -> Optional[datetime]:
+        """Validate closes_at is not in the past."""
+        if v is not None:
+            now = datetime.now(timezone.utc) if v.tzinfo else datetime.utcnow()
+            if v < now:
+                raise ValueError("closes_at cannot be in the past")
+        return v
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def validate_tags(cls, v) -> List[str]:
+        """Ensure tags is a valid list."""
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            raise ValueError("tags must be a list")
+        return v
+
+    @field_validator("extra_data", mode="before")
+    @classmethod
+    def validate_extra_data(cls, v) -> dict:
+        """Ensure extra_data is a valid dict."""
+        if v is None:
+            return {}
+        if not isinstance(v, dict):
+            raise ValueError("extra_data must be a dictionary")
+        return v
+
+    @model_validator(mode="after")
+    def validate_salary_range(self):
+        """Validate salary_min is not greater than salary_max."""
         if self.salary_min is not None and self.salary_max is not None:
             if self.salary_min > self.salary_max:
                 raise ValueError("salary_min cannot be greater than salary_max")
-        # Validate salary values are positive
-        if self.salary_min is not None and self.salary_min < 0:
-            raise ValueError("salary_min cannot be negative")
-        if self.salary_max is not None and self.salary_max < 0:
-            raise ValueError("salary_max cannot be negative")
+        return self
 
 
 class VacancyUpdate(BaseModel):
@@ -116,6 +163,72 @@ class VacancyUpdate(BaseModel):
     department_id: Optional[int] = None
     hiring_manager_id: Optional[int] = None
     closes_at: Optional[datetime] = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: Optional[str]) -> Optional[str]:
+        """Validate title is not empty and has at least 3 characters if provided."""
+        if v is not None:
+            if not v.strip():
+                raise ValueError("title cannot be empty")
+            if len(v.strip()) < 3:
+                raise ValueError("title must be at least 3 characters long")
+            return v.strip()
+        return v
+
+    @field_validator("salary_min", "salary_max")
+    @classmethod
+    def validate_salary_positive(cls, v: Optional[int]) -> Optional[int]:
+        """Validate salary values are non-negative."""
+        if v is not None and v < 0:
+            raise ValueError("salary cannot be negative")
+        return v
+
+    @field_validator("priority")
+    @classmethod
+    def validate_priority(cls, v: Optional[int]) -> Optional[int]:
+        """Validate priority is in range 0-2 if provided."""
+        if v is not None and (v < 0 or v > 2):
+            raise ValueError("priority must be between 0 and 2")
+        return v
+
+    @field_validator("closes_at")
+    @classmethod
+    def validate_closes_at(cls, v: Optional[datetime]) -> Optional[datetime]:
+        """Validate closes_at is not in the past."""
+        if v is not None:
+            now = datetime.now(timezone.utc) if v.tzinfo else datetime.utcnow()
+            if v < now:
+                raise ValueError("closes_at cannot be in the past")
+        return v
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def validate_tags(cls, v) -> Optional[List[str]]:
+        """Ensure tags is a valid list if provided."""
+        if v is None:
+            return None
+        if not isinstance(v, list):
+            raise ValueError("tags must be a list")
+        return v
+
+    @field_validator("extra_data", mode="before")
+    @classmethod
+    def validate_extra_data(cls, v) -> Optional[dict]:
+        """Ensure extra_data is a valid dict if provided."""
+        if v is None:
+            return None
+        if not isinstance(v, dict):
+            raise ValueError("extra_data must be a dictionary")
+        return v
+
+    @model_validator(mode="after")
+    def validate_salary_range(self):
+        """Validate salary_min is not greater than salary_max."""
+        if self.salary_min is not None and self.salary_max is not None:
+            if self.salary_min > self.salary_max:
+                raise ValueError("salary_min cannot be greater than salary_max")
+        return self
 
 
 class VacancyResponse(BaseModel):
@@ -489,8 +602,26 @@ async def update_vacancy(
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
-    # Update fields
+    # Get update data (only fields that were explicitly set)
     update_data = data.model_dump(exclude_unset=True)
+
+    # Validate salary range with combined values (existing + updates)
+    final_salary_min = update_data.get("salary_min", vacancy.salary_min)
+    final_salary_max = update_data.get("salary_max", vacancy.salary_max)
+    if final_salary_min is not None and final_salary_max is not None:
+        if final_salary_min > final_salary_max:
+            raise HTTPException(
+                status_code=422,
+                detail="salary_min cannot be greater than salary_max"
+            )
+
+    # Handle tags and extra_data: convert None to empty values
+    if "tags" in update_data and update_data["tags"] is None:
+        update_data["tags"] = []
+    if "extra_data" in update_data and update_data["extra_data"] is None:
+        update_data["extra_data"] = {}
+
+    # Update fields
     for field, value in update_data.items():
         setattr(vacancy, field, value)
 
@@ -728,6 +859,10 @@ async def update_application(
         if field != 'stage_order' or data.stage_order is not None:  # Don't override auto-calculated order
             setattr(application, field, value)
 
+    # Check if stage_order went negative and rebalance if needed
+    if application.stage_order is not None and application.stage_order < 0:
+        await rebalance_stage_orders(db, application.vacancy_id, application.stage)
+
     await db.commit()
     await db.refresh(application)
 
@@ -902,6 +1037,138 @@ async def get_kanban_board(
     )
 
 
+@router.get("/{vacancy_id}/kanban/column/{stage}", response_model=KanbanColumn)
+async def get_kanban_column(
+    vacancy_id: int,
+    stage: ApplicationStage,
+    skip: int = Query(0, ge=0, description="Number of items to skip"),
+    limit: int = Query(50, ge=1, le=200, description="Max candidates to return"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(check_vacancy_access)
+):
+    """Get paginated candidates for a specific Kanban column.
+
+    This endpoint is used for loading more candidates in a column (infinite scroll).
+    """
+    # Verify vacancy exists
+    vacancy_result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id)
+    )
+    vacancy = vacancy_result.scalar()
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Define stage titles
+    stage_titles = {
+        ApplicationStage.applied: "Отклики",
+        ApplicationStage.screening: "Скрининг",
+        ApplicationStage.phone_screen: "Телефонное интервью",
+        ApplicationStage.interview: "Интервью",
+        ApplicationStage.assessment: "Тестовое задание",
+        ApplicationStage.offer: "Оффер",
+        ApplicationStage.hired: "Наняты",
+        ApplicationStage.rejected: "Отклонены",
+        ApplicationStage.withdrawn: "Отозвали заявку",
+    }
+
+    # Get total count for this stage
+    total_count_result = await db.execute(
+        select(func.count(VacancyApplication.id))
+        .where(
+            VacancyApplication.vacancy_id == vacancy_id,
+            VacancyApplication.stage == stage
+        )
+    )
+    total_count = total_count_result.scalar() or 0
+
+    # Get applications with pagination
+    apps_result = await db.execute(
+        select(VacancyApplication)
+        .where(
+            VacancyApplication.vacancy_id == vacancy_id,
+            VacancyApplication.stage == stage
+        )
+        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
+        .offset(skip)
+        .limit(limit)
+    )
+    applications = apps_result.scalars().all()
+
+    # Bulk load entities
+    entity_ids = [app.entity_id for app in applications]
+    entities_map = {}
+    if entity_ids:
+        entities_result = await db.execute(
+            select(Entity).where(Entity.id.in_(entity_ids))
+        )
+        for entity in entities_result.scalars().all():
+            entities_map[entity.id] = entity
+
+    # Build response
+    app_responses = []
+    for app in applications:
+        entity = entities_map.get(app.entity_id)
+        app_responses.append(ApplicationResponse(
+            id=app.id,
+            vacancy_id=app.vacancy_id,
+            vacancy_title=vacancy.title,
+            entity_id=app.entity_id,
+            entity_name=entity.name if entity else None,
+            entity_type=entity.type if entity else None,
+            entity_email=entity.email if entity else None,
+            entity_phone=entity.phone if entity else None,
+            entity_position=entity.position if entity else None,
+            stage=app.stage,
+            stage_order=app.stage_order or 0,
+            rating=app.rating,
+            notes=app.notes,
+            rejection_reason=app.rejection_reason,
+            source=app.source,
+            next_interview_at=app.next_interview_at,
+            applied_at=app.applied_at,
+            last_stage_change_at=app.last_stage_change_at,
+            updated_at=app.updated_at
+        ))
+
+    return KanbanColumn(
+        stage=stage,
+        title=stage_titles.get(stage, str(stage.value)),
+        applications=app_responses,
+        count=len(app_responses),
+        total_count=total_count,
+        has_more=(skip + len(app_responses)) < total_count
+    )
+
+
+async def rebalance_stage_orders(
+    db: AsyncSession,
+    vacancy_id: int,
+    stage: ApplicationStage
+) -> None:
+    """Rebalance all stage_order values in a column to prevent negative numbers.
+
+    This function reassigns sequential positive order values (starting from 1000)
+    to all applications in a given stage, preserving their relative order.
+    Uses a starting value of 1000 with gaps to leave room for future insertions.
+    """
+    # Get all applications in this stage ordered by current stage_order
+    result = await db.execute(
+        select(VacancyApplication)
+        .where(
+            VacancyApplication.vacancy_id == vacancy_id,
+            VacancyApplication.stage == stage
+        )
+        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
+    )
+    applications = result.scalars().all()
+
+    # Reassign sequential orders starting from 1000 with gaps of 1000
+    for i, app in enumerate(applications):
+        app.stage_order = (i + 1) * 1000
+
+    logger.info(f"Rebalanced {len(applications)} applications in stage {stage} for vacancy {vacancy_id}")
+
+
 @router.post("/applications/bulk-move", response_model=List[ApplicationResponse])
 async def bulk_move_applications(
     data: BulkStageUpdate,
@@ -911,6 +1178,11 @@ async def bulk_move_applications(
     """Move multiple applications to a new stage."""
     if not data.application_ids:
         return []
+
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=403, detail="No organization access")
 
     result = await db.execute(
         select(VacancyApplication).where(
@@ -925,6 +1197,46 @@ async def bulk_move_applications(
     # Get the vacancy_id from first application
     vacancy_id = applications[0].vacancy_id
 
+    # Verify vacancy exists and belongs to user's organization
+    vacancy_result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id, Vacancy.org_id == org.id)
+    )
+    vacancy = vacancy_result.scalar()
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found in your organization")
+
+    # Verify all applications belong to the same vacancy
+    for app in applications:
+        if app.vacancy_id != vacancy_id:
+            raise HTTPException(
+                status_code=400,
+                detail="All applications must belong to the same vacancy"
+            )
+
+    # Verify all entities belong to the same organization
+    entity_ids = [app.entity_id for app in applications]
+    entities_result = await db.execute(
+        select(Entity).where(Entity.id.in_(entity_ids))
+    )
+    entities_map = {e.id: e for e in entities_result.scalars().all()}
+
+    for app in applications:
+        entity = entities_map.get(app.entity_id)
+        if not entity:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Entity {app.entity_id} not found"
+            )
+        if entity.org_id != org.id:
+            logger.warning(
+                f"Cross-org bulk-move attempt: user {current_user.id} tried to move "
+                f"entity {entity.id} (org {entity.org_id}) in vacancy {vacancy_id} (org {org.id})"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=f"Entity {entity.id} does not belong to your organization"
+            )
+
     # Get max stage_order for the new stage
     max_order_result = await db.execute(
         select(func.max(VacancyApplication.stage_order))
@@ -938,18 +1250,12 @@ async def bulk_move_applications(
     now = datetime.utcnow()
     for i, app in enumerate(applications):
         app.stage = data.stage
-        app.stage_order = max_order + i + 1
+        app.stage_order = max_order + (i + 1) * 1000
         app.last_stage_change_at = now
 
     await db.commit()
 
-    # Build response
-    entity_ids = [app.entity_id for app in applications]
-    entities_result = await db.execute(
-        select(Entity).where(Entity.id.in_(entity_ids))
-    )
-    entities_map = {e.id: e for e in entities_result.scalars().all()}
-
+    # Build response using already loaded entities
     responses = []
     for app in applications:
         entity = entities_map.get(app.entity_id)

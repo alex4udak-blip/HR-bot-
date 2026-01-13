@@ -29,3 +29,8 @@ export { useUserFeatures } from './useUserFeatures';
 export type {
   UseUserFeaturesReturn,
 } from './useUserFeatures';
+
+export { useCurrencyRates } from './useCurrencyRates';
+export type {
+  UseCurrencyRatesReturn,
+} from './useCurrencyRates';

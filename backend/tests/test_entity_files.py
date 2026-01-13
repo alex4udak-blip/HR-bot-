@@ -837,3 +837,518 @@ class TestEntityFilesAuthorization:
             f"/api/entities/{entity_for_files.id}/files/{entity_file.id}/download"
         )
         assert response.status_code == 401
+
+
+# ============================================================================
+# FILE LIMIT TESTS
+# ============================================================================
+
+class TestFileLimit:
+    """Tests for file count limit per entity."""
+
+    async def test_upload_within_limit(
+        self,
+        client: AsyncClient,
+        admin_user: User,
+        entity_for_files: Entity,
+        org_owner,
+        tmp_path: Path,
+        monkeypatch
+    ):
+        """Test uploading files within the limit."""
+        upload_dir = tmp_path / "uploads" / "entity_files"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            "api.routes.entities.ENTITY_FILES_DIR",
+            upload_dir
+        )
+        # Set a low limit for testing
+        monkeypatch.setattr("api.routes.entities.MAX_FILES_PER_ENTITY", 5)
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+        file_content = b"test content"
+
+        # Upload 5 files (should succeed)
+        for i in range(5):
+            response = await client.post(
+                f"/api/entities/{entity_for_files.id}/files",
+                files={"file": (f"file_{i}.txt", BytesIO(file_content), "text/plain")},
+                data={"file_type": "other"},
+                headers=auth_headers(token)
+            )
+            assert response.status_code == 200
+
+    async def test_upload_exceeds_limit(
+        self,
+        client: AsyncClient,
+        admin_user: User,
+        entity_for_files: Entity,
+        org_owner,
+        tmp_path: Path,
+        monkeypatch
+    ):
+        """Test uploading file when limit is reached."""
+        upload_dir = tmp_path / "uploads" / "entity_files"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            "api.routes.entities.ENTITY_FILES_DIR",
+            upload_dir
+        )
+        # Set a low limit for testing
+        monkeypatch.setattr("api.routes.entities.MAX_FILES_PER_ENTITY", 3)
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+        file_content = b"test content"
+
+        # Upload 3 files (limit)
+        for i in range(3):
+            response = await client.post(
+                f"/api/entities/{entity_for_files.id}/files",
+                files={"file": (f"file_{i}.txt", BytesIO(file_content), "text/plain")},
+                data={"file_type": "other"},
+                headers=auth_headers(token)
+            )
+            assert response.status_code == 200
+
+        # Try to upload 4th file (should fail)
+        response = await client.post(
+            f"/api/entities/{entity_for_files.id}/files",
+            files={"file": ("file_4.txt", BytesIO(file_content), "text/plain")},
+            data={"file_type": "other"},
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 400
+        assert "maximum" in response.json()["detail"].lower()
+        assert "20" in response.json()["detail"] or "3" in response.json()["detail"]
+
+    async def test_upload_after_delete_within_limit(
+        self,
+        client: AsyncClient,
+        admin_user: User,
+        entity_for_files: Entity,
+        org_owner,
+        tmp_path: Path,
+        monkeypatch
+    ):
+        """Test uploading file after deleting one to be within limit."""
+        upload_dir = tmp_path / "uploads" / "entity_files"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            "api.routes.entities.ENTITY_FILES_DIR",
+            upload_dir
+        )
+        # Set a low limit for testing
+        monkeypatch.setattr("api.routes.entities.MAX_FILES_PER_ENTITY", 2)
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+        file_content = b"test content"
+
+        # Upload 2 files (limit)
+        file_ids = []
+        for i in range(2):
+            response = await client.post(
+                f"/api/entities/{entity_for_files.id}/files",
+                files={"file": (f"file_{i}.txt", BytesIO(file_content), "text/plain")},
+                data={"file_type": "other"},
+                headers=auth_headers(token)
+            )
+            assert response.status_code == 200
+            file_ids.append(response.json()["id"])
+
+        # Delete one file
+        response = await client.delete(
+            f"/api/entities/{entity_for_files.id}/files/{file_ids[0]}",
+            headers=auth_headers(token)
+        )
+        assert response.status_code == 200
+
+        # Now upload should succeed
+        response = await client.post(
+            f"/api/entities/{entity_for_files.id}/files",
+            files={"file": ("new_file.txt", BytesIO(file_content), "text/plain")},
+            data={"file_type": "other"},
+            headers=auth_headers(token)
+        )
+        assert response.status_code == 200
+
+
+# ============================================================================
+# DISK SPACE TESTS
+# ============================================================================
+
+class TestDiskSpace:
+    """Tests for disk space checks."""
+
+    async def test_disk_space_check_function(self):
+        """Test the check_disk_space helper function."""
+        from api.routes.entities import check_disk_space
+        from pathlib import Path
+
+        # Check on root directory (should have space)
+        has_space, free_mb = check_disk_space(Path("/tmp"))
+        assert isinstance(has_space, bool)
+        assert isinstance(free_mb, int)
+        # On most systems, /tmp should have some space
+        assert free_mb > 0 or free_mb == -1  # -1 means couldn't check
+
+    async def test_upload_insufficient_disk_space(
+        self,
+        client: AsyncClient,
+        admin_user: User,
+        entity_for_files: Entity,
+        org_owner,
+        tmp_path: Path,
+        monkeypatch
+    ):
+        """Test upload rejection when disk space is insufficient."""
+        upload_dir = tmp_path / "uploads" / "entity_files"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            "api.routes.entities.ENTITY_FILES_DIR",
+            upload_dir
+        )
+
+        # Mock check_disk_space to return insufficient space
+        def mock_check_disk_space(path, required_mb=100):
+            return False, 50  # Only 50MB free, need 100MB
+
+        monkeypatch.setattr(
+            "api.routes.entities.check_disk_space",
+            mock_check_disk_space
+        )
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+        file_content = b"test content"
+
+        response = await client.post(
+            f"/api/entities/{entity_for_files.id}/files",
+            files={"file": ("test.txt", BytesIO(file_content), "text/plain")},
+            data={"file_type": "other"},
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 507
+        assert "disk space" in response.json()["detail"].lower()
+
+    async def test_upload_sufficient_disk_space(
+        self,
+        client: AsyncClient,
+        admin_user: User,
+        entity_for_files: Entity,
+        org_owner,
+        tmp_path: Path,
+        monkeypatch
+    ):
+        """Test upload success when disk space is sufficient."""
+        upload_dir = tmp_path / "uploads" / "entity_files"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            "api.routes.entities.ENTITY_FILES_DIR",
+            upload_dir
+        )
+
+        # Mock check_disk_space to return sufficient space
+        def mock_check_disk_space(path, required_mb=100):
+            return True, 500  # 500MB free
+
+        monkeypatch.setattr(
+            "api.routes.entities.check_disk_space",
+            mock_check_disk_space
+        )
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+        file_content = b"test content"
+
+        response = await client.post(
+            f"/api/entities/{entity_for_files.id}/files",
+            files={"file": ("test.txt", BytesIO(file_content), "text/plain")},
+            data={"file_type": "other"},
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 200
+
+
+# ============================================================================
+# ORPHANED FILES CLEANUP TESTS
+# ============================================================================
+
+class TestOrphanedFilesCleanup:
+    """Tests for orphaned files cleanup endpoints."""
+
+    async def test_cleanup_entity_orphaned_files_success(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        admin_user: User,
+        organization: Organization,
+        entity_for_files: Entity,
+        org_owner,
+        tmp_path: Path,
+        monkeypatch
+    ):
+        """Test successful cleanup of orphaned files for an entity."""
+        # Set up upload directory
+        upload_dir = tmp_path / "uploads" / "entity_files"
+        entity_dir = upload_dir / str(entity_for_files.id)
+        entity_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            "api.routes.entities.ENTITY_FILES_DIR",
+            upload_dir
+        )
+
+        # Create orphaned file on disk (no DB record)
+        orphan_file = entity_dir / "orphaned_file.txt"
+        orphan_file.write_bytes(b"orphaned content")
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+
+        response = await client.post(
+            f"/api/entities/{entity_for_files.id}/files/cleanup",
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["entity_id"] == entity_for_files.id
+        assert data["removed_count"] == 1
+        assert len(data["removed_files"]) == 1
+        assert "orphaned_file.txt" in data["removed_files"][0]
+
+        # Verify orphan file was deleted
+        assert not orphan_file.exists()
+
+    async def test_cleanup_entity_no_orphans(
+        self,
+        client: AsyncClient,
+        admin_user: User,
+        entity_for_files: Entity,
+        entity_file: EntityFile,
+        org_owner,
+        tmp_path: Path,
+        monkeypatch
+    ):
+        """Test cleanup when no orphaned files exist."""
+        upload_dir = tmp_path / "uploads" / "entity_files"
+        monkeypatch.setattr(
+            "api.routes.entities.ENTITY_FILES_DIR",
+            upload_dir
+        )
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+
+        response = await client.post(
+            f"/api/entities/{entity_for_files.id}/files/cleanup",
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["removed_count"] == 0
+        assert data["removed_files"] == []
+
+    async def test_cleanup_entity_no_permission(
+        self,
+        client: AsyncClient,
+        second_user: User,
+        entity_for_files: Entity,
+        org_member
+    ):
+        """Test cleanup denied without edit permission."""
+        token = create_access_token(data={"sub": str(second_user.id)})
+
+        response = await client.post(
+            f"/api/entities/{entity_for_files.id}/files/cleanup",
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 403
+
+    async def test_cleanup_entity_not_found(
+        self,
+        client: AsyncClient,
+        admin_user: User,
+        org_owner
+    ):
+        """Test cleanup for non-existent entity."""
+        token = create_access_token(data={"sub": str(admin_user.id)})
+
+        response = await client.post(
+            "/api/entities/99999/files/cleanup",
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 404
+
+    async def test_cleanup_all_requires_admin(
+        self,
+        client: AsyncClient,
+        second_user: User,
+        org_member
+    ):
+        """Test that cleanup-all requires admin role."""
+        token = create_access_token(data={"sub": str(second_user.id)})
+
+        response = await client.post(
+            "/api/entities/files/cleanup-all",
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 403
+        assert "admin" in response.json()["detail"].lower()
+
+    async def test_cleanup_all_as_admin(
+        self,
+        client: AsyncClient,
+        db_session: AsyncSession,
+        admin_user: User,
+        organization: Organization,
+        entity_for_files: Entity,
+        org_owner,
+        tmp_path: Path,
+        monkeypatch
+    ):
+        """Test cleanup-all endpoint as organization admin/owner."""
+        # Set up upload directory
+        upload_dir = tmp_path / "uploads" / "entity_files"
+        entity_dir = upload_dir / str(entity_for_files.id)
+        entity_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            "api.routes.entities.ENTITY_FILES_DIR",
+            upload_dir
+        )
+
+        # Create orphaned file
+        orphan_file = entity_dir / "orphan.txt"
+        orphan_file.write_bytes(b"orphan")
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+
+        response = await client.post(
+            "/api/entities/files/cleanup-all",
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["org_id"] == organization.id
+        assert "total_removed" in data
+        assert "entities_processed" in data
+
+    async def test_cleanup_preserves_valid_files(
+        self,
+        client: AsyncClient,
+        admin_user: User,
+        entity_for_files: Entity,
+        entity_file: EntityFile,
+        org_owner,
+        tmp_path: Path,
+        monkeypatch
+    ):
+        """Test that cleanup does not remove files with DB records."""
+        # Set up upload directory matching the entity_file fixture
+        # The entity_file fixture creates files in tmp_path / "entity_files"
+        upload_dir = tmp_path / "entity_files"
+        monkeypatch.setattr(
+            "api.routes.entities.ENTITY_FILES_DIR",
+            upload_dir
+        )
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+
+        # Run cleanup
+        response = await client.post(
+            f"/api/entities/{entity_for_files.id}/files/cleanup",
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 200
+
+        # Verify the valid file still exists
+        file_path = Path(entity_file.file_path)
+        assert file_path.exists()
+
+    async def test_cleanup_unauthorized(
+        self,
+        client: AsyncClient,
+        entity_for_files: Entity
+    ):
+        """Test cleanup without authentication."""
+        response = await client.post(
+            f"/api/entities/{entity_for_files.id}/files/cleanup"
+        )
+        assert response.status_code == 401
+
+    async def test_cleanup_all_unauthorized(
+        self,
+        client: AsyncClient
+    ):
+        """Test cleanup-all without authentication."""
+        response = await client.post(
+            "/api/entities/files/cleanup-all"
+        )
+        assert response.status_code == 401
+
+
+# ============================================================================
+# HELPER FUNCTION TESTS
+# ============================================================================
+
+class TestHelperFunctions:
+    """Tests for helper functions."""
+
+    async def test_get_entity_file_count(
+        self,
+        db_session: AsyncSession,
+        entity_for_files: Entity,
+        multiple_entity_files: list[EntityFile]
+    ):
+        """Test get_entity_file_count returns correct count."""
+        from api.routes.entities import get_entity_file_count
+
+        count = await get_entity_file_count(db_session, entity_for_files.id)
+        assert count == 4  # multiple_entity_files fixture creates 4 files
+
+    async def test_get_entity_file_count_empty(
+        self,
+        db_session: AsyncSession,
+        entity_for_files: Entity
+    ):
+        """Test get_entity_file_count returns 0 for entity with no files."""
+        from api.routes.entities import get_entity_file_count
+
+        count = await get_entity_file_count(db_session, entity_for_files.id)
+        assert count == 0
+
+    async def test_validate_file_upload(self):
+        """Test validate_file_upload function."""
+        from api.routes.entities import validate_file_upload
+
+        # Valid PDF
+        valid, error = validate_file_upload("resume.pdf", "application/pdf")
+        assert valid is True
+        assert error == ""
+
+        # Invalid extension
+        valid, error = validate_file_upload("script.exe", "application/octet-stream")
+        assert valid is False
+        assert "not allowed" in error.lower()
+
+        # Path traversal attempt
+        valid, error = validate_file_upload("../../../etc/passwd", "text/plain")
+        assert valid is False
+        assert "invalid" in error.lower()
+
+        # Null byte injection
+        valid, error = validate_file_upload("file.pdf\x00.exe", "application/pdf")
+        assert valid is False
+        assert "invalid" in error.lower()
+
+        # No extension
+        valid, error = validate_file_upload("noextension", "text/plain")
+        assert valid is False
+        assert "extension" in error.lower()
