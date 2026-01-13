@@ -7,6 +7,7 @@ os.environ["TESTING"] = "1"
 # Set required environment variables for testing
 os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only"
 os.environ["SUPERADMIN_PASSWORD"] = "test-superadmin-password"
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 
 import asyncio
 import pytest

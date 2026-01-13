@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -16,13 +16,24 @@ import {
   Mail,
   AtSign,
   Edit3,
-  Shield
+  Shield,
+  Building2,
+  ToggleLeft,
+  ToggleRight,
+  Briefcase,
+  Brain
 } from 'lucide-react';
 import {
   getCriteriaPresets,
   createCriteriaPreset,
   deleteCriteriaPreset,
-  updateUserProfile
+  updateUserProfile,
+  getFeatureSettings,
+  setFeatureAccess,
+  deleteFeatureSetting,
+  getDepartments,
+  type FeatureSetting,
+  type Department
 } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import type { Criterion, CriteriaPreset } from '@/types';
@@ -36,7 +47,21 @@ const categoryConfig = {
   green_flags: { icon: CheckCircle, color: 'text-green-400 bg-green-500/20', label: 'Green Flags' },
 };
 
-type SettingsTab = 'general' | 'presets' | 'roles';
+type SettingsTab = 'general' | 'presets' | 'roles' | 'features';
+
+// Feature display configuration
+const featureConfig: Record<string, { icon: typeof Briefcase; label: string; description: string }> = {
+  vacancies: {
+    icon: Briefcase,
+    label: 'Vacancies',
+    description: 'Access to vacancy management and Kanban board'
+  },
+  ai_analysis: {
+    icon: Brain,
+    label: 'AI Analysis',
+    description: 'AI-powered analysis features for entities and calls'
+  }
+};
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
@@ -123,6 +148,101 @@ export default function SettingsPage() {
       toast.error('Ошибка обновления профиля');
     },
   });
+
+  // Feature access queries
+  const { data: featureSettingsData, isLoading: isLoadingFeatures } = useQuery({
+    queryKey: ['feature-settings'],
+    queryFn: getFeatureSettings,
+    staleTime: 30000,
+    enabled: isSuperAdmin() || user?.org_role === 'owner',
+  });
+
+  const { data: departments = [] } = useQuery({
+    queryKey: ['departments', -1],
+    queryFn: () => getDepartments(-1),
+    staleTime: 60000,
+    enabled: isSuperAdmin() || user?.org_role === 'owner',
+  });
+
+  // Feature mutations
+  const featureMutation = useMutation({
+    mutationFn: ({ featureName, request }: { featureName: string; request: { department_ids?: number[] | null; enabled: boolean } }) =>
+      setFeatureAccess(featureName, request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['feature-settings'] });
+      toast.success('Feature settings updated');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to update feature settings');
+    },
+  });
+
+  const deleteFeatureMutation = useMutation({
+    mutationFn: ({ featureName, departmentId }: { featureName: string; departmentId?: number | null }) =>
+      deleteFeatureSetting(featureName, departmentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['feature-settings'] });
+      toast.success('Feature setting removed');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to remove feature setting');
+    },
+  });
+
+  // Selected departments for multi-select
+  const [selectedDepartments, setSelectedDepartments] = useState<Record<string, number[]>>({});
+
+  // Group feature settings by feature name
+  const groupedFeatures = useMemo(() => {
+    if (!featureSettingsData) return {};
+    const grouped: Record<string, { orgWide: FeatureSetting | null; departmentSettings: FeatureSetting[] }> = {};
+
+    // Initialize for all restricted features
+    featureSettingsData.restricted_features.forEach(featureName => {
+      grouped[featureName] = { orgWide: null, departmentSettings: [] };
+    });
+
+    // Group existing settings
+    featureSettingsData.features.forEach(setting => {
+      if (!grouped[setting.feature_name]) {
+        grouped[setting.feature_name] = { orgWide: null, departmentSettings: [] };
+      }
+      if (setting.department_id === null) {
+        grouped[setting.feature_name].orgWide = setting;
+      } else {
+        grouped[setting.feature_name].departmentSettings.push(setting);
+      }
+    });
+
+    return grouped;
+  }, [featureSettingsData]);
+
+  // Handle org-wide toggle
+  const handleOrgWideToggle = (featureName: string, enabled: boolean) => {
+    featureMutation.mutate({
+      featureName,
+      request: { department_ids: null, enabled }
+    });
+  };
+
+  // Handle adding department-specific setting
+  const handleAddDepartmentSetting = (featureName: string) => {
+    const deptIds = selectedDepartments[featureName] || [];
+    if (deptIds.length === 0) {
+      toast.error('Please select at least one department');
+      return;
+    }
+    featureMutation.mutate({
+      featureName,
+      request: { department_ids: deptIds, enabled: true }
+    });
+    setSelectedDepartments(prev => ({ ...prev, [featureName]: [] }));
+  };
+
+  // Handle removing department-specific setting
+  const handleRemoveDepartmentSetting = (featureName: string, departmentId: number) => {
+    deleteFeatureMutation.mutate({ featureName, departmentId });
+  };
 
   const handleSaveProfile = () => {
     profileMutation.mutate({
@@ -272,12 +392,166 @@ export default function SettingsPage() {
               Роли и права
             </button>
           )}
+          {(isSuperAdmin() || user?.org_role === 'owner') && (
+            <button
+              onClick={() => setActiveTab('features')}
+              className={clsx(
+                'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
+                activeTab === 'features'
+                  ? 'bg-accent-500/20 text-accent-400'
+                  : 'bg-white/5 text-white/60 hover:bg-white/10'
+              )}
+            >
+              <ToggleRight className="w-4 h-4" />
+              Feature Access
+            </button>
+          )}
         </div>
 
         {/* Roles Tab - Fine-grained access control */}
         {activeTab === 'roles' && isSuperAdmin() && (
           <div className="glass rounded-2xl p-6">
             <RoleManagement />
+          </div>
+        )}
+
+        {/* Feature Access Tab */}
+        {activeTab === 'features' && (isSuperAdmin() || user?.org_role === 'owner') && (
+          <div className="glass rounded-2xl p-6">
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold">Feature Access Control</h2>
+              <p className="text-sm text-dark-400">
+                Configure which features are available organization-wide or for specific departments
+              </p>
+            </div>
+
+            {isLoadingFeatures ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : featureSettingsData?.restricted_features.length === 0 ? (
+              <div className="text-center py-8">
+                <ToggleLeft className="w-12 h-12 mx-auto text-dark-600 mb-3" />
+                <p className="text-dark-400">No configurable features available</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {Object.entries(groupedFeatures).map(([featureName, { orgWide, departmentSettings }]) => {
+                  const config = featureConfig[featureName] || {
+                    icon: ToggleRight,
+                    label: featureName.charAt(0).toUpperCase() + featureName.slice(1).replace(/_/g, ' '),
+                    description: 'Feature access control'
+                  };
+                  const FeatureIcon = config.icon;
+                  const isOrgWideEnabled = orgWide?.enabled ?? false;
+
+                  return (
+                    <div key={featureName} className="glass-light rounded-xl p-5">
+                      {/* Feature Header */}
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-accent-500/20 flex items-center justify-center">
+                            <FeatureIcon className="w-5 h-5 text-accent-400" />
+                          </div>
+                          <div>
+                            <h3 className="font-medium">{config.label}</h3>
+                            <p className="text-sm text-dark-400">{config.description}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Org-wide Toggle */}
+                      <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg mb-4">
+                        <div className="flex items-center gap-2">
+                          <Globe className="w-4 h-4 text-purple-400" />
+                          <span className="text-sm font-medium">Organization-wide</span>
+                        </div>
+                        <button
+                          onClick={() => handleOrgWideToggle(featureName, !isOrgWideEnabled)}
+                          disabled={featureMutation.isPending}
+                          className={clsx(
+                            'relative w-12 h-6 rounded-full transition-colors',
+                            isOrgWideEnabled ? 'bg-accent-500' : 'bg-white/10'
+                          )}
+                        >
+                          <span
+                            className={clsx(
+                              'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
+                              isOrgWideEnabled ? 'translate-x-7' : 'translate-x-1'
+                            )}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Department-specific Settings */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-blue-400" />
+                          <span className="text-sm font-medium text-dark-300">Department-specific access</span>
+                        </div>
+
+                        {/* Existing department settings */}
+                        {departmentSettings.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mb-3">
+                            {departmentSettings.map(setting => (
+                              <span
+                                key={setting.id}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-500/20 text-blue-400 rounded-lg text-sm"
+                              >
+                                {setting.department_name || `Dept #${setting.department_id}`}
+                                <button
+                                  onClick={() => handleRemoveDepartmentSetting(featureName, setting.department_id!)}
+                                  disabled={deleteFeatureMutation.isPending}
+                                  className="ml-1 hover:text-red-400 transition-colors"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Add department select */}
+                        <div className="flex gap-2">
+                          <select
+                            multiple
+                            value={selectedDepartments[featureName]?.map(String) || []}
+                            onChange={(e) => {
+                              const values = Array.from(e.target.selectedOptions, option => parseInt(option.value));
+                              setSelectedDepartments(prev => ({ ...prev, [featureName]: values }));
+                            }}
+                            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent-500 min-h-[80px]"
+                          >
+                            {departments
+                              .filter((dept): dept is Department & { id: number } =>
+                                'id' in dept &&
+                                typeof dept.id === 'number' &&
+                                !departmentSettings.some(s => s.department_id === dept.id)
+                              )
+                              .map(dept => (
+                                <option key={dept.id} value={dept.id}>
+                                  {dept.name}
+                                </option>
+                              ))}
+                          </select>
+                          <button
+                            onClick={() => handleAddDepartmentSetting(featureName)}
+                            disabled={featureMutation.isPending || !selectedDepartments[featureName]?.length}
+                            className="px-4 py-2 bg-accent-500 text-white rounded-lg hover:bg-accent-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                          >
+                            <Plus className="w-4 h-4" />
+                            Add
+                          </button>
+                        </div>
+                        <p className="text-xs text-dark-500">
+                          Hold Ctrl/Cmd to select multiple departments
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

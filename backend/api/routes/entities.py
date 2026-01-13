@@ -44,6 +44,10 @@ class EntityCreate(BaseModel):
     tags: Optional[List[str]] = []
     extra_data: Optional[dict] = {}
     department_id: Optional[int] = None
+    # Expected salary for candidates
+    expected_salary_min: Optional[int] = None
+    expected_salary_max: Optional[int] = None
+    expected_salary_currency: Optional[str] = 'RUB'
 
 
 class EntityUpdate(BaseModel):
@@ -61,6 +65,10 @@ class EntityUpdate(BaseModel):
     tags: Optional[List[str]] = None
     extra_data: Optional[dict] = None
     department_id: Optional[int] = None
+    # Expected salary for candidates
+    expected_salary_min: Optional[int] = None
+    expected_salary_max: Optional[int] = None
+    expected_salary_currency: Optional[str] = None
 
 
 class TransferCreate(BaseModel):
@@ -98,6 +106,10 @@ class EntityResponse(BaseModel):
     transferred_to_id: Optional[int] = None
     transferred_to_name: Optional[str] = None
     transferred_at: Optional[datetime] = None
+    # Expected salary for candidates
+    expected_salary_min: Optional[int] = None
+    expected_salary_max: Optional[int] = None
+    expected_salary_currency: Optional[str] = 'RUB'
 
     class Config:
         from_attributes = True
@@ -623,7 +635,11 @@ async def list_entities(
             "is_transferred": entity.is_transferred or False,
             "transferred_to_id": entity.transferred_to_id,
             "transferred_to_name": transferred_to_names.get(entity.transferred_to_id) if entity.transferred_to_id else None,
-            "transferred_at": entity.transferred_at.isoformat() if entity.transferred_at else None
+            "transferred_at": entity.transferred_at.isoformat() if entity.transferred_at else None,
+            # Expected salary for candidates
+            "expected_salary_min": entity.expected_salary_min,
+            "expected_salary_max": entity.expected_salary_max,
+            "expected_salary_currency": entity.expected_salary_currency or 'RUB'
         })
 
     return response
@@ -675,7 +691,10 @@ async def create_entity(
         tags=data.tags or [],
         extra_data=data.extra_data or {},
         created_by=current_user.id,
-        department_id=data.department_id
+        department_id=data.department_id,
+        expected_salary_min=data.expected_salary_min,
+        expected_salary_max=data.expected_salary_max,
+        expected_salary_currency=data.expected_salary_currency or 'RUB'
     )
     db.add(entity)
     await db.commit()
@@ -702,7 +721,10 @@ async def create_entity(
         "created_at": entity.created_at.isoformat() if entity.created_at else None,
         "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
         "chats_count": 0,
-        "calls_count": 0
+        "calls_count": 0,
+        "expected_salary_min": entity.expected_salary_min,
+        "expected_salary_max": entity.expected_salary_max,
+        "expected_salary_currency": entity.expected_salary_currency or 'RUB'
     }
 
     # Broadcast entity.created event
@@ -932,6 +954,10 @@ async def get_entity(
         "transferred_to_id": entity.transferred_to_id,
         "transferred_to_name": transferred_to_name,
         "transferred_at": entity.transferred_at.isoformat() if entity.transferred_at else None,
+        # Expected salary for candidates
+        "expected_salary_min": entity.expected_salary_min,
+        "expected_salary_max": entity.expected_salary_max,
+        "expected_salary_currency": entity.expected_salary_currency or 'RUB',
         "chats": [
             {
                 "id": c.id,
@@ -1074,7 +1100,10 @@ async def update_entity(
         "department_id": entity.department_id,
         "department_name": department_name,
         "created_at": entity.created_at.isoformat() if entity.created_at else None,
-        "updated_at": entity.updated_at.isoformat() if entity.updated_at else None
+        "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
+        "expected_salary_min": entity.expected_salary_min,
+        "expected_salary_max": entity.expected_salary_max,
+        "expected_salary_currency": entity.expected_salary_currency or 'RUB'
     }
 
     # Broadcast entity.updated event

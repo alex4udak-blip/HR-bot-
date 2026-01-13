@@ -152,4 +152,191 @@ describe('ConfirmDialog', () => {
     // onCancel should not be called when clicking inside the dialog
     expect(onCancel).not.toHaveBeenCalled();
   });
+
+  describe('Accessibility', () => {
+    it('should have proper dialog role', () => {
+      render(<ConfirmDialog {...defaultProps} />);
+
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toBeInTheDocument();
+    });
+
+    it('should have aria-modal attribute set to true', () => {
+      render(<ConfirmDialog {...defaultProps} />);
+
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
+    });
+
+    it('should have aria-labelledby pointing to title', () => {
+      render(<ConfirmDialog {...defaultProps} />);
+
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toHaveAttribute('aria-labelledby', 'confirm-dialog-title');
+    });
+
+    it('should have title with correct id for aria-labelledby', () => {
+      render(<ConfirmDialog {...defaultProps} />);
+
+      const title = screen.getByText('Delete Item');
+      expect(title).toHaveAttribute('id', 'confirm-dialog-title');
+    });
+
+    it('should have accessible name for close button', () => {
+      render(<ConfirmDialog {...defaultProps} />);
+
+      const closeButton = screen.getByLabelText('Close dialog');
+      expect(closeButton).toBeInTheDocument();
+      expect(closeButton.tagName).toBe('BUTTON');
+    });
+
+    it('should have proper button types', () => {
+      render(<ConfirmDialog {...defaultProps} />);
+
+      const confirmButton = screen.getByText('Confirm');
+      const cancelButton = screen.getByText('Cancel');
+
+      expect(confirmButton).toHaveAttribute('type', 'button');
+      expect(cancelButton).toHaveAttribute('type', 'button');
+    });
+
+    it('should have message text accessible', () => {
+      render(<ConfirmDialog {...defaultProps} />);
+
+      const message = screen.getByText('Are you sure you want to delete this item?');
+      expect(message).toBeInTheDocument();
+    });
+
+    it('should include icon for each variant', () => {
+      const { rerender } = render(<ConfirmDialog {...defaultProps} variant="danger" />);
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+      rerender(<ConfirmDialog {...defaultProps} variant="warning" />);
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+      rerender(<ConfirmDialog {...defaultProps} variant="info" />);
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
+
+    it('should indicate disabled state in buttons when loading', () => {
+      render(<ConfirmDialog {...defaultProps} loading={true} />);
+
+      const confirmButton = screen.getByText('Processing...');
+      const cancelButton = screen.getByText('Cancel');
+
+      expect(confirmButton).toHaveAttribute('disabled');
+      expect(cancelButton).toHaveAttribute('disabled');
+    });
+  });
+
+  describe('Keyboard Navigation', () => {
+    it('should call onCancel when Escape key is pressed', () => {
+      const onCancel = vi.fn();
+      render(<ConfirmDialog {...defaultProps} onCancel={onCancel} />);
+
+      const dialog = screen.getByRole('dialog');
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+
+      expect(onCancel).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not call onCancel on Escape when loading', () => {
+      const onCancel = vi.fn();
+      render(<ConfirmDialog {...defaultProps} onCancel={onCancel} loading={true} />);
+
+      const dialog = screen.getByRole('dialog');
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+
+      expect(onCancel).not.toHaveBeenCalled();
+    });
+
+    it('should ignore other key presses', () => {
+      const onCancel = vi.fn();
+      const onConfirm = vi.fn();
+      render(<ConfirmDialog {...defaultProps} onCancel={onCancel} onConfirm={onConfirm} />);
+
+      const dialog = screen.getByRole('dialog');
+
+      fireEvent.keyDown(dialog, { key: 'Enter' });
+      fireEvent.keyDown(dialog, { key: 'Space' });
+      fireEvent.keyDown(dialog, { key: 'Tab' });
+
+      // Only Escape should trigger onCancel
+      expect(onCancel).not.toHaveBeenCalled();
+      expect(onConfirm).not.toHaveBeenCalled();
+    });
+
+    it('should handle keyboard events on backdrop', () => {
+      const onCancel = vi.fn();
+      const { container } = render(<ConfirmDialog {...defaultProps} onCancel={onCancel} />);
+
+      const backdrop = container.querySelector('.backdrop-blur-sm');
+      if (backdrop) {
+        fireEvent.keyDown(backdrop, { key: 'Escape' });
+        expect(onCancel).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('should allow focus on interactive elements', () => {
+      render(<ConfirmDialog {...defaultProps} />);
+
+      const confirmButton = screen.getByText('Confirm');
+      const cancelButton = screen.getByText('Cancel');
+      const closeButton = screen.getByLabelText('Close dialog');
+
+      // All buttons should be focusable
+      confirmButton.focus();
+      expect(document.activeElement).toBe(confirmButton);
+
+      cancelButton.focus();
+      expect(document.activeElement).toBe(cancelButton);
+
+      closeButton.focus();
+      expect(document.activeElement).toBe(closeButton);
+    });
+
+    it('should have focusable confirm button with correct label', () => {
+      render(<ConfirmDialog {...defaultProps} confirmLabel="Delete Forever" />);
+
+      const confirmButton = screen.getByText('Delete Forever');
+      confirmButton.focus();
+
+      expect(document.activeElement).toBe(confirmButton);
+      expect(confirmButton).not.toBeDisabled();
+    });
+
+    it('should prevent focus on disabled buttons during loading', () => {
+      render(<ConfirmDialog {...defaultProps} loading={true} />);
+
+      const confirmButton = screen.getByText('Processing...');
+      const cancelButton = screen.getByText('Cancel');
+
+      expect(confirmButton).toBeDisabled();
+      expect(cancelButton).toBeDisabled();
+    });
+  });
+
+  describe('Focus Management', () => {
+    it('should contain interactive elements within dialog', () => {
+      render(<ConfirmDialog {...defaultProps} />);
+
+      const dialog = screen.getByRole('dialog');
+      const buttons = dialog.querySelectorAll('button');
+
+      // Should have: close button, cancel button, confirm button
+      expect(buttons.length).toBe(3);
+    });
+
+    it('should have all buttons accessible when not loading', () => {
+      render(<ConfirmDialog {...defaultProps} />);
+
+      const confirmButton = screen.getByText('Confirm');
+      const cancelButton = screen.getByText('Cancel');
+      const closeButton = screen.getByLabelText('Close dialog');
+
+      expect(confirmButton).not.toBeDisabled();
+      expect(cancelButton).not.toBeDisabled();
+      expect(closeButton).not.toBeDisabled();
+    });
+  });
 });

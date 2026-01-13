@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, UserCheck, Building2, Wrench, Target, Users, User } from 'lucide-react';
+import { X, UserCheck, Building2, Wrench, Target, Users, User, DollarSign } from 'lucide-react';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
-import type { Entity, EntityType, EntityStatus } from '@/types';
-import { ENTITY_TYPES, STATUS_LABELS } from '@/types';
+import type { Entity, EntityType, EntityStatus, CurrencyCode } from '@/types';
+import { ENTITY_TYPES, STATUS_LABELS, CURRENCIES } from '@/types';
 
 interface ContactFormProps {
   entity?: Entity | null;
@@ -41,7 +41,11 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
     phones: initialData?.phones?.join(', ') || '',
     company: initialData?.company || '',
     position: initialData?.position || '',
-    tags: initialData?.tags?.join(', ') || ''
+    tags: initialData?.tags?.join(', ') || '',
+    // Expected salary for candidates
+    expected_salary_min: initialData?.expected_salary_min?.toString() || '',
+    expected_salary_max: initialData?.expected_salary_max?.toString() || '',
+    expected_salary_currency: (initialData?.expected_salary_currency || 'RUB') as CurrencyCode
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -91,7 +95,11 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
         tags: formData.tags
           .split(',')
           .map((t) => t.trim())
-          .filter((t) => t.length > 0)
+          .filter((t) => t.length > 0),
+        // Expected salary for candidates
+        expected_salary_min: formData.expected_salary_min ? parseInt(formData.expected_salary_min, 10) : undefined,
+        expected_salary_max: formData.expected_salary_max ? parseInt(formData.expected_salary_max, 10) : undefined,
+        expected_salary_currency: formData.expected_salary_currency || 'RUB'
       };
 
       let result: Entity;
@@ -269,6 +277,52 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
               />
             </div>
           </div>
+
+          {/* Expected Salary - only for candidates */}
+          {formData.type === 'candidate' && (
+            <div>
+              <label className="block text-sm font-medium text-white/60 mb-2 flex items-center gap-2">
+                <DollarSign size={16} />
+                Expected Salary
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <input
+                    type="number"
+                    value={formData.expected_salary_min}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, expected_salary_min: e.target.value }))}
+                    className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+                    placeholder="Min"
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <input
+                    type="number"
+                    value={formData.expected_salary_max}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, expected_salary_max: e.target.value }))}
+                    className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+                    placeholder="Max"
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <select
+                    value={formData.expected_salary_currency}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, expected_salary_currency: e.target.value as CurrencyCode }))}
+                    className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-cyan-500/50"
+                  >
+                    {CURRENCIES.map((curr) => (
+                      <option key={curr.code} value={curr.code} className="bg-gray-900">
+                        {curr.code} ({curr.symbol})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs text-white/40 mt-1">Gross monthly salary expectation</p>
+            </div>
+          )}
 
           {/* Tags */}
           <div>

@@ -3295,6 +3295,41 @@ async def get_my_permissions(
 
 
 # ============================================================================
+# USER FEATURES
+# ============================================================================
+
+class UserFeaturesResponse(BaseModel):
+    """Response schema for user's available features."""
+    features: List[str]
+
+
+@router.get("/me/features", response_model=UserFeaturesResponse)
+async def get_my_features(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get the list of features available to the current user.
+
+    Returns all features the user can access, including:
+    - Default features (chats, contacts, calls, dashboard)
+    - Restricted features that are enabled for user's organization/departments
+
+    Superadmin and org owners have access to all features.
+    """
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        # User not in any organization - return default features only
+        from ..services.features import DEFAULT_FEATURES
+        return UserFeaturesResponse(features=list(DEFAULT_FEATURES))
+
+    # Get user's available features
+    features = await get_user_features(db, current_user.id, org.id)
+    return UserFeaturesResponse(features=features)
+
+
+# ============================================================================
 # MENU CONFIGURATION
 # ============================================================================
 
@@ -3305,6 +3340,7 @@ class MenuItemConfig(BaseModel):
     path: str
     icon: str
     required_permission: Optional[str] = None
+    required_feature: Optional[str] = None  # Feature that must be available to show this item
     superadmin_only: bool = False
 
 
@@ -3319,7 +3355,7 @@ DEFAULT_MENU_ITEMS = [
     MenuItemConfig(id="chats", label="Chats", path="/chats", icon="MessageSquare", required_permission="can_view_chats"),
     MenuItemConfig(id="contacts", label="Contacts", path="/contacts", icon="Users", required_permission="can_view_contacts"),
     MenuItemConfig(id="calls", label="Calls", path="/calls", icon="Phone", required_permission="can_view_calls"),
-    MenuItemConfig(id="vacancies", label="Вакансии", path="/vacancies", icon="Briefcase", required_permission="can_view_vacancies"),
+    MenuItemConfig(id="vacancies", label="Vacancies", path="/vacancies", icon="Briefcase", required_permission="can_view_vacancies", required_feature="vacancies"),
     MenuItemConfig(id="departments", label="Departments", path="/departments", required_permission="can_view_departments", icon="Building2"),
     MenuItemConfig(id="users", label="Users", path="/users", icon="UserCog", required_permission="can_view_all_users"),
     MenuItemConfig(id="invite", label="Invite", path="/invite", icon="UserPlus", required_permission="can_invite_users"),
@@ -3357,17 +3393,10 @@ async def get_my_menu(
             continue
 
         # Check feature access for restricted features (vacancies, ai_analysis, etc.)
-        # Map menu item IDs to feature names
-        feature_mapping = {
-            "vacancies": "vacancies",
-            # Add other feature mappings here as needed
-        }
-
-        if item.id in feature_mapping and org_id:
-            feature_name = feature_mapping[item.id]
+        if item.required_feature and org_id:
             # Check if user can access this feature
             has_feature_access = await can_access_feature(
-                db, current_user.id, org_id, feature_name
+                db, current_user.id, org_id, item.required_feature
             )
             if not has_feature_access:
                 continue

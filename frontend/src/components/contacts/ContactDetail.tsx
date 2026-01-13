@@ -20,12 +20,13 @@ import {
   Download,
   Target,
   Plus,
-  FolderOpen
+  FolderOpen,
+  DollarSign
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import type { EntityWithRelations, Chat, CallRecording } from '@/types';
-import { STATUS_LABELS, STATUS_COLORS, CALL_STATUS_LABELS, CALL_STATUS_COLORS } from '@/types';
+import { STATUS_LABELS, STATUS_COLORS, CALL_STATUS_LABELS, CALL_STATUS_COLORS, formatSalary } from '@/types';
 import EntityAI from './EntityAI';
 import CriteriaPanelEntity from './CriteriaPanelEntity';
 import AddToVacancyModal from '../entities/AddToVacancyModal';
@@ -33,6 +34,8 @@ import EntityVacancies from '../entities/EntityVacancies';
 import EntityFiles from '../entities/EntityFiles';
 import * as api from '@/services/api';
 import { useEntityStore } from '@/stores/entityStore';
+import { FeatureGatedButton } from '@/components/auth/FeatureGate';
+import { useCanAccessFeature } from '@/hooks/useCanAccessFeature';
 
 interface ContactDetailProps {
   entity: EntityWithRelations;
@@ -52,6 +55,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
   const [downloadingReport, setDownloadingReport] = useState<string | null>(null);
   const [vacanciesKey, setVacanciesKey] = useState(0); // Key to force reload vacancies
   const { fetchEntity } = useEntityStore();
+  const { canAccessFeature } = useCanAccessFeature();
 
   // Load unlinked chats when modal opens
   useEffect(() => {
@@ -278,6 +282,15 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   <span className="truncate">{entity.position}</span>
                 </div>
               )}
+              {/* Expected salary for candidates */}
+              {entity.type === 'candidate' && (entity.expected_salary_min || entity.expected_salary_max) && (
+                <div className="flex items-center gap-2 text-white/60 min-w-0">
+                  <DollarSign size={16} className="flex-shrink-0" />
+                  <span className="truncate">
+                    {formatSalary(entity.expected_salary_min, entity.expected_salary_max, entity.expected_salary_currency)}
+                  </span>
+                </div>
+              )}
             </div>
 
             {entity.tags && entity.tags.length > 0 && (
@@ -305,12 +318,20 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
           { id: 'overview', label: 'Обзор' },
           { id: 'chats', label: `Чаты (${entity.chats?.length || 0})`, shortLabel: `Чаты` },
           { id: 'calls', label: `Звонки (${entity.calls?.length || 0})`, shortLabel: `Звонки` },
-          { id: 'vacancies', label: 'Вакансии', icon: Briefcase },
+          { id: 'vacancies', label: 'Вакансии', icon: Briefcase, requiresFeature: 'vacancies' as const },
           { id: 'files', label: 'Файлы', icon: FolderOpen },
           { id: 'criteria', label: 'Критерии', icon: Target },
           { id: 'reports', label: 'Отчёты', icon: Download },
           { id: 'history', label: 'История' }
-        ].map((tab) => {
+        ]
+        .filter((tab) => {
+          // Filter out tabs that require features the user doesn't have access to
+          if ('requiresFeature' in tab && tab.requiresFeature) {
+            return canAccessFeature(tab.requiresFeature);
+          }
+          return true;
+        })
+        .map((tab) => {
           const Icon = 'icon' in tab ? tab.icon : null;
           const shortLabel = 'shortLabel' in tab ? tab.shortLabel : tab.label;
           return (
@@ -526,7 +547,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
           </div>
         )}
 
-        {activeTab === 'vacancies' && (
+        {activeTab === 'vacancies' && canAccessFeature('vacancies') && (
           <div className="glass rounded-xl border border-white/10 p-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold text-white flex items-center gap-2">
@@ -534,13 +555,15 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 Вакансии
               </h3>
               {entity.type === 'candidate' && (
-                <button
+                <FeatureGatedButton
+                  feature="vacancies"
                   onClick={() => setShowAddToVacancyModal(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors"
+                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors disabled:bg-blue-600/50 disabled:hover:bg-blue-600/50"
+                  disabledTooltip="You don't have access to this feature"
                 >
                   <Plus size={16} />
                   Добавить в вакансию
-                </button>
+                </FeatureGatedButton>
               )}
             </div>
             <EntityVacancies key={vacanciesKey} entityId={entity.id} />

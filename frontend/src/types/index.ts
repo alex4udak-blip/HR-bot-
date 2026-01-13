@@ -630,6 +630,10 @@ export const CURRENCIES = [
 
 export type CurrencyCode = typeof CURRENCIES[number]['code'];
 
+/**
+ * @deprecated Use formatSalary from '@/utils' instead for consistent currency formatting.
+ * This function is kept for backwards compatibility and will be removed in a future version.
+ */
 export const formatSalary = (
   min?: number,
   max?: number,

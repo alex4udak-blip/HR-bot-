@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Check, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 import type { ParsedResume, ParsedVacancy } from '@/services/api';
+import { getCurrencyDropdownOptions, formatSalary } from '@/utils';
 
 interface ParsedDataPreviewProps {
   type: 'resume' | 'vacancy';
@@ -9,7 +10,7 @@ interface ParsedDataPreviewProps {
   onDataChange: (data: ParsedResume | ParsedVacancy) => void;
 }
 
-const CURRENCY_OPTIONS = ['RUB', 'USD', 'EUR'];
+const CURRENCY_DROPDOWN_OPTIONS = getCurrencyDropdownOptions();
 
 export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDataPreviewProps) {
   const [localData, setLocalData] = useState<ParsedResume | ParsedVacancy>(data);
@@ -168,12 +169,22 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
               onChange={(e) => handleChange('salary_currency', e.target.value)}
               className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
             >
-              {CURRENCY_OPTIONS.map((currency) => (
-                <option key={currency} value={currency}>{currency}</option>
+              {CURRENCY_DROPDOWN_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
           </div>
         </div>
+
+        {/* Formatted salary preview */}
+        {(resumeData.salary_min || resumeData.salary_max) && (
+          <div className="p-3 bg-white/5 rounded-lg border border-white/10">
+            <span className="text-sm text-white/60">Formatted: </span>
+            <span className="text-sm font-medium">
+              {formatSalary(resumeData.salary_min, resumeData.salary_max, resumeData.salary_currency || 'RUB')}
+            </span>
+          </div>
+        )}
 
         {/* Skills */}
         <div>
@@ -332,12 +343,22 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             onChange={(e) => handleChange('salary_currency', e.target.value)}
             className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
           >
-            {CURRENCY_OPTIONS.map((currency) => (
-              <option key={currency} value={currency}>{currency}</option>
+            {CURRENCY_DROPDOWN_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
         </div>
       </div>
+
+      {/* Formatted salary preview */}
+      {(vacancyData.salary_min || vacancyData.salary_max) && (
+        <div className="p-3 bg-white/5 rounded-lg border border-white/10">
+          <span className="text-sm text-white/60">Formatted: </span>
+          <span className="text-sm font-medium">
+            {formatSalary(vacancyData.salary_min, vacancyData.salary_max, vacancyData.salary_currency || 'RUB')}
+          </span>
+        </div>
+      )}
 
       {/* Description */}
       <div>

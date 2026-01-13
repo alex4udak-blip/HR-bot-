@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import { getVacancies, applyEntityToVacancy } from '@/services/api';
 import type { Vacancy } from '@/types';
 import { VACANCY_STATUS_LABELS, VACANCY_STATUS_COLORS } from '@/types';
+import { formatSalary } from '@/utils';
 
 interface AddToVacancyModalProps {
   entityId: number;
@@ -78,17 +79,10 @@ export default function AddToVacancyModal({
     }
   };
 
-  // Format salary for display
-  const formatSalary = (vacancy: Vacancy) => {
+  // Format salary for display using utility function
+  const getSalaryDisplay = (vacancy: Vacancy) => {
     if (!vacancy.salary_min && !vacancy.salary_max) return null;
-    const min = vacancy.salary_min ? vacancy.salary_min.toLocaleString() : '';
-    const max = vacancy.salary_max ? vacancy.salary_max.toLocaleString() : '';
-    const currency = vacancy.salary_currency || 'RUB';
-
-    if (min && max) return `${min} - ${max} ${currency}`;
-    if (min) return `от ${min} ${currency}`;
-    if (max) return `до ${max} ${currency}`;
-    return null;
+    return formatSalary(vacancy.salary_min, vacancy.salary_max, vacancy.salary_currency);
   };
 
   return (
@@ -167,7 +161,7 @@ export default function AddToVacancyModal({
               </div>
             ) : (
               vacancies.map((vacancy) => {
-                const salary = formatSalary(vacancy);
+                const salary = getSalaryDisplay(vacancy);
                 return (
                   <button
                     key={vacancy.id}

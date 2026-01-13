@@ -1207,11 +1207,16 @@ export interface MenuItem {
   path: string;
   icon: string;
   required_permission?: string;
+  required_feature?: string;  // Feature that must be available to show this item
   superadmin_only: boolean;
 }
 
 export interface MenuConfig {
   items: MenuItem[];
+}
+
+export interface UserFeatures {
+  features: string[];
 }
 
 export const getMyPermissions = async (): Promise<EffectivePermissions> => {
@@ -1221,6 +1226,11 @@ export const getMyPermissions = async (): Promise<EffectivePermissions> => {
 
 export const getMyMenu = async (): Promise<MenuConfig> => {
   const { data } = await api.get('/admin/me/menu');
+  return data;
+};
+
+export const getMyFeatures = async (): Promise<UserFeatures> => {
+  const { data } = await api.get('/admin/me/features');
   return data;
 };
 
@@ -1484,6 +1494,57 @@ export const parseResumeFromFile = async (file: File): Promise<ParsedResume> => 
 
 export const parseVacancyFromUrl = async (url: string): Promise<ParsedVacancy> => {
   const { data } = await api.post('/parser/vacancy/url', { url });
+  return data;
+};
+
+// === FEATURE ACCESS CONTROL ===
+
+export interface FeatureSetting {
+  id: number;
+  feature_name: string;
+  enabled: boolean;
+  department_id: number | null;
+  department_name: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FeatureSettingsResponse {
+  features: FeatureSetting[];
+  available_features: string[];
+  restricted_features: string[];
+}
+
+export interface UserFeaturesResponse {
+  features: string[];
+}
+
+export interface SetFeatureAccessRequest {
+  department_ids?: number[] | null;
+  enabled: boolean;
+}
+
+export const getFeatureSettings = async (): Promise<FeatureSettingsResponse> => {
+  const { data } = await api.get('/admin/features');
+  return data;
+};
+
+export const setFeatureAccess = async (
+  featureName: string,
+  request: SetFeatureAccessRequest
+): Promise<FeatureSettingsResponse> => {
+  const { data } = await api.put(`/admin/features/${featureName}`, request);
+  return data;
+};
+
+export const deleteFeatureSetting = async (
+  featureName: string,
+  departmentId?: number | null
+): Promise<{ success: boolean }> => {
+  const params = departmentId !== undefined && departmentId !== null
+    ? `?department_id=${departmentId}`
+    : '';
+  const { data } = await api.delete(`/admin/features/${featureName}${params}`);
   return data;
 };
 

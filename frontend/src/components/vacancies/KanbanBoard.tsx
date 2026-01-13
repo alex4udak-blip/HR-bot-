@@ -23,6 +23,7 @@ import { updateApplication } from '@/services/api';
 import AddCandidateModal from './AddCandidateModal';
 import ApplicationDetailModal from './ApplicationDetailModal';
 import { KanbanCardSkeleton, Skeleton, NoCandidatesEmpty, ConfirmDialog, ErrorMessage } from '@/components/ui';
+import { OnboardingTooltip } from '@/components/onboarding';
 
 interface KanbanBoardProps {
   vacancy: Vacancy;
@@ -370,7 +371,13 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
       {/* Header */}
       <div className="flex items-center justify-between p-3 sm:p-4 border-b border-white/10">
         <div className="flex items-center gap-2 sm:gap-4">
-          <h2 className="text-base sm:text-lg font-semibold">Kanban Board</h2>
+          <OnboardingTooltip
+            id="kanban-board"
+            content="Drag candidates between stages to update their status"
+            position="bottom"
+          >
+            <h2 className="text-base sm:text-lg font-semibold">Kanban Board</h2>
+          </OnboardingTooltip>
           <span className="text-white/40 text-xs sm:text-sm">
             {kanbanBoard.total_count} candidates
           </span>
