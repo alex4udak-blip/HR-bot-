@@ -1364,4 +1364,74 @@ export const getVacancyStats = async (): Promise<VacancyStats> => {
   return data;
 };
 
+// Entity-Vacancy integration
+export const getEntityVacancies = async (entityId: number): Promise<VacancyApplication[]> => {
+  const { data } = await api.get(`/entities/${entityId}/vacancies`);
+  return data;
+};
+
+export const applyEntityToVacancy = async (
+  entityId: number,
+  vacancyId: number,
+  source?: string
+): Promise<VacancyApplication> => {
+  const { data } = await api.post(`/entities/${entityId}/apply-to-vacancy`, {
+    vacancy_id: vacancyId,
+    source
+  });
+  return data;
+};
+
+// Entity files
+export interface EntityFile {
+  id: number;
+  entity_id: number;
+  file_type: 'resume' | 'cover_letter' | 'test_assignment' | 'certificate' | 'portfolio' | 'other';
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  mime_type: string;
+  description?: string;
+  uploaded_by?: number;
+  created_at: string;
+}
+
+export const getEntityFiles = async (entityId: number): Promise<EntityFile[]> => {
+  const { data } = await api.get(`/entities/${entityId}/files`);
+  return data;
+};
+
+export const uploadEntityFile = async (
+  entityId: number,
+  file: File,
+  fileType: string,
+  description?: string
+): Promise<EntityFile> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('file_type', fileType);
+  if (description) formData.append('description', description);
+
+  const { data } = await api.post(`/entities/${entityId}/files`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+  return data;
+};
+
+export const deleteEntityFile = async (entityId: number, fileId: number): Promise<void> => {
+  await api.delete(`/entities/${entityId}/files/${fileId}`);
+};
+
+export const downloadEntityFile = async (entityId: number, fileId: number): Promise<Blob> => {
+  const response = await fetch(`/api/entities/${entityId}/files/${fileId}/download`, {
+    credentials: 'include'
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  return response.blob();
+};
+
 export default api;

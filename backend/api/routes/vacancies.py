@@ -18,8 +18,45 @@ from ..models.database import (
     Entity, EntityType, User, Organization, Department
 )
 from ..services.auth import get_current_user, get_user_org
+from ..services.features import can_access_feature
 
 router = APIRouter()
+
+
+# === Feature Access Control ===
+
+async def check_vacancy_access(
+    current_user: User = Depends(check_vacancy_access),
+    db: AsyncSession = Depends(get_db)
+) -> User:
+    """Check if user has access to the vacancies feature.
+
+    This dependency verifies that:
+    1. User is authenticated
+    2. User's organization/department has the vacancies feature enabled
+    3. Superadmin and Owner always have access (bypassed in can_access_feature)
+
+    Raises:
+        HTTPException 403 if user cannot access vacancies feature
+
+    Returns:
+        The authenticated user if they have access
+    """
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(
+            status_code=403,
+            detail="Функция вакансий недоступна - организация не найдена"
+        )
+
+    has_access = await can_access_feature(db, current_user.id, org.id, "vacancies")
+    if not has_access:
+        raise HTTPException(
+            status_code=403,
+            detail="Функция вакансий недоступна для вашего отдела"
+        )
+
+    return current_user
 
 
 # === Pydantic Schemas ===
@@ -169,7 +206,7 @@ async def list_vacancies(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(check_vacancy_access)
 ):
     """List all vacancies with optional filters."""
     org = await get_user_org(current_user, db)
@@ -264,7 +301,7 @@ async def list_vacancies(
 async def create_vacancy(
     data: VacancyCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(check_vacancy_access)
 ):
     """Create a new vacancy."""
     org = await get_user_org(current_user, db)
@@ -330,7 +367,7 @@ async def create_vacancy(
 async def get_vacancy(
     vacancy_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(check_vacancy_access)
 ):
     """Get a single vacancy by ID."""
     result = await db.execute(
@@ -404,7 +441,7 @@ async def update_vacancy(
     vacancy_id: int,
     data: VacancyUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(check_vacancy_access)
 ):
     """Update a vacancy."""
     result = await db.execute(
@@ -437,7 +474,7 @@ async def update_vacancy(
 async def delete_vacancy(
     vacancy_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(check_vacancy_access)
 ):
     """Delete a vacancy."""
     result = await db.execute(
@@ -461,7 +498,7 @@ async def list_applications(
     vacancy_id: int,
     stage: Optional[ApplicationStage] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(check_vacancy_access)
 ):
     """List all applications for a vacancy."""
     # Verify vacancy exists
@@ -520,7 +557,7 @@ async def create_application(
     vacancy_id: int,
     data: ApplicationCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(check_vacancy_access)
 ):
     """Add a candidate to a vacancy pipeline."""
     # Verify vacancy exists
@@ -606,7 +643,7 @@ async def update_application(
     application_id: int,
     data: ApplicationUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(check_vacancy_access)
 ):
     """Update an application (move stage, add notes, etc.)."""
     result = await db.execute(
@@ -682,7 +719,7 @@ async def update_application(
 async def delete_application(
     application_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(check_vacancy_access)
 ):
     """Remove a candidate from a vacancy pipeline."""
     result = await db.execute(
@@ -705,7 +742,7 @@ async def delete_application(
 async def get_kanban_board(
     vacancy_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(check_vacancy_access)
 ):
     """Get Kanban board data for a vacancy."""
     # Verify vacancy exists
@@ -799,7 +836,7 @@ async def get_kanban_board(
 async def bulk_move_applications(
     data: BulkStageUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(check_vacancy_access)
 ):
     """Move multiple applications to a new stage."""
     if not data.application_ids:
@@ -877,7 +914,7 @@ async def bulk_move_applications(
 @router.get("/stats/overview")
 async def get_vacancies_stats(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(check_vacancy_access)
 ):
     """Get overview statistics for vacancies."""
     org = await get_user_org(current_user, db)

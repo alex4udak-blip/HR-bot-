@@ -16,7 +16,8 @@ from ..models.database import (
     SharedAccess, ResourceType, AccessLevel, CustomRole, RolePermissionOverride,
     UserCustomRole, PermissionAuditLog
 )
-from ..services.auth import get_superadmin, get_current_user, create_access_token, create_impersonation_token, hash_password
+from ..services.auth import get_superadmin, get_current_user, create_access_token, create_impersonation_token, hash_password, get_user_org
+from ..services.features import can_access_feature, get_user_features, get_org_features as get_org_features_service, set_department_feature, bulk_set_department_features, RESTRICTED_FEATURES, ALL_FEATURES
 from ..models.schemas import TokenResponse, UserResponse
 from ..config import get_settings
 
@@ -230,6 +231,43 @@ class PermissionAuditLogResponse(BaseModel):
     changed_by_email: str
     details: Optional[Dict[str, Any]]
     created_at: datetime
+
+
+# ==================== Feature Access Control Schemas ====================
+
+class FeatureSettingResponse(BaseModel):
+    """Response for a single feature setting"""
+    id: int
+    feature_name: str
+    enabled: bool
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class FeatureSettingsResponse(BaseModel):
+    """Response for all feature settings"""
+    features: List[FeatureSettingResponse]
+    available_features: List[str]  # All valid feature names
+    restricted_features: List[str]  # Features that require explicit enablement
+
+
+class SetFeatureAccessRequest(BaseModel):
+    """Request to set feature access for departments"""
+    department_ids: Optional[List[int]] = Field(
+        None,
+        description="List of department IDs. If None, sets org-wide default."
+    )
+    enabled: bool = Field(
+        True,
+        description="Whether the feature should be enabled"
+    )
+
+
+class UserFeaturesResponse(BaseModel):
+    """Response for user's available features"""
+    features: List[str]
 
 
 # ==================== Helper Functions ====================
@@ -3300,18 +3338,39 @@ async def get_my_menu(
     Get the menu configuration for the current user.
 
     Returns only menu items that the user has permission to see.
-    This endpoint filters menu items based on user's effective permissions.
+    This endpoint filters menu items based on user's effective permissions
+    and feature access control (for restricted features like vacancies).
     """
     # Get user's effective permissions
     permissions_response = await get_my_permissions(current_user, db)
     permissions = permissions_response.permissions
     is_superadmin = current_user.role and current_user.role.value == "superadmin"
 
+    # Get user's organization for feature access check
+    org = await get_user_org(current_user, db)
+    org_id = org.id if org else None
+
     visible_items = []
     for item in DEFAULT_MENU_ITEMS:
         # Check superadmin-only items
         if item.superadmin_only and not is_superadmin:
             continue
+
+        # Check feature access for restricted features (vacancies, ai_analysis, etc.)
+        # Map menu item IDs to feature names
+        feature_mapping = {
+            "vacancies": "vacancies",
+            # Add other feature mappings here as needed
+        }
+
+        if item.id in feature_mapping and org_id:
+            feature_name = feature_mapping[item.id]
+            # Check if user can access this feature
+            has_feature_access = await can_access_feature(
+                db, current_user.id, org_id, feature_name
+            )
+            if not has_feature_access:
+                continue
 
         # Check required permission
         if item.required_permission:
@@ -3328,3 +3387,221 @@ async def get_my_menu(
         visible_items.append(item)
 
     return MenuConfigResponse(items=visible_items)
+
+
+# ==================== Feature Access Control Endpoints ====================
+
+@router.get("/features", response_model=FeatureSettingsResponse)
+async def get_features(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all feature settings for the organization.
+
+    Returns all configured feature settings including org-wide defaults
+    and department-specific overrides.
+
+    Requires: Owner or Admin role in the organization.
+    """
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Организация не найдена")
+
+    # Check if user has permission to view features (owner or admin)
+    is_superadmin = current_user.role == UserRole.superadmin
+
+    if not is_superadmin:
+        org_member_result = await db.execute(
+            select(OrgMember).where(
+                OrgMember.user_id == current_user.id,
+                OrgMember.org_id == org.id
+            )
+        )
+        org_member = org_member_result.scalar()
+
+        if not org_member or org_member.role not in (OrgRole.owner, OrgRole.admin):
+            raise HTTPException(
+                status_code=403,
+                detail="Только владелец или администратор может просматривать настройки функций"
+            )
+
+    features = await get_org_features_service(db, org.id)
+
+    return FeatureSettingsResponse(
+        features=[FeatureSettingResponse(**f) for f in features],
+        available_features=ALL_FEATURES,
+        restricted_features=RESTRICTED_FEATURES
+    )
+
+
+@router.get("/features/me", response_model=UserFeaturesResponse)
+async def get_my_features(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get list of all features available to the current user.
+
+    Returns feature names the user can access based on their
+    organization and department settings.
+    """
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Организация не найдена")
+
+    features = await get_user_features(db, current_user.id, org.id)
+
+    return UserFeaturesResponse(features=features)
+
+
+@router.put("/features/{feature_name}", response_model=FeatureSettingsResponse)
+async def set_feature_access(
+    feature_name: str,
+    request_data: SetFeatureAccessRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Set feature access for departments (owner/admin only).
+
+    If department_ids is None, sets org-wide default.
+    If department_ids is provided, sets department-specific settings.
+
+    Args:
+        feature_name: Name of the feature (e.g., 'vacancies', 'ai_analysis')
+        request_data: Contains department_ids (optional) and enabled flag
+
+    Returns:
+        Updated list of all feature settings for the organization
+    """
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Организация не найдена")
+
+    # Check if user has permission to manage features (superadmin or owner only)
+    is_superadmin = current_user.role == UserRole.superadmin
+
+    if not is_superadmin:
+        org_member_result = await db.execute(
+            select(OrgMember).where(
+                OrgMember.user_id == current_user.id,
+                OrgMember.org_id == org.id
+            )
+        )
+        org_member = org_member_result.scalar()
+
+        if not org_member or org_member.role != OrgRole.owner:
+            raise HTTPException(
+                status_code=403,
+                detail="Только владелец организации может изменять настройки функций"
+            )
+
+    # Validate feature name
+    if feature_name not in ALL_FEATURES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Неизвестная функция: {feature_name}. Доступные функции: {ALL_FEATURES}"
+        )
+
+    # Validate department IDs if provided
+    if request_data.department_ids:
+        for dept_id in request_data.department_ids:
+            dept_result = await db.execute(
+                select(Department).where(
+                    Department.id == dept_id,
+                    Department.org_id == org.id
+                )
+            )
+            if not dept_result.scalar():
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Отдел с ID {dept_id} не найден в организации"
+                )
+
+    # Set feature access
+    try:
+        await bulk_set_department_features(
+            db,
+            org.id,
+            feature_name,
+            request_data.enabled,
+            request_data.department_ids
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Return updated feature settings
+    features = await get_org_features_service(db, org.id)
+
+    return FeatureSettingsResponse(
+        features=[FeatureSettingResponse(**f) for f in features],
+        available_features=ALL_FEATURES,
+        restricted_features=RESTRICTED_FEATURES
+    )
+
+
+@router.delete("/features/{feature_name}")
+async def delete_feature_setting(
+    feature_name: str,
+    department_id: Optional[int] = Query(None, description="Department ID or None for org-wide setting"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a specific feature setting.
+
+    Removes a feature configuration, reverting to default behavior
+    (restricted features will be disabled, default features always available).
+
+    Args:
+        feature_name: Name of the feature
+        department_id: Optional department ID. If None, deletes org-wide setting.
+
+    Returns:
+        Success message
+    """
+    from ..models.database import DepartmentFeature
+
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Организация не найдена")
+
+    # Check if user has permission to manage features (superadmin or owner only)
+    is_superadmin = current_user.role == UserRole.superadmin
+
+    if not is_superadmin:
+        org_member_result = await db.execute(
+            select(OrgMember).where(
+                OrgMember.user_id == current_user.id,
+                OrgMember.org_id == org.id
+            )
+        )
+        org_member = org_member_result.scalar()
+
+        if not org_member or org_member.role != OrgRole.owner:
+            raise HTTPException(
+                status_code=403,
+                detail="Только владелец организации может удалять настройки функций"
+            )
+
+    # Find and delete the feature setting
+    query = select(DepartmentFeature).where(
+        DepartmentFeature.org_id == org.id,
+        DepartmentFeature.feature_name == feature_name
+    )
+
+    if department_id is not None:
+        query = query.where(DepartmentFeature.department_id == department_id)
+    else:
+        query = query.where(DepartmentFeature.department_id.is_(None))
+
+    result = await db.execute(query)
+    feature = result.scalar()
+
+    if not feature:
+        raise HTTPException(
+            status_code=404,
+            detail="Настройка функции не найдена"
+        )
+
+    await db.delete(feature)
+    await db.commit()
+
+    return {"message": "Настройка функции успешно удалена"}

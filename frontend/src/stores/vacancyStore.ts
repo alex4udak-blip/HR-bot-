@@ -11,6 +11,7 @@ interface VacancyFilters {
 interface VacancyState {
   // Vacancies list
   vacancies: Vacancy[];
+  vacanciesForSelect: Vacancy[]; // Open vacancies for dropdown selection
   currentVacancy: Vacancy | null;
   loading: boolean;
   error: string | null;
@@ -28,6 +29,7 @@ interface VacancyState {
 
   // Actions - Vacancies
   fetchVacancies: () => Promise<void>;
+  fetchVacanciesForSelect: () => Promise<void>;
   fetchVacancy: (id: number) => Promise<void>;
   createVacancy: (data: api.VacancyCreate) => Promise<Vacancy>;
   updateVacancy: (id: number, data: api.VacancyUpdate) => Promise<void>;
@@ -60,6 +62,7 @@ interface VacancyState {
 
 export const useVacancyStore = create<VacancyState>((set, get) => ({
   vacancies: [],
+  vacanciesForSelect: [],
   currentVacancy: null,
   loading: false,
   error: null,
@@ -79,6 +82,16 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch vacancies';
       set({ error: message, loading: false });
+    }
+  },
+
+  fetchVacanciesForSelect: async () => {
+    try {
+      // Fetch only open vacancies for dropdown selection
+      const vacancies = await api.getVacancies({ status: 'open' });
+      set({ vacanciesForSelect: vacancies });
+    } catch (err) {
+      console.error('Failed to fetch vacancies for select:', err);
     }
   },
 

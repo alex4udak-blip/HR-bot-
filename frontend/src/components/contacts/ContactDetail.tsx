@@ -18,7 +18,9 @@ import {
   Loader2,
   AtSign,
   Download,
-  Target
+  Target,
+  Plus,
+  FolderOpen
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -26,6 +28,9 @@ import type { EntityWithRelations, Chat, CallRecording } from '@/types';
 import { STATUS_LABELS, STATUS_COLORS, CALL_STATUS_LABELS, CALL_STATUS_COLORS } from '@/types';
 import EntityAI from './EntityAI';
 import CriteriaPanelEntity from './CriteriaPanelEntity';
+import AddToVacancyModal from '../entities/AddToVacancyModal';
+import EntityVacancies from '../entities/EntityVacancies';
+import EntityFiles from '../entities/EntityFiles';
 import * as api from '@/services/api';
 import { useEntityStore } from '@/stores/entityStore';
 
@@ -36,14 +41,16 @@ interface ContactDetailProps {
 
 export default function ContactDetail({ entity, showAIInOverview = true }: ContactDetailProps) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'overview' | 'chats' | 'calls' | 'history' | 'criteria' | 'reports'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'chats' | 'calls' | 'vacancies' | 'files' | 'history' | 'criteria' | 'reports'>('overview');
   const [showLinkChatModal, setShowLinkChatModal] = useState(false);
   const [showLinkCallModal, setShowLinkCallModal] = useState(false);
+  const [showAddToVacancyModal, setShowAddToVacancyModal] = useState(false);
   const [unlinkedChats, setUnlinkedChats] = useState<Chat[]>([]);
   const [unlinkedCalls, setUnlinkedCalls] = useState<CallRecording[]>([]);
   const [loadingLink, setLoadingLink] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [downloadingReport, setDownloadingReport] = useState<string | null>(null);
+  const [vacanciesKey, setVacanciesKey] = useState(0); // Key to force reload vacancies
   const { fetchEntity } = useEntityStore();
 
   // Load unlinked chats when modal opens
@@ -298,6 +305,8 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
           { id: 'overview', label: 'Обзор' },
           { id: 'chats', label: `Чаты (${entity.chats?.length || 0})`, shortLabel: `Чаты` },
           { id: 'calls', label: `Звонки (${entity.calls?.length || 0})`, shortLabel: `Звонки` },
+          { id: 'vacancies', label: 'Вакансии', icon: Briefcase },
+          { id: 'files', label: 'Файлы', icon: FolderOpen },
           { id: 'criteria', label: 'Критерии', icon: Target },
           { id: 'reports', label: 'Отчёты', icon: Download },
           { id: 'history', label: 'История' }
@@ -514,6 +523,37 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 <p>Нет записей звонков</p>
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'vacancies' && (
+          <div className="glass rounded-xl border border-white/10 p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Briefcase size={18} className="text-blue-400" />
+                Вакансии
+              </h3>
+              {entity.type === 'candidate' && (
+                <button
+                  onClick={() => setShowAddToVacancyModal(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors"
+                >
+                  <Plus size={16} />
+                  Добавить в вакансию
+                </button>
+              )}
+            </div>
+            <EntityVacancies key={vacanciesKey} entityId={entity.id} />
+          </div>
+        )}
+
+        {activeTab === 'files' && (
+          <div className="glass rounded-xl border border-white/10 p-4">
+            <h3 className="text-base font-semibold text-white flex items-center gap-2 mb-4">
+              <FolderOpen size={18} className="text-green-400" />
+              Файлы
+            </h3>
+            <EntityFiles entityId={entity.id} canEdit={!entity.is_transferred} />
           </div>
         )}
 
@@ -777,6 +817,21 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Add to Vacancy Modal */}
+      <AnimatePresence>
+        {showAddToVacancyModal && (
+          <AddToVacancyModal
+            entityId={entity.id}
+            entityName={entity.name}
+            onClose={() => setShowAddToVacancyModal(false)}
+            onSuccess={() => {
+              setShowAddToVacancyModal(false);
+              setVacanciesKey(prev => prev + 1); // Force reload vacancies
+            }}
+          />
         )}
       </AnimatePresence>
     </div>
