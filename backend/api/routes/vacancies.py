@@ -26,7 +26,7 @@ router = APIRouter()
 # === Feature Access Control ===
 
 async def check_vacancy_access(
-    current_user: User = Depends(check_vacancy_access),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> User:
     """Check if user has access to the vacancies feature.
