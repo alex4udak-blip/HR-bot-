@@ -6,7 +6,7 @@ import clsx from 'clsx';
 import { getEntityVacancies } from '@/services/api';
 import type { VacancyApplication } from '@/types';
 import { APPLICATION_STAGE_LABELS, APPLICATION_STAGE_COLORS } from '@/types';
-import { ListSkeleton, EmptyState } from '@/components/ui';
+import { ListSkeleton, EmptyState, NoEntityVacanciesEmpty } from '@/components/ui';
 
 interface EntityVacanciesProps {
   entityId: number;
@@ -27,7 +27,7 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
         setApplications(data);
       } catch (err) {
         console.error('Failed to load entity vacancies:', err);
-        setError('Не удалось загрузить вакансии');
+        setError('Failed to load vacancies');
       } finally {
         setLoading(false);
       }
@@ -58,7 +58,7 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
     return (
       <EmptyState
         icon={Briefcase}
-        title="Ошибка загрузки"
+        title="Loading error"
         description={error}
         size="sm"
       />
@@ -66,14 +66,7 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
   }
 
   if (applications.length === 0) {
-    return (
-      <EmptyState
-        icon={Briefcase}
-        title="Нет связанных вакансий"
-        description="Добавьте кандидата в вакансию"
-        size="sm"
-      />
-    );
+    return <NoEntityVacanciesEmpty />;
   }
 
   return (
