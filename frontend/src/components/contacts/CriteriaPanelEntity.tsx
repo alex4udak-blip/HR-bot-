@@ -8,7 +8,8 @@ import {
   ChevronDown,
   AlertCircle,
   CheckCircle,
-  Target
+  Target,
+  TrendingUp
 } from 'lucide-react';
 import * as Select from '@radix-ui/react-select';
 import {
@@ -28,18 +29,21 @@ const categoryIcons = {
   basic: Target,
   red_flags: AlertCircle,
   green_flags: CheckCircle,
+  potential: TrendingUp,
 };
 
 const categoryColors = {
   basic: 'text-blue-400 bg-blue-500/20',
   red_flags: 'text-red-400 bg-red-500/20',
   green_flags: 'text-green-400 bg-green-500/20',
+  potential: 'text-purple-400 bg-purple-500/20',
 };
 
 const categoryLabels = {
   basic: 'Основные',
   red_flags: 'Негативные',
   green_flags: 'Позитивные',
+  potential: 'Потенциал',
 };
 
 export default function CriteriaPanelEntity({ entityId }: CriteriaPanelEntityProps) {

@@ -62,7 +62,7 @@ def generate_pdf_report(title: str, content: str, chat_title: str) -> bytes:
     font_bold = 'DejaVuSans-Bold' if use_cyrillic else 'Helvetica-Bold'
 
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=20*mm, bottomMargin=20*mm, leftMargin=20*mm, rightMargin=20*mm)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=30*mm, bottomMargin=20*mm, leftMargin=20*mm, rightMargin=20*mm)
 
     styles = getSampleStyleSheet()
 
@@ -71,6 +71,7 @@ def generate_pdf_report(title: str, content: str, chat_title: str) -> bytes:
         name='CustomTitle',
         fontName=font_bold,
         fontSize=18,
+        spaceBefore=10,
         spaceAfter=12,
         textColor=colors.HexColor('#1a1a2e'),
     ))
@@ -125,7 +126,7 @@ def generate_pdf_report(title: str, content: str, chat_title: str) -> bytes:
     # Title
     story.append(Paragraph(escape_html(f"Аналитический отчёт: {chat_title}"), styles['CustomTitle']))
     story.append(Paragraph(f"Дата создания: {datetime.now().strftime('%d.%m.%Y %H:%M')}", styles['CustomBody']))
-    story.append(Spacer(1, 20))
+    story.append(Spacer(1, 30))
 
     # Parse markdown and add content
     lines = content.split('\n')

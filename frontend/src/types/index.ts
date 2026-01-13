@@ -119,7 +119,7 @@ export interface Criterion {
   name: string;
   description: string;
   weight: number;
-  category: 'basic' | 'red_flags' | 'green_flags';
+  category: 'basic' | 'red_flags' | 'green_flags' | 'potential';
 }
 
 export interface CriteriaPreset {

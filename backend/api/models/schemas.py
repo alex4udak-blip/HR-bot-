@@ -200,6 +200,8 @@ class CriteriaPresetCreate(BaseModel):
     criteria: List[CriterionItem]
     category: Optional[str] = None
     is_global: bool = False
+    chat_type: Optional[str] = None  # For type-specific presets
+    is_default: bool = False  # Mark as default for chat type
 
 
 class CriteriaPresetResponse(BaseModel):
@@ -209,11 +211,18 @@ class CriteriaPresetResponse(BaseModel):
     criteria: List[dict]
     category: Optional[str]
     is_global: bool
+    chat_type: Optional[str] = None
+    is_default: bool = False
     created_by: Optional[int]
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class ChatTypeDefaultCriteriaUpdate(BaseModel):
+    """Update default criteria for a chat type."""
+    criteria: List[CriterionItem]
 
 
 class ChatCriteriaUpdate(BaseModel):

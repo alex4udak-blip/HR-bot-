@@ -30,7 +30,9 @@ import {
   List,
   CheckCircle,
   ArrowUp,
-  AlignLeft
+  AlignLeft,
+  Copy,
+  Check
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { getAIHistory, clearAIHistory, streamAIMessage, streamQuickAction } from '@/services/api';
@@ -128,6 +130,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
   const [streamingContent, setStreamingContent] = useState('');
   const streamingContentRef = useRef('');
   const [localMessages, setLocalMessages] = useState<LocalMessage[]>([]);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   // Flag to prevent overwriting local messages right after streaming
@@ -340,6 +343,13 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
     }
   };
 
+  const handleCopyMessage = (messageId: string, content: string) => {
+    navigator.clipboard.writeText(content);
+    setCopiedMessageId(messageId);
+    toast.success('Скопировано');
+    setTimeout(() => setCopiedMessageId(null), 2000);
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full">
       {/* Header */}
@@ -402,15 +412,28 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.15 }}
             className={clsx(
-              'rounded-xl p-3 max-w-[85%]',
+              'rounded-xl p-3 max-w-[85%] group',
               msg.role === 'user'
                 ? 'bg-accent-500/20 ml-auto'
                 : 'glass-light mr-auto'
             )}
           >
             {msg.role === 'assistant' ? (
-              <div className="prose prose-sm max-w-none prose-invert prose-headings:text-dark-100 prose-p:text-dark-200 prose-strong:text-dark-100 prose-li:text-dark-200 break-words">
-                <ReactMarkdown>{msg.content}</ReactMarkdown>
+              <div className="relative">
+                <button
+                  onClick={() => handleCopyMessage(msg.id, msg.content)}
+                  className="absolute -top-1 -right-1 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Копировать"
+                >
+                  {copiedMessageId === msg.id ? (
+                    <Check size={14} className="text-green-400" />
+                  ) : (
+                    <Copy size={14} className="text-white/60" />
+                  )}
+                </button>
+                <div className="prose prose-sm max-w-none prose-invert prose-headings:text-dark-100 prose-p:text-dark-200 prose-strong:text-dark-100 prose-li:text-dark-200 break-words">
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                </div>
               </div>
             ) : (
               <p className="text-sm break-words">{msg.content}</p>

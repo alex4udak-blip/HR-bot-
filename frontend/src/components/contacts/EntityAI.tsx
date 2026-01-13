@@ -11,7 +11,9 @@ import {
   Trash2,
   Loader2,
   Brain,
-  RefreshCw
+  RefreshCw,
+  Copy,
+  Check
 } from 'lucide-react';
 import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
@@ -51,6 +53,7 @@ export default function EntityAI({ entity }: EntityAIProps) {
   const [memory, setMemory] = useState<AIMemory | null>(null);
   const [updatingMemory, setUpdatingMemory] = useState(false);
   const [showMemory, setShowMemory] = useState(false);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -143,6 +146,13 @@ export default function EntityAI({ entity }: EntityAIProps) {
       console.error('Failed to clear history:', e);
       toast.error('Не удалось очистить историю');
     }
+  };
+
+  const handleCopy = (idx: number, content: string) => {
+    navigator.clipboard.writeText(content);
+    setCopiedIdx(idx);
+    toast.success('Скопировано');
+    setTimeout(() => setCopiedIdx(null), 2000);
   };
 
   const sendMessage = async (message?: string, quickAction?: string) => {
@@ -385,15 +395,34 @@ export default function EntityAI({ entity }: EntityAIProps) {
           <div
             key={i}
             className={clsx(
-              'p-3 rounded-lg overflow-hidden',
+              'p-3 rounded-lg overflow-hidden group',
               msg.role === 'user'
                 ? 'bg-cyan-500/20 ml-4 sm:ml-8'
                 : 'bg-white/5 mr-2 sm:mr-4'
             )}
           >
-            <div className="prose prose-invert prose-sm max-w-none break-words overflow-wrap-anywhere">
-              <ReactMarkdown>{msg.content}</ReactMarkdown>
-            </div>
+            {msg.role === 'assistant' ? (
+              <div className="relative">
+                <button
+                  onClick={() => handleCopy(i, msg.content)}
+                  className="absolute -top-1 -right-1 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Копировать"
+                >
+                  {copiedIdx === i ? (
+                    <Check size={14} className="text-green-400" />
+                  ) : (
+                    <Copy size={14} className="text-white/60" />
+                  )}
+                </button>
+                <div className="prose prose-invert prose-sm max-w-none break-words overflow-wrap-anywhere">
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                </div>
+              </div>
+            ) : (
+              <div className="prose prose-invert prose-sm max-w-none break-words overflow-wrap-anywhere">
+                <ReactMarkdown>{msg.content}</ReactMarkdown>
+              </div>
+            )}
           </div>
         ))}
 

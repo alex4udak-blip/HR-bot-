@@ -1,16 +1,18 @@
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, and_
 
 from ..database import get_db
 from ..models.database import User, UserRole, Chat, CriteriaPreset, ChatCriteria, Entity, EntityCriteria
 from ..models.schemas import (
     CriteriaPresetCreate, CriteriaPresetResponse,
     ChatCriteriaUpdate, ChatCriteriaResponse,
-    EntityCriteriaUpdate, EntityCriteriaResponse
+    EntityCriteriaUpdate, EntityCriteriaResponse,
+    ChatTypeDefaultCriteriaUpdate
 )
 from ..services.auth import get_current_user
+from ..services.chat_types import get_default_criteria as get_hardcoded_defaults
 
 router = APIRouter()
 
@@ -19,16 +21,30 @@ router = APIRouter()
 
 @router.get("/presets", response_model=List[CriteriaPresetResponse])
 async def get_presets(
+    chat_type: Optional[str] = Query(None, description="Filter by chat type"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     user = await db.merge(user)
     # Global presets + user's own presets
-    query = select(CriteriaPreset).where(
+    conditions = [
         or_(
             CriteriaPreset.is_global == True,
             CriteriaPreset.created_by == user.id
         )
+    ]
+
+    # Add chat_type filter if provided
+    if chat_type:
+        conditions.append(
+            or_(
+                CriteriaPreset.chat_type == chat_type,
+                CriteriaPreset.chat_type.is_(None)  # Also include non-type-specific presets
+            )
+        )
+
+    query = select(CriteriaPreset).where(
+        and_(*conditions)
     ).order_by(CriteriaPreset.category, CriteriaPreset.name)
 
     result = await db.execute(query)
@@ -42,6 +58,8 @@ async def get_presets(
             criteria=p.criteria,
             category=p.category,
             is_global=p.is_global,
+            chat_type=p.chat_type,
+            is_default=p.is_default,
             created_by=p.created_by,
             created_at=p.created_at,
         ) for p in presets
@@ -55,8 +73,32 @@ async def create_preset(
     user: User = Depends(get_current_user),
 ):
     user = await db.merge(user)
-    # Only superadmin can create global presets
+    # Only superadmin can create global presets or set defaults
     is_global = data.is_global and user.role == UserRole.superadmin
+    is_default = data.is_default and user.role == UserRole.superadmin
+
+    # If setting as default, clear any existing defaults for this chat type
+    if is_default and data.chat_type:
+        await db.execute(
+            select(CriteriaPreset).where(
+                and_(
+                    CriteriaPreset.chat_type == data.chat_type,
+                    CriteriaPreset.is_default == True
+                )
+            )
+        )
+        # Update any existing defaults to non-default
+        from sqlalchemy import update
+        await db.execute(
+            update(CriteriaPreset)
+            .where(
+                and_(
+                    CriteriaPreset.chat_type == data.chat_type,
+                    CriteriaPreset.is_default == True
+                )
+            )
+            .values(is_default=False)
+        )
 
     preset = CriteriaPreset(
         name=data.name,
@@ -64,6 +106,8 @@ async def create_preset(
         criteria=[c.model_dump() for c in data.criteria],
         category=data.category,
         is_global=is_global,
+        chat_type=data.chat_type,
+        is_default=is_default,
         created_by=user.id,
     )
     db.add(preset)
@@ -77,6 +121,8 @@ async def create_preset(
         criteria=preset.criteria,
         category=preset.category,
         is_global=preset.is_global,
+        chat_type=preset.chat_type,
+        is_default=preset.is_default,
         created_by=preset.created_by,
         created_at=preset.created_at,
     )
@@ -103,11 +149,150 @@ async def delete_preset(
     await db.commit()
 
 
+# ============ DEFAULT CRITERIA BY CHAT TYPE ============
+
+@router.get("/defaults/{chat_type}")
+async def get_default_criteria_for_type(
+    chat_type: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Get default criteria for a chat type. First checks DB for custom defaults, then falls back to hardcoded."""
+    # First check for a custom default preset in the database
+    result = await db.execute(
+        select(CriteriaPreset).where(
+            and_(
+                CriteriaPreset.chat_type == chat_type,
+                CriteriaPreset.is_default == True
+            )
+        )
+    )
+    custom_default = result.scalar_one_or_none()
+
+    if custom_default:
+        return {
+            "chat_type": chat_type,
+            "criteria": custom_default.criteria,
+            "is_custom": True,
+            "preset_id": custom_default.id,
+        }
+
+    # Fall back to hardcoded defaults
+    hardcoded = get_hardcoded_defaults(chat_type)
+    return {
+        "chat_type": chat_type,
+        "criteria": hardcoded,
+        "is_custom": False,
+        "preset_id": None,
+    }
+
+
+@router.put("/defaults/{chat_type}")
+async def set_default_criteria_for_type(
+    chat_type: str,
+    data: ChatTypeDefaultCriteriaUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Set custom default criteria for a chat type. Superadmin only."""
+    user = await db.merge(user)
+
+    if user.role != UserRole.superadmin:
+        raise HTTPException(status_code=403, detail="Only superadmins can set default criteria")
+
+    from sqlalchemy import update
+
+    # First, clear any existing defaults for this chat type
+    await db.execute(
+        update(CriteriaPreset)
+        .where(
+            and_(
+                CriteriaPreset.chat_type == chat_type,
+                CriteriaPreset.is_default == True
+            )
+        )
+        .values(is_default=False)
+    )
+
+    # Check if we already have a preset for this type (even if not default)
+    result = await db.execute(
+        select(CriteriaPreset).where(
+            and_(
+                CriteriaPreset.chat_type == chat_type,
+                CriteriaPreset.is_global == True,
+                CriteriaPreset.name == f"Default criteria for {chat_type}"
+            )
+        )
+    )
+    existing = result.scalar_one_or_none()
+
+    criteria_data = [c.model_dump() for c in data.criteria]
+
+    if existing:
+        # Update existing preset
+        existing.criteria = criteria_data
+        existing.is_default = True
+        preset = existing
+    else:
+        # Create new preset
+        preset = CriteriaPreset(
+            name=f"Default criteria for {chat_type}",
+            description=f"Custom default criteria for {chat_type} chats",
+            criteria=criteria_data,
+            category="basic",
+            is_global=True,
+            chat_type=chat_type,
+            is_default=True,
+            created_by=user.id,
+        )
+        db.add(preset)
+
+    await db.commit()
+    await db.refresh(preset)
+
+    return {
+        "chat_type": chat_type,
+        "criteria": preset.criteria,
+        "is_custom": True,
+        "preset_id": preset.id,
+    }
+
+
+@router.delete("/defaults/{chat_type}", status_code=204)
+async def reset_default_criteria_for_type(
+    chat_type: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Reset default criteria for a chat type back to hardcoded defaults. Superadmin only."""
+    user = await db.merge(user)
+
+    if user.role != UserRole.superadmin:
+        raise HTTPException(status_code=403, detail="Only superadmins can reset default criteria")
+
+    from sqlalchemy import update
+
+    # Clear any custom defaults for this chat type
+    await db.execute(
+        update(CriteriaPreset)
+        .where(
+            and_(
+                CriteriaPreset.chat_type == chat_type,
+                CriteriaPreset.is_default == True
+            )
+        )
+        .values(is_default=False)
+    )
+
+    await db.commit()
+
+
 # ============ CHAT CRITERIA ============
 
 @router.get("/chats/{chat_id}", response_model=ChatCriteriaResponse)
 async def get_chat_criteria(
     chat_id: int,
+    use_defaults: bool = Query(False, description="Return default criteria if none set"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -124,6 +309,38 @@ async def get_chat_criteria(
     criteria = result.scalar_one_or_none()
 
     if not criteria:
+        # If use_defaults is True, try to get default criteria for this chat type
+        if use_defaults and chat.chat_type:
+            # First check for custom default in DB
+            default_result = await db.execute(
+                select(CriteriaPreset).where(
+                    and_(
+                        CriteriaPreset.chat_type == chat.chat_type.value if hasattr(chat.chat_type, 'value') else chat.chat_type,
+                        CriteriaPreset.is_default == True
+                    )
+                )
+            )
+            custom_default = default_result.scalar_one_or_none()
+
+            if custom_default:
+                return ChatCriteriaResponse(
+                    id=0,
+                    chat_id=chat_id,
+                    criteria=custom_default.criteria,
+                    updated_at=chat.created_at,
+                )
+
+            # Fall back to hardcoded defaults
+            chat_type_str = chat.chat_type.value if hasattr(chat.chat_type, 'value') else str(chat.chat_type)
+            hardcoded = get_hardcoded_defaults(chat_type_str)
+            if hardcoded:
+                return ChatCriteriaResponse(
+                    id=0,
+                    chat_id=chat_id,
+                    criteria=hardcoded,
+                    updated_at=chat.created_at,
+                )
+
         # Return empty criteria
         return ChatCriteriaResponse(
             id=0,
