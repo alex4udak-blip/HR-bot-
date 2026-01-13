@@ -456,6 +456,9 @@ async def list_entities(
     result = await db.execute(query)
     entities = result.scalars().all()
 
+    # DEBUG: Log query results
+    logger.info(f"list_entities RESULT: user={current_user.id}, found {len(entities)} entities, ids={[e.id for e in entities][:20]}")
+
     if not entities:
         return []
 

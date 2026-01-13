@@ -206,6 +206,9 @@ async def list_calls(
     result = await db.execute(query)
     calls = result.unique().scalars().all()
 
+    # DEBUG: Log query results
+    logger.info(f"list_calls RESULT: user={current_user.id}, found {len(calls)} calls, ids={[c.id for c in calls][:20]}")
+
     if not calls:
         return []
 
