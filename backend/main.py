@@ -13,7 +13,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
-from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies
+from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser
 from api.config import settings
 
 # Configure logging - show important messages
@@ -698,6 +698,7 @@ app.include_router(realtime.router, tags=["realtime"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(external_links.router, tags=["external-links"])
 app.include_router(vacancies.router, prefix="/api/vacancies", tags=["vacancies"])
+app.include_router(parser.router, prefix="/api/parser", tags=["parser"])
 
 
 @app.get("/health")
