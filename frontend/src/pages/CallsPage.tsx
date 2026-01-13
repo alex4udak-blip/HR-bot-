@@ -71,13 +71,9 @@ export default function CallsPage() {
     });
   };
 
-  // Filter calls by access - superadmin and owner see everything, others only see their own or shared
-  const accessibleCalls = calls.filter((call) => {
-    return isSuperAdmin() || isOwner() ||
-      call.is_mine === true ||
-      call.is_shared === true ||
-      call.owner_id === user?.id;
-  });
+  // Backend already filters calls by access control (ownership, department, sharing)
+  // No additional filtering needed on frontend
+  const accessibleCalls = calls;
 
   // Fetch calls on mount
   useEffect(() => {

@@ -93,26 +93,16 @@ export default function ChatsPage() {
     }
   }, [chatId, setSelectedChatId]);
 
+  // Backend already filters chats by access control (ownership, department, sharing)
+  // Frontend only needs to filter by search and type
   const filteredChats = chats.filter((chat) => {
     const matchesSearch = (chat.custom_name || chat.title).toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = typeFilter === 'all' || chat.chat_type === typeFilter;
-
-    // Access control: superadmin and owner see everything, others only see their own or shared
-    const hasAccess = isSuperAdmin() || isOwner() ||
-      chat.is_mine === true ||
-      chat.is_shared === true ||
-      chat.owner_id === user?.id;
-
-    return matchesSearch && matchesType && hasAccess;
+    return matchesSearch && matchesType;
   });
 
-  // Count chats per type - only count accessible chats
-  const accessibleChats = chats.filter((chat) => {
-    return isSuperAdmin() || isOwner() ||
-      chat.is_mine === true ||
-      chat.is_shared === true ||
-      chat.owner_id === user?.id;
-  });
+  // All chats from backend are accessible - no additional filtering needed
+  const accessibleChats = chats;
 
   const typeCounts = accessibleChats.reduce((acc, chat) => {
     acc[chat.chat_type] = (acc[chat.chat_type] || 0) + 1;
