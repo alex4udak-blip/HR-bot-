@@ -5,7 +5,10 @@ These tests verify that access_level (view/edit/full) is properly enforced.
 import pytest
 from datetime import datetime
 
-from api.models.database import Entity, SharedAccess, AccessLevel, ResourceType
+from api.models.database import (
+    Entity, SharedAccess, AccessLevel, ResourceType,
+    DepartmentMember, DeptRole, OrgMember, OrgRole, EntityType, EntityStatus
+)
 
 
 class TestEntityOwnerAccess:
@@ -392,3 +395,220 @@ class TestEntityDepartmentAccess:
         # Current bug: might return 200 because only org_id is checked
         assert response.status_code in [403, 404], \
             f"User should not see entity from other dept. Got {response.status_code}"
+
+
+class TestDepartmentAdminContactVisibility:
+    """Test that department admin/lead can see contacts created by department members.
+
+    This is a critical test for the fix of dept_user_ids undefined variable bug.
+    """
+
+    @pytest.mark.asyncio
+    async def test_dept_lead_sees_contacts_created_by_dept_members(
+        self, db_session, client, organization, department, admin_user, admin_token,
+        regular_user, user_token, get_auth_headers
+    ):
+        """
+        Test that department lead can see contacts created by department members in list.
+
+        Scenario:
+        1. admin_user is lead of department
+        2. regular_user is member of same department
+        3. regular_user creates a contact (without department_id)
+        4. admin_user (lead) should see this contact in their list
+        """
+        # Setup: make admin_user lead of department
+        dept_lead = DepartmentMember(
+            department_id=department.id,
+            user_id=admin_user.id,
+            role=DeptRole.lead,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_lead)
+
+        # Setup: make regular_user member of same department
+        dept_member = DepartmentMember(
+            department_id=department.id,
+            user_id=regular_user.id,
+            role=DeptRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_member)
+
+        # Setup: add admin_user to organization as admin (not owner to test dept access)
+        org_admin = OrgMember(
+            org_id=organization.id,
+            user_id=admin_user.id,
+            role=OrgRole.admin,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_admin)
+
+        # Setup: add regular_user to organization as member
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+
+        await db_session.commit()
+
+        # Create entity by regular_user (department member) - without department_id!
+        member_entity = Entity(
+            org_id=organization.id,
+            department_id=None,  # No department_id - should still be visible to lead
+            created_by=regular_user.id,
+            name="Contact By Member",
+            email="member-contact@test.com",
+            type=EntityType.candidate,
+            status=EntityStatus.active,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(member_entity)
+        await db_session.commit()
+        await db_session.refresh(member_entity)
+
+        # Test: admin_user (lead) should see this contact
+        response = await client.get(
+            "/api/entities",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        entity_ids = [e["id"] for e in data]
+        assert member_entity.id in entity_ids, \
+            f"Dept lead should see contact created by dept member. Got entities: {entity_ids}"
+
+    @pytest.mark.asyncio
+    async def test_dept_sub_admin_sees_contacts_created_by_dept_members(
+        self, db_session, client, organization, department, admin_user, admin_token,
+        regular_user, get_auth_headers
+    ):
+        """
+        Test that department sub_admin can see contacts created by department members.
+        """
+        # Setup: make admin_user sub_admin of department
+        dept_sub_admin = DepartmentMember(
+            department_id=department.id,
+            user_id=admin_user.id,
+            role=DeptRole.sub_admin,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_sub_admin)
+
+        # Setup: make regular_user member of same department
+        dept_member = DepartmentMember(
+            department_id=department.id,
+            user_id=regular_user.id,
+            role=DeptRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_member)
+
+        # Setup: add admin_user to organization as admin
+        org_admin = OrgMember(
+            org_id=organization.id,
+            user_id=admin_user.id,
+            role=OrgRole.admin,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_admin)
+
+        # Setup: add regular_user to organization as member
+        org_member = OrgMember(
+            org_id=organization.id,
+            user_id=regular_user.id,
+            role=OrgRole.member,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_member)
+
+        await db_session.commit()
+
+        # Create entity by regular_user (department member) - without department_id!
+        member_entity = Entity(
+            org_id=organization.id,
+            department_id=None,
+            created_by=regular_user.id,
+            name="Contact By Member 2",
+            email="member-contact2@test.com",
+            type=EntityType.client,
+            status=EntityStatus.active,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(member_entity)
+        await db_session.commit()
+        await db_session.refresh(member_entity)
+
+        # Test: admin_user (sub_admin) should see this contact
+        response = await client.get(
+            "/api/entities",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        entity_ids = [e["id"] for e in data]
+        assert member_entity.id in entity_ids, \
+            f"Dept sub_admin should see contact created by dept member. Got entities: {entity_ids}"
+
+    @pytest.mark.asyncio
+    async def test_dept_lead_sees_contacts_with_department_id(
+        self, db_session, client, organization, department, admin_user, admin_token,
+        get_auth_headers
+    ):
+        """
+        Test that department lead can see contacts explicitly assigned to their department.
+        """
+        # Setup: make admin_user lead of department
+        dept_lead = DepartmentMember(
+            department_id=department.id,
+            user_id=admin_user.id,
+            role=DeptRole.lead,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_lead)
+
+        # Setup: add admin_user to organization as admin
+        org_admin = OrgMember(
+            org_id=organization.id,
+            user_id=admin_user.id,
+            role=OrgRole.admin,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(org_admin)
+
+        await db_session.commit()
+
+        # Create entity with department_id set (created by someone else)
+        dept_entity = Entity(
+            org_id=organization.id,
+            department_id=department.id,  # Explicitly in the department
+            created_by=999,  # Some other user
+            name="Dept Contact",
+            email="dept-contact@test.com",
+            type=EntityType.partner,
+            status=EntityStatus.active,
+            created_at=datetime.utcnow()
+        )
+        db_session.add(dept_entity)
+        await db_session.commit()
+        await db_session.refresh(dept_entity)
+
+        # Test: admin_user (lead) should see this contact
+        response = await client.get(
+            "/api/entities",
+            headers=get_auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        entity_ids = [e["id"] for e in data]
+        assert dept_entity.id in entity_ids, \
+            f"Dept lead should see contact in their department. Got entities: {entity_ids}"

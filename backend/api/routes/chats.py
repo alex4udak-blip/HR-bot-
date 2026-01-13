@@ -181,6 +181,9 @@ async def get_chats(
             if dept_entity_ids:
                 conditions.append(Chat.entity_id.in_(dept_entity_ids))  # Chats linked to dept entities
 
+            # DEBUG: Log access conditions
+            logger.info(f"get_chats: shared_chat_ids={shared_chat_ids}, dept_entity_ids={dept_entity_ids}, conditions_count={len(conditions)}")
+
             query = query.where(or_(*conditions))
         # org owner sees all in org (no additional filter)
 
