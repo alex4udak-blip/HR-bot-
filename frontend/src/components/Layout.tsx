@@ -14,6 +14,7 @@ import {
   Shield,
   UserCog,
   UserPlus,
+  Briefcase,
   type LucideIcon
 } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
@@ -33,6 +34,7 @@ const iconMap: Record<string, LucideIcon> = {
   Settings,
   Shield,
   Trash2,
+  Briefcase,
 };
 
 // Localized labels
@@ -41,6 +43,7 @@ const labelMap: Record<string, string> = {
   'Chats': 'Чаты',
   'Contacts': 'Контакты',
   'Calls': 'Созвоны',
+  'Vacancies': 'Вакансии',
   'Departments': 'Департаменты',
   'Users': 'Пользователи',
   'Invite': 'Приглашения',
@@ -86,6 +89,7 @@ export default function Layout() {
       { path: '/chats', icon: MessageSquare, label: 'Чаты' },
       { path: '/calls', icon: Phone, label: 'Созвоны' },
       { path: '/contacts', icon: Users, label: 'Контакты' },
+      { path: '/vacancies', icon: Briefcase, label: 'Вакансии' },
       { path: '/trash', icon: Trash2, label: 'Корзина' },
     ];
 

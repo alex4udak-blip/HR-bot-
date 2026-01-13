@@ -56,6 +56,28 @@ class EntityStatus(str, enum.Enum):
     negotiation = "negotiation"
 
 
+class VacancyStatus(str, enum.Enum):
+    """Status of a job vacancy"""
+    draft = "draft"          # Not yet published
+    open = "open"            # Actively hiring
+    paused = "paused"        # Temporarily paused
+    closed = "closed"        # Position filled
+    cancelled = "cancelled"  # Cancelled/no longer needed
+
+
+class ApplicationStage(str, enum.Enum):
+    """Pipeline stage for candidate application"""
+    applied = "applied"           # Initial application
+    screening = "screening"       # Resume/profile review
+    phone_screen = "phone_screen" # Phone screening
+    interview = "interview"       # Interview stage
+    assessment = "assessment"     # Technical/skill assessment
+    offer = "offer"               # Offer extended
+    hired = "hired"               # Accepted and hired
+    rejected = "rejected"         # Rejected at any stage
+    withdrawn = "withdrawn"       # Candidate withdrew
+
+
 class CallSource(str, enum.Enum):
     meet = "meet"
     zoom = "zoom"
@@ -669,3 +691,75 @@ class UserCustomRole(Base):
     user = relationship("User", foreign_keys=[user_id])
     role = relationship("CustomRole", back_populates="user_assignments")
     assigned_by_user = relationship("User", foreign_keys=[assigned_by])
+
+
+class Vacancy(Base):
+    """Job vacancy/position opening"""
+    __tablename__ = "vacancies"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
+    title = Column(String(255), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    requirements = Column(Text, nullable=True)  # Job requirements
+    responsibilities = Column(Text, nullable=True)  # Key responsibilities
+    salary_min = Column(Integer, nullable=True)  # Minimum salary
+    salary_max = Column(Integer, nullable=True)  # Maximum salary
+    salary_currency = Column(String(10), default="RUB")  # Currency code
+    location = Column(String(255), nullable=True)  # Work location
+    employment_type = Column(String(50), nullable=True)  # full-time, part-time, contract, remote
+    experience_level = Column(String(50), nullable=True)  # junior, middle, senior, lead
+    status = Column(SQLEnum(VacancyStatus), default=VacancyStatus.draft, index=True)
+    priority = Column(Integer, default=0)  # 0=normal, 1=high, 2=urgent
+    tags = Column(JSON, default=list)
+    extra_data = Column(JSON, default=dict)  # Additional custom fields
+    # Hiring team
+    hiring_manager_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # Dates
+    published_at = Column(DateTime, nullable=True)
+    closes_at = Column(DateTime, nullable=True)  # Application deadline
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Relationships
+    organization = relationship("Organization")
+    department = relationship("Department")
+    hiring_manager = relationship("User", foreign_keys=[hiring_manager_id])
+    creator = relationship("User", foreign_keys=[created_by])
+    applications = relationship("VacancyApplication", back_populates="vacancy", cascade="all, delete-orphan")
+
+
+class VacancyApplication(Base):
+    """Candidate application to a vacancy (pipeline tracking)"""
+    __tablename__ = "vacancy_applications"
+
+    id = Column(Integer, primary_key=True)
+    vacancy_id = Column(Integer, ForeignKey("vacancies.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    stage = Column(SQLEnum(ApplicationStage), default=ApplicationStage.applied, index=True)
+    stage_order = Column(Integer, default=0)  # For custom ordering within a stage
+    rating = Column(Integer, nullable=True)  # 1-5 rating
+    notes = Column(Text, nullable=True)  # Internal notes about candidate
+    rejection_reason = Column(String(255), nullable=True)  # Reason for rejection
+    source = Column(String(100), nullable=True)  # How candidate was sourced (linkedin, referral, etc)
+    # Interview scheduling
+    next_interview_at = Column(DateTime, nullable=True)
+    # Timestamps for analytics
+    applied_at = Column(DateTime, default=func.now())
+    last_stage_change_at = Column(DateTime, default=func.now())
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        # One application per candidate per vacancy
+        UniqueConstraint('vacancy_id', 'entity_id', name='uq_vacancy_application'),
+        # Index for kanban queries
+        Index('ix_vacancy_application_stage', 'vacancy_id', 'stage'),
+    )
+
+    # Relationships
+    vacancy = relationship("Vacancy", back_populates="applications")
+    entity = relationship("Entity")
+    created_by_user = relationship("User", foreign_keys=[created_by])

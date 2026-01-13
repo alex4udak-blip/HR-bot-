@@ -13,6 +13,7 @@ import UsersPage from '@/pages/UsersPage';
 import DepartmentsPage from '@/pages/DepartmentsPage';
 import SettingsPage from '@/pages/SettingsPage';
 import AdminSimulatorPage from '@/pages/AdminSimulatorPage';
+import VacanciesPage from '@/pages/VacanciesPage';
 import Layout from '@/components/Layout';
 import { WebSocketProvider } from '@/components/WebSocketProvider';
 
@@ -94,6 +95,8 @@ export default function App() {
         <Route path="contacts/:entityId" element={<ContactsPage />} />
         <Route path="calls" element={<CallsPage />} />
         <Route path="calls/:callId" element={<CallsPage />} />
+        <Route path="vacancies" element={<VacanciesPage />} />
+        <Route path="vacancies/:vacancyId" element={<VacanciesPage />} />
         <Route path="trash" element={<TrashPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="departments" element={<DepartmentsPage />} />

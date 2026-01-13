@@ -13,7 +13,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
-from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links
+from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies
 from api.config import settings
 
 # Configure logging - show important messages
@@ -387,6 +387,77 @@ async def init_database():
 
     logger.info("=== INVITATIONS TABLE READY ===")
 
+    # Step 9: Vacancies and Kanban pipeline
+    logger.info("=== SETTING UP VACANCIES ===")
+
+    # Create vacancy status enum
+    await run_migration(engine, "CREATE TYPE vacancystatus AS ENUM ('draft', 'open', 'paused', 'closed', 'cancelled')", "Create vacancystatus enum")
+
+    # Create application stage enum
+    await run_migration(engine, "CREATE TYPE applicationstage AS ENUM ('applied', 'screening', 'phone_screen', 'interview', 'assessment', 'offer', 'hired', 'rejected', 'withdrawn')", "Create applicationstage enum")
+
+    # Create vacancies table
+    create_vacancies = """
+        CREATE TABLE IF NOT EXISTS vacancies (
+            id SERIAL PRIMARY KEY,
+            org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+            department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
+            title VARCHAR(255) NOT NULL,
+            description TEXT,
+            requirements TEXT,
+            responsibilities TEXT,
+            salary_min INTEGER,
+            salary_max INTEGER,
+            salary_currency VARCHAR(10) DEFAULT 'RUB',
+            location VARCHAR(255),
+            employment_type VARCHAR(50),
+            experience_level VARCHAR(50),
+            status vacancystatus DEFAULT 'draft',
+            priority INTEGER DEFAULT 0,
+            tags JSONB DEFAULT '[]'::jsonb,
+            extra_data JSONB DEFAULT '{}'::jsonb,
+            hiring_manager_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            published_at TIMESTAMP,
+            closes_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """
+    await run_migration(engine, create_vacancies, "Create vacancies table")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_vacancies_org_id ON vacancies(org_id)", "Index vacancies.org_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_vacancies_department_id ON vacancies(department_id)", "Index vacancies.department_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_vacancies_status ON vacancies(status)", "Index vacancies.status")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_vacancies_title ON vacancies(title)", "Index vacancies.title")
+
+    # Create vacancy_applications table
+    create_vacancy_applications = """
+        CREATE TABLE IF NOT EXISTS vacancy_applications (
+            id SERIAL PRIMARY KEY,
+            vacancy_id INTEGER NOT NULL REFERENCES vacancies(id) ON DELETE CASCADE,
+            entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+            stage applicationstage DEFAULT 'applied',
+            stage_order INTEGER DEFAULT 0,
+            rating INTEGER,
+            notes TEXT,
+            rejection_reason VARCHAR(255),
+            source VARCHAR(100),
+            next_interview_at TIMESTAMP,
+            applied_at TIMESTAMP DEFAULT NOW(),
+            last_stage_change_at TIMESTAMP DEFAULT NOW(),
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(vacancy_id, entity_id)
+        )
+    """
+    await run_migration(engine, create_vacancy_applications, "Create vacancy_applications table")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_vacancy_applications_vacancy_id ON vacancy_applications(vacancy_id)", "Index vacancy_applications.vacancy_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_vacancy_applications_entity_id ON vacancy_applications(entity_id)", "Index vacancy_applications.entity_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_vacancy_applications_stage ON vacancy_applications(stage)", "Index vacancy_applications.stage")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_vacancy_application_stage ON vacancy_applications(vacancy_id, stage)", "Index vacancy_applications(vacancy_id, stage)")
+
+    logger.info("=== VACANCIES TABLES READY ===")
+
     # Step 10: Create superadmin and default organization
     try:
         async with AsyncSessionLocal() as db:
@@ -600,6 +671,7 @@ app.include_router(invitations.router, prefix="/api/invitations", tags=["invitat
 app.include_router(realtime.router, tags=["realtime"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(external_links.router, tags=["external-links"])
+app.include_router(vacancies.router, prefix="/api/vacancies", tags=["vacancies"])
 
 
 @app.get("/health")

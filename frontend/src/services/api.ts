@@ -3,7 +3,8 @@ import type {
   User, Chat, Message, Participant, CriteriaPreset,
   ChatCriteria, EntityCriteria, AIConversation, AnalysisResult, Stats, AuthResponse,
   Entity, EntityWithRelations, EntityType, EntityStatus,
-  CallRecording, CallStatus
+  CallRecording, CallStatus,
+  Vacancy, VacancyStatus, VacancyApplication, ApplicationStage, KanbanBoard, VacancyStats
 } from '@/types';
 
 const api = axios.create({
@@ -1220,6 +1221,146 @@ export const getMyPermissions = async (): Promise<EffectivePermissions> => {
 
 export const getMyMenu = async (): Promise<MenuConfig> => {
   const { data } = await api.get('/admin/me/menu');
+  return data;
+};
+
+
+// === VACANCIES ===
+
+export interface VacancyFilters {
+  status?: VacancyStatus;
+  department_id?: number;
+  search?: string;
+  skip?: number;
+  limit?: number;
+}
+
+export interface VacancyCreate {
+  title: string;
+  description?: string;
+  requirements?: string;
+  responsibilities?: string;
+  salary_min?: number;
+  salary_max?: number;
+  salary_currency?: string;
+  location?: string;
+  employment_type?: string;
+  experience_level?: string;
+  status?: VacancyStatus;
+  priority?: number;
+  tags?: string[];
+  extra_data?: Record<string, unknown>;
+  department_id?: number;
+  hiring_manager_id?: number;
+  closes_at?: string;
+}
+
+export interface VacancyUpdate {
+  title?: string;
+  description?: string;
+  requirements?: string;
+  responsibilities?: string;
+  salary_min?: number;
+  salary_max?: number;
+  salary_currency?: string;
+  location?: string;
+  employment_type?: string;
+  experience_level?: string;
+  status?: VacancyStatus;
+  priority?: number;
+  tags?: string[];
+  extra_data?: Record<string, unknown>;
+  department_id?: number;
+  hiring_manager_id?: number;
+  closes_at?: string;
+}
+
+export interface ApplicationCreate {
+  vacancy_id: number;
+  entity_id: number;
+  stage?: ApplicationStage;
+  rating?: number;
+  notes?: string;
+  source?: string;
+}
+
+export interface ApplicationUpdate {
+  stage?: ApplicationStage;
+  stage_order?: number;
+  rating?: number;
+  notes?: string;
+  rejection_reason?: string;
+  next_interview_at?: string;
+}
+
+export const getVacancies = async (filters?: VacancyFilters): Promise<Vacancy[]> => {
+  const params = new URLSearchParams();
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) params.set(key, String(value));
+    });
+  }
+  const { data } = await api.get(`/vacancies?${params}`);
+  return data;
+};
+
+export const getVacancy = async (id: number): Promise<Vacancy> => {
+  const { data } = await api.get(`/vacancies/${id}`);
+  return data;
+};
+
+export const createVacancy = async (vacancyData: VacancyCreate): Promise<Vacancy> => {
+  const { data } = await api.post('/vacancies', vacancyData);
+  return data;
+};
+
+export const updateVacancy = async (id: number, updates: VacancyUpdate): Promise<Vacancy> => {
+  const { data } = await api.put(`/vacancies/${id}`, updates);
+  return data;
+};
+
+export const deleteVacancy = async (id: number): Promise<void> => {
+  await api.delete(`/vacancies/${id}`);
+};
+
+// Vacancy Applications
+export const getApplications = async (vacancyId: number, stage?: ApplicationStage): Promise<VacancyApplication[]> => {
+  const params = stage ? `?stage=${stage}` : '';
+  const { data } = await api.get(`/vacancies/${vacancyId}/applications${params}`);
+  return data;
+};
+
+export const createApplication = async (vacancyId: number, applicationData: ApplicationCreate): Promise<VacancyApplication> => {
+  const { data } = await api.post(`/vacancies/${vacancyId}/applications`, applicationData);
+  return data;
+};
+
+export const updateApplication = async (applicationId: number, updates: ApplicationUpdate): Promise<VacancyApplication> => {
+  const { data } = await api.put(`/vacancies/applications/${applicationId}`, updates);
+  return data;
+};
+
+export const deleteApplication = async (applicationId: number): Promise<void> => {
+  await api.delete(`/vacancies/applications/${applicationId}`);
+};
+
+// Kanban Board
+export const getKanbanBoard = async (vacancyId: number): Promise<KanbanBoard> => {
+  const { data } = await api.get(`/vacancies/${vacancyId}/kanban`);
+  return data;
+};
+
+export const bulkMoveApplications = async (applicationIds: number[], stage: ApplicationStage): Promise<VacancyApplication[]> => {
+  const { data } = await api.post('/vacancies/applications/bulk-move', {
+    application_ids: applicationIds,
+    stage
+  });
+  return data;
+};
+
+// Vacancy Stats
+export const getVacancyStats = async (): Promise<VacancyStats> => {
+  const { data } = await api.get('/vacancies/stats/overview');
   return data;
 };
 
