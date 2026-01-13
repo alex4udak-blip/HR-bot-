@@ -70,6 +70,75 @@ echo "Migration complete. Current version:"
 python -m alembic current
 
 echo ""
+echo "=== Creating all tables with SQLAlchemy fallback ==="
+timeout 60 python -c "
+import os
+import asyncio
+import sys
+
+# Add backend to path for imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) or '.')
+
+async def create_all_tables():
+    db_url = os.environ.get('DATABASE_URL', '')
+    if db_url.startswith('postgres://'):
+        db_url = db_url.replace('postgres://', 'postgresql+asyncpg://', 1)
+    elif db_url.startswith('postgresql://'):
+        db_url = db_url.replace('postgresql://', 'postgresql+asyncpg://', 1)
+
+    if not db_url:
+        print('No DATABASE_URL, skipping')
+        return
+
+    print('Connecting to database...')
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy import text
+
+    engine = create_async_engine(db_url, pool_timeout=30, connect_args={'timeout': 30})
+
+    try:
+        # Import all models to register them with Base
+        from api.models.database import Base
+
+        # Use run_sync to run create_all
+        async with engine.begin() as conn:
+            # List tables before
+            result = await conn.execute(text(
+                \"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name\"
+            ))
+            existing_tables = [row[0] for row in result.fetchall()]
+            print(f'Existing tables ({len(existing_tables)}): {existing_tables}')
+
+            # Create all missing tables
+            print('Creating missing tables with checkfirst=True...')
+            await conn.run_sync(Base.metadata.create_all, checkfirst=True)
+
+            # List tables after
+            result = await conn.execute(text(
+                \"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name\"
+            ))
+            new_tables = [row[0] for row in result.fetchall()]
+            print(f'Tables after create_all ({len(new_tables)}): {new_tables}')
+
+            # Show new tables created
+            created = set(new_tables) - set(existing_tables)
+            if created:
+                print(f'Newly created tables: {created}')
+            else:
+                print('No new tables needed (all exist)')
+
+        print('All tables ensured successfully!')
+    except Exception as e:
+        print(f'Error creating tables: {e}')
+        import traceback
+        traceback.print_exc()
+    finally:
+        await engine.dispose()
+
+asyncio.run(create_all_tables())
+" && echo "SQLAlchemy create_all done" || echo "SQLAlchemy create_all failed, but continuing..."
+
+echo ""
 echo "=== Ensuring critical columns exist ==="
 timeout 30 python -c "
 import os
@@ -113,6 +182,154 @@ async def ensure_columns():
 
 asyncio.run(ensure_columns())
 " && echo "Column check done" || echo "Column check skipped"
+
+echo ""
+echo "=== Final check: ensuring critical new tables exist ==="
+timeout 60 python -c "
+import os
+import asyncio
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import text
+
+async def ensure_critical_tables():
+    db_url = os.environ.get('DATABASE_URL', '')
+    if db_url.startswith('postgres://'):
+        db_url = db_url.replace('postgres://', 'postgresql+asyncpg://', 1)
+    elif db_url.startswith('postgresql://'):
+        db_url = db_url.replace('postgresql://', 'postgresql+asyncpg://', 1)
+
+    if not db_url:
+        print('No DATABASE_URL, skipping')
+        return
+
+    print('Checking critical tables...')
+    engine = create_async_engine(db_url, pool_timeout=30, connect_args={'timeout': 30})
+    try:
+        async with engine.begin() as conn:
+            # Check which tables exist
+            result = await conn.execute(text(
+                \"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'\"
+            ))
+            existing_tables = set(row[0] for row in result.fetchall())
+
+            # Create vacancies table if missing
+            if 'vacancies' not in existing_tables:
+                print('Creating vacancies table...')
+                await conn.execute(text('''
+                    CREATE TABLE IF NOT EXISTS vacancies (
+                        id SERIAL PRIMARY KEY,
+                        org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+                        department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
+                        title VARCHAR(255) NOT NULL,
+                        description TEXT,
+                        requirements TEXT,
+                        responsibilities TEXT,
+                        salary_min INTEGER,
+                        salary_max INTEGER,
+                        salary_currency VARCHAR(10) DEFAULT 'RUB',
+                        location VARCHAR(255),
+                        employment_type VARCHAR(50),
+                        experience_level VARCHAR(50),
+                        status VARCHAR(20) DEFAULT 'draft',
+                        priority INTEGER DEFAULT 0,
+                        tags JSONB DEFAULT '[]',
+                        extra_data JSONB DEFAULT '{}',
+                        hiring_manager_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                        published_at TIMESTAMP,
+                        closes_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        updated_at TIMESTAMP DEFAULT NOW()
+                    )
+                '''))
+                await conn.execute(text('CREATE INDEX IF NOT EXISTS ix_vacancies_org_id ON vacancies(org_id)'))
+                await conn.execute(text('CREATE INDEX IF NOT EXISTS ix_vacancies_status ON vacancies(status)'))
+                print('vacancies table created!')
+            else:
+                print('vacancies table exists')
+
+            # Create vacancy_applications table if missing
+            if 'vacancy_applications' not in existing_tables:
+                print('Creating vacancy_applications table...')
+                await conn.execute(text('''
+                    CREATE TABLE IF NOT EXISTS vacancy_applications (
+                        id SERIAL PRIMARY KEY,
+                        vacancy_id INTEGER NOT NULL REFERENCES vacancies(id) ON DELETE CASCADE,
+                        entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                        stage VARCHAR(30) DEFAULT 'applied',
+                        stage_order INTEGER DEFAULT 0,
+                        rating INTEGER,
+                        notes TEXT,
+                        rejection_reason VARCHAR(255),
+                        source VARCHAR(100),
+                        next_interview_at TIMESTAMP,
+                        applied_at TIMESTAMP DEFAULT NOW(),
+                        last_stage_change_at TIMESTAMP DEFAULT NOW(),
+                        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                        updated_at TIMESTAMP DEFAULT NOW(),
+                        UNIQUE(vacancy_id, entity_id)
+                    )
+                '''))
+                await conn.execute(text('CREATE INDEX IF NOT EXISTS ix_vacancy_applications_vacancy_id ON vacancy_applications(vacancy_id)'))
+                await conn.execute(text('CREATE INDEX IF NOT EXISTS ix_vacancy_applications_stage ON vacancy_applications(vacancy_id, stage)'))
+                print('vacancy_applications table created!')
+            else:
+                print('vacancy_applications table exists')
+
+            # Create entity_files table if missing
+            if 'entity_files' not in existing_tables:
+                print('Creating entity_files table...')
+                await conn.execute(text('''
+                    CREATE TABLE IF NOT EXISTS entity_files (
+                        id SERIAL PRIMARY KEY,
+                        entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                        org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                        file_type VARCHAR(30) DEFAULT 'other',
+                        file_name VARCHAR(255) NOT NULL,
+                        file_path VARCHAR(512) NOT NULL,
+                        file_size INTEGER,
+                        mime_type VARCHAR(100),
+                        description VARCHAR(500),
+                        uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                '''))
+                await conn.execute(text('CREATE INDEX IF NOT EXISTS ix_entity_files_entity_id ON entity_files(entity_id)'))
+                print('entity_files table created!')
+            else:
+                print('entity_files table exists')
+
+            # Create department_features table if missing
+            if 'department_features' not in existing_tables:
+                print('Creating department_features table...')
+                await conn.execute(text('''
+                    CREATE TABLE IF NOT EXISTS department_features (
+                        id SERIAL PRIMARY KEY,
+                        org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                        department_id INTEGER REFERENCES departments(id) ON DELETE CASCADE,
+                        feature_name VARCHAR(50) NOT NULL,
+                        enabled BOOLEAN DEFAULT TRUE,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        updated_at TIMESTAMP DEFAULT NOW(),
+                        UNIQUE(org_id, department_id, feature_name)
+                    )
+                '''))
+                await conn.execute(text('CREATE INDEX IF NOT EXISTS ix_department_features_org_id ON department_features(org_id)'))
+                await conn.execute(text('CREATE INDEX IF NOT EXISTS ix_department_features_lookup ON department_features(org_id, feature_name)'))
+                print('department_features table created!')
+            else:
+                print('department_features table exists')
+
+            print('All critical tables verified!')
+    except Exception as e:
+        print(f'Error in critical tables check: {e}')
+        import traceback
+        traceback.print_exc()
+    finally:
+        await engine.dispose()
+
+asyncio.run(ensure_critical_tables())
+" && echo "Critical tables check done" || echo "Critical tables check failed, but continuing..."
 
 echo ""
 echo "=== Starting server ==="
