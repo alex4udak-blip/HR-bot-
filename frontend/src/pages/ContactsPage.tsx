@@ -223,13 +223,9 @@ export default function ContactsPage() {
     setShowCreateModal(true);
   };
 
-  // Filter entities by access - superadmin and owner see everything, others only see their own or shared
-  const accessibleEntities = entities.filter((entity) => {
-    return isSuperAdmin() || isOwner() ||
-      entity.is_mine === true ||
-      entity.is_shared === true ||
-      entity.created_by === user?.id;
-  });
+  // Backend already filters entities by access control (ownership, department, sharing)
+  // No additional filtering needed on frontend
+  const accessibleEntities = entities;
 
   // Note: typeCounts comes from the store and is fetched separately
   // to show accurate totals even when filtered by type
