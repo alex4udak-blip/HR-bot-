@@ -6,3 +6,9 @@ export type {
   CallCompletedEvent,
   CallFailedEvent,
 } from './useWebSocket';
+
+export { useKeyboardShortcuts } from './useKeyboardShortcuts';
+export type {
+  KeyboardShortcut,
+  UseKeyboardShortcutsOptions,
+} from './useKeyboardShortcuts';

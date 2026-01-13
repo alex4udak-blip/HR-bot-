@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useKeyboardShortcuts } from '@/hooks';
 import {
   Mail,
   Phone,
@@ -19,7 +20,7 @@ import { APPLICATION_STAGE_LABELS, APPLICATION_STAGE_COLORS } from '@/types';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import AddCandidateModal from './AddCandidateModal';
 import ApplicationDetailModal from './ApplicationDetailModal';
-import { KanbanCardSkeleton, Skeleton } from '@/components/ui';
+import { KanbanCardSkeleton, Skeleton, NoCandidatesEmpty } from '@/components/ui';
 
 interface KanbanBoardProps {
   vacancy: Vacancy;
@@ -42,6 +43,8 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   const [selectedApplication, setSelectedApplication] = useState<VacancyApplication | null>(null);
   const [draggedApp, setDraggedApp] = useState<VacancyApplication | null>(null);
   const [dropTarget, setDropTarget] = useState<ApplicationStage | null>(null);
+  const [focusedColumnIndex, setFocusedColumnIndex] = useState<number | null>(null);
+  const boardRef = useRef<HTMLDivElement>(null);
 
   const {
     kanbanBoard,
@@ -50,6 +53,67 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     moveApplication,
     removeApplication
   } = useVacancyStore();
+
+  // Check if any modal is open
+  const isModalOpen = showAddCandidate || !!selectedApplication;
+
+  // Keyboard shortcut handlers
+  const handleCloseModal = useCallback(() => {
+    if (selectedApplication) {
+      setSelectedApplication(null);
+    } else if (showAddCandidate) {
+      setShowAddCandidate(false);
+    }
+  }, [selectedApplication, showAddCandidate]);
+
+  const handleNavigateLeft = useCallback(() => {
+    if (!kanbanBoard || isModalOpen) return;
+    setFocusedColumnIndex((prev) => {
+      if (prev === null) return 0;
+      return Math.max(0, prev - 1);
+    });
+  }, [kanbanBoard, isModalOpen]);
+
+  const handleNavigateRight = useCallback(() => {
+    if (!kanbanBoard || isModalOpen) return;
+    setFocusedColumnIndex((prev) => {
+      if (prev === null) return 0;
+      return Math.min(VISIBLE_STAGES.length - 1, (prev ?? -1) + 1);
+    });
+  }, [kanbanBoard, isModalOpen]);
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts([
+    {
+      key: 'Escape',
+      handler: handleCloseModal,
+      description: 'Close modal',
+    },
+  ], { enabled: isModalOpen });
+
+  useKeyboardShortcuts([
+    {
+      key: 'ArrowLeft',
+      handler: handleNavigateLeft,
+      description: 'Navigate to previous column',
+    },
+    {
+      key: 'ArrowRight',
+      handler: handleNavigateRight,
+      description: 'Navigate to next column',
+    },
+  ], { enabled: !isModalOpen && !!kanbanBoard });
+
+  // Scroll focused column into view
+  useEffect(() => {
+    if (focusedColumnIndex !== null && boardRef.current) {
+      const columns = boardRef.current.querySelectorAll('[data-kanban-column]');
+      const focusedColumn = columns[focusedColumnIndex];
+      if (focusedColumn) {
+        focusedColumn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      }
+    }
+  }, [focusedColumnIndex]);
 
   useEffect(() => {
     fetchKanbanBoard(vacancy.id);
@@ -128,7 +192,37 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   if (!kanbanBoard) {
     return (
       <div className="flex items-center justify-center h-full text-white/40">
-        Не удалось загрузить доску
+        Failed to load board
+      </div>
+    );
+  }
+
+  // Show empty state when there are no candidates at all
+  if (kanbanBoard.total_count === 0) {
+    return (
+      <div className="h-full flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold">Kanban Board</h2>
+            <span className="text-white/40 text-sm">0 candidates</span>
+          </div>
+          <button
+            onClick={() => setShowAddCandidate(true)}
+            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add Candidate
+          </button>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <NoCandidatesEmpty onAdd={() => setShowAddCandidate(true)} />
+        </div>
+        {showAddCandidate && (
+          <AddCandidateModal
+            vacancyId={vacancy.id}
+            onClose={() => setShowAddCandidate(false)}
+          />
+        )}
       </div>
     );
   }
@@ -153,20 +247,24 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
       </div>
 
       {/* Board */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden p-4">
+      <div className="flex-1 overflow-x-auto overflow-y-hidden p-4" ref={boardRef}>
         <div className="flex gap-4 h-full min-w-max">
-          {VISIBLE_STAGES.map((stage) => {
+          {VISIBLE_STAGES.map((stage, index) => {
             const column = kanbanBoard.columns.find((c) => c.stage === stage);
             const apps = column?.applications || [];
             const isDropping = dropTarget === stage && draggedApp?.stage !== stage;
+            const isFocused = focusedColumnIndex === index;
 
             return (
               <div
                 key={stage}
+                data-kanban-column
                 className={clsx(
                   'w-72 flex-shrink-0 flex flex-col rounded-xl border transition-colors',
                   isDropping
                     ? 'border-blue-500 bg-blue-500/10'
+                    : isFocused
+                    ? 'border-blue-400 bg-blue-500/5 ring-2 ring-blue-400/30'
                     : 'border-white/10 bg-white/5'
                 )}
                 onDragOver={(e) => handleDragOver(e, stage)}

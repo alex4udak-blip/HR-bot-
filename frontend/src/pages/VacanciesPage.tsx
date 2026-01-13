@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useKeyboardShortcuts } from '@/hooks';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -62,6 +63,7 @@ export default function VacanciesPage() {
   const [editingVacancy, setEditingVacancy] = useState<Vacancy | null>(null);
   const [showParserModal, setShowParserModal] = useState(false);
   const [prefillData, setPrefillData] = useState<Partial<Vacancy> | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const {
     vacancies,
@@ -73,6 +75,86 @@ export default function VacanciesPage() {
     setFilters,
     clearCurrentVacancy
   } = useVacancyStore();
+
+  // Modal state check for keyboard shortcut handlers
+  const isAnyModalOpen = showCreateModal || !!editingVacancy || showParserModal;
+
+  // Keyboard shortcut handlers
+  const handleOpenCreateModal = useCallback(() => {
+    setPrefillData(null);
+    setShowCreateModal(true);
+  }, []);
+
+  const handleCloseModal = useCallback(() => {
+    if (showParserModal) {
+      setShowParserModal(false);
+    } else if (showCreateModal || editingVacancy) {
+      setShowCreateModal(false);
+      setEditingVacancy(null);
+      setPrefillData(null);
+    }
+  }, [showParserModal, showCreateModal, editingVacancy]);
+
+  const handleFocusSearch = useCallback(() => {
+    searchInputRef.current?.focus();
+  }, []);
+
+  const handleToggleKanban = useCallback(() => {
+    if (currentVacancy) {
+      setViewMode(viewMode === 'list' ? 'kanban' : 'list');
+    }
+  }, [currentVacancy, viewMode]);
+
+  const handleEditVacancy = useCallback(() => {
+    if (currentVacancy && !isAnyModalOpen) {
+      setEditingVacancy(currentVacancy);
+    }
+  }, [currentVacancy, isAnyModalOpen]);
+
+  const handleGoBack = useCallback(() => {
+    if (vacancyId && !isAnyModalOpen) {
+      navigate('/vacancies');
+    }
+  }, [vacancyId, isAnyModalOpen, navigate]);
+
+  // Keyboard shortcuts for list view (no vacancy selected)
+  useKeyboardShortcuts([
+    {
+      key: 'n',
+      ctrlOrCmd: true,
+      handler: handleOpenCreateModal,
+      description: 'Open create vacancy modal',
+    },
+    {
+      key: 'Escape',
+      handler: handleCloseModal,
+      description: 'Close any open modal',
+    },
+    {
+      key: '/',
+      handler: handleFocusSearch,
+      description: 'Focus search input',
+    },
+  ], { enabled: !vacancyId || isAnyModalOpen });
+
+  // Keyboard shortcuts for detail view (vacancy selected)
+  useKeyboardShortcuts([
+    {
+      key: 'Escape',
+      handler: isAnyModalOpen ? handleCloseModal : handleGoBack,
+      description: 'Go back to list or close modal',
+    },
+    {
+      key: 'e',
+      handler: handleEditVacancy,
+      description: 'Edit vacancy',
+    },
+    {
+      key: 'k',
+      handler: handleToggleKanban,
+      description: 'Toggle Kanban view',
+    },
+  ], { enabled: !!vacancyId });
 
   // Load departments
   useEffect(() => {
@@ -135,14 +217,6 @@ export default function VacanciesPage() {
     const url = `${window.location.origin}/vacancies/${vacancy.id}`;
     navigator.clipboard.writeText(url);
     toast.success('Ссылка скопирована');
-  };
-
-  const handleKeyboardShortcut = (key: string) => {
-    if (key === 'N') {
-      setShowCreateModal(true);
-    } else if (key === 'K' && currentVacancy) {
-      setViewMode(viewMode === 'list' ? 'kanban' : 'list');
-    }
   };
 
   const getSalaryDisplay = (vacancy: Vacancy) => {
@@ -263,6 +337,7 @@ export default function VacanciesPage() {
           <div className="relative flex-1 min-w-[200px] max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
             <input
+              ref={searchInputRef}
               type="text"
               placeholder="Поиск по названию..."
               value={searchQuery}
@@ -447,14 +522,13 @@ export default function VacanciesPage() {
         )}
       </AnimatePresence>
 
-      {/* Keyboard Shortcuts */}
+      {/* Keyboard Shortcuts Help */}
       <KeyboardShortcuts
-        onShortcut={handleKeyboardShortcut}
         shortcuts={[
-          { key: '?', description: 'Показать горячие клавиши', global: true },
-          { key: 'Esc', description: 'Закрыть модальное окно', global: true },
-          { key: '/', description: 'Фокус на поиск', global: true },
-          { key: 'N', description: 'Создать вакансию' },
+          { key: '?', description: 'Show keyboard shortcuts', global: true },
+          { key: 'Esc', description: 'Close modal', global: true },
+          { key: '/', description: 'Focus search input', global: true },
+          { key: 'Ctrl/Cmd+N', description: 'Create vacancy' },
         ]}
       />
     </div>

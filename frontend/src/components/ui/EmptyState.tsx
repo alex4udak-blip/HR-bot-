@@ -1,4 +1,5 @@
 import { LucideIcon, Briefcase, Users, FileText, Search, Inbox } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 
 interface EmptyStateProps {
@@ -9,6 +10,10 @@ interface EmptyStateProps {
     label: string;
     onClick: () => void;
   };
+  link?: {
+    label: string;
+    to: string;
+  };
   className?: string;
   size?: 'sm' | 'md' | 'lg';
 }
@@ -18,6 +23,7 @@ export default function EmptyState({
   title,
   description,
   action,
+  link,
   className,
   size = 'md'
 }: EmptyStateProps) {
@@ -66,6 +72,17 @@ export default function EmptyState({
           + {action.label}
         </button>
       )}
+      {link && (
+        <Link
+          to={link.to}
+          className={clsx(
+            'mt-4 text-blue-400 hover:text-blue-300 transition-colors inline-flex items-center gap-1',
+            styles.description
+          )}
+        >
+          {link.label} &rarr;
+        </Link>
+      )}
     </div>
   );
 }
@@ -76,20 +93,21 @@ export function NoVacanciesEmpty({ onCreate }: { onCreate: () => void }) {
   return (
     <EmptyState
       icon={Briefcase}
-      title="Нет вакансий"
-      description="Создайте первую вакансию или импортируйте"
-      action={{ label: 'Создать вакансию', onClick: onCreate }}
+      title="No vacancies yet"
+      description="Create your first vacancy to start building your talent pipeline"
+      action={{ label: 'Create Vacancy', onClick: onCreate }}
     />
   );
 }
 
-export function NoCandidatesEmpty({ onAdd }: { onAdd: () => void }) {
+export function NoCandidatesEmpty({ onAdd }: { onAdd?: () => void }) {
   return (
     <EmptyState
       icon={Users}
-      title="Нет кандидатов"
-      description="Добавьте первого кандидата в вакансию"
-      action={{ label: 'Добавить кандидата', onClick: onAdd }}
+      title="No candidates yet"
+      description="Add candidates to this vacancy from the contacts page"
+      action={onAdd ? { label: 'Add Candidate', onClick: onAdd } : undefined}
+      link={!onAdd ? { label: 'Go to Contacts', to: '/contacts' } : undefined}
     />
   );
 }
@@ -98,8 +116,8 @@ export function NoResultsEmpty({ query }: { query: string }) {
   return (
     <EmptyState
       icon={Search}
-      title="Ничего не найдено"
-      description={`По запросу "${query}" результатов не найдено`}
+      title="No results found"
+      description={`No results found for "${query}"`}
       size="sm"
     />
   );
@@ -109,8 +127,20 @@ export function NoDataEmpty() {
   return (
     <EmptyState
       icon={FileText}
-      title="Нет данных"
-      description="Данные пока отсутствуют"
+      title="No data"
+      description="No data available yet"
+    />
+  );
+}
+
+export function NoEntityVacanciesEmpty({ onAdd }: { onAdd?: () => void }) {
+  return (
+    <EmptyState
+      icon={Briefcase}
+      title="Not applied to any vacancies"
+      description="Add this candidate to a vacancy"
+      action={onAdd ? { label: 'Add to Vacancy', onClick: onAdd } : undefined}
+      size="sm"
     />
   );
 }
