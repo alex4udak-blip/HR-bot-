@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = 'add_vacancies'
-down_revision = 'add_entity_ai_memory'
+down_revision = 'add_must_change_pwd'  # Fixed: was add_entity_ai_memory, now follows linear chain
 branch_labels = None
 depends_on = None
 

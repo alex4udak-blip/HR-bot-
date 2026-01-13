@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = 'add_department_features'
-down_revision = 'add_vacancies'
+down_revision = 'add_entity_files'  # Fixed: was add_vacancies, now follows add_entity_files
 branch_labels = None
 depends_on = None
 

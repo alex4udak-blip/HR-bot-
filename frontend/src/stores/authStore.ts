@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { User } from '@/types';
-import { getMyPermissions, getMyMenu, type MenuItem } from '@/services/api';
+import { getMyPermissions, getMyMenu, getMyFeatures, type MenuItem } from '@/services/api';
 
 interface AuthState {
   user: User | null;
@@ -12,12 +12,16 @@ interface AuthState {
   customRoleName: string | null;
   menuItems: MenuItem[];
   permissionsLoading: boolean;
+  // Features
+  features: string[];
   setUser: (user: User | null) => void;
   setLoading: (loading: boolean) => void;
   logout: () => void;
   // Permissions
   fetchPermissions: () => Promise<void>;
   hasPermission: (permission: string) => boolean;
+  // Features
+  hasFeature: (feature: string) => boolean;
   // Impersonation
   impersonate: (userId: number) => Promise<void>;
   exitImpersonation: () => Promise<void>;
@@ -46,6 +50,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   customRoleName: null,
   menuItems: [],
   permissionsLoading: false,
+  // Features state
+  features: [],
   setUser: (user) => {
     set({ user });
     // Fetch permissions when user is set
@@ -63,19 +69,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       permissionsSource: null,
       customRoleName: null,
       menuItems: [],
+      features: [],
     });
   },
 
-  // Fetch user's effective permissions
+  // Fetch user's effective permissions and features
   fetchPermissions: async () => {
     const { user } = get();
     if (!user) return;
 
     set({ permissionsLoading: true });
     try {
-      const [permissionsData, menuData] = await Promise.all([
+      const [permissionsData, menuData, featuresData] = await Promise.all([
         getMyPermissions(),
         getMyMenu(),
+        getMyFeatures(),
       ]);
 
       set({
@@ -83,6 +91,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         permissionsSource: permissionsData.source,
         customRoleName: permissionsData.custom_role_name,
         menuItems: menuData.items,
+        features: featuresData.features,
         permissionsLoading: false,
       });
     } catch (error) {
@@ -110,6 +119,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     return false;
+  },
+
+  // Check if user has access to a specific feature
+  hasFeature: (feature: string) => {
+    const { features, user } = get();
+
+    // Superadmin has all features
+    if (user?.role === 'superadmin') return true;
+
+    // Check if feature is in the user's available features
+    return features.includes(feature);
   },
 
   // Impersonate a user

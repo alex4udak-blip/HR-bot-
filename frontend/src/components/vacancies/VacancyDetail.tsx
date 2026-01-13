@@ -22,8 +22,8 @@ import {
   EMPLOYMENT_TYPES,
   EXPERIENCE_LEVELS,
   APPLICATION_STAGE_LABELS,
-  formatSalary
 } from '@/types';
+import { formatSalary } from '@/utils';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import AddCandidateModal from './AddCandidateModal';
 import { NoCandidatesEmpty } from '@/components/ui';

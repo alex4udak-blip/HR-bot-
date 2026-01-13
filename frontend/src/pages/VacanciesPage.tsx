@@ -26,10 +26,8 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import type { Vacancy, VacancyStatus } from '@/types';
-import {
-  EMPLOYMENT_TYPES,
-  formatSalary
-} from '@/types';
+import { EMPLOYMENT_TYPES } from '@/types';
+import { formatSalary } from '@/utils';
 import { getDepartments } from '@/services/api';
 import type { Department, ParsedVacancy } from '@/services/api';
 import {
@@ -48,6 +46,7 @@ import {
   ConfirmDialog,
   ErrorMessage
 } from '@/components/ui';
+import { OnboardingTooltip } from '@/components/onboarding';
 
 const STATUS_FILTERS: { id: VacancyStatus | 'all'; name: string }[] = [
   { id: 'all', name: 'All' },
@@ -492,10 +491,16 @@ export default function VacanciesPage() {
       {/* Header */}
       <div className="p-4 border-b border-white/10">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Briefcase className="w-7 h-7 text-blue-400" />
-            Vacancies
-          </h1>
+          <OnboardingTooltip
+            id="vacancies-page"
+            content="Create vacancies and track candidates through the hiring pipeline"
+            position="bottom"
+          >
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Briefcase className="w-7 h-7 text-blue-400" />
+              Vacancies
+            </h1>
+          </OnboardingTooltip>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowParserModal(true)}

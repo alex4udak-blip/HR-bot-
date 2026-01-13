@@ -22,7 +22,8 @@ import {
   FolderOpen,
   Share,
   Globe,
-  Upload
+  Upload,
+  Briefcase
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -31,13 +32,17 @@ import { useAuthStore } from '@/stores/authStore';
 import type { EntityType, Entity } from '@/types';
 import { ENTITY_TYPES, STATUS_LABELS, STATUS_COLORS } from '@/types';
 import type { OwnershipFilter, Department, ParsedResume } from '@/services/api';
-import { getDepartments } from '@/services/api';
+import { getDepartments, getVacancies, getApplications } from '@/services/api';
+import type { Vacancy } from '@/types';
 import ContactForm from '@/components/contacts/ContactForm';
 import TransferModal from '@/components/contacts/TransferModal';
 import ContactDetail from '@/components/contacts/ContactDetail';
 import EntityAI from '@/components/contacts/EntityAI';
 import ShareModal from '@/components/common/ShareModal';
 import ParserModal from '@/components/parser/ParserModal';
+import { OnboardingTooltip } from '@/components/onboarding';
+import { FeatureGatedButton } from '@/components/auth/FeatureGate';
+import { useCanAccessFeature } from '@/hooks/useCanAccessFeature';
 
 // Ownership filter options
 const OWNERSHIP_FILTERS: { id: OwnershipFilter; name: string; icon: typeof FolderOpen; description: string }[] = [
@@ -67,7 +72,11 @@ export default function ContactsPage() {
   const [typeFilter, setTypeFilter] = useState<EntityType | 'all'>(initialType || 'all');
   const [ownershipFilter, setOwnershipFilter] = useState<OwnershipFilter>('all');
   const [departmentFilter, setDepartmentFilter] = useState<number | 'all'>('all');
+  const [vacancyFilter, setVacancyFilter] = useState<number | 'all'>('all');
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [vacancies, setVacancies] = useState<Vacancy[]>([]);
+  const [vacancyEntityIds, setVacancyEntityIds] = useState<Set<number> | null>(null);
+  const [vacancyFilterLoading, setVacancyFilterLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -96,6 +105,8 @@ export default function ContactsPage() {
     typeCounts,
     fetchTypeCounts
   } = useEntityStore();
+
+  const { canAccessFeature } = useCanAccessFeature();
 
   // Helper functions to check permissions using authStore helpers
   const canEdit = (entity: Entity) => {
@@ -146,11 +157,34 @@ export default function ContactsPage() {
     });
   };
 
-  // Load departments and type counts on mount
+  // Load departments, vacancies, and type counts on mount
   useEffect(() => {
     getDepartments().then(setDepartments).catch(console.error);
+    getVacancies().then(setVacancies).catch(console.error);
     fetchTypeCounts(); // Load initial type counts
   }, [fetchTypeCounts]);
+
+  // Load entity IDs when vacancy filter changes
+  useEffect(() => {
+    if (vacancyFilter === 'all') {
+      setVacancyEntityIds(null);
+      return;
+    }
+
+    setVacancyFilterLoading(true);
+    getApplications(vacancyFilter)
+      .then((applications) => {
+        const entityIds = new Set(applications.map((app) => app.entity_id));
+        setVacancyEntityIds(entityIds);
+      })
+      .catch((error) => {
+        console.error('Failed to load vacancy applications:', error);
+        setVacancyEntityIds(new Set());
+      })
+      .finally(() => {
+        setVacancyFilterLoading(false);
+      });
+  }, [vacancyFilter]);
 
   // Load entities on mount and when any filter changes - single unified effect
   useEffect(() => {
@@ -254,8 +288,10 @@ export default function ContactsPage() {
   };
 
   // Backend already filters entities by access control (ownership, department, sharing)
-  // No additional filtering needed on frontend
-  const accessibleEntities = entities;
+  // Apply vacancy filter on frontend (filter by entity IDs who applied to selected vacancy)
+  const accessibleEntities = vacancyEntityIds !== null
+    ? entities.filter((entity) => vacancyEntityIds.has(entity.id))
+    : entities;
 
   // Note: typeCounts comes from the store and is fetched separately
   // to show accurate totals even when filtered by type
@@ -286,15 +322,23 @@ export default function ContactsPage() {
         {/* Header */}
         <div className="p-4 border-b border-white/5">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-semibold text-white">Контакты</h1>
+            <OnboardingTooltip
+              id="contacts-page"
+              content="Import candidates from hh.ru or upload resumes"
+              position="bottom"
+            >
+              <h1 className="text-xl font-semibold text-white">Контакты</h1>
+            </OnboardingTooltip>
             <div className="flex items-center gap-2">
-              <button
+              <FeatureGatedButton
+                feature="vacancies"
                 onClick={() => setShowParserModal(true)}
-                className="p-2 rounded-lg bg-white/5 text-white/60 hover:bg-white/10 transition-colors"
+                className="p-2 rounded-lg bg-white/5 text-white/60 hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Импорт резюме"
+                disabledTooltip="You don't have access to this feature"
               >
                 <Upload size={20} />
-              </button>
+              </FeatureGatedButton>
               <button
                 onClick={() => {
                   setEditingEntity(null);
@@ -358,6 +402,33 @@ export default function ContactsPage() {
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {/* Vacancy Filter - Filter candidates by vacancy */}
+          {vacancies.length > 0 && canAccessFeature('vacancies') && (
+            <div className="mb-3">
+              <div className="relative">
+                <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={16} />
+                <select
+                  value={vacancyFilter}
+                  onChange={(e) => setVacancyFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                  disabled={vacancyFilterLoading}
+                  className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50 appearance-none cursor-pointer disabled:opacity-50"
+                >
+                  <option value="all">All candidates</option>
+                  {vacancies.map((vacancy) => (
+                    <option key={vacancy.id} value={vacancy.id}>
+                      {vacancy.title} ({vacancy.applications_count})
+                    </option>
+                  ))}
+                </select>
+                {vacancyFilterLoading && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

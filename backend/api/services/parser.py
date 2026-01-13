@@ -8,10 +8,11 @@ import httpx
 import re
 import json
 import logging
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, Literal, Tuple
 from pydantic import BaseModel
 from anthropic import AsyncAnthropic
 from .documents import document_parser
+from .hh_api import parse_vacancy_via_api, HHVacancy
 from ..config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -271,11 +272,41 @@ async def parse_resume_from_url(url: str) -> ParsedResume:
     return ParsedResume(**data)
 
 
-async def parse_vacancy_from_url(url: str) -> ParsedVacancy:
-    """Parse vacancy from URL"""
+async def parse_vacancy_from_url(url: str) -> Tuple[ParsedVacancy, str]:
+    """Parse vacancy from URL - uses API when available, falls back to AI.
+
+    Args:
+        url: The vacancy URL to parse
+
+    Returns:
+        Tuple of (ParsedVacancy, method) where method is "api" or "ai"
+    """
     # Detect source
     source = detect_source(url)
 
+    # Try hh.ru API first (free and instant!)
+    if source == "hh":
+        logger.info(f"Trying hh.ru API for: {url}")
+        api_result = await parse_vacancy_via_api(url)
+        if api_result:
+            logger.info(f"Successfully parsed via hh.ru API: {api_result.title}")
+            vacancy = ParsedVacancy(
+                title=api_result.title,
+                description=api_result.description,
+                requirements=", ".join(api_result.skills) if api_result.skills else None,
+                salary_min=api_result.salary_min,
+                salary_max=api_result.salary_max,
+                salary_currency=api_result.salary_currency,
+                location=api_result.location,
+                employment_type=api_result.employment_type,
+                experience_level=api_result.experience_level,
+                company_name=api_result.company_name,
+                source_url=url,
+            )
+            return vacancy, "api"
+        logger.warning("hh.ru API failed, falling back to AI parsing")
+
+    # Fallback to AI parsing
     # Fetch page content
     html_content = await fetch_url_content(url)
 
@@ -293,4 +324,4 @@ async def parse_vacancy_from_url(url: str) -> ParsedVacancy:
     if not data.get("title"):
         data["title"] = "Untitled Vacancy"
 
-    return ParsedVacancy(**data)
+    return ParsedVacancy(**data), "ai"

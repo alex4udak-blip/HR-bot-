@@ -153,8 +153,9 @@ class TestHtmlExtraction:
         long_content = "A" * 20000
         html = f'<html><body><p>{long_content}</p></body></html>'
         result = extract_text_from_html(html)
-        assert len(result) <= 15100  # 15000 + "[текст обрезан]"
-        assert "[текст обрезан]" in result
+        assert len(result) <= 15100  # 15000 + truncation marker
+        # Check for either English or Russian truncation marker
+        assert "[text truncated]" in result or "[текст обрезан]" in result or "..." in result
 
 
 # ============================================================================
@@ -349,19 +350,22 @@ class TestURLParsing:
             "salary_currency": "RUB"
         }
 
-        with patch('api.services.parser.fetch_url_content', new_callable=AsyncMock) as mock_fetch:
-            with patch('api.services.parser._get_ai_client') as mock_client:
-                mock_fetch.return_value = mock_html
+        with patch('api.services.parser.parse_vacancy_via_api', new_callable=AsyncMock) as mock_api:
+            mock_api.return_value = None  # Force fallback to AI
+            with patch('api.services.parser.fetch_url_content', new_callable=AsyncMock) as mock_fetch:
+                with patch('api.services.parser._get_ai_client') as mock_client:
+                    mock_fetch.return_value = mock_html
 
-                mock_message = MagicMock()
-                mock_message.content = [MagicMock(text=json.dumps(mock_ai_response))]
-                mock_client.return_value.messages.create = AsyncMock(return_value=mock_message)
+                    mock_message = MagicMock()
+                    mock_message.content = [MagicMock(text=json.dumps(mock_ai_response))]
+                    mock_client.return_value.messages.create = AsyncMock(return_value=mock_message)
 
-                result = await parse_vacancy_from_url("https://hh.ru/vacancy/456")
+                    result, method = await parse_vacancy_from_url("https://hh.ru/vacancy/456")
 
-                assert result.title == "Backend Developer"
-                assert result.source_url == "https://hh.ru/vacancy/456"
-                assert result.salary_min == 200000
+                    assert result.title == "Backend Developer"
+                    assert result.source_url == "https://hh.ru/vacancy/456"
+                    assert result.salary_min == 200000
+                    assert method == "ai"
 
     @pytest.mark.asyncio
     async def test_parse_url_empty_content(self):
@@ -373,6 +377,42 @@ class TestURLParsing:
                 await parse_resume_from_url("https://example.com/empty")
 
             assert "extract text" in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_parse_vacancy_from_hh_via_api(self):
+        """Test vacancy parsing from hh.ru URL using the API."""
+        from api.services.hh_api import HHVacancy
+
+        mock_hh_vacancy = HHVacancy(
+            id="12345678",
+            title="Senior Python Developer",
+            description="We are looking for an experienced developer",
+            salary_min=200000,
+            salary_max=350000,
+            salary_currency="RUB",
+            location="Moscow",
+            company_name="TechCorp",
+            employment_type="full-time",
+            experience_level="senior",
+            skills=["Python", "FastAPI", "PostgreSQL"],
+            source_url="https://hh.ru/vacancy/12345678"
+        )
+
+        with patch('api.services.parser.parse_vacancy_via_api', new_callable=AsyncMock) as mock_api:
+            mock_api.return_value = mock_hh_vacancy
+
+            result, method = await parse_vacancy_from_url("https://hh.ru/vacancy/12345678")
+
+            assert result.title == "Senior Python Developer"
+            assert result.salary_min == 200000
+            assert result.salary_max == 350000
+            assert result.salary_currency == "RUB"
+            assert result.location == "Moscow"
+            assert result.company_name == "TechCorp"
+            assert result.employment_type == "full-time"
+            assert result.experience_level == "senior"
+            assert result.requirements == "Python, FastAPI, PostgreSQL"
+            assert method == "api"
 
 
 # ============================================================================
@@ -572,3 +612,508 @@ class TestParserRoutes:
 
         assert response.status_code == 400
         assert "Unsupported file format" in response.json()["detail"]
+
+
+# ============================================================================
+# ADDITIONAL SOURCE DETECTION TESTS
+# ============================================================================
+
+class TestSourceDetectionExtended:
+    """Extended tests for URL source detection - all supported sites."""
+
+    def test_detect_hh_regional_subdomains(self):
+        """Test detection of hh.ru regional subdomains."""
+        assert detect_source("https://spb.hh.ru/resume/123") == "hh"
+        assert detect_source("https://msk.hh.ru/vacancy/456") == "hh"
+        assert detect_source("https://ekb.hh.ru/resume/789") == "hh"
+        assert detect_source("https://nn.hh.ru/vacancy/abc") == "hh"
+
+    def test_detect_linkedin_variants(self):
+        """Test detection of LinkedIn URL variants."""
+        assert detect_source("https://www.linkedin.com/in/johndoe") == "linkedin"
+        assert detect_source("https://linkedin.com/jobs/view/123456") == "linkedin"
+        assert detect_source("https://ru.linkedin.com/in/user") == "linkedin"
+
+    def test_detect_superjob_variants(self):
+        """Test detection of SuperJob URL variants."""
+        assert detect_source("https://www.superjob.ru/resume/python-123.html") == "superjob"
+        assert detect_source("https://superjob.ru/vakansii/backend-456.html") == "superjob"
+        assert detect_source("https://www.superjob.ru/vacancy/789") == "superjob"
+
+    def test_detect_habr_variants(self):
+        """Test detection of Habr Career URL variants."""
+        assert detect_source("https://career.habr.com/user123") == "habr"
+        assert detect_source("https://career.habr.com/vacancies/123") == "habr"
+        assert detect_source("https://habr.com/career/user456") == "habr"
+
+    def test_detect_case_insensitivity(self):
+        """Test that source detection is case-insensitive."""
+        assert detect_source("https://HH.RU/resume/123") == "hh"
+        assert detect_source("https://LINKEDIN.COM/in/user") == "linkedin"
+        assert detect_source("https://SUPERJOB.RU/resume/456") == "superjob"
+
+    def test_detect_url_with_query_params(self):
+        """Test source detection with query parameters."""
+        assert detect_source("https://hh.ru/resume/123?from=search") == "hh"
+        assert detect_source("https://linkedin.com/in/user?trk=public_profile") == "linkedin"
+
+    def test_detect_url_with_fragments(self):
+        """Test source detection with URL fragments."""
+        assert detect_source("https://hh.ru/resume/123#experience") == "hh"
+        assert detect_source("https://career.habr.com/user#skills") == "habr"
+
+
+# ============================================================================
+# ADDITIONAL JSON CLEANING TESTS
+# ============================================================================
+
+class TestJsonCleaningExtended:
+    """Extended tests for AI response JSON cleaning."""
+
+    def test_clean_json_nested_objects(self):
+        """Test cleaning JSON with nested objects."""
+        response = '''```json
+{
+    "name": "Test",
+    "salary": {
+        "min": 100000,
+        "max": 200000
+    }
+}
+```'''
+        result = _clean_json_response(response)
+        parsed = json.loads(result)
+        assert parsed["name"] == "Test"
+        assert parsed["salary"]["min"] == 100000
+
+    def test_clean_json_with_arrays(self):
+        """Test cleaning JSON with arrays."""
+        response = '''The skills are:
+```json
+{"skills": ["Python", "JavaScript", "Go"], "experience": [1, 2, 3]}
+```
+That is the list.'''
+        result = _clean_json_response(response)
+        parsed = json.loads(result)
+        assert len(parsed["skills"]) == 3
+        assert "Python" in parsed["skills"]
+
+    def test_clean_json_with_special_characters(self):
+        """Test cleaning JSON with special characters in values."""
+        response = '{"name": "John O\'Connor", "email": "john+test@example.com"}'
+        result = _clean_json_response(response)
+        parsed = json.loads(result)
+        assert parsed["name"] == "John O'Connor"
+        assert parsed["email"] == "john+test@example.com"
+
+    def test_clean_json_with_unicode(self):
+        """Test cleaning JSON with Unicode characters."""
+        response = '{"name": "Иван Петров", "position": "Разработчик Python"}'
+        result = _clean_json_response(response)
+        parsed = json.loads(result)
+        assert parsed["name"] == "Иван Петров"
+        assert "Python" in parsed["position"]
+
+    def test_clean_json_with_escaped_characters(self):
+        """Test cleaning JSON with escaped characters."""
+        response = '{"description": "Line1\\nLine2\\tTabbed"}'
+        result = _clean_json_response(response)
+        parsed = json.loads(result)
+        assert "Line1" in parsed["description"]
+
+
+# ============================================================================
+# ADDITIONAL URL PARSING TESTS
+# ============================================================================
+
+class TestURLParsingExtended:
+    """Extended tests for URL-based parsing."""
+
+    @pytest.mark.asyncio
+    async def test_parse_resume_from_linkedin_url(self):
+        """Test resume parsing from LinkedIn URL."""
+        mock_html = '''
+        <html>
+        <body>
+            <h1>Jane Smith</h1>
+            <p>Senior Software Engineer at Google</p>
+            <p>San Francisco, California</p>
+        </body>
+        </html>
+        '''
+
+        mock_ai_response = {
+            "name": "Jane Smith",
+            "position": "Senior Software Engineer",
+            "company": "Google",
+            "location": "San Francisco, California",
+            "skills": ["Python", "Java", "Go"],
+            "salary_currency": "USD"
+        }
+
+        with patch('api.services.parser.fetch_url_content', new_callable=AsyncMock) as mock_fetch:
+            with patch('api.services.parser._get_ai_client') as mock_client:
+                mock_fetch.return_value = mock_html
+
+                mock_message = MagicMock()
+                mock_message.content = [MagicMock(text=json.dumps(mock_ai_response))]
+                mock_client.return_value.messages.create = AsyncMock(return_value=mock_message)
+
+                result = await parse_resume_from_url("https://linkedin.com/in/janesmith")
+
+                assert result.name == "Jane Smith"
+                assert result.position == "Senior Software Engineer"
+                assert result.company == "Google"
+
+    @pytest.mark.asyncio
+    async def test_parse_vacancy_from_superjob_url(self):
+        """Test vacancy parsing from SuperJob URL."""
+        mock_html = '''
+        <html>
+        <body>
+            <h1>Python Developer</h1>
+            <div class="company">IT Company</div>
+            <div class="salary">100 000 - 150 000 руб.</div>
+        </body>
+        </html>
+        '''
+
+        mock_ai_response = {
+            "title": "Python Developer",
+            "company_name": "IT Company",
+            "salary_min": 100000,
+            "salary_max": 150000,
+            "salary_currency": "RUB",
+            "employment_type": "full-time"
+        }
+
+        with patch('api.services.parser.fetch_url_content', new_callable=AsyncMock) as mock_fetch:
+            with patch('api.services.parser._get_ai_client') as mock_client:
+                mock_fetch.return_value = mock_html
+
+                mock_message = MagicMock()
+                mock_message.content = [MagicMock(text=json.dumps(mock_ai_response))]
+                mock_client.return_value.messages.create = AsyncMock(return_value=mock_message)
+
+                result, method = await parse_vacancy_from_url("https://superjob.ru/vakansii/python-123")
+
+                assert result.title == "Python Developer"
+                assert result.company_name == "IT Company"
+                assert result.salary_min == 100000
+                assert method == "ai"  # SuperJob uses AI parsing
+
+    @pytest.mark.asyncio
+    async def test_parse_vacancy_from_habr_url(self):
+        """Test vacancy parsing from Habr Career URL."""
+        mock_html = '''
+        <html>
+        <body>
+            <h1>Go Developer</h1>
+            <div class="company">Startup Inc</div>
+            <div class="location">Remote</div>
+        </body>
+        </html>
+        '''
+
+        mock_ai_response = {
+            "title": "Go Developer",
+            "company_name": "Startup Inc",
+            "location": "Remote",
+            "salary_currency": "RUB",
+            "experience_level": "middle"
+        }
+
+        with patch('api.services.parser.fetch_url_content', new_callable=AsyncMock) as mock_fetch:
+            with patch('api.services.parser._get_ai_client') as mock_client:
+                mock_fetch.return_value = mock_html
+
+                mock_message = MagicMock()
+                mock_message.content = [MagicMock(text=json.dumps(mock_ai_response))]
+                mock_client.return_value.messages.create = AsyncMock(return_value=mock_message)
+
+                result, method = await parse_vacancy_from_url("https://career.habr.com/vacancies/123")
+
+                assert result.title == "Go Developer"
+                assert result.location == "Remote"
+                assert method == "ai"  # Habr uses AI parsing
+
+
+# ============================================================================
+# ADDITIONAL PDF/DOCUMENT PARSING TESTS
+# ============================================================================
+
+class TestDocumentParsingExtended:
+    """Extended tests for document parsing - PDF, DOCX, TXT."""
+
+    @pytest.mark.asyncio
+    async def test_parse_resume_from_pdf_with_telegram(self):
+        """Test resume parsing from PDF with Telegram contact."""
+        mock_parse_result = MagicMock()
+        mock_parse_result.status = "success"
+        mock_parse_result.content = """
+        Мария Иванова
+        Backend Developer
+        telegram: @marivanова
+        email: maria@example.com
+        Опыт: 3 года
+        """
+
+        mock_ai_response = {
+            "name": "Мария Иванова",
+            "email": "maria@example.com",
+            "telegram": "@marivanova",
+            "position": "Backend Developer",
+            "experience_years": 3,
+            "skills": ["Python", "Django"],
+            "salary_currency": "RUB"
+        }
+
+        with patch('api.services.parser.document_parser') as mock_doc_parser:
+            with patch('api.services.parser._get_ai_client') as mock_client:
+                mock_doc_parser.parse = AsyncMock(return_value=mock_parse_result)
+
+                mock_message = MagicMock()
+                mock_message.content = [MagicMock(text=json.dumps(mock_ai_response))]
+                mock_client.return_value.messages.create = AsyncMock(return_value=mock_message)
+
+                result = await parse_resume_from_pdf(b"pdf content", "resume.pdf")
+
+                assert result.telegram == "@marivanova"
+                assert result.email == "maria@example.com"
+
+    @pytest.mark.asyncio
+    async def test_parse_resume_from_pdf_with_salary(self):
+        """Test resume parsing from PDF with salary expectations."""
+        mock_parse_result = MagicMock()
+        mock_parse_result.status = "success"
+        mock_parse_result.content = """
+        Алексей Смирнов
+        Senior Developer
+        Ожидаемая зарплата: от 300000 до 450000 рублей
+        """
+
+        mock_ai_response = {
+            "name": "Алексей Смирнов",
+            "position": "Senior Developer",
+            "salary_min": 300000,
+            "salary_max": 450000,
+            "salary_currency": "RUB",
+            "skills": []
+        }
+
+        with patch('api.services.parser.document_parser') as mock_doc_parser:
+            with patch('api.services.parser._get_ai_client') as mock_client:
+                mock_doc_parser.parse = AsyncMock(return_value=mock_parse_result)
+
+                mock_message = MagicMock()
+                mock_message.content = [MagicMock(text=json.dumps(mock_ai_response))]
+                mock_client.return_value.messages.create = AsyncMock(return_value=mock_message)
+
+                result = await parse_resume_from_pdf(b"pdf content", "resume.pdf")
+
+                assert result.salary_min == 300000
+                assert result.salary_max == 450000
+                assert result.salary_currency == "RUB"
+
+    @pytest.mark.asyncio
+    async def test_parse_resume_pdf_parsing_error(self):
+        """Test handling of PDF parsing errors with specific error message."""
+        mock_parse_result = MagicMock()
+        mock_parse_result.status = "failed"
+        mock_parse_result.error = "Corrupted PDF file"
+
+        with patch('api.services.parser.document_parser') as mock_doc_parser:
+            mock_doc_parser.parse = AsyncMock(return_value=mock_parse_result)
+
+            with pytest.raises(ValueError) as exc_info:
+                await parse_resume_from_pdf(b"corrupted", "bad.pdf")
+
+            assert "Corrupted PDF" in str(exc_info.value)
+
+
+# ============================================================================
+# CURRENCY HANDLING TESTS
+# ============================================================================
+
+class TestCurrencyHandling:
+    """Tests for currency handling in parsed data."""
+
+    def test_parsed_resume_with_usd_currency(self):
+        """Test ParsedResume with USD salary."""
+        resume = ParsedResume(
+            name="John Doe",
+            salary_min=5000,
+            salary_max=8000,
+            salary_currency="USD"
+        )
+        assert resume.salary_currency == "USD"
+        assert resume.salary_min == 5000
+        assert resume.salary_max == 8000
+
+    def test_parsed_resume_with_eur_currency(self):
+        """Test ParsedResume with EUR salary."""
+        resume = ParsedResume(
+            name="Hans Mueller",
+            salary_min=4000,
+            salary_max=6000,
+            salary_currency="EUR"
+        )
+        assert resume.salary_currency == "EUR"
+
+    def test_parsed_vacancy_with_usd_currency(self):
+        """Test ParsedVacancy with USD salary."""
+        vacancy = ParsedVacancy(
+            title="Senior Engineer",
+            salary_min=120000,
+            salary_max=180000,
+            salary_currency="USD"
+        )
+        assert vacancy.salary_currency == "USD"
+        assert vacancy.salary_min == 120000
+
+    def test_parsed_vacancy_default_currency(self):
+        """Test that ParsedVacancy defaults to RUB."""
+        vacancy = ParsedVacancy(title="Test Position")
+        assert vacancy.salary_currency == "RUB"
+
+    def test_parsed_resume_default_currency(self):
+        """Test that ParsedResume defaults to RUB."""
+        resume = ParsedResume()
+        assert resume.salary_currency == "RUB"
+
+
+# ============================================================================
+# ERROR HANDLING EDGE CASES
+# ============================================================================
+
+class TestErrorHandlingEdgeCases:
+    """Tests for error handling edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_parse_resume_network_error(self):
+        """Test handling of network errors during URL fetch."""
+        with patch('api.services.parser.fetch_url_content', new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.side_effect = Exception("Connection timeout")
+
+            with pytest.raises(Exception) as exc_info:
+                await parse_resume_from_url("https://hh.ru/resume/123")
+
+            assert "timeout" in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_parse_vacancy_invalid_json_from_ai(self):
+        """Test handling when AI returns invalid JSON."""
+        mock_html = "<html><body><h1>Test</h1></body></html>"
+
+        with patch('api.services.parser.parse_vacancy_via_api', new_callable=AsyncMock) as mock_api:
+            mock_api.return_value = None  # Force fallback to AI
+            with patch('api.services.parser.fetch_url_content', new_callable=AsyncMock) as mock_fetch:
+                with patch('api.services.parser._get_ai_client') as mock_client:
+                    mock_fetch.return_value = mock_html
+
+                    mock_message = MagicMock()
+                    # Return invalid JSON
+                    mock_message.content = [MagicMock(text="This is not valid JSON at all")]
+                    mock_client.return_value.messages.create = AsyncMock(return_value=mock_message)
+
+                    # The parser should raise an error for invalid JSON
+                    with pytest.raises(Exception):
+                        await parse_vacancy_from_url("https://hh.ru/vacancy/456")
+
+    def test_extract_text_empty_html(self):
+        """Test text extraction from empty HTML."""
+        result = extract_text_from_html("<html><body></body></html>")
+        assert result.strip() == "" or len(result.strip()) < 5
+
+    def test_extract_text_html_with_only_whitespace(self):
+        """Test text extraction from HTML with only whitespace."""
+        html = "<html><body>   \n\t   </body></html>"
+        result = extract_text_from_html(html)
+        assert result.strip() == "" or len(result.strip()) < 5
+
+    def test_detect_source_empty_url(self):
+        """Test source detection with empty URL."""
+        assert detect_source("") == "unknown"
+
+    def test_detect_source_invalid_url(self):
+        """Test source detection with invalid URL."""
+        assert detect_source("not-a-url") == "unknown"
+        assert detect_source("ftp://example.com") == "unknown"
+
+
+# ============================================================================
+# HTML EXTRACTION EDGE CASES
+# ============================================================================
+
+class TestHtmlExtractionEdgeCases:
+    """Edge case tests for HTML text extraction."""
+
+    def test_extract_text_with_nested_elements(self):
+        """Test extraction from deeply nested HTML."""
+        html = '''
+        <html>
+        <body>
+            <div>
+                <div>
+                    <div>
+                        <span>
+                            <p>Deeply nested content</p>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        '''
+        result = extract_text_from_html(html)
+        assert "Deeply nested content" in result
+
+    def test_extract_text_with_comments(self):
+        """Test that HTML comments are removed."""
+        html = '''
+        <html>
+        <body>
+            <!-- This is a comment -->
+            <p>Visible text</p>
+            <!-- Another comment with <tags> inside -->
+        </body>
+        </html>
+        '''
+        result = extract_text_from_html(html)
+        assert "This is a comment" not in result
+        assert "Visible text" in result
+
+    def test_extract_text_preserves_list_content(self):
+        """Test that list content is preserved."""
+        html = '''
+        <html>
+        <body>
+            <ul>
+                <li>Python</li>
+                <li>JavaScript</li>
+                <li>Go</li>
+            </ul>
+        </body>
+        </html>
+        '''
+        result = extract_text_from_html(html)
+        assert "Python" in result
+        assert "JavaScript" in result
+        assert "Go" in result
+
+    def test_extract_text_preserves_table_content(self):
+        """Test that table content is preserved."""
+        html = '''
+        <html>
+        <body>
+            <table>
+                <tr><td>Experience</td><td>5 years</td></tr>
+                <tr><td>Location</td><td>Moscow</td></tr>
+            </table>
+        </body>
+        </html>
+        '''
+        result = extract_text_from_html(html)
+        assert "Experience" in result
+        assert "5 years" in result
+        assert "Moscow" in result

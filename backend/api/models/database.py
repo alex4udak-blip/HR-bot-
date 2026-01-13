@@ -416,12 +416,17 @@ class Entity(Base):
     criteria = relationship("EntityCriteria", back_populates="entity", uselist=False, cascade="all, delete-orphan")
     files = relationship("EntityFile", back_populates="entity", cascade="all, delete-orphan")
 
+    # Expected salary for candidates
+    expected_salary_min = Column(Integer, nullable=True)
+    expected_salary_max = Column(Integer, nullable=True)
+    expected_salary_currency = Column(String(10), default='RUB')
+
     # AI Long-term Memory
     # Auto-updated summary of all interactions with this entity
     ai_summary = Column(Text, nullable=True)
     ai_summary_updated_at = Column(DateTime, nullable=True)
     # Key events/milestones extracted from conversations
-    # Format: [{"date": "2024-01-15", "event": "hired", "details": "Нанят в отдел разработки"}]
+    # Format: [{"date": "2024-01-15", "event": "hired", "details": "Hired to development team"}]
     key_events = Column(JSON, default=list)
 
 

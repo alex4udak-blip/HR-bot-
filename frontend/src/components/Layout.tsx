@@ -54,7 +54,7 @@ const labelMap: Record<string, string> = {
 
 export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { user, logout, isImpersonating, exitImpersonation, menuItems, fetchPermissions, customRoleName } = useAuthStore();
+  const { user, logout, isImpersonating, exitImpersonation, menuItems, fetchPermissions, customRoleName, hasFeature } = useAuthStore();
   const navigate = useNavigate();
 
   // Fetch permissions on mount
@@ -89,28 +89,32 @@ export default function Layout() {
       { path: '/chats', icon: MessageSquare, label: 'Чаты' },
       { path: '/calls', icon: Phone, label: 'Созвоны' },
       { path: '/contacts', icon: Users, label: 'Контакты' },
-      { path: '/vacancies', icon: Briefcase, label: 'Вакансии' },
       { path: '/trash', icon: Trash2, label: 'Корзина' },
     ];
 
-    // Добавляем пункты для superadmin
+    // Add vacancies only if user has access to the feature
+    if (hasFeature('vacancies')) {
+      items.splice(4, 0, { path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
+    }
+
+    // Add menu items for superadmin
     if (user?.role === 'superadmin') {
       items.push({ path: '/users', icon: Users, label: 'Пользователи' });
     }
 
-    // Добавляем пункты для superadmin и org owner
+    // Add menu items for superadmin and org owner
     if (user?.role === 'superadmin' || user?.org_role === 'owner') {
       items.push({ path: '/departments', icon: Building2, label: 'Департаменты' });
       items.push({ path: '/settings', icon: Settings, label: 'Настройки' });
     }
 
-    // Добавляем симулятор только для superadmin
+    // Add admin simulator only for superadmin
     if (user?.role === 'superadmin') {
       items.push({ path: '/admin/simulator', icon: Shield, label: 'Симулятор ролей' });
     }
 
     return items;
-  }, [menuItems, user?.role, user?.org_role]);
+  }, [menuItems, user?.role, user?.org_role, hasFeature]);
 
   const handleLogout = () => {
     logout();

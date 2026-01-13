@@ -68,7 +68,8 @@ async def run_migration(engine, sql: str, description: str):
         logger.info(f"Migration OK: {description}")
         return True
     except Exception as e:
-        logger.debug(f"Migration skipped ({description}): {e}")
+        # Log at WARNING level so errors are visible in production
+        logger.warning(f"Migration failed ({description}): {e}")
         return False
 
 
