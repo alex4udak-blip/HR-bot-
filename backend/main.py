@@ -469,9 +469,10 @@ async def init_database():
         CREATE TABLE IF NOT EXISTS entity_files (
             id SERIAL PRIMARY KEY,
             entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+            org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
             file_type entityfiletype DEFAULT 'other',
             file_name VARCHAR(255) NOT NULL,
-            file_path VARCHAR(500) NOT NULL,
+            file_path VARCHAR(512) NOT NULL,
             file_size INTEGER,
             mime_type VARCHAR(100),
             description VARCHAR(500),
@@ -481,6 +482,10 @@ async def init_database():
     """
     await run_migration(engine, create_entity_files, "Create entity_files table")
     await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entity_files_entity_id ON entity_files(entity_id)", "Index entity_files.entity_id")
+    await run_migration(engine, "CREATE INDEX IF NOT EXISTS ix_entity_files_org_id ON entity_files(org_id)", "Index entity_files.org_id")
+
+    # Add org_id column if table exists but column doesn't (for existing deployments)
+    await run_migration(engine, "ALTER TABLE entity_files ADD COLUMN IF NOT EXISTS org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE", "Add org_id to entity_files")
 
     logger.info("=== ENTITY FILES TABLE READY ===")
 
