@@ -199,6 +199,11 @@ export const resetDefaultCriteria = async (chatType: string): Promise<void> => {
   await api.delete(`/criteria/defaults/${chatType}`);
 };
 
+export const seedUniversalPresets = async (): Promise<{ message: string; created: string[] }> => {
+  const { data } = await api.post('/criteria/presets/seed-universal');
+  return data;
+};
+
 // AI
 export const getAIHistory = async (chatId: number): Promise<AIConversation> => {
   const { data } = await api.get(`/chats/${chatId}/ai/history`);

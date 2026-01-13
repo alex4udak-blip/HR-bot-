@@ -12,7 +12,7 @@ from ..models.schemas import (
     ChatTypeDefaultCriteriaUpdate
 )
 from ..services.auth import get_current_user
-from ..services.chat_types import get_default_criteria as get_hardcoded_defaults
+from ..services.chat_types import get_default_criteria as get_hardcoded_defaults, get_universal_presets
 
 router = APIRouter()
 
@@ -147,6 +147,72 @@ async def delete_preset(
 
     await db.delete(preset)
     await db.commit()
+
+
+@router.get("/presets/universal")
+async def get_universal_preset_templates(
+    user: User = Depends(get_current_user),
+):
+    """Get universal preset templates that work for all chat types."""
+    presets = get_universal_presets()
+    return [
+        {
+            "id": f"universal_{i}",
+            "name": p["name"],
+            "description": p["description"],
+            "criteria": p["criteria"],
+            "is_universal": True,
+        }
+        for i, p in enumerate(presets)
+    ]
+
+
+@router.post("/presets/seed-universal", status_code=201)
+async def seed_universal_presets(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Seed universal presets to database as global presets. Superadmin only."""
+    user = await db.merge(user)
+
+    if user.role != UserRole.superadmin:
+        raise HTTPException(status_code=403, detail="Only superadmins can seed presets")
+
+    presets = get_universal_presets()
+    created = []
+
+    for preset_data in presets:
+        # Check if preset with this name already exists
+        result = await db.execute(
+            select(CriteriaPreset).where(
+                and_(
+                    CriteriaPreset.name == preset_data["name"],
+                    CriteriaPreset.is_global == True
+                )
+            )
+        )
+        existing = result.scalar_one_or_none()
+
+        if not existing:
+            preset = CriteriaPreset(
+                name=preset_data["name"],
+                description=preset_data["description"],
+                criteria=preset_data["criteria"],
+                category="basic",
+                is_global=True,
+                chat_type=None,  # Universal - works for all types
+                is_default=False,
+                created_by=user.id,
+            )
+            db.add(preset)
+            created.append(preset_data["name"])
+
+    await db.commit()
+
+    return {
+        "message": f"Created {len(created)} universal presets",
+        "created": created,
+    }
 
 
 # ============ DEFAULT CRITERIA BY CHAT TYPE ============
