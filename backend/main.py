@@ -390,11 +390,23 @@ async def init_database():
     # Step 9: Vacancies and Kanban pipeline
     logger.info("=== SETTING UP VACANCIES ===")
 
-    # Create vacancy status enum
-    await run_migration(engine, "CREATE TYPE vacancystatus AS ENUM ('draft', 'open', 'paused', 'closed', 'cancelled')", "Create vacancystatus enum")
+    # Create vacancy status enum (with IF NOT EXISTS workaround for PostgreSQL)
+    await run_migration(engine, """
+        DO $$ BEGIN
+            CREATE TYPE vacancystatus AS ENUM ('draft', 'open', 'paused', 'closed', 'cancelled');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$
+    """, "Create vacancystatus enum")
 
     # Create application stage enum
-    await run_migration(engine, "CREATE TYPE applicationstage AS ENUM ('applied', 'screening', 'phone_screen', 'interview', 'assessment', 'offer', 'hired', 'rejected', 'withdrawn')", "Create applicationstage enum")
+    await run_migration(engine, """
+        DO $$ BEGIN
+            CREATE TYPE applicationstage AS ENUM ('applied', 'screening', 'phone_screen', 'interview', 'assessment', 'offer', 'hired', 'rejected', 'withdrawn');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$
+    """, "Create applicationstage enum")
 
     # Create vacancies table
     create_vacancies = """
@@ -461,8 +473,14 @@ async def init_database():
     # Step 10: Entity files for document attachments
     logger.info("=== SETTING UP ENTITY FILES ===")
 
-    # Create entity file type enum
-    await run_migration(engine, "CREATE TYPE entityfiletype AS ENUM ('resume', 'cover_letter', 'test_assignment', 'certificate', 'portfolio', 'other')", "Create entityfiletype enum")
+    # Create entity file type enum (with IF NOT EXISTS workaround for PostgreSQL)
+    await run_migration(engine, """
+        DO $$ BEGIN
+            CREATE TYPE entityfiletype AS ENUM ('resume', 'cover_letter', 'test_assignment', 'certificate', 'portfolio', 'other');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$
+    """, "Create entityfiletype enum")
 
     # Create entity_files table
     create_entity_files = """
