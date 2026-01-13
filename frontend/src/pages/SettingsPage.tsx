@@ -53,13 +53,13 @@ type SettingsTab = 'general' | 'presets' | 'roles' | 'features';
 const featureConfig: Record<string, { icon: typeof Briefcase; label: string; description: string }> = {
   vacancies: {
     icon: Briefcase,
-    label: 'Vacancies',
-    description: 'Access to vacancy management and Kanban board'
+    label: 'Вакансии',
+    description: 'Доступ к управлению вакансиями и Kanban доске'
   },
   ai_analysis: {
     icon: Brain,
-    label: 'AI Analysis',
-    description: 'AI-powered analysis features for entities and calls'
+    label: 'AI Анализ',
+    description: 'AI-анализ для контактов и звонков'
   }
 };
 
@@ -403,7 +403,7 @@ export default function SettingsPage() {
               )}
             >
               <ToggleRight className="w-4 h-4" />
-              Feature Access
+              Управление доступом
             </button>
           )}
         </div>
@@ -419,9 +419,9 @@ export default function SettingsPage() {
         {activeTab === 'features' && (isSuperAdmin() || user?.org_role === 'owner') && (
           <div className="glass rounded-2xl p-6">
             <div className="mb-6">
-              <h2 className="text-lg font-semibold">Feature Access Control</h2>
+              <h2 className="text-lg font-semibold">Управление доступом к функциям</h2>
               <p className="text-sm text-dark-400">
-                Configure which features are available organization-wide or for specific departments
+                Настройте доступ к функциям для всей организации или отдельных отделов
               </p>
             </div>
 
@@ -432,7 +432,7 @@ export default function SettingsPage() {
             ) : featureSettingsData?.restricted_features.length === 0 ? (
               <div className="text-center py-8">
                 <ToggleLeft className="w-12 h-12 mx-auto text-dark-600 mb-3" />
-                <p className="text-dark-400">No configurable features available</p>
+                <p className="text-dark-400">Нет настраиваемых функций</p>
               </div>
             ) : (
               <div className="space-y-6">
@@ -440,7 +440,7 @@ export default function SettingsPage() {
                   const config = featureConfig[featureName] || {
                     icon: ToggleRight,
                     label: featureName.charAt(0).toUpperCase() + featureName.slice(1).replace(/_/g, ' '),
-                    description: 'Feature access control'
+                    description: 'Управление доступом к функции'
                   };
                   const FeatureIcon = config.icon;
                   const isOrgWideEnabled = orgWide?.enabled ?? false;
@@ -464,7 +464,7 @@ export default function SettingsPage() {
                       <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg mb-4">
                         <div className="flex items-center gap-2">
                           <Globe className="w-4 h-4 text-purple-400" />
-                          <span className="text-sm font-medium">Organization-wide</span>
+                          <span className="text-sm font-medium">Для всей организации</span>
                         </div>
                         <button
                           onClick={() => handleOrgWideToggle(featureName, !isOrgWideEnabled)}
@@ -487,7 +487,7 @@ export default function SettingsPage() {
                       <div className="space-y-3">
                         <div className="flex items-center gap-2">
                           <Building2 className="w-4 h-4 text-blue-400" />
-                          <span className="text-sm font-medium text-dark-300">Department-specific access</span>
+                          <span className="text-sm font-medium text-dark-300">Доступ для отделов</span>
                         </div>
 
                         {/* Existing department settings */}
@@ -540,11 +540,11 @@ export default function SettingsPage() {
                             className="px-4 py-2 bg-accent-500 text-white rounded-lg hover:bg-accent-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                           >
                             <Plus className="w-4 h-4" />
-                            Add
+                            Добавить
                           </button>
                         </div>
                         <p className="text-xs text-dark-500">
-                          Hold Ctrl/Cmd to select multiple departments
+                          Удерживайте Ctrl/Cmd для выбора нескольких отделов
                         </p>
                       </div>
                     </div>

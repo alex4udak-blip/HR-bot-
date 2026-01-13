@@ -157,9 +157,9 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
       if (dropTarget.stage !== draggedApp.stage) {
         try {
           await moveApplication(draggedApp.id, dropTarget.stage);
-          toast.success(`Candidate moved to "${APPLICATION_STAGE_LABELS[dropTarget.stage]}"`);
+          toast.success(`Кандидат перемещён в "${APPLICATION_STAGE_LABELS[dropTarget.stage]}"`);
         } catch {
-          toast.error('Error moving candidate');
+          toast.error('Ошибка при перемещении кандидата');
         }
       } else if (dropTarget.index !== null) {
         // Reordering within same column
@@ -185,9 +185,9 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
 
             await updateApplication(draggedApp.id, { stage_order: newOrder });
             await fetchKanbanBoard(vacancy.id); // Refresh to get updated order
-            toast.success('Card reordered');
+            toast.success('Карточка переупорядочена');
           } catch {
-            toast.error('Error reordering card');
+            toast.error('Ошибка при переупорядочивании');
           }
         }
       }
@@ -263,10 +263,10 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     setDeleteLoading(true);
     try {
       await removeApplication(confirmDialog.application.id);
-      toast.success('Candidate removed from vacancy');
+      toast.success('Кандидат удалён из вакансии');
       setConfirmDialog({ open: false, application: null });
     } catch {
-      toast.error('Failed to remove candidate');
+      toast.error('Не удалось удалить кандидата');
     } finally {
       setDeleteLoading(false);
     }
@@ -331,7 +331,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   if (!kanbanBoard) {
     return (
       <div className="flex items-center justify-center h-full text-white/40">
-        Failed to load board
+        Не удалось загрузить доску
       </div>
     );
   }
@@ -342,15 +342,15 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
       <div className="h-full flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <div className="flex items-center gap-4">
-            <h2 className="text-lg font-semibold">Kanban Board</h2>
-            <span className="text-white/40 text-sm">0 candidates</span>
+            <h2 className="text-lg font-semibold">Kanban доска</h2>
+            <span className="text-white/40 text-sm">0 кандидатов</span>
           </div>
           <button
             onClick={() => setShowAddCandidate(true)}
             className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors"
           >
             <Plus className="w-4 h-4" />
-            Add Candidate
+            Добавить кандидата
           </button>
         </div>
         <div className="flex-1 flex items-center justify-center">
@@ -373,13 +373,13 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
         <div className="flex items-center gap-2 sm:gap-4">
           <OnboardingTooltip
             id="kanban-board"
-            content="Drag candidates between stages to update their status"
+            content="Перетаскивайте кандидатов между этапами для обновления статуса"
             position="bottom"
           >
-            <h2 className="text-base sm:text-lg font-semibold">Kanban Board</h2>
+            <h2 className="text-base sm:text-lg font-semibold">Kanban доска</h2>
           </OnboardingTooltip>
           <span className="text-white/40 text-xs sm:text-sm">
-            {kanbanBoard.total_count} candidates
+            {kanbanBoard.total_count} кандидатов
           </span>
         </div>
         <button
@@ -387,8 +387,8 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
           className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs sm:text-sm transition-colors"
         >
           <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Add Candidate</span>
-          <span className="sm:hidden">Add</span>
+          <span className="hidden sm:inline">Добавить кандидата</span>
+          <span className="sm:hidden">Добавить</span>
         </button>
       </div>
 
@@ -501,7 +501,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                                     setSelectedApplication(app);
                                   }}
                                   className="p-1.5 sm:p-1 hover:bg-white/10 rounded touch-manipulation"
-                                  title="Details"
+                                  title="Детали"
                                 >
                                   <Edit className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                                 </button>
@@ -511,7 +511,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                                     handleViewCandidate(app);
                                   }}
                                   className="p-1.5 sm:p-1 hover:bg-white/10 rounded touch-manipulation"
-                                  title="View profile"
+                                  title="Профиль"
                                 >
                                   <ExternalLink className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                                 </button>
@@ -521,7 +521,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                                     handleDeleteClick(app);
                                   }}
                                   className="p-1.5 sm:p-1 hover:bg-red-500/20 text-red-400 rounded touch-manipulation"
-                                  title="Remove"
+                                  title="Удалить"
                                 >
                                   <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                                 </button>
@@ -561,7 +561,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                               </div>
                               <div className="flex items-center gap-1 text-xs text-white/40">
                                 <Clock className="w-3 h-3" />
-                                {new Date(app.applied_at).toLocaleDateString('en-US', {
+                                {new Date(app.applied_at).toLocaleDateString('ru-RU', {
                                   day: 'numeric',
                                   month: 'short'
                                 })}
@@ -594,14 +594,14 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                   {apps.length === 0 && !isDropping && (
                     <div className="h-24 flex flex-col items-center justify-center text-white/20 text-sm">
                       <Users className="w-6 h-6 mb-1" />
-                      <span>Empty</span>
+                      <span>Пусто</span>
                     </div>
                   )}
 
                   {/* Drop zone indicator for empty columns */}
                   {apps.length === 0 && isDropping && (
                     <div className="h-24 flex flex-col items-center justify-center border-2 border-dashed border-blue-500/50 rounded-lg text-blue-400 text-sm">
-                      <span>Drop here</span>
+                      <span>Отпустите здесь</span>
                     </div>
                   )}
                 </div>
@@ -629,10 +629,10 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
       {/* Confirmation Dialog */}
       <ConfirmDialog
         open={confirmDialog.open}
-        title="Remove Candidate"
-        message="Remove this candidate from the vacancy? This action cannot be undone."
-        confirmLabel="Remove"
-        cancelLabel="Cancel"
+        title="Удалить кандидата"
+        message="Удалить этого кандидата из вакансии? Это действие невозможно отменить."
+        confirmLabel="Удалить"
+        cancelLabel="Отмена"
         variant="danger"
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelConfirm}
