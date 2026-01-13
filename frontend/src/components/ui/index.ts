@@ -12,3 +12,7 @@ export {
   DetailSkeleton,
   ListSkeleton
 } from './Skeleton';
+export { default as ConfirmDialog } from './ConfirmDialog';
+export type { ConfirmDialogProps } from './ConfirmDialog';
+export { default as ErrorMessage, getErrorType, getErrorTypeFromStatus } from './ErrorMessage';
+export type { ErrorMessageProps, ErrorType } from './ErrorMessage';

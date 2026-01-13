@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useKeyboardShortcuts } from '@/hooks';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -15,44 +15,75 @@ import {
   Trash2,
   LayoutGrid,
   List,
-  Upload
+  Upload,
+  Filter,
+  X,
+  Check,
+  ChevronDown,
+  Calendar
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import type { Vacancy, VacancyStatus } from '@/types';
 import {
-  VACANCY_STATUS_LABELS,
-  VACANCY_STATUS_COLORS,
   EMPLOYMENT_TYPES,
   formatSalary
 } from '@/types';
 import { getDepartments } from '@/services/api';
 import type { Department, ParsedVacancy } from '@/services/api';
-import VacancyForm from '@/components/vacancies/VacancyForm';
-import VacancyDetail from '@/components/vacancies/VacancyDetail';
-import KanbanBoard from '@/components/vacancies/KanbanBoard';
+import {
+  VacancyForm,
+  VacancyDetail,
+  KanbanBoard,
+  VacancyCardSkeleton,
+  VacancyStatusBadge,
+} from '@/components/vacancies';
 import ParserModal from '@/components/parser/ParserModal';
 import {
   ContextMenu,
   createVacancyContextMenu,
   NoVacanciesEmpty,
-  VacancyCardSkeleton,
-  KeyboardShortcuts
+  KeyboardShortcuts,
+  ConfirmDialog,
+  ErrorMessage
 } from '@/components/ui';
 
 const STATUS_FILTERS: { id: VacancyStatus | 'all'; name: string }[] = [
-  { id: 'all', name: 'Все' },
-  { id: 'draft', name: 'Черновики' },
-  { id: 'open', name: 'Открытые' },
-  { id: 'paused', name: 'На паузе' },
-  { id: 'closed', name: 'Закрытые' },
-  { id: 'cancelled', name: 'Отменённые' },
+  { id: 'all', name: 'All' },
+  { id: 'draft', name: 'Draft' },
+  { id: 'open', name: 'Open' },
+  { id: 'paused', name: 'Paused' },
+  { id: 'closed', name: 'Closed' },
+  { id: 'cancelled', name: 'Cancelled' },
 ];
+
+// Quick filter options
+const SALARY_RANGES = [
+  { id: 'any', label: 'Any Salary', min: undefined, max: undefined },
+  { id: 'under100k', label: 'Under 100k', min: undefined, max: 100000 },
+  { id: '100k-200k', label: '100k - 200k', min: 100000, max: 200000 },
+  { id: '200k-300k', label: '200k - 300k', min: 200000, max: 300000 },
+  { id: '300k+', label: '300k+', min: 300000, max: undefined },
+];
+
+const DATE_RANGES = [
+  { id: 'any', label: 'Any Time', days: undefined },
+  { id: '7days', label: 'Last 7 days', days: 7 },
+  { id: '30days', label: 'Last 30 days', days: 30 },
+  { id: '90days', label: 'Last 90 days', days: 90 },
+];
+
+interface QuickFilters {
+  statuses: VacancyStatus[];
+  salaryRange: string;
+  dateRange: string;
+}
 
 export default function VacanciesPage() {
   const { vacancyId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
@@ -65,19 +96,153 @@ export default function VacanciesPage() {
   const [prefillData, setPrefillData] = useState<Partial<Vacancy> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    vacancy: Vacancy | null;
+    type: 'delete' | 'close';
+  }>({ open: false, vacancy: null, type: 'delete' });
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Quick filters state
+  const [showFiltersDropdown, setShowFiltersDropdown] = useState(false);
+  const [quickFilters, setQuickFilters] = useState<QuickFilters>(() => {
+    // Initialize from URL params
+    const statusesParam = searchParams.get('statuses');
+    const salaryParam = searchParams.get('salary');
+    const dateParam = searchParams.get('date');
+    return {
+      statuses: statusesParam ? statusesParam.split(',') as VacancyStatus[] : [],
+      salaryRange: salaryParam || 'any',
+      dateRange: dateParam || 'any',
+    };
+  });
+  const filtersDropdownRef = useRef<HTMLDivElement>(null);
+
   const {
     vacancies,
     currentVacancy,
     loading,
+    error,
     fetchVacancies,
     fetchVacancy,
     deleteVacancy,
     setFilters,
-    clearCurrentVacancy
+    clearCurrentVacancy,
+    clearError
   } = useVacancyStore();
 
   // Modal state check for keyboard shortcut handlers
   const isAnyModalOpen = showCreateModal || !!editingVacancy || showParserModal;
+
+  // Calculate active filter count
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (quickFilters.statuses.length > 0) count++;
+    if (quickFilters.salaryRange !== 'any') count++;
+    if (quickFilters.dateRange !== 'any') count++;
+    return count;
+  }, [quickFilters]);
+
+  // Filter vacancies based on quick filters
+  const filteredVacancies = useMemo(() => {
+    return vacancies.filter((vacancy) => {
+      // Status filter
+      if (quickFilters.statuses.length > 0 && !quickFilters.statuses.includes(vacancy.status)) {
+        return false;
+      }
+
+      // Salary range filter
+      if (quickFilters.salaryRange !== 'any') {
+        const salaryConfig = SALARY_RANGES.find(s => s.id === quickFilters.salaryRange);
+        if (salaryConfig) {
+          const vacancySalary = vacancy.salary_max || vacancy.salary_min || 0;
+          if (salaryConfig.min !== undefined && vacancySalary < salaryConfig.min) return false;
+          if (salaryConfig.max !== undefined && vacancySalary > salaryConfig.max) return false;
+        }
+      }
+
+      // Date range filter
+      if (quickFilters.dateRange !== 'any') {
+        const dateConfig = DATE_RANGES.find(d => d.id === quickFilters.dateRange);
+        if (dateConfig?.days) {
+          const vacancyDate = new Date(vacancy.created_at);
+          const cutoffDate = new Date();
+          cutoffDate.setDate(cutoffDate.getDate() - dateConfig.days);
+          if (vacancyDate < cutoffDate) return false;
+        }
+      }
+
+      return true;
+    });
+  }, [vacancies, quickFilters]);
+
+  // Sync quick filters to URL
+  useEffect(() => {
+    const newParams = new URLSearchParams(searchParams);
+
+    if (quickFilters.statuses.length > 0) {
+      newParams.set('statuses', quickFilters.statuses.join(','));
+    } else {
+      newParams.delete('statuses');
+    }
+
+    if (quickFilters.salaryRange !== 'any') {
+      newParams.set('salary', quickFilters.salaryRange);
+    } else {
+      newParams.delete('salary');
+    }
+
+    if (quickFilters.dateRange !== 'any') {
+      newParams.set('date', quickFilters.dateRange);
+    } else {
+      newParams.delete('date');
+    }
+
+    setSearchParams(newParams, { replace: true });
+  }, [quickFilters, setSearchParams, searchParams]);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (filtersDropdownRef.current && !filtersDropdownRef.current.contains(event.target as Node)) {
+        setShowFiltersDropdown(false);
+      }
+    };
+
+    if (showFiltersDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showFiltersDropdown]);
+
+  // Quick filter handlers
+  const handleToggleStatusFilter = (status: VacancyStatus) => {
+    setQuickFilters(prev => ({
+      ...prev,
+      statuses: prev.statuses.includes(status)
+        ? prev.statuses.filter(s => s !== status)
+        : [...prev.statuses, status]
+    }));
+  };
+
+  const handleSalaryRangeChange = (rangeId: string) => {
+    setQuickFilters(prev => ({ ...prev, salaryRange: rangeId }));
+  };
+
+  const handleDateRangeChange = (rangeId: string) => {
+    setQuickFilters(prev => ({ ...prev, dateRange: rangeId }));
+  };
+
+  const handleClearAllFilters = () => {
+    setQuickFilters({
+      statuses: [],
+      salaryRange: 'any',
+      dateRange: 'any',
+    });
+  };
 
   // Keyboard shortcut handlers
   const handleOpenCreateModal = useCallback(() => {
@@ -200,23 +365,46 @@ export default function VacanciesPage() {
     navigate('/vacancies');
   };
 
-  const handleDelete = async (vacancy: Vacancy) => {
-    if (!confirm(`Удалить вакансию "${vacancy.title}"?`)) return;
+  const handleDeleteClick = (vacancy: Vacancy) => {
+    setConfirmDialog({ open: true, vacancy, type: 'delete' });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDialog.vacancy) return;
+    setDeleteLoading(true);
     try {
-      await deleteVacancy(vacancy.id);
-      toast.success('Вакансия удалена');
-      if (currentVacancy?.id === vacancy.id) {
+      await deleteVacancy(confirmDialog.vacancy.id);
+      toast.success('Vacancy deleted successfully');
+      if (currentVacancy?.id === confirmDialog.vacancy.id) {
         navigate('/vacancies');
       }
+      setConfirmDialog({ open: false, vacancy: null, type: 'delete' });
     } catch {
-      toast.error('Ошибка при удалении вакансии');
+      toast.error('Failed to delete vacancy');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handleCancelConfirm = () => {
+    if (!deleteLoading) {
+      setConfirmDialog({ open: false, vacancy: null, type: 'delete' });
+    }
+  };
+
+  const handleRetryFetch = () => {
+    clearError();
+    if (vacancyId) {
+      fetchVacancy(parseInt(vacancyId));
+    } else {
+      fetchVacancies();
     }
   };
 
   const handleCopyLink = (vacancy: Vacancy) => {
     const url = `${window.location.origin}/vacancies/${vacancy.id}`;
     navigator.clipboard.writeText(url);
-    toast.success('Ссылка скопирована');
+    toast.success('Link copied');
   };
 
   const getSalaryDisplay = (vacancy: Vacancy) => {
@@ -241,7 +429,7 @@ export default function VacanciesPage() {
     setPrefillData(prefill);
     setShowParserModal(false);
     setShowCreateModal(true);
-    toast.success('Данные распознаны');
+    toast.success('Data parsed successfully');
   };
 
   // Detail view
@@ -257,9 +445,7 @@ export default function VacanciesPage() {
           </button>
           <div className="flex-1">
             <h1 className="text-xl font-semibold">{currentVacancy.title}</h1>
-            <span className={clsx('text-xs px-2 py-0.5 rounded-full', VACANCY_STATUS_COLORS[currentVacancy.status])}>
-              {VACANCY_STATUS_LABELS[currentVacancy.status]}
-            </span>
+            <VacancyStatusBadge status={currentVacancy.status} size="sm" />
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -268,21 +454,21 @@ export default function VacanciesPage() {
                 'p-2 rounded-lg transition-colors',
                 viewMode === 'kanban' ? 'bg-blue-500/20 text-blue-300' : 'hover:bg-white/5'
               )}
-              title={viewMode === 'kanban' ? 'Показать детали' : 'Показать Kanban'}
+              title={viewMode === 'kanban' ? 'Show Details' : 'Show Kanban'}
             >
               {viewMode === 'kanban' ? <List className="w-5 h-5" /> : <LayoutGrid className="w-5 h-5" />}
             </button>
             <button
               onClick={() => setEditingVacancy(currentVacancy)}
               className="p-2 hover:bg-white/5 rounded-lg transition-colors"
-              title="Редактировать"
+              title="Edit"
             >
               <Edit className="w-5 h-5" />
             </button>
             <button
-              onClick={() => handleDelete(currentVacancy)}
+              onClick={() => handleDeleteClick(currentVacancy)}
               className="p-2 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors"
-              title="Удалить"
+              title="Delete"
             >
               <Trash2 className="w-5 h-5" />
             </button>
@@ -308,7 +494,7 @@ export default function VacanciesPage() {
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Briefcase className="w-7 h-7 text-blue-400" />
-            Вакансии
+            Vacancies
           </h1>
           <div className="flex items-center gap-2">
             <button
@@ -316,7 +502,7 @@ export default function VacanciesPage() {
               className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
             >
               <Upload className="w-4 h-4" />
-              Импорт
+              Import
             </button>
             <button
               onClick={() => {
@@ -326,7 +512,7 @@ export default function VacanciesPage() {
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
             >
               <Plus className="w-5 h-5" />
-              Новая вакансия
+              New Vacancy
             </button>
           </div>
         </div>
@@ -339,7 +525,7 @@ export default function VacanciesPage() {
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="Поиск по названию..."
+              placeholder="Search by title..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-sm"
@@ -370,36 +556,171 @@ export default function VacanciesPage() {
             onChange={(e) => setDepartmentFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
             className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-blue-500"
           >
-            <option value="all">Все отделы</option>
+            <option value="all">All Departments</option>
             {departments.map((dept) => (
               <option key={dept.id} value={dept.id}>
                 {dept.name}
               </option>
             ))}
           </select>
+
+          {/* Quick Filters Dropdown */}
+          <div className="relative" ref={filtersDropdownRef}>
+            <button
+              onClick={() => setShowFiltersDropdown(!showFiltersDropdown)}
+              className={clsx(
+                'flex items-center gap-2 px-3 py-2 border rounded-lg text-sm transition-colors',
+                activeFilterCount > 0
+                  ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
+                  : 'bg-white/5 border-white/10 hover:bg-white/10'
+              )}
+            >
+              <Filter className="w-4 h-4" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="flex items-center justify-center w-5 h-5 bg-blue-600 text-white text-xs rounded-full">
+                  {activeFilterCount}
+                </span>
+              )}
+              <ChevronDown className={clsx('w-4 h-4 transition-transform', showFiltersDropdown && 'rotate-180')} />
+            </button>
+
+            {/* Dropdown Panel */}
+            <AnimatePresence>
+              {showFiltersDropdown && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="absolute right-0 top-full mt-2 w-80 bg-gray-900 border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden"
+                >
+                  {/* Header */}
+                  <div className="flex items-center justify-between p-3 border-b border-white/10">
+                    <span className="font-medium text-sm">Quick Filters</span>
+                    {activeFilterCount > 0 && (
+                      <button
+                        onClick={handleClearAllFilters}
+                        className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                        Clear All
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="p-3 space-y-4 max-h-96 overflow-y-auto">
+                    {/* Status Filter (Multi-select) */}
+                    <div>
+                      <label className="flex items-center gap-2 text-xs font-medium text-white/60 mb-2">
+                        <Briefcase className="w-3.5 h-3.5" />
+                        Status
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(['open', 'draft', 'paused', 'closed'] as VacancyStatus[]).map((status) => (
+                          <button
+                            key={status}
+                            onClick={() => handleToggleStatusFilter(status)}
+                            className={clsx(
+                              'flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border transition-colors',
+                              quickFilters.statuses.includes(status)
+                                ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
+                                : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70'
+                            )}
+                          >
+                            {quickFilters.statuses.includes(status) && <Check className="w-3 h-3" />}
+                            {STATUS_FILTERS.find(s => s.id === status)?.name || status}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Salary Range Filter */}
+                    <div>
+                      <label className="flex items-center gap-2 text-xs font-medium text-white/60 mb-2">
+                        <DollarSign className="w-3.5 h-3.5" />
+                        Salary Range
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {SALARY_RANGES.map((range) => (
+                          <button
+                            key={range.id}
+                            onClick={() => handleSalaryRangeChange(range.id)}
+                            className={clsx(
+                              'px-2.5 py-1.5 text-xs rounded-lg border transition-colors',
+                              quickFilters.salaryRange === range.id
+                                ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
+                                : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70'
+                            )}
+                          >
+                            {range.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Date Range Filter */}
+                    <div>
+                      <label className="flex items-center gap-2 text-xs font-medium text-white/60 mb-2">
+                        <Calendar className="w-3.5 h-3.5" />
+                        Created Date
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {DATE_RANGES.map((range) => (
+                          <button
+                            key={range.id}
+                            onClick={() => handleDateRangeChange(range.id)}
+                            className={clsx(
+                              'px-2.5 py-1.5 text-xs rounded-lg border transition-colors',
+                              quickFilters.dateRange === range.id
+                                ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
+                                : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70'
+                            )}
+                          >
+                            {range.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Results count */}
+                  <div className="p-3 border-t border-white/10 bg-white/5">
+                    <span className="text-xs text-white/50">
+                      Showing {filteredVacancies.length} of {vacancies.length} vacancies
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
 
       {/* Vacancies list */}
-      <div className="flex-1 overflow-auto p-4">
-        {loading ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="flex-1 overflow-auto p-3 sm:p-4">
+        {error ? (
+          <ErrorMessage
+            error={error}
+            onRetry={handleRetryFetch}
+          />
+        ) : loading ? (
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <VacancyCardSkeleton key={i} />
             ))}
           </div>
-        ) : vacancies.length === 0 ? (
+        ) : filteredVacancies.length === 0 ? (
           <NoVacanciesEmpty onCreate={() => setShowCreateModal(true)} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             <AnimatePresence mode="popLayout">
-              {vacancies.map((vacancy) => (
+              {filteredVacancies.map((vacancy) => (
                 <ContextMenu
                   key={vacancy.id}
                   items={createVacancyContextMenu(
                     () => handleVacancyClick(vacancy),
                     () => setEditingVacancy(vacancy),
-                    () => handleDelete(vacancy),
+                    () => handleDeleteClick(vacancy),
                     () => handleCopyLink(vacancy)
                   )}
                 >
@@ -414,16 +735,14 @@ export default function VacanciesPage() {
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-lg truncate">{vacancy.title}</h3>
-                        <span className={clsx('text-xs px-2 py-0.5 rounded-full', VACANCY_STATUS_COLORS[vacancy.status])}>
-                          {VACANCY_STATUS_LABELS[vacancy.status]}
-                        </span>
+                        <VacancyStatusBadge status={vacancy.status} size="sm" />
                       </div>
                       {vacancy.priority > 0 && (
                         <span className={clsx(
                           'text-xs px-2 py-0.5 rounded-full',
                           vacancy.priority === 2 ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'
                         )}>
-                          {vacancy.priority === 2 ? 'Срочно' : 'Важно'}
+                          {vacancy.priority === 2 ? 'Urgent' : 'Important'}
                         </span>
                       )}
                     </div>
@@ -454,7 +773,7 @@ export default function VacanciesPage() {
                     <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm">
                         <Users className="w-4 h-4 text-blue-400" />
-                        <span>{vacancy.applications_count} кандидатов</span>
+                        <span>{vacancy.applications_count} candidates</span>
                       </div>
                       {Object.keys(vacancy.stage_counts).length > 0 && (
                         <div className="flex items-center gap-1">
@@ -530,6 +849,19 @@ export default function VacanciesPage() {
           { key: '/', description: 'Focus search input', global: true },
           { key: 'Ctrl/Cmd+N', description: 'Create vacancy' },
         ]}
+      />
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title="Delete Vacancy"
+        message="Are you sure you want to delete this vacancy? This action cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelConfirm}
+        loading={deleteLoading}
       />
     </div>
   );
