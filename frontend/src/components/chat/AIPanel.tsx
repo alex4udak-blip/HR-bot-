@@ -420,9 +420,12 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
           >
             {msg.role === 'assistant' ? (
               <div className="relative">
+                <div className="prose prose-sm max-w-none prose-invert prose-headings:text-dark-100 prose-p:text-dark-200 prose-strong:text-dark-100 prose-li:text-dark-200 break-words">
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                </div>
                 <button
                   onClick={() => handleCopyMessage(msg.id, msg.content)}
-                  className="absolute -top-1 -right-1 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute -bottom-1 -right-1 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"
                   title="Копировать"
                 >
                   {copiedMessageId === msg.id ? (
@@ -431,9 +434,6 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
                     <Copy size={14} className="text-white/60" />
                   )}
                 </button>
-                <div className="prose prose-sm max-w-none prose-invert prose-headings:text-dark-100 prose-p:text-dark-200 prose-strong:text-dark-100 prose-li:text-dark-200 break-words">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
-                </div>
               </div>
             ) : (
               <p className="text-sm break-words">{msg.content}</p>
