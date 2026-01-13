@@ -2077,7 +2077,8 @@ import uuid
 import mimetypes
 
 # Uploads directory for entity files
-ENTITY_FILES_DIR = Path(__file__).parent.parent.parent / "uploads" / "entities"
+ENTITY_FILES_DIR = Path(__file__).parent.parent.parent / "uploads" / "entity_files"
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 
 
 class EntityFileResponse(BaseModel):
@@ -2220,6 +2221,11 @@ async def upload_entity_file(
     # Read and save file
     content = await file.read()
     file_size = len(content)
+
+    # Validate file size
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(400, f"File too large. Maximum size is {MAX_FILE_SIZE // (1024 * 1024)}MB")
+
     file_path.write_bytes(content)
 
     # Detect MIME type
@@ -2228,6 +2234,7 @@ async def upload_entity_file(
     # Create database record
     entity_file = EntityFile(
         entity_id=entity_id,
+        org_id=org.id,
         file_type=file_type_enum,
         file_name=original_name,
         file_path=str(file_path),
