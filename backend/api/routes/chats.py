@@ -197,6 +197,9 @@ async def get_chats(
     result = await db.execute(query)
     chats = result.scalars().all()
 
+    # DEBUG: Log query results
+    logger.info(f"get_chats RESULT: user={user.id}, found {len(chats)} chats, ids={[c.id for c in chats][:20]}")
+
     if not chats:
         return []
 
