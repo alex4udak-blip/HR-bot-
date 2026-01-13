@@ -43,6 +43,7 @@ class ParsedVacancy(BaseModel):
     description: Optional[str] = None
     requirements: Optional[str] = None
     responsibilities: Optional[str] = None
+    skills: list[str] = []  # Key skills/technologies required
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
     salary_currency: str = "RUB"
@@ -82,9 +83,10 @@ RESUME_PROMPT = """Извлеки информацию из резюме кан�
 VACANCY_PROMPT = """Извлеки информацию о вакансии. Верни ТОЛЬКО валидный JSON без markdown форматирования:
 {
   "title": "Название вакансии",
-  "description": "Описание",
-  "requirements": "Требования",
-  "responsibilities": "Обязанности",
+  "description": "Общее описание вакансии",
+  "requirements": "Требования к кандидату (образование, опыт, качества)",
+  "responsibilities": "Обязанности на должности",
+  "skills": ["Python", "FastAPI", "PostgreSQL"],
   "salary_min": 200000,
   "salary_max": 350000,
   "salary_currency": "RUB",
@@ -94,7 +96,13 @@ VACANCY_PROMPT = """Извлеки информацию о вакансии. В�
   "company_name": "Компания"
 }
 
-Если какое-то поле отсутствует в тексте, установи его в null.
+ВАЖНО:
+- skills - это список конкретных технологий и навыков (массив строк)
+- requirements - это общие требования (образование, опыт работы, soft skills) в виде текста
+- responsibilities - это обязанности и задачи на позиции
+- Не путай skills с requirements!
+
+Если какое-то поле отсутствует в тексте, установи его в null (для skills - пустой массив []).
 Для employment_type используй: full-time, part-time, remote, hybrid.
 Для experience_level используй: intern, junior, middle, senior, lead.
 Для salary_min и salary_max укажи числа без валюты (только если указаны).
@@ -293,7 +301,11 @@ async def parse_vacancy_from_url(url: str) -> Tuple[ParsedVacancy, str]:
             vacancy = ParsedVacancy(
                 title=api_result.title,
                 description=api_result.description,
-                requirements=", ".join(api_result.skills) if api_result.skills else None,
+                # Note: hh.ru API doesn't provide separate requirements/responsibilities fields
+                # The description contains all text; user can split manually if needed
+                requirements=None,
+                responsibilities=None,
+                skills=api_result.skills,  # Keep skills as skills, not requirements
                 salary_min=api_result.salary_min,
                 salary_max=api_result.salary_max,
                 salary_currency=api_result.salary_currency,

@@ -80,6 +80,23 @@ class VacancyCreate(BaseModel):
     hiring_manager_id: Optional[int] = None
     closes_at: Optional[datetime] = None
 
+    @property
+    def model_post_init(self, __context):
+        """Validate salary range after initialization."""
+        pass
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Validate salary range
+        if self.salary_min is not None and self.salary_max is not None:
+            if self.salary_min > self.salary_max:
+                raise ValueError("salary_min cannot be greater than salary_max")
+        # Validate salary values are positive
+        if self.salary_min is not None and self.salary_min < 0:
+            raise ValueError("salary_min cannot be negative")
+        if self.salary_max is not None and self.salary_max < 0:
+            raise ValueError("salary_max cannot be negative")
+
 
 class VacancyUpdate(BaseModel):
     title: Optional[str] = None
@@ -181,7 +198,9 @@ class KanbanColumn(BaseModel):
     stage: ApplicationStage
     title: str
     applications: List[ApplicationResponse]
-    count: int
+    count: int  # Number of applications loaded (may be limited)
+    total_count: int = 0  # Total applications in this stage (for "X more" indicator)
+    has_more: bool = False  # True if there are more applications not loaded
 
 
 class KanbanBoard(BaseModel):
@@ -233,36 +252,54 @@ async def list_vacancies(
     result = await db.execute(query)
     vacancies = result.scalars().all()
 
-    # Enrich with counts and related data
+    if not vacancies:
+        return []
+
+    # BULK LOAD: Get all related data in single queries to avoid N+1
+    vacancy_ids = [v.id for v in vacancies]
+    dept_ids = [v.department_id for v in vacancies if v.department_id]
+    manager_ids = [v.hiring_manager_id for v in vacancies if v.hiring_manager_id]
+
+    # Bulk load departments
+    dept_names = {}
+    if dept_ids:
+        dept_result = await db.execute(
+            select(Department.id, Department.name).where(Department.id.in_(dept_ids))
+        )
+        dept_names = {row[0]: row[1] for row in dept_result.all()}
+
+    # Bulk load hiring managers
+    manager_names = {}
+    if manager_ids:
+        manager_result = await db.execute(
+            select(User.id, User.name).where(User.id.in_(manager_ids))
+        )
+        manager_names = {row[0]: row[1] for row in manager_result.all()}
+
+    # Bulk load application counts by stage for all vacancies
+    stage_counts_result = await db.execute(
+        select(
+            VacancyApplication.vacancy_id,
+            VacancyApplication.stage,
+            func.count(VacancyApplication.id)
+        )
+        .where(VacancyApplication.vacancy_id.in_(vacancy_ids))
+        .group_by(VacancyApplication.vacancy_id, VacancyApplication.stage)
+    )
+    # Build nested dict: {vacancy_id: {stage: count}}
+    all_stage_counts = {}
+    for row in stage_counts_result.all():
+        vac_id, stage, count = row
+        if vac_id not in all_stage_counts:
+            all_stage_counts[vac_id] = {}
+        all_stage_counts[vac_id][str(stage.value)] = count
+
+    # Build response using pre-loaded data
     responses = []
     for vacancy in vacancies:
-        # Get department name
-        dept_name = None
-        if vacancy.department_id:
-            dept_result = await db.execute(
-                select(Department.name).where(Department.id == vacancy.department_id)
-            )
-            dept_name = dept_result.scalar()
-
-        # Get hiring manager name
-        manager_name = None
-        if vacancy.hiring_manager_id:
-            manager_result = await db.execute(
-                select(User.name).where(User.id == vacancy.hiring_manager_id)
-            )
-            manager_name = manager_result.scalar()
-
-        # Get application counts by stage
-        stage_counts_result = await db.execute(
-            select(
-                VacancyApplication.stage,
-                func.count(VacancyApplication.id)
-            )
-            .where(VacancyApplication.vacancy_id == vacancy.id)
-            .group_by(VacancyApplication.stage)
-        )
-        stage_counts = {str(row[0].value): row[1] for row in stage_counts_result.all()}
-
+        dept_name = dept_names.get(vacancy.department_id)
+        manager_name = manager_names.get(vacancy.hiring_manager_id)
+        stage_counts = all_stage_counts.get(vacancy.id, {})
         total_apps = sum(stage_counts.values())
 
         responses.append(VacancyResponse(
@@ -560,21 +597,37 @@ async def create_application(
     current_user: User = Depends(check_vacancy_access)
 ):
     """Add a candidate to a vacancy pipeline."""
-    # Verify vacancy exists
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=403, detail="No organization access")
+
+    # Verify vacancy exists and belongs to user's organization
     vacancy_result = await db.execute(
-        select(Vacancy).where(Vacancy.id == vacancy_id)
+        select(Vacancy).where(Vacancy.id == vacancy_id, Vacancy.org_id == org.id)
     )
     vacancy = vacancy_result.scalar()
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
-    # Verify entity exists
+    # Verify entity exists and belongs to same organization
     entity_result = await db.execute(
-        select(Entity).where(Entity.id == data.entity_id)
+        select(Entity).where(Entity.id == data.entity_id, Entity.org_id == org.id)
     )
     entity = entity_result.scalar()
     if not entity:
-        raise HTTPException(status_code=404, detail="Entity not found")
+        raise HTTPException(status_code=404, detail="Entity not found in your organization")
+
+    # Security: Explicit cross-organization check
+    if vacancy.org_id != entity.org_id:
+        logger.warning(
+            f"Cross-org application attempt: user {current_user.id} tried to add "
+            f"entity {entity.id} (org {entity.org_id}) to vacancy {vacancy.id} (org {vacancy.org_id})"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot add candidate from different organization"
+        )
 
     # Check for existing application
     existing = await db.execute(
@@ -741,10 +794,11 @@ async def delete_application(
 @router.get("/{vacancy_id}/kanban", response_model=KanbanBoard)
 async def get_kanban_board(
     vacancy_id: int,
+    limit_per_column: int = Query(50, ge=1, le=200, description="Max candidates per column"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """Get Kanban board data for a vacancy."""
+    """Get Kanban board data for a vacancy with pagination per column."""
     # Verify vacancy exists
     vacancy_result = await db.execute(
         select(Vacancy).where(Vacancy.id == vacancy_id)
@@ -766,15 +820,29 @@ async def get_kanban_board(
         (ApplicationStage.withdrawn, "Отозвали заявку"),
     ]
 
-    # Get all applications
-    apps_result = await db.execute(
-        select(VacancyApplication)
+    # Get total counts per stage (for UI to show "X more" indicators)
+    counts_result = await db.execute(
+        select(VacancyApplication.stage, func.count(VacancyApplication.id))
         .where(VacancyApplication.vacancy_id == vacancy_id)
-        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
+        .group_by(VacancyApplication.stage)
     )
-    all_apps = apps_result.scalars().all()
+    stage_total_counts = {row[0]: row[1] for row in counts_result.all()}
 
-    # Get entity info for all applications
+    # Get applications per stage with limit (optimized queries)
+    all_apps = []
+    for stage, _ in stage_config:
+        stage_result = await db.execute(
+            select(VacancyApplication)
+            .where(
+                VacancyApplication.vacancy_id == vacancy_id,
+                VacancyApplication.stage == stage
+            )
+            .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
+            .limit(limit_per_column)
+        )
+        all_apps.extend(stage_result.scalars().all())
+
+    # Get entity info for all loaded applications (bulk load)
     entity_ids = [app.entity_id for app in all_apps]
     entities_map = {}
     if entity_ids:
@@ -784,12 +852,13 @@ async def get_kanban_board(
         for entity in entities_result.scalars().all():
             entities_map[entity.id] = entity
 
-    # Build columns
+    # Build columns with pagination info
     columns = []
-    total_count = 0
+    total_count = sum(stage_total_counts.values())
 
     for stage, title in stage_config:
         stage_apps = [app for app in all_apps if app.stage == stage]
+        stage_total = stage_total_counts.get(stage, 0)
 
         app_responses = []
         for app in stage_apps:
@@ -820,9 +889,10 @@ async def get_kanban_board(
             stage=stage,
             title=title,
             applications=app_responses,
-            count=len(app_responses)
+            count=len(app_responses),
+            total_count=stage_total,
+            has_more=len(app_responses) < stage_total
         ))
-        total_count += len(app_responses)
 
     return KanbanBoard(
         vacancy_id=vacancy.id,
