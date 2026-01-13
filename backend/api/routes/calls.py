@@ -185,6 +185,9 @@ async def list_calls(
             if dept_entity_ids:
                 conditions.append(CallRecording.entity_id.in_(dept_entity_ids))  # Calls linked to dept entities
 
+            # DEBUG: Log access conditions
+            logger.info(f"list_calls: user={current_user.id}, lead_dept_ids={lead_dept_ids}, dept_member_ids={dept_member_ids}, shared_call_ids={shared_call_ids}, dept_entity_ids={dept_entity_ids}")
+
             query = query.where(or_(*conditions))
         # org owner sees all in org (no additional filter)
 

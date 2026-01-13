@@ -400,6 +400,9 @@ async def list_entities(
                     )
                     dept_member_ids = [r for r in dept_member_ids_result.scalars().all()]
 
+                    # DEBUG: Log department access info
+                    logger.info(f"list_entities: user={current_user.id}, admin_dept_ids={admin_dept_ids}, dept_member_ids={dept_member_ids}")
+
                     # Show entities created by department members (even without department_id)
                     if dept_member_ids:
                         conditions.append(Entity.created_by.in_(dept_member_ids))
