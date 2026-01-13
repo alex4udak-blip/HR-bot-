@@ -148,7 +148,7 @@ def extract_text_from_html(html: str) -> str:
     # Truncate if too long
     max_length = 15000
     if len(text) > max_length:
-        text = text[:max_length] + "\n...[текст обрезан]"
+        text = text[:max_length] + "\n...[text truncated]"
 
     return text
 

@@ -46,14 +46,14 @@ async def check_vacancy_access(
     if not org:
         raise HTTPException(
             status_code=403,
-            detail="Функция вакансий недоступна - организация не найдена"
+            detail="Vacancies feature unavailable - organization not found"
         )
 
     has_access = await can_access_feature(db, current_user.id, org.id, "vacancies")
     if not has_access:
         raise HTTPException(
             status_code=403,
-            detail="Функция вакансий недоступна для вашего отдела"
+            detail="Vacancies feature is not enabled for your department"
         )
 
     return current_user
