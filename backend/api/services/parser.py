@@ -9,7 +9,7 @@ import re
 import json
 import logging
 from typing import Optional, Dict, Any, Literal, Tuple
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from anthropic import AsyncAnthropic
 from .documents import document_parser
 from .hh_api import parse_vacancy_via_api, HHVacancy
@@ -45,7 +45,7 @@ class ParsedResume(BaseModel):
     position: Optional[str] = None  # Desired position
     specialization: Optional[str] = None
     company: Optional[str] = None   # Current/last company
-    experience_years: Optional[int] = None
+    experience_years: Optional[float] = None  # Can be fractional (e.g., 1.5 years)
 
     # Навыки
     skills: list[str] = []
@@ -85,6 +85,17 @@ class ParsedResume(BaseModel):
     # Метаданные
     parse_confidence: float = 0.0
     parse_warnings: list[str] = []
+
+    # Validators to handle None values from AI responses
+    @field_validator('emails', 'phones', 'skills', 'skills_detailed', 'education',
+                     'experience', 'languages', 'courses', 'achievements', 'links',
+                     'parse_warnings', mode='before')
+    @classmethod
+    def ensure_list(cls, v):
+        """Convert None to empty list"""
+        if v is None:
+            return []
+        return v
 
 
 class ParsedVacancy(BaseModel):

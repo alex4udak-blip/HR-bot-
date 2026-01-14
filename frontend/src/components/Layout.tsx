@@ -113,9 +113,11 @@ export default function Layout() {
       { path: '/trash', icon: Trash2, label: 'Корзина' },
     ];
 
-    // Add "База кандидатов" only for HR department (feature-gated)
+    // Add "База кандидатов" only for HR department (feature-gated) - after "Контакты"
     if (hasFeature('candidate_database')) {
-      items.splice(1, 0, { path: '/candidates', icon: UserCheck, label: 'База кандидатов' });
+      // Find index of Контакты and insert after it
+      const contactsIndex = items.findIndex(item => item.path === '/contacts');
+      items.splice(contactsIndex + 1, 0, { path: '/candidates', icon: UserCheck, label: 'База кандидатов' });
     }
 
     // Add menu items for superadmin
