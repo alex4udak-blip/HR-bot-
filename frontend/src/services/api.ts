@@ -2468,23 +2468,40 @@ export interface ParsedVacancy {
   source_url?: string;
 }
 
+// Response wrapper from parser API
+interface ParseResponse<T> {
+  success: boolean;
+  data?: T;
+  source?: string;
+  error?: string;
+}
+
 export const parseResumeFromUrl = async (url: string): Promise<ParsedResume> => {
-  const { data } = await debouncedMutation<ParsedResume>('post', '/parser/resume/url', { url });
-  return data;
+  const { data: response } = await debouncedMutation<ParseResponse<ParsedResume>>('post', '/parser/resume/url', { url });
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'Ошибка парсинга резюме');
+  }
+  return response.data;
 };
 
 export const parseResumeFromFile = async (file: File): Promise<ParsedResume> => {
   const formData = new FormData();
   formData.append('file', file);
-  const { data } = await api.post('/parser/resume/file', formData, {
+  const { data: response } = await api.post<ParseResponse<ParsedResume>>('/parser/resume/file', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   });
-  return data;
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'Ошибка парсинга файла');
+  }
+  return response.data;
 };
 
 export const parseVacancyFromUrl = async (url: string): Promise<ParsedVacancy> => {
-  const { data } = await debouncedMutation<ParsedVacancy>('post', '/parser/vacancy/url', { url });
-  return data;
+  const { data: response } = await debouncedMutation<ParseResponse<ParsedVacancy>>('post', '/parser/vacancy/url', { url });
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'Ошибка парсинга вакансии');
+  }
+  return response.data;
 };
 
 /**
