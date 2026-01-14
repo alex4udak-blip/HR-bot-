@@ -11,21 +11,27 @@ import {
   Target,
   TrendingUp,
   Bookmark,
-  X
+  X,
+  RotateCcw,
+  Globe
 } from 'lucide-react';
 import * as Select from '@radix-ui/react-select';
 import {
   getEntityCriteria,
   updateEntityCriteria,
   getCriteriaPresets,
-  createCriteriaPreset
+  createCriteriaPreset,
+  getEntityDefaultCriteria,
+  setEntityDefaultCriteria
 } from '@/services/api';
-import type { Criterion } from '@/types';
+import type { Criterion, EntityType } from '@/types';
+import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
 interface CriteriaPanelEntityProps {
   entityId: number;
+  entityType?: EntityType;
 }
 
 const categoryIcons = {
@@ -49,13 +55,14 @@ const categoryLabels = {
   potential: 'Потенциал',
 };
 
-export default function CriteriaPanelEntity({ entityId }: CriteriaPanelEntityProps) {
+export default function CriteriaPanelEntity({ entityId, entityType }: CriteriaPanelEntityProps) {
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
   const [showSaveAsTemplate, setShowSaveAsTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [savingTemplate, setSavingTemplate] = useState(false);
   const queryClient = useQueryClient();
+  const { isSuperAdmin } = useAuthStore();
 
   const { data: entityCriteria, isLoading } = useQuery({
     queryKey: ['entity-criteria', entityId],
@@ -84,6 +91,33 @@ export default function CriteriaPanelEntity({ entityId }: CriteriaPanelEntityPro
       toast.error('Ошибка сохранения');
     },
   });
+
+  const saveAsDefaultMutation = useMutation({
+    mutationFn: () => setEntityDefaultCriteria(entityType!, criteria),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['entity-default-criteria', entityType] });
+      toast.success('Сохранено как критерии по умолчанию');
+    },
+    onError: () => {
+      toast.error('Ошибка сохранения');
+    },
+  });
+
+  const handleLoadDefaults = async () => {
+    if (!entityType) return;
+    try {
+      const defaults = await getEntityDefaultCriteria(entityType);
+      if (defaults.criteria.length > 0) {
+        setCriteria(defaults.criteria as Criterion[]);
+        setHasChanges(true);
+        toast.success(defaults.is_custom ? 'Загружены пользовательские критерии' : 'Загружены стандартные критерии');
+      } else {
+        toast.error('Нет критериев по умолчанию для этого типа');
+      }
+    } catch {
+      toast.error('Ошибка загрузки критериев');
+    }
+  };
 
   const handleAddCriterion = () => {
     setCriteria([
@@ -162,7 +196,17 @@ export default function CriteriaPanelEntity({ entityId }: CriteriaPanelEntityPro
             {criteria.length} {criteria.length === 1 ? 'критерий' : criteria.length < 5 ? 'критерия' : 'критериев'}
           </p>
         </div>
-        <div className="flex gap-2 flex-shrink-0">
+        <div className="flex gap-2 flex-shrink-0 flex-wrap">
+          {entityType && (
+            <button
+              onClick={handleLoadDefaults}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg glass-light text-xs hover:bg-white/10 transition-colors"
+              title="Загрузить критерии по умолчанию"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>По умолч.</span>
+            </button>
+          )}
           {presets.length > 0 && (
             <Select.Root onValueChange={handleApplyPreset}>
               <Select.Trigger className="flex items-center gap-2 px-3 py-2 rounded-lg glass-light text-sm hover:bg-white/10 transition-colors">
@@ -319,6 +363,28 @@ export default function CriteriaPanelEntity({ entityId }: CriteriaPanelEntityPro
             <Save className="w-4 h-4" />
             {saveMutation.isPending ? 'Сохранение...' : 'Сохранить'}
           </button>
+        </motion.div>
+      )}
+
+      {/* Save as Default Button - Superadmin only */}
+      {isSuperAdmin() && entityType && criteria.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="pt-2 border-t border-white/10"
+        >
+          <button
+            onClick={() => saveAsDefaultMutation.mutate()}
+            disabled={saveAsDefaultMutation.isPending}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl glass-light text-xs sm:text-sm hover:bg-white/10 disabled:opacity-50 transition-colors"
+            title={`Сохранить как критерии по умолчанию для всех контактов типа "${entityType}"`}
+          >
+            <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            {saveAsDefaultMutation.isPending ? 'Сохранение...' : 'Глобальные для типа'}
+          </button>
+          <p className="text-[10px] sm:text-xs text-dark-500 text-center mt-1">
+            Для всех новых контактов типа "{entityType}"
+          </p>
         </motion.div>
       )}
 

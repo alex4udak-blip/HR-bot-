@@ -60,6 +60,8 @@ interface AuthState {
   canEditResource: (resource: { owner_id?: number; is_mine?: boolean; access_level?: string }) => boolean;
   canDeleteResource: (resource: { owner_id?: number; is_mine?: boolean; access_level?: string }) => boolean;
   canShareResource: (resource: { owner_id?: number; is_mine?: boolean; access_level?: string }) => boolean;
+  // Department access check
+  canAccessDepartment: (departmentId: number | undefined) => boolean;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -499,5 +501,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (resource.access_level === 'full') return true;
 
     return false;
+  },
+
+  // Check if user has access to resources in a specific department
+  // Returns true if:
+  // - User is SUPERADMIN or ORG OWNER (access to all departments)
+  // - User belongs to the same department
+  // - departmentId is undefined (resource has no department restriction)
+  canAccessDepartment: (departmentId: number | undefined) => {
+    const { user, isSuperAdmin, isOwner } = get();
+    if (!user) return false;
+
+    // SUPERADMIN and ORG OWNER can access all departments
+    if (isSuperAdmin() || isOwner()) return true;
+
+    // If resource has no department restriction, allow access
+    if (departmentId === undefined || departmentId === null) return true;
+
+    // User must belong to the same department
+    return user.department_id === departmentId;
   },
 }));

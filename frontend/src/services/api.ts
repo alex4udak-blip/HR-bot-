@@ -1149,6 +1149,27 @@ export const updateEntityCriteria = async (entityId: number, criteria: { name: s
   return data;
 };
 
+// Default criteria by entity type
+export interface EntityDefaultCriteriaResponse {
+  entity_type: string;
+  criteria: { name: string; description: string; weight: number; category: string }[];
+  is_custom: boolean;
+  preset_id: number | null;
+}
+
+export const getEntityDefaultCriteria = async (entityType: string): Promise<EntityDefaultCriteriaResponse> => {
+  const { data } = await deduplicatedGet<EntityDefaultCriteriaResponse>(`/criteria/entity-defaults/${entityType}`);
+  return data;
+};
+
+export const setEntityDefaultCriteria = async (
+  entityType: string,
+  criteria: { name: string; description: string; weight: number; category: string }[]
+): Promise<EntityDefaultCriteriaResponse> => {
+  const { data } = await debouncedMutation<EntityDefaultCriteriaResponse>('put', `/criteria/entity-defaults/${entityType}`, { criteria });
+  return data;
+};
+
 // Entity Report Download
 export const downloadEntityReport = async (entityId: number, reportType: string, format: string): Promise<Blob> => {
   const response = await fetch(`/api/entities/${entityId}/report`, {

@@ -1,8 +1,71 @@
 """
 Chat type configurations with default presets, quick actions, and AI prompts.
+Also includes Entity type default criteria.
 """
 
 from typing import Dict, List, Any
+
+
+# ============ ENTITY TYPE DEFAULT CRITERIA ============
+
+ENTITY_TYPE_DEFAULT_CRITERIA: Dict[str, List[Dict[str, Any]]] = {
+    "candidate": [
+        {"name": "Communication Skills", "description": "Clarity, professionalism, responsiveness", "weight": 8, "category": "basic"},
+        {"name": "Technical Knowledge", "description": "Demonstrated expertise in required areas", "weight": 9, "category": "basic"},
+        {"name": "Problem Solving", "description": "Approach to challenges and solutions", "weight": 7, "category": "basic"},
+        {"name": "Team Collaboration", "description": "How they interact with others", "weight": 6, "category": "basic"},
+        {"name": "Inconsistent Statements", "description": "Contradictions in claims or experience", "weight": 8, "category": "red_flags"},
+        {"name": "Negative Attitude", "description": "Complaints, blame, negativity", "weight": 7, "category": "red_flags"},
+        {"name": "Initiative", "description": "Proactive suggestions and engagement", "weight": 6, "category": "green_flags"},
+        {"name": "Quick Learner", "description": "Adaptability and learning speed", "weight": 7, "category": "green_flags"},
+    ],
+    "client": [
+        {"name": "Satisfaction Level", "description": "Overall client happiness", "weight": 9, "category": "basic"},
+        {"name": "Engagement", "description": "Active participation in communication", "weight": 7, "category": "basic"},
+        {"name": "Payment Reliability", "description": "Timely payments and financial stability", "weight": 8, "category": "basic"},
+        {"name": "Requirements Clarity", "description": "Clear communication of needs", "weight": 7, "category": "basic"},
+        {"name": "Complaints", "description": "Expressed dissatisfaction", "weight": 9, "category": "red_flags"},
+        {"name": "Unrealistic Expectations", "description": "Demands beyond agreed scope", "weight": 7, "category": "red_flags"},
+        {"name": "Referral Potential", "description": "Likelihood to recommend us", "weight": 6, "category": "green_flags"},
+        {"name": "Long-term Partnership", "description": "Interest in ongoing collaboration", "weight": 8, "category": "green_flags"},
+    ],
+    "contractor": [
+        {"name": "Work Quality", "description": "Quality of deliverables", "weight": 9, "category": "basic"},
+        {"name": "Deadline Compliance", "description": "Meeting agreed timelines", "weight": 8, "category": "basic"},
+        {"name": "Communication", "description": "Responsiveness and clarity", "weight": 7, "category": "basic"},
+        {"name": "Cost Efficiency", "description": "Value for money", "weight": 6, "category": "basic"},
+        {"name": "Missed Deadlines", "description": "Late deliveries", "weight": 8, "category": "red_flags"},
+        {"name": "Quality Issues", "description": "Bugs, errors, revisions needed", "weight": 9, "category": "red_flags"},
+        {"name": "Proactive Solutions", "description": "Suggesting improvements", "weight": 6, "category": "green_flags"},
+        {"name": "Flexibility", "description": "Adapting to changes", "weight": 7, "category": "green_flags"},
+    ],
+    "lead": [
+        {"name": "Buying Intent", "description": "Seriousness of purchase interest", "weight": 9, "category": "basic"},
+        {"name": "Budget Alignment", "description": "Match with our pricing", "weight": 8, "category": "basic"},
+        {"name": "Decision Timeline", "description": "Urgency of decision", "weight": 7, "category": "basic"},
+        {"name": "Stakeholder Access", "description": "Connection to decision makers", "weight": 7, "category": "basic"},
+        {"name": "Price Objections", "description": "Focus on discounts", "weight": 7, "category": "red_flags"},
+        {"name": "Competitor Mentions", "description": "Considering alternatives", "weight": 6, "category": "red_flags"},
+        {"name": "Urgency Signals", "description": "Need to act fast", "weight": 8, "category": "green_flags"},
+        {"name": "Champion Identified", "description": "Internal advocate found", "weight": 8, "category": "green_flags"},
+    ],
+    "partner": [
+        {"name": "Strategic Alignment", "description": "Shared goals and values", "weight": 9, "category": "basic"},
+        {"name": "Communication Quality", "description": "Regular and clear updates", "weight": 8, "category": "basic"},
+        {"name": "Mutual Benefit", "description": "Value for both parties", "weight": 8, "category": "basic"},
+        {"name": "Commitment Level", "description": "Dedication to partnership", "weight": 7, "category": "basic"},
+        {"name": "Broken Promises", "description": "Unfulfilled commitments", "weight": 9, "category": "red_flags"},
+        {"name": "One-sided Benefits", "description": "Partnership favoring one side", "weight": 7, "category": "red_flags"},
+        {"name": "Growth Potential", "description": "Opportunity for expansion", "weight": 7, "category": "green_flags"},
+        {"name": "Trust Building", "description": "Increasing reliability over time", "weight": 8, "category": "green_flags"},
+    ],
+    "custom": [],
+}
+
+
+def get_entity_default_criteria(entity_type: str) -> List[Dict[str, Any]]:
+    """Get default criteria for an entity type."""
+    return ENTITY_TYPE_DEFAULT_CRITERIA.get(entity_type, [])
 
 # Chat type metadata
 CHAT_TYPE_CONFIG: Dict[str, Dict[str, Any]] = {

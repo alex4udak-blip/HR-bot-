@@ -256,6 +256,11 @@ class ChatTypeDefaultCriteriaUpdate(BaseModel):
     criteria: List[CriterionItem]
 
 
+class EntityTypeDefaultCriteriaUpdate(BaseModel):
+    """Update default criteria for an entity type."""
+    criteria: List[CriterionItem]
+
+
 class ChatCriteriaUpdate(BaseModel):
     criteria: List[CriterionItem]
 

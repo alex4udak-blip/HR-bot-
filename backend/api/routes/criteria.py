@@ -9,10 +9,14 @@ from ..models.schemas import (
     CriteriaPresetCreate, CriteriaPresetResponse,
     ChatCriteriaUpdate, ChatCriteriaResponse,
     EntityCriteriaUpdate, EntityCriteriaResponse,
-    ChatTypeDefaultCriteriaUpdate
+    ChatTypeDefaultCriteriaUpdate, EntityTypeDefaultCriteriaUpdate
 )
 from ..services.auth import get_current_user
-from ..services.chat_types import get_default_criteria as get_hardcoded_defaults, get_universal_presets
+from ..services.chat_types import (
+    get_default_criteria as get_hardcoded_defaults,
+    get_universal_presets,
+    get_entity_default_criteria as get_hardcoded_entity_defaults
+)
 
 router = APIRouter()
 
@@ -461,11 +465,150 @@ async def update_chat_criteria(
     )
 
 
+# ============ DEFAULT CRITERIA BY ENTITY TYPE ============
+
+@router.get("/defaults/entity/{entity_type}")
+async def get_default_criteria_for_entity_type(
+    entity_type: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Get default criteria for an entity type. First checks DB for custom defaults, then falls back to hardcoded."""
+    # First check for a custom default preset in the database
+    result = await db.execute(
+        select(CriteriaPreset).where(
+            and_(
+                CriteriaPreset.entity_type == entity_type,
+                CriteriaPreset.is_default == True
+            )
+        )
+    )
+    custom_default = result.scalar_one_or_none()
+
+    if custom_default:
+        return {
+            "entity_type": entity_type,
+            "criteria": custom_default.criteria,
+            "is_custom": True,
+            "preset_id": custom_default.id,
+        }
+
+    # Fall back to hardcoded defaults
+    hardcoded = get_hardcoded_entity_defaults(entity_type)
+    return {
+        "entity_type": entity_type,
+        "criteria": hardcoded,
+        "is_custom": False,
+        "preset_id": None,
+    }
+
+
+@router.put("/defaults/entity/{entity_type}")
+async def set_default_criteria_for_entity_type(
+    entity_type: str,
+    data: EntityTypeDefaultCriteriaUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Set custom default criteria for an entity type. Superadmin only."""
+    user = await db.merge(user)
+
+    if user.role != UserRole.superadmin:
+        raise HTTPException(status_code=403, detail="Only superadmins can set default criteria")
+
+    from sqlalchemy import update
+
+    # First, clear any existing defaults for this entity type
+    await db.execute(
+        update(CriteriaPreset)
+        .where(
+            and_(
+                CriteriaPreset.entity_type == entity_type,
+                CriteriaPreset.is_default == True
+            )
+        )
+        .values(is_default=False)
+    )
+
+    # Check if we already have a preset for this type (even if not default)
+    result = await db.execute(
+        select(CriteriaPreset).where(
+            and_(
+                CriteriaPreset.entity_type == entity_type,
+                CriteriaPreset.is_global == True,
+                CriteriaPreset.name == f"Default criteria for entity type {entity_type}"
+            )
+        )
+    )
+    existing = result.scalar_one_or_none()
+
+    criteria_data = [c.model_dump() for c in data.criteria]
+
+    if existing:
+        # Update existing preset
+        existing.criteria = criteria_data
+        existing.is_default = True
+        preset = existing
+    else:
+        # Create new preset
+        preset = CriteriaPreset(
+            name=f"Default criteria for entity type {entity_type}",
+            description=f"Custom default criteria for {entity_type} entities",
+            criteria=criteria_data,
+            category="basic",
+            is_global=True,
+            entity_type=entity_type,
+            is_default=True,
+            created_by=user.id,
+        )
+        db.add(preset)
+
+    await db.commit()
+    await db.refresh(preset)
+
+    return {
+        "entity_type": entity_type,
+        "criteria": preset.criteria,
+        "is_custom": True,
+        "preset_id": preset.id,
+    }
+
+
+@router.delete("/defaults/entity/{entity_type}", status_code=204)
+async def reset_default_criteria_for_entity_type(
+    entity_type: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Reset default criteria for an entity type back to hardcoded defaults. Superadmin only."""
+    user = await db.merge(user)
+
+    if user.role != UserRole.superadmin:
+        raise HTTPException(status_code=403, detail="Only superadmins can reset default criteria")
+
+    from sqlalchemy import update
+
+    # Clear any custom defaults for this entity type
+    await db.execute(
+        update(CriteriaPreset)
+        .where(
+            and_(
+                CriteriaPreset.entity_type == entity_type,
+                CriteriaPreset.is_default == True
+            )
+        )
+        .values(is_default=False)
+    )
+
+    await db.commit()
+
+
 # ============ ENTITY CRITERIA ============
 
 @router.get("/entities/{entity_id}", response_model=EntityCriteriaResponse)
 async def get_entity_criteria(
     entity_id: int,
+    use_defaults: bool = Query(False, description="Return default criteria if none set"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -482,6 +625,38 @@ async def get_entity_criteria(
     criteria = result.scalar_one_or_none()
 
     if not criteria:
+        # If use_defaults is True, try to get default criteria for this entity type
+        if use_defaults and entity.type:
+            # First check for custom default in DB
+            entity_type_str = entity.type.value if hasattr(entity.type, 'value') else str(entity.type)
+            default_result = await db.execute(
+                select(CriteriaPreset).where(
+                    and_(
+                        CriteriaPreset.entity_type == entity_type_str,
+                        CriteriaPreset.is_default == True
+                    )
+                )
+            )
+            custom_default = default_result.scalar_one_or_none()
+
+            if custom_default:
+                return EntityCriteriaResponse(
+                    id=0,
+                    entity_id=entity_id,
+                    criteria=custom_default.criteria,
+                    updated_at=entity.created_at,
+                )
+
+            # Fall back to hardcoded defaults
+            hardcoded = get_hardcoded_entity_defaults(entity_type_str)
+            if hardcoded:
+                return EntityCriteriaResponse(
+                    id=0,
+                    entity_id=entity_id,
+                    criteria=hardcoded,
+                    updated_at=entity.created_at,
+                )
+
         # Return empty criteria
         return EntityCriteriaResponse(
             id=0,

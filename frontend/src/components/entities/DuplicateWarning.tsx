@@ -31,6 +31,7 @@ interface DuplicateWarningProps {
   entityId: number;
   entityName: string;
   isAdmin?: boolean;
+  isTransferred?: boolean;
   onMergeComplete?: () => void;
 }
 
@@ -38,6 +39,7 @@ export default function DuplicateWarning({
   entityId,
   entityName,
   isAdmin = false,
+  isTransferred = false,
   onMergeComplete
 }: DuplicateWarningProps) {
   const navigate = useNavigate();
@@ -198,7 +200,7 @@ export default function DuplicateWarning({
                       })}
                     </div>
 
-                    {isAdmin && (
+                    {isAdmin && !isTransferred && (
                       <button
                         onClick={() => handleOpenMergeModal(duplicate)}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/20 text-blue-400 text-xs rounded-lg hover:bg-blue-500/30 transition-colors"

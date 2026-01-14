@@ -90,6 +90,7 @@ export default function ContactsPage() {
     canEditResource,
     canDeleteResource,
     canShareResource,
+    canAccessDepartment,
     isSuperAdmin,
     isOwner
   } = useAuthStore();
@@ -113,6 +114,9 @@ export default function ContactsPage() {
     // Transferred entities are read-only
     if (entity.is_transferred) return false;
 
+    // Check department access - user must have access to entity's department
+    if (!canAccessDepartment(entity.department_id)) return false;
+
     // Check based on ownership and access level
     return canEditResource({
       owner_id: entity.owner_id,
@@ -124,6 +128,9 @@ export default function ContactsPage() {
   const canDelete = (entity: Entity) => {
     // Transferred entities cannot be deleted
     if (entity.is_transferred) return false;
+
+    // Check department access - user must have access to entity's department
+    if (!canAccessDepartment(entity.department_id)) return false;
 
     // Only owners can delete
     return canDeleteResource({
@@ -137,6 +144,9 @@ export default function ContactsPage() {
     // Transferred entities cannot be shared
     if (entity.is_transferred) return false;
 
+    // Check department access - user must have access to entity's department
+    if (!canAccessDepartment(entity.department_id)) return false;
+
     // Check share permissions
     return canShareResource({
       owner_id: entity.owner_id,
@@ -148,6 +158,9 @@ export default function ContactsPage() {
   const canTransfer = (entity: Entity) => {
     // Already transferred entities cannot be transferred again
     if (entity.is_transferred) return false;
+
+    // Check department access - user must have access to entity's department
+    if (!canAccessDepartment(entity.department_id)) return false;
 
     // Only owners can transfer
     return canDeleteResource({

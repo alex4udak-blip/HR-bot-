@@ -42,6 +42,7 @@ import { useEntityStore } from '@/stores/entityStore';
 import { useAuthStore } from '@/stores/authStore';
 import { FeatureGatedButton } from '@/components/auth/FeatureGate';
 import { useCanAccessFeature } from '@/hooks/useCanAccessFeature';
+import type { Entity } from '@/types';
 
 interface ContactDetailProps {
   entity: EntityWithRelations;
@@ -62,7 +63,23 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
   const [vacanciesKey, setVacanciesKey] = useState(0); // Key to force reload vacancies
   const { fetchEntity } = useEntityStore();
   const { canAccessFeature } = useCanAccessFeature();
-  const { isAdmin } = useAuthStore();
+  const { isAdmin, canEditResource, canAccessDepartment } = useAuthStore();
+
+  // Check if user can edit this entity (considering is_transferred and department access)
+  const canEditEntity = (e: EntityWithRelations | Entity): boolean => {
+    // Transferred entities are read-only
+    if (e.is_transferred) return false;
+
+    // Check department access
+    if (!canAccessDepartment(e.department_id)) return false;
+
+    // Check resource-level permissions
+    return canEditResource({
+      owner_id: e.owner_id,
+      is_mine: e.is_mine,
+      access_level: e.access_level
+    });
+  };
 
   // Load unlinked chats when modal opens
   useEffect(() => {
@@ -177,6 +194,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
           entityId={entity.id}
           entityName={entity.name}
           isAdmin={isAdmin()}
+          isTransferred={entity.is_transferred}
           onMergeComplete={() => fetchEntity(entity.id)}
         />
       )}
@@ -390,13 +408,15 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   <MessageSquare size={18} className="text-cyan-400 flex-shrink-0" />
                   <span className="truncate">Последние чаты</span>
                 </h3>
-                <button
-                  onClick={() => setShowLinkChatModal(true)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors flex-shrink-0 whitespace-nowrap"
-                >
-                  <Link2 size={12} />
-                  Привязать
-                </button>
+                {canEditEntity(entity) && (
+                  <button
+                    onClick={() => setShowLinkChatModal(true)}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors flex-shrink-0 whitespace-nowrap"
+                  >
+                    <Link2 size={12} />
+                    Привязать
+                  </button>
+                )}
               </div>
               {entity.chats && entity.chats.length > 0 ? (
                 <div className="space-y-2">
@@ -415,7 +435,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   ))}
                 </div>
               ) : (
-                <EmptyChats onLink={() => setShowLinkChatModal(true)} />
+                <EmptyChats onLink={canEditEntity(entity) ? () => setShowLinkChatModal(true) : undefined} />
               )}
             </div>
 
@@ -426,13 +446,15 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   <Phone size={18} className="text-green-400 flex-shrink-0" />
                   <span className="truncate">Последние звонки</span>
                 </h3>
-                <button
-                  onClick={() => setShowLinkCallModal(true)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors flex-shrink-0 whitespace-nowrap"
-                >
-                  <Link2 size={12} />
-                  Привязать
-                </button>
+                {canEditEntity(entity) && (
+                  <button
+                    onClick={() => setShowLinkCallModal(true)}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors flex-shrink-0 whitespace-nowrap"
+                  >
+                    <Link2 size={12} />
+                    Привязать
+                  </button>
+                )}
               </div>
               {entity.calls && entity.calls.length > 0 ? (
                 <div className="space-y-2">
@@ -455,7 +477,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   ))}
                 </div>
               ) : (
-                <EmptyCalls onLink={() => setShowLinkCallModal(true)} />
+                <EmptyCalls onLink={canEditEntity(entity) ? () => setShowLinkCallModal(true) : undefined} />
               )}
             </div>
 
@@ -540,7 +562,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </motion.div>
               ))
             ) : (
-              <EmptyChats onLink={() => setShowLinkChatModal(true)} />
+              <EmptyChats onLink={canEditEntity(entity) ? () => setShowLinkChatModal(true) : undefined} />
             )}
           </div>
         )}
@@ -583,7 +605,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </motion.div>
               ))
             ) : (
-              <EmptyCalls onLink={() => setShowLinkCallModal(true)} />
+              <EmptyCalls onLink={canEditEntity(entity) ? () => setShowLinkCallModal(true) : undefined} />
             )}
           </div>
         )}
@@ -595,7 +617,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 <Briefcase size={18} className="text-blue-400" />
                 Вакансии
               </h3>
-              {entity.type === 'candidate' && (
+              {entity.type === 'candidate' && canEditEntity(entity) && (
                 <FeatureGatedButton
                   feature="vacancies"
                   onClick={() => setShowAddToVacancyModal(true)}
@@ -617,7 +639,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               <FolderOpen size={18} className="text-green-400" />
               Файлы
             </h3>
-            <EntityFiles entityId={entity.id} canEdit={!entity.is_transferred} />
+            <EntityFiles entityId={entity.id} canEdit={canEditEntity(entity)} />
           </div>
         )}
 
@@ -684,7 +706,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
         {activeTab === 'criteria' && (
           <div className="glass rounded-xl border border-white/10 overflow-hidden">
-            <CriteriaPanelEntity entityId={entity.id} />
+            <CriteriaPanelEntity entityId={entity.id} entityType={entity.type} />
           </div>
         )}
 

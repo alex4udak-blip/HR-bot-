@@ -311,9 +311,10 @@ class CriteriaPreset(Base):
     description = Column(Text, nullable=True)
     criteria = Column(JSON, nullable=False)  # [{name, weight, description, category}]
     category = Column(String(100), nullable=True)  # basic, red_flags, green_flags, position
-    chat_type = Column(SQLEnum(ChatType), nullable=True, index=True)  # Type-specific presets
+    chat_type = Column(SQLEnum(ChatType), nullable=True, index=True)  # Type-specific presets for chats
+    entity_type = Column(SQLEnum(EntityType), nullable=True, index=True)  # Type-specific presets for entities
     is_global = Column(Boolean, default=False)  # True = visible to all
-    is_default = Column(Boolean, default=False)  # True = default for chat type
+    is_default = Column(Boolean, default=False)  # True = default for chat/entity type
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=func.now())
 
