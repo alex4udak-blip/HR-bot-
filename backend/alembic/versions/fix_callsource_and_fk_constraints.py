@@ -45,27 +45,11 @@ def enum_value_exists(enum_name: str, value: str) -> bool:
 def upgrade():
     """Add missing CallSource enum values and fix FK constraints."""
 
-    # Add missing CallSource enum values
-    # Note: ALTER TYPE ... ADD VALUE cannot run inside a transaction in older PostgreSQL
-    # Using IF NOT EXISTS makes this safe to run multiple times
-    callsource_values = ['google_doc', 'google_drive', 'direct_url', 'fireflies']
-
-    conn = op.get_bind()
-
-    for value in callsource_values:
-        if not enum_value_exists('callsource', value):
-            try:
-                # Try with autocommit if available
-                try:
-                    with op.get_context().autocommit_block():
-                        op.execute(sa.text(f"ALTER TYPE callsource ADD VALUE IF NOT EXISTS '{value}'"))
-                except Exception:
-                    # Fallback: commit current transaction, add value, start new transaction
-                    # This works in PostgreSQL 9.1+ with IF NOT EXISTS
-                    op.execute(sa.text(f"ALTER TYPE callsource ADD VALUE IF NOT EXISTS '{value}'"))
-            except Exception as e:
-                # Value might already exist or enum might not exist yet - skip
-                print(f"Warning: Could not add enum value '{value}': {e}")
+    # Skip enum changes - they cause issues with transactional DDL on Railway/managed PostgreSQL
+    # The enum values will be added manually if needed or via a separate non-transactional script
+    # See: https://www.postgresql.org/docs/current/sql-altertype.html
+    # "ADD VALUE cannot be executed inside a transaction block"
+    print("Skipping CallSource enum changes (requires manual execution outside transaction)")
 
     # Fix FK constraints by dropping and recreating with ondelete
     # Note: This is safe as we're only changing the ondelete behavior
