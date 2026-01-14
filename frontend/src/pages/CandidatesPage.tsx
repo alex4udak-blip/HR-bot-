@@ -1,17 +1,12 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search,
   Plus,
   UserCheck,
   Phone,
   Mail,
   Upload,
-  Filter,
-  X,
-  ChevronDown,
-  ChevronUp,
   Edit,
   Trash2,
   Briefcase,
@@ -19,7 +14,6 @@ import {
   List,
   Users,
   ChevronRight,
-  Settings,
   Star,
   Clock,
   ExternalLink,
@@ -29,26 +23,21 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
 import { useVacancyStore } from '@/stores/vacancyStore';
-import { useAuthStore } from '@/stores/authStore';
-import type { Entity, EntityStatus, Vacancy, VacancyApplication, ApplicationStage } from '@/types';
+import type { Entity, Vacancy, VacancyApplication, ApplicationStage } from '@/types';
 import {
-  STATUS_LABELS,
-  STATUS_COLORS,
   PIPELINE_STAGES,
   APPLICATION_STAGE_LABELS,
   APPLICATION_STAGE_COLORS,
   VACANCY_STATUS_LABELS,
   VACANCY_STATUS_COLORS
 } from '@/types';
-import { formatSalary } from '@/utils';
 import type { ParsedResume } from '@/services/api';
-import { updateApplication } from '@/services/api';
 import ContactForm from '@/components/contacts/ContactForm';
 import ParserModal from '@/components/parser/ParserModal';
 import VacancyForm from '@/components/vacancies/VacancyForm';
 import AddCandidateModal from '@/components/vacancies/AddCandidateModal';
 import ApplicationDetailModal from '@/components/vacancies/ApplicationDetailModal';
-import { ConfirmDialog, ErrorMessage, EmptyCandidates, Skeleton } from '@/components/ui';
+import { ConfirmDialog, ErrorMessage, Skeleton } from '@/components/ui';
 import { OnboardingTooltip } from '@/components/onboarding';
 
 // View modes
@@ -59,7 +48,6 @@ const ALL_STAGES_TAB = 'all';
 
 export default function CandidatesPage() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
@@ -68,7 +56,6 @@ export default function CandidatesPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // UI State
-  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [showCreateCandidateModal, setShowCreateCandidateModal] = useState(false);
   const [showCreateVacancyModal, setShowCreateVacancyModal] = useState(false);
   const [showAddToVacancyModal, setShowAddToVacancyModal] = useState(false);
@@ -92,12 +79,8 @@ export default function CandidatesPage() {
 
   // Stores
   const {
-    entities,
-    loading: entitiesLoading,
-    error: entitiesError,
     deleteEntity,
-    setFilters,
-    clearError: clearEntityError
+    setFilters
   } = useEntityStore();
 
   const {
@@ -109,16 +92,8 @@ export default function CandidatesPage() {
     fetchVacancies,
     fetchKanbanBoard,
     moveApplication,
-    removeApplication,
-    clearError: clearVacancyError
+    removeApplication
   } = useVacancyStore();
-
-  const { canEditResource, canDeleteResource } = useAuthStore();
-
-  // Filter entities to only candidates
-  const candidates = useMemo(() => {
-    return entities.filter(e => e.type === 'candidate');
-  }, [entities]);
 
   // Open vacancies only
   const openVacancies = useMemo(() => {
@@ -155,29 +130,10 @@ export default function CandidatesPage() {
     return counts;
   }, [kanbanBoard]);
 
-  // Permission helpers
-  const canEdit = useCallback((entity: Entity) => {
-    if (entity.is_transferred) return false;
-    return canEditResource({
-      owner_id: entity.owner_id,
-      is_mine: entity.is_mine,
-      access_level: entity.access_level
-    });
-  }, [canEditResource]);
-
-  const canDelete = useCallback((entity: Entity) => {
-    if (entity.is_transferred) return false;
-    return canDeleteResource({
-      owner_id: entity.owner_id,
-      is_mine: entity.is_mine,
-      access_level: entity.access_level
-    });
-  }, [canDeleteResource]);
-
   // Load data on mount
   useEffect(() => {
     fetchVacancies();
-    setFilters({ type: 'candidate', search: searchQuery || undefined });
+    setFilters({ type: 'candidate' });
   }, [fetchVacancies, setFilters]);
 
   // Load kanban when vacancy selected
@@ -193,14 +149,6 @@ export default function CandidatesPage() {
       setSelectedVacancyId(openVacancies[0].id);
     }
   }, [selectedVacancyId, openVacancies]);
-
-  // Debounced search
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      setFilters({ search: searchQuery || undefined });
-    }, 300);
-    return () => clearTimeout(timeout);
-  }, [searchQuery, setFilters]);
 
   // Drag handlers
   const handleDragStart = (app: VacancyApplication) => {
@@ -235,10 +183,6 @@ export default function CandidatesPage() {
   const handleVacancySelect = (vacancyId: number) => {
     setSelectedVacancyId(vacancyId);
     setSelectedStage(ALL_STAGES_TAB);
-  };
-
-  const handleCandidateClick = (candidate: Entity) => {
-    navigate(`/contacts/${candidate.id}`);
   };
 
   const handleApplicationClick = (app: VacancyApplication) => {
