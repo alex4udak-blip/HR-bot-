@@ -68,7 +68,7 @@ export default function TrashPage() {
   }
 
   return (
-    <div className="h-full flex flex-col p-6">
+    <div className="h-full w-full max-w-full flex flex-col overflow-hidden p-6">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-2">

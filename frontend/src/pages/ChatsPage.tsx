@@ -120,7 +120,7 @@ export default function ChatsPage() {
   };
 
   return (
-    <div className="h-full flex">
+    <div className="h-full w-full max-w-full flex overflow-hidden">
       {/* Chat List - Left Column */}
       <div
         className={clsx(

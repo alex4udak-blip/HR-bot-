@@ -145,7 +145,7 @@ export default function Layout() {
   };
 
   return (
-    <div className="h-screen flex flex-col lg:flex-row relative overflow-x-hidden">
+    <div className="h-screen w-full max-w-full flex flex-col lg:flex-row relative overflow-hidden">
       <BackgroundEffects />
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 h-screen glass border-r border-white/5">
