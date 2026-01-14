@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { useKeyboardShortcuts, useCurrencyRates } from '@/hooks';
+import { useCurrencyRates } from '@/hooks';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -42,7 +42,6 @@ import {
   ContextMenu,
   createVacancyContextMenu,
   EmptyVacancies,
-  KeyboardShortcuts,
   ConfirmDialog,
   ErrorMessage
 } from '@/components/ui';
@@ -133,9 +132,6 @@ export default function VacanciesPage() {
 
   // Currency rates for salary conversion during filtering
   const { getComparableSalary } = useCurrencyRates();
-
-  // Modal state check for keyboard shortcut handlers
-  const isAnyModalOpen = showCreateModal || !!editingVacancy || showParserModal;
 
   // Calculate active filter count
   const activeFilterCount = useMemo(() => {
@@ -258,83 +254,6 @@ export default function VacanciesPage() {
       dateRange: 'any',
     });
   };
-
-  // Keyboard shortcut handlers
-  const handleOpenCreateModal = useCallback(() => {
-    setPrefillData(null);
-    setShowCreateModal(true);
-  }, []);
-
-  const handleCloseModal = useCallback(() => {
-    if (showParserModal) {
-      setShowParserModal(false);
-    } else if (showCreateModal || editingVacancy) {
-      setShowCreateModal(false);
-      setEditingVacancy(null);
-      setPrefillData(null);
-    }
-  }, [showParserModal, showCreateModal, editingVacancy]);
-
-  const handleFocusSearch = useCallback(() => {
-    searchInputRef.current?.focus();
-  }, []);
-
-  const handleToggleKanban = useCallback(() => {
-    if (currentVacancy) {
-      setViewMode(viewMode === 'list' ? 'kanban' : 'list');
-    }
-  }, [currentVacancy, viewMode]);
-
-  const handleEditVacancy = useCallback(() => {
-    if (currentVacancy && !isAnyModalOpen) {
-      setEditingVacancy(currentVacancy);
-    }
-  }, [currentVacancy, isAnyModalOpen]);
-
-  const handleGoBack = useCallback(() => {
-    if (vacancyId && !isAnyModalOpen) {
-      navigate('/vacancies');
-    }
-  }, [vacancyId, isAnyModalOpen, navigate]);
-
-  // Keyboard shortcuts for list view (no vacancy selected)
-  useKeyboardShortcuts([
-    {
-      key: 'n',
-      ctrlOrCmd: true,
-      handler: handleOpenCreateModal,
-      description: 'Open create vacancy modal',
-    },
-    {
-      key: 'Escape',
-      handler: handleCloseModal,
-      description: 'Close any open modal',
-    },
-    {
-      key: '/',
-      handler: handleFocusSearch,
-      description: 'Focus search input',
-    },
-  ], { enabled: !vacancyId || isAnyModalOpen });
-
-  // Keyboard shortcuts for detail view (vacancy selected)
-  useKeyboardShortcuts([
-    {
-      key: 'Escape',
-      handler: isAnyModalOpen ? handleCloseModal : handleGoBack,
-      description: 'Go back to list or close modal',
-    },
-    {
-      key: 'e',
-      handler: handleEditVacancy,
-      description: 'Edit vacancy',
-    },
-    {
-      key: 'k',
-      handler: handleToggleKanban,
-      description: 'Toggle Kanban view',
-    },
-  ], { enabled: !!vacancyId });
 
   // Load departments
   useEffect(() => {
@@ -871,16 +790,6 @@ export default function VacanciesPage() {
           />
         )}
       </AnimatePresence>
-
-      {/* Keyboard Shortcuts Help */}
-      <KeyboardShortcuts
-        shortcuts={[
-          { key: '?', description: 'Показать горячие клавиши', global: true },
-          { key: 'Esc', description: 'Закрыть окно', global: true },
-          { key: '/', description: 'Перейти к поиску', global: true },
-          { key: 'Ctrl/Cmd+N', description: 'Создать вакансию' },
-        ]}
-      />
 
       {/* Confirmation Dialog */}
       <ConfirmDialog

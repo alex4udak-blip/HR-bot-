@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useKeyboardShortcuts } from '@/hooks';
 import {
   MapPin,
   DollarSign,
@@ -35,21 +34,6 @@ interface VacancyDetailProps {
 export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
   const [showAddCandidate, setShowAddCandidate] = useState(false);
   const { fetchKanbanBoard } = useVacancyStore();
-
-  // Keyboard shortcut: Escape closes add candidate modal
-  const handleCloseModal = useCallback(() => {
-    if (showAddCandidate) {
-      setShowAddCandidate(false);
-    }
-  }, [showAddCandidate]);
-
-  useKeyboardShortcuts([
-    {
-      key: 'Escape',
-      handler: handleCloseModal,
-      description: 'Close add candidate modal',
-    },
-  ], { enabled: showAddCandidate });
 
   useEffect(() => {
     fetchKanbanBoard(vacancy.id);

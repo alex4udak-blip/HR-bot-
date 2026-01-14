@@ -18,17 +18,14 @@ import {
   UserCheck,
   HelpCircle,
   Search,
-  Keyboard,
   type LucideIcon
 } from 'lucide-react';
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useOnboardingTour } from '@/hooks/useOnboardingTour';
-import { useKeyboardShortcuts, type KeyboardShortcut } from '@/hooks/useKeyboardShortcuts';
 import BackgroundEffects from './BackgroundEffects';
 import { OnboardingTour } from './onboarding';
 import CommandPalette, { CommandPaletteHint } from './CommandPalette';
-import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
 import clsx from 'clsx';
 
@@ -75,111 +72,10 @@ const pathToTourAttribute: Record<string, string> = {
 
 export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const { user, logout, isImpersonating, exitImpersonation, menuItems, fetchPermissions, customRoleName, hasFeature } = useAuthStore();
   const navigate = useNavigate();
   const { startTour, resetTour, hasCompletedTour } = useOnboardingTour();
   const { open: openCommandPalette } = useCommandPalette();
-
-  // Global shortcut handlers
-  const handleShowShortcuts = useCallback(() => {
-    setShowShortcutsHelp(true);
-  }, []);
-
-  const handleGoToCandidates = useCallback(() => {
-    navigate('/candidates');
-  }, [navigate]);
-
-  const handleGoToVacancies = useCallback(() => {
-    navigate('/vacancies');
-  }, [navigate]);
-
-  const handleGoToSettings = useCallback(() => {
-    navigate('/settings');
-  }, [navigate]);
-
-  const handleGoToDashboard = useCallback(() => {
-    navigate('/dashboard');
-  }, [navigate]);
-
-  const handleGoToChats = useCallback(() => {
-    navigate('/chats');
-  }, [navigate]);
-
-  // Define global keyboard shortcuts
-  const globalShortcuts: KeyboardShortcut[] = useMemo(() => [
-    // Help
-    {
-      key: '/',
-      ctrlOrCmd: true,
-      handler: handleShowShortcuts,
-      description: 'Показать горячие клавиши',
-      category: 'general',
-      global: true,
-    },
-    {
-      key: '?',
-      handler: handleShowShortcuts,
-      description: 'Показать справку',
-      category: 'general',
-      global: true,
-    },
-    // Navigation sequences
-    {
-      key: 'c',
-      sequence: ['g', 'c'],
-      handler: handleGoToCandidates,
-      description: 'Перейти к кандидатам',
-      category: 'navigation',
-      global: true,
-    },
-    {
-      key: 'v',
-      sequence: ['g', 'v'],
-      handler: handleGoToVacancies,
-      description: 'Перейти к вакансиям',
-      category: 'navigation',
-      global: true,
-    },
-    {
-      key: 's',
-      sequence: ['g', 's'],
-      handler: handleGoToSettings,
-      description: 'Перейти к настройкам',
-      category: 'navigation',
-      global: true,
-    },
-    {
-      key: 'd',
-      sequence: ['g', 'd'],
-      handler: handleGoToDashboard,
-      description: 'Перейти на главную',
-      category: 'navigation',
-      global: true,
-    },
-    {
-      key: 'h',
-      sequence: ['g', 'h'],
-      handler: handleGoToChats,
-      description: 'Перейти к чатам',
-      category: 'navigation',
-      global: true,
-    },
-    // Close modal
-    {
-      key: 'Escape',
-      handler: () => setShowShortcutsHelp(false),
-      description: 'Закрыть модальное окно',
-      category: 'general',
-      global: true,
-      allowInInput: true,
-    },
-  ], [handleShowShortcuts, handleGoToCandidates, handleGoToVacancies, handleGoToSettings, handleGoToDashboard, handleGoToChats]);
-
-  // Register global keyboard shortcuts
-  useKeyboardShortcuts(globalShortcuts, {
-    enabled: !showShortcutsHelp && !mobileMenuOpen,
-  });
 
   // Handler for starting/restarting the tour
   const handleHelpClick = () => {
@@ -311,15 +207,6 @@ export default function Layout() {
               )}
             </div>
           </div>
-          <button
-            onClick={handleShowShortcuts}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-dark-300 hover:text-blue-400 hover:bg-blue-500/10 transition-all duration-200 mb-2"
-            title="Горячие клавиши (Cmd+/ или ?)"
-          >
-            <Keyboard className="w-5 h-5" />
-            <span className="font-medium">Горячие клавиши</span>
-            <kbd className="ml-auto px-1.5 py-0.5 bg-white/10 rounded text-xs font-mono text-white/50">?</kbd>
-          </button>
           <button
             onClick={handleHelpClick}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-dark-300 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all duration-200 mb-2"
@@ -460,12 +347,6 @@ export default function Layout() {
 
       {/* Command Palette (Cmd+K global search) */}
       <CommandPalette />
-
-      {/* Keyboard Shortcuts Help Modal */}
-      <KeyboardShortcutsHelp
-        open={showShortcutsHelp}
-        onClose={() => setShowShortcutsHelp(false)}
-      />
     </div>
   );
 }

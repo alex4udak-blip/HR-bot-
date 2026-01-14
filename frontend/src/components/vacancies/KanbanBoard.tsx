@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useKeyboardShortcuts } from '@/hooks';
 import {
   Mail,
   Phone,
@@ -52,7 +51,6 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   const [selectedApplication, setSelectedApplication] = useState<VacancyApplication | null>(null);
   const [draggedApp, setDraggedApp] = useState<VacancyApplication | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
-  const [focusedColumnIndex, setFocusedColumnIndex] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const boardRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef<Map<string, number>>(new Map());
@@ -80,67 +78,6 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     removeApplication,
     clearError
   } = useVacancyStore();
-
-  // Check if any modal is open
-  const isModalOpen = showAddCandidate || !!selectedApplication;
-
-  // Keyboard shortcut handlers
-  const handleCloseModal = useCallback(() => {
-    if (selectedApplication) {
-      setSelectedApplication(null);
-    } else if (showAddCandidate) {
-      setShowAddCandidate(false);
-    }
-  }, [selectedApplication, showAddCandidate]);
-
-  const handleNavigateLeft = useCallback(() => {
-    if (!kanbanBoard || isModalOpen) return;
-    setFocusedColumnIndex((prev) => {
-      if (prev === null) return 0;
-      return Math.max(0, prev - 1);
-    });
-  }, [kanbanBoard, isModalOpen]);
-
-  const handleNavigateRight = useCallback(() => {
-    if (!kanbanBoard || isModalOpen) return;
-    setFocusedColumnIndex((prev) => {
-      if (prev === null) return 0;
-      return Math.min(VISIBLE_STAGES.length - 1, (prev ?? -1) + 1);
-    });
-  }, [kanbanBoard, isModalOpen]);
-
-  // Keyboard shortcuts
-  useKeyboardShortcuts([
-    {
-      key: 'Escape',
-      handler: handleCloseModal,
-      description: 'Close modal',
-    },
-  ], { enabled: isModalOpen });
-
-  useKeyboardShortcuts([
-    {
-      key: 'ArrowLeft',
-      handler: handleNavigateLeft,
-      description: 'Navigate to previous column',
-    },
-    {
-      key: 'ArrowRight',
-      handler: handleNavigateRight,
-      description: 'Navigate to next column',
-    },
-  ], { enabled: !isModalOpen && !!kanbanBoard });
-
-  // Scroll focused column into view
-  useEffect(() => {
-    if (focusedColumnIndex !== null && boardRef.current) {
-      const columns = boardRef.current.querySelectorAll('[data-kanban-column]');
-      const focusedColumn = columns[focusedColumnIndex];
-      if (focusedColumn) {
-        focusedColumn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-      }
-    }
-  }, [focusedColumnIndex]);
 
   useEffect(() => {
     fetchKanbanBoard(vacancy.id);
@@ -449,11 +386,10 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         <div className="flex gap-3 sm:gap-4 h-full min-w-max pb-2">
-          {VISIBLE_STAGES.map((stage, index) => {
+          {VISIBLE_STAGES.map((stage) => {
             const column = kanbanBoard.columns.find((c) => c.stage === stage);
             const apps = column?.applications || [];
             const isDropping = dropTarget?.stage === stage && draggedApp?.stage !== stage;
-            const isFocused = focusedColumnIndex === index;
             const isReorderTarget = dropTarget?.stage === stage && draggedApp?.stage === stage;
 
             return (
@@ -464,8 +400,6 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                   'w-64 sm:w-72 flex-shrink-0 flex flex-col rounded-xl border transition-all duration-200',
                   isDropping
                     ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20'
-                    : isFocused
-                    ? 'border-blue-400 bg-blue-500/5 ring-2 ring-blue-400/30'
                     : 'border-white/10 bg-white/5'
                 )}
                 onDragOver={(e) => handleColumnDragOver(e, stage)}

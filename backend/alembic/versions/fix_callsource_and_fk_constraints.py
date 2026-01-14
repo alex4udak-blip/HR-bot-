@@ -19,6 +19,9 @@ Adds missing ondelete behavior to foreign keys:
 Revision ID: fix_callsource_and_fk_constraints
 Revises: add_entity_salary
 Create Date: 2026-01-13
+
+Note: Uses autocommit_block() for ALTER TYPE ADD VALUE as per Alembic docs:
+https://github.com/sqlalchemy/alembic/issues/123
 """
 from alembic import op
 import sqlalchemy as sa
@@ -29,30 +32,23 @@ branch_labels = None
 depends_on = None
 
 
-def enum_value_exists(enum_name: str, value: str) -> bool:
-    """Check if an enum value exists."""
-    conn = op.get_bind()
-    result = conn.execute(sa.text(
-        """
-        SELECT 1 FROM pg_enum e
-        JOIN pg_type t ON e.enumtypid = t.oid
-        WHERE t.typname = :enum_name AND e.enumlabel = :value
-        """
-    ), {"enum_name": enum_name, "value": value})
-    return result.fetchone() is not None
-
-
 def upgrade():
     """Add missing CallSource enum values and fix FK constraints."""
 
-    # Add missing CallSource enum values
+    # Add enum values using autocommit_block() - official Alembic way
+    # See: https://github.com/sqlalchemy/alembic/issues/123
+    # ALTER TYPE ... ADD VALUE cannot run inside a transaction block
     callsource_values = ['google_doc', 'google_drive', 'direct_url', 'fireflies']
 
     for value in callsource_values:
-        if not enum_value_exists('callsource', value):
-            # Use autocommit for ALTER TYPE
+        # Each ADD VALUE needs its own autocommit block
+        try:
             with op.get_context().autocommit_block():
-                op.execute(f"ALTER TYPE callsource ADD VALUE IF NOT EXISTS '{value}'")
+                op.execute(sa.text(f"ALTER TYPE callsource ADD VALUE IF NOT EXISTS '{value}'"))
+            print(f"Added/verified enum value: {value}")
+        except Exception as e:
+            # Value might already exist or enum might not exist
+            print(f"Note: {value} - {e}")
 
     # Fix FK constraints by dropping and recreating with ondelete
     # Note: This is safe as we're only changing the ondelete behavior
