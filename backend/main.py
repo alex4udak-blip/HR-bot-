@@ -54,7 +54,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "font-src 'self' https://fonts.gstatic.com; "
             "img-src 'self' data: blob:; "
             "connect-src 'self' ws: wss:; "
-            "script-src 'self' 'unsafe-inline'"
+            "script-src 'self'"
         )
         return response
 
@@ -769,7 +769,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_allowed_origins_list(),
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -839,7 +839,24 @@ except Exception as e:
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    from datetime import datetime
+    from api.database import AsyncSessionLocal
+
+    health = {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+    # Check database
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        health["database"] = "connected"
+    except Exception as e:
+        health["database"] = f"error: {str(e)}"
+        health["status"] = "unhealthy"
+
+    if health["status"] == "unhealthy":
+        raise HTTPException(status_code=503, detail=health)
+
+    return health
 
 
 @app.get("/debug/routes")

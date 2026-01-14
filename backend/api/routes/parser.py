@@ -7,12 +7,14 @@ Security features:
 - Rate limiting: 5 requests per minute per user
 - URL validation: Only allowed domains (hh.ru, linkedin.com, superjob.ru, habr career)
 - URL sanitization: Prevents prompt injection attacks
+- Magic bytes validation: Prevents file type spoofing
 - Comprehensive logging of all parsing requests
 """
 import logging
 import re
 import zipfile
 import io
+import magic
 from urllib.parse import urlparse, urlunparse
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +47,83 @@ ALLOWED_DOMAINS = {
     'career.habr.com',
     'habr.com',
 }
+
+# Allowed MIME types for file uploads (validated via magic bytes)
+ALLOWED_MIME_TYPES = {
+    # Documents
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # .docx
+    'application/msword',  # .doc
+    'text/plain',
+    'text/rtf',
+    'application/rtf',
+    # Images
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    # Archives (for bulk import)
+    'application/zip',
+    'application/x-zip-compressed',
+}
+
+# Mapping of file extensions to expected MIME types
+EXTENSION_MIME_MAP = {
+    'pdf': {'application/pdf'},
+    'docx': {'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip'},
+    'doc': {'application/msword', 'application/octet-stream'},
+    'txt': {'text/plain'},
+    'rtf': {'text/rtf', 'application/rtf'},
+    'jpg': {'image/jpeg'},
+    'jpeg': {'image/jpeg'},
+    'png': {'image/png'},
+    'gif': {'image/gif'},
+    'webp': {'image/webp'},
+    'zip': {'application/zip', 'application/x-zip-compressed'},
+}
+
+
+def validate_file_magic(file_content: bytes, filename: str) -> tuple[bool, str]:
+    """
+    Validates file content by checking magic bytes against expected MIME type.
+
+    This prevents attacks where malicious files are uploaded with spoofed extensions
+    (e.g., an executable renamed to .pdf).
+
+    Args:
+        file_content: The raw bytes of the uploaded file
+        filename: The original filename (used to check extension consistency)
+
+    Returns:
+        Tuple of (is_valid, error_message). If valid, error_message is empty.
+    """
+    if not file_content:
+        return False, "Empty file content"
+
+    # Detect MIME type from file content using magic bytes
+    try:
+        detected_mime = magic.from_buffer(file_content, mime=True)
+    except Exception as e:
+        logger.error(f"Magic bytes detection failed: {e}")
+        return False, f"Failed to detect file type: {str(e)}"
+
+    # Check if detected MIME type is in allowed list
+    if detected_mime not in ALLOWED_MIME_TYPES:
+        return False, f"File type not allowed: {detected_mime}"
+
+    # Get file extension
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+
+    # Verify extension matches detected MIME type
+    if ext in EXTENSION_MIME_MAP:
+        expected_mimes = EXTENSION_MIME_MAP[ext]
+        if detected_mime not in expected_mimes:
+            # Special case: .docx files are detected as application/zip
+            if ext == 'docx' and detected_mime == 'application/zip':
+                return True, ""
+            return False, f"File extension .{ext} does not match content type {detected_mime}"
+
+    return True, ""
 
 
 def validate_and_sanitize_url(url: str) -> str:
@@ -309,6 +388,18 @@ async def parse_resume_file(
                 detail=f"File too large: {len(file_content) / 1024 / 1024:.1f}MB (max 20MB)"
             )
 
+        # Validate magic bytes to prevent file type spoofing
+        is_valid, magic_error = validate_file_magic(file_content, safe_filename)
+        if not is_valid:
+            logger.warning(
+                f"Resume file REJECTED | user_id={current_user.id} | "
+                f"filename={safe_filename} | reason=magic_bytes_mismatch | error={magic_error}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"File validation failed: {magic_error}"
+            )
+
         # Log parsing request
         logger.info(
             f"Resume file parsing requested | user_id={current_user.id} | "
@@ -494,6 +585,18 @@ async def bulk_import_resumes(
                 detail=f"ZIP file too large: {len(zip_content) / 1024 / 1024:.1f}MB (max 100MB)"
             )
 
+        # Validate ZIP file magic bytes
+        is_valid, magic_error = validate_file_magic(zip_content, file.filename)
+        if not is_valid:
+            logger.warning(
+                f"Bulk import REJECTED | user_id={current_user.id} | "
+                f"filename={file.filename} | reason=magic_bytes_mismatch | error={magic_error}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"ZIP file validation failed: {magic_error}"
+            )
+
         # Get user's organization
         org = await get_user_org(current_user, db)
         if not org:
@@ -566,6 +669,21 @@ async def bulk_import_resumes(
                                 filename=filename,
                                 success=False,
                                 error="File too large (max 20MB)"
+                            ))
+                            failed += 1
+                            continue
+
+                        # Validate magic bytes for each file in ZIP
+                        is_valid, magic_error = validate_file_magic(file_data, filename)
+                        if not is_valid:
+                            logger.warning(
+                                f"Bulk import: file rejected due to magic bytes | "
+                                f"filename={filename} | error={magic_error}"
+                            )
+                            results.append(BulkImportResult(
+                                filename=filename,
+                                success=False,
+                                error=f"File validation failed: {magic_error}"
                             ))
                             failed += 1
                             continue
