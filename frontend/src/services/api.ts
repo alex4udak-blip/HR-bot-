@@ -2505,6 +2505,44 @@ export const parseVacancyFromUrl = async (url: string): Promise<ParsedVacancy> =
 };
 
 /**
+ * Result for a single resume in bulk import
+ */
+export interface BulkImportResult {
+  filename: string;
+  success: boolean;
+  entity_id?: number;
+  entity_name?: string;
+  error?: string;
+}
+
+/**
+ * Response from bulk resume import
+ */
+export interface BulkImportResponse {
+  success: boolean;
+  total_files: number;
+  successful: number;
+  failed: number;
+  results: BulkImportResult[];
+  error?: string;
+}
+
+/**
+ * Bulk import resumes from a ZIP file.
+ * Each resume will be parsed using AI and a candidate entity will be created.
+ * @param file - ZIP file containing resume files (PDF, DOC, DOCX)
+ * @returns Import results for each file
+ */
+export const bulkImportResumes = async (file: File): Promise<BulkImportResponse> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await api.post<BulkImportResponse>('/parser/resume/bulk-import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+  return data;
+};
+
+/**
  * Response from creating entity from resume
  */
 export interface CreateEntityFromResumeResponse {

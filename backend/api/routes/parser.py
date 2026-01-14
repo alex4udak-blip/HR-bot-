@@ -11,10 +11,14 @@ Security features:
 """
 import logging
 import re
+import zipfile
+import io
 from urllib.parse import urlparse, urlunparse
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 from ..services.parser import (
     ParsedResume,
@@ -24,8 +28,9 @@ from ..services.parser import (
     parse_vacancy_from_url,
     detect_source,
 )
-from ..services.auth import get_current_user
-from ..models.database import User
+from ..services.auth import get_current_user, get_user_org
+from ..database import get_db
+from ..models.database import User, Entity, EntityType, EntityStatus
 from ..limiter import limiter
 
 logger = logging.getLogger(__name__)
@@ -422,4 +427,278 @@ async def parse_vacancy_url(
         return ParseVacancyResponse(
             success=False,
             error=f"Failed to parse vacancy: {str(e)}"
+        )
+
+
+class BulkImportResult(BaseModel):
+    """Result for a single resume in bulk import"""
+    filename: str
+    success: bool
+    entity_id: Optional[int] = None
+    entity_name: Optional[str] = None
+    error: Optional[str] = None
+
+
+class BulkImportResponse(BaseModel):
+    """Response for bulk resume import"""
+    success: bool
+    total_files: int
+    successful: int
+    failed: int
+    results: List[BulkImportResult]
+    error: Optional[str] = None
+
+
+@router.post("/resume/bulk-import", response_model=BulkImportResponse)
+@limiter.limit("2/minute", key_func=_get_rate_limit_key)
+async def bulk_import_resumes(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Bulk import resumes from a ZIP file.
+
+    The ZIP file should contain resume files in supported formats:
+    - PDF (.pdf)
+    - Word documents (.docx, .doc)
+    - Text files (.txt, .rtf)
+
+    Each resume will be parsed using AI and a candidate entity will be created.
+    Maximum 50 files per ZIP, maximum 100MB total size.
+
+    Returns a list of results for each file processed.
+    """
+    request.state._rate_limit_user = current_user
+
+    try:
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="File is required")
+
+        # Check file extension
+        if not file.filename.lower().endswith('.zip'):
+            raise HTTPException(
+                status_code=400,
+                detail="Only ZIP files are allowed for bulk import"
+            )
+
+        # Read ZIP content
+        zip_content = await file.read()
+
+        # Check size (max 100MB)
+        max_size = 100 * 1024 * 1024
+        if len(zip_content) > max_size:
+            raise HTTPException(
+                status_code=400,
+                detail=f"ZIP file too large: {len(zip_content) / 1024 / 1024:.1f}MB (max 100MB)"
+            )
+
+        # Get user's organization
+        org = await get_user_org(current_user, db)
+        if not org:
+            raise HTTPException(status_code=403, detail="No organization access")
+
+        logger.info(
+            f"Bulk import started | user_id={current_user.id} | "
+            f"org_id={org.id} | zip_size={len(zip_content)} bytes"
+        )
+
+        results = []
+        successful = 0
+        failed = 0
+        allowed_extensions = {'pdf', 'docx', 'doc', 'txt', 'rtf'}
+
+        try:
+            with zipfile.ZipFile(io.BytesIO(zip_content), 'r') as zip_file:
+                # Get list of files (excluding directories and hidden files)
+                file_list = [
+                    f for f in zip_file.namelist()
+                    if not f.endswith('/') and not f.startswith('__MACOSX') and not f.startswith('.')
+                ]
+
+                # Check file count limit
+                if len(file_list) > 50:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Too many files in ZIP: {len(file_list)} (max 50)"
+                    )
+
+                if len(file_list) == 0:
+                    return BulkImportResponse(
+                        success=True,
+                        total_files=0,
+                        successful=0,
+                        failed=0,
+                        results=[],
+                        error="ZIP file contains no valid resume files"
+                    )
+
+                for filename in file_list:
+                    # Get file extension
+                    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+
+                    if ext not in allowed_extensions:
+                        results.append(BulkImportResult(
+                            filename=filename,
+                            success=False,
+                            error=f"Unsupported format: {ext}"
+                        ))
+                        failed += 1
+                        continue
+
+                    try:
+                        # Extract and read file
+                        file_data = zip_file.read(filename)
+
+                        if not file_data or len(file_data) == 0:
+                            results.append(BulkImportResult(
+                                filename=filename,
+                                success=False,
+                                error="Empty file"
+                            ))
+                            failed += 1
+                            continue
+
+                        # Check individual file size (max 20MB)
+                        if len(file_data) > 20 * 1024 * 1024:
+                            results.append(BulkImportResult(
+                                filename=filename,
+                                success=False,
+                                error="File too large (max 20MB)"
+                            ))
+                            failed += 1
+                            continue
+
+                        # Parse resume
+                        safe_filename = re.sub(r'[<>:"/\\|?*]', '_', filename.split('/')[-1])
+                        resume = await parse_resume_from_pdf(file_data, safe_filename)
+
+                        # Create candidate entity
+                        entity_name = resume.name or f"Candidate from {safe_filename}"
+
+                        # Check for existing entity with same email
+                        existing = None
+                        if resume.email:
+                            result = await db.execute(
+                                select(Entity).where(
+                                    Entity.email == resume.email,
+                                    Entity.org_id == org.id
+                                )
+                            )
+                            existing = result.scalar_one_or_none()
+
+                        if existing:
+                            results.append(BulkImportResult(
+                                filename=filename,
+                                success=False,
+                                entity_id=existing.id,
+                                entity_name=existing.name,
+                                error=f"Candidate with email {resume.email} already exists"
+                            ))
+                            failed += 1
+                            continue
+
+                        # Build extra_data from parsed resume
+                        extra_data = {}
+                        if resume.skills:
+                            extra_data["skills"] = resume.skills
+                        if resume.experience:
+                            extra_data["experience"] = [
+                                {
+                                    "company": exp.company,
+                                    "position": exp.position,
+                                    "start_date": exp.start_date,
+                                    "end_date": exp.end_date,
+                                    "description": exp.description
+                                }
+                                for exp in resume.experience
+                            ]
+                        if resume.education:
+                            extra_data["education"] = [
+                                {
+                                    "institution": edu.institution,
+                                    "degree": edu.degree,
+                                    "field": edu.field,
+                                    "year": edu.year
+                                }
+                                for edu in resume.education
+                            ]
+                        if resume.languages:
+                            extra_data["languages"] = resume.languages
+                        if resume.summary:
+                            extra_data["summary"] = resume.summary
+
+                        # Create entity
+                        entity = Entity(
+                            name=entity_name,
+                            type=EntityType.candidate,
+                            status=EntityStatus.new,
+                            email=resume.email,
+                            phone=resume.phone,
+                            company=resume.experience[0].company if resume.experience else None,
+                            position=resume.experience[0].position if resume.experience else None,
+                            tags=resume.skills[:10] if resume.skills else [],
+                            extra_data=extra_data,
+                            org_id=org.id,
+                            created_by=current_user.id
+                        )
+
+                        db.add(entity)
+                        await db.flush()
+
+                        results.append(BulkImportResult(
+                            filename=filename,
+                            success=True,
+                            entity_id=entity.id,
+                            entity_name=entity.name
+                        ))
+                        successful += 1
+
+                        logger.info(
+                            f"Bulk import: created entity {entity.id} from {safe_filename}"
+                        )
+
+                    except Exception as e:
+                        logger.error(f"Bulk import: failed to process {filename}: {e}")
+                        results.append(BulkImportResult(
+                            filename=filename,
+                            success=False,
+                            error=str(e)
+                        ))
+                        failed += 1
+
+                # Commit all entities
+                await db.commit()
+
+        except zipfile.BadZipFile:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid ZIP file format"
+            )
+
+        logger.info(
+            f"Bulk import completed | user_id={current_user.id} | "
+            f"total={len(results)} | successful={successful} | failed={failed}"
+        )
+
+        return BulkImportResponse(
+            success=True,
+            total_files=len(results),
+            successful=successful,
+            failed=failed,
+            results=results
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Bulk import error | user_id={current_user.id} | error={e}")
+        return BulkImportResponse(
+            success=False,
+            total_files=0,
+            successful=0,
+            failed=0,
+            results=[],
+            error=f"Bulk import failed: {str(e)}"
         )

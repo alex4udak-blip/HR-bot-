@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -19,15 +19,20 @@ import {
   DollarSign,
   Users,
   UserCheck,
-  Sparkles
+  Sparkles,
+  FolderArchive,
+  Loader2,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import type { Entity, Vacancy } from '@/types';
-import type { ParsedResume } from '@/services/api';
+import type { ParsedResume, BulkImportResponse } from '@/services/api';
 import { formatSalary } from '@/utils';
+import { bulkImportResumes } from '@/services/api';
 import ContactForm from '@/components/contacts/ContactForm';
 import ParserModal from '@/components/parser/ParserModal';
 import { Skeleton } from '@/components/ui';
@@ -49,6 +54,12 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
   const [showParserModal, setShowParserModal] = useState(false);
   const [showAddToVacancyModal, setShowAddToVacancyModal] = useState(false);
   const [prefillData, setPrefillData] = useState<Partial<Entity> | null>(null);
+
+  // Bulk import state
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [bulkImportLoading, setBulkImportLoading] = useState(false);
+  const [bulkImportResult, setBulkImportResult] = useState<BulkImportResponse | null>(null);
+  const bulkImportInputRef = useRef<HTMLInputElement>(null);
 
   // Drag state
   const [draggedCandidate, setDraggedCandidate] = useState<Entity | null>(null);
@@ -215,6 +226,55 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     toast.success('Данные распознаны');
   };
 
+  const handleBulkImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      toast.error('Пожалуйста, выберите ZIP файл');
+      return;
+    }
+
+    setBulkImportLoading(true);
+    setBulkImportResult(null);
+    setShowBulkImportModal(true);
+
+    try {
+      const result = await bulkImportResumes(file);
+      setBulkImportResult(result);
+
+      if (result.successful > 0) {
+        toast.success(`Импортировано ${result.successful} кандидатов`);
+        fetchEntities(); // Refresh the list
+      }
+      if (result.failed > 0) {
+        toast.error(`Не удалось импортировать ${result.failed} файлов`);
+      }
+    } catch (err) {
+      console.error('Bulk import error:', err);
+      toast.error('Ошибка массового импорта');
+      setBulkImportResult({
+        success: false,
+        total_files: 0,
+        successful: 0,
+        failed: 0,
+        results: [],
+        error: err instanceof Error ? err.message : 'Неизвестная ошибка'
+      });
+    } finally {
+      setBulkImportLoading(false);
+      // Reset file input
+      if (bulkImportInputRef.current) {
+        bulkImportInputRef.current.value = '';
+      }
+    }
+  };
+
+  const closeBulkImportModal = () => {
+    setShowBulkImportModal(false);
+    setBulkImportResult(null);
+  };
+
   const getAvatarInitials = (name: string) => {
     return name
       .split(' ')
@@ -263,6 +323,17 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               <Upload className="w-4 h-4" />
               Загрузить резюме
             </button>
+            <label className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors cursor-pointer">
+              <FolderArchive className="w-4 h-4" />
+              Массовый импорт
+              <input
+                ref={bulkImportInputRef}
+                type="file"
+                accept=".zip"
+                onChange={handleBulkImport}
+                className="hidden"
+              />
+            </label>
             <button
               onClick={() => {
                 setPrefillData(null);
@@ -638,6 +709,120 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                     </button>
                   ))
                 )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* Bulk Import Modal */}
+        {showBulkImportModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+            onClick={closeBulkImportModal}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-dark-900 border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden"
+            >
+              <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <FolderArchive className="w-5 h-5 text-purple-400" />
+                  Массовый импорт резюме
+                </h3>
+                {!bulkImportLoading && (
+                  <button
+                    onClick={closeBulkImportModal}
+                    className="p-1 hover:bg-white/10 rounded"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="p-6">
+                {bulkImportLoading ? (
+                  <div className="flex flex-col items-center justify-center py-8">
+                    <Loader2 className="w-12 h-12 text-purple-400 animate-spin mb-4" />
+                    <p className="text-white/60">Обрабатываем резюме...</p>
+                    <p className="text-sm text-white/40 mt-1">Это может занять несколько минут</p>
+                  </div>
+                ) : bulkImportResult ? (
+                  <div className="space-y-4">
+                    {/* Summary */}
+                    <div className="flex items-center justify-center gap-6 py-4">
+                      <div className="text-center">
+                        <p className="text-3xl font-bold text-green-400">{bulkImportResult.successful}</p>
+                        <p className="text-sm text-white/40">Успешно</p>
+                      </div>
+                      <div className="w-px h-12 bg-white/10" />
+                      <div className="text-center">
+                        <p className="text-3xl font-bold text-red-400">{bulkImportResult.failed}</p>
+                        <p className="text-sm text-white/40">Ошибок</p>
+                      </div>
+                    </div>
+
+                    {/* Results list */}
+                    {bulkImportResult.results.length > 0 && (
+                      <div className="max-h-64 overflow-y-auto space-y-2">
+                        {bulkImportResult.results.map((result, index) => (
+                          <div
+                            key={index}
+                            className={clsx(
+                              'flex items-center gap-3 p-3 rounded-lg border',
+                              result.success
+                                ? 'bg-green-500/10 border-green-500/30'
+                                : 'bg-red-500/10 border-red-500/30'
+                            )}
+                          >
+                            {result.success ? (
+                              <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
+                            ) : (
+                              <XCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">
+                                {result.entity_name || result.filename}
+                              </p>
+                              {result.error && (
+                                <p className="text-xs text-red-400 truncate">{result.error}</p>
+                              )}
+                            </div>
+                            {result.entity_id && (
+                              <button
+                                onClick={() => {
+                                  closeBulkImportModal();
+                                  navigate(`/contacts/${result.entity_id}`);
+                                }}
+                                className="text-xs text-blue-400 hover:text-blue-300"
+                              >
+                                Открыть
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {bulkImportResult.error && (
+                      <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                        <p className="text-sm text-red-400">{bulkImportResult.error}</p>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={closeBulkImportModal}
+                      className="w-full py-2 bg-white/10 hover:bg-white/15 rounded-lg text-sm transition-colors"
+                    >
+                      Закрыть
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </motion.div>
           </motion.div>
