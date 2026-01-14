@@ -11,15 +11,17 @@ Optimizations:
 - Smart truncate: Reduce token usage while preserving context
 - Hash-based caching for quick actions
 """
-from typing import List, AsyncGenerator, Optional
+from typing import List, AsyncGenerator, Optional, TYPE_CHECKING
 from anthropic import AsyncAnthropic
 import logging
+import os
 
 from ..config import get_settings
-from ..models.database import Entity, Chat, Message, CallRecording
+from ..models.database import Entity, Chat, Message, CallRecording, EntityFile, EntityFileType
 from .cache import cache_service, smart_truncate, format_messages_optimized
 from .participants import identify_participants_from_objects, format_participant_list
 from .entity_memory import entity_memory_service
+from .documents import document_parser
 
 logger = logging.getLogger("hr-analyzer.entity-ai")
 
@@ -143,11 +145,45 @@ class EntityAIService:
             self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
         return self._client
 
-    def _build_entity_context(
+    async def _parse_entity_file(self, file: EntityFile) -> Optional[str]:
+        """Parse entity file content asynchronously"""
+        try:
+            if not file.file_path or not os.path.exists(file.file_path):
+                logger.warning(f"File not found: {file.file_path}")
+                return None
+
+            with open(file.file_path, 'rb') as f:
+                file_bytes = f.read()
+
+            result = await document_parser.parse(file_bytes, file.file_name, file.mime_type)
+
+            if result.status == "failed":
+                logger.warning(f"Failed to parse file {file.file_name}: {result.error}")
+                return None
+
+            return result.content
+        except Exception as e:
+            logger.error(f"Error parsing entity file {file.file_name}: {e}")
+            return None
+
+    def _get_file_type_label(self, file_type: EntityFileType) -> str:
+        """Get human-readable label for file type"""
+        labels = {
+            EntityFileType.resume: "📄 Резюме",
+            EntityFileType.cover_letter: "✉️ Сопроводительное письмо",
+            EntityFileType.test_assignment: "📝 Тестовое задание",
+            EntityFileType.certificate: "🏆 Сертификат",
+            EntityFileType.portfolio: "🎨 Портфолио",
+            EntityFileType.other: "📎 Документ",
+        }
+        return labels.get(file_type, "📎 Файл")
+
+    async def _build_entity_context(
         self,
         entity: Entity,
         chats: List[Chat],
-        calls: List[CallRecording]
+        calls: List[CallRecording],
+        files: Optional[List[EntityFile]] = None
     ) -> str:
         """Build comprehensive context about the entity from all sources"""
         parts = []
@@ -167,6 +203,27 @@ class EntityAIService:
         memory_context = entity_memory_service.build_memory_context(entity)
         if memory_context:
             parts.append(memory_context)
+
+        # Add entity files (resume, test assignments, portfolio, etc.)
+        if files:
+            parts.append("\n## ФАЙЛЫ КАНДИДАТА:")
+            for file in files:
+                file_label = self._get_file_type_label(file.file_type)
+                parts.append(f"\n### {file_label}: {file.file_name}")
+
+                if file.description:
+                    parts.append(f"*Описание:* {file.description}")
+
+                # Parse and include file content
+                file_content = await self._parse_entity_file(file)
+                if file_content:
+                    # Limit file content to prevent token overflow
+                    max_file_chars = 5000
+                    if len(file_content) > max_file_chars:
+                        file_content = file_content[:max_file_chars] + "\n... (содержимое сокращено)"
+                    parts.append(f"**Содержимое:**\n{file_content}")
+                else:
+                    parts.append("(не удалось извлечь содержимое файла)")
 
         # All linked chats with messages (optimized with smart truncate and participant roles)
         if chats:
@@ -200,28 +257,30 @@ class EntityAIService:
                 call_context = build_smart_context(call, include_full_transcript=False)
                 parts.append(call_context)
 
-        if not chats and not calls:
-            parts.append("\n⚠️ К этому контакту пока не привязаны чаты или звонки.")
+        if not chats and not calls and not files:
+            parts.append("\n⚠️ К этому контакту пока не привязаны чаты, звонки или файлы.")
 
         return "\n".join(parts)
 
-    def _build_system_prompt(self, entity_context: str) -> str:
+    def _build_system_prompt(self, entity_context: str, has_files: bool = False) -> str:
         """Build system prompt with entity context"""
+        files_note = ", прикреплённые файлы (резюме, тестовые задания, портфолио)" if has_files else ""
         return f"""Ты — AI-ассистент для HR-аналитики. У тебя есть полные данные о контакте:
-все переписки из Telegram и все записи звонков.
+все переписки из Telegram, записи звонков{files_note}.
 
 {entity_context}
 
 ПРАВИЛА:
 1. Отвечай на русском языке
 2. Основывайся ТОЛЬКО на фактах из предоставленных данных
-3. Приводи конкретные цитаты из переписок/звонков где возможно
+3. Приводи конкретные цитаты из переписок/звонков/документов где возможно
 4. Если информации недостаточно — честно скажи об этом
 5. Будь объективен и профессионален
 6. Используй форматирование markdown для структурирования ответа
 7. Не придумывай факты — работай только с тем, что есть
 8. ВАЖНО: Различай юмор, сарказм, шутки от серьёзных проблем. Неформальный стиль общения — это нормально, не считай его за red flag
-9. Понимай контекст: дружелюбная ирония, мемы, сленг — это часть современной коммуникации"""
+9. Понимай контекст: дружелюбная ирония, мемы, сленг — это часть современной коммуникации
+10. При анализе файлов (резюме, тестовые задания) обращай внимание на качество выполнения, навыки и соответствие требованиям"""
 
     async def chat_stream(
         self,
@@ -229,15 +288,16 @@ class EntityAIService:
         entity: Entity,
         chats: List[Chat],
         calls: List[CallRecording],
-        conversation_history: List[dict]
+        conversation_history: List[dict],
+        files: Optional[List[EntityFile]] = None
     ) -> AsyncGenerator[str, None]:
         """
         Stream AI response for chat with Prompt Caching.
 
         Prompt Caching provides 90% cost reduction on cached system prompts.
         """
-        context = self._build_entity_context(entity, chats, calls)
-        system_text = self._build_system_prompt(context)
+        context = await self._build_entity_context(entity, chats, calls, files)
+        system_text = self._build_system_prompt(context, has_files=bool(files))
 
         # Use Prompt Caching for system prompt (90% savings!)
         system = [
@@ -284,7 +344,8 @@ class EntityAIService:
         action: str,
         entity: Entity,
         chats: List[Chat],
-        calls: List[CallRecording]
+        calls: List[CallRecording],
+        files: Optional[List[EntityFile]] = None
     ) -> AsyncGenerator[str, None]:
         """Execute quick action and stream response"""
         prompt = ENTITY_QUICK_ACTIONS.get(action)
@@ -292,9 +353,9 @@ class EntityAIService:
             yield f"Неизвестное действие: {action}"
             return
 
-        logger.info(f"Entity AI quick action '{action}' for entity {entity.id}")
+        logger.info(f"Entity AI quick action '{action}' for entity {entity.id}, {len(files or [])} files")
 
-        async for text in self.chat_stream(prompt, entity, chats, calls, []):
+        async for text in self.chat_stream(prompt, entity, chats, calls, [], files):
             yield text
 
     async def generate_entity_report(
@@ -303,10 +364,11 @@ class EntityAIService:
         chats: List[Chat],
         calls: List[CallRecording],
         criteria: List[dict],
-        report_type: str = "full_analysis"
+        report_type: str = "full_analysis",
+        files: Optional[List[EntityFile]] = None
     ) -> str:
         """Generate comprehensive report for entity (non-streaming for file generation)"""
-        context = self._build_entity_context(entity, chats, calls)
+        context = await self._build_entity_context(entity, chats, calls, files)
 
         # Build report prompt
         report_prompt = ENTITY_QUICK_ACTIONS.get(report_type, ENTITY_QUICK_ACTIONS["full_analysis"])
@@ -318,7 +380,7 @@ class EntityAIService:
                 criteria_text += f"- **{c.get('name', 'Критерий')}** (вес: {c.get('weight', 5)}/10): {c.get('description', '')}\n"
             report_prompt += f"\n\n{criteria_text}\nОцени контакт по указанным критериям."
 
-        system_text = self._build_system_prompt(context)
+        system_text = self._build_system_prompt(context, has_files=bool(files))
 
         # Use Prompt Caching for system prompt
         system = [

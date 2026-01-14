@@ -22,7 +22,7 @@ import logging
 from ..database import get_db
 from ..models.database import (
     User, UserRole, Entity, Chat, Message, CallRecording,
-    EntityAIConversation, EntityCriteria, AnalysisHistory
+    EntityAIConversation, EntityCriteria, AnalysisHistory, EntityFile
 )
 from ..services.auth import get_current_user
 from ..services.entity_ai import entity_ai_service
@@ -45,14 +45,14 @@ class EntityReportRequest(BaseModel):
 
 
 async def get_entity_with_data(db: AsyncSession, entity_id: int):
-    """Get entity with all related chats (with messages) and calls"""
+    """Get entity with all related chats (with messages), calls, and files"""
     # Get entity
     result = await db.execute(
         select(Entity).where(Entity.id == entity_id)
     )
     entity = result.scalar_one_or_none()
     if not entity:
-        return None, [], []
+        return None, [], [], []
 
     # Get chats with messages, owner, and entity for participant identification
     result = await db.execute(
@@ -75,7 +75,15 @@ async def get_entity_with_data(db: AsyncSession, entity_id: int):
     )
     calls = list(result.scalars().all())
 
-    return entity, chats, calls
+    # Get entity files (resumes, test assignments, portfolios, etc.)
+    result = await db.execute(
+        select(EntityFile)
+        .where(EntityFile.entity_id == entity_id)
+        .order_by(EntityFile.created_at)
+    )
+    files = list(result.scalars().all())
+
+    return entity, chats, calls, files
 
 
 @router.get("/entities/{entity_id}/ai/actions")
@@ -115,7 +123,7 @@ async def entity_ai_message(
     user = await db.merge(user)
 
     # Get entity with all data
-    entity, chats, calls = await get_entity_with_data(db, entity_id)
+    entity, chats, calls, files = await get_entity_with_data(db, entity_id)
 
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
@@ -153,14 +161,14 @@ async def entity_ai_message(
             if request.quick_action:
                 # Quick action
                 async for chunk in entity_ai_service.quick_action(
-                    request.quick_action, entity, chats, calls
+                    request.quick_action, entity, chats, calls, files
                 ):
                     full_response += chunk
                     yield f"data: {json.dumps({'content': chunk})}\n\n"
             else:
                 # Regular chat
                 async for chunk in entity_ai_service.chat_stream(
-                    request.message, entity, chats, calls, history
+                    request.message, entity, chats, calls, history, files
                 ):
                     full_response += chunk
                     yield f"data: {json.dumps({'content': chunk})}\n\n"
@@ -306,7 +314,7 @@ async def update_entity_ai_summary(
     user = await db.merge(user)
 
     # Get entity with all data
-    entity, chats, calls = await get_entity_with_data(db, entity_id)
+    entity, chats, calls, files = await get_entity_with_data(db, entity_id)
 
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
@@ -327,6 +335,10 @@ async def update_entity_ai_summary(
     for call in calls:
         if call.summary:
             content_parts.append(f"Звонок {call.title}: {call.summary}")
+
+    # Add files info
+    for file in files:
+        content_parts.append(f"Файл ({file.file_type.value}): {file.file_name}")
 
     content = "\n\n".join(content_parts)
 
@@ -444,7 +456,7 @@ async def batch_update_entity_summaries(
     for entity in entities:
         try:
             # Get entity data
-            entity_obj, chats, calls = await get_entity_with_data(db, entity.id)
+            entity_obj, chats, calls, files = await get_entity_with_data(db, entity.id)
 
             # Build content
             content_parts = []
@@ -495,7 +507,7 @@ async def generate_entity_report(
     user = await db.merge(user)
 
     # Get entity with all data
-    entity, chats, calls = await get_entity_with_data(db, entity_id)
+    entity, chats, calls, files = await get_entity_with_data(db, entity_id)
 
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
@@ -522,6 +534,12 @@ async def generate_entity_report(
     if entity.ai_summary:
         content_parts.append(f"\n## Общее резюме\n{entity.ai_summary}")
 
+    # Add files info
+    for file in files:
+        content_parts.append(f"\n## Файл ({file.file_type.value}): {file.file_name}")
+        if file.description:
+            content_parts.append(f"Описание: {file.description}")
+
     # Add chat messages
     for chat in chats:
         if hasattr(chat, 'messages') and chat.messages:
@@ -540,9 +558,9 @@ async def generate_entity_report(
     if not content:
         raise HTTPException(status_code=400, detail="No data to generate report")
 
-    # Generate report using AI
+    # Generate report using AI (with files for content analysis)
     report_content = await entity_ai_service.generate_entity_report(
-        entity, chats, calls, criteria, request.report_type
+        entity, chats, calls, criteria, request.report_type, files
     )
 
     # Save to analysis history
