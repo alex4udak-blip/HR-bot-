@@ -29,27 +29,55 @@ branch_labels = None
 depends_on = None
 
 
-def enum_value_exists(enum_name: str, value: str) -> bool:
-    """Check if an enum value exists."""
-    conn = op.get_bind()
-    result = conn.execute(sa.text(
-        """
-        SELECT 1 FROM pg_enum e
-        JOIN pg_type t ON e.enumtypid = t.oid
-        WHERE t.typname = :enum_name AND e.enumlabel = :value
-        """
-    ), {"enum_name": enum_name, "value": value})
-    return result.fetchone() is not None
+def add_enum_values_outside_transaction():
+    """
+    Add enum values using a separate autocommit connection.
+    This is required because ALTER TYPE ... ADD VALUE cannot run inside a transaction.
+    """
+    callsource_values = ['google_doc', 'google_drive', 'direct_url', 'fireflies']
+
+    # Get the engine from alembic context
+    bind = op.get_bind()
+    engine = bind.engine
+
+    # Create a new raw connection with autocommit
+    raw_conn = engine.raw_connection()
+    try:
+        raw_conn.set_isolation_level(0)  # ISOLATION_LEVEL_AUTOCOMMIT
+
+        cursor = raw_conn.cursor()
+        try:
+            # Check which values already exist
+            cursor.execute("""
+                SELECT e.enumlabel FROM pg_enum e
+                JOIN pg_type t ON e.enumtypid = t.oid
+                WHERE t.typname = 'callsource'
+            """)
+            existing_values = {row[0] for row in cursor.fetchall()}
+
+            # Add missing values
+            for value in callsource_values:
+                if value not in existing_values:
+                    try:
+                        cursor.execute(f"ALTER TYPE callsource ADD VALUE '{value}'")
+                        print(f"Added enum value: {value}")
+                    except Exception as e:
+                        print(f"Could not add enum value '{value}': {e}")
+                else:
+                    print(f"Enum value already exists: {value}")
+        finally:
+            cursor.close()
+    except Exception as e:
+        print(f"Error adding enum values: {e}")
+    finally:
+        raw_conn.close()
 
 
 def upgrade():
     """Add missing CallSource enum values and fix FK constraints."""
 
-    # Skip enum changes - they cause issues with transactional DDL on Railway/managed PostgreSQL
-    # The enum values will be added manually if needed or via a separate non-transactional script
-    # See: https://www.postgresql.org/docs/current/sql-altertype.html
-    # "ADD VALUE cannot be executed inside a transaction block"
-    print("Skipping CallSource enum changes (requires manual execution outside transaction)")
+    # Add enum values using separate autocommit connection
+    add_enum_values_outside_transaction()
 
     # Fix FK constraints by dropping and recreating with ondelete
     # Note: This is safe as we're only changing the ondelete behavior
