@@ -7,22 +7,6 @@ export type {
   CallFailedEvent,
 } from './useWebSocket';
 
-export {
-  useKeyboardShortcuts,
-  useGlobalShortcuts,
-  useShortcutContext,
-  useGroupedShortcuts,
-  ShortcutProvider,
-  ShortcutContext,
-  formatShortcut,
-  CATEGORY_LABELS,
-} from './useKeyboardShortcuts';
-export type {
-  KeyboardShortcut,
-  UseKeyboardShortcutsOptions,
-  ShortcutCategory,
-} from './useKeyboardShortcuts';
-
 export { useOnboarding } from './useOnboarding';
 export type {
   TooltipId,

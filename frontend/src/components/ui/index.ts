@@ -1,8 +1,4 @@
 export { default as CurrencySelect } from './CurrencySelect';
-export { default as KeyboardShortcuts } from './KeyboardShortcuts';
-export { default as ShortcutBadge, ShortcutHint, ButtonWithShortcut } from '../ShortcutBadge';
-export { default as KeyboardShortcutsHelp, ShortcutHelpButton } from '../KeyboardShortcutsHelp';
-export { default as GlobalShortcuts } from '../GlobalShortcuts';
 export { default as ContextMenu, createVacancyContextMenu, createEntityContextMenu } from './ContextMenu';
 export type { ContextMenuItem } from './ContextMenu';
 export {
