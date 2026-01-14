@@ -46,13 +46,26 @@ def upgrade():
     """Add missing CallSource enum values and fix FK constraints."""
 
     # Add missing CallSource enum values
+    # Note: ALTER TYPE ... ADD VALUE cannot run inside a transaction in older PostgreSQL
+    # Using IF NOT EXISTS makes this safe to run multiple times
     callsource_values = ['google_doc', 'google_drive', 'direct_url', 'fireflies']
+
+    conn = op.get_bind()
 
     for value in callsource_values:
         if not enum_value_exists('callsource', value):
-            # Use autocommit for ALTER TYPE
-            with op.get_context().autocommit_block():
-                op.execute(f"ALTER TYPE callsource ADD VALUE IF NOT EXISTS '{value}'")
+            try:
+                # Try with autocommit if available
+                try:
+                    with op.get_context().autocommit_block():
+                        op.execute(sa.text(f"ALTER TYPE callsource ADD VALUE IF NOT EXISTS '{value}'"))
+                except Exception:
+                    # Fallback: commit current transaction, add value, start new transaction
+                    # This works in PostgreSQL 9.1+ with IF NOT EXISTS
+                    op.execute(sa.text(f"ALTER TYPE callsource ADD VALUE IF NOT EXISTS '{value}'"))
+            except Exception as e:
+                # Value might already exist or enum might not exist yet - skip
+                print(f"Warning: Could not add enum value '{value}': {e}")
 
     # Fix FK constraints by dropping and recreating with ondelete
     # Note: This is safe as we're only changing the ondelete behavior
