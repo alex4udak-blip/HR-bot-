@@ -344,7 +344,7 @@ export default function ContactsPage() {
             </OnboardingTooltip>
             <div className="flex items-center gap-2">
               <FeatureGatedButton
-                feature="vacancies"
+                feature="candidate_database"
                 onClick={() => setShowParserModal(true)}
                 className="p-2 rounded-lg bg-white/5 text-white/60 hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Импорт резюме"

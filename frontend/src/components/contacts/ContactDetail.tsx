@@ -353,7 +353,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
           { id: 'overview', label: 'Обзор' },
           { id: 'chats', label: `Чаты (${entity.chats?.length || 0})`, shortLabel: `Чаты` },
           { id: 'calls', label: `Звонки (${entity.calls?.length || 0})`, shortLabel: `Звонки` },
-          { id: 'vacancies', label: 'Вакансии', icon: Briefcase, requiresFeature: 'vacancies' as const },
+          { id: 'vacancies', label: 'Вакансии', icon: Briefcase, requiresFeature: 'candidate_database' as const },
           { id: 'files', label: 'Файлы', icon: FolderOpen },
           { id: 'criteria', label: 'Критерии', icon: Target },
           { id: 'reports', label: 'Отчёты', icon: Download },
@@ -481,8 +481,8 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               )}
             </div>
 
-            {/* Recommended Vacancies - only for candidates */}
-            {entity.type === 'candidate' && (
+            {/* Recommended Vacancies - only for candidates with candidate_database feature */}
+            {entity.type === 'candidate' && canAccessFeature('candidate_database') && (
               <div className="glass rounded-xl p-4 xl:col-span-2 h-fit border border-white/10">
                 <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
                   <Target size={18} className="text-purple-400" />
@@ -610,7 +610,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
           </div>
         )}
 
-        {activeTab === 'vacancies' && canAccessFeature('vacancies') && (
+        {activeTab === 'vacancies' && canAccessFeature('candidate_database') && (
           <div className="glass rounded-xl border border-white/10 p-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold text-white flex items-center gap-2">
@@ -619,7 +619,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               </h3>
               {entity.type === 'candidate' && canEditEntity(entity) && (
                 <FeatureGatedButton
-                  feature="vacancies"
+                  feature="candidate_database"
                   onClick={() => setShowAddToVacancyModal(true)}
                   className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors disabled:bg-blue-600/50 disabled:hover:bg-blue-600/50"
                   disabledTooltip="You don't have access to this feature"
