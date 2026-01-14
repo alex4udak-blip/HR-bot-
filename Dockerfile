@@ -15,7 +15,9 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies (ffmpeg for audio, libreoffice for documents)
-RUN apt-get update && apt-get install -y \
+# Use DEBIAN_FRONTEND=noninteractive to avoid interactive prompts
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ffmpeg \
     libreoffice-common \
     libreoffice-writer \
@@ -26,7 +28,8 @@ RUN apt-get update && apt-get install -y \
     # Playwright dependencies
     wget \
     gnupg \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Copy backend files
 COPY backend/ .
