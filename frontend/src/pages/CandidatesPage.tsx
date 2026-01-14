@@ -466,7 +466,7 @@ export default function CandidatesPage() {
   };
 
   return (
-    <div className="h-full flex">
+    <div className="h-full w-full max-w-full flex overflow-hidden">
       {/* Vacancy Sidebar */}
       <div className={clsx(
         'flex flex-col border-r border-white/10 bg-gray-900/50 transition-all duration-300',

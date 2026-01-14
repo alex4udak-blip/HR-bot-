@@ -369,7 +369,7 @@ export default function VacanciesPage() {
   // Detail view
   if (currentVacancy && vacancyId) {
     return (
-      <div className="h-full flex flex-col">
+      <div className="h-full w-full max-w-full flex flex-col overflow-hidden">
         <div className="flex items-center gap-4 p-4 border-b border-white/10">
           <button
             onClick={handleBack}
@@ -423,7 +423,7 @@ export default function VacanciesPage() {
 
   // List view
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full w-full max-w-full flex flex-col overflow-hidden">
       {/* Header */}
       <div className="p-4 border-b border-white/10">
         <div className="flex items-center justify-between mb-4">

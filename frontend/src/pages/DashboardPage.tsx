@@ -54,12 +54,12 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="h-full overflow-y-auto p-6">
+    <div className="h-full w-full max-w-full overflow-y-auto overflow-x-hidden p-6">
       <motion.div
         variants={container}
         initial="hidden"
         animate="show"
-        className="space-y-6 max-w-7xl mx-auto"
+        className="space-y-6 max-w-7xl mx-auto w-full"
       >
         {/* Header */}
         <motion.div variants={item}>
