@@ -328,8 +328,12 @@ export default function ContactsPage() {
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         className={clsx(
-          'flex-shrink-0 border-r border-white/5 flex flex-col bg-black/20',
-          currentEntity ? 'w-80' : 'w-full max-w-2xl'
+          'flex-shrink-0 border-r border-white/5 flex flex-col bg-black/20 transition-all duration-200',
+          currentEntity
+            ? showAIPanel
+              ? 'w-64 xl:w-72' // Narrower when AI panel is open
+              : 'w-80'
+            : 'w-full max-w-2xl'
         )}
       >
         {/* Header */}
