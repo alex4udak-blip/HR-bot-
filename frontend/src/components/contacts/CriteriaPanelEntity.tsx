@@ -9,13 +9,16 @@ import {
   AlertCircle,
   CheckCircle,
   Target,
-  TrendingUp
+  TrendingUp,
+  Bookmark,
+  X
 } from 'lucide-react';
 import * as Select from '@radix-ui/react-select';
 import {
   getEntityCriteria,
   updateEntityCriteria,
-  getCriteriaPresets
+  getCriteriaPresets,
+  createCriteriaPreset
 } from '@/services/api';
 import type { Criterion } from '@/types';
 import toast from 'react-hot-toast';
@@ -49,6 +52,9 @@ const categoryLabels = {
 export default function CriteriaPanelEntity({ entityId }: CriteriaPanelEntityProps) {
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
+  const [showSaveAsTemplate, setShowSaveAsTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: entityCriteria, isLoading } = useQuery({
@@ -113,6 +119,33 @@ export default function CriteriaPanelEntity({ entityId }: CriteriaPanelEntityPro
     }
   };
 
+  const handleSaveAsTemplate = async () => {
+    if (!templateName.trim() || criteria.length === 0) {
+      toast.error('Введите название и добавьте критерии');
+      return;
+    }
+
+    setSavingTemplate(true);
+    try {
+      await createCriteriaPreset({
+        name: templateName.trim(),
+        criteria: criteria,
+        category: 'custom',
+        chat_type: null,
+        is_global: false,
+        is_default: false,
+      });
+      queryClient.invalidateQueries({ queryKey: ['criteria-presets'] });
+      toast.success('Шаблон сохранён');
+      setShowSaveAsTemplate(false);
+      setTemplateName('');
+    } catch {
+      toast.error('Ошибка сохранения шаблона');
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -162,6 +195,15 @@ export default function CriteriaPanelEntity({ entityId }: CriteriaPanelEntityPro
             <Plus className="w-4 h-4" />
             Добавить
           </button>
+          {criteria.length > 0 && (
+            <button
+              onClick={() => setShowSaveAsTemplate(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 text-sm transition-colors"
+            >
+              <Bookmark className="w-4 h-4" />
+              <span className="hidden sm:inline">Сохранить как шаблон</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -281,6 +323,74 @@ export default function CriteriaPanelEntity({ entityId }: CriteriaPanelEntityPro
           </button>
         </motion.div>
       )}
+
+      {/* Save as Template Modal */}
+      <AnimatePresence>
+        {showSaveAsTemplate && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+            onClick={() => setShowSaveAsTemplate(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Bookmark className="w-5 h-5 text-purple-400" />
+                  Сохранить как шаблон
+                </h3>
+                <button
+                  onClick={() => setShowSaveAsTemplate(false)}
+                  className="p-1 rounded-lg hover:bg-white/10"
+                >
+                  <X size={20} className="text-white/60" />
+                </button>
+              </div>
+
+              <p className="text-sm text-white/60 mb-4">
+                Сохраните текущие {criteria.length} критериев как шаблон для использования с другими контактами
+              </p>
+
+              <input
+                type="text"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="Название шаблона..."
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/40 focus:outline-none focus:border-purple-500 mb-4"
+                autoFocus
+              />
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowSaveAsTemplate(false)}
+                  className="flex-1 px-4 py-2 rounded-xl bg-white/5 text-white/60 hover:bg-white/10 transition-colors"
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={handleSaveAsTemplate}
+                  disabled={savingTemplate || !templateName.trim()}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {savingTemplate ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Bookmark className="w-4 h-4" />
+                  )}
+                  Сохранить
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

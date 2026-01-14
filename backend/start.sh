@@ -151,8 +151,8 @@ import os
 import asyncio
 import sys
 
-# Add backend to path for imports
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) or '.')
+# We're running from /app (backend directory), so just add current dir
+sys.path.insert(0, '.')
 
 async def create_all_tables():
     db_url = os.environ.get('DATABASE_URL', '')
