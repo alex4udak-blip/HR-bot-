@@ -14,19 +14,23 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies (ffmpeg for audio, libreoffice for documents)
-RUN apt-get update && apt-get install -y \
+# Install system dependencies in stages to avoid memory/timeout issues
+# Stage 1: Basic tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    libreoffice-common \
-    libreoffice-writer \
-    libreoffice-calc \
-    libreoffice-impress \
     unrar-free \
     libheif-dev \
-    # Playwright dependencies
     wget \
     gnupg \
     && rm -rf /var/lib/apt/lists/*
+
+# Stage 2: LibreOffice (for document parsing - docx, xlsx, pptx)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libreoffice-writer-nogui \
+    libreoffice-calc-nogui \
+    libreoffice-impress-nogui \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Copy backend files
 COPY backend/ .
