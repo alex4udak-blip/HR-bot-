@@ -364,6 +364,9 @@ async def init_database():
     await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS transferred_to_id INTEGER REFERENCES users(id) ON DELETE SET NULL", "Add transferred_to_id to entities")
     await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS transferred_at TIMESTAMP", "Add transferred_at to entities")
 
+    # Entity optimistic locking version field
+    await run_migration(engine, "ALTER TABLE entities ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1", "Add version to entities")
+
     # Step 8: Invitations table
     logger.info("=== SETTING UP INVITATIONS ===")
     create_invitations = """
