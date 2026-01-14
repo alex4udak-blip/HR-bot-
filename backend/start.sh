@@ -124,19 +124,16 @@ echo "Checking current alembic version..."
 python -m alembic current || echo "No current version (fresh database)"
 
 echo ""
-echo "Upgrading to latest migration (add_compatibility_score)..."
+echo "Upgrading to latest migration (head)..."
 # Use timeout to prevent migration from blocking forever (max 120 seconds)
-# First try specific target, then heads if that fails
-timeout 120 python -m alembic upgrade add_compatibility_score 2>&1 && echo "Migration successful" || {
+# Upgrade to head to get all migrations including add_entity_type_criteria
+timeout 120 python -m alembic upgrade head 2>&1 && echo "Migration successful" || {
     ALEMBIC_EXIT=$?
     if [ $ALEMBIC_EXIT -eq 124 ]; then
         echo "WARNING: Migration timed out after 120 seconds!"
         echo "This usually means a lock or network issue. Continuing with SQLAlchemy fallback..."
     else
-        echo "Specific target failed (exit code: $ALEMBIC_EXIT), trying 'heads'..."
-        timeout 60 python -m alembic upgrade heads 2>&1 && echo "Migration with heads successful" || {
-            echo "Upgrade failed, but continuing - tables will be created by SQLAlchemy"
-        }
+        echo "Migration failed (exit code: $ALEMBIC_EXIT), continuing with SQLAlchemy fallback..."
     fi
 }
 
@@ -237,6 +234,7 @@ async def ensure_columns():
     try:
         async with engine.begin() as conn:
             print('Checking columns...')
+            # entity_transfers columns
             for col_name, col_type in [
                 ('copy_entity_id', 'INTEGER'),
                 ('cancelled_at', 'TIMESTAMP'),
@@ -247,10 +245,42 @@ async def ensure_columns():
                 except Exception as e:
                     pass
 
+            # users columns
             try:
                 await conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE'))
             except Exception as e:
                 pass
+
+            # entities.version column (critical for PR #373)
+            try:
+                await conn.execute(text('ALTER TABLE entities ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1'))
+                print('entities.version column ensured')
+            except Exception as e:
+                pass
+
+            # vacancy_applications.compatibility_score column
+            try:
+                await conn.execute(text('ALTER TABLE vacancy_applications ADD COLUMN IF NOT EXISTS compatibility_score JSONB'))
+                print('vacancy_applications.compatibility_score column ensured')
+            except Exception as e:
+                pass
+
+            # criteria_presets.entity_type column
+            try:
+                # First ensure the enum exists
+                await conn.execute(text(\"\"\"
+                    DO \$\$ BEGIN
+                        CREATE TYPE entitytype AS ENUM ('candidate', 'client', 'contractor', 'lead', 'partner', 'custom');
+                    EXCEPTION
+                        WHEN duplicate_object THEN null;
+                    END \$\$;
+                \"\"\"))
+                await conn.execute(text('ALTER TABLE criteria_presets ADD COLUMN IF NOT EXISTS entity_type entitytype'))
+                print('criteria_presets.entity_type column ensured')
+            except Exception as e:
+                print(f'entity_type column: {e}')
+                pass
+
             print('Columns OK')
     finally:
         await engine.dispose()
