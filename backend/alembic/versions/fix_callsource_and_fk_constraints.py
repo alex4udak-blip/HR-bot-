@@ -19,6 +19,9 @@ Adds missing ondelete behavior to foreign keys:
 Revision ID: fix_callsource_and_fk_constraints
 Revises: add_entity_salary
 Create Date: 2026-01-13
+
+Note: Uses autocommit_block() for ALTER TYPE ADD VALUE as per Alembic docs:
+https://github.com/sqlalchemy/alembic/issues/123
 """
 from alembic import op
 import sqlalchemy as sa
@@ -29,55 +32,23 @@ branch_labels = None
 depends_on = None
 
 
-def add_enum_values_outside_transaction():
-    """
-    Add enum values using a separate autocommit connection.
-    This is required because ALTER TYPE ... ADD VALUE cannot run inside a transaction.
-    """
-    callsource_values = ['google_doc', 'google_drive', 'direct_url', 'fireflies']
-
-    # Get the engine from alembic context
-    bind = op.get_bind()
-    engine = bind.engine
-
-    # Create a new raw connection with autocommit
-    raw_conn = engine.raw_connection()
-    try:
-        raw_conn.set_isolation_level(0)  # ISOLATION_LEVEL_AUTOCOMMIT
-
-        cursor = raw_conn.cursor()
-        try:
-            # Check which values already exist
-            cursor.execute("""
-                SELECT e.enumlabel FROM pg_enum e
-                JOIN pg_type t ON e.enumtypid = t.oid
-                WHERE t.typname = 'callsource'
-            """)
-            existing_values = {row[0] for row in cursor.fetchall()}
-
-            # Add missing values
-            for value in callsource_values:
-                if value not in existing_values:
-                    try:
-                        cursor.execute(f"ALTER TYPE callsource ADD VALUE '{value}'")
-                        print(f"Added enum value: {value}")
-                    except Exception as e:
-                        print(f"Could not add enum value '{value}': {e}")
-                else:
-                    print(f"Enum value already exists: {value}")
-        finally:
-            cursor.close()
-    except Exception as e:
-        print(f"Error adding enum values: {e}")
-    finally:
-        raw_conn.close()
-
-
 def upgrade():
     """Add missing CallSource enum values and fix FK constraints."""
 
-    # Add enum values using separate autocommit connection
-    add_enum_values_outside_transaction()
+    # Add enum values using autocommit_block() - official Alembic way
+    # See: https://github.com/sqlalchemy/alembic/issues/123
+    # ALTER TYPE ... ADD VALUE cannot run inside a transaction block
+    callsource_values = ['google_doc', 'google_drive', 'direct_url', 'fireflies']
+
+    for value in callsource_values:
+        # Each ADD VALUE needs its own autocommit block
+        try:
+            with op.get_context().autocommit_block():
+                op.execute(sa.text(f"ALTER TYPE callsource ADD VALUE IF NOT EXISTS '{value}'"))
+            print(f"Added/verified enum value: {value}")
+        except Exception as e:
+            # Value might already exist or enum might not exist
+            print(f"Note: {value} - {e}")
 
     # Fix FK constraints by dropping and recreating with ondelete
     # Note: This is safe as we're only changing the ondelete behavior
