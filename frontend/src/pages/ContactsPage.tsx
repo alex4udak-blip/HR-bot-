@@ -324,6 +324,7 @@ export default function ContactsPage() {
   return (
     <div className="h-full flex">
       {/* Sidebar - Entity List */}
+      {/* Hide sidebar completely on narrower screens when AI panel is open */}
       <motion.div
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
@@ -331,7 +332,7 @@ export default function ContactsPage() {
           'flex-shrink-0 border-r border-white/5 flex flex-col bg-black/20 transition-all duration-200',
           currentEntity
             ? showAIPanel
-              ? 'w-64 xl:w-72' // Narrower when AI panel is open
+              ? 'hidden 2xl:flex w-64 2xl:w-72' // Hide on screens < 2xl when AI panel is open
               : 'w-80'
             : 'w-full max-w-2xl'
         )}
@@ -663,6 +664,7 @@ export default function ContactsPage() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
             className="flex-1 flex flex-col min-w-0"
+            style={{ minWidth: showAIPanel ? '450px' : '400px' }}
           >
             {/* Header */}
             <div className="p-4 border-b border-white/5 flex items-center gap-4">
@@ -752,7 +754,7 @@ export default function ContactsPage() {
             animate={{ width: 480, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="hidden xl:flex flex-col border-l border-white/5 glass overflow-hidden"
+            className="hidden xl:flex flex-col border-l border-white/5 glass overflow-hidden flex-shrink-0"
           >
             <div className="p-4 border-b border-white/5 flex items-center justify-between flex-shrink-0">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">
