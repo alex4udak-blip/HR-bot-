@@ -263,6 +263,18 @@ export interface Entity {
   expected_salary_currency?: string;
 }
 
+export interface EntityFile {
+  id: number;
+  entity_id: number;
+  file_type: 'resume' | 'cover_letter' | 'test_assignment' | 'certificate' | 'portfolio' | 'other';
+  file_name: string;
+  file_path: string;
+  file_size?: number;
+  mime_type?: string;
+  description?: string;
+  created_at: string;
+}
+
 export interface EntityWithRelations extends Entity {
   chats: Array<{
     id: number;
@@ -285,6 +297,7 @@ export interface EntityWithRelations extends Entity {
     result?: string;
     created_at: string;
   }>;
+  files?: EntityFile[];
 }
 
 export interface EntityTransfer {

@@ -336,9 +336,22 @@ async def update_entity_ai_summary(
         if call.summary:
             content_parts.append(f"Звонок {call.title}: {call.summary}")
 
-    # Add files info
+    # Add files with parsed content (like in chat_stream)
     for file in files:
-        content_parts.append(f"Файл ({file.file_type.value}): {file.file_name}")
+        file_header = f"Файл ({file.file_type.value}): {file.file_name}"
+        if file.description:
+            file_header += f"\nОписание: {file.description}"
+
+        # Parse file content using entity_ai_service
+        file_content = await entity_ai_service._parse_entity_file(file)
+        if file_content:
+            # Limit file content to prevent token overflow
+            max_file_chars = 5000
+            if len(file_content) > max_file_chars:
+                file_content = file_content[:max_file_chars] + "\n... (содержимое сокращено)"
+            content_parts.append(f"{file_header}\nСодержимое:\n{file_content}")
+        else:
+            content_parts.append(f"{file_header}\n(не удалось извлечь содержимое файла)")
 
     content = "\n\n".join(content_parts)
 
@@ -468,6 +481,9 @@ async def batch_update_entity_summaries(
             for call in calls:
                 if call.summary:
                     content_parts.append(f"Звонок {call.title}: {call.summary}")
+
+            for file in files:
+                content_parts.append(f"Файл ({file.file_type.value}): {file.file_name}")
 
             content = "\n\n".join(content_parts)
 

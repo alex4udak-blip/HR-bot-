@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
-import type { EntityWithRelations, Chat, CallRecording } from '@/types';
+import type { EntityWithRelations, Chat, CallRecording, VacancyApplication } from '@/types';
 import { EmptyChats, EmptyCalls } from '@/components/ui';
 import { STATUS_LABELS, STATUS_COLORS, CALL_STATUS_LABELS, CALL_STATUS_COLORS, formatSalary } from '@/types';
 import EntityAI from './EntityAI';
@@ -62,6 +62,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
   const [loadingData, setLoadingData] = useState(false);
   const [downloadingReport, setDownloadingReport] = useState<string | null>(null);
   const [vacanciesKey, setVacanciesKey] = useState(0); // Key to force reload vacancies
+  const [entityApplications, setEntityApplications] = useState<VacancyApplication[]>([]);
   const { fetchEntity } = useEntityStore();
   const { canAccessFeature } = useCanAccessFeature();
   const { isAdmin, canEditResource, canAccessDepartment } = useAuthStore();
@@ -95,6 +96,19 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
       loadUnlinkedCalls();
     }
   }, [showLinkCallModal]);
+
+  // Load entity applications for timeline
+  useEffect(() => {
+    const loadApplications = async () => {
+      try {
+        const data = await api.getEntityVacancies(entity.id);
+        setEntityApplications(data);
+      } catch (e) {
+        console.error('Failed to load entity applications:', e);
+      }
+    };
+    loadApplications();
+  }, [entity.id, vacanciesKey]);
 
   const loadUnlinkedChats = async () => {
     setLoadingData(true);
@@ -660,6 +674,19 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   duration_seconds: call.duration_seconds,
                   created_at: call.created_at,
                   summary: call.summary
+                }))}
+                files={entity.files?.map(file => ({
+                  id: file.id,
+                  file_name: file.file_name,
+                  file_type: file.file_type,
+                  created_at: file.created_at
+                }))}
+                applications={entityApplications?.map(app => ({
+                  id: app.id,
+                  vacancy_title: app.vacancy_title || 'Вакансия',
+                  stage: app.stage,
+                  applied_at: app.applied_at,
+                  updated_at: app.updated_at
                 }))}
               />
             </div>
