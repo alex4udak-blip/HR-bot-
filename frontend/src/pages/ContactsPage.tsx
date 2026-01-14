@@ -322,56 +322,68 @@ export default function ContactsPage() {
   };
 
   // Calculate layout mode based on AI panel state
-  // When AI panel is open on xl+ screens, we need to manage space better
+  // When AI panel is open on xl+ screens, we show all 3 columns: sidebar (240px) + content (1fr) + AI (480px)
   const layoutMode = currentEntity
     ? showAIPanel
-      ? 'ai-open' // content + AI panel (sidebar hidden on xl, overlay on smaller)
+      ? 'ai-open' // sidebar (narrow) + content + AI panel
       : 'detail' // sidebar + content
     : 'list'; // full width list
 
   return (
     <div
       className={clsx(
-        'h-full',
-        // Use CSS Grid for precise layout control
-        layoutMode === 'ai-open' && 'xl:grid xl:grid-cols-[1fr_480px]',
+        'h-full overflow-hidden',
+        // Use CSS Grid for precise layout control with 3 columns when AI panel is open
+        // On xl (1280px): 220px sidebar + flex content + 420px AI = ~1280px fits perfectly
+        // On 2xl (1536px): 260px sidebar + flex content + 480px AI = more breathing room
+        layoutMode === 'ai-open' && 'xl:grid xl:grid-cols-[220px_minmax(300px,1fr)_420px] 2xl:grid-cols-[260px_minmax(400px,1fr)_480px]',
         layoutMode === 'detail' && 'flex',
         layoutMode === 'list' && 'flex'
       )}
     >
       {/* Sidebar - Entity List */}
-      {/* Hide sidebar when AI panel is open on xl+ to give more space to main content */}
+      {/* When AI panel is open on xl+, sidebar becomes narrow via grid column */}
+      {/* On lg screens without AI: fixed 280px. On xl+ with AI: grid controls width */}
       <motion.div
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         className={clsx(
-          'border-r border-white/5 flex flex-col bg-black/20 transition-all duration-200',
+          'border-r border-white/5 flex flex-col bg-black/20 transition-all duration-200 overflow-hidden',
           layoutMode === 'ai-open'
-            ? 'hidden' // Hide sidebar when AI panel is open
+            ? 'hidden xl:flex xl:w-full min-w-0' // Hidden on <xl, grid controls width on xl+
             : layoutMode === 'detail'
-              ? 'w-80 flex-shrink-0'
+              ? 'w-64 lg:w-72 xl:w-80 flex-shrink-0' // Responsive sidebar widths
               : 'w-full max-w-2xl'
         )}
       >
         {/* Header */}
-        <div className="p-4 border-b border-white/5">
-          <div className="flex items-center justify-between mb-4">
+        <div className={clsx(
+          'border-b border-white/5',
+          layoutMode === 'ai-open' ? 'p-3' : 'p-4'
+        )}>
+          <div className="flex items-center justify-between mb-3">
             <OnboardingTooltip
               id="contacts-page"
               content="Import candidates from hh.ru or upload resumes"
               position="bottom"
             >
-              <h1 className="text-xl font-semibold text-white">Контакты</h1>
+              <h1 className={clsx(
+                'font-semibold text-white truncate',
+                layoutMode === 'ai-open' ? 'text-base' : 'text-xl'
+              )}>Контакты</h1>
             </OnboardingTooltip>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
               <FeatureGatedButton
                 feature="candidate_database"
                 onClick={() => setShowParserModal(true)}
-                className="p-2 rounded-lg bg-white/5 text-white/60 hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className={clsx(
+                  'rounded-lg bg-white/5 text-white/60 hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+                  layoutMode === 'ai-open' ? 'p-1.5' : 'p-2'
+                )}
                 title="Импорт резюме"
                 disabledTooltip="You don't have access to this feature"
               >
-                <Upload size={20} />
+                <Upload size={layoutMode === 'ai-open' ? 16 : 20} />
               </FeatureGatedButton>
               <button
                 onClick={() => {
@@ -379,27 +391,36 @@ export default function ContactsPage() {
                   setPrefillData(null);
                   setShowCreateModal(true);
                 }}
-                className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors"
+                className={clsx(
+                  'rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors',
+                  layoutMode === 'ai-open' ? 'p-1.5' : 'p-2'
+                )}
               >
-                <Plus size={20} />
+                <Plus size={layoutMode === 'ai-open' ? 16 : 20} />
               </button>
             </div>
           </div>
 
           {/* Search */}
-          <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={18} />
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={layoutMode === 'ai-open' ? 14 : 18} />
             <input
               type="text"
-              placeholder="Поиск контактов..."
+              placeholder={layoutMode === 'ai-open' ? 'Поиск...' : 'Поиск контактов...'}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+              className={clsx(
+                'w-full bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50',
+                layoutMode === 'ai-open' ? 'pl-8 pr-3 py-1.5 text-sm' : 'pl-10 pr-4 py-2'
+              )}
             />
           </div>
 
           {/* Ownership Filters */}
-          <div className="flex gap-1 mb-3 p-1 bg-white/5 rounded-lg">
+          <div className={clsx(
+            'flex gap-1 mb-3 p-1 bg-white/5 rounded-lg',
+            layoutMode === 'ai-open' && 'overflow-x-auto'
+          )}>
             {OWNERSHIP_FILTERS.map((filter) => {
               const Icon = filter.icon;
               return (
@@ -407,15 +428,16 @@ export default function ContactsPage() {
                   key={filter.id}
                   onClick={() => setOwnershipFilter(filter.id)}
                   className={clsx(
-                    'flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm transition-colors',
+                    'flex-1 flex items-center justify-center rounded-md transition-colors whitespace-nowrap',
+                    layoutMode === 'ai-open' ? 'gap-1 px-2 py-1.5 text-xs' : 'gap-1.5 px-3 py-2 text-sm',
                     ownershipFilter === filter.id
                       ? 'bg-cyan-500 text-white shadow-lg'
                       : 'text-white/60 hover:text-white hover:bg-white/5'
                   )}
                   title={filter.description}
                 >
-                  <Icon size={14} />
-                  <span>{filter.name}</span>
+                  <Icon size={layoutMode === 'ai-open' ? 12 : 14} />
+                  <span className={layoutMode === 'ai-open' ? 'sr-only' : ''}>{filter.name}</span>
                 </button>
               );
             })}
@@ -427,9 +449,12 @@ export default function ContactsPage() {
               <select
                 value={departmentFilter}
                 onChange={(e) => setDepartmentFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50"
+                className={clsx(
+                  'w-full bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-cyan-500/50',
+                  layoutMode === 'ai-open' ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm'
+                )}
               >
-                <option value="all">Все департаменты</option>
+                <option value="all">{layoutMode === 'ai-open' ? 'Все' : 'Все департаменты'}</option>
                 {departments.map((dept) => (
                   <option key={dept.id} value={dept.id}>
                     {dept.name}
@@ -443,14 +468,20 @@ export default function ContactsPage() {
           {vacancies.length > 0 && canAccessFeature('vacancies') && (
             <div className="mb-3">
               <div className="relative">
-                <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={16} />
+                <Briefcase className={clsx(
+                  'absolute top-1/2 -translate-y-1/2 text-white/40',
+                  layoutMode === 'ai-open' ? 'left-2' : 'left-3'
+                )} size={layoutMode === 'ai-open' ? 14 : 16} />
                 <select
                   value={vacancyFilter}
                   onChange={(e) => setVacancyFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
                   disabled={vacancyFilterLoading}
-                  className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500/50 appearance-none cursor-pointer disabled:opacity-50"
+                  className={clsx(
+                    'w-full bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-cyan-500/50 appearance-none cursor-pointer disabled:opacity-50',
+                    layoutMode === 'ai-open' ? 'pl-7 pr-3 py-1.5 text-xs' : 'pl-10 pr-4 py-2 text-sm'
+                  )}
                 >
-                  <option value="all">All candidates</option>
+                  <option value="all">{layoutMode === 'ai-open' ? 'Все' : 'All candidates'}</option>
                   {vacancies.map((vacancy) => (
                     <option key={vacancy.id} value={vacancy.id}>
                       {vacancy.title} ({vacancy.applications_count})
@@ -467,7 +498,10 @@ export default function ContactsPage() {
           )}
 
           {/* Type Filters */}
-          <div className="flex flex-wrap gap-2">
+          <div className={clsx(
+            'flex flex-wrap',
+            layoutMode === 'ai-open' ? 'gap-1' : 'gap-2'
+          )}>
             {ENTITY_TYPE_FILTERS.map((filter) => {
               const Icon = filter.icon;
               // Use typeCounts from store - these stay constant regardless of type filter
@@ -479,16 +513,18 @@ export default function ContactsPage() {
                 <button
                   key={filter.id}
                   onClick={() => setTypeFilter(filter.id)}
+                  title={`${filter.name} (${count})`}
                   className={clsx(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors',
+                    'flex items-center rounded-lg transition-colors',
+                    layoutMode === 'ai-open' ? 'gap-1 px-2 py-1 text-xs' : 'gap-1.5 px-3 py-1.5 text-sm',
                     typeFilter === filter.id
                       ? 'bg-cyan-500/20 text-cyan-400'
                       : 'bg-white/5 text-white/60 hover:bg-white/10'
                   )}
                 >
-                  <Icon size={14} />
-                  <span>{filter.name}</span>
-                  <span className="text-xs opacity-60">({count})</span>
+                  <Icon size={layoutMode === 'ai-open' ? 12 : 14} />
+                  <span className={layoutMode === 'ai-open' ? 'sr-only' : ''}>{filter.name}</span>
+                  <span className={clsx('opacity-60', layoutMode === 'ai-open' ? 'text-[10px]' : 'text-xs')}>({count})</span>
                 </button>
               );
             })}
@@ -496,23 +532,29 @@ export default function ContactsPage() {
         </div>
 
         {/* Entity List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        <div className={clsx(
+          'flex-1 overflow-y-auto overflow-x-hidden',
+          layoutMode === 'ai-open' ? 'p-2 space-y-1' : 'p-4 space-y-2'
+        )}>
           {loading && accessibleEntities.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
             </div>
           ) : accessibleEntities.length === 0 ? (
             <div className="text-center py-8 text-white/40">
-              <Users className="mx-auto mb-2" size={40} />
-              <p>Контакты не найдены</p>
+              <Users className="mx-auto mb-2" size={layoutMode === 'ai-open' ? 28 : 40} />
+              <p className={layoutMode === 'ai-open' ? 'text-xs' : ''}>Контакты не найдены</p>
               <button
                 onClick={() => {
                   setEditingEntity(null);
                   setShowCreateModal(true);
                 }}
-                className="mt-4 px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors"
+                className={clsx(
+                  'mt-4 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors',
+                  layoutMode === 'ai-open' ? 'px-3 py-1.5 text-xs' : 'px-4 py-2'
+                )}
               >
-                Добавить первый контакт
+                {layoutMode === 'ai-open' ? 'Добавить' : 'Добавить первый контакт'}
               </button>
             </div>
           ) : (
@@ -520,6 +562,7 @@ export default function ContactsPage() {
               const Icon = getEntityIcon(entity.type);
               const isSelected = currentEntity?.id === entity.id;
               const isCompact = !!currentEntity; // Sidebar is narrow when entity is selected
+              const isVeryCompact = layoutMode === 'ai-open'; // Extra compact when AI panel is open
 
               return (
                 <motion.div
@@ -529,7 +572,7 @@ export default function ContactsPage() {
                   onClick={() => handleSelectEntity(entity.id)}
                   className={clsx(
                     'rounded-xl cursor-pointer transition-all group overflow-hidden',
-                    isCompact ? 'p-3' : 'p-4',
+                    isVeryCompact ? 'p-2' : isCompact ? 'p-3' : 'p-4',
                     entity.is_transferred
                       ? 'bg-white/3 border border-white/5 opacity-60'
                       : isSelected
@@ -537,18 +580,21 @@ export default function ContactsPage() {
                       : 'bg-white/5 border border-white/5 hover:bg-white/10'
                   )}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className={clsx('flex items-center', isVeryCompact ? 'gap-2' : 'gap-3')}>
                     <div className={clsx(
                       'rounded-lg flex-shrink-0',
-                      isCompact ? 'p-1.5' : 'p-2',
+                      isVeryCompact ? 'p-1' : isCompact ? 'p-1.5' : 'p-2',
                       isSelected ? 'bg-cyan-500/30' : 'bg-white/10'
                     )}>
-                      <Icon size={isCompact ? 16 : 20} className={isSelected ? 'text-cyan-400' : 'text-white/60'} />
+                      <Icon size={isVeryCompact ? 14 : isCompact ? 16 : 20} className={isSelected ? 'text-cyan-400' : 'text-white/60'} />
                     </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className={clsx('font-medium text-white truncate', isCompact && 'text-sm')}>{entity.name}</h3>
+                    <div className="flex-1 min-w-0 overflow-hidden">
+                      <div className="flex items-center gap-1.5 overflow-hidden">
+                        <h3 className={clsx(
+                          'font-medium text-white truncate',
+                          isVeryCompact ? 'text-xs' : isCompact ? 'text-sm' : ''
+                        )}>{entity.name}</h3>
                         {!isCompact && entity.is_transferred && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 flex-shrink-0">
                             Передан
@@ -561,18 +607,21 @@ export default function ContactsPage() {
                         )}
                       </div>
 
-                      {/* Compact mode: show minimal info */}
+                      {/* Compact/Very compact mode: show minimal info */}
                       {isCompact ? (
-                        <div className="flex items-center gap-2 mt-0.5 text-xs text-white/40">
+                        <div className={clsx(
+                          'flex items-center mt-0.5 text-white/40',
+                          isVeryCompact ? 'gap-1.5 text-[10px]' : 'gap-2 text-xs'
+                        )}>
                           {entity.chats_count !== undefined && entity.chats_count > 0 && (
-                            <span className="flex items-center gap-1">
-                              <MessageSquare size={10} />
+                            <span className="flex items-center gap-0.5">
+                              <MessageSquare size={isVeryCompact ? 8 : 10} />
                               {entity.chats_count}
                             </span>
                           )}
                           {entity.calls_count !== undefined && entity.calls_count > 0 && (
-                            <span className="flex items-center gap-1">
-                              <Phone size={10} />
+                            <span className="flex items-center gap-0.5">
+                              <Phone size={isVeryCompact ? 8 : 10} />
                               {entity.calls_count}
                             </span>
                           )}
@@ -680,16 +729,16 @@ export default function ContactsPage() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
             className={clsx(
-              'flex flex-col overflow-hidden',
-              // When AI panel is open, this is the first grid column (1fr = takes remaining space)
+              'flex flex-col overflow-hidden min-w-0',
+              // When AI panel is open, this is the middle grid column (minmax controls width)
               // When AI panel is closed, use flex-1 to fill available space
               layoutMode === 'ai-open'
-                ? 'min-w-0' // Allow shrinking in grid, no flex needed
-                : 'flex-1 min-w-0' // Flex layout with min-w-0 to allow truncation
+                ? 'w-full' // Grid controls width via minmax
+                : 'flex-1' // Flex layout fills remaining space
             )}
           >
             {/* Header */}
-            <div className="p-4 border-b border-white/5 flex items-center gap-2 sm:gap-4 overflow-hidden">
+            <div className="p-3 xl:p-4 border-b border-white/5 flex items-center gap-2 sm:gap-3 overflow-hidden">
               <button
                 onClick={handleBack}
                 className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex-shrink-0"
@@ -698,63 +747,67 @@ export default function ContactsPage() {
               </button>
               <div className="flex-1 min-w-0 overflow-hidden">
                 <div className="flex items-center gap-2 overflow-hidden">
-                  <h2 className="text-lg sm:text-xl font-semibold text-white truncate">{currentEntity.name}</h2>
+                  <h2 className="text-base sm:text-lg xl:text-xl font-semibold text-white truncate">{currentEntity.name}</h2>
                   {currentEntity.is_transferred && currentEntity.transferred_to_name && (
-                    <span className="hidden sm:flex px-2 py-1 bg-orange-500/20 text-orange-400 text-xs rounded-lg whitespace-nowrap items-center gap-1 flex-shrink-0">
+                    <span className="hidden lg:flex px-2 py-1 bg-orange-500/20 text-orange-400 text-xs rounded-lg whitespace-nowrap items-center gap-1 flex-shrink-0">
                       <ArrowRightLeft size={12} />
-                      Передан
+                      <span className="hidden xl:inline">Передан</span>
                     </span>
                   )}
                   {currentEntity.is_shared && currentEntity.access_level === 'view' && (
-                    <span className="hidden sm:inline px-2 py-1 bg-purple-500/20 text-purple-400 text-xs rounded-lg whitespace-nowrap flex-shrink-0">
-                      Просмотр
+                    <span className="hidden lg:inline px-2 py-1 bg-purple-500/20 text-purple-400 text-xs rounded-lg whitespace-nowrap flex-shrink-0">
+                      <span className="hidden xl:inline">Просмотр</span>
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-white/60 truncate">
+                <p className="text-xs sm:text-sm text-white/60 truncate">
                   {ENTITY_TYPES[currentEntity.type].name}
                   {currentEntity.company && ` @ ${currentEntity.company}`}
                 </p>
               </div>
-              <div className="flex gap-1 sm:gap-2 flex-shrink-0">
+              <div className="flex gap-1 flex-shrink-0">
                 <button
                   onClick={() => setShowAIPanel(!showAIPanel)}
                   data-tour="ai-button"
                   className={clsx(
-                    'p-2 sm:px-3 sm:py-2 rounded-lg flex items-center gap-2 transition-colors',
+                    'p-2 rounded-lg flex items-center gap-1.5 transition-colors',
                     showAIPanel
                       ? 'bg-cyan-500/20 text-cyan-400'
                       : 'bg-white/5 hover:bg-white/10 text-white/60'
                   )}
+                  title="AI Ассистент"
                 >
                   <Bot size={16} />
-                  <span className="hidden sm:inline">AI</span>
+                  <span className={clsx('hidden', showAIPanel ? '2xl:inline' : 'lg:inline')}>AI</span>
                 </button>
                 {canShare(currentEntity as Entity) && (
                   <button
                     onClick={() => setShowShareModal(true)}
-                    className="p-2 sm:px-3 sm:py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
+                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-1.5"
+                    title="Поделиться"
                   >
                     <Share2 size={16} />
-                    <span className="hidden sm:inline">Поделиться</span>
+                    <span className={clsx('hidden', showAIPanel ? '2xl:inline' : 'xl:inline')}>Поделиться</span>
                   </button>
                 )}
                 {canTransfer(currentEntity as Entity) && (
                   <button
                     onClick={() => handleTransfer(currentEntity as Entity)}
-                    className="p-2 sm:px-3 sm:py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
+                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-1.5"
+                    title="Передать"
                   >
                     <ArrowRightLeft size={16} />
-                    <span className="hidden sm:inline">Передать</span>
+                    <span className={clsx('hidden', showAIPanel ? '2xl:inline' : 'xl:inline')}>Передать</span>
                   </button>
                 )}
                 {canEdit(currentEntity as Entity) && (
                   <button
                     onClick={() => handleEdit(currentEntity as Entity)}
-                    className="p-2 sm:px-3 sm:py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-2"
+                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-1.5"
+                    title="Редактировать"
                   >
                     <Edit size={16} />
-                    <span className="hidden sm:inline">Редактировать</span>
+                    <span className={clsx('hidden', showAIPanel ? '2xl:inline' : 'xl:inline')}>Изменить</span>
                   </button>
                 )}
               </div>
@@ -769,7 +822,7 @@ export default function ContactsPage() {
       </AnimatePresence>
 
       {/* AI Panel - Right Column */}
-      {/* On xl+ screens: fixed 480px width as second grid column */}
+      {/* On xl (1280px): 420px width, on 2xl (1536px): 480px width as third grid column */}
       {/* On smaller screens: uses mobile overlay below */}
       <AnimatePresence>
         {currentEntity && showAIPanel && (
@@ -778,16 +831,16 @@ export default function ContactsPage() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="hidden xl:flex flex-col border-l border-white/5 glass overflow-hidden w-[480px]"
+            className="hidden xl:flex flex-col border-l border-white/5 glass overflow-hidden w-full min-w-0"
           >
-            <div className="p-4 border-b border-white/5 flex items-center justify-between flex-shrink-0">
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Bot size={20} className="text-cyan-400" />
-                AI Ассистент
+            <div className="p-3 2xl:p-4 border-b border-white/5 flex items-center justify-between flex-shrink-0">
+              <h3 className="text-base 2xl:text-lg font-semibold text-white flex items-center gap-2 truncate">
+                <Bot size={18} className="text-cyan-400 flex-shrink-0" />
+                <span className="truncate">AI Ассистент</span>
               </h3>
               <button
                 onClick={() => setShowAIPanel(false)}
-                className="p-1.5 rounded-lg hover:bg-white/10 text-white/60"
+                className="p-1.5 rounded-lg hover:bg-white/10 text-white/60 flex-shrink-0"
               >
                 <X size={18} />
               </button>
