@@ -108,17 +108,17 @@ export default function Layout() {
     const items = [
       { path: '/dashboard', icon: LayoutDashboard, label: 'Главная' },
       { path: '/chats', icon: MessageSquare, label: 'Чаты' },
-      { path: '/calls', icon: Phone, label: 'Созвоны' },
       { path: '/contacts', icon: Users, label: 'Контакты' },
-      { path: '/trash', icon: Trash2, label: 'Корзина' },
     ];
 
     // Add "База кандидатов" only for HR department (feature-gated) - after "Контакты"
     if (hasFeature('candidate_database')) {
-      // Find index of Контакты and insert after it
-      const contactsIndex = items.findIndex(item => item.path === '/contacts');
-      items.splice(contactsIndex + 1, 0, { path: '/candidates', icon: UserCheck, label: 'База кандидатов' });
+      items.push({ path: '/candidates', icon: UserCheck, label: 'База кандидатов' });
     }
+
+    // Add remaining items
+    items.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
+    items.push({ path: '/trash', icon: Trash2, label: 'Корзина' });
 
     // Add menu items for superadmin
     if (user?.role === 'superadmin') {
