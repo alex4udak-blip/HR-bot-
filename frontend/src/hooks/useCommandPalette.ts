@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useCallback, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { create } from 'zustand';
 import { globalSearch, type GlobalSearchResponse } from '@/services/api';
 
 /**
@@ -104,6 +105,54 @@ const PAGES: PageItem[] = [
 ];
 
 /**
+ * Zustand store for Command Palette global state
+ * This ensures all components share the same isOpen state
+ */
+interface CommandPaletteStore {
+  isOpen: boolean;
+  query: string;
+  selectedIndex: number;
+  isLoading: boolean;
+  apiResults: GlobalSearchResponse | null;
+  history: string[];
+
+  // Actions
+  open: () => void;
+  close: () => void;
+  toggle: () => void;
+  setQuery: (query: string) => void;
+  setSelectedIndex: (index: number) => void;
+  setIsLoading: (loading: boolean) => void;
+  setApiResults: (results: GlobalSearchResponse | null) => void;
+  setHistory: (history: string[]) => void;
+}
+
+export const useCommandPaletteStore = create<CommandPaletteStore>((set, get) => ({
+  isOpen: false,
+  query: '',
+  selectedIndex: 0,
+  isLoading: false,
+  apiResults: null,
+  history: getCommandHistory(),
+
+  open: () => set({ isOpen: true, query: '', selectedIndex: 0, apiResults: null }),
+  close: () => set({ isOpen: false, query: '', selectedIndex: 0 }),
+  toggle: () => {
+    const { isOpen, open, close } = get();
+    if (isOpen) {
+      close();
+    } else {
+      open();
+    }
+  },
+  setQuery: (query) => set({ query, selectedIndex: 0 }),
+  setSelectedIndex: (selectedIndex) => set({ selectedIndex }),
+  setIsLoading: (isLoading) => set({ isLoading }),
+  setApiResults: (apiResults) => set({ apiResults }),
+  setHistory: (history) => set({ history }),
+}));
+
+/**
  * Return type for the useCommandPalette hook
  */
 export interface UseCommandPaletteReturn {
@@ -151,7 +200,8 @@ export interface UseCommandPaletteReturn {
  * - Debounced API calls
  * - Search history
  *
- * @param debounceMs Debounce time for API calls (default: 300)
+ * @param options.debounceMs Debounce time for API calls (default: 300)
+ * @param options.enableKeyboardShortcuts Enable global keyboard shortcuts (default: true)
  *
  * @example
  * ```tsx
@@ -167,13 +217,29 @@ export interface UseCommandPaletteReturn {
  * );
  * ```
  */
-export function useCommandPalette(debounceMs: number = 300): UseCommandPaletteReturn {
-  const [isOpen, setIsOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
-  const [apiResults, setApiResults] = useState<GlobalSearchResponse | null>(null);
-  const [history, setHistory] = useState<string[]>(getCommandHistory);
+export function useCommandPalette(options: {
+  debounceMs?: number;
+  enableKeyboardShortcuts?: boolean;
+} = {}): UseCommandPaletteReturn {
+  const { debounceMs = 300, enableKeyboardShortcuts = true } = options;
+
+  // Use global store for shared state
+  const {
+    isOpen,
+    query,
+    selectedIndex,
+    isLoading,
+    apiResults,
+    history,
+    open,
+    close,
+    toggle,
+    setQuery: storeSetQuery,
+    setSelectedIndex,
+    setIsLoading,
+    setApiResults,
+    setHistory,
+  } = useCommandPaletteStore();
 
   const navigate = useNavigate();
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -189,7 +255,7 @@ export function useCommandPalette(debounceMs: number = 300): UseCommandPaletteRe
       keywords: ['создать', 'добавить', 'кандидат', 'новый', 'create', 'add', 'candidate'],
       action: () => {
         navigate('/candidates?action=create');
-        setIsOpen(false);
+        close();
       }
     },
     {
@@ -200,7 +266,7 @@ export function useCommandPalette(debounceMs: number = 300): UseCommandPaletteRe
       keywords: ['создать', 'добавить', 'вакансия', 'новая', 'create', 'add', 'vacancy'],
       action: () => {
         navigate('/vacancies?action=create');
-        setIsOpen(false);
+        close();
       }
     },
     {
@@ -211,7 +277,7 @@ export function useCommandPalette(debounceMs: number = 300): UseCommandPaletteRe
       keywords: ['загрузить', 'импорт', 'резюме', 'файл', 'upload', 'import', 'resume', 'cv'],
       action: () => {
         navigate('/candidates?action=upload');
-        setIsOpen(false);
+        close();
       }
     },
     {
@@ -222,10 +288,10 @@ export function useCommandPalette(debounceMs: number = 300): UseCommandPaletteRe
       keywords: ['записать', 'звонок', 'созвон', 'видео', 'record', 'call', 'meeting'],
       action: () => {
         navigate('/calls?action=record');
-        setIsOpen(false);
+        close();
       }
     }
-  ], [navigate]);
+  ], [navigate, close]);
 
   // Filter local items (pages and actions)
   const filterLocalItems = useCallback((searchQuery: string): CommandPaletteItem[] => {
@@ -247,7 +313,7 @@ export function useCommandPalette(debounceMs: number = 300): UseCommandPaletteRe
           icon: page.icon,
           action: () => {
             navigate(page.path);
-            setIsOpen(false);
+            close();
             saveToHistory(searchQuery);
           }
         });
@@ -276,7 +342,7 @@ export function useCommandPalette(debounceMs: number = 300): UseCommandPaletteRe
     });
 
     return results;
-  }, [actions, navigate]);
+  }, [actions, navigate, close]);
 
   // Convert API results to CommandPaletteItems
   const convertApiResults = useCallback((response: GlobalSearchResponse, searchQuery: string): CommandPaletteItem[] => {
@@ -292,7 +358,7 @@ export function useCommandPalette(debounceMs: number = 300): UseCommandPaletteRe
         icon: 'UserCheck',
         action: () => {
           navigate(`/candidates/${candidate.id}`);
-          setIsOpen(false);
+          close();
           saveToHistory(searchQuery);
         }
       });
@@ -308,14 +374,14 @@ export function useCommandPalette(debounceMs: number = 300): UseCommandPaletteRe
         icon: 'Briefcase',
         action: () => {
           navigate(`/vacancies/${vacancy.id}`);
-          setIsOpen(false);
+          close();
           saveToHistory(searchQuery);
         }
       });
     });
 
     return items;
-  }, [navigate]);
+  }, [navigate, close]);
 
   // Combined results
   const results = useMemo((): CommandPaletteItem[] => {
@@ -376,23 +442,22 @@ export function useCommandPalette(debounceMs: number = 300): UseCommandPaletteRe
         }
       }
     }, debounceMs);
-  }, [debounceMs]);
+  }, [debounceMs, setApiResults, setIsLoading]);
 
   // Handle query change
   const handleSetQuery = useCallback((newQuery: string) => {
-    setQuery(newQuery);
-    setSelectedIndex(0);
+    storeSetQuery(newQuery);
     performSearch(newQuery);
-  }, [performSearch]);
+  }, [storeSetQuery, performSearch]);
 
   // Keyboard navigation
   const moveUp = useCallback(() => {
-    setSelectedIndex(prev => (prev > 0 ? prev - 1 : results.length - 1));
-  }, [results.length]);
+    setSelectedIndex(selectedIndex > 0 ? selectedIndex - 1 : results.length - 1);
+  }, [selectedIndex, results.length, setSelectedIndex]);
 
   const moveDown = useCallback(() => {
-    setSelectedIndex(prev => (prev < results.length - 1 ? prev + 1 : 0));
-  }, [results.length]);
+    setSelectedIndex(selectedIndex < results.length - 1 ? selectedIndex + 1 : 0);
+  }, [selectedIndex, results.length, setSelectedIndex]);
 
   const executeSelected = useCallback(() => {
     if (results[selectedIndex]) {
@@ -400,36 +465,16 @@ export function useCommandPalette(debounceMs: number = 300): UseCommandPaletteRe
     }
   }, [results, selectedIndex]);
 
-  // Open/close handlers
-  const open = useCallback(() => {
-    setIsOpen(true);
-    setQuery('');
-    setSelectedIndex(0);
-    setApiResults(null);
-  }, []);
-
-  const close = useCallback(() => {
-    setIsOpen(false);
-    setQuery('');
-    setSelectedIndex(0);
-  }, []);
-
-  const toggle = useCallback(() => {
-    if (isOpen) {
-      close();
-    } else {
-      open();
-    }
-  }, [isOpen, open, close]);
-
   // Clear history
   const clearHistoryHandler = useCallback(() => {
     clearCommandHistory();
     setHistory([]);
-  }, []);
+  }, [setHistory]);
 
-  // Global keyboard shortcut
+  // Global keyboard shortcut - only one instance should register this
   useEffect(() => {
+    if (!enableKeyboardShortcuts) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       // Cmd+K or Ctrl+K
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
@@ -466,7 +511,7 @@ export function useCommandPalette(debounceMs: number = 300): UseCommandPaletteRe
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, toggle, close, moveUp, moveDown, executeSelected]);
+  }, [enableKeyboardShortcuts, isOpen, toggle, close, moveUp, moveDown, executeSelected]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -483,7 +528,7 @@ export function useCommandPalette(debounceMs: number = 300): UseCommandPaletteRe
   // Reset selection when results change
   useEffect(() => {
     setSelectedIndex(0);
-  }, [results.length]);
+  }, [results.length, setSelectedIndex]);
 
   return {
     isOpen,

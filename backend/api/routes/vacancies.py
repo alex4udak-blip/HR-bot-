@@ -19,6 +19,7 @@ from ..models.database import (
 )
 from ..services.auth import get_current_user, get_user_org
 from ..services.features import can_access_feature
+from ..services.cache import scoring_cache
 
 router = APIRouter()
 
@@ -631,6 +632,16 @@ async def update_vacancy(
 
     await db.commit()
     await db.refresh(vacancy)
+
+    # Invalidate scoring cache if relevant fields changed
+    # (requirements, salary, experience level, etc.)
+    scoring_relevant_fields = {
+        'requirements', 'salary_min', 'salary_max', 'salary_currency',
+        'experience_level', 'tags', 'description', 'responsibilities'
+    }
+    if any(field in update_data for field in scoring_relevant_fields):
+        await scoring_cache.invalidate_vacancy_scores(vacancy.id)
+        logger.info(f"Invalidated scoring cache for vacancy {vacancy.id} due to scoring-relevant field change")
 
     logger.info(f"Updated vacancy {vacancy.id}")
 

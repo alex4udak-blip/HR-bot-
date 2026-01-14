@@ -57,6 +57,32 @@ describe('useOnboardingTour', () => {
       expect(result.current.totalSteps).toBe(DEFAULT_TOUR_STEPS.length);
     });
 
+    it('should have 7 default steps', () => {
+      expect(DEFAULT_TOUR_STEPS.length).toBe(7);
+    });
+
+    it('should have all expected step IDs in order', () => {
+      const expectedIds = [
+        'candidates-database',
+        'upload-resume',
+        'smart-search',
+        'candidate-card',
+        'candidate-filters',
+        'vacancies',
+        'create-vacancy',
+      ];
+      const actualIds = DEFAULT_TOUR_STEPS.map(step => step.id);
+      expect(actualIds).toEqual(expectedIds);
+    });
+
+    it('should have route property for all steps to ensure navigation works', () => {
+      DEFAULT_TOUR_STEPS.forEach(step => {
+        expect(step.route).toBeDefined();
+        expect(typeof step.route).toBe('string');
+        expect(step.route!.startsWith('/')).toBe(true);
+      });
+    });
+
     it('should accept custom tour steps', () => {
       const customSteps: TourStep[] = [
         {

@@ -2,16 +2,21 @@
 Vacancy Recommendation Service for HR-Bot.
 
 Provides AI-powered vacancy recommendations for candidates based on:
-- Skills matching
+- Skills matching (AI-enhanced)
+- Experience level compatibility
+- Cultural fit assessment
 - Salary expectations
 - Location preferences
-- Experience level
 """
 
 import logging
-from typing import List, Optional, Dict, Any
+import json
+import re
+import hashlib
+from typing import List, Optional, Dict, Any, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
+from anthropic import AsyncAnthropic
 
 from sqlalchemy import select, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,8 +26,133 @@ from ..models.database import (
     Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
     User
 )
+from ..config import get_settings
 
 logger = logging.getLogger("hr-analyzer.vacancy_recommender")
+settings = get_settings()
+
+
+@dataclass
+class AIMatchAnalysis:
+    """Result of AI-powered match analysis."""
+    overall_score: int = 0  # 0-100
+    skills_score: int = 0  # 0-100
+    experience_score: int = 0  # 0-100
+    culture_fit_score: int = 0  # 0-100
+    match_reasons: List[str] = field(default_factory=list)
+    missing_requirements: List[str] = field(default_factory=list)
+    summary: str = ""
+    ai_analyzed: bool = False  # True if this was AI-analyzed, False if fallback
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "overall_score": self.overall_score,
+            "skills_score": self.skills_score,
+            "experience_score": self.experience_score,
+            "culture_fit_score": self.culture_fit_score,
+            "match_reasons": self.match_reasons,
+            "missing_requirements": self.missing_requirements,
+            "summary": self.summary,
+            "ai_analyzed": self.ai_analyzed,
+        }
+
+
+class AIMatchCache:
+    """Simple in-memory cache for AI match analysis results with TTL."""
+
+    def __init__(self, ttl_minutes: int = 60):
+        """
+        Initialize cache.
+
+        Args:
+            ttl_minutes: Time-to-live for cache entries in minutes
+        """
+        self._cache: Dict[str, Tuple[AIMatchAnalysis, datetime]] = {}
+        self._ttl = timedelta(minutes=ttl_minutes)
+
+    def _make_key(self, entity_id: int, vacancy_id: int) -> str:
+        """Create cache key from entity and vacancy IDs."""
+        return f"{entity_id}:{vacancy_id}"
+
+    def get(self, entity_id: int, vacancy_id: int) -> Optional[AIMatchAnalysis]:
+        """
+        Get cached analysis result if exists and not expired.
+
+        Args:
+            entity_id: Candidate entity ID
+            vacancy_id: Vacancy ID
+
+        Returns:
+            Cached AIMatchAnalysis or None if not found/expired
+        """
+        key = self._make_key(entity_id, vacancy_id)
+        if key not in self._cache:
+            return None
+
+        result, cached_at = self._cache[key]
+        if datetime.utcnow() - cached_at > self._ttl:
+            # Entry expired, remove it
+            del self._cache[key]
+            return None
+
+        return result
+
+    def set(self, entity_id: int, vacancy_id: int, result: AIMatchAnalysis) -> None:
+        """
+        Store analysis result in cache.
+
+        Args:
+            entity_id: Candidate entity ID
+            vacancy_id: Vacancy ID
+            result: Analysis result to cache
+        """
+        key = self._make_key(entity_id, vacancy_id)
+        self._cache[key] = (result, datetime.utcnow())
+
+    def invalidate(self, entity_id: Optional[int] = None, vacancy_id: Optional[int] = None) -> None:
+        """
+        Invalidate cache entries.
+
+        Args:
+            entity_id: If provided, invalidate all entries for this entity
+            vacancy_id: If provided, invalidate all entries for this vacancy
+        """
+        if entity_id is None and vacancy_id is None:
+            # Clear entire cache
+            self._cache.clear()
+            return
+
+        keys_to_delete = []
+        for key in self._cache:
+            e_id, v_id = key.split(":")
+            if entity_id and int(e_id) == entity_id:
+                keys_to_delete.append(key)
+            elif vacancy_id and int(v_id) == vacancy_id:
+                keys_to_delete.append(key)
+
+        for key in keys_to_delete:
+            del self._cache[key]
+
+    def clear_expired(self) -> int:
+        """
+        Remove all expired entries from cache.
+
+        Returns:
+            Number of entries removed
+        """
+        now = datetime.utcnow()
+        keys_to_delete = [
+            key for key, (_, cached_at) in self._cache.items()
+            if now - cached_at > self._ttl
+        ]
+        for key in keys_to_delete:
+            del self._cache[key]
+        return len(keys_to_delete)
+
+
+# Global cache instance
+_ai_match_cache = AIMatchCache(ttl_minutes=60)
 
 
 @dataclass
@@ -46,6 +176,13 @@ class VacancyRecommendation:
     department_name: Optional[str] = None
     applications_count: int = 0
 
+    # AI analysis details
+    ai_analyzed: bool = False
+    skills_score: Optional[int] = None
+    experience_score: Optional[int] = None
+    culture_fit_score: Optional[int] = None
+    ai_summary: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -64,6 +201,11 @@ class VacancyRecommendation:
             "experience_level": self.experience_level,
             "department_name": self.department_name,
             "applications_count": self.applications_count,
+            "ai_analyzed": self.ai_analyzed,
+            "skills_score": self.skills_score,
+            "experience_score": self.experience_score,
+            "culture_fit_score": self.culture_fit_score,
+            "ai_summary": self.ai_summary,
         }
 
 
@@ -86,6 +228,13 @@ class CandidateMatch:
     expected_salary_max: Optional[int] = None
     expected_salary_currency: str = "RUB"
 
+    # AI analysis details
+    ai_analyzed: bool = False
+    skills_score: Optional[int] = None
+    experience_score: Optional[int] = None
+    culture_fit_score: Optional[int] = None
+    ai_summary: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -102,15 +251,31 @@ class CandidateMatch:
             "expected_salary_min": self.expected_salary_min,
             "expected_salary_max": self.expected_salary_max,
             "expected_salary_currency": self.expected_salary_currency,
+            "ai_analyzed": self.ai_analyzed,
+            "skills_score": self.skills_score,
+            "experience_score": self.experience_score,
+            "culture_fit_score": self.culture_fit_score,
+            "ai_summary": self.ai_summary,
         }
 
 
 class VacancyRecommenderService:
     """Service for recommending vacancies to candidates and vice versa."""
 
-    def __init__(self):
-        """Initialize the vacancy recommender service."""
-        # Keywords commonly found in job requirements
+    def __init__(self, use_ai: bool = True, cache_ttl_minutes: int = 60):
+        """
+        Initialize the vacancy recommender service.
+
+        Args:
+            use_ai: Whether to use AI analysis (default True)
+            cache_ttl_minutes: TTL for AI analysis cache in minutes
+        """
+        self._client: Optional[AsyncAnthropic] = None
+        self.model = "claude-sonnet-4-20250514"
+        self.use_ai = use_ai
+        self._cache = AIMatchCache(ttl_minutes=cache_ttl_minutes)
+
+        # Keywords commonly found in job requirements (fallback)
         self.skill_keywords = {
             "python", "javascript", "typescript", "react", "node", "nodejs",
             "java", "kotlin", "swift", "golang", "go", "rust", "c++", "c#",
@@ -124,6 +289,19 @@ class VacancyRecommenderService:
             "sales", "marketing", "hr", "recruiting", "finance",
             "english", "german", "french", "chinese", "spanish",
         }
+
+    @property
+    def client(self) -> AsyncAnthropic:
+        """Lazy initialization of Anthropic client."""
+        if self._client is None:
+            if not settings.anthropic_api_key:
+                raise ValueError("ANTHROPIC_API_KEY is not configured")
+            self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        return self._client
+
+    def _is_ai_available(self) -> bool:
+        """Check if AI analysis is available."""
+        return self.use_ai and bool(settings.anthropic_api_key)
 
     def _extract_skills_from_text(self, text: Optional[str]) -> List[str]:
         """Extract skill keywords from text (requirements, position, tags, etc.)."""
@@ -270,12 +448,327 @@ class VacancyRecommenderService:
 
         return min(100, int(score))
 
+    def _build_entity_profile(self, entity: Entity) -> str:
+        """Build a comprehensive profile string for the entity."""
+        parts = [f"## Кандидат: {entity.name}"]
+
+        if entity.position:
+            parts.append(f"- **Текущая позиция:** {entity.position}")
+        if entity.company:
+            parts.append(f"- **Компания:** {entity.company}")
+
+        # Expected salary
+        if entity.expected_salary_min or entity.expected_salary_max:
+            currency = entity.expected_salary_currency or 'RUB'
+            if entity.expected_salary_min and entity.expected_salary_max:
+                parts.append(f"- **Ожидаемая зарплата:** {entity.expected_salary_min:,} - {entity.expected_salary_max:,} {currency}")
+            elif entity.expected_salary_min:
+                parts.append(f"- **Ожидаемая зарплата:** от {entity.expected_salary_min:,} {currency}")
+            elif entity.expected_salary_max:
+                parts.append(f"- **Ожидаемая зарплата:** до {entity.expected_salary_max:,} {currency}")
+
+        # Tags/skills
+        if entity.tags:
+            parts.append(f"- **Теги/навыки:** {', '.join(entity.tags)}")
+
+        # AI Summary if available
+        if entity.ai_summary:
+            parts.append(f"\n### AI-резюме:\n{entity.ai_summary}")
+
+        # Extra data (filtered)
+        extra = entity.extra_data or {}
+        if "skills" in extra:
+            skills = extra["skills"]
+            if isinstance(skills, list):
+                parts.append(f"- **Навыки:** {', '.join(str(s) for s in skills)}")
+            elif isinstance(skills, str):
+                parts.append(f"- **Навыки:** {skills}")
+
+        if "experience" in extra:
+            parts.append(f"- **Опыт:** {extra['experience']}")
+        if "education" in extra:
+            edu = extra["education"]
+            if isinstance(edu, list):
+                parts.append(f"- **Образование:** {', '.join(str(e) for e in edu)}")
+            else:
+                parts.append(f"- **Образование:** {edu}")
+        if "languages" in extra:
+            langs = extra["languages"]
+            if isinstance(langs, list):
+                parts.append(f"- **Языки:** {', '.join(str(l) for l in langs)}")
+            else:
+                parts.append(f"- **Языки:** {langs}")
+        if "resume_text" in extra:
+            resume = str(extra["resume_text"])[:1500]  # Limit to prevent token overflow
+            parts.append(f"\n### Текст резюме:\n{resume}")
+
+        return "\n".join(parts)
+
+    def _build_vacancy_profile(self, vacancy: Vacancy) -> str:
+        """Build a comprehensive profile string for the vacancy."""
+        parts = [f"## Вакансия: {vacancy.title}"]
+
+        if vacancy.description:
+            parts.append(f"\n### Описание:\n{vacancy.description}")
+
+        if vacancy.requirements:
+            parts.append(f"\n### Требования:\n{vacancy.requirements}")
+
+        if vacancy.responsibilities:
+            parts.append(f"\n### Обязанности:\n{vacancy.responsibilities}")
+
+        # Salary range
+        if vacancy.salary_min or vacancy.salary_max:
+            currency = vacancy.salary_currency or 'RUB'
+            if vacancy.salary_min and vacancy.salary_max:
+                parts.append(f"- **Зарплата:** {vacancy.salary_min:,} - {vacancy.salary_max:,} {currency}")
+            elif vacancy.salary_min:
+                parts.append(f"- **Зарплата:** от {vacancy.salary_min:,} {currency}")
+            elif vacancy.salary_max:
+                parts.append(f"- **Зарплата:** до {vacancy.salary_max:,} {currency}")
+
+        if vacancy.location:
+            parts.append(f"- **Локация:** {vacancy.location}")
+
+        if vacancy.employment_type:
+            parts.append(f"- **Тип занятости:** {vacancy.employment_type}")
+
+        if vacancy.experience_level:
+            parts.append(f"- **Уровень опыта:** {vacancy.experience_level}")
+
+        if vacancy.tags:
+            parts.append(f"- **Теги:** {', '.join(vacancy.tags)}")
+
+        return "\n".join(parts)
+
+    def _build_ai_match_prompt(self, entity: Entity, vacancy: Vacancy) -> str:
+        """Build the AI match analysis prompt."""
+        entity_profile = self._build_entity_profile(entity)
+        vacancy_profile = self._build_vacancy_profile(vacancy)
+
+        return f"""Проанализируй соответствие кандидата вакансии.
+
+{entity_profile}
+
+---
+
+{vacancy_profile}
+
+---
+
+Предоставь детальный анализ соответствия в формате JSON:
+{{
+    "overall_score": <0-100 целое число>,
+    "skills_score": <0-100 целое число, соответствие навыков>,
+    "experience_score": <0-100 целое число, соответствие опыта>,
+    "culture_fit_score": <0-100 целое число, культурное соответствие>,
+    "match_reasons": [<список 2-5 причин соответствия на русском>],
+    "missing_requirements": [<список 1-4 недостающих требований на русском>],
+    "summary": "<1-2 предложения общей оценки на русском>"
+}}
+
+Критерии оценки:
+- **overall_score**: Общее соответствие (90-100: идеально, 70-89: хорошо, 50-69: средне, 30-49: слабо, 0-29: не подходит)
+- **skills_score**: Насколько навыки кандидата соответствуют требованиям (учитывай смежные навыки, не только точные совпадения)
+- **experience_score**: Релевантность опыта (годы, индустрия, похожие роли)
+- **culture_fit_score**: Оценка культурного соответствия на основе профиля и описания вакансии
+
+Отвечай ТОЛЬКО валидным JSON, без дополнительного текста."""
+
+    def _parse_ai_match_response(self, response_text: str) -> AIMatchAnalysis:
+        """Parse AI response into AIMatchAnalysis object."""
+        try:
+            # Try to extract JSON from response
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
+                data = json.loads(json_match.group())
+            else:
+                data = json.loads(response_text)
+
+            # Validate and normalize scores
+            def normalize_score(value: Any) -> int:
+                if isinstance(value, (int, float)):
+                    return max(0, min(100, int(value)))
+                return 0
+
+            return AIMatchAnalysis(
+                overall_score=normalize_score(data.get('overall_score', 0)),
+                skills_score=normalize_score(data.get('skills_score', 0)),
+                experience_score=normalize_score(data.get('experience_score', 0)),
+                culture_fit_score=normalize_score(data.get('culture_fit_score', 0)),
+                match_reasons=data.get('match_reasons', [])[:5],
+                missing_requirements=data.get('missing_requirements', [])[:4],
+                summary=data.get('summary', ''),
+                ai_analyzed=True
+            )
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            logger.error(f"Failed to parse AI match response: {e}")
+            return AIMatchAnalysis(
+                overall_score=50,
+                summary="Не удалось проанализировать соответствие из-за ошибки парсинга.",
+                ai_analyzed=False
+            )
+
+    async def _ai_analyze_match(
+        self,
+        entity: Entity,
+        vacancy: Vacancy,
+        use_cache: bool = True
+    ) -> AIMatchAnalysis:
+        """
+        Perform AI-powered match analysis between candidate and vacancy.
+
+        Args:
+            entity: Candidate entity
+            vacancy: Target vacancy
+            use_cache: Whether to use cached results (default True)
+
+        Returns:
+            AIMatchAnalysis with detailed scores and reasons
+        """
+        # Check cache first
+        if use_cache:
+            cached = self._cache.get(entity.id, vacancy.id)
+            if cached:
+                logger.debug(f"Cache hit for entity {entity.id} <-> vacancy {vacancy.id}")
+                return cached
+
+        # Check if AI is available
+        if not self._is_ai_available():
+            logger.debug("AI not available, using fallback scoring")
+            return self._fallback_match_analysis(entity, vacancy)
+
+        logger.info(f"AI analyzing match: entity {entity.id} <-> vacancy {vacancy.id}")
+
+        prompt = self._build_ai_match_prompt(entity, vacancy)
+
+        system_prompt = """Ты эксперт HR-аналитик, специализирующийся на подборе кандидатов.
+Твоя задача - объективно оценить соответствие кандидата вакансии.
+Будь сбалансирован и справедлив в оценке - выделяй как сильные стороны, так и потенциальные проблемы.
+Всегда отвечай только валидным JSON в запрошенном формате.
+Используй русский язык для текстовых полей."""
+
+        try:
+            response = await self.client.messages.create(
+                model=self.model,
+                max_tokens=1024,
+                system=[{
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"}
+                }],
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            result_text = response.content[0].text
+            analysis = self._parse_ai_match_response(result_text)
+
+            # Cache the result
+            if use_cache and analysis.ai_analyzed:
+                self._cache.set(entity.id, vacancy.id, analysis)
+
+            logger.info(
+                f"AI match score: entity {entity.id} <-> vacancy {vacancy.id} = {analysis.overall_score}"
+            )
+
+            return analysis
+
+        except Exception as e:
+            logger.error(f"AI match analysis error: {e}")
+            # Fallback to keyword-based analysis
+            return self._fallback_match_analysis(entity, vacancy)
+
+    def _fallback_match_analysis(
+        self,
+        entity: Entity,
+        vacancy: Vacancy
+    ) -> AIMatchAnalysis:
+        """
+        Fallback match analysis using keyword matching when AI is unavailable.
+
+        Args:
+            entity: Candidate entity
+            vacancy: Target vacancy
+
+        Returns:
+            AIMatchAnalysis based on keyword matching
+        """
+        candidate_skills = self._extract_candidate_skills(entity)
+        vacancy_skills = self._extract_vacancy_requirements(vacancy)
+        salary_compatible, salary_reason = self._check_salary_compatibility(entity, vacancy)
+
+        # Calculate scores
+        skills_score = 0
+        if vacancy_skills:
+            matched = set(candidate_skills) & set(vacancy_skills)
+            skills_score = int((len(matched) / len(vacancy_skills)) * 100)
+        else:
+            skills_score = 50  # Base score when no specific skills required
+
+        # Simple experience and culture fit scores (fallback uses base values)
+        experience_score = 50
+        culture_fit_score = 50
+
+        # Overall score calculation
+        overall_score = self._calculate_match_score(
+            candidate_skills,
+            vacancy_skills,
+            salary_compatible
+        )
+
+        # Build match reasons
+        match_reasons = []
+        missing_requirements = []
+
+        if candidate_skills and vacancy_skills:
+            matched = set(candidate_skills) & set(vacancy_skills)
+            missing = set(vacancy_skills) - set(candidate_skills)
+
+            if matched:
+                match_reasons.append(f"Совпадающие навыки: {', '.join(sorted(matched))}")
+
+            if missing:
+                missing_requirements.append(f"Недостающие навыки: {', '.join(sorted(missing))}")
+
+        if salary_compatible:
+            match_reasons.append("Зарплатные ожидания совпадают")
+        elif salary_reason:
+            missing_requirements.append(salary_reason)
+
+        summary = f"Анализ на основе ключевых слов. Совпадение навыков: {skills_score}%."
+
+        return AIMatchAnalysis(
+            overall_score=overall_score,
+            skills_score=skills_score,
+            experience_score=experience_score,
+            culture_fit_score=culture_fit_score,
+            match_reasons=match_reasons,
+            missing_requirements=missing_requirements,
+            summary=summary,
+            ai_analyzed=False
+        )
+
+    def invalidate_cache(
+        self,
+        entity_id: Optional[int] = None,
+        vacancy_id: Optional[int] = None
+    ) -> None:
+        """
+        Invalidate AI analysis cache.
+
+        Args:
+            entity_id: If provided, invalidate all entries for this entity
+            vacancy_id: If provided, invalidate all entries for this vacancy
+        """
+        self._cache.invalidate(entity_id=entity_id, vacancy_id=vacancy_id)
+
     async def get_recommendations(
         self,
         db: AsyncSession,
         entity: Entity,
         limit: int = 5,
-        org_id: Optional[int] = None
+        org_id: Optional[int] = None,
+        use_ai: Optional[bool] = None
     ) -> List[VacancyRecommendation]:
         """
         Get vacancy recommendations for a candidate.
@@ -285,6 +778,7 @@ class VacancyRecommenderService:
             entity: Entity (candidate) to get recommendations for
             limit: Maximum number of recommendations
             org_id: Optional organization ID to filter vacancies
+            use_ai: Whether to use AI analysis (defaults to self.use_ai)
 
         Returns:
             List of VacancyRecommendation objects sorted by match score
@@ -293,9 +787,8 @@ class VacancyRecommenderService:
             logger.warning(f"Entity {entity.id} is not a candidate, skipping recommendations")
             return []
 
-        # Extract candidate skills
-        candidate_skills = self._extract_candidate_skills(entity)
-        logger.debug(f"Candidate {entity.id} skills: {candidate_skills}")
+        # Determine whether to use AI
+        should_use_ai = use_ai if use_ai is not None else self.use_ai
 
         # Get active vacancies not already applied to
         applied_vacancy_ids_query = (
@@ -324,41 +817,31 @@ class VacancyRecommenderService:
         recommendations = []
 
         for vacancy in vacancies:
-            # Extract vacancy requirements
-            vacancy_skills = self._extract_vacancy_requirements(vacancy)
+            # Check salary compatibility (needed for both AI and fallback)
+            salary_compatible, _ = self._check_salary_compatibility(entity, vacancy)
 
-            # Check salary compatibility
-            salary_compatible, salary_reason = self._check_salary_compatibility(entity, vacancy)
-
-            # Calculate match score
-            match_score = self._calculate_match_score(
-                candidate_skills,
-                vacancy_skills,
-                salary_compatible
-            )
-
-            # Build match reasons
-            match_reasons = []
-            missing_requirements = []
-
-            if candidate_skills and vacancy_skills:
-                matched = set(candidate_skills) & set(vacancy_skills)
-                missing = set(vacancy_skills) - set(candidate_skills)
-
-                if matched:
-                    match_reasons.append(
-                        f"Совпадающие навыки: {', '.join(sorted(matched))}"
-                    )
-
-                if missing:
-                    missing_requirements.append(
-                        f"Требуемые навыки: {', '.join(sorted(missing))}"
-                    )
-
-            if salary_compatible:
-                match_reasons.append("Зарплатные ожидания совпадают")
-            elif salary_reason:
-                missing_requirements.append(salary_reason)
+            # Use AI analysis if enabled and available
+            if should_use_ai and self._is_ai_available():
+                analysis = await self._ai_analyze_match(entity, vacancy)
+                match_score = analysis.overall_score
+                match_reasons = analysis.match_reasons
+                missing_requirements = analysis.missing_requirements
+                ai_analyzed = analysis.ai_analyzed
+                skills_score = analysis.skills_score
+                experience_score = analysis.experience_score
+                culture_fit_score = analysis.culture_fit_score
+                ai_summary = analysis.summary
+            else:
+                # Fallback to keyword-based analysis
+                analysis = self._fallback_match_analysis(entity, vacancy)
+                match_score = analysis.overall_score
+                match_reasons = analysis.match_reasons
+                missing_requirements = analysis.missing_requirements
+                ai_analyzed = False
+                skills_score = analysis.skills_score
+                experience_score = analysis.experience_score
+                culture_fit_score = analysis.culture_fit_score
+                ai_summary = analysis.summary
 
             # Get applications count
             apps_count_result = await db.execute(
@@ -391,13 +874,19 @@ class VacancyRecommenderService:
                 experience_level=vacancy.experience_level,
                 department_name=dept_name,
                 applications_count=apps_count,
+                ai_analyzed=ai_analyzed,
+                skills_score=skills_score,
+                experience_score=experience_score,
+                culture_fit_score=culture_fit_score,
+                ai_summary=ai_summary,
             ))
 
         # Sort by match score (descending) and limit
         recommendations.sort(key=lambda r: r.match_score, reverse=True)
 
         logger.info(
-            f"Generated {len(recommendations[:limit])} recommendations for entity {entity.id}"
+            f"Generated {len(recommendations[:limit])} recommendations for entity {entity.id} "
+            f"(AI: {should_use_ai and self._is_ai_available()})"
         )
 
         return recommendations[:limit]
@@ -407,7 +896,8 @@ class VacancyRecommenderService:
         db: AsyncSession,
         vacancy: Vacancy,
         limit: int = 10,
-        exclude_applied: bool = True
+        exclude_applied: bool = True,
+        use_ai: Optional[bool] = None
     ) -> List[CandidateMatch]:
         """
         Find candidates that match a vacancy.
@@ -417,13 +907,13 @@ class VacancyRecommenderService:
             vacancy: Vacancy to find candidates for
             limit: Maximum number of candidates
             exclude_applied: Whether to exclude already applied candidates
+            use_ai: Whether to use AI analysis (defaults to self.use_ai)
 
         Returns:
             List of CandidateMatch objects sorted by match score
         """
-        # Extract vacancy requirements
-        vacancy_skills = self._extract_vacancy_requirements(vacancy)
-        logger.debug(f"Vacancy {vacancy.id} required skills: {vacancy_skills}")
+        # Determine whether to use AI
+        should_use_ai = use_ai if use_ai is not None else self.use_ai
 
         # Get already applied entity IDs
         applied_entity_ids = set()
@@ -455,37 +945,31 @@ class VacancyRecommenderService:
         matches = []
 
         for candidate in candidates:
-            # Extract candidate skills
-            candidate_skills = self._extract_candidate_skills(candidate)
-
-            # Check salary compatibility
+            # Check salary compatibility (needed for both AI and fallback)
             salary_compatible, _ = self._check_salary_compatibility(candidate, vacancy)
 
-            # Calculate match score
-            match_score = self._calculate_match_score(
-                candidate_skills,
-                vacancy_skills,
-                salary_compatible
-            )
-
-            # Build match reasons
-            match_reasons = []
-            missing_skills = []
-
-            if candidate_skills and vacancy_skills:
-                matched = set(candidate_skills) & set(vacancy_skills)
-                missing = set(vacancy_skills) - set(candidate_skills)
-
-                if matched:
-                    match_reasons.append(
-                        f"Совпадающие навыки: {', '.join(sorted(matched))}"
-                    )
-
-                if missing:
-                    missing_skills.extend(sorted(missing))
-
-            if salary_compatible:
-                match_reasons.append("Зарплатные ожидания совпадают")
+            # Use AI analysis if enabled and available
+            if should_use_ai and self._is_ai_available():
+                analysis = await self._ai_analyze_match(candidate, vacancy)
+                match_score = analysis.overall_score
+                match_reasons = analysis.match_reasons
+                missing_skills = analysis.missing_requirements
+                ai_analyzed = analysis.ai_analyzed
+                skills_score = analysis.skills_score
+                experience_score = analysis.experience_score
+                culture_fit_score = analysis.culture_fit_score
+                ai_summary = analysis.summary
+            else:
+                # Fallback to keyword-based analysis
+                analysis = self._fallback_match_analysis(candidate, vacancy)
+                match_score = analysis.overall_score
+                match_reasons = analysis.match_reasons
+                missing_skills = analysis.missing_requirements
+                ai_analyzed = False
+                skills_score = analysis.skills_score
+                experience_score = analysis.experience_score
+                culture_fit_score = analysis.culture_fit_score
+                ai_summary = analysis.summary
 
             matches.append(CandidateMatch(
                 entity_id=candidate.id,
@@ -501,13 +985,19 @@ class VacancyRecommenderService:
                 expected_salary_min=candidate.expected_salary_min,
                 expected_salary_max=candidate.expected_salary_max,
                 expected_salary_currency=candidate.expected_salary_currency or "RUB",
+                ai_analyzed=ai_analyzed,
+                skills_score=skills_score,
+                experience_score=experience_score,
+                culture_fit_score=culture_fit_score,
+                ai_summary=ai_summary,
             ))
 
         # Sort by match score (descending) and limit
         matches.sort(key=lambda m: m.match_score, reverse=True)
 
         logger.info(
-            f"Found {len(matches[:limit])} matching candidates for vacancy {vacancy.id}"
+            f"Found {len(matches[:limit])} matching candidates for vacancy {vacancy.id} "
+            f"(AI: {should_use_ai and self._is_ai_available()})"
         )
 
         return matches[:limit]

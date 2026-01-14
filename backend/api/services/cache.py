@@ -5,8 +5,10 @@ Provides:
 - Hash-based caching to avoid re-analyzing unchanged data
 - Automatic cache invalidation on new messages
 - Memory-efficient context management
+- Thread-safe operations using asyncio.Lock
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -22,8 +24,18 @@ class AnalysisCacheService:
     # In-memory cache for quick lookups (will be replaced with Redis later)
     _cache: Dict[str, Dict[str, Any]] = {}
 
+    # Lock for thread-safe cache operations
+    _lock: asyncio.Lock = None
+
     # Default TTL for cached results (1 hour)
     DEFAULT_TTL_SECONDS = 3600
+
+    @classmethod
+    def _get_lock(cls) -> asyncio.Lock:
+        """Get or create the asyncio lock (lazy initialization for event loop compatibility)."""
+        if cls._lock is None:
+            cls._lock = asyncio.Lock()
+        return cls._lock
 
     @staticmethod
     def compute_messages_hash(messages: list, criteria: list = None) -> str:
@@ -118,7 +130,7 @@ class AnalysisCacheService:
         return hashlib.md5(combined.encode()).hexdigest()
 
     @classmethod
-    def get_cached_analysis(
+    async def get_cached_analysis(
         cls,
         cache_key: str,
         content_hash: str
@@ -131,30 +143,31 @@ class AnalysisCacheService:
         - Hash doesn't match (content changed)
         - Cache expired
         """
-        cache_entry = cls._cache.get(cache_key)
+        async with cls._get_lock():
+            cache_entry = cls._cache.get(cache_key)
 
-        if not cache_entry:
-            logger.debug(f"Cache miss: {cache_key} (no entry)")
-            return None
+            if not cache_entry:
+                logger.debug(f"Cache miss: {cache_key} (no entry)")
+                return None
 
-        # Check hash match
-        if cache_entry.get('hash') != content_hash:
-            logger.info(f"Cache invalidated: {cache_key} (hash mismatch)")
-            del cls._cache[cache_key]
-            return None
+            # Check hash match
+            if cache_entry.get('hash') != content_hash:
+                logger.info(f"Cache invalidated: {cache_key} (hash mismatch)")
+                del cls._cache[cache_key]
+                return None
 
-        # Check expiry
-        expires_at = cache_entry.get('expires_at')
-        if expires_at and datetime.utcnow() > expires_at:
-            logger.info(f"Cache expired: {cache_key}")
-            del cls._cache[cache_key]
-            return None
+            # Check expiry
+            expires_at = cache_entry.get('expires_at')
+            if expires_at and datetime.utcnow() > expires_at:
+                logger.info(f"Cache expired: {cache_key}")
+                del cls._cache[cache_key]
+                return None
 
-        logger.info(f"Cache hit: {cache_key}")
-        return cache_entry.get('result')
+            logger.info(f"Cache hit: {cache_key}")
+            return cache_entry.get('result')
 
     @classmethod
-    def set_cached_analysis(
+    async def set_cached_analysis(
         cls,
         cache_key: str,
         content_hash: str,
@@ -164,37 +177,48 @@ class AnalysisCacheService:
         """Store analysis result in cache with hash for validation."""
         ttl = ttl_seconds or cls.DEFAULT_TTL_SECONDS
 
-        cls._cache[cache_key] = {
-            'hash': content_hash,
-            'result': result,
-            'created_at': datetime.utcnow(),
-            'expires_at': datetime.utcnow() + timedelta(seconds=ttl)
-        }
+        async with cls._get_lock():
+            cls._cache[cache_key] = {
+                'hash': content_hash,
+                'result': result,
+                'created_at': datetime.utcnow(),
+                'expires_at': datetime.utcnow() + timedelta(seconds=ttl)
+            }
 
         logger.info(f"Cached: {cache_key} (TTL: {ttl}s)")
 
     @classmethod
-    def invalidate_chat_cache(cls, chat_id: int):
+    async def invalidate_chat_cache(cls, chat_id: int):
         """Invalidate all cache entries for a chat."""
-        keys_to_delete = [k for k in cls._cache.keys() if f"chat:{chat_id}" in k]
-        for key in keys_to_delete:
-            del cls._cache[key]
-            logger.info(f"Invalidated: {key}")
+        async with cls._get_lock():
+            keys_to_delete = [k for k in cls._cache.keys() if f"chat:{chat_id}" in k]
+            for key in keys_to_delete:
+                del cls._cache[key]
+                logger.info(f"Invalidated: {key}")
 
     @classmethod
-    def invalidate_entity_cache(cls, entity_id: int):
+    async def invalidate_entity_cache(cls, entity_id: int):
         """Invalidate all cache entries for an entity."""
-        keys_to_delete = [k for k in cls._cache.keys() if f"entity:{entity_id}" in k]
-        for key in keys_to_delete:
-            del cls._cache[key]
-            logger.info(f"Invalidated: {key}")
+        async with cls._get_lock():
+            keys_to_delete = [k for k in cls._cache.keys() if f"entity:{entity_id}" in k]
+            for key in keys_to_delete:
+                del cls._cache[key]
+                logger.info(f"Invalidated: {key}")
 
     @classmethod
-    def clear_all(cls):
+    async def clear_all(cls):
         """Clear entire cache."""
+        async with cls._get_lock():
+            count = len(cls._cache)
+            cls._cache.clear()
+        logger.info(f"Cleared {count} cache entries")
+
+    @classmethod
+    def clear_all_sync(cls):
+        """Clear entire cache (sync version for testing setup)."""
         count = len(cls._cache)
         cls._cache.clear()
-        logger.info(f"Cleared {count} cache entries")
+        logger.info(f"Cleared {count} cache entries (sync)")
 
 
 def smart_truncate(content: str, max_length: int = 500) -> str:
@@ -285,3 +309,209 @@ def format_messages_optimized(
 
 # Singleton instance
 cache_service = AnalysisCacheService()
+
+
+class ScoringCacheService:
+    """
+    In-memory cache for AI compatibility scores.
+
+    Used when VacancyApplication doesn't exist to avoid re-calculating scores.
+    Scores are cached with TTL and invalidated when entity or vacancy changes.
+    """
+
+    # In-memory cache storage
+    _cache: Dict[str, Dict[str, Any]] = {}
+
+    # Lock for thread-safe operations
+    _lock: asyncio.Lock = None
+
+    # Default TTL for scoring cache (1 hour)
+    DEFAULT_TTL_SECONDS = 3600
+
+    @classmethod
+    def _get_lock(cls) -> asyncio.Lock:
+        """Get or create the asyncio lock (lazy initialization)."""
+        if cls._lock is None:
+            cls._lock = asyncio.Lock()
+        return cls._lock
+
+    @staticmethod
+    def make_score_key(entity_id: int, vacancy_id: int) -> str:
+        """Generate cache key for entity-vacancy score pair."""
+        return f"score:{entity_id}:{vacancy_id}"
+
+    @classmethod
+    async def get_cached_score(
+        cls,
+        entity_id: int,
+        vacancy_id: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get cached compatibility score if exists and not expired.
+
+        Args:
+            entity_id: Candidate entity ID
+            vacancy_id: Vacancy ID
+
+        Returns:
+            Cached score dict or None if not found/expired
+        """
+        cache_key = cls.make_score_key(entity_id, vacancy_id)
+
+        async with cls._get_lock():
+            cache_entry = cls._cache.get(cache_key)
+
+            if not cache_entry:
+                logger.debug(f"Score cache miss: {cache_key} (no entry)")
+                return None
+
+            # Check expiry
+            expires_at = cache_entry.get('expires_at')
+            if expires_at and datetime.utcnow() > expires_at:
+                logger.info(f"Score cache expired: {cache_key}")
+                del cls._cache[cache_key]
+                return None
+
+            logger.info(f"Score cache hit: {cache_key}")
+            return cache_entry.get('score')
+
+    @classmethod
+    async def set_cached_score(
+        cls,
+        entity_id: int,
+        vacancy_id: int,
+        score: Dict[str, Any],
+        ttl_seconds: int = None
+    ) -> None:
+        """
+        Cache compatibility score with TTL.
+
+        Args:
+            entity_id: Candidate entity ID
+            vacancy_id: Vacancy ID
+            score: Score dict to cache
+            ttl_seconds: Optional TTL override (default 1 hour)
+        """
+        cache_key = cls.make_score_key(entity_id, vacancy_id)
+        ttl = ttl_seconds or cls.DEFAULT_TTL_SECONDS
+
+        async with cls._get_lock():
+            cls._cache[cache_key] = {
+                'score': score,
+                'entity_id': entity_id,
+                'vacancy_id': vacancy_id,
+                'created_at': datetime.utcnow(),
+                'expires_at': datetime.utcnow() + timedelta(seconds=ttl)
+            }
+
+        logger.info(f"Score cached: {cache_key} (TTL: {ttl}s)")
+
+    @classmethod
+    async def invalidate_entity_scores(cls, entity_id: int) -> int:
+        """
+        Invalidate all cached scores for an entity.
+
+        Called when entity data changes (skills, experience, salary, etc.).
+
+        Args:
+            entity_id: Entity ID to invalidate
+
+        Returns:
+            Number of cache entries invalidated
+        """
+        prefix = f"score:{entity_id}:"
+        count = 0
+
+        async with cls._get_lock():
+            keys_to_delete = [
+                k for k in cls._cache.keys()
+                if k.startswith(prefix)
+            ]
+            for key in keys_to_delete:
+                del cls._cache[key]
+                count += 1
+                logger.info(f"Score cache invalidated: {key}")
+
+        if count > 0:
+            logger.info(f"Invalidated {count} score cache entries for entity {entity_id}")
+        return count
+
+    @classmethod
+    async def invalidate_vacancy_scores(cls, vacancy_id: int) -> int:
+        """
+        Invalidate all cached scores for a vacancy.
+
+        Called when vacancy data changes (requirements, salary, etc.).
+
+        Args:
+            vacancy_id: Vacancy ID to invalidate
+
+        Returns:
+            Number of cache entries invalidated
+        """
+        suffix = f":{vacancy_id}"
+        count = 0
+
+        async with cls._get_lock():
+            keys_to_delete = [
+                k for k in cls._cache.keys()
+                if k.startswith("score:") and k.endswith(suffix)
+            ]
+            for key in keys_to_delete:
+                del cls._cache[key]
+                count += 1
+                logger.info(f"Score cache invalidated: {key}")
+
+        if count > 0:
+            logger.info(f"Invalidated {count} score cache entries for vacancy {vacancy_id}")
+        return count
+
+    @classmethod
+    async def invalidate_score(cls, entity_id: int, vacancy_id: int) -> bool:
+        """
+        Invalidate a specific entity-vacancy score.
+
+        Args:
+            entity_id: Entity ID
+            vacancy_id: Vacancy ID
+
+        Returns:
+            True if entry was invalidated, False if not found
+        """
+        cache_key = cls.make_score_key(entity_id, vacancy_id)
+
+        async with cls._get_lock():
+            if cache_key in cls._cache:
+                del cls._cache[cache_key]
+                logger.info(f"Score cache invalidated: {cache_key}")
+                return True
+            return False
+
+    @classmethod
+    async def clear_all(cls) -> int:
+        """Clear entire scoring cache."""
+        async with cls._get_lock():
+            count = len(cls._cache)
+            cls._cache.clear()
+        logger.info(f"Cleared {count} score cache entries")
+        return count
+
+    @classmethod
+    def clear_all_sync(cls) -> int:
+        """Clear entire cache (sync version for testing setup)."""
+        count = len(cls._cache)
+        cls._cache.clear()
+        logger.info(f"Cleared {count} score cache entries (sync)")
+        return count
+
+    @classmethod
+    def get_cache_stats(cls) -> Dict[str, Any]:
+        """Get cache statistics for monitoring."""
+        return {
+            "total_entries": len(cls._cache),
+            "keys": list(cls._cache.keys())
+        }
+
+
+# Singleton instance for scoring cache
+scoring_cache = ScoringCacheService()

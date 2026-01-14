@@ -35,8 +35,11 @@ import EntityVacancies from '../entities/EntityVacancies';
 import RecommendedVacancies from '../entities/RecommendedVacancies';
 import EntityFiles from '../entities/EntityFiles';
 import RedFlagsPanel from '../entities/RedFlagsPanel';
+import SimilarCandidates from '../entities/SimilarCandidates';
+import DuplicateWarning from '../entities/DuplicateWarning';
 import * as api from '@/services/api';
 import { useEntityStore } from '@/stores/entityStore';
+import { useAuthStore } from '@/stores/authStore';
 import { FeatureGatedButton } from '@/components/auth/FeatureGate';
 import { useCanAccessFeature } from '@/hooks/useCanAccessFeature';
 
@@ -59,6 +62,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
   const [vacanciesKey, setVacanciesKey] = useState(0); // Key to force reload vacancies
   const { fetchEntity } = useEntityStore();
   const { canAccessFeature } = useCanAccessFeature();
+  const { isAdmin } = useAuthStore();
 
   // Load unlinked chats when modal opens
   useEffect(() => {
@@ -167,6 +171,16 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
   return (
     <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
+      {/* Duplicate Warning - only for candidates */}
+      {entity.type === 'candidate' && (
+        <DuplicateWarning
+          entityId={entity.id}
+          entityName={entity.name}
+          isAdmin={isAdmin()}
+          onMergeComplete={() => fetchEntity(entity.id)}
+        />
+      )}
+
       {/* Contact Info Card */}
       <div className="glass rounded-xl p-4 sm:p-6 border border-white/10">
         <div className="flex items-start gap-3 sm:gap-4">
@@ -456,6 +470,16 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   entityId={entity.id}
                   entityName={entity.name}
                   onApply={() => setVacanciesKey(prev => prev + 1)}
+                />
+              </div>
+            )}
+
+            {/* Similar Candidates - only for candidates */}
+            {entity.type === 'candidate' && (
+              <div className="glass rounded-xl p-4 xl:col-span-2 h-fit border border-white/10">
+                <SimilarCandidates
+                  entityId={entity.id}
+                  entityName={entity.name}
                 />
               </div>
             )}

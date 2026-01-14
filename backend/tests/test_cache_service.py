@@ -22,6 +22,8 @@ from api.services.cache import (
     cache_service
 )
 
+pytestmark = pytest.mark.asyncio
+
 
 class TestSmartTruncate:
     """Tests for smart_truncate function."""
@@ -185,9 +187,9 @@ class TestAnalysisCacheService:
 
     def setup_method(self):
         """Clear cache before each test."""
-        cache_service.clear_all()
+        cache_service.clear_all_sync()
 
-    def test_compute_messages_hash_consistent(self):
+    async def test_compute_messages_hash_consistent(self):
         """Same messages should produce same hash."""
         msg1 = MagicMock()
         msg1.id = 1
@@ -248,81 +250,85 @@ class TestAnalysisCacheService:
 
         assert hash1 != hash2
 
-    def test_cache_set_and_get(self):
+    async def test_cache_set_and_get(self):
         """Should store and retrieve cached results."""
         cache_key = "test:chat:1"
         content_hash = "abc123"
         result = "Analysis result text"
 
-        cache_service.set_cached_analysis(cache_key, content_hash, result)
-        cached = cache_service.get_cached_analysis(cache_key, content_hash)
+        await cache_service.set_cached_analysis(cache_key, content_hash, result)
+        cached = await cache_service.get_cached_analysis(cache_key, content_hash)
 
         assert cached == result
 
-    def test_cache_miss_no_entry(self):
+    async def test_cache_miss_no_entry(self):
         """Should return None for non-existent cache."""
-        cached = cache_service.get_cached_analysis("nonexistent", "hash")
+        cached = await cache_service.get_cached_analysis("nonexistent", "hash")
         assert cached is None
 
-    def test_cache_miss_wrong_hash(self):
+    async def test_cache_miss_wrong_hash(self):
         """Should return None when hash doesn't match."""
         cache_key = "test:chat:1"
-        cache_service.set_cached_analysis(cache_key, "hash1", "result")
+        await cache_service.set_cached_analysis(cache_key, "hash1", "result")
 
         # Try to get with different hash
-        cached = cache_service.get_cached_analysis(cache_key, "hash2")
+        cached = await cache_service.get_cached_analysis(cache_key, "hash2")
         assert cached is None
 
-    def test_cache_expiry(self):
+    async def test_cache_expiry(self):
         """Should return None for expired cache."""
+        import asyncio
         cache_key = "test:chat:1"
         content_hash = "abc123"
 
         # Set with very short TTL
-        cache_service.set_cached_analysis(
+        await cache_service.set_cached_analysis(
             cache_key, content_hash, "result", ttl_seconds=0
         )
 
+        # Wait a small amount to ensure expiration
+        await asyncio.sleep(0.01)
+
         # Should be expired
-        cached = cache_service.get_cached_analysis(cache_key, content_hash)
+        cached = await cache_service.get_cached_analysis(cache_key, content_hash)
         assert cached is None
 
-    def test_invalidate_chat_cache(self):
+    async def test_invalidate_chat_cache(self):
         """Should invalidate all cache for a chat."""
         # Set multiple cache entries for same chat
-        cache_service.set_cached_analysis("chat:1:report:quick", "h1", "r1")
-        cache_service.set_cached_analysis("chat:1:report:full", "h2", "r2")
-        cache_service.set_cached_analysis("chat:2:report:quick", "h3", "r3")
+        await cache_service.set_cached_analysis("chat:1:report:quick", "h1", "r1")
+        await cache_service.set_cached_analysis("chat:1:report:full", "h2", "r2")
+        await cache_service.set_cached_analysis("chat:2:report:quick", "h3", "r3")
 
         # Invalidate chat 1
-        cache_service.invalidate_chat_cache(1)
+        await cache_service.invalidate_chat_cache(1)
 
         # Chat 1 entries should be gone
-        assert cache_service.get_cached_analysis("chat:1:report:quick", "h1") is None
-        assert cache_service.get_cached_analysis("chat:1:report:full", "h2") is None
+        assert await cache_service.get_cached_analysis("chat:1:report:quick", "h1") is None
+        assert await cache_service.get_cached_analysis("chat:1:report:full", "h2") is None
 
         # Chat 2 should still exist
-        assert cache_service.get_cached_analysis("chat:2:report:quick", "h3") == "r3"
+        assert await cache_service.get_cached_analysis("chat:2:report:quick", "h3") == "r3"
 
-    def test_invalidate_entity_cache(self):
+    async def test_invalidate_entity_cache(self):
         """Should invalidate all cache for an entity."""
-        cache_service.set_cached_analysis("entity:1:analysis", "h1", "r1")
-        cache_service.set_cached_analysis("entity:2:analysis", "h2", "r2")
+        await cache_service.set_cached_analysis("entity:1:analysis", "h1", "r1")
+        await cache_service.set_cached_analysis("entity:2:analysis", "h2", "r2")
 
-        cache_service.invalidate_entity_cache(1)
+        await cache_service.invalidate_entity_cache(1)
 
-        assert cache_service.get_cached_analysis("entity:1:analysis", "h1") is None
-        assert cache_service.get_cached_analysis("entity:2:analysis", "h2") == "r2"
+        assert await cache_service.get_cached_analysis("entity:1:analysis", "h1") is None
+        assert await cache_service.get_cached_analysis("entity:2:analysis", "h2") == "r2"
 
-    def test_clear_all(self):
+    async def test_clear_all(self):
         """Should clear entire cache."""
-        cache_service.set_cached_analysis("key1", "h1", "r1")
-        cache_service.set_cached_analysis("key2", "h2", "r2")
+        await cache_service.set_cached_analysis("key1", "h1", "r1")
+        await cache_service.set_cached_analysis("key2", "h2", "r2")
 
-        cache_service.clear_all()
+        await cache_service.clear_all()
 
-        assert cache_service.get_cached_analysis("key1", "h1") is None
-        assert cache_service.get_cached_analysis("key2", "h2") is None
+        assert await cache_service.get_cached_analysis("key1", "h1") is None
+        assert await cache_service.get_cached_analysis("key2", "h2") is None
 
 
 class TestEntityHashComputation:
@@ -330,7 +336,7 @@ class TestEntityHashComputation:
 
     def setup_method(self):
         """Clear cache before each test."""
-        cache_service.clear_all()
+        cache_service.clear_all_sync()
 
     def test_entity_hash_includes_entity_info(self):
         """Entity info changes should change hash."""

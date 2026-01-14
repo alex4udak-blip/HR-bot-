@@ -1283,35 +1283,273 @@ class TestMimeTypeHandling:
 class TestResourceManagement:
     """Tests for temporary file cleanup and resource management."""
 
-    def test_parser_creates_temp_dir(self):
-        """Test that parser creates temporary directory."""
+    def test_parser_does_not_have_persistent_temp_dir(self):
+        """Test that parser does not create a persistent temporary directory."""
         with patch('api.services.documents.anthropic.Anthropic'):
             parser = DocumentParser()
 
-            assert parser.temp_dir is not None
-            assert isinstance(parser.temp_dir, str)
+            # Parser should not have temp_dir attribute (temp dirs are created per-operation)
+            assert not hasattr(parser, 'temp_dir')
 
     @pytest.mark.asyncio
-    async def test_conversion_cleans_up_temp_files(self, parser):
-        """Test that conversion operations clean up temporary files."""
+    async def test_temp_dir_cleaned_up_after_docx_conversion(self, parser):
+        """Test that temp directory is cleaned up after DOC/ODT conversion."""
         mock_process = AsyncMock()
         mock_process.communicate = AsyncMock(return_value=(b"", b""))
 
-        removed_files = []
+        created_temp_dirs = []
 
-        def track_remove(path):
-            removed_files.append(path)
+        original_temp_dir = tempfile.TemporaryDirectory
 
-        # Mock os.path.exists to return True so cleanup code runs
-        with patch('asyncio.create_subprocess_exec', return_value=mock_process), \
-             patch('builtins.open', mock_open()), \
+        class TrackingTempDir:
+            def __init__(self, *args, **kwargs):
+                self._temp_dir = original_temp_dir(*args, **kwargs)
+                created_temp_dirs.append(self._temp_dir.name)
+
+            def __enter__(self):
+                return self._temp_dir.__enter__()
+
+            def __exit__(self, *args):
+                return self._temp_dir.__exit__(*args)
+
+        mock_doc = Mock()
+        mock_doc.paragraphs = [Mock(text="Converted content")]
+        mock_doc.tables = []
+
+        with patch('tempfile.TemporaryDirectory', TrackingTempDir), \
+             patch('asyncio.create_subprocess_exec', return_value=mock_process), \
+             patch('builtins.open', mock_open(read_data=b"docx bytes")), \
              patch('os.path.exists', return_value=True), \
-             patch('os.remove', side_effect=track_remove):
+             patch('api.services.documents.DocxDocument', return_value=mock_doc):
 
             await parser.parse(b"doc content", "test.doc")
 
-        # Should have cleaned up temp files
-        assert len(removed_files) > 0
+        # Verify temp dir was created and then cleaned up
+        assert len(created_temp_dirs) == 1
+        assert not os.path.exists(created_temp_dirs[0])
+
+    @pytest.mark.asyncio
+    async def test_temp_dir_cleaned_up_after_xlsx_conversion(self, parser):
+        """Test that temp directory is cleaned up after XLS/ODS conversion."""
+        mock_process = AsyncMock()
+        mock_process.communicate = AsyncMock(return_value=(b"", b""))
+
+        created_temp_dirs = []
+
+        original_temp_dir = tempfile.TemporaryDirectory
+
+        class TrackingTempDir:
+            def __init__(self, *args, **kwargs):
+                self._temp_dir = original_temp_dir(*args, **kwargs)
+                created_temp_dirs.append(self._temp_dir.name)
+
+            def __enter__(self):
+                return self._temp_dir.__enter__()
+
+            def __exit__(self, *args):
+                return self._temp_dir.__exit__(*args)
+
+        mock_cell = Mock()
+        mock_cell.value = "Data"
+
+        mock_sheet = Mock()
+        mock_sheet.iter_rows.return_value = [[mock_cell]]
+
+        mock_wb = Mock()
+        mock_wb.sheetnames = ["Sheet1"]
+        mock_wb.__getitem__ = Mock(return_value=mock_sheet)
+
+        with patch('tempfile.TemporaryDirectory', TrackingTempDir), \
+             patch('asyncio.create_subprocess_exec', return_value=mock_process), \
+             patch('builtins.open', mock_open(read_data=b"xlsx bytes")), \
+             patch('os.path.exists', return_value=True), \
+             patch('openpyxl.load_workbook', return_value=mock_wb):
+
+            await parser.parse(b"xls content", "test.xls")
+
+        # Verify temp dir was created and then cleaned up
+        assert len(created_temp_dirs) == 1
+        assert not os.path.exists(created_temp_dirs[0])
+
+    @pytest.mark.asyncio
+    async def test_temp_dir_cleaned_up_after_pptx_conversion(self, parser):
+        """Test that temp directory is cleaned up after PPT/ODP conversion."""
+        mock_process = AsyncMock()
+        mock_process.communicate = AsyncMock(return_value=(b"", b""))
+
+        created_temp_dirs = []
+
+        original_temp_dir = tempfile.TemporaryDirectory
+
+        class TrackingTempDir:
+            def __init__(self, *args, **kwargs):
+                self._temp_dir = original_temp_dir(*args, **kwargs)
+                created_temp_dirs.append(self._temp_dir.name)
+
+            def __enter__(self):
+                return self._temp_dir.__enter__()
+
+            def __exit__(self, *args):
+                return self._temp_dir.__exit__(*args)
+
+        mock_shape = Mock()
+        mock_shape.text = "Slide content"
+
+        mock_slide = Mock()
+        mock_slide.shapes = [mock_shape]
+
+        mock_prs = Mock()
+        mock_prs.slides = [mock_slide]
+
+        with patch('tempfile.TemporaryDirectory', TrackingTempDir), \
+             patch('asyncio.create_subprocess_exec', return_value=mock_process), \
+             patch('builtins.open', mock_open(read_data=b"pptx bytes")), \
+             patch('os.path.exists', return_value=True), \
+             patch('api.services.documents.Presentation', return_value=mock_prs):
+
+            await parser.parse(b"ppt content", "test.ppt")
+
+        # Verify temp dir was created and then cleaned up
+        assert len(created_temp_dirs) == 1
+        assert not os.path.exists(created_temp_dirs[0])
+
+    @pytest.mark.asyncio
+    async def test_temp_dir_cleaned_up_after_rar_extraction(self, parser):
+        """Test that temp directory is cleaned up after RAR extraction."""
+        mock_process = AsyncMock()
+        mock_process.communicate = AsyncMock(return_value=(b"", b""))
+
+        created_temp_dirs = []
+
+        original_temp_dir = tempfile.TemporaryDirectory
+
+        class TrackingTempDir:
+            def __init__(self, *args, **kwargs):
+                self._temp_dir = original_temp_dir(*args, **kwargs)
+                created_temp_dirs.append(self._temp_dir.name)
+
+            def __enter__(self):
+                return self._temp_dir.__enter__()
+
+            def __exit__(self, *args):
+                return self._temp_dir.__exit__(*args)
+
+        with patch('tempfile.TemporaryDirectory', TrackingTempDir), \
+             patch('asyncio.create_subprocess_exec', return_value=mock_process), \
+             patch('builtins.open', mock_open()), \
+             patch('os.makedirs'), \
+             patch('os.walk', return_value=[]):
+
+            await parser.parse(b"rar content", "archive.rar")
+
+        # Verify temp dir was created and then cleaned up
+        assert len(created_temp_dirs) == 1
+        assert not os.path.exists(created_temp_dirs[0])
+
+    @pytest.mark.asyncio
+    async def test_temp_dir_cleaned_up_after_msg_parsing(self, parser):
+        """Test that temp directory is cleaned up after MSG parsing."""
+        extract_msg = pytest.importorskip('extract_msg')
+
+        created_temp_dirs = []
+
+        original_temp_dir = tempfile.TemporaryDirectory
+
+        class TrackingTempDir:
+            def __init__(self, *args, **kwargs):
+                self._temp_dir = original_temp_dir(*args, **kwargs)
+                created_temp_dirs.append(self._temp_dir.name)
+
+            def __enter__(self):
+                return self._temp_dir.__enter__()
+
+            def __exit__(self, *args):
+                return self._temp_dir.__exit__(*args)
+
+        mock_msg = Mock()
+        mock_msg.sender = "sender@test.com"
+        mock_msg.to = "recipient@test.com"
+        mock_msg.subject = "Test"
+        mock_msg.date = "2024-01-01"
+        mock_msg.body = "Body"
+
+        with patch('tempfile.TemporaryDirectory', TrackingTempDir), \
+             patch('builtins.open', mock_open()), \
+             patch('extract_msg.Message', return_value=mock_msg):
+
+            await parser.parse(b"msg content", "message.msg")
+
+        # Verify temp dir was created and then cleaned up
+        assert len(created_temp_dirs) == 1
+        assert not os.path.exists(created_temp_dirs[0])
+
+    @pytest.mark.asyncio
+    async def test_temp_dir_cleaned_up_on_conversion_error(self, parser):
+        """Test that temp directory is cleaned up even when conversion fails."""
+        mock_process = AsyncMock()
+        mock_process.communicate = AsyncMock(return_value=(b"", b""))
+
+        created_temp_dirs = []
+
+        original_temp_dir = tempfile.TemporaryDirectory
+
+        class TrackingTempDir:
+            def __init__(self, *args, **kwargs):
+                self._temp_dir = original_temp_dir(*args, **kwargs)
+                created_temp_dirs.append(self._temp_dir.name)
+
+            def __enter__(self):
+                return self._temp_dir.__enter__()
+
+            def __exit__(self, *args):
+                return self._temp_dir.__exit__(*args)
+
+        with patch('tempfile.TemporaryDirectory', TrackingTempDir), \
+             patch('asyncio.create_subprocess_exec', return_value=mock_process), \
+             patch('builtins.open', mock_open()), \
+             patch('os.path.exists', return_value=False):  # Simulate conversion failure
+
+            result = await parser.parse(b"doc content", "test.doc")
+
+        # Conversion should fail but temp dir should still be cleaned up
+        assert result.status == "failed"
+        assert len(created_temp_dirs) == 1
+        assert not os.path.exists(created_temp_dirs[0])
+
+    @pytest.mark.asyncio
+    async def test_no_temp_files_leak_after_multiple_parses(self, parser):
+        """Test that no temp files leak after parsing multiple documents."""
+        # Get initial temp dir contents
+        temp_base = tempfile.gettempdir()
+        initial_dirs = set(os.listdir(temp_base))
+
+        mock_process = AsyncMock()
+        mock_process.communicate = AsyncMock(return_value=(b"", b""))
+
+        mock_doc = Mock()
+        mock_doc.paragraphs = [Mock(text="Content")]
+        mock_doc.tables = []
+
+        # Parse multiple documents
+        for i in range(5):
+            with patch('asyncio.create_subprocess_exec', return_value=mock_process), \
+                 patch('builtins.open', mock_open(read_data=b"docx bytes")), \
+                 patch('os.path.exists', return_value=True), \
+                 patch('api.services.documents.DocxDocument', return_value=mock_doc):
+
+                await parser.parse(b"doc content", f"test{i}.doc")
+
+        # Check that no new temp directories remain
+        final_dirs = set(os.listdir(temp_base))
+        new_dirs = final_dirs - initial_dirs
+
+        # Filter to only temp dirs that might be from our parser
+        # (they should have been cleaned up)
+        parser_temp_dirs = [d for d in new_dirs if d.startswith('tmp')]
+
+        # All temp dirs should be cleaned up
+        # (allowing some tolerance for other system processes)
+        assert len(parser_temp_dirs) == 0, f"Leaked temp dirs: {parser_temp_dirs}"
 
 
 # ============================================================================

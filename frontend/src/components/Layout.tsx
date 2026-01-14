@@ -26,7 +26,7 @@ import { useOnboardingTour } from '@/hooks/useOnboardingTour';
 import BackgroundEffects from './BackgroundEffects';
 import { OnboardingTour } from './onboarding';
 import CommandPalette, { CommandPaletteHint } from './CommandPalette';
-import { useCommandPalette } from '@/hooks/useCommandPalette';
+import { useCommandPaletteStore } from '@/hooks/useCommandPalette';
 import clsx from 'clsx';
 
 // Icon mapping for dynamic menu
@@ -75,7 +75,7 @@ export default function Layout() {
   const { user, logout, isImpersonating, exitImpersonation, menuItems, fetchPermissions, customRoleName, hasFeature } = useAuthStore();
   const navigate = useNavigate();
   const { startTour, resetTour, hasCompletedTour } = useOnboardingTour();
-  const { open: openCommandPalette } = useCommandPalette();
+  const openCommandPalette = useCommandPaletteStore((state) => state.open);
 
   // Handler for starting/restarting the tour
   const handleHelpClick = () => {

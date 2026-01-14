@@ -556,7 +556,7 @@ class AIService:
             content_hash = cache_service.compute_messages_hash(messages, criteria)
             cache_key = f"chat:{chat_id}:report:{report_type}"
 
-            cached = cache_service.get_cached_analysis(cache_key, content_hash)
+            cached = await cache_service.get_cached_analysis(cache_key, content_hash)
             if cached:
                 logger.info(f"Using cached report for chat {chat_id}")
                 return cached
@@ -651,7 +651,7 @@ class AIService:
 
         # Cache the result for future use
         if cache_key and content_hash:
-            cache_service.set_cached_analysis(
+            await cache_service.set_cached_analysis(
                 cache_key,
                 content_hash,
                 result,

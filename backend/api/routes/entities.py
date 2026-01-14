@@ -18,6 +18,7 @@ from ..models.database import (
 )
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to
 from ..services.red_flags import red_flags_service
+from ..services.cache import scoring_cache
 from .realtime import broadcast_entity_created, broadcast_entity_updated, broadcast_entity_deleted
 
 # Ownership filter type
@@ -70,6 +71,8 @@ class EntityUpdate(BaseModel):
     expected_salary_min: Optional[int] = None
     expected_salary_max: Optional[int] = None
     expected_salary_currency: Optional[str] = None
+    # Optimistic locking version (optional, for concurrent update detection)
+    version: Optional[int] = None
 
 
 class TransferCreate(BaseModel):
@@ -632,6 +635,8 @@ async def list_entities(
             "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
             "chats_count": chats_counts.get(entity.id, 0),
             "calls_count": calls_counts.get(entity.id, 0),
+            # Optimistic locking version
+            "version": entity.version or 1,
             # Transfer tracking
             "is_transferred": entity.is_transferred or False,
             "transferred_to_id": entity.transferred_to_id,
@@ -1095,6 +1100,8 @@ async def get_entity(
         "department_name": department_name,
         "created_at": entity.created_at.isoformat() if entity.created_at else None,
         "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
+        # Optimistic locking version
+        "version": entity.version or 1,
         # Transfer tracking
         "is_transferred": entity.is_transferred or False,
         "transferred_to_id": entity.transferred_to_id,
@@ -1276,8 +1283,11 @@ async def update_entity(
     if not org:
         raise HTTPException(403, "No organization access")
 
+    # Use SELECT FOR UPDATE to prevent race conditions
     result = await db.execute(
-        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+        select(Entity)
+        .where(Entity.id == entity_id, Entity.org_id == org.id)
+        .with_for_update()
     )
     entity = result.scalar_one_or_none()
 
@@ -1339,11 +1349,25 @@ async def update_entity(
         if data.phones is not None:
             data.phones = filtered_phones
 
+    # Optimistic locking: check version if provided
+    if data.version is not None and entity.version != data.version:
+        raise HTTPException(
+            409,
+            f"Conflict: Entity was modified by another request. "
+            f"Expected version {data.version}, but current version is {entity.version}. "
+            f"Please refresh and try again."
+        )
+
     update_data = data.model_dump(exclude_unset=True)
+    # Remove version from update_data to prevent it from being set directly
+    update_data.pop('version', None)
+
     for key, value in update_data.items():
         setattr(entity, key, value)
 
     entity.updated_at = datetime.utcnow()
+    # Increment version for optimistic locking
+    entity.version = (entity.version or 1) + 1
     await db.commit()
     await db.refresh(entity)
 
@@ -1375,8 +1399,19 @@ async def update_entity(
         "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
         "expected_salary_min": entity.expected_salary_min,
         "expected_salary_max": entity.expected_salary_max,
-        "expected_salary_currency": entity.expected_salary_currency or 'RUB'
+        "expected_salary_currency": entity.expected_salary_currency or 'RUB',
+        "version": entity.version
     }
+
+    # Invalidate scoring cache if relevant fields changed
+    # (skills, experience, salary, etc.)
+    scoring_relevant_fields = {
+        'tags', 'extra_data', 'expected_salary_min', 'expected_salary_max',
+        'expected_salary_currency', 'position', 'ai_summary'
+    }
+    if any(field in update_data for field in scoring_relevant_fields):
+        await scoring_cache.invalidate_entity_scores(entity.id)
+        logger.info(f"Invalidated scoring cache for entity {entity.id} due to scoring-relevant field change")
 
     # Broadcast entity.updated event
     await broadcast_entity_updated(org.id, response_data)
@@ -1396,8 +1431,11 @@ async def delete_entity(
     if not org:
         raise HTTPException(403, "No organization access")
 
+    # Use SELECT FOR UPDATE to prevent race conditions
     result = await db.execute(
-        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+        select(Entity)
+        .where(Entity.id == entity_id, Entity.org_id == org.id)
+        .with_for_update()
     )
     entity = result.scalar_one_or_none()
 
@@ -1464,8 +1502,11 @@ async def transfer_entity(
     if not org:
         raise HTTPException(403, "No organization access")
 
+    # Use SELECT FOR UPDATE to prevent race conditions during transfer
     result = await db.execute(
-        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+        select(Entity)
+        .where(Entity.id == entity_id, Entity.org_id == org.id)
+        .with_for_update()
     )
     entity = result.scalar_one_or_none()
 
@@ -1650,9 +1691,11 @@ async def cancel_transfer(
     """
     current_user = await db.merge(current_user)
 
-    # Get transfer record
+    # Get transfer record with row lock to prevent concurrent cancellations
     result = await db.execute(
-        select(EntityTransfer).where(EntityTransfer.id == transfer_id)
+        select(EntityTransfer)
+        .where(EntityTransfer.id == transfer_id)
+        .with_for_update()
     )
     transfer = result.scalar_one_or_none()
 
@@ -1671,9 +1714,11 @@ async def cancel_transfer(
     if transfer.cancel_deadline and datetime.utcnow() > transfer.cancel_deadline:
         raise HTTPException(400, "Cancellation window expired (1 hour)")
 
-    # Get the original entity
+    # Get the original entity with row lock to prevent race conditions
     entity_result = await db.execute(
-        select(Entity).where(Entity.id == transfer.entity_id)
+        select(Entity)
+        .where(Entity.id == transfer.entity_id)
+        .with_for_update()
     )
     entity = entity_result.scalar_one_or_none()
 

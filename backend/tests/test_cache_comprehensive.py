@@ -8,6 +8,7 @@ Tests:
 - Hash computation edge cases
 - Smart truncate edge cases
 """
+import asyncio
 import pytest
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
@@ -18,6 +19,8 @@ from api.services.cache import (
     AnalysisCacheService,
     cache_service
 )
+
+pytestmark = pytest.mark.asyncio
 
 
 class TestSmartTruncateEdgeCases:
@@ -173,36 +176,39 @@ class TestCacheTTLEdgeCases:
 
     def setup_method(self):
         """Clear cache before each test."""
-        cache_service.clear_all()
+        cache_service.clear_all_sync()
 
-    def test_cache_with_custom_ttl(self):
+    async def test_cache_with_custom_ttl(self):
         """Test setting cache with custom TTL."""
-        cache_service.set_cached_analysis(
+        await cache_service.set_cached_analysis(
             "test:key",
             "hash123",
             "result",
             ttl_seconds=3600
         )
 
-        cached = cache_service.get_cached_analysis("test:key", "hash123")
+        cached = await cache_service.get_cached_analysis("test:key", "hash123")
         assert cached == "result"
 
-    def test_cache_with_zero_ttl_expires_immediately(self):
+    async def test_cache_with_zero_ttl_expires_immediately(self):
         """Test that zero TTL expires immediately."""
-        cache_service.set_cached_analysis(
+        await cache_service.set_cached_analysis(
             "test:key",
             "hash123",
             "result",
             ttl_seconds=0
         )
 
+        # Wait a small amount to ensure expiration
+        await asyncio.sleep(0.01)
+
         # Should be expired
-        cached = cache_service.get_cached_analysis("test:key", "hash123")
+        cached = await cache_service.get_cached_analysis("test:key", "hash123")
         assert cached is None
 
-    def test_cache_default_ttl(self):
+    async def test_cache_default_ttl(self):
         """Test that default TTL is used when not specified."""
-        cache_service.set_cached_analysis("test:key", "hash123", "result")
+        await cache_service.set_cached_analysis("test:key", "hash123", "result")
 
         # Should use DEFAULT_TTL_SECONDS
         entry = cache_service._cache.get("test:key")
@@ -212,9 +218,9 @@ class TestCacheTTLEdgeCases:
         # Expiration should be in the future
         assert entry["expires_at"] > datetime.utcnow()
 
-    def test_cache_entry_structure(self):
+    async def test_cache_entry_structure(self):
         """Test that cache entry has correct structure."""
-        cache_service.set_cached_analysis(
+        await cache_service.set_cached_analysis(
             "test:key",
             "hash123",
             "result",
@@ -237,43 +243,43 @@ class TestCacheConcurrency:
 
     def setup_method(self):
         """Clear cache before each test."""
-        cache_service.clear_all()
+        cache_service.clear_all_sync()
 
-    def test_multiple_writes_last_wins(self):
+    async def test_multiple_writes_last_wins(self):
         """Test that last write wins for same key."""
-        cache_service.set_cached_analysis("key", "hash1", "result1")
-        cache_service.set_cached_analysis("key", "hash2", "result2")
+        await cache_service.set_cached_analysis("key", "hash1", "result1")
+        await cache_service.set_cached_analysis("key", "hash2", "result2")
 
         # Should have hash2
-        cached = cache_service.get_cached_analysis("key", "hash2")
+        cached = await cache_service.get_cached_analysis("key", "hash2")
         assert cached == "result2"
 
         # hash1 should not match
-        cached = cache_service.get_cached_analysis("key", "hash1")
+        cached = await cache_service.get_cached_analysis("key", "hash1")
         assert cached is None
 
-    def test_different_keys_independent(self):
+    async def test_different_keys_independent(self):
         """Test that different cache keys are independent."""
-        cache_service.set_cached_analysis("key1", "hash1", "result1")
-        cache_service.set_cached_analysis("key2", "hash2", "result2")
+        await cache_service.set_cached_analysis("key1", "hash1", "result1")
+        await cache_service.set_cached_analysis("key2", "hash2", "result2")
 
-        assert cache_service.get_cached_analysis("key1", "hash1") == "result1"
-        assert cache_service.get_cached_analysis("key2", "hash2") == "result2"
+        assert await cache_service.get_cached_analysis("key1", "hash1") == "result1"
+        assert await cache_service.get_cached_analysis("key2", "hash2") == "result2"
 
-    def test_invalidate_does_not_affect_others(self):
+    async def test_invalidate_does_not_affect_others(self):
         """Test that invalidating one key doesn't affect others."""
-        cache_service.set_cached_analysis("chat:1:report", "h1", "r1")
-        cache_service.set_cached_analysis("chat:2:report", "h2", "r2")
-        cache_service.set_cached_analysis("entity:1:analysis", "h3", "r3")
+        await cache_service.set_cached_analysis("chat:1:report", "h1", "r1")
+        await cache_service.set_cached_analysis("chat:2:report", "h2", "r2")
+        await cache_service.set_cached_analysis("entity:1:analysis", "h3", "r3")
 
-        cache_service.invalidate_chat_cache(1)
+        await cache_service.invalidate_chat_cache(1)
 
         # Chat 1 gone
-        assert cache_service.get_cached_analysis("chat:1:report", "h1") is None
+        assert await cache_service.get_cached_analysis("chat:1:report", "h1") is None
 
         # Others still there
-        assert cache_service.get_cached_analysis("chat:2:report", "h2") == "r2"
-        assert cache_service.get_cached_analysis("entity:1:analysis", "h3") == "r3"
+        assert await cache_service.get_cached_analysis("chat:2:report", "h2") == "r2"
+        assert await cache_service.get_cached_analysis("entity:1:analysis", "h3") == "r3"
 
 
 class TestHashComputationEdgeCases:
@@ -388,65 +394,65 @@ class TestInvalidation:
 
     def setup_method(self):
         """Clear cache before each test."""
-        cache_service.clear_all()
+        cache_service.clear_all_sync()
 
-    def test_invalidate_chat_cache_no_matches(self):
+    async def test_invalidate_chat_cache_no_matches(self):
         """Test invalidating chat when no entries exist."""
-        cache_service.set_cached_analysis("entity:1:report", "h1", "r1")
+        await cache_service.set_cached_analysis("entity:1:report", "h1", "r1")
 
         # Should not raise error
-        cache_service.invalidate_chat_cache(999)
+        await cache_service.invalidate_chat_cache(999)
 
         # Entity cache should still exist
-        assert cache_service.get_cached_analysis("entity:1:report", "h1") == "r1"
+        assert await cache_service.get_cached_analysis("entity:1:report", "h1") == "r1"
 
-    def test_invalidate_entity_cache_no_matches(self):
+    async def test_invalidate_entity_cache_no_matches(self):
         """Test invalidating entity when no entries exist."""
-        cache_service.set_cached_analysis("chat:1:report", "h1", "r1")
+        await cache_service.set_cached_analysis("chat:1:report", "h1", "r1")
 
         # Should not raise error
-        cache_service.invalidate_entity_cache(999)
+        await cache_service.invalidate_entity_cache(999)
 
         # Chat cache should still exist
-        assert cache_service.get_cached_analysis("chat:1:report", "h1") == "r1"
+        assert await cache_service.get_cached_analysis("chat:1:report", "h1") == "r1"
 
-    def test_invalidate_partial_key_match(self):
+    async def test_invalidate_partial_key_match(self):
         """Test that invalidation uses substring matching correctly."""
-        cache_service.set_cached_analysis("chat:10:report", "h1", "r1")
-        cache_service.set_cached_analysis("chat:1:report", "h2", "r2")
-        cache_service.set_cached_analysis("chat:100:report", "h3", "r3")
+        await cache_service.set_cached_analysis("chat:10:report", "h1", "r1")
+        await cache_service.set_cached_analysis("chat:1:report", "h2", "r2")
+        await cache_service.set_cached_analysis("chat:100:report", "h3", "r3")
 
         # Invalidate chat 1 - should only affect exact chat:1
-        cache_service.invalidate_chat_cache(1)
+        await cache_service.invalidate_chat_cache(1)
 
         # Chat 10 and 100 should still exist
-        assert cache_service.get_cached_analysis("chat:10:report", "h1") == "r1"
-        assert cache_service.get_cached_analysis("chat:100:report", "h3") == "r3"
+        assert await cache_service.get_cached_analysis("chat:10:report", "h1") == "r1"
+        assert await cache_service.get_cached_analysis("chat:100:report", "h3") == "r3"
 
         # Chat 1 should be gone
-        assert cache_service.get_cached_analysis("chat:1:report", "h2") is None
+        assert await cache_service.get_cached_analysis("chat:1:report", "h2") is None
 
-    def test_clear_all_removes_everything(self):
+    async def test_clear_all_removes_everything(self):
         """Test that clear_all removes all cache entries."""
         # Add various types
-        cache_service.set_cached_analysis("chat:1:report", "h1", "r1")
-        cache_service.set_cached_analysis("entity:1:analysis", "h2", "r2")
-        cache_service.set_cached_analysis("custom:key", "h3", "r3")
+        await cache_service.set_cached_analysis("chat:1:report", "h1", "r1")
+        await cache_service.set_cached_analysis("entity:1:analysis", "h2", "r2")
+        await cache_service.set_cached_analysis("custom:key", "h3", "r3")
 
-        cache_service.clear_all()
+        await cache_service.clear_all()
 
         # All should be gone
-        assert cache_service.get_cached_analysis("chat:1:report", "h1") is None
-        assert cache_service.get_cached_analysis("entity:1:analysis", "h2") is None
-        assert cache_service.get_cached_analysis("custom:key", "h3") is None
+        assert await cache_service.get_cached_analysis("chat:1:report", "h1") is None
+        assert await cache_service.get_cached_analysis("entity:1:analysis", "h2") is None
+        assert await cache_service.get_cached_analysis("custom:key", "h3") is None
 
-    def test_clear_all_returns_count(self):
+    async def test_clear_all_returns_count(self):
         """Test that clear_all returns count (implicitly via logging)."""
-        cache_service.set_cached_analysis("key1", "h1", "r1")
-        cache_service.set_cached_analysis("key2", "h2", "r2")
+        await cache_service.set_cached_analysis("key1", "h1", "r1")
+        await cache_service.set_cached_analysis("key2", "h2", "r2")
 
         # Clear should work without error
-        cache_service.clear_all()
+        await cache_service.clear_all()
 
         # Cache should be empty
         assert len(cache_service._cache) == 0
@@ -572,3 +578,197 @@ class TestMessageTimestampFormatting:
 
         # Should still work, just without timestamp
         assert "Test" in result
+
+
+class TestConcurrentCacheAccess:
+    """Tests for thread-safe concurrent cache operations using asyncio.Lock."""
+
+    def setup_method(self):
+        """Clear cache before each test."""
+        cache_service.clear_all_sync()
+        # Reset the lock to ensure fresh state
+        AnalysisCacheService._lock = None
+
+    async def test_concurrent_writes_no_data_corruption(self):
+        """Test that concurrent writes don't corrupt cache data."""
+        num_tasks = 100
+        results = []
+
+        async def write_task(i: int):
+            key = f"concurrent:key:{i}"
+            await cache_service.set_cached_analysis(key, f"hash{i}", f"result{i}")
+            results.append(i)
+
+        # Run all writes concurrently
+        tasks = [write_task(i) for i in range(num_tasks)]
+        await asyncio.gather(*tasks)
+
+        # All writes should have completed
+        assert len(results) == num_tasks
+
+        # All values should be correctly stored
+        for i in range(num_tasks):
+            cached = await cache_service.get_cached_analysis(f"concurrent:key:{i}", f"hash{i}")
+            assert cached == f"result{i}", f"Key {i} has wrong value"
+
+    async def test_concurrent_reads_and_writes(self):
+        """Test that concurrent reads and writes work correctly."""
+        # Pre-populate some data
+        for i in range(10):
+            await cache_service.set_cached_analysis(f"rw:key:{i}", f"hash{i}", f"result{i}")
+
+        read_results = []
+        write_results = []
+
+        async def read_task(i: int):
+            result = await cache_service.get_cached_analysis(f"rw:key:{i % 10}", f"hash{i % 10}")
+            read_results.append((i, result))
+
+        async def write_task(i: int):
+            await cache_service.set_cached_analysis(f"rw:new:{i}", f"newhash{i}", f"newresult{i}")
+            write_results.append(i)
+
+        # Mix reads and writes
+        tasks = []
+        for i in range(50):
+            tasks.append(read_task(i))
+            tasks.append(write_task(i))
+
+        await asyncio.gather(*tasks)
+
+        # All operations should complete
+        assert len(read_results) == 50
+        assert len(write_results) == 50
+
+        # All reads should return expected values
+        for i, result in read_results:
+            expected = f"result{i % 10}"
+            assert result == expected, f"Read {i} returned {result}, expected {expected}"
+
+    async def test_concurrent_invalidation_safety(self):
+        """Test that concurrent invalidation doesn't cause errors."""
+        # Pre-populate cache with multiple entries for same chat
+        for i in range(20):
+            await cache_service.set_cached_analysis(f"chat:1:report:{i}", f"h{i}", f"r{i}")
+            await cache_service.set_cached_analysis(f"chat:2:report:{i}", f"h{i}", f"r{i}")
+
+        invalidation_count = [0]
+        write_count = [0]
+
+        async def invalidate_task():
+            await cache_service.invalidate_chat_cache(1)
+            invalidation_count[0] += 1
+
+        async def write_task(i: int):
+            await cache_service.set_cached_analysis(f"chat:3:report:{i}", f"h{i}", f"r{i}")
+            write_count[0] += 1
+
+        # Run invalidations and writes concurrently
+        tasks = []
+        for i in range(10):
+            tasks.append(invalidate_task())
+            tasks.append(write_task(i))
+
+        await asyncio.gather(*tasks)
+
+        # All operations should complete without errors
+        assert invalidation_count[0] == 10
+        assert write_count[0] == 10
+
+        # Chat 1 should be invalidated
+        for i in range(20):
+            assert await cache_service.get_cached_analysis(f"chat:1:report:{i}", f"h{i}") is None
+
+        # Chat 2 and 3 should still have data
+        for i in range(20):
+            assert await cache_service.get_cached_analysis(f"chat:2:report:{i}", f"h{i}") == f"r{i}"
+        for i in range(10):
+            assert await cache_service.get_cached_analysis(f"chat:3:report:{i}", f"h{i}") == f"r{i}"
+
+    async def test_concurrent_clear_all_safety(self):
+        """Test that concurrent clear_all doesn't cause errors."""
+        errors = []
+
+        async def populate_and_clear():
+            try:
+                for i in range(5):
+                    await cache_service.set_cached_analysis(f"clear:key:{i}", f"h{i}", f"r{i}")
+                await cache_service.clear_all()
+            except Exception as e:
+                errors.append(str(e))
+
+        # Run multiple clear_all operations concurrently
+        tasks = [populate_and_clear() for _ in range(10)]
+        await asyncio.gather(*tasks)
+
+        # No errors should have occurred
+        assert len(errors) == 0, f"Errors occurred: {errors}"
+
+        # Cache should be empty after all clears
+        assert len(cache_service._cache) == 0
+
+    async def test_lock_is_shared_across_operations(self):
+        """Test that the lock is properly shared across all cache operations."""
+        # This test verifies that operations are serialized by checking
+        # that interleaved operations produce consistent results
+
+        operation_order = []
+
+        async def set_and_record(key: str, delay: float):
+            operation_order.append(f"start_set_{key}")
+            await cache_service.set_cached_analysis(key, "hash", f"value_{key}")
+            await asyncio.sleep(delay)
+            operation_order.append(f"end_set_{key}")
+
+        async def get_and_record(key: str, delay: float):
+            operation_order.append(f"start_get_{key}")
+            await asyncio.sleep(delay)
+            result = await cache_service.get_cached_analysis(key, "hash")
+            operation_order.append(f"end_get_{key}")
+            return result
+
+        # Set initial values
+        await cache_service.set_cached_analysis("locktest:1", "hash", "value_locktest:1")
+        await cache_service.set_cached_analysis("locktest:2", "hash", "value_locktest:2")
+
+        # Run concurrent operations
+        results = await asyncio.gather(
+            get_and_record("locktest:1", 0.001),
+            set_and_record("locktest:3", 0.001),
+            get_and_record("locktest:2", 0.001),
+        )
+
+        # All get operations should return correct values
+        assert results[0] == "value_locktest:1"
+        assert results[2] == "value_locktest:2"
+
+        # New key should be set correctly
+        assert await cache_service.get_cached_analysis("locktest:3", "hash") == "value_locktest:3"
+
+    async def test_high_contention_scenario(self):
+        """Test cache under high contention with many concurrent operations."""
+        num_operations = 200
+        success_count = [0]
+        error_count = [0]
+
+        async def random_operation(i: int):
+            try:
+                op = i % 4
+                if op == 0:
+                    await cache_service.set_cached_analysis(f"hc:{i}", f"h{i}", f"r{i}")
+                elif op == 1:
+                    await cache_service.get_cached_analysis(f"hc:{i // 2}", f"h{i // 2}")
+                elif op == 2:
+                    await cache_service.invalidate_chat_cache(i % 10)
+                else:
+                    await cache_service.invalidate_entity_cache(i % 10)
+                success_count[0] += 1
+            except Exception as e:
+                error_count[0] += 1
+
+        tasks = [random_operation(i) for i in range(num_operations)]
+        await asyncio.gather(*tasks)
+
+        # All operations should succeed without errors
+        assert success_count[0] == num_operations, f"Only {success_count[0]}/{num_operations} succeeded"
+        assert error_count[0] == 0, f"{error_count[0]} errors occurred"

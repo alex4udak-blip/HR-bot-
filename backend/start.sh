@@ -57,12 +57,19 @@ python -m alembic current || echo "No current version (fresh database)"
 
 echo ""
 echo "Upgrading to latest migration (add_feature_audit_logs)..."
+# Use timeout to prevent migration from blocking forever (max 120 seconds)
 # First try specific target, then heads if that fails
-python -m alembic upgrade add_feature_audit_logs 2>&1 && echo "Migration successful" || {
-    echo "Specific target failed, trying 'heads'..."
-    python -m alembic upgrade heads 2>&1 && echo "Migration with heads successful" || {
-        echo "Upgrade failed, but continuing - tables will be created by SQLAlchemy"
-    }
+timeout 120 python -m alembic upgrade add_feature_audit_logs 2>&1 && echo "Migration successful" || {
+    ALEMBIC_EXIT=$?
+    if [ $ALEMBIC_EXIT -eq 124 ]; then
+        echo "WARNING: Migration timed out after 120 seconds!"
+        echo "This usually means a lock or network issue. Continuing with SQLAlchemy fallback..."
+    else
+        echo "Specific target failed (exit code: $ALEMBIC_EXIT), trying 'heads'..."
+        timeout 60 python -m alembic upgrade heads 2>&1 && echo "Migration with heads successful" || {
+            echo "Upgrade failed, but continuing - tables will be created by SQLAlchemy"
+        }
+    fi
 }
 
 echo ""
