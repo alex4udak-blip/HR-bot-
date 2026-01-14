@@ -839,12 +839,40 @@ except Exception as e:
 
 @app.get("/health")
 async def health_check():
+    """
+    Health check endpoint for Railway.
+    Always returns 200 OK for Railway healthcheck to pass.
+    DB status is informational only.
+    """
     from datetime import datetime
     from api.database import AsyncSessionLocal
 
     health = {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
-    # Check database
+    # Check database (informational, doesn't affect status code)
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        health["database"] = "connected"
+    except Exception as e:
+        health["database"] = f"degraded: {str(e)}"
+        health["status"] = "degraded"  # Informational only
+
+    # Always return 200 for Railway healthcheck
+    return health
+
+
+@app.get("/health/deep")
+async def health_check_deep():
+    """
+    Deep health check that returns 503 if DB is unavailable.
+    Use for monitoring/alerting, not for Railway healthcheck.
+    """
+    from datetime import datetime
+    from api.database import AsyncSessionLocal
+
+    health = {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
     try:
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))
@@ -852,8 +880,6 @@ async def health_check():
     except Exception as e:
         health["database"] = f"error: {str(e)}"
         health["status"] = "unhealthy"
-
-    if health["status"] == "unhealthy":
         raise HTTPException(status_code=503, detail=health)
 
     return health
