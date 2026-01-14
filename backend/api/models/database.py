@@ -66,15 +66,25 @@ class VacancyStatus(str, enum.Enum):
 
 
 class ApplicationStage(str, enum.Enum):
-    """Pipeline stage for candidate application"""
-    applied = "applied"           # Initial application
-    screening = "screening"       # Resume/profile review
-    phone_screen = "phone_screen" # Phone screening
-    interview = "interview"       # Interview stage
-    assessment = "assessment"     # Technical/skill assessment
-    offer = "offer"               # Offer extended
-    hired = "hired"               # Accepted and hired
-    rejected = "rejected"         # Rejected at any stage
+    """Pipeline stage for candidate application
+
+    Main stages: new → screening → practice → tech_practice → is_interview → offer → hired/rejected
+    """
+    # Main pipeline stages
+    new = "new"                   # Новый - just added to vacancy
+    screening = "screening"       # Скрининг - initial review
+    practice = "practice"         # Практика - practical task/test
+    tech_practice = "tech_practice"  # Тех-практика - technical practice
+    is_interview = "is_interview" # ИС - final interview (Information Security / Important Stage)
+    offer = "offer"               # Оффер - offer extended
+    hired = "hired"               # Принят - accepted and hired
+    rejected = "rejected"         # Отказ - rejected at any stage
+
+    # Legacy stages (kept for backward compatibility)
+    applied = "applied"           # Legacy: same as 'new'
+    phone_screen = "phone_screen" # Legacy: phone screening
+    interview = "interview"       # Legacy: interview stage
+    assessment = "assessment"     # Legacy: technical assessment
     withdrawn = "withdrawn"       # Candidate withdrew
 
 

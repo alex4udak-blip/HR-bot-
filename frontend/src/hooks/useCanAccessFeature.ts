@@ -11,6 +11,8 @@ export type FeatureName =
   | 'contacts'
   | 'calls'
   | 'vacancies'
+  | 'candidate_database'
+  | 'candidates'
   | 'departments'
   | 'users'
   | 'invite'

@@ -494,15 +494,26 @@ export const CALL_STATUS_COLORS: Record<CallStatus, string> = {
 export type VacancyStatus = 'draft' | 'open' | 'paused' | 'closed' | 'cancelled';
 
 export type ApplicationStage =
+  // Main pipeline stages
+  | 'new'           // Новый
+  | 'screening'     // Скрининг
+  | 'practice'      // Практика
+  | 'tech_practice' // Тех-практика
+  | 'is_interview'  // ИС (итоговое собеседование)
+  | 'offer'         // Оффер
+  | 'hired'         // Принят
+  | 'rejected'      // Отказ
+  // Legacy stages (backward compatibility)
   | 'applied'
-  | 'screening'
   | 'phone_screen'
   | 'interview'
   | 'assessment'
-  | 'offer'
-  | 'hired'
-  | 'rejected'
   | 'withdrawn';
+
+// Main pipeline stages in order
+export const PIPELINE_STAGES: ApplicationStage[] = [
+  'new', 'screening', 'practice', 'tech_practice', 'is_interview', 'offer', 'hired', 'rejected'
+];
 
 export interface Vacancy {
   id: number;
@@ -659,26 +670,38 @@ export const VACANCY_STATUS_COLORS: Record<VacancyStatus, string> = {
 };
 
 export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = {
-  applied: 'Отклик',
+  // Main pipeline stages
+  new: 'Новый',
   screening: 'Скрининг',
+  practice: 'Практика',
+  tech_practice: 'Тех-практика',
+  is_interview: 'ИС',
+  offer: 'Оффер',
+  hired: 'Принят',
+  rejected: 'Отказ',
+  // Legacy stages (backward compatibility)
+  applied: 'Отклик',
   phone_screen: 'Телефонный скрининг',
   interview: 'Собеседование',
   assessment: 'Тестирование',
-  offer: 'Оффер',
-  hired: 'Принят',
-  rejected: 'Отклонён',
   withdrawn: 'Отозван'
 };
 
 export const APPLICATION_STAGE_COLORS: Record<ApplicationStage, string> = {
-  applied: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  // Main pipeline stages
+  new: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
   screening: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
-  phone_screen: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-  interview: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
-  assessment: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+  practice: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+  tech_practice: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+  is_interview: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
   offer: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
   hired: 'bg-green-500/20 text-green-300 border-green-500/30',
   rejected: 'bg-red-500/20 text-red-300 border-red-500/30',
+  // Legacy stages (backward compatibility)
+  applied: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  phone_screen: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+  interview: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+  assessment: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
   withdrawn: 'bg-gray-500/20 text-gray-300 border-gray-500/30'
 };
 
