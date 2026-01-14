@@ -4010,3 +4010,272 @@ async def compare_candidates(
         similar_location=comparison.similar_location,
         match_reasons=comparison.match_reasons
     )
+
+
+# === Entity Chats & Calls API ===
+# These endpoints provide easy access to chats and calls linked to an entity
+
+@router.get("/{entity_id}/chats")
+async def get_entity_chats(
+    entity_id: int,
+    limit: int = Query(50, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all chats linked to an entity (candidate/contact).
+
+    Returns a list of chats with basic info (id, title, type, messages count, last activity).
+    Useful for viewing all communication history with a specific contact.
+    """
+    from sqlalchemy.orm import selectinload
+    from ..services.permissions import PermissionService
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Get entity
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check if user has access to view this entity
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(404, "Entity not found")
+
+    # Get chats linked to this entity
+    chats_query = (
+        select(Chat)
+        .options(selectinload(Chat.owner))
+        .where(
+            Chat.entity_id == entity_id,
+            Chat.org_id == org.id,
+            Chat.deleted_at.is_(None)
+        )
+        .order_by(Chat.last_activity.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+
+    result = await db.execute(chats_query)
+    chats = result.scalars().all()
+
+    if not chats:
+        return []
+
+    # Get chat IDs for batch queries
+    chat_ids = [chat.id for chat in chats]
+
+    # Batch query: Get message counts
+    msg_counts_result = await db.execute(
+        select(Message.chat_id, func.count(Message.id))
+        .where(Message.chat_id.in_(chat_ids))
+        .group_by(Message.chat_id)
+    )
+    msg_counts = {row[0]: row[1] for row in msg_counts_result.fetchall()}
+
+    # Build response
+    response = []
+    for chat in chats:
+        is_mine = chat.owner_id == current_user.id
+
+        response.append({
+            "id": chat.id,
+            "telegram_chat_id": chat.telegram_chat_id,
+            "title": chat.title,
+            "custom_name": chat.custom_name,
+            "chat_type": chat.chat_type.value if chat.chat_type else "hr",
+            "owner_id": chat.owner_id,
+            "owner_name": chat.owner.name if chat.owner else None,
+            "is_active": chat.is_active,
+            "messages_count": msg_counts.get(chat.id, 0),
+            "last_activity": chat.last_activity.isoformat() if chat.last_activity else None,
+            "created_at": chat.created_at.isoformat() if chat.created_at else None,
+            "is_mine": is_mine,
+        })
+
+    return response
+
+
+@router.get("/{entity_id}/calls")
+async def get_entity_calls(
+    entity_id: int,
+    limit: int = Query(50, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all call recordings linked to an entity (candidate/contact).
+
+    Returns a list of calls with basic info (id, title, status, duration, created_at).
+    Useful for viewing all call history with a specific contact.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Get entity
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check if user has access to view this entity
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(404, "Entity not found")
+
+    # Get calls linked to this entity
+    calls_query = (
+        select(CallRecording)
+        .where(
+            CallRecording.entity_id == entity_id,
+            CallRecording.org_id == org.id
+        )
+        .order_by(CallRecording.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+
+    result = await db.execute(calls_query)
+    calls = result.scalars().all()
+
+    if not calls:
+        return []
+
+    # Get owner IDs for batch query
+    owner_ids = list(set(call.owner_id for call in calls if call.owner_id))
+
+    # Batch query: Get owner names
+    owner_names_map = {}
+    if owner_ids:
+        owner_result = await db.execute(
+            select(User.id, User.name).where(User.id.in_(owner_ids))
+        )
+        owner_names_map = {row[0]: row[1] for row in owner_result.fetchall()}
+
+    # Build response
+    response = []
+    for call in calls:
+        is_mine = call.owner_id == current_user.id
+
+        response.append({
+            "id": call.id,
+            "title": call.title,
+            "source_type": call.source_type.value if call.source_type else None,
+            "status": call.status.value if call.status else None,
+            "duration_seconds": call.duration_seconds,
+            "owner_id": call.owner_id,
+            "owner_name": owner_names_map.get(call.owner_id) if call.owner_id else None,
+            "summary": call.summary[:200] + "..." if call.summary and len(call.summary) > 200 else call.summary,
+            "created_at": call.created_at.isoformat() if call.created_at else None,
+            "processed_at": call.processed_at.isoformat() if call.processed_at else None,
+            "is_mine": is_mine,
+        })
+
+    return response
+
+
+@router.post("/{entity_id}/link-call/{call_id}")
+async def link_call_to_entity(
+    entity_id: int,
+    call_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Link a call recording to an entity (candidate/contact).
+
+    This allows associating call recordings with specific contacts,
+    making it easier to find all calls related to a candidate.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Verify entity exists and belongs to same org
+    entity_result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = entity_result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check edit permissions - requires edit or full access
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=AccessLevel.edit)
+    if not has_access:
+        raise HTTPException(403, "No edit permission for this entity")
+
+    # Get and update call (must belong to same org)
+    call_result = await db.execute(
+        select(CallRecording).where(CallRecording.id == call_id, CallRecording.org_id == org.id)
+    )
+    call = call_result.scalar_one_or_none()
+
+    if not call:
+        raise HTTPException(404, "Call not found")
+
+    call.entity_id = entity_id
+    await db.commit()
+    return {"success": True, "entity_id": entity_id, "call_id": call_id}
+
+
+@router.delete("/{entity_id}/unlink-call/{call_id}")
+async def unlink_call_from_entity(
+    entity_id: int,
+    call_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Unlink a call recording from an entity (candidate/contact).
+
+    Removes the association between a call and a contact without deleting either.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Verify entity exists and user has edit access
+    entity_result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = entity_result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check edit permissions - requires edit or full access
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=AccessLevel.edit)
+    if not has_access:
+        raise HTTPException(403, "No edit permission for this entity")
+
+    call_result = await db.execute(
+        select(CallRecording).where(
+            CallRecording.id == call_id,
+            CallRecording.entity_id == entity_id,
+            CallRecording.org_id == org.id
+        )
+    )
+    call = call_result.scalar_one_or_none()
+
+    if not call:
+        raise HTTPException(404, "Call not found or not linked to this entity")
+
+    call.entity_id = None
+    await db.commit()
+    return {"success": True}

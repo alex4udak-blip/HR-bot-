@@ -20,21 +20,71 @@ settings = get_settings()
 
 
 class ParsedResume(BaseModel):
-    """Extracted resume data"""
+    """Extracted resume data (расширенная версия для URL парсинга)"""
+    # Основные данные
     name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+
+    # Контакты
     email: Optional[str] = None
+    emails: list[str] = []
     phone: Optional[str] = None
+    phones: list[str] = []
     telegram: Optional[str] = None
+    whatsapp: Optional[str] = None
+
+    # Персональные данные
+    birth_date: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    citizenship: Optional[str] = None
+    relocation: Optional[str] = None
+
+    # Профессиональные данные
     position: Optional[str] = None  # Desired position
+    specialization: Optional[str] = None
     company: Optional[str] = None   # Current/last company
     experience_years: Optional[int] = None
+
+    # Навыки
     skills: list[str] = []
+    skills_detailed: list[dict] = []
+
+    # Образование и опыт
+    education: list[dict] = []
+    experience: list[dict] = []
+    languages: list[dict] = []
+    courses: list[dict] = []
+
+    # Зарплата
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
     salary_currency: str = "RUB"
+
+    # Формат работы
+    employment_type: Optional[str] = None
+    schedule: Optional[str] = None
+
+    # Локация
     location: Optional[str] = None
+    metro: Optional[str] = None
+
+    # Дополнительно
     summary: Optional[str] = None
+    about: Optional[str] = None
+    achievements: list[str] = []
+
+    # Ссылки
     source_url: Optional[str] = None
+    linkedin: Optional[str] = None
+    github: Optional[str] = None
+    portfolio: Optional[str] = None
+    links: list[str] = []
+
+    # Метаданные
+    parse_confidence: float = 0.0
+    parse_warnings: list[str] = []
 
 
 class ParsedVacancy(BaseModel):
@@ -55,27 +105,58 @@ class ParsedVacancy(BaseModel):
 
 
 # AI prompts for parsing
-RESUME_PROMPT = """Извлеки информацию из резюме кандидата. Верни ТОЛЬКО валидный JSON без markdown форматирования:
+RESUME_PROMPT = """Ты - HR-эксперт. Извлеки ВСЮ информацию из резюме кандидата.
+Верни ТОЛЬКО валидный JSON без markdown форматирования:
+
 {
-  "name": "ФИО",
+  "name": "Полное ФИО",
+  "first_name": "Имя",
+  "last_name": "Фамилия",
   "email": "email@example.com",
+  "emails": ["все найденные email"],
   "phone": "+7...",
-  "telegram": "@username",
+  "phones": ["все найденные телефоны"],
+  "telegram": "@username или t.me/...",
+  "whatsapp": "номер WhatsApp",
+  "birth_date": "дата рождения",
+  "age": 30,
+  "gender": "male/female",
+  "citizenship": "гражданство",
+  "relocation": "yes/no/possible",
   "position": "Желаемая должность",
+  "specialization": "Специализация",
   "company": "Текущая компания",
   "experience_years": 5,
-  "skills": ["Python", "FastAPI"],
+  "skills": ["Python", "FastAPI", ...],
+  "skills_detailed": [{"name": "Python", "level": "expert", "years": 5}],
+  "education": [{"institution": "ВУЗ", "degree": "Степень", "year": "2020"}],
+  "experience": [{"company": "Компания", "position": "Должность", "period": "2020-2023", "description": "..."}],
+  "languages": [{"language": "English", "level": "B2"}],
+  "courses": [{"name": "Курс", "organization": "Организация", "year": "2022"}],
   "salary_min": 200000,
   "salary_max": 300000,
   "salary_currency": "RUB",
-  "location": "Москва",
-  "summary": "Краткое описание опыта"
+  "employment_type": "full-time/part-time/project",
+  "schedule": "remote/office/hybrid",
+  "location": "Город",
+  "metro": "Станция метро",
+  "about": "О себе",
+  "achievements": ["достижение1", "достижение2"],
+  "linkedin": "ссылка на LinkedIn",
+  "github": "ссылка на GitHub",
+  "portfolio": "ссылка на портфолио",
+  "links": ["все найденные ссылки"],
+  "parse_confidence": 0.9,
+  "parse_warnings": []
 }
 
-Если какое-то поле отсутствует в тексте, установи его в null.
-Для experience_years укажи примерное количество лет опыта работы (целое число).
-Для skills извлеки все упомянутые навыки и технологии.
-Для salary_min и salary_max укажи числа без валюты (только если указаны).
+ПРАВИЛА:
+- Если поле отсутствует - null (не пустую строку)
+- Зарплата - числа без символов валюты
+- skills - массив ВСЕХ навыков и технологий
+- experience - от последнего места к первому
+- parse_confidence: 0.9+ если всё найдено, 0.5-0.8 если частично, <0.5 если мало данных
+- parse_warnings - список проблем ("Не найден email", "Нет опыта работы" и т.д.)
 
 Текст для анализа:
 """
