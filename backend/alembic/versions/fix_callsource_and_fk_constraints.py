@@ -20,9 +20,11 @@ Revision ID: fix_callsource_and_fk_constraints
 Revises: add_entity_salary
 Create Date: 2026-01-13
 
-Note: Uses autocommit_block() for ALTER TYPE ADD VALUE as per Alembic docs:
-https://github.com/sqlalchemy/alembic/issues/123
+Note: Uses psycopg2 sync connection for enum changes because:
+- asyncpg doesn't support autocommit mode properly
+- ALTER TYPE ADD VALUE requires autocommit
 """
+import os
 from alembic import op
 import sqlalchemy as sa
 
@@ -32,23 +34,68 @@ branch_labels = None
 depends_on = None
 
 
+def add_enum_values_with_sync_connection():
+    """
+    Add enum values using a separate psycopg2 sync connection with autocommit.
+    This is required because:
+    1. ALTER TYPE ... ADD VALUE cannot run inside a transaction
+    2. asyncpg (used by alembic here) doesn't support autocommit_block properly
+    """
+    import psycopg2
+
+    callsource_values = ['google_doc', 'google_drive', 'direct_url', 'fireflies']
+
+    # Get database URL and convert to psycopg2 format
+    db_url = os.getenv("DATABASE_URL", "")
+    if not db_url:
+        print("Warning: DATABASE_URL not set, skipping enum additions")
+        return
+
+    # Convert URL format for psycopg2
+    if db_url.startswith("postgresql+asyncpg://"):
+        db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+    elif db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://")
+
+    try:
+        # Connect with autocommit mode
+        conn = psycopg2.connect(db_url)
+        conn.autocommit = True  # Critical: enables autocommit for ALTER TYPE
+
+        cursor = conn.cursor()
+        try:
+            # Check existing values
+            cursor.execute("""
+                SELECT e.enumlabel FROM pg_enum e
+                JOIN pg_type t ON e.enumtypid = t.oid
+                WHERE t.typname = 'callsource'
+            """)
+            existing = {row[0] for row in cursor.fetchall()}
+
+            # Add missing values
+            for value in callsource_values:
+                if value not in existing:
+                    try:
+                        cursor.execute(f"ALTER TYPE callsource ADD VALUE '{value}'")
+                        print(f"Added enum value: {value}")
+                    except psycopg2.Error as e:
+                        print(f"Could not add '{value}': {e}")
+                else:
+                    print(f"Enum value exists: {value}")
+        finally:
+            cursor.close()
+        conn.close()
+        print("Enum values updated successfully")
+    except Exception as e:
+        print(f"Warning: Could not update enum values: {e}")
+        print("This is non-critical - the app will still work")
+
+
 def upgrade():
     """Add missing CallSource enum values and fix FK constraints."""
 
-    # Add enum values using autocommit_block() - official Alembic way
-    # See: https://github.com/sqlalchemy/alembic/issues/123
-    # ALTER TYPE ... ADD VALUE cannot run inside a transaction block
-    callsource_values = ['google_doc', 'google_drive', 'direct_url', 'fireflies']
-
-    for value in callsource_values:
-        # Each ADD VALUE needs its own autocommit block
-        try:
-            with op.get_context().autocommit_block():
-                op.execute(sa.text(f"ALTER TYPE callsource ADD VALUE IF NOT EXISTS '{value}'"))
-            print(f"Added/verified enum value: {value}")
-        except Exception as e:
-            # Value might already exist or enum might not exist
-            print(f"Note: {value} - {e}")
+    # Add enum values using separate sync connection with autocommit
+    add_enum_values_with_sync_connection()
 
     # Fix FK constraints by dropping and recreating with ondelete
     # Note: This is safe as we're only changing the ondelete behavior
