@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     unrar-free \
     libheif-dev \
+    libmagic1 \
     wget \
     gnupg \
     curl \
