@@ -321,20 +321,36 @@ export default function ContactsPage() {
     return icons[type] || User;
   };
 
+  // Calculate layout mode based on AI panel state
+  // When AI panel is open on xl+ screens, we need to manage space better
+  const layoutMode = currentEntity
+    ? showAIPanel
+      ? 'ai-open' // content + AI panel (sidebar hidden on xl, overlay on smaller)
+      : 'detail' // sidebar + content
+    : 'list'; // full width list
+
   return (
-    <div className="h-full flex">
+    <div
+      className={clsx(
+        'h-full',
+        // Use CSS Grid for precise layout control
+        layoutMode === 'ai-open' && 'xl:grid xl:grid-cols-[1fr_480px]',
+        layoutMode === 'detail' && 'flex',
+        layoutMode === 'list' && 'flex'
+      )}
+    >
       {/* Sidebar - Entity List */}
-      {/* Hide sidebar completely on narrower screens when AI panel is open */}
+      {/* Hide sidebar when AI panel is open on xl+ to give more space to main content */}
       <motion.div
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         className={clsx(
-          'flex-shrink-0 border-r border-white/5 flex flex-col bg-black/20 transition-all duration-200',
-          currentEntity
-            ? showAIPanel
-              ? 'hidden 2xl:flex w-64 2xl:w-72' // Hide on screens < 2xl when AI panel is open
-              : 'w-80'
-            : 'w-full max-w-2xl'
+          'border-r border-white/5 flex flex-col bg-black/20 transition-all duration-200',
+          layoutMode === 'ai-open'
+            ? 'hidden' // Hide sidebar when AI panel is open
+            : layoutMode === 'detail'
+              ? 'w-80 flex-shrink-0'
+              : 'w-full max-w-2xl'
         )}
       >
         {/* Header */}
@@ -663,29 +679,35 @@ export default function ContactsPage() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
-            className="flex-1 flex flex-col min-w-0"
-            style={{ minWidth: showAIPanel ? '450px' : '400px' }}
+            className={clsx(
+              'flex flex-col overflow-hidden',
+              // When AI panel is open, this is the first grid column (1fr = takes remaining space)
+              // When AI panel is closed, use flex-1 to fill available space
+              layoutMode === 'ai-open'
+                ? 'min-w-0' // Allow shrinking in grid, no flex needed
+                : 'flex-1 min-w-0' // Flex layout with min-w-0 to allow truncation
+            )}
           >
             {/* Header */}
-            <div className="p-4 border-b border-white/5 flex items-center gap-4">
+            <div className="p-4 border-b border-white/5 flex items-center gap-2 sm:gap-4 overflow-hidden">
               <button
                 onClick={handleBack}
-                className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex-shrink-0"
               >
                 <ChevronLeft size={20} className="text-white/60" />
               </button>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-semibold text-white truncate">{currentEntity.name}</h2>
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <h2 className="text-lg sm:text-xl font-semibold text-white truncate">{currentEntity.name}</h2>
                   {currentEntity.is_transferred && currentEntity.transferred_to_name && (
-                    <span className="px-2 py-1 bg-orange-500/20 text-orange-400 text-xs rounded-lg whitespace-nowrap flex items-center gap-1">
+                    <span className="hidden sm:flex px-2 py-1 bg-orange-500/20 text-orange-400 text-xs rounded-lg whitespace-nowrap items-center gap-1 flex-shrink-0">
                       <ArrowRightLeft size={12} />
-                      Передан → {currentEntity.transferred_to_name}
+                      Передан
                     </span>
                   )}
                   {currentEntity.is_shared && currentEntity.access_level === 'view' && (
-                    <span className="px-2 py-1 bg-purple-500/20 text-purple-400 text-xs rounded-lg whitespace-nowrap">
-                      Только просмотр
+                    <span className="hidden sm:inline px-2 py-1 bg-purple-500/20 text-purple-400 text-xs rounded-lg whitespace-nowrap flex-shrink-0">
+                      Просмотр
                     </span>
                   )}
                 </div>
@@ -694,7 +716,7 @@ export default function ContactsPage() {
                   {currentEntity.company && ` @ ${currentEntity.company}`}
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-1 sm:gap-2 flex-shrink-0">
                 <button
                   onClick={() => setShowAIPanel(!showAIPanel)}
                   data-tour="ai-button"
@@ -746,15 +768,17 @@ export default function ContactsPage() {
         )}
       </AnimatePresence>
 
-      {/* AI Panel - Right Column - EXACT same as ChatsPage */}
+      {/* AI Panel - Right Column */}
+      {/* On xl+ screens: fixed 480px width as second grid column */}
+      {/* On smaller screens: uses mobile overlay below */}
       <AnimatePresence>
         {currentEntity && showAIPanel && (
           <motion.div
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 480, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="hidden xl:flex flex-col border-l border-white/5 glass overflow-hidden flex-shrink-0"
+            className="hidden xl:flex flex-col border-l border-white/5 glass overflow-hidden w-[480px]"
           >
             <div className="p-4 border-b border-white/5 flex items-center justify-between flex-shrink-0">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">
