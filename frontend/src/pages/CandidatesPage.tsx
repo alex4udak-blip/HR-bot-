@@ -10,117 +10,108 @@ import {
   Upload,
   Filter,
   X,
-  Check,
   ChevronDown,
   ChevronUp,
   Edit,
   Trash2,
-  MoreVertical,
-  DollarSign,
-  Calendar,
-  Tag,
-  CheckSquare,
-  Square,
-  RefreshCw
+  Briefcase,
+  LayoutGrid,
+  List,
+  Users,
+  ChevronRight,
+  Settings,
+  Star,
+  Clock,
+  ExternalLink,
+  GripVertical
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
+import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import type { Entity, EntityStatus } from '@/types';
-import { STATUS_LABELS, STATUS_COLORS } from '@/types';
+import type { Entity, EntityStatus, Vacancy, VacancyApplication, ApplicationStage } from '@/types';
+import {
+  STATUS_LABELS,
+  STATUS_COLORS,
+  PIPELINE_STAGES,
+  APPLICATION_STAGE_LABELS,
+  APPLICATION_STAGE_COLORS,
+  VACANCY_STATUS_LABELS,
+  VACANCY_STATUS_COLORS
+} from '@/types';
 import { formatSalary } from '@/utils';
 import type { ParsedResume } from '@/services/api';
+import { updateApplication } from '@/services/api';
 import ContactForm from '@/components/contacts/ContactForm';
 import ParserModal from '@/components/parser/ParserModal';
-import { ConfirmDialog, ErrorMessage, EmptyCandidates } from '@/components/ui';
+import VacancyForm from '@/components/vacancies/VacancyForm';
+import AddCandidateModal from '@/components/vacancies/AddCandidateModal';
+import ApplicationDetailModal from '@/components/vacancies/ApplicationDetailModal';
+import { ConfirmDialog, ErrorMessage, EmptyCandidates, Skeleton } from '@/components/ui';
 import { OnboardingTooltip } from '@/components/onboarding';
 
-// Candidate statuses (subset of EntityStatus)
-const CANDIDATE_STATUSES: EntityStatus[] = ['new', 'screening', 'interview', 'offer', 'hired', 'rejected'];
+// View modes
+type ViewMode = 'list' | 'kanban';
 
-// Salary range filters (in RUB)
-const SALARY_RANGES = [
-  { id: 'any', label: 'Любая', min: undefined, max: undefined },
-  { id: 'under100k', label: 'До 100k', min: undefined, max: 100000 },
-  { id: '100k-200k', label: '100k - 200k', min: 100000, max: 200000 },
-  { id: '200k-300k', label: '200k - 300k', min: 200000, max: 300000 },
-  { id: '300k+', label: '300k+', min: 300000, max: undefined },
-];
-
-// Date range filters
-const DATE_RANGES = [
-  { id: 'any', label: 'За все время', days: undefined },
-  { id: '7days', label: 'За 7 дней', days: 7 },
-  { id: '30days', label: 'За 30 дней', days: 30 },
-  { id: '90days', label: 'За 90 дней', days: 90 },
-];
-
-interface QuickFilters {
-  statuses: EntityStatus[];
-  salaryRange: string;
-  dateRange: string;
-  skills: string[];
-}
-
-// Pagination config
-const PAGE_SIZE = 20;
+// Stage tabs for filtering
+const ALL_STAGES_TAB = 'all';
 
 export default function CandidatesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // View state
+  const [viewMode, setViewMode] = useState<ViewMode>('kanban');
+  const [selectedVacancyId, setSelectedVacancyId] = useState<number | null>(null);
+  const [selectedStage, setSelectedStage] = useState<ApplicationStage | typeof ALL_STAGES_TAB>(ALL_STAGES_TAB);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   // UI State
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showCreateCandidateModal, setShowCreateCandidateModal] = useState(false);
+  const [showCreateVacancyModal, setShowCreateVacancyModal] = useState(false);
+  const [showAddToVacancyModal, setShowAddToVacancyModal] = useState(false);
   const [editingCandidate, setEditingCandidate] = useState<Entity | null>(null);
   const [showParserModal, setShowParserModal] = useState(false);
   const [prefillData, setPrefillData] = useState<Partial<Entity> | null>(null);
-  const [showFiltersDropdown, setShowFiltersDropdown] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [showBulkActions, setShowBulkActions] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [sortField, setSortField] = useState<string>('created_at');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const filtersDropdownRef = useRef<HTMLDivElement>(null);
+  const [selectedApplication, setSelectedApplication] = useState<VacancyApplication | null>(null);
+
+  // Drag state for kanban
+  const [draggedApp, setDraggedApp] = useState<VacancyApplication | null>(null);
+  const [dropTargetStage, setDropTargetStage] = useState<ApplicationStage | null>(null);
 
   // Confirmation dialogs
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     candidate: Entity | null;
-    type: 'delete' | 'bulk_delete';
-  }>({ open: false, candidate: null, type: 'delete' });
-  const [bulkStatusDialog, setBulkStatusDialog] = useState<{
-    open: boolean;
-    status: EntityStatus | null;
-  }>({ open: false, status: null });
+    application: VacancyApplication | null;
+    type: 'delete_candidate' | 'delete_application';
+  }>({ open: false, candidate: null, application: null, type: 'delete_candidate' });
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Quick filters
-  const [quickFilters, setQuickFilters] = useState<QuickFilters>(() => {
-    const statusesParam = searchParams.get('statuses');
-    const salaryParam = searchParams.get('salary');
-    const dateParam = searchParams.get('date');
-    const skillsParam = searchParams.get('skills');
-    return {
-      statuses: statusesParam ? statusesParam.split(',') as EntityStatus[] : [],
-      salaryRange: salaryParam || 'any',
-      dateRange: dateParam || 'any',
-      skills: skillsParam ? skillsParam.split(',') : [],
-    };
-  });
-
-  // Store
+  // Stores
   const {
     entities,
-    loading,
-    error,
+    loading: entitiesLoading,
+    error: entitiesError,
     deleteEntity,
-    updateEntity,
     setFilters,
-    clearError
+    clearError: clearEntityError
   } = useEntityStore();
+
+  const {
+    vacancies,
+    kanbanBoard,
+    kanbanLoading,
+    loading: vacanciesLoading,
+    error: vacanciesError,
+    fetchVacancies,
+    fetchKanbanBoard,
+    moveApplication,
+    removeApplication,
+    clearError: clearVacancyError
+  } = useVacancyStore();
 
   const { canEditResource, canDeleteResource } = useAuthStore();
 
@@ -129,108 +120,40 @@ export default function CandidatesPage() {
     return entities.filter(e => e.type === 'candidate');
   }, [entities]);
 
-  // Apply quick filters
-  const filteredCandidates = useMemo(() => {
-    return candidates.filter((candidate) => {
-      // Status filter
-      if (quickFilters.statuses.length > 0 && !quickFilters.statuses.includes(candidate.status)) {
-        return false;
-      }
+  // Open vacancies only
+  const openVacancies = useMemo(() => {
+    return vacancies.filter(v => v.status === 'open' || v.status === 'paused');
+  }, [vacancies]);
 
-      // Salary range filter
-      if (quickFilters.salaryRange !== 'any') {
-        const salaryConfig = SALARY_RANGES.find(s => s.id === quickFilters.salaryRange);
-        if (salaryConfig) {
-          const salaryMin = candidate.expected_salary_min || 0;
-          const salaryMax = candidate.expected_salary_max || salaryMin;
-          const avgSalary = salaryMin && salaryMax ? (salaryMin + salaryMax) / 2 : salaryMin || salaryMax;
+  // Current vacancy
+  const currentVacancy = useMemo(() => {
+    return vacancies.find(v => v.id === selectedVacancyId) || null;
+  }, [vacancies, selectedVacancyId]);
 
-          if (!avgSalary) return false;
-          if (salaryConfig.min !== undefined && avgSalary < salaryConfig.min) return false;
-          if (salaryConfig.max !== undefined && avgSalary > salaryConfig.max) return false;
-        }
-      }
+  // Filter applications by selected stage
+  const filteredApplications = useMemo(() => {
+    if (!kanbanBoard) return [];
 
-      // Date range filter
-      if (quickFilters.dateRange !== 'any') {
-        const dateConfig = DATE_RANGES.find(d => d.id === quickFilters.dateRange);
-        if (dateConfig?.days) {
-          const candidateDate = new Date(candidate.created_at);
-          const cutoffDate = new Date();
-          cutoffDate.setDate(cutoffDate.getDate() - dateConfig.days);
-          if (candidateDate < cutoffDate) return false;
-        }
-      }
+    const allApps = kanbanBoard.columns.flatMap(col => col.applications);
 
-      // Skills filter
-      if (quickFilters.skills.length > 0) {
-        const candidateTags = candidate.tags.map(t => t.toLowerCase());
-        const hasAllSkills = quickFilters.skills.every(skill =>
-          candidateTags.some(tag => tag.includes(skill.toLowerCase()))
-        );
-        if (!hasAllSkills) return false;
-      }
+    if (selectedStage === ALL_STAGES_TAB) {
+      return allApps;
+    }
 
-      return true;
+    return allApps.filter(app => app.stage === selectedStage);
+  }, [kanbanBoard, selectedStage]);
+
+  // Get stage counts
+  const stageCounts = useMemo(() => {
+    if (!kanbanBoard) return {};
+
+    const counts: Record<string, number> = { all: kanbanBoard.total_count };
+    kanbanBoard.columns.forEach(col => {
+      counts[col.stage] = col.count;
     });
-  }, [candidates, quickFilters]);
 
-  // Sorting
-  const sortedCandidates = useMemo(() => {
-    return [...filteredCandidates].sort((a, b) => {
-      let comparison = 0;
-
-      switch (sortField) {
-        case 'name':
-          comparison = a.name.localeCompare(b.name, 'ru');
-          break;
-        case 'expected_salary_min':
-          const salaryA = a.expected_salary_min || 0;
-          const salaryB = b.expected_salary_min || 0;
-          comparison = salaryA - salaryB;
-          break;
-        case 'status':
-          comparison = a.status.localeCompare(b.status);
-          break;
-        case 'created_at':
-          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-          break;
-        default:
-          comparison = 0;
-      }
-
-      return sortDirection === 'asc' ? comparison : -comparison;
-    });
-  }, [filteredCandidates, sortField, sortDirection]);
-
-  // Pagination
-  const totalPages = Math.ceil(sortedCandidates.length / PAGE_SIZE);
-  const paginatedCandidates = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return sortedCandidates.slice(start, start + PAGE_SIZE);
-  }, [sortedCandidates, currentPage]);
-
-  // Active filter count
-  const activeFilterCount = useMemo(() => {
-    let count = 0;
-    if (quickFilters.statuses.length > 0) count++;
-    if (quickFilters.salaryRange !== 'any') count++;
-    if (quickFilters.dateRange !== 'any') count++;
-    if (quickFilters.skills.length > 0) count++;
-    return count;
-  }, [quickFilters]);
-
-  // All unique skills from candidates
-  const allSkills = useMemo(() => {
-    const skillSet = new Set<string>();
-    candidates.forEach(c => c.tags.forEach(t => skillSet.add(t)));
-    return Array.from(skillSet).sort();
-  }, [candidates]);
-
-  // Selection helpers
-  const allSelected = paginatedCandidates.length > 0 &&
-    paginatedCandidates.every(c => selectedIds.has(c.id));
-  const someSelected = selectedIds.size > 0 && !allSelected;
+    return counts;
+  }, [kanbanBoard]);
 
   // Permission helpers
   const canEdit = useCallback((entity: Entity) => {
@@ -251,197 +174,98 @@ export default function CandidatesPage() {
     });
   }, [canDeleteResource]);
 
-  // Load candidates on mount
+  // Load data on mount
   useEffect(() => {
-    setFilters({
-      type: 'candidate',
-      search: searchQuery || undefined
-    });
-  }, [setFilters]);
+    fetchVacancies();
+    setFilters({ type: 'candidate', search: searchQuery || undefined });
+  }, [fetchVacancies, setFilters]);
+
+  // Load kanban when vacancy selected
+  useEffect(() => {
+    if (selectedVacancyId) {
+      fetchKanbanBoard(selectedVacancyId);
+    }
+  }, [selectedVacancyId, fetchKanbanBoard]);
+
+  // Select first vacancy if none selected
+  useEffect(() => {
+    if (!selectedVacancyId && openVacancies.length > 0) {
+      setSelectedVacancyId(openVacancies[0].id);
+    }
+  }, [selectedVacancyId, openVacancies]);
 
   // Debounced search
   useEffect(() => {
     const timeout = setTimeout(() => {
       setFilters({ search: searchQuery || undefined });
-      setCurrentPage(1);
     }, 300);
     return () => clearTimeout(timeout);
   }, [searchQuery, setFilters]);
 
-  // Sync filters to URL
-  useEffect(() => {
-    const newParams = new URLSearchParams();
+  // Drag handlers
+  const handleDragStart = (app: VacancyApplication) => {
+    setDraggedApp(app);
+  };
 
-    if (searchQuery) newParams.set('search', searchQuery);
-    if (quickFilters.statuses.length > 0) {
-      newParams.set('statuses', quickFilters.statuses.join(','));
-    }
-    if (quickFilters.salaryRange !== 'any') {
-      newParams.set('salary', quickFilters.salaryRange);
-    }
-    if (quickFilters.dateRange !== 'any') {
-      newParams.set('date', quickFilters.dateRange);
-    }
-    if (quickFilters.skills.length > 0) {
-      newParams.set('skills', quickFilters.skills.join(','));
-    }
-
-    setSearchParams(newParams, { replace: true });
-  }, [searchQuery, quickFilters, setSearchParams]);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (filtersDropdownRef.current && !filtersDropdownRef.current.contains(event.target as Node)) {
-        setShowFiltersDropdown(false);
+  const handleDragEnd = async () => {
+    if (draggedApp && dropTargetStage && dropTargetStage !== draggedApp.stage) {
+      try {
+        await moveApplication(draggedApp.id, dropTargetStage);
+        toast.success(`Кандидат перемещён в "${APPLICATION_STAGE_LABELS[dropTargetStage]}"`);
+      } catch {
+        toast.error('Ошибка при перемещении');
       }
-    };
-
-    if (showFiltersDropdown) {
-      document.addEventListener('mousedown', handleClickOutside);
     }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showFiltersDropdown]);
-
-  // Reset page on filter change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [quickFilters]);
-
-  // Handlers
-  const handleToggleStatusFilter = (status: EntityStatus) => {
-    setQuickFilters(prev => ({
-      ...prev,
-      statuses: prev.statuses.includes(status)
-        ? prev.statuses.filter(s => s !== status)
-        : [...prev.statuses, status]
-    }));
+    setDraggedApp(null);
+    setDropTargetStage(null);
   };
 
-  const handleSalaryRangeChange = (rangeId: string) => {
-    setQuickFilters(prev => ({ ...prev, salaryRange: rangeId }));
-  };
-
-  const handleDateRangeChange = (rangeId: string) => {
-    setQuickFilters(prev => ({ ...prev, dateRange: rangeId }));
-  };
-
-  const handleToggleSkillFilter = (skill: string) => {
-    setQuickFilters(prev => ({
-      ...prev,
-      skills: prev.skills.includes(skill)
-        ? prev.skills.filter(s => s !== skill)
-        : [...prev.skills, skill]
-    }));
-  };
-
-  const handleClearAllFilters = () => {
-    setQuickFilters({
-      statuses: [],
-      salaryRange: 'any',
-      dateRange: 'any',
-      skills: [],
-    });
-    setSearchQuery('');
-  };
-
-  const handleSortChange = (field: string) => {
-    if (sortField === field) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
+  const handleColumnDragOver = (e: React.DragEvent, stage: ApplicationStage) => {
+    e.preventDefault();
+    if (draggedApp) {
+      setDropTargetStage(stage);
     }
   };
 
-  const renderSortIcon = (field: string) => {
-    if (sortField !== field) {
-      return <ChevronDown className="w-4 h-4 text-white/30" />;
-    }
-    return sortDirection === 'asc'
-      ? <ChevronUp className="w-4 h-4 text-cyan-400" />
-      : <ChevronDown className="w-4 h-4 text-cyan-400" />;
+  const handleColumnDragLeave = () => {
+    setDropTargetStage(null);
+  };
+
+  // Other handlers
+  const handleVacancySelect = (vacancyId: number) => {
+    setSelectedVacancyId(vacancyId);
+    setSelectedStage(ALL_STAGES_TAB);
   };
 
   const handleCandidateClick = (candidate: Entity) => {
     navigate(`/contacts/${candidate.id}`);
   };
 
-  const handleSelectAll = () => {
-    if (allSelected) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(paginatedCandidates.map(c => c.id)));
-    }
+  const handleApplicationClick = (app: VacancyApplication) => {
+    setSelectedApplication(app);
   };
 
-  const handleSelectOne = (id: number) => {
-    const newSet = new Set(selectedIds);
-    if (newSet.has(id)) {
-      newSet.delete(id);
-    } else {
-      newSet.add(id);
-    }
-    setSelectedIds(newSet);
+  const handleViewCandidateProfile = (app: VacancyApplication) => {
+    navigate(`/contacts/${app.entity_id}`);
   };
 
-  const handleDeleteClick = (candidate: Entity) => {
-    setConfirmDialog({ open: true, candidate, type: 'delete' });
+  const handleDeleteApplication = (app: VacancyApplication) => {
+    setConfirmDialog({ open: true, candidate: null, application: app, type: 'delete_application' });
   };
 
   const handleConfirmDelete = async () => {
-    if (!confirmDialog.candidate) return;
     setActionLoading(true);
     try {
-      await deleteEntity(confirmDialog.candidate.id);
-      toast.success('Кандидат удален');
-      setConfirmDialog({ open: false, candidate: null, type: 'delete' });
+      if (confirmDialog.type === 'delete_candidate' && confirmDialog.candidate) {
+        await deleteEntity(confirmDialog.candidate.id);
+        toast.success('Кандидат удален');
+      } else if (confirmDialog.type === 'delete_application' && confirmDialog.application) {
+        await removeApplication(confirmDialog.application.id);
+        toast.success('Кандидат удалён из вакансии');
+      }
+      setConfirmDialog({ open: false, candidate: null, application: null, type: 'delete_candidate' });
     } catch {
-      toast.error('Не удалось удалить кандидата');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleBulkDelete = () => {
-    if (selectedIds.size === 0) return;
-    setConfirmDialog({ open: true, candidate: null, type: 'bulk_delete' });
-  };
-
-  const handleConfirmBulkDelete = async () => {
-    setActionLoading(true);
-    try {
-      const deletePromises = Array.from(selectedIds).map(id => deleteEntity(id));
-      await Promise.all(deletePromises);
-      toast.success(`Удалено кандидатов: ${selectedIds.size}`);
-      setSelectedIds(new Set());
-      setConfirmDialog({ open: false, candidate: null, type: 'bulk_delete' });
-    } catch {
-      toast.error('Не удалось удалить некоторых кандидатов');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleBulkStatusChange = (status: EntityStatus) => {
-    if (selectedIds.size === 0) return;
-    setBulkStatusDialog({ open: true, status });
-  };
-
-  const handleConfirmBulkStatus = async () => {
-    if (!bulkStatusDialog.status) return;
-    setActionLoading(true);
-    try {
-      const updatePromises = Array.from(selectedIds).map(id =>
-        updateEntity(id, { status: bulkStatusDialog.status! })
-      );
-      await Promise.all(updatePromises);
-      toast.success(`Статус изменен для ${selectedIds.size} кандидатов`);
-      setSelectedIds(new Set());
-      setBulkStatusDialog({ open: false, status: null });
-      setShowBulkActions(false);
-    } catch {
-      toast.error('Не удалось изменить статус');
+      toast.error('Ошибка при удалении');
     } finally {
       setActionLoading(false);
     }
@@ -469,20 +293,14 @@ export default function CandidatesPage() {
     };
     setPrefillData(prefill);
     setShowParserModal(false);
-    setShowCreateModal(true);
+    setShowCreateCandidateModal(true);
     toast.success('Данные распознаны');
-  };
-
-  const handleRetryFetch = () => {
-    clearError();
-    setFilters({ type: 'candidate', search: searchQuery || undefined });
   };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('ru-RU', {
       day: 'numeric',
-      month: 'short',
-      year: 'numeric'
+      month: 'short'
     });
   };
 
@@ -495,566 +313,550 @@ export default function CandidatesPage() {
       .toUpperCase();
   };
 
-  return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="p-4 border-b border-white/10">
-        <div className="flex items-center justify-between mb-4">
-          <OnboardingTooltip
-            id="candidates-page"
-            content="Управляйте базой кандидатов, отслеживайте статусы и добавляйте новых через парсинг резюме"
-            position="bottom"
+  // Render vacancy sidebar item
+  const renderVacancyItem = (vacancy: Vacancy) => {
+    const isSelected = vacancy.id === selectedVacancyId;
+
+    return (
+      <button
+        key={vacancy.id}
+        onClick={() => handleVacancySelect(vacancy.id)}
+        className={clsx(
+          'w-full text-left p-3 rounded-lg border transition-all duration-200',
+          isSelected
+            ? 'bg-cyan-500/20 border-cyan-500/50'
+            : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'
+        )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <h4 className={clsx('font-medium truncate text-sm', isSelected && 'text-cyan-300')}>
+              {vacancy.title}
+            </h4>
+            {vacancy.department_name && (
+              <p className="text-xs text-white/40 truncate mt-0.5">{vacancy.department_name}</p>
+            )}
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <span className={clsx('text-xs px-1.5 py-0.5 rounded', VACANCY_STATUS_COLORS[vacancy.status])}>
+              {VACANCY_STATUS_LABELS[vacancy.status]}
+            </span>
+            <span className="text-xs text-white/40">
+              {vacancy.applications_count} канд.
+            </span>
+          </div>
+        </div>
+      </button>
+    );
+  };
+
+  // Render kanban card
+  const renderKanbanCard = (app: VacancyApplication) => (
+    <motion.div
+      key={app.id}
+      layout
+      draggable
+      onDragStart={() => handleDragStart(app)}
+      onDragEnd={handleDragEnd}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{
+        opacity: draggedApp?.id === app.id ? 0.5 : 1,
+        y: 0,
+        scale: draggedApp?.id === app.id ? 0.98 : 1
+      }}
+      className={clsx(
+        'p-3 bg-gray-800 rounded-lg border cursor-grab active:cursor-grabbing',
+        'hover:border-white/30 transition-all duration-200 group',
+        draggedApp?.id === app.id
+          ? 'border-cyan-500/50 shadow-lg'
+          : 'border-white/10'
+      )}
+    >
+      {/* Card Header */}
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <GripVertical className="w-4 h-4 text-white/30 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <h4 className="font-medium truncate text-sm">{app.entity_name}</h4>
+            {app.entity_position && (
+              <p className="text-xs text-white/40 truncate">{app.entity_position}</p>
+            )}
+          </div>
+        </div>
+        {/* Action buttons */}
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleApplicationClick(app);
+            }}
+            className="p-1 hover:bg-white/10 rounded"
+            title="Детали"
           >
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <UserCheck className="w-7 h-7 text-cyan-400" />
-              База кандидатов
-            </h1>
-          </OnboardingTooltip>
+            <Edit className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleViewCandidateProfile(app);
+            }}
+            className="p-1 hover:bg-white/10 rounded"
+            title="Профиль"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDeleteApplication(app);
+            }}
+            className="p-1 hover:bg-red-500/20 text-red-400 rounded"
+            title="Удалить"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Contact Info */}
+      <div className="space-y-1 text-xs text-white/60 ml-6">
+        {app.entity_email && (
+          <div className="flex items-center gap-1.5 truncate">
+            <Mail className="w-3 h-3 flex-shrink-0" />
+            <span className="truncate">{app.entity_email}</span>
+          </div>
+        )}
+        {app.entity_phone && (
+          <div className="flex items-center gap-1.5">
+            <Phone className="w-3 h-3 flex-shrink-0" />
+            <span>{app.entity_phone}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5 ml-6">
+        <div className="flex items-center gap-2">
+          {app.rating && (
+            <div className="flex items-center gap-0.5 text-yellow-400">
+              <Star className="w-3 h-3 fill-current" />
+              <span className="text-xs">{app.rating}</span>
+            </div>
+          )}
+          {app.source && (
+            <span className="text-xs px-1.5 py-0.5 bg-white/5 rounded text-white/40">
+              {app.source}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1 text-xs text-white/40">
+          <Clock className="w-3 h-3" />
+          {formatDate(app.applied_at)}
+        </div>
+      </div>
+
+      {/* Notes Preview */}
+      {app.notes && (
+        <div className="mt-2 p-2 bg-white/5 rounded text-xs text-white/60 line-clamp-2 ml-6">
+          {app.notes}
+        </div>
+      )}
+    </motion.div>
+  );
+
+  // Render kanban column
+  const renderKanbanColumn = (stage: ApplicationStage) => {
+    const column = kanbanBoard?.columns.find(c => c.stage === stage);
+    const apps = column?.applications || [];
+    const isDropTarget = dropTargetStage === stage && draggedApp?.stage !== stage;
+
+    return (
+      <div
+        key={stage}
+        className={clsx(
+          'w-72 flex-shrink-0 flex flex-col rounded-xl border transition-all duration-200',
+          isDropTarget
+            ? 'border-cyan-500 bg-cyan-500/10 shadow-lg shadow-cyan-500/20'
+            : 'border-white/10 bg-white/5'
+        )}
+        onDragOver={(e) => handleColumnDragOver(e, stage)}
+        onDragLeave={handleColumnDragLeave}
+        onDrop={handleDragEnd}
+      >
+        {/* Column Header */}
+        <div className={clsx(
+          'p-3 border-b border-white/10 flex items-center justify-between',
+          APPLICATION_STAGE_COLORS[stage]
+        )}>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowParserModal(true)}
-              data-tour="upload-resume"
-              className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
-            >
-              <Upload className="w-4 h-4" />
-              Загрузить резюме
-            </button>
-            <button
-              onClick={() => {
-                setPrefillData(null);
-                setShowCreateModal(true);
-              }}
-              className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg transition-colors"
-            >
-              <Plus className="w-5 h-5" />
-              Добавить кандидата
-            </button>
+            <span className="font-medium">{APPLICATION_STAGE_LABELS[stage]}</span>
+            <span className="text-xs px-2 py-0.5 bg-black/20 rounded-full">
+              {apps.length}
+            </span>
           </div>
         </div>
 
-        {/* Filters Row */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Search */}
-          <div className="relative flex-1 min-w-[200px] max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder="Поиск по имени, телефону, email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              data-tour="search-input"
-              className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+        {/* Cards */}
+        <div className="flex-1 overflow-y-auto p-2 space-y-2">
+          <AnimatePresence mode="popLayout">
+            {apps.map(app => renderKanbanCard(app))}
+          </AnimatePresence>
 
-          {/* Quick Filters Dropdown */}
-          <div className="relative" ref={filtersDropdownRef}>
-            <button
-              onClick={() => setShowFiltersDropdown(!showFiltersDropdown)}
-              data-tour="filters-button"
-              className={clsx(
-                'flex items-center gap-2 px-3 py-2 border rounded-lg text-sm transition-colors',
-                activeFilterCount > 0
-                  ? 'bg-cyan-600/20 border-cyan-500/50 text-cyan-300'
-                  : 'bg-white/5 border-white/10 hover:bg-white/10'
+          {/* Empty state */}
+          {apps.length === 0 && !isDropTarget && (
+            <div className="h-24 flex flex-col items-center justify-center text-white/20 text-sm">
+              <Users className="w-6 h-6 mb-1" />
+              <span>Пусто</span>
+            </div>
+          )}
+
+          {/* Drop zone indicator */}
+          {apps.length === 0 && isDropTarget && (
+            <div className="h-24 flex flex-col items-center justify-center border-2 border-dashed border-cyan-500/50 rounded-lg text-cyan-400 text-sm">
+              <span>Отпустите здесь</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="h-full flex">
+      {/* Vacancy Sidebar */}
+      <div className={clsx(
+        'flex flex-col border-r border-white/10 bg-gray-900/50 transition-all duration-300',
+        sidebarCollapsed ? 'w-16' : 'w-72'
+      )}>
+        {/* Sidebar Header */}
+        <div className="p-3 border-b border-white/10 flex items-center justify-between">
+          {!sidebarCollapsed && (
+            <div className="flex items-center gap-2">
+              <Briefcase className="w-5 h-5 text-cyan-400" />
+              <span className="font-medium">Вакансии</span>
+            </div>
+          )}
+          <button
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="p-1.5 hover:bg-white/5 rounded-lg transition-colors"
+          >
+            <ChevronRight className={clsx(
+              'w-4 h-4 transition-transform',
+              sidebarCollapsed ? '' : 'rotate-180'
+            )} />
+          </button>
+        </div>
+
+        {/* Sidebar Content */}
+        {!sidebarCollapsed && (
+          <>
+            {/* Add Vacancy Button */}
+            <div className="p-3 border-b border-white/10">
+              <button
+                onClick={() => setShowCreateVacancyModal(true)}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Новая вакансия
+              </button>
+            </div>
+
+            {/* Vacancies List */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {vacanciesLoading && vacancies.length === 0 ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map(i => (
+                    <Skeleton key={i} variant="rounded" className="h-20 w-full" />
+                  ))}
+                </div>
+              ) : openVacancies.length === 0 ? (
+                <div className="text-center py-8 text-white/40">
+                  <Briefcase className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">Нет открытых вакансий</p>
+                  <button
+                    onClick={() => setShowCreateVacancyModal(true)}
+                    className="mt-2 text-cyan-400 text-sm hover:underline"
+                  >
+                    Создать вакансию
+                  </button>
+                </div>
+              ) : (
+                openVacancies.map(vacancy => renderVacancyItem(vacancy))
               )}
+            </div>
+          </>
+        )}
+
+        {/* Collapsed state icons */}
+        {sidebarCollapsed && (
+          <div className="flex-1 flex flex-col items-center py-3 space-y-2">
+            <button
+              onClick={() => setShowCreateVacancyModal(true)}
+              className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+              title="Новая вакансия"
             >
-              <Filter className="w-4 h-4" />
-              Фильтры
-              {activeFilterCount > 0 && (
-                <span className="flex items-center justify-center w-5 h-5 bg-cyan-600 text-white text-xs rounded-full">
-                  {activeFilterCount}
+              <Plus className="w-5 h-5 text-cyan-400" />
+            </button>
+            {openVacancies.slice(0, 5).map(vacancy => (
+              <button
+                key={vacancy.id}
+                onClick={() => handleVacancySelect(vacancy.id)}
+                className={clsx(
+                  'w-10 h-10 rounded-lg flex items-center justify-center text-xs font-medium transition-colors',
+                  vacancy.id === selectedVacancyId
+                    ? 'bg-cyan-500/20 text-cyan-300'
+                    : 'bg-white/5 hover:bg-white/10 text-white/60'
+                )}
+                title={vacancy.title}
+              >
+                {vacancy.title.slice(0, 2).toUpperCase()}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <div className="p-4 border-b border-white/10">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <OnboardingTooltip
+                id="candidates-page"
+                content="Управляйте кандидатами по вакансиям, перетаскивайте между этапами"
+                position="bottom"
+              >
+                <h1 className="text-xl font-bold flex items-center gap-2">
+                  <UserCheck className="w-6 h-6 text-cyan-400" />
+                  {currentVacancy ? currentVacancy.title : 'База кандидатов'}
+                </h1>
+              </OnboardingTooltip>
+              {currentVacancy && (
+                <span className="text-sm text-white/40">
+                  {kanbanBoard?.total_count || 0} кандидатов
                 </span>
               )}
-              <ChevronDown className={clsx('w-4 h-4 transition-transform', showFiltersDropdown && 'rotate-180')} />
-            </button>
-
-            {/* Dropdown Panel */}
-            <AnimatePresence>
-              {showFiltersDropdown && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="absolute left-0 top-full mt-2 w-80 bg-gray-900 border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden"
+            </div>
+            <div className="flex items-center gap-2">
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-white/5 rounded-lg p-1">
+                <button
+                  onClick={() => setViewMode('kanban')}
+                  className={clsx(
+                    'p-1.5 rounded transition-colors',
+                    viewMode === 'kanban' ? 'bg-cyan-600 text-white' : 'text-white/60 hover:text-white'
+                  )}
+                  title="Kanban"
                 >
-                  {/* Header */}
-                  <div className="flex items-center justify-between p-3 border-b border-white/10">
-                    <span className="font-medium text-sm">Фильтры</span>
-                    {activeFilterCount > 0 && (
-                      <button
-                        onClick={handleClearAllFilters}
-                        className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition-colors"
-                      >
-                        <X className="w-3 h-3" />
-                        Сбросить
-                      </button>
-                    )}
-                  </div>
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={clsx(
+                    'p-1.5 rounded transition-colors',
+                    viewMode === 'list' ? 'bg-cyan-600 text-white' : 'text-white/60 hover:text-white'
+                  )}
+                  title="Список"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+              </div>
 
-                  <div className="p-3 space-y-4 max-h-96 overflow-y-auto">
-                    {/* Status Filter */}
-                    <div>
-                      <label className="flex items-center gap-2 text-xs font-medium text-white/60 mb-2">
-                        <UserCheck className="w-3.5 h-3.5" />
-                        Статус
-                      </label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {CANDIDATE_STATUSES.map((status) => (
-                          <button
-                            key={status}
-                            onClick={() => handleToggleStatusFilter(status)}
-                            className={clsx(
-                              'flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border transition-colors',
-                              quickFilters.statuses.includes(status)
-                                ? 'bg-cyan-600/20 border-cyan-500/50 text-cyan-300'
-                                : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70'
-                            )}
-                          >
-                            {quickFilters.statuses.includes(status) && <Check className="w-3 h-3" />}
-                            {STATUS_LABELS[status]}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+              <button
+                onClick={() => setShowParserModal(true)}
+                className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+              >
+                <Upload className="w-4 h-4" />
+                Загрузить резюме
+              </button>
 
-                    {/* Salary Range Filter */}
-                    <div>
-                      <label className="flex items-center gap-2 text-xs font-medium text-white/60 mb-2">
-                        <DollarSign className="w-3.5 h-3.5" />
-                        Ожидаемая зарплата
-                      </label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {SALARY_RANGES.map((range) => (
-                          <button
-                            key={range.id}
-                            onClick={() => handleSalaryRangeChange(range.id)}
-                            className={clsx(
-                              'px-2.5 py-1.5 text-xs rounded-lg border transition-colors',
-                              quickFilters.salaryRange === range.id
-                                ? 'bg-cyan-600/20 border-cyan-500/50 text-cyan-300'
-                                : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70'
-                            )}
-                          >
-                            {range.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Date Range Filter */}
-                    <div>
-                      <label className="flex items-center gap-2 text-xs font-medium text-white/60 mb-2">
-                        <Calendar className="w-3.5 h-3.5" />
-                        Дата добавления
-                      </label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {DATE_RANGES.map((range) => (
-                          <button
-                            key={range.id}
-                            onClick={() => handleDateRangeChange(range.id)}
-                            className={clsx(
-                              'px-2.5 py-1.5 text-xs rounded-lg border transition-colors',
-                              quickFilters.dateRange === range.id
-                                ? 'bg-cyan-600/20 border-cyan-500/50 text-cyan-300'
-                                : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70'
-                            )}
-                          >
-                            {range.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Skills Filter */}
-                    {allSkills.length > 0 && (
-                      <div>
-                        <label className="flex items-center gap-2 text-xs font-medium text-white/60 mb-2">
-                          <Tag className="w-3.5 h-3.5" />
-                          Навыки
-                        </label>
-                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                          {allSkills.slice(0, 15).map((skill) => (
-                            <button
-                              key={skill}
-                              onClick={() => handleToggleSkillFilter(skill)}
-                              className={clsx(
-                                'px-2.5 py-1 text-xs rounded-full border transition-colors',
-                                quickFilters.skills.includes(skill)
-                                  ? 'bg-cyan-600/20 border-cyan-500/50 text-cyan-300'
-                                  : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70'
-                              )}
-                            >
-                              {skill}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Results count */}
-                  <div className="p-3 border-t border-white/10 bg-white/5">
-                    <span className="text-xs text-white/50">
-                      Найдено {filteredCandidates.length} из {candidates.length} кандидатов
-                    </span>
-                  </div>
-                </motion.div>
+              {currentVacancy && (
+                <button
+                  onClick={() => setShowAddToVacancyModal(true)}
+                  className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Добавить кандидата
+                </button>
               )}
-            </AnimatePresence>
+            </div>
           </div>
 
-          {/* Selected count & bulk actions */}
-          {selectedIds.size > 0 && (
-            <div className="flex items-center gap-2 ml-auto">
-              <span className="text-sm text-white/60">
-                Выбрано: {selectedIds.size}
-              </span>
-              <div className="relative">
-                <button
-                  onClick={() => setShowBulkActions(!showBulkActions)}
-                  className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm hover:bg-white/10 transition-colors"
-                >
-                  <MoreVertical className="w-4 h-4" />
-                  Действия
-                  <ChevronDown className={clsx('w-4 h-4 transition-transform', showBulkActions && 'rotate-180')} />
-                </button>
-
-                {showBulkActions && (
-                  <div className="absolute right-0 top-full mt-2 w-56 bg-gray-900 border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
-                    <div className="p-2">
-                      <p className="text-xs text-white/40 px-2 py-1 mb-1">Изменить статус</p>
-                      {CANDIDATE_STATUSES.map(status => (
-                        <button
-                          key={status}
-                          onClick={() => handleBulkStatusChange(status)}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-white/5 rounded-lg transition-colors"
-                        >
-                          <span className={clsx('w-2 h-2 rounded-full', STATUS_COLORS[status].replace('text-', 'bg-').split(' ')[0])} />
-                          {STATUS_LABELS[status]}
-                        </button>
-                      ))}
-                      <div className="border-t border-white/10 my-2" />
-                      <button
-                        onClick={handleBulkDelete}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        Удалить выбранных
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+          {/* Stage Tabs */}
+          {currentVacancy && (
+            <div className="flex items-center gap-1 overflow-x-auto pb-1">
               <button
-                onClick={() => setSelectedIds(new Set())}
-                className="p-2 hover:bg-white/5 rounded-lg transition-colors text-white/60"
+                onClick={() => setSelectedStage(ALL_STAGES_TAB)}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors',
+                  selectedStage === ALL_STAGES_TAB
+                    ? 'bg-cyan-600 text-white'
+                    : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+                )}
               >
-                <X className="w-4 h-4" />
+                Все ({stageCounts.all || 0})
               </button>
+              {PIPELINE_STAGES.map(stage => (
+                <button
+                  key={stage}
+                  onClick={() => setSelectedStage(stage)}
+                  className={clsx(
+                    'px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors',
+                    selectedStage === stage
+                      ? APPLICATION_STAGE_COLORS[stage]
+                      : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+                  )}
+                >
+                  {APPLICATION_STAGE_LABELS[stage]} ({stageCounts[stage] || 0})
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-hidden">
+          {!currentVacancy ? (
+            // No vacancy selected - show all candidates
+            <div className="h-full flex items-center justify-center text-white/40">
+              <div className="text-center">
+                <Briefcase className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                <h3 className="text-lg font-medium mb-2">Выберите вакансию</h3>
+                <p className="text-sm">Выберите вакансию в боковой панели для просмотра кандидатов</p>
+                <button
+                  onClick={() => setShowCreateVacancyModal(true)}
+                  className="mt-4 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-white text-sm transition-colors"
+                >
+                  Создать вакансию
+                </button>
+              </div>
+            </div>
+          ) : kanbanLoading ? (
+            // Loading
+            <div className="h-full flex items-center justify-center">
+              <div className="animate-spin w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full" />
+            </div>
+          ) : vacanciesError ? (
+            // Error
+            <div className="h-full flex items-center justify-center p-4">
+              <ErrorMessage error={vacanciesError} onRetry={() => fetchKanbanBoard(selectedVacancyId!)} />
+            </div>
+          ) : viewMode === 'kanban' ? (
+            // Kanban View
+            <div className="h-full overflow-x-auto p-4">
+              <div className="flex gap-4 h-full min-w-max">
+                {PIPELINE_STAGES.map(stage => renderKanbanColumn(stage))}
+              </div>
+            </div>
+          ) : (
+            // List View
+            <div className="h-full overflow-auto p-4">
+              {filteredApplications.length === 0 ? (
+                <div className="flex items-center justify-center py-12 text-white/40">
+                  <div className="text-center">
+                    <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                    <p>Нет кандидатов на этом этапе</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredApplications.map(app => (
+                    <div
+                      key={app.id}
+                      onClick={() => handleApplicationClick(app)}
+                      className="p-4 bg-white/5 rounded-xl border border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center text-cyan-400 font-medium text-sm">
+                            {getAvatarInitials(app.entity_name || '')}
+                          </div>
+                          <div>
+                            <h4 className="font-medium">{app.entity_name}</h4>
+                            <p className="text-sm text-white/50">{app.entity_position || app.entity_email}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={clsx('text-xs px-2 py-1 rounded-full', APPLICATION_STAGE_COLORS[app.stage])}>
+                            {APPLICATION_STAGE_LABELS[app.stage]}
+                          </span>
+                          <span className="text-sm text-white/40">{formatDate(app.applied_at)}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewCandidateProfile(app);
+                            }}
+                            className="p-2 hover:bg-white/5 rounded-lg text-white/60 hover:text-white"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
 
-      {/* Table */}
-      <div className="flex-1 overflow-auto">
-        {error ? (
-          <div className="p-4">
-            <ErrorMessage error={error} onRetry={handleRetryFetch} />
-          </div>
-        ) : loading && candidates.length === 0 ? (
-          <div className="flex items-center justify-center py-12">
-            <RefreshCw className="w-8 h-8 text-cyan-400 animate-spin" />
-          </div>
-        ) : filteredCandidates.length === 0 ? (
-          <div className="flex items-center justify-center py-8">
-            <EmptyCandidates
-              variant={searchQuery ? 'search' : activeFilterCount > 0 ? 'filter' : 'primary'}
-              query={searchQuery}
-              onUploadResume={() => setShowParserModal(true)}
-              onCreateCandidate={() => {
-                setPrefillData(null);
-                setShowCreateModal(true);
-              }}
-            />
-          </div>
-        ) : (
-          <table className="w-full">
-            <thead className="sticky top-0 bg-gray-900/95 backdrop-blur-sm border-b border-white/10">
-              <tr>
-                <th className="w-12 px-4 py-3 text-left">
-                  <button
-                    onClick={handleSelectAll}
-                    className="p-1 hover:bg-white/5 rounded transition-colors"
-                  >
-                    {allSelected ? (
-                      <CheckSquare className="w-5 h-5 text-cyan-400" />
-                    ) : someSelected ? (
-                      <div className="w-5 h-5 border-2 border-cyan-400 rounded flex items-center justify-center">
-                        <div className="w-2 h-2 bg-cyan-400 rounded-sm" />
-                      </div>
-                    ) : (
-                      <Square className="w-5 h-5 text-white/40" />
-                    )}
-                  </button>
-                </th>
-                <th className="px-4 py-3 text-left">
-                  <button
-                    onClick={() => handleSortChange('name')}
-                    className="flex items-center gap-1 text-sm font-medium text-white/60 hover:text-white transition-colors"
-                    data-testid="sort-name"
-                  >
-                    Имя
-                    {renderSortIcon('name')}
-                  </button>
-                </th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Контакты</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Навыки</th>
-                <th className="px-4 py-3 text-left">
-                  <button
-                    onClick={() => handleSortChange('expected_salary_min')}
-                    className="flex items-center gap-1 text-sm font-medium text-white/60 hover:text-white transition-colors"
-                    data-testid="sort-salary"
-                  >
-                    Зарплата
-                    {renderSortIcon('expected_salary_min')}
-                  </button>
-                </th>
-                <th className="px-4 py-3 text-left">
-                  <button
-                    onClick={() => handleSortChange('status')}
-                    className="flex items-center gap-1 text-sm font-medium text-white/60 hover:text-white transition-colors"
-                    data-testid="sort-status"
-                  >
-                    Статус
-                    {renderSortIcon('status')}
-                  </button>
-                </th>
-                <th className="px-4 py-3 text-left">
-                  <button
-                    onClick={() => handleSortChange('created_at')}
-                    className="flex items-center gap-1 text-sm font-medium text-white/60 hover:text-white transition-colors"
-                    data-testid="sort-date"
-                  >
-                    Добавлен
-                    {renderSortIcon('created_at')}
-                  </button>
-                </th>
-                <th className="w-24 px-4 py-3 text-right text-sm font-medium text-white/60">Действия</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {paginatedCandidates.map((candidate, index) => (
-                <tr
-                  key={candidate.id}
-                  onClick={() => handleCandidateClick(candidate)}
-                  data-tour={index === 0 ? 'candidate-row' : undefined}
-                  className={clsx(
-                    'hover:bg-white/5 cursor-pointer transition-colors',
-                    selectedIds.has(candidate.id) && 'bg-cyan-500/10'
-                  )}
-                >
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => handleSelectOne(candidate.id)}
-                      className="p-1 hover:bg-white/5 rounded transition-colors"
-                    >
-                      {selectedIds.has(candidate.id) ? (
-                        <CheckSquare className="w-5 h-5 text-cyan-400" />
-                      ) : (
-                        <Square className="w-5 h-5 text-white/40" />
-                      )}
-                    </button>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center text-cyan-400 font-medium text-sm">
-                        {getAvatarInitials(candidate.name)}
-                      </div>
-                      <div>
-                        <p className="font-medium text-white">{candidate.name}</p>
-                        {candidate.position && (
-                          <p className="text-sm text-white/50">{candidate.position}</p>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="space-y-1">
-                      {candidate.phone && (
-                        <div className="flex items-center gap-1.5 text-sm text-white/60">
-                          <Phone className="w-3.5 h-3.5" />
-                          {candidate.phone}
-                        </div>
-                      )}
-                      {candidate.email && (
-                        <div className="flex items-center gap-1.5 text-sm text-white/60">
-                          <Mail className="w-3.5 h-3.5" />
-                          {candidate.email}
-                        </div>
-                      )}
-                      {candidate.telegram_usernames && candidate.telegram_usernames.length > 0 && (
-                        <div className="flex items-center gap-1.5 text-sm text-white/60">
-                          <span className="text-cyan-400">@</span>
-                          {candidate.telegram_usernames[0]}
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1 max-w-[200px]">
-                      {candidate.tags.slice(0, 3).map((tag) => (
-                        <span
-                          key={tag}
-                          className="px-2 py-0.5 text-xs bg-white/5 rounded-full text-white/70"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                      {candidate.tags.length > 3 && (
-                        <span className="px-2 py-0.5 text-xs text-white/40">
-                          +{candidate.tags.length - 3}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {candidate.expected_salary_min || candidate.expected_salary_max ? (
-                      <span className="text-sm text-white/70">
-                        {formatSalary(
-                          candidate.expected_salary_min,
-                          candidate.expected_salary_max,
-                          candidate.expected_salary_currency
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-sm text-white/30">-</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={clsx('px-2.5 py-1 text-xs rounded-full', STATUS_COLORS[candidate.status])}>
-                      {STATUS_LABELS[candidate.status]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-sm text-white/50">
-                      {formatDate(candidate.created_at)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-1">
-                      {canEdit(candidate) && (
-                        <button
-                          onClick={() => setEditingCandidate(candidate)}
-                          className="p-2 hover:bg-white/5 rounded-lg transition-colors text-white/60 hover:text-white"
-                          title="Редактировать"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                      )}
-                      {canDelete(candidate) && (
-                        <button
-                          onClick={() => handleDeleteClick(candidate)}
-                          className="p-2 hover:bg-red-500/10 rounded-lg transition-colors text-white/60 hover:text-red-400"
-                          title="Удалить"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t border-white/10">
-          <span className="text-sm text-white/50">
-            Показано {(currentPage - 1) * PAGE_SIZE + 1}-{Math.min(currentPage * PAGE_SIZE, filteredCandidates.length)} из {filteredCandidates.length}
-          </span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="px-3 py-1.5 text-sm rounded-lg hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              Назад
-            </button>
-            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-              let pageNum: number;
-              if (totalPages <= 5) {
-                pageNum = i + 1;
-              } else if (currentPage <= 3) {
-                pageNum = i + 1;
-              } else if (currentPage >= totalPages - 2) {
-                pageNum = totalPages - 4 + i;
-              } else {
-                pageNum = currentPage - 2 + i;
-              }
-              return (
-                <button
-                  key={pageNum}
-                  onClick={() => setCurrentPage(pageNum)}
-                  className={clsx(
-                    'w-8 h-8 text-sm rounded-lg transition-colors',
-                    currentPage === pageNum
-                      ? 'bg-cyan-600 text-white'
-                      : 'hover:bg-white/5 text-white/60'
-                  )}
-                >
-                  {pageNum}
-                </button>
-              );
-            })}
-            <button
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="px-3 py-1.5 text-sm rounded-lg hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              Вперед
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Create/Edit Modal */}
+      {/* Modals */}
       <AnimatePresence>
-        {(showCreateModal || editingCandidate) && (
+        {showCreateCandidateModal && (
           <ContactForm
-            entity={editingCandidate}
             prefillData={prefillData || undefined}
             defaultType="candidate"
             onClose={() => {
-              setShowCreateModal(false);
-              setEditingCandidate(null);
+              setShowCreateCandidateModal(false);
               setPrefillData(null);
             }}
             onSuccess={() => {
-              setShowCreateModal(false);
-              setEditingCandidate(null);
+              setShowCreateCandidateModal(false);
               setPrefillData(null);
-              toast.success(editingCandidate ? 'Кандидат обновлен' : 'Кандидат создан');
+              toast.success('Кандидат создан');
             }}
           />
         )}
-      </AnimatePresence>
 
-      {/* Parser Modal */}
-      <AnimatePresence>
+        {editingCandidate && (
+          <ContactForm
+            entity={editingCandidate}
+            defaultType="candidate"
+            onClose={() => setEditingCandidate(null)}
+            onSuccess={() => {
+              setEditingCandidate(null);
+              toast.success('Кандидат обновлен');
+            }}
+          />
+        )}
+
+        {showCreateVacancyModal && (
+          <VacancyForm
+            onClose={() => setShowCreateVacancyModal(false)}
+            onSuccess={() => {
+              setShowCreateVacancyModal(false);
+              fetchVacancies();
+              toast.success('Вакансия создана');
+            }}
+          />
+        )}
+
+        {showAddToVacancyModal && selectedVacancyId && (
+          <AddCandidateModal
+            vacancyId={selectedVacancyId}
+            onClose={() => setShowAddToVacancyModal(false)}
+          />
+        )}
+
+        {selectedApplication && (
+          <ApplicationDetailModal
+            application={selectedApplication}
+            onClose={() => setSelectedApplication(null)}
+          />
+        )}
+
         {showParserModal && (
           <ParserModal
             type="resume"
@@ -1064,33 +866,20 @@ export default function CandidatesPage() {
         )}
       </AnimatePresence>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Confirmation Dialog */}
       <ConfirmDialog
         open={confirmDialog.open}
-        title={confirmDialog.type === 'bulk_delete' ? 'Удалить кандидатов' : 'Удалить кандидата'}
+        title={confirmDialog.type === 'delete_application' ? 'Удалить из вакансии' : 'Удалить кандидата'}
         message={
-          confirmDialog.type === 'bulk_delete'
-            ? `Вы уверены, что хотите удалить ${selectedIds.size} кандидатов? Это действие невозможно отменить.`
-            : `Вы уверены, что хотите удалить "${confirmDialog.candidate?.name}"? Это действие невозможно отменить.`
+          confirmDialog.type === 'delete_application'
+            ? 'Удалить этого кандидата из вакансии? Сам контакт останется в базе.'
+            : 'Удалить кандидата? Это действие невозможно отменить.'
         }
         confirmLabel="Удалить"
         cancelLabel="Отмена"
         variant="danger"
-        onConfirm={confirmDialog.type === 'bulk_delete' ? handleConfirmBulkDelete : handleConfirmDelete}
-        onCancel={() => setConfirmDialog({ open: false, candidate: null, type: 'delete' })}
-        loading={actionLoading}
-      />
-
-      {/* Bulk Status Change Dialog */}
-      <ConfirmDialog
-        open={bulkStatusDialog.open}
-        title="Изменить статус"
-        message={`Изменить статус для ${selectedIds.size} кандидатов на "${bulkStatusDialog.status ? STATUS_LABELS[bulkStatusDialog.status] : ''}"?`}
-        confirmLabel="Изменить"
-        cancelLabel="Отмена"
-        variant="info"
-        onConfirm={handleConfirmBulkStatus}
-        onCancel={() => setBulkStatusDialog({ open: false, status: null })}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDialog({ open: false, candidate: null, application: null, type: 'delete_candidate' })}
         loading={actionLoading}
       />
     </div>
