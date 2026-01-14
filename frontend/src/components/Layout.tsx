@@ -61,7 +61,6 @@ const labelMap: Record<string, string> = {
 // Map paths to data-tour attributes
 const pathToTourAttribute: Record<string, string> = {
   '/candidates': 'candidates-link',
-  '/vacancies': 'vacancies-link',
   '/contacts': 'contacts-link',
   '/chats': 'chats-link',
   '/dashboard': 'dashboard-link',
@@ -105,9 +104,8 @@ export default function Layout() {
       }));
     }
 
-    // Fallback to static menu
+    // Fallback to static menu - base items for all users
     const items = [
-      { path: '/candidates', icon: UserCheck, label: 'База кандидатов' },
       { path: '/dashboard', icon: LayoutDashboard, label: 'Главная' },
       { path: '/chats', icon: MessageSquare, label: 'Чаты' },
       { path: '/calls', icon: Phone, label: 'Созвоны' },
@@ -115,9 +113,9 @@ export default function Layout() {
       { path: '/trash', icon: Trash2, label: 'Корзина' },
     ];
 
-    // Add vacancies only if user has access to the feature
-    if (hasFeature('vacancies')) {
-      items.splice(5, 0, { path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
+    // Add "База кандидатов" only for HR department (feature-gated)
+    if (hasFeature('candidate_database')) {
+      items.splice(1, 0, { path: '/candidates', icon: UserCheck, label: 'База кандидатов' });
     }
 
     // Add menu items for superadmin

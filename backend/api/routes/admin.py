@@ -3369,10 +3369,10 @@ class MenuConfigResponse(BaseModel):
 # Default menu configuration
 DEFAULT_MENU_ITEMS = [
     MenuItemConfig(id="dashboard", label="Dashboard", path="/", icon="LayoutDashboard"),
+    MenuItemConfig(id="candidates", label="Candidates", path="/candidates", icon="UserCheck", required_feature="candidate_database"),
     MenuItemConfig(id="chats", label="Chats", path="/chats", icon="MessageSquare", required_permission="can_view_chats"),
     MenuItemConfig(id="contacts", label="Contacts", path="/contacts", icon="Users", required_permission="can_view_contacts"),
     MenuItemConfig(id="calls", label="Calls", path="/calls", icon="Phone", required_permission="can_view_calls"),
-    MenuItemConfig(id="vacancies", label="Vacancies", path="/vacancies", icon="Briefcase", required_permission="can_view_vacancies", required_feature="vacancies"),
     MenuItemConfig(id="departments", label="Departments", path="/departments", required_permission="can_view_departments", icon="Building2"),
     MenuItemConfig(id="users", label="Users", path="/users", icon="UserCog", required_permission="can_view_all_users"),
     MenuItemConfig(id="invite", label="Invite", path="/invite", icon="UserPlus", required_permission="can_invite_users"),

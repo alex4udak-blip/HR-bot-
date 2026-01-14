@@ -19,7 +19,7 @@ from ..models.database import (
 DEFAULT_FEATURES = ["chats", "contacts", "calls", "dashboard"]
 
 # Features that require explicit enablement to be accessible
-RESTRICTED_FEATURES = ["vacancies", "ai_analysis"]
+RESTRICTED_FEATURES = ["vacancies", "ai_analysis", "candidate_database"]
 
 # All valid feature names
 ALL_FEATURES = DEFAULT_FEATURES + RESTRICTED_FEATURES
