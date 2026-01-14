@@ -851,3 +851,517 @@ class TestRecommendation:
         rec = Recommendation.HIRE
         assert str(rec.value) == "hire"
         assert rec.value == "hire"
+
+
+# ============================================================================
+# SCORING CACHE TESTS
+# ============================================================================
+
+from api.services.cache import ScoringCacheService, scoring_cache
+
+
+class TestScoringCacheService:
+    """Tests for ScoringCacheService in-memory cache."""
+
+    @pytest.fixture(autouse=True)
+    def clear_cache(self):
+        """Clear scoring cache before and after each test."""
+        ScoringCacheService.clear_all_sync()
+        yield
+        ScoringCacheService.clear_all_sync()
+
+    def test_make_score_key(self):
+        """Test cache key generation."""
+        key = ScoringCacheService.make_score_key(123, 456)
+        assert key == "score:123:456"
+
+    @pytest.mark.asyncio
+    async def test_set_and_get_cached_score(self):
+        """Test setting and getting cached scores."""
+        score_data = {
+            "overall_score": 85,
+            "skills_match": 90,
+            "experience_match": 80,
+            "salary_match": 95,
+            "culture_fit": 75,
+            "strengths": ["Strong skills"],
+            "weaknesses": [],
+            "recommendation": "hire",
+            "summary": "Great match",
+            "key_factors": []
+        }
+
+        # Set cached score
+        await ScoringCacheService.set_cached_score(1, 2, score_data)
+
+        # Get cached score
+        cached = await ScoringCacheService.get_cached_score(1, 2)
+
+        assert cached is not None
+        assert cached["overall_score"] == 85
+        assert cached["recommendation"] == "hire"
+
+    @pytest.mark.asyncio
+    async def test_cache_miss(self):
+        """Test that cache returns None when no entry exists."""
+        cached = await ScoringCacheService.get_cached_score(999, 888)
+        assert cached is None
+
+    @pytest.mark.asyncio
+    async def test_cache_ttl_expiry(self):
+        """Test that cache entries expire after TTL."""
+        from datetime import datetime, timedelta
+
+        score_data = {"overall_score": 70}
+
+        # Set with very short TTL (already expired)
+        await ScoringCacheService.set_cached_score(1, 2, score_data, ttl_seconds=1)
+
+        # Manually expire the entry
+        cache_key = ScoringCacheService.make_score_key(1, 2)
+        async with ScoringCacheService._get_lock():
+            ScoringCacheService._cache[cache_key]['expires_at'] = datetime.utcnow() - timedelta(seconds=10)
+
+        # Should return None (expired)
+        cached = await ScoringCacheService.get_cached_score(1, 2)
+        assert cached is None
+
+    @pytest.mark.asyncio
+    async def test_invalidate_entity_scores(self):
+        """Test invalidating all scores for an entity."""
+        # Cache scores for entity 1 with multiple vacancies
+        await ScoringCacheService.set_cached_score(1, 10, {"overall_score": 80})
+        await ScoringCacheService.set_cached_score(1, 20, {"overall_score": 75})
+        await ScoringCacheService.set_cached_score(1, 30, {"overall_score": 70})
+        # Cache score for different entity
+        await ScoringCacheService.set_cached_score(2, 10, {"overall_score": 60})
+
+        # Verify all are cached
+        assert await ScoringCacheService.get_cached_score(1, 10) is not None
+        assert await ScoringCacheService.get_cached_score(1, 20) is not None
+        assert await ScoringCacheService.get_cached_score(1, 30) is not None
+        assert await ScoringCacheService.get_cached_score(2, 10) is not None
+
+        # Invalidate all scores for entity 1
+        count = await ScoringCacheService.invalidate_entity_scores(1)
+
+        assert count == 3  # 3 entries for entity 1
+
+        # Verify entity 1 scores are gone
+        assert await ScoringCacheService.get_cached_score(1, 10) is None
+        assert await ScoringCacheService.get_cached_score(1, 20) is None
+        assert await ScoringCacheService.get_cached_score(1, 30) is None
+
+        # Verify entity 2 score still exists
+        assert await ScoringCacheService.get_cached_score(2, 10) is not None
+
+    @pytest.mark.asyncio
+    async def test_invalidate_vacancy_scores(self):
+        """Test invalidating all scores for a vacancy."""
+        # Cache scores for vacancy 10 with multiple entities
+        await ScoringCacheService.set_cached_score(1, 10, {"overall_score": 80})
+        await ScoringCacheService.set_cached_score(2, 10, {"overall_score": 75})
+        await ScoringCacheService.set_cached_score(3, 10, {"overall_score": 70})
+        # Cache score for different vacancy
+        await ScoringCacheService.set_cached_score(1, 20, {"overall_score": 60})
+
+        # Invalidate all scores for vacancy 10
+        count = await ScoringCacheService.invalidate_vacancy_scores(10)
+
+        assert count == 3  # 3 entries for vacancy 10
+
+        # Verify vacancy 10 scores are gone
+        assert await ScoringCacheService.get_cached_score(1, 10) is None
+        assert await ScoringCacheService.get_cached_score(2, 10) is None
+        assert await ScoringCacheService.get_cached_score(3, 10) is None
+
+        # Verify other vacancy score still exists
+        assert await ScoringCacheService.get_cached_score(1, 20) is not None
+
+    @pytest.mark.asyncio
+    async def test_invalidate_single_score(self):
+        """Test invalidating a specific entity-vacancy score."""
+        await ScoringCacheService.set_cached_score(1, 10, {"overall_score": 80})
+        await ScoringCacheService.set_cached_score(1, 20, {"overall_score": 75})
+
+        # Invalidate only 1-10
+        result = await ScoringCacheService.invalidate_score(1, 10)
+        assert result is True
+
+        # 1-10 should be gone
+        assert await ScoringCacheService.get_cached_score(1, 10) is None
+        # 1-20 should still exist
+        assert await ScoringCacheService.get_cached_score(1, 20) is not None
+
+    @pytest.mark.asyncio
+    async def test_invalidate_nonexistent_score(self):
+        """Test invalidating a score that doesn't exist."""
+        result = await ScoringCacheService.invalidate_score(999, 888)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_clear_all(self):
+        """Test clearing entire cache."""
+        await ScoringCacheService.set_cached_score(1, 10, {"overall_score": 80})
+        await ScoringCacheService.set_cached_score(2, 20, {"overall_score": 75})
+
+        count = await ScoringCacheService.clear_all()
+        assert count == 2
+
+        assert await ScoringCacheService.get_cached_score(1, 10) is None
+        assert await ScoringCacheService.get_cached_score(2, 20) is None
+
+    def test_get_cache_stats(self):
+        """Test getting cache statistics."""
+        stats = ScoringCacheService.get_cache_stats()
+        assert "total_entries" in stats
+        assert "keys" in stats
+
+
+class TestScoringCacheIntegration:
+    """Integration tests for scoring cache with API endpoints."""
+
+    @pytest.fixture(autouse=True)
+    def clear_cache(self):
+        """Clear scoring cache before and after each test."""
+        ScoringCacheService.clear_all_sync()
+        yield
+        ScoringCacheService.clear_all_sync()
+
+    @pytest.mark.asyncio
+    async def test_calculate_score_caches_without_application(
+        self,
+        client: AsyncClient,
+        admin_user,
+        admin_token,
+        org_owner,
+        vacancy,
+        candidate_for_scoring,
+        mock_anthropic_client
+    ):
+        """Test that scores are cached in memory when no VacancyApplication exists."""
+        # Mock AI response
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text=json.dumps({
+            "overall_score": 85,
+            "skills_match": 90,
+            "experience_match": 80,
+            "salary_match": 95,
+            "culture_fit": 75,
+            "strengths": ["Strong Python skills"],
+            "weaknesses": [],
+            "recommendation": "hire",
+            "summary": "Great match",
+            "key_factors": ["Technical skills"]
+        }))]
+        mock_anthropic_client.messages.create = AsyncMock(return_value=mock_response)
+
+        # First request - should calculate and cache
+        response1 = await client.post(
+            "/api/scoring/calculate",
+            json={
+                "entity_id": candidate_for_scoring.id,
+                "vacancy_id": vacancy.id
+            },
+            headers=auth_headers(admin_token)
+        )
+        assert response1.status_code == 200
+        data1 = response1.json()
+        assert data1["cached"] is False
+        assert data1["score"]["overall_score"] == 85
+
+        # Verify score is cached in memory
+        cached = await ScoringCacheService.get_cached_score(
+            candidate_for_scoring.id, vacancy.id
+        )
+        assert cached is not None
+        assert cached["overall_score"] == 85
+
+        # Second request - should return cached score
+        response2 = await client.post(
+            "/api/scoring/calculate",
+            json={
+                "entity_id": candidate_for_scoring.id,
+                "vacancy_id": vacancy.id
+            },
+            headers=auth_headers(admin_token)
+        )
+        assert response2.status_code == 200
+        data2 = response2.json()
+        assert data2["cached"] is True
+        assert data2["score"]["overall_score"] == 85
+
+    @pytest.mark.asyncio
+    async def test_calculate_score_prefers_application_cache(
+        self,
+        client: AsyncClient,
+        admin_user,
+        admin_token,
+        org_owner,
+        vacancy,
+        candidate_for_scoring,
+        application,
+        db_session
+    ):
+        """Test that application cache is used when it exists."""
+        # Set cached score on application
+        application.compatibility_score = {
+            "overall_score": 90,
+            "skills_match": 95,
+            "experience_match": 85,
+            "salary_match": 100,
+            "culture_fit": 80,
+            "strengths": ["From application cache"],
+            "weaknesses": [],
+            "recommendation": "hire",
+            "summary": "Application cached",
+            "key_factors": []
+        }
+        await db_session.commit()
+
+        # Also set a different score in memory cache
+        await ScoringCacheService.set_cached_score(
+            candidate_for_scoring.id, vacancy.id,
+            {"overall_score": 50}  # Different score
+        )
+
+        # Request should return application cache, not memory cache
+        response = await client.post(
+            "/api/scoring/calculate",
+            json={
+                "entity_id": candidate_for_scoring.id,
+                "vacancy_id": vacancy.id
+            },
+            headers=auth_headers(admin_token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["cached"] is True
+        assert data["score"]["overall_score"] == 90  # From application, not memory cache
+
+
+class TestScoringCacheInvalidation:
+    """Tests for cache invalidation on entity/vacancy updates."""
+
+    @pytest.fixture(autouse=True)
+    def clear_cache(self):
+        """Clear scoring cache before and after each test."""
+        ScoringCacheService.clear_all_sync()
+        yield
+        ScoringCacheService.clear_all_sync()
+
+    @pytest.mark.asyncio
+    async def test_entity_update_invalidates_score_cache(
+        self,
+        client: AsyncClient,
+        admin_user,
+        admin_token,
+        org_owner,
+        vacancy,
+        candidate_for_scoring
+    ):
+        """Test that updating entity invalidates its cached scores."""
+        # Pre-populate cache
+        await ScoringCacheService.set_cached_score(
+            candidate_for_scoring.id, vacancy.id,
+            {"overall_score": 80}
+        )
+
+        # Verify cache exists
+        cached = await ScoringCacheService.get_cached_score(
+            candidate_for_scoring.id, vacancy.id
+        )
+        assert cached is not None
+
+        # Update entity with scoring-relevant field (tags/skills)
+        response = await client.patch(
+            f"/api/entities/{candidate_for_scoring.id}",
+            json={
+                "tags": ["python", "fastapi", "docker", "kubernetes"]
+            },
+            headers=auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+
+        # Cache should be invalidated
+        cached_after = await ScoringCacheService.get_cached_score(
+            candidate_for_scoring.id, vacancy.id
+        )
+        assert cached_after is None
+
+    @pytest.mark.asyncio
+    async def test_entity_update_salary_invalidates_cache(
+        self,
+        client: AsyncClient,
+        admin_user,
+        admin_token,
+        org_owner,
+        vacancy,
+        candidate_for_scoring
+    ):
+        """Test that updating entity salary invalidates cached scores."""
+        # Pre-populate cache
+        await ScoringCacheService.set_cached_score(
+            candidate_for_scoring.id, vacancy.id,
+            {"overall_score": 80}
+        )
+
+        # Update entity salary
+        response = await client.patch(
+            f"/api/entities/{candidate_for_scoring.id}",
+            json={
+                "expected_salary_min": 300000,
+                "expected_salary_max": 400000
+            },
+            headers=auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+
+        # Cache should be invalidated
+        cached_after = await ScoringCacheService.get_cached_score(
+            candidate_for_scoring.id, vacancy.id
+        )
+        assert cached_after is None
+
+    @pytest.mark.asyncio
+    async def test_entity_update_non_scoring_field_preserves_cache(
+        self,
+        client: AsyncClient,
+        admin_user,
+        admin_token,
+        org_owner,
+        vacancy,
+        candidate_for_scoring
+    ):
+        """Test that updating non-scoring fields does not invalidate cache."""
+        # Pre-populate cache
+        await ScoringCacheService.set_cached_score(
+            candidate_for_scoring.id, vacancy.id,
+            {"overall_score": 80}
+        )
+
+        # Update entity with non-scoring field (phone)
+        response = await client.patch(
+            f"/api/entities/{candidate_for_scoring.id}",
+            json={
+                "phone": "+7 999 888 7777"
+            },
+            headers=auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+
+        # Cache should still exist
+        cached_after = await ScoringCacheService.get_cached_score(
+            candidate_for_scoring.id, vacancy.id
+        )
+        assert cached_after is not None
+        assert cached_after["overall_score"] == 80
+
+    @pytest.mark.asyncio
+    async def test_vacancy_update_invalidates_score_cache(
+        self,
+        client: AsyncClient,
+        admin_user,
+        admin_token,
+        org_owner,
+        vacancy,
+        candidate_for_scoring
+    ):
+        """Test that updating vacancy invalidates all its cached scores."""
+        # Pre-populate cache for multiple entities
+        await ScoringCacheService.set_cached_score(
+            candidate_for_scoring.id, vacancy.id,
+            {"overall_score": 80}
+        )
+        await ScoringCacheService.set_cached_score(
+            999, vacancy.id,  # Another entity
+            {"overall_score": 70}
+        )
+
+        # Update vacancy with scoring-relevant field
+        response = await client.patch(
+            f"/api/vacancies/{vacancy.id}",
+            json={
+                "requirements": "7+ years of Python experience, team leadership"
+            },
+            headers=auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+
+        # Both cached scores should be invalidated
+        cached1 = await ScoringCacheService.get_cached_score(
+            candidate_for_scoring.id, vacancy.id
+        )
+        cached2 = await ScoringCacheService.get_cached_score(999, vacancy.id)
+
+        assert cached1 is None
+        assert cached2 is None
+
+    @pytest.mark.asyncio
+    async def test_vacancy_salary_update_invalidates_cache(
+        self,
+        client: AsyncClient,
+        admin_user,
+        admin_token,
+        org_owner,
+        vacancy,
+        candidate_for_scoring
+    ):
+        """Test that updating vacancy salary invalidates cached scores."""
+        # Pre-populate cache
+        await ScoringCacheService.set_cached_score(
+            candidate_for_scoring.id, vacancy.id,
+            {"overall_score": 80}
+        )
+
+        # Update vacancy salary
+        response = await client.patch(
+            f"/api/vacancies/{vacancy.id}",
+            json={
+                "salary_min": 250000,
+                "salary_max": 400000
+            },
+            headers=auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+
+        # Cache should be invalidated
+        cached_after = await ScoringCacheService.get_cached_score(
+            candidate_for_scoring.id, vacancy.id
+        )
+        assert cached_after is None
+
+    @pytest.mark.asyncio
+    async def test_vacancy_update_non_scoring_field_preserves_cache(
+        self,
+        client: AsyncClient,
+        admin_user,
+        admin_token,
+        org_owner,
+        vacancy,
+        candidate_for_scoring
+    ):
+        """Test that updating non-scoring fields does not invalidate cache."""
+        # Pre-populate cache
+        await ScoringCacheService.set_cached_score(
+            candidate_for_scoring.id, vacancy.id,
+            {"overall_score": 80}
+        )
+
+        # Update vacancy with non-scoring field (location)
+        response = await client.patch(
+            f"/api/vacancies/{vacancy.id}",
+            json={
+                "location": "Saint Petersburg"
+            },
+            headers=auth_headers(admin_token)
+        )
+        assert response.status_code == 200
+
+        # Cache should still exist
+        cached_after = await ScoringCacheService.get_cached_score(
+            candidate_for_scoring.id, vacancy.id
+        )
+        assert cached_after is not None
+        assert cached_after["overall_score"] == 80

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
-import { useCommandPalette, clearCommandHistory } from '../useCommandPalette';
+import { useCommandPalette, useCommandPaletteStore, clearCommandHistory } from '../useCommandPalette';
 import * as api from '@/services/api';
 
 // Mock navigate
@@ -24,11 +24,144 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
   <BrowserRouter>{children}</BrowserRouter>
 );
 
+describe('useCommandPaletteStore', () => {
+  beforeEach(() => {
+    useCommandPaletteStore.setState({
+      isOpen: false,
+      query: '',
+      selectedIndex: 0,
+      isLoading: false,
+      apiResults: null,
+      history: [],
+    });
+  });
+
+  describe('global state synchronization', () => {
+    it('should share isOpen state across multiple store instances', () => {
+      // Get store state from two different "components"
+      const store1 = useCommandPaletteStore.getState();
+
+      // Open from store1
+      store1.open();
+
+      // Check that store2 sees the change
+      const store2 = useCommandPaletteStore.getState();
+      expect(store2.isOpen).toBe(true);
+    });
+
+    it('should synchronize state between multiple hook instances', () => {
+      const { result: result1 } = renderHook(() => useCommandPalette(), { wrapper });
+      const { result: result2 } = renderHook(() => useCommandPalette(), { wrapper });
+
+      // Both should start closed
+      expect(result1.current.isOpen).toBe(false);
+      expect(result2.current.isOpen).toBe(false);
+
+      // Open from first instance
+      act(() => {
+        result1.current.open();
+      });
+
+      // Second instance should see the change
+      expect(result2.current.isOpen).toBe(true);
+    });
+
+    it('should synchronize query state between hook instances', () => {
+      const { result: result1 } = renderHook(() => useCommandPalette(), { wrapper });
+      const { result: result2 } = renderHook(() => useCommandPalette(), { wrapper });
+
+      // Set query from first instance
+      act(() => {
+        result1.current.setQuery('test query');
+      });
+
+      // Second instance should see the query
+      expect(result2.current.query).toBe('test query');
+    });
+
+    it('should close from any instance', () => {
+      const { result: result1 } = renderHook(() => useCommandPalette(), { wrapper });
+      const { result: result2 } = renderHook(() => useCommandPalette(), { wrapper });
+
+      // Open from first instance
+      act(() => {
+        result1.current.open();
+      });
+      expect(result2.current.isOpen).toBe(true);
+
+      // Close from second instance
+      act(() => {
+        result2.current.close();
+      });
+
+      // First instance should see it closed
+      expect(result1.current.isOpen).toBe(false);
+    });
+  });
+
+  describe('store actions', () => {
+    it('should open and reset state', () => {
+      const store = useCommandPaletteStore.getState();
+
+      // Set some state first
+      useCommandPaletteStore.setState({
+        query: 'old query',
+        selectedIndex: 5
+      });
+
+      // Open should reset
+      store.open();
+
+      const state = useCommandPaletteStore.getState();
+      expect(state.isOpen).toBe(true);
+      expect(state.query).toBe('');
+      expect(state.selectedIndex).toBe(0);
+    });
+
+    it('should close and reset state', () => {
+      useCommandPaletteStore.setState({
+        isOpen: true,
+        query: 'some query',
+        selectedIndex: 3
+      });
+
+      const store = useCommandPaletteStore.getState();
+      store.close();
+
+      const state = useCommandPaletteStore.getState();
+      expect(state.isOpen).toBe(false);
+      expect(state.query).toBe('');
+      expect(state.selectedIndex).toBe(0);
+    });
+
+    it('should toggle correctly', () => {
+      const store = useCommandPaletteStore.getState();
+
+      expect(useCommandPaletteStore.getState().isOpen).toBe(false);
+
+      store.toggle();
+      expect(useCommandPaletteStore.getState().isOpen).toBe(true);
+
+      store.toggle();
+      expect(useCommandPaletteStore.getState().isOpen).toBe(false);
+    });
+  });
+});
+
 describe('useCommandPalette', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearCommandHistory();
     localStorage.clear();
+    // Reset store state before each test
+    useCommandPaletteStore.setState({
+      isOpen: false,
+      query: '',
+      selectedIndex: 0,
+      isLoading: false,
+      apiResults: null,
+      history: [],
+    });
   });
 
   afterEach(() => {
@@ -201,7 +334,7 @@ describe('useCommandPalette', () => {
       };
       vi.mocked(api.globalSearch).mockResolvedValue(mockResponse);
 
-      const { result } = renderHook(() => useCommandPalette(100), { wrapper });
+      const { result } = renderHook(() => useCommandPalette({ debounceMs: 100 }), { wrapper });
 
       act(() => {
         result.current.setQuery('john');
@@ -210,20 +343,20 @@ describe('useCommandPalette', () => {
       // API should not be called immediately
       expect(api.globalSearch).not.toHaveBeenCalled();
 
-      // Fast-forward past debounce
+      // Fast-forward past debounce and run all pending timers
       await act(async () => {
         vi.advanceTimersByTime(150);
+        await vi.runAllTimersAsync();
       });
 
-      await waitFor(() => {
-        expect(api.globalSearch).toHaveBeenCalledWith('john', 10);
-      });
+      // API should have been called after debounce
+      expect(api.globalSearch).toHaveBeenCalledWith('john', 10);
 
       vi.useRealTimers();
     });
 
     it('should not call API for empty query', async () => {
-      const { result } = renderHook(() => useCommandPalette(100), { wrapper });
+      const { result } = renderHook(() => useCommandPalette({ debounceMs: 100 }), { wrapper });
 
       act(() => {
         result.current.setQuery('');

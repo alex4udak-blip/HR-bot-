@@ -117,6 +117,247 @@ class TestRedFlagsService:
         flags = service._analyze_work_history(extra_data)
         assert len(flags) == 0
 
+    def test_analyze_work_history_employment_gap_medium(self):
+        """Test detection of medium severity employment gap (6-12 months)."""
+        service = RedFlagsService()
+        extra_data = {
+            "experience": [
+                {
+                    "company": "Company A",
+                    "position": "Developer",
+                    "start_date": "2020-01",
+                    "end_date": "2021-06"  # Ends June 2021
+                },
+                {
+                    "company": "Company B",
+                    "position": "Senior Developer",
+                    "start_date": "2022-02",  # Starts Feb 2022, 8 month gap
+                    "end_date": "2023-01"
+                }
+            ]
+        }
+
+        flags = service._analyze_work_history(extra_data)
+
+        # Should detect employment gap
+        gap_flags = [f for f in flags if f.type == RedFlagType.EMPLOYMENT_GAPS]
+        assert len(gap_flags) == 1
+        assert gap_flags[0].severity == Severity.MEDIUM
+        assert "пробел" in gap_flags[0].description.lower()
+        assert "Company A" in gap_flags[0].evidence
+        assert "Company B" in gap_flags[0].evidence
+
+    def test_analyze_work_history_employment_gap_high(self):
+        """Test detection of high severity employment gap (> 12 months)."""
+        service = RedFlagsService()
+        extra_data = {
+            "experience": [
+                {
+                    "company": "Company A",
+                    "start_date": "2018-01",
+                    "end_date": "2019-06"  # Ends June 2019
+                },
+                {
+                    "company": "Company B",
+                    "start_date": "2021-01",  # Starts Jan 2021, 19 month gap
+                    "end_date": "2023-01"
+                }
+            ]
+        }
+
+        flags = service._analyze_work_history(extra_data)
+
+        # Should detect high severity employment gap
+        gap_flags = [f for f in flags if f.type == RedFlagType.EMPLOYMENT_GAPS]
+        assert len(gap_flags) == 1
+        assert gap_flags[0].severity == Severity.HIGH
+        assert "значительный" in gap_flags[0].description.lower()
+
+    def test_analyze_work_history_no_employment_gap(self):
+        """Test no gap detection when jobs are continuous."""
+        service = RedFlagsService()
+        extra_data = {
+            "experience": [
+                {
+                    "company": "Company A",
+                    "start_date": "2020-01",
+                    "end_date": "2021-06"
+                },
+                {
+                    "company": "Company B",
+                    "start_date": "2021-07",  # Starts right after previous ends
+                    "end_date": "2023-01"
+                }
+            ]
+        }
+
+        flags = service._analyze_work_history(extra_data)
+
+        # Should not detect employment gap
+        gap_flags = [f for f in flags if f.type == RedFlagType.EMPLOYMENT_GAPS]
+        assert len(gap_flags) == 0
+
+    def test_analyze_work_history_multiple_gaps(self):
+        """Test detection of multiple employment gaps."""
+        service = RedFlagsService()
+        extra_data = {
+            "experience": [
+                {
+                    "company": "Company A",
+                    "start_date": "2018-01",
+                    "end_date": "2019-01"  # Ends Jan 2019
+                },
+                {
+                    "company": "Company B",
+                    "start_date": "2020-01",  # 12 month gap
+                    "end_date": "2021-01"
+                },
+                {
+                    "company": "Company C",
+                    "start_date": "2022-06",  # 17 month gap
+                    "end_date": "present"
+                }
+            ]
+        }
+
+        flags = service._analyze_work_history(extra_data)
+
+        # Should detect two employment gaps
+        gap_flags = [f for f in flags if f.type == RedFlagType.EMPLOYMENT_GAPS]
+        assert len(gap_flags) == 2
+
+        # Check severities
+        severities = [f.severity for f in gap_flags]
+        assert Severity.HIGH in severities  # 17 month gap
+        # First gap is exactly 12 months, which is > 6 but not > 12, so MEDIUM
+
+    def test_analyze_work_history_gap_with_year_only_dates(self):
+        """Test gap detection with year-only date formats."""
+        service = RedFlagsService()
+        extra_data = {
+            "experience": [
+                {
+                    "company": "Company A",
+                    "start_date": "2018",
+                    "end_date": "2019"  # Ends Dec 2019
+                },
+                {
+                    "company": "Company B",
+                    "start_date": "2021",  # Starts Jan 2021, 13 month gap
+                    "end_date": "2023"
+                }
+            ]
+        }
+
+        flags = service._analyze_work_history(extra_data)
+
+        # Should detect high severity gap (> 12 months)
+        gap_flags = [f for f in flags if f.type == RedFlagType.EMPLOYMENT_GAPS]
+        assert len(gap_flags) == 1
+        assert gap_flags[0].severity == Severity.HIGH
+
+    def test_analyze_work_history_gap_skips_current_job(self):
+        """Test that gap detection skips current job for gap calculation."""
+        service = RedFlagsService()
+        extra_data = {
+            "experience": [
+                {
+                    "company": "Company A",
+                    "start_date": "2020-01",
+                    "end_date": "2021-01"
+                },
+                {
+                    "company": "Company B",
+                    "start_date": "2022-01",  # 12 month gap, but current job
+                    "end_date": "present"
+                }
+            ]
+        }
+
+        flags = service._analyze_work_history(extra_data)
+
+        # Should detect employment gap (between A and B)
+        gap_flags = [f for f in flags if f.type == RedFlagType.EMPLOYMENT_GAPS]
+        assert len(gap_flags) == 1
+
+    def test_analyze_work_history_small_gap_ignored(self):
+        """Test that small gaps (< 6 months) are ignored."""
+        service = RedFlagsService()
+        extra_data = {
+            "experience": [
+                {
+                    "company": "Company A",
+                    "start_date": "2020-01",
+                    "end_date": "2021-06"
+                },
+                {
+                    "company": "Company B",
+                    "start_date": "2021-10",  # 4 month gap - should be ignored
+                    "end_date": "2023-01"
+                }
+            ]
+        }
+
+        flags = service._analyze_work_history(extra_data)
+
+        # Should not detect employment gap
+        gap_flags = [f for f in flags if f.type == RedFlagType.EMPLOYMENT_GAPS]
+        assert len(gap_flags) == 0
+
+    def test_parse_date_various_formats(self):
+        """Test _parse_date helper with various formats."""
+        service = RedFlagsService()
+
+        # Year only
+        result = service._parse_date("2020", is_end_date=False)
+        assert result == datetime(2020, 1, 1)
+
+        result = service._parse_date("2020", is_end_date=True)
+        assert result == datetime(2020, 12, 31)
+
+        # YYYY-MM format
+        result = service._parse_date("2020-06", is_end_date=False)
+        assert result.year == 2020
+        assert result.month == 6
+
+        # Present values
+        for present_value in ["present", "now", "current", "настоящее время"]:
+            result = service._parse_date(present_value)
+            assert result is not None
+            # Should be close to now
+            assert (datetime.now() - result).total_seconds() < 5
+
+        # Invalid date
+        result = service._parse_date("invalid-date")
+        assert result is None
+
+        # None
+        result = service._parse_date(None)
+        assert result is None
+
+    def test_detect_employment_gaps_single_job(self):
+        """Test gap detection with single job (should return empty)."""
+        service = RedFlagsService()
+
+        parsed_jobs = [
+            {
+                "company": "Company A",
+                "position": "Dev",
+                "start": datetime(2020, 1, 1),
+                "end": datetime(2023, 1, 1),
+                "is_current": False
+            }
+        ]
+
+        flags = service._detect_employment_gaps(parsed_jobs)
+        assert len(flags) == 0
+
+    def test_detect_employment_gaps_empty_list(self):
+        """Test gap detection with empty job list."""
+        service = RedFlagsService()
+        flags = service._detect_employment_gaps([])
+        assert len(flags) == 0
+
     def test_check_references_missing(self):
         """Test detection of missing references."""
         service = RedFlagsService()

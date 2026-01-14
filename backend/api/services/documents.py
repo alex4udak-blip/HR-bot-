@@ -49,7 +49,6 @@ class DocumentParseResult:
 class DocumentParser:
     def __init__(self):
         self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        self.temp_dir = tempfile.mkdtemp()
 
     async def parse(self, file_bytes: bytes, filename: str, mime_type: Optional[str] = None) -> DocumentParseResult:
         """Main entry point for document parsing."""
@@ -228,17 +227,17 @@ class DocumentParser:
     # ========== DOC/ODT (convert to DOCX) ==========
     async def _convert_then_parse_docx(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
         ext = Path(filename).suffix
-        temp_input = os.path.join(self.temp_dir, f"input{ext}")
-        temp_output = os.path.join(self.temp_dir, "output.docx")
 
-        try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_input = os.path.join(temp_dir, f"input{ext}")
+
             with open(temp_input, 'wb') as f:
                 f.write(file_bytes)
 
             # Convert using LibreOffice
             process = await asyncio.create_subprocess_exec(
                 'libreoffice', '--headless', '--convert-to', 'docx',
-                '--outdir', self.temp_dir, temp_input,
+                '--outdir', temp_dir, temp_input,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
@@ -246,7 +245,7 @@ class DocumentParser:
 
             # Find the output file
             output_name = Path(temp_input).stem + ".docx"
-            output_path = os.path.join(self.temp_dir, output_name)
+            output_path = os.path.join(temp_dir, output_name)
 
             if os.path.exists(output_path):
                 with open(output_path, 'rb') as f:
@@ -259,10 +258,7 @@ class DocumentParser:
                     status="failed",
                     error="LibreOffice conversion failed"
                 )
-        finally:
-            for f in [temp_input, temp_output]:
-                if os.path.exists(f):
-                    os.remove(f)
+        # temp_dir is automatically cleaned up when exiting the context
 
     # ========== RTF ==========
     async def _parse_rtf(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
@@ -362,22 +358,23 @@ class DocumentParser:
     # ========== XLS/ODS (convert to XLSX) ==========
     async def _convert_then_parse_xlsx(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
         ext = Path(filename).suffix
-        temp_input = os.path.join(self.temp_dir, f"input{ext}")
 
-        try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_input = os.path.join(temp_dir, f"input{ext}")
+
             with open(temp_input, 'wb') as f:
                 f.write(file_bytes)
 
             process = await asyncio.create_subprocess_exec(
                 'libreoffice', '--headless', '--convert-to', 'xlsx',
-                '--outdir', self.temp_dir, temp_input,
+                '--outdir', temp_dir, temp_input,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
             await process.communicate()
 
             output_name = Path(temp_input).stem + ".xlsx"
-            output_path = os.path.join(self.temp_dir, output_name)
+            output_path = os.path.join(temp_dir, output_name)
 
             if os.path.exists(output_path):
                 with open(output_path, 'rb') as f:
@@ -387,9 +384,7 @@ class DocumentParser:
                 return result
             else:
                 return DocumentParseResult(status="failed", error="Conversion failed")
-        finally:
-            for f in Path(self.temp_dir).glob("input*"):
-                f.unlink(missing_ok=True)
+        # temp_dir is automatically cleaned up when exiting the context
 
     # ========== CSV ==========
     async def _parse_csv(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
@@ -442,22 +437,23 @@ class DocumentParser:
     # ========== PPT/ODP (convert to PPTX) ==========
     async def _convert_then_parse_pptx(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
         ext = Path(filename).suffix
-        temp_input = os.path.join(self.temp_dir, f"input{ext}")
 
-        try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_input = os.path.join(temp_dir, f"input{ext}")
+
             with open(temp_input, 'wb') as f:
                 f.write(file_bytes)
 
             process = await asyncio.create_subprocess_exec(
                 'libreoffice', '--headless', '--convert-to', 'pptx',
-                '--outdir', self.temp_dir, temp_input,
+                '--outdir', temp_dir, temp_input,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
             await process.communicate()
 
             output_name = Path(temp_input).stem + ".pptx"
-            output_path = os.path.join(self.temp_dir, output_name)
+            output_path = os.path.join(temp_dir, output_name)
 
             if os.path.exists(output_path):
                 with open(output_path, 'rb') as f:
@@ -467,9 +463,7 @@ class DocumentParser:
                 return result
             else:
                 return DocumentParseResult(status="failed", error="Conversion failed")
-        finally:
-            for f in Path(self.temp_dir).glob("input*"):
-                f.unlink(missing_ok=True)
+        # temp_dir is automatically cleaned up when exiting the context
 
     # ========== Images (OCR with Claude Vision) ==========
     async def _ocr_with_vision(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
@@ -616,10 +610,10 @@ class DocumentParser:
             )
 
     async def _extract_and_parse_rar(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
-        temp_rar = os.path.join(self.temp_dir, "archive.rar")
-        extract_dir = os.path.join(self.temp_dir, "extracted")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_rar = os.path.join(temp_dir, "archive.rar")
+            extract_dir = os.path.join(temp_dir, "extracted")
 
-        try:
             with open(temp_rar, 'wb') as f:
                 f.write(file_bytes)
 
@@ -656,11 +650,7 @@ class DocumentParser:
                     "extracted_files": extracted_files
                 }
             )
-        finally:
-            import shutil
-            shutil.rmtree(extract_dir, ignore_errors=True)
-            if os.path.exists(temp_rar):
-                os.remove(temp_rar)
+        # temp_dir is automatically cleaned up when exiting the context
 
     async def _extract_and_parse_7z(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
         try:
@@ -768,37 +758,36 @@ class DocumentParser:
 
     # ========== Outlook MSG ==========
     async def _parse_outlook_msg(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
-        temp_msg = os.path.join(self.temp_dir, "message.msg")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_msg = os.path.join(temp_dir, "message.msg")
 
-        try:
-            with open(temp_msg, 'wb') as f:
-                f.write(file_bytes)
+            try:
+                with open(temp_msg, 'wb') as f:
+                    f.write(file_bytes)
 
-            import extract_msg
-            msg = extract_msg.Message(temp_msg)
+                import extract_msg
+                msg = extract_msg.Message(temp_msg)
 
-            parts = []
-            parts.append(f"From: {msg.sender}")
-            parts.append(f"To: {msg.to}")
-            parts.append(f"Subject: {msg.subject}")
-            parts.append(f"Date: {msg.date}")
-            parts.append("---")
-            parts.append(msg.body or "")
+                parts = []
+                parts.append(f"From: {msg.sender}")
+                parts.append(f"To: {msg.to}")
+                parts.append(f"Subject: {msg.subject}")
+                parts.append(f"Date: {msg.date}")
+                parts.append("---")
+                parts.append(msg.body or "")
 
-            return DocumentParseResult(
-                content="\n".join(parts),
-                status="parsed",
-                metadata={
-                    "from": msg.sender,
-                    "to": msg.to,
-                    "subject": msg.subject
-                }
-            )
-        except Exception as e:
-            return DocumentParseResult(status="failed", error=f"MSG parsing failed: {e}")
-        finally:
-            if os.path.exists(temp_msg):
-                os.remove(temp_msg)
+                return DocumentParseResult(
+                    content="\n".join(parts),
+                    status="parsed",
+                    metadata={
+                        "from": msg.sender,
+                        "to": msg.to,
+                        "subject": msg.subject
+                    }
+                )
+            except Exception as e:
+                return DocumentParseResult(status="failed", error=f"MSG parsing failed: {e}")
+        # temp_dir is automatically cleaned up when exiting the context
 
 
 # Singleton instance

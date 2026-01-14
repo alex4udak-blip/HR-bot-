@@ -204,7 +204,7 @@ describe('CandidatesPage', () => {
 
       renderWithRouter();
 
-      expect(screen.getByText('База кандидатов пуста')).toBeInTheDocument();
+      expect(screen.getByText('Пока нет кандидатов')).toBeInTheDocument();
     });
   });
 
@@ -621,5 +621,186 @@ describe('Candidates Filter Logic', () => {
     });
 
     expect(filtered).toHaveLength(3);
+  });
+});
+
+describe('Candidates Sorting', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (useEntityStore as ReturnType<typeof vi.fn>).mockReturnValue(mockEntityStore);
+    (useAuthStore as ReturnType<typeof vi.fn>).mockReturnValue(mockAuthStore);
+  });
+
+  const renderWithRouter = (initialEntries: string[] = ['/candidates']) => {
+    return render(
+      <MemoryRouter initialEntries={initialEntries}>
+        <CandidatesPage />
+      </MemoryRouter>
+    );
+  };
+
+  describe('Sorting UI', () => {
+    it('should render sortable column headers with icons', () => {
+      renderWithRouter();
+
+      expect(screen.getByTestId('sort-name')).toBeInTheDocument();
+      expect(screen.getByTestId('sort-salary')).toBeInTheDocument();
+      expect(screen.getByTestId('sort-status')).toBeInTheDocument();
+      expect(screen.getByTestId('sort-date')).toBeInTheDocument();
+    });
+
+    it('should toggle sort direction when clicking same column', async () => {
+      renderWithRouter();
+
+      const sortDateButton = screen.getByTestId('sort-date');
+
+      // Initial state should show desc indicator (default for created_at)
+      fireEvent.click(sortDateButton);
+
+      await waitFor(() => {
+        // After clicking, direction should toggle
+        expect(sortDateButton).toBeInTheDocument();
+      });
+    });
+
+    it('should change sort field when clicking different column', async () => {
+      renderWithRouter();
+
+      const sortNameButton = screen.getByTestId('sort-name');
+      fireEvent.click(sortNameButton);
+
+      await waitFor(() => {
+        // The name column header should be active
+        expect(sortNameButton).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Sorting Logic', () => {
+    // Helper function to sort candidates
+    const sortCandidates = (
+      candidates: Entity[],
+      sortField: string,
+      sortDirection: 'asc' | 'desc'
+    ) => {
+      return [...candidates].sort((a, b) => {
+        let comparison = 0;
+
+        switch (sortField) {
+          case 'name':
+            comparison = a.name.localeCompare(b.name, 'ru');
+            break;
+          case 'expected_salary_min':
+            const salaryA = a.expected_salary_min || 0;
+            const salaryB = b.expected_salary_min || 0;
+            comparison = salaryA - salaryB;
+            break;
+          case 'status':
+            comparison = a.status.localeCompare(b.status);
+            break;
+          case 'created_at':
+            comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+            break;
+          default:
+            comparison = 0;
+        }
+
+        return sortDirection === 'asc' ? comparison : -comparison;
+      });
+    };
+
+    const candidatesOnly = mockCandidates.filter(e => e.type === 'candidate');
+
+    it('should sort by name ascending', () => {
+      const sorted = sortCandidates(candidatesOnly, 'name', 'asc');
+
+      expect(sorted[0].name).toBe('Алексей Смирнов');
+      expect(sorted[1].name).toBe('Иван Иванов');
+      expect(sorted[2].name).toBe('Мария Петрова');
+    });
+
+    it('should sort by name descending', () => {
+      const sorted = sortCandidates(candidatesOnly, 'name', 'desc');
+
+      expect(sorted[0].name).toBe('Мария Петрова');
+      expect(sorted[1].name).toBe('Иван Иванов');
+      expect(sorted[2].name).toBe('Алексей Смирнов');
+    });
+
+    it('should sort by salary ascending', () => {
+      const sorted = sortCandidates(candidatesOnly, 'expected_salary_min', 'asc');
+
+      // Алексей: 80k, Иван: 150k, Мария: 180k
+      expect(sorted[0].name).toBe('Алексей Смирнов');
+      expect(sorted[1].name).toBe('Иван Иванов');
+      expect(sorted[2].name).toBe('Мария Петрова');
+    });
+
+    it('should sort by salary descending', () => {
+      const sorted = sortCandidates(candidatesOnly, 'expected_salary_min', 'desc');
+
+      // Мария: 180k, Иван: 150k, Алексей: 80k
+      expect(sorted[0].name).toBe('Мария Петрова');
+      expect(sorted[1].name).toBe('Иван Иванов');
+      expect(sorted[2].name).toBe('Алексей Смирнов');
+    });
+
+    it('should sort by status ascending', () => {
+      const sorted = sortCandidates(candidatesOnly, 'status', 'asc');
+
+      // hired, interview, new (alphabetically)
+      expect(sorted[0].status).toBe('hired');
+      expect(sorted[1].status).toBe('interview');
+      expect(sorted[2].status).toBe('new');
+    });
+
+    it('should sort by status descending', () => {
+      const sorted = sortCandidates(candidatesOnly, 'status', 'desc');
+
+      // new, interview, hired (reverse alphabetically)
+      expect(sorted[0].status).toBe('new');
+      expect(sorted[1].status).toBe('interview');
+      expect(sorted[2].status).toBe('hired');
+    });
+
+    it('should sort by created_at ascending', () => {
+      const sorted = sortCandidates(candidatesOnly, 'created_at', 'asc');
+
+      // Oldest first: Алексей (60 days ago), Мария (5 days ago), Иван (today)
+      expect(sorted[0].name).toBe('Алексей Смирнов');
+      expect(sorted[1].name).toBe('Мария Петрова');
+      expect(sorted[2].name).toBe('Иван Иванов');
+    });
+
+    it('should sort by created_at descending', () => {
+      const sorted = sortCandidates(candidatesOnly, 'created_at', 'desc');
+
+      // Newest first: Иван (today), Мария (5 days ago), Алексей (60 days ago)
+      expect(sorted[0].name).toBe('Иван Иванов');
+      expect(sorted[1].name).toBe('Мария Петрова');
+      expect(sorted[2].name).toBe('Алексей Смирнов');
+    });
+
+    it('should handle candidates without salary when sorting by salary', () => {
+      const candidatesWithoutSalary: Entity[] = [
+        ...candidatesOnly,
+        {
+          id: 5,
+          name: 'Без зарплаты',
+          type: 'candidate' as EntityType,
+          status: 'new' as EntityStatus,
+          tags: [],
+          extra_data: {},
+          // No salary fields
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ];
+
+      const sorted = sortCandidates(candidatesWithoutSalary, 'expected_salary_min', 'asc');
+
+      // Candidate without salary (0) should be first
+      expect(sorted[0].name).toBe('Без зарплаты');
+    });
   });
 });

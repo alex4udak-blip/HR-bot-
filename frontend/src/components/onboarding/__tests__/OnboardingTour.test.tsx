@@ -46,9 +46,9 @@ describe('OnboardingTour Integration', () => {
         'upload-resume',
         'smart-search',
         'candidate-card',
-        'ai-analysis',
+        'candidate-filters',
         'vacancies',
-        'kanban-board',
+        'create-vacancy',
       ];
 
       expect(DEFAULT_TOUR_STEPS.map(s => s.id)).toEqual(expectedIds);

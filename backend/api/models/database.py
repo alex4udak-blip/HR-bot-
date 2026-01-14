@@ -430,6 +430,10 @@ class Entity(Base):
     # Format: [{"date": "2024-01-15", "event": "hired", "details": "Hired to development team"}]
     key_events = Column(JSON, default=list)
 
+    # Optimistic locking version field
+    # Incremented on each update to detect concurrent modifications
+    version = Column(Integer, default=1, nullable=False)
+
 
 class EntityTransfer(Base):
     __tablename__ = "entity_transfers"

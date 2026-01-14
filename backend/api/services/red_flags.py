@@ -122,6 +122,43 @@ class RedFlagsService:
             self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
         return self._client
 
+    def _parse_date(self, date_value: Any, is_end_date: bool = False) -> Optional[datetime]:
+        """
+        Parse date from various formats.
+
+        Args:
+            date_value: Date value (string or datetime)
+            is_end_date: If True, use end of period for ambiguous dates (year-only)
+
+        Returns:
+            Parsed datetime or None if parsing fails
+        """
+        if not date_value:
+            return None
+
+        # Check for "present" values
+        if isinstance(date_value, str):
+            if date_value.lower() in ["present", "now", "current", "настоящее время", "по настоящее время"]:
+                return datetime.now()
+
+            try:
+                if len(date_value) == 4:  # Just year
+                    year = int(date_value)
+                    if is_end_date:
+                        return datetime(year, 12, 31)
+                    else:
+                        return datetime(year, 1, 1)
+                elif len(date_value) == 7:  # YYYY-MM
+                    return datetime.strptime(date_value, "%Y-%m")
+                else:
+                    return datetime.fromisoformat(date_value.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                return None
+        elif isinstance(date_value, datetime):
+            return date_value
+
+        return None
+
     def _analyze_work_history(self, extra_data: dict) -> List[RedFlag]:
         """
         Analyze work history for job hopping and employment gaps.
@@ -142,6 +179,9 @@ class RedFlagsService:
         short_jobs = []
         total_jobs = len(work_history)
 
+        # Parse all jobs with their dates for gap detection
+        parsed_jobs = []
+
         for job in work_history:
             # Parse dates
             start_date = job.get("start_date") or job.get("from")
@@ -150,41 +190,35 @@ class RedFlagsService:
             if not start_date:
                 continue
 
-            try:
-                # Handle various date formats
-                if isinstance(start_date, str):
-                    if len(start_date) == 4:  # Just year
-                        start = datetime(int(start_date), 1, 1)
-                    elif len(start_date) == 7:  # YYYY-MM
-                        start = datetime.strptime(start_date, "%Y-%m")
-                    else:
-                        start = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-                else:
-                    start = start_date
+            start = self._parse_date(start_date, is_end_date=False)
+            end = self._parse_date(end_date, is_end_date=True)
 
-                if end_date and end_date.lower() not in ["present", "now", "current", "настоящее время", "по настоящее время"]:
-                    if isinstance(end_date, str):
-                        if len(end_date) == 4:
-                            end = datetime(int(end_date), 12, 31)
-                        elif len(end_date) == 7:
-                            end = datetime.strptime(end_date, "%Y-%m")
-                        else:
-                            end = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-                    else:
-                        end = end_date
-                else:
-                    end = datetime.now()
-
-                # Calculate duration
-                duration_months = (end.year - start.year) * 12 + (end.month - start.month)
-
-                if duration_months < 12 and end != datetime.now():
-                    company = job.get("company") or job.get("employer") or "Неизвестная компания"
-                    short_jobs.append(f"{company} ({duration_months} мес.)")
-
-            except (ValueError, TypeError) as e:
-                logger.debug(f"Could not parse dates for job: {e}")
+            if not start:
                 continue
+
+            # If no end date, assume current job
+            if not end:
+                end = datetime.now()
+
+            company = job.get("company") or job.get("employer") or "Неизвестная компания"
+            position = job.get("position") or job.get("title") or ""
+
+            parsed_jobs.append({
+                "company": company,
+                "position": position,
+                "start": start,
+                "end": end,
+                "is_current": end_date is None or (
+                    isinstance(end_date, str) and
+                    end_date.lower() in ["present", "now", "current", "настоящее время", "по настоящее время"]
+                )
+            })
+
+            # Calculate duration for job hopping detection
+            duration_months = (end.year - start.year) * 12 + (end.month - start.month)
+
+            if duration_months < 12 and not parsed_jobs[-1]["is_current"]:
+                short_jobs.append(f"{company} ({duration_months} мес.)")
 
         # Job hopping detection
         if total_jobs >= 3 and len(short_jobs) >= 2:
@@ -195,6 +229,91 @@ class RedFlagsService:
                 description=f"Обнаружено {len(short_jobs)} позиций с работой менее года: {', '.join(short_jobs[:3])}{'...' if len(short_jobs) > 3 else ''}",
                 suggestion="Уточните причины частой смены работы. Спросите о конкретных обстоятельствах ухода с каждой позиции.",
                 evidence=f"Из {total_jobs} мест работы, {len(short_jobs)} длились менее года"
+            ))
+
+        # Employment gaps detection
+        flags.extend(self._detect_employment_gaps(parsed_jobs))
+
+        return flags
+
+    def _detect_employment_gaps(self, parsed_jobs: List[Dict[str, Any]]) -> List[RedFlag]:
+        """
+        Detect employment gaps in work history.
+
+        Args:
+            parsed_jobs: List of jobs with parsed start/end dates
+
+        Returns:
+            List of RedFlag for employment gaps > 6 months
+        """
+        flags = []
+
+        if len(parsed_jobs) < 2:
+            return flags
+
+        # Sort jobs by end_date (most recent first, then by start_date)
+        sorted_jobs = sorted(
+            parsed_jobs,
+            key=lambda x: (x["end"], x["start"]),
+            reverse=True
+        )
+
+        # Find gaps between consecutive jobs
+        detected_gaps = []
+
+        for i in range(len(sorted_jobs) - 1):
+            current_job = sorted_jobs[i]
+            previous_job = sorted_jobs[i + 1]
+
+            # Calculate gap: current job's start minus previous job's end
+            # Note: We still check gaps before current jobs - the gap is between
+            # when the previous job ended and when the current job started
+            gap_start = previous_job["end"]
+            gap_end = current_job["start"]
+
+            # Gap in months
+            gap_months = (gap_end.year - gap_start.year) * 12 + (gap_end.month - gap_start.month)
+
+            if gap_months > 6:
+                # Format gap period for display
+                gap_start_str = gap_start.strftime("%m/%Y")
+                gap_end_str = gap_end.strftime("%m/%Y")
+
+                detected_gaps.append({
+                    "gap_months": gap_months,
+                    "from_company": previous_job["company"],
+                    "to_company": current_job["company"],
+                    "period": f"{gap_start_str} - {gap_end_str}"
+                })
+
+        # Create RedFlags for detected gaps
+        for gap in detected_gaps:
+            gap_months = gap["gap_months"]
+
+            # Determine severity: > 12 months = HIGH, > 6 months = MEDIUM
+            if gap_months > 12:
+                severity = Severity.HIGH
+                severity_text = "значительный"
+            else:
+                severity = Severity.MEDIUM
+                severity_text = "заметный"
+
+            # Format gap duration
+            years = gap_months // 12
+            months = gap_months % 12
+            if years > 0 and months > 0:
+                duration_str = f"{years} г. {months} мес."
+            elif years > 0:
+                duration_str = f"{years} г."
+            else:
+                duration_str = f"{months} мес."
+
+            flags.append(RedFlag(
+                type=RedFlagType.EMPLOYMENT_GAPS,
+                severity=severity,
+                description=f"Обнаружен {severity_text} пробел в карьере: {duration_str} ({gap['period']})",
+                suggestion="Уточните, чем занимался кандидат в этот период. Возможные причины: обучение, личные обстоятельства, фриланс, поиск работы.",
+                evidence=f"Перерыв между {gap['from_company']} и {gap['to_company']}"
             ))
 
         return flags

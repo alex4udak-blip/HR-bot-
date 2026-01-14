@@ -12,6 +12,7 @@ import {
   X,
   Check,
   ChevronDown,
+  ChevronUp,
   Edit,
   Trash2,
   MoreVertical,
@@ -79,6 +80,8 @@ export default function CandidatesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortField, setSortField] = useState<string>('created_at');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const filtersDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -172,12 +175,40 @@ export default function CandidatesPage() {
     });
   }, [candidates, quickFilters]);
 
+  // Sorting
+  const sortedCandidates = useMemo(() => {
+    return [...filteredCandidates].sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortField) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name, 'ru');
+          break;
+        case 'expected_salary_min':
+          const salaryA = a.expected_salary_min || 0;
+          const salaryB = b.expected_salary_min || 0;
+          comparison = salaryA - salaryB;
+          break;
+        case 'status':
+          comparison = a.status.localeCompare(b.status);
+          break;
+        case 'created_at':
+          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          break;
+        default:
+          comparison = 0;
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [filteredCandidates, sortField, sortDirection]);
+
   // Pagination
-  const totalPages = Math.ceil(filteredCandidates.length / PAGE_SIZE);
+  const totalPages = Math.ceil(sortedCandidates.length / PAGE_SIZE);
   const paginatedCandidates = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE;
-    return filteredCandidates.slice(start, start + PAGE_SIZE);
-  }, [filteredCandidates, currentPage]);
+    return sortedCandidates.slice(start, start + PAGE_SIZE);
+  }, [sortedCandidates, currentPage]);
 
   // Active filter count
   const activeFilterCount = useMemo(() => {
@@ -312,6 +343,24 @@ export default function CandidatesPage() {
       skills: [],
     });
     setSearchQuery('');
+  };
+
+  const handleSortChange = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const renderSortIcon = (field: string) => {
+    if (sortField !== field) {
+      return <ChevronDown className="w-4 h-4 text-white/30" />;
+    }
+    return sortDirection === 'asc'
+      ? <ChevronUp className="w-4 h-4 text-cyan-400" />
+      : <ChevronDown className="w-4 h-4 text-cyan-400" />;
   };
 
   const handleCandidateClick = (candidate: Entity) => {
@@ -511,6 +560,7 @@ export default function CandidatesPage() {
           <div className="relative" ref={filtersDropdownRef}>
             <button
               onClick={() => setShowFiltersDropdown(!showFiltersDropdown)}
+              data-tour="filters-button"
               className={clsx(
                 'flex items-center gap-2 px-3 py-2 border rounded-lg text-sm transition-colors',
                 activeFilterCount > 0
@@ -758,12 +808,48 @@ export default function CandidatesPage() {
                     )}
                   </button>
                 </th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Имя</th>
+                <th className="px-4 py-3 text-left">
+                  <button
+                    onClick={() => handleSortChange('name')}
+                    className="flex items-center gap-1 text-sm font-medium text-white/60 hover:text-white transition-colors"
+                    data-testid="sort-name"
+                  >
+                    Имя
+                    {renderSortIcon('name')}
+                  </button>
+                </th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Контакты</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Навыки</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Зарплата</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Статус</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Добавлен</th>
+                <th className="px-4 py-3 text-left">
+                  <button
+                    onClick={() => handleSortChange('expected_salary_min')}
+                    className="flex items-center gap-1 text-sm font-medium text-white/60 hover:text-white transition-colors"
+                    data-testid="sort-salary"
+                  >
+                    Зарплата
+                    {renderSortIcon('expected_salary_min')}
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-left">
+                  <button
+                    onClick={() => handleSortChange('status')}
+                    className="flex items-center gap-1 text-sm font-medium text-white/60 hover:text-white transition-colors"
+                    data-testid="sort-status"
+                  >
+                    Статус
+                    {renderSortIcon('status')}
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-left">
+                  <button
+                    onClick={() => handleSortChange('created_at')}
+                    className="flex items-center gap-1 text-sm font-medium text-white/60 hover:text-white transition-colors"
+                    data-testid="sort-date"
+                  >
+                    Добавлен
+                    {renderSortIcon('created_at')}
+                  </button>
+                </th>
                 <th className="w-24 px-4 py-3 text-right text-sm font-medium text-white/60">Действия</th>
               </tr>
             </thead>

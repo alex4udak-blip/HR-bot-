@@ -18,6 +18,7 @@ from ..models.database import (
 )
 from ..services.auth import get_current_user
 from ..services.ai_scoring import ai_scoring_service, CompatibilityScore
+from ..services.cache import scoring_cache
 
 logger = logging.getLogger("hr-analyzer.routes.scoring")
 router = APIRouter()
@@ -180,8 +181,8 @@ async def calculate_compatibility(
     application = result.scalar_one_or_none()
 
     if application and application.compatibility_score:
-        # Return cached score
-        logger.info(f"Returning cached score for entity {entity.id} <-> vacancy {vacancy.id}")
+        # Return cached score from application
+        logger.info(f"Returning cached score from application for entity {entity.id} <-> vacancy {vacancy.id}")
         return CalculateScoreResponse(
             entity_id=entity.id,
             vacancy_id=vacancy.id,
@@ -189,18 +190,34 @@ async def calculate_compatibility(
             cached=True
         )
 
+    # Check for cached score in memory (when no application exists)
+    if not application:
+        cached_score = await scoring_cache.get_cached_score(entity.id, vacancy.id)
+        if cached_score:
+            logger.info(f"Returning cached score from memory for entity {entity.id} <-> vacancy {vacancy.id}")
+            return CalculateScoreResponse(
+                entity_id=entity.id,
+                vacancy_id=vacancy.id,
+                score=CompatibilityScoreResponse(**cached_score),
+                cached=True
+            )
+
     # Calculate new score
     score = await ai_scoring_service.calculate_compatibility(entity, vacancy)
+    score_dict = score.to_dict()
 
-    # Cache score in application if exists
+    # Cache score in application if exists, otherwise cache in memory
     if application:
-        application.compatibility_score = score.to_dict()
+        application.compatibility_score = score_dict
         await db.commit()
+    else:
+        # Cache in memory with 1 hour TTL
+        await scoring_cache.set_cached_score(entity.id, vacancy.id, score_dict)
 
     return CalculateScoreResponse(
         entity_id=entity.id,
         vacancy_id=vacancy.id,
-        score=CompatibilityScoreResponse(**score.to_dict()),
+        score=CompatibilityScoreResponse(**score_dict),
         cached=False
     )
 
