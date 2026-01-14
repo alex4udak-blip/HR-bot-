@@ -21,7 +21,8 @@ import {
   ToggleLeft,
   ToggleRight,
   Briefcase,
-  Brain
+  Brain,
+  Users
 } from 'lucide-react';
 import {
   getCriteriaPresets,
@@ -60,6 +61,11 @@ const featureConfig: Record<string, { icon: typeof Briefcase; label: string; des
     icon: Brain,
     label: 'AI Анализ',
     description: 'AI-анализ для контактов и звонков'
+  },
+  candidate_database: {
+    icon: Users,
+    label: 'База кандидатов',
+    description: 'Доступ к базе кандидатов в разделе Вакансии'
   }
 };
 
