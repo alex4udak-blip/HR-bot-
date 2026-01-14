@@ -12,6 +12,7 @@ export type TooltipId =
   | 'vacancies-page'
   | 'kanban-board'
   | 'contacts-page'
+  | 'candidates-page'
   | 'parser-modal';
 
 /**

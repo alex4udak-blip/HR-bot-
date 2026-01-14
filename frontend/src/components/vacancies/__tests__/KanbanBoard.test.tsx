@@ -319,21 +319,21 @@ describe('KanbanBoard', () => {
     it('should have edit button on each card', () => {
       renderWithRouter();
 
-      const detailsButtons = screen.getAllByTitle('Details');
+      const detailsButtons = screen.getAllByTitle('Детали');
       expect(detailsButtons.length).toBe(3); // 3 candidates
     });
 
     it('should have view profile button on each card', () => {
       renderWithRouter();
 
-      const viewButtons = screen.getAllByTitle('View profile');
+      const viewButtons = screen.getAllByTitle('Профиль');
       expect(viewButtons.length).toBe(3); // 3 candidates
     });
 
     it('should have remove button on each card', () => {
       renderWithRouter();
 
-      const removeButtons = screen.getAllByTitle('Remove');
+      const removeButtons = screen.getAllByTitle('Удалить');
       expect(removeButtons.length).toBe(3); // 3 candidates
     });
   });

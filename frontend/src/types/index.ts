@@ -550,9 +550,76 @@ export interface VacancyApplication {
   rejection_reason?: string;
   source?: string;
   next_interview_at?: string;
+  compatibility_score?: CompatibilityScore;
   applied_at: string;
   last_stage_change_at: string;
   updated_at: string;
+}
+
+// === AI Compatibility Scoring ===
+
+export type ScoringRecommendation = 'hire' | 'maybe' | 'reject';
+
+export interface CompatibilityScore {
+  overall_score: number;       // 0-100 overall compatibility
+  skills_match: number;        // 0-100 skills alignment
+  experience_match: number;    // 0-100 experience fit
+  salary_match: number;        // 0-100 salary expectations alignment
+  culture_fit: number;         // 0-100 culture compatibility
+  strengths: string[];         // Candidate strengths for this role
+  weaknesses: string[];        // Potential risks/concerns
+  recommendation: ScoringRecommendation;  // hire/maybe/reject
+  summary: string;             // Brief assessment text
+  key_factors: string[];       // Key decision factors
+}
+
+export interface CalculateScoreRequest {
+  entity_id: number;
+  vacancy_id: number;
+}
+
+export interface CalculateScoreResponse {
+  entity_id: number;
+  vacancy_id: number;
+  score: CompatibilityScore;
+  cached: boolean;
+}
+
+export interface EntityScoreResult {
+  entity_id: number;
+  entity_name: string;
+  score: CompatibilityScore;
+}
+
+export interface VacancyScoreResult {
+  vacancy_id: number;
+  vacancy_title: string;
+  score: CompatibilityScore;
+}
+
+export interface BestMatchesRequest {
+  limit?: number;
+  min_score?: number;
+  status_filter?: string[];
+}
+
+export interface BestMatchesResponse {
+  vacancy_id: number;
+  vacancy_title: string;
+  matches: EntityScoreResult[];
+  total_evaluated: number;
+}
+
+export interface MatchingVacanciesRequest {
+  limit?: number;
+  min_score?: number;
+}
+
+export interface MatchingVacanciesResponse {
+  entity_id: number;
+  entity_name: string;
+  matches: VacancyScoreResult[];
+  total_evaluated: number;
 }
 
 export interface KanbanColumn {
@@ -648,6 +715,50 @@ export const CURRENCIES = [
 ] as const;
 
 export type CurrencyCode = typeof CURRENCIES[number]['code'];
+
+// === Vacancy Recommendations ===
+
+export interface VacancyRecommendation {
+  vacancy_id: number;
+  vacancy_title: string;
+  match_score: number;
+  match_reasons: string[];
+  missing_requirements: string[];
+  salary_compatible: boolean;
+  location_match: boolean;
+  salary_min?: number;
+  salary_max?: number;
+  salary_currency: string;
+  location?: string;
+  employment_type?: string;
+  experience_level?: string;
+  department_name?: string;
+  applications_count: number;
+}
+
+export interface CandidateMatch {
+  entity_id: number;
+  entity_name: string;
+  match_score: number;
+  match_reasons: string[];
+  missing_skills: string[];
+  salary_compatible: boolean;
+  email?: string;
+  phone?: string;
+  position?: string;
+  status?: string;
+  expected_salary_min?: number;
+  expected_salary_max?: number;
+  expected_salary_currency: string;
+}
+
+export interface NotifyCandidatesResponse {
+  vacancy_id: number;
+  vacancy_title: string;
+  candidates_found: number;
+  candidates_notified: CandidateMatch[];
+  message: string;
+}
 
 /**
  * @deprecated Use formatSalary from '@/utils' instead for consistent currency formatting.

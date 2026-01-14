@@ -41,7 +41,7 @@ import ParserModal from '@/components/parser/ParserModal';
 import {
   ContextMenu,
   createVacancyContextMenu,
-  NoVacanciesEmpty,
+  EmptyVacancies,
   KeyboardShortcuts,
   ConfirmDialog,
   ErrorMessage
@@ -465,6 +465,7 @@ export default function VacanciesPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setViewMode(viewMode === 'list' ? 'kanban' : 'list')}
+              data-tour="kanban-toggle"
               className={clsx(
                 'p-2 rounded-lg transition-colors',
                 viewMode === 'kanban' ? 'bg-blue-500/20 text-blue-300' : 'hover:bg-white/5'
@@ -731,7 +732,16 @@ export default function VacanciesPage() {
             ))}
           </div>
         ) : filteredVacancies.length === 0 ? (
-          <NoVacanciesEmpty onCreate={() => setShowCreateModal(true)} />
+          <div className="flex items-center justify-center py-8">
+            <EmptyVacancies
+              variant={searchQuery ? 'search' : activeFilterCount > 0 ? 'filter' : 'primary'}
+              query={searchQuery}
+              onCreate={() => {
+                setPrefillData(null);
+                setShowCreateModal(true);
+              }}
+            />
+          </div>
         ) : (
           <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             <AnimatePresence mode="popLayout">

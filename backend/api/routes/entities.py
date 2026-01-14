@@ -14,9 +14,10 @@ from ..models.database import (
     Entity, EntityType, EntityStatus, EntityTransfer,
     Chat, CallRecording, AnalysisHistory, User, Organization,
     SharedAccess, ResourceType, UserRole, AccessLevel, OrgRole,
-    Department, DepartmentMember, DeptRole
+    Department, DepartmentMember, DeptRole, Vacancy, Message
 )
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to
+from ..services.red_flags import red_flags_service
 from .realtime import broadcast_entity_created, broadcast_entity_updated, broadcast_entity_deleted
 
 # Ownership filter type
@@ -645,6 +646,151 @@ async def list_entities(
     return response
 
 
+# === Smart Search Schemas ===
+
+class SmartSearchResult(BaseModel):
+    """Single search result with relevance score."""
+    id: int
+    type: EntityType
+    name: str
+    status: EntityStatus
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    company: Optional[str] = None
+    position: Optional[str] = None
+    tags: List[str] = []
+    extra_data: dict = {}
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    relevance_score: float = 0.0
+    expected_salary_min: Optional[int] = None
+    expected_salary_max: Optional[int] = None
+    expected_salary_currency: Optional[str] = 'RUB'
+    ai_summary: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class SmartSearchResponse(BaseModel):
+    """Smart search response with results and metadata."""
+    results: List[SmartSearchResult]
+    total: int
+    parsed_query: dict
+    offset: int
+    limit: int
+
+
+@router.get("/search")
+async def smart_search(
+    query: str = Query(..., min_length=1, max_length=500, description="Natural language search query"),
+    type: Optional[EntityType] = Query(None, description="Filter by entity type"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Smart search with AI-powered natural language understanding.
+
+    Examples:
+    - "Python developers with 3+ years experience"
+    - "Frontend React salary up to 200000"
+    - "Moscow Java senior"
+    - "candidates with DevOps skills"
+
+    Returns ranked results based on relevance to the query.
+    """
+    from ..services.smart_search import smart_search_service
+
+    current_user = await db.merge(current_user)
+
+    # SUPERADMIN sees everything
+    org_id = None
+    if current_user.role != UserRole.superadmin:
+        org = await get_user_org(current_user, db)
+        if not org:
+            return SmartSearchResponse(
+                results=[],
+                total=0,
+                parsed_query={},
+                offset=offset,
+                limit=limit
+            )
+        org_id = org.id
+
+    try:
+        # Perform smart search
+        search_result = await smart_search_service.search(
+            db=db,
+            query=query,
+            org_id=org_id,
+            user_id=current_user.id,
+            entity_type=type,
+            limit=limit,
+            offset=offset,
+        )
+
+        entities = search_result["results"]
+        scores = search_result.get("scores", {})
+
+        if not entities:
+            return SmartSearchResponse(
+                results=[],
+                total=0,
+                parsed_query=search_result.get("parsed_query", {}),
+                offset=offset,
+                limit=limit
+            )
+
+        # Get department names for results
+        dept_ids = list(set(e.department_id for e in entities if e.department_id))
+        dept_names = {}
+        if dept_ids:
+            depts_result = await db.execute(select(Department).where(Department.id.in_(dept_ids)))
+            for dept in depts_result.scalars().all():
+                dept_names[dept.id] = dept.name
+
+        # Build response
+        results = []
+        for entity in entities:
+            results.append(SmartSearchResult(
+                id=entity.id,
+                type=entity.type,
+                name=entity.name,
+                status=entity.status,
+                phone=entity.phone,
+                email=entity.email,
+                company=entity.company,
+                position=entity.position,
+                tags=entity.tags or [],
+                extra_data=entity.extra_data or {},
+                department_id=entity.department_id,
+                department_name=dept_names.get(entity.department_id) if entity.department_id else None,
+                created_at=entity.created_at,
+                updated_at=entity.updated_at,
+                relevance_score=scores.get(entity.id, 0.0),
+                expected_salary_min=entity.expected_salary_min,
+                expected_salary_max=entity.expected_salary_max,
+                expected_salary_currency=entity.expected_salary_currency or 'RUB',
+                ai_summary=entity.ai_summary[:200] + "..." if entity.ai_summary and len(entity.ai_summary) > 200 else entity.ai_summary,
+            ))
+
+        return SmartSearchResponse(
+            results=results,
+            total=search_result["total"],
+            parsed_query=search_result.get("parsed_query", {}),
+            offset=offset,
+            limit=limit
+        )
+
+    except Exception as e:
+        logger.error(f"Smart search error: {e}")
+        raise HTTPException(500, f"Search error: {str(e)}")
+
+
 @router.post("", status_code=201)
 async def create_entity(
     data: EntityCreate,
@@ -988,6 +1134,132 @@ async def get_entity(
             }
             for a in analyses
         ]
+    }
+
+
+@router.get("/{entity_id}/red-flags")
+async def get_entity_red_flags(
+    entity_id: int,
+    vacancy_id: Optional[int] = Query(None, description="Optional vacancy ID to compare against"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get red flags analysis for a candidate.
+
+    Analyzes the candidate's profile and communications for potential red flags:
+    - Job hopping (frequent job changes)
+    - Employment gaps
+    - Salary mismatch (if vacancy provided)
+    - Skill inconsistency
+    - Overqualified/underqualified
+    - Location concerns
+    - Missing references
+    - Communication issues (AI analysis)
+
+    Returns a list of detected red flags with severity levels and recommendations.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Fetch entity
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Check access
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(404, "Entity not found")
+
+    # Fetch vacancy if provided
+    vacancy = None
+    if vacancy_id:
+        vacancy_result = await db.execute(
+            select(Vacancy).where(Vacancy.id == vacancy_id, Vacancy.org_id == org.id)
+        )
+        vacancy = vacancy_result.scalar_one_or_none()
+
+    # Fetch linked chats with messages for AI analysis
+    chats_result = await db.execute(
+        select(Chat).where(Chat.entity_id == entity_id)
+    )
+    chats = list(chats_result.scalars().all())
+
+    # Load messages for each chat (limit to avoid memory issues)
+    for chat in chats:
+        messages_result = await db.execute(
+            select(Message)
+            .where(Message.chat_id == chat.id)
+            .order_by(Message.timestamp.desc())
+            .limit(100)
+        )
+        chat.messages = list(messages_result.scalars().all())
+
+    # Fetch linked calls with transcripts
+    calls_result = await db.execute(
+        select(CallRecording)
+        .where(CallRecording.entity_id == entity_id)
+        .order_by(CallRecording.created_at.desc())
+        .limit(5)  # Limit to last 5 calls
+    )
+    calls = list(calls_result.scalars().all())
+
+    # Run red flags analysis
+    try:
+        analysis = await red_flags_service.detect_red_flags(
+            entity=entity,
+            vacancy=vacancy,
+            chats=chats,
+            calls=calls
+        )
+        return analysis.to_dict()
+    except Exception as e:
+        logger.error(f"Red flags analysis failed for entity {entity_id}: {e}")
+        raise HTTPException(500, f"Failed to analyze red flags: {str(e)}")
+
+
+@router.get("/{entity_id}/risk-score")
+async def get_entity_risk_score(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get quick risk score for a candidate (0-100).
+
+    This is a fast synchronous calculation based on available profile data.
+    For full analysis with AI, use the /red-flags endpoint.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(404, "Entity not found")
+
+    risk_score = red_flags_service.get_risk_score(entity)
+
+    return {
+        "entity_id": entity_id,
+        "risk_score": risk_score,
+        "risk_level": "high" if risk_score >= 60 else "medium" if risk_score >= 30 else "low"
     }
 
 
@@ -2865,3 +3137,831 @@ async def cleanup_all_orphaned_files_endpoint(
         "org_id": org.id,
         **result
     }
+
+
+# === Resume Parsing API ===
+
+from ..services.resume_parser import resume_parser_service, ParsedResume
+
+
+class ParsedResumeResponse(BaseModel):
+    """Ответ с данными распарсенного резюме."""
+    # Основные данные
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    telegram: Optional[str] = None
+
+    # Профессиональные данные
+    position: Optional[str] = None
+    company: Optional[str] = None
+    experience_years: Optional[int] = None
+
+    # Зарплатные ожидания
+    expected_salary_min: Optional[int] = None
+    expected_salary_max: Optional[int] = None
+    expected_salary_currency: str = "RUB"
+
+    # Навыки и образование
+    skills: List[str] = []
+    education: List[dict] = []
+    experience: List[dict] = []
+    languages: List[dict] = []
+
+    # Дополнительные данные
+    location: Optional[str] = None
+    about: Optional[str] = None
+    links: List[str] = []
+
+    # Метаданные парсинга
+    parse_confidence: float = 0.0
+    parse_warnings: List[str] = []
+
+    class Config:
+        from_attributes = True
+
+
+class EntityFromResumeResponse(BaseModel):
+    """Ответ при создании Entity из резюме."""
+    entity: dict  # Созданная карточка кандидата
+    parsed_data: ParsedResumeResponse  # Распарсенные данные резюме
+    file_id: Optional[int] = None  # ID прикреплённого файла
+
+
+@router.post("/parse-resume", response_model=ParsedResumeResponse)
+async def parse_resume(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Парсинг резюме и извлечение структурированных данных.
+
+    Принимает файл резюме (PDF, DOC, DOCX) и возвращает JSON
+    с извлечёнными данными: ФИО, контакты, навыки, опыт и т.д.
+
+    Этот endpoint только парсит резюме, но не создаёт карточку кандидата.
+    Для создания карточки используйте POST /api/entities/from-resume.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "Нет доступа к организации")
+
+    # Проверяем размер файла
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            413,
+            f"Файл слишком большой. Максимальный размер: {MAX_FILE_SIZE // (1024 * 1024)} МБ"
+        )
+
+    filename = file.filename or "resume"
+
+    # Проверяем расширение файла
+    ext = filename.lower().split('.')[-1] if '.' in filename else ''
+    allowed_extensions = {'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'}
+    if ext not in allowed_extensions:
+        raise HTTPException(
+            400,
+            f"Неподдерживаемый формат файла: .{ext}. "
+            f"Поддерживаются: {', '.join(allowed_extensions)}"
+        )
+
+    try:
+        # Парсим резюме
+        parsed = await resume_parser_service.parse_resume(content, filename)
+
+        logger.info(
+            f"RESUME_PARSE: success | filename='{filename}' | "
+            f"name='{parsed.name}' | confidence={parsed.parse_confidence} | "
+            f"user_id={current_user.id} | org_id={org.id}"
+        )
+
+        return ParsedResumeResponse(
+            name=parsed.name,
+            phone=parsed.phone,
+            email=parsed.email,
+            telegram=parsed.telegram,
+            position=parsed.position,
+            company=parsed.company,
+            experience_years=parsed.experience_years,
+            expected_salary_min=parsed.expected_salary_min,
+            expected_salary_max=parsed.expected_salary_max,
+            expected_salary_currency=parsed.expected_salary_currency,
+            skills=parsed.skills or [],
+            education=parsed.education or [],
+            experience=parsed.experience or [],
+            languages=parsed.languages or [],
+            location=parsed.location,
+            about=parsed.about,
+            links=parsed.links or [],
+            parse_confidence=parsed.parse_confidence,
+            parse_warnings=parsed.parse_warnings or []
+        )
+
+    except ValueError as e:
+        logger.warning(
+            f"RESUME_PARSE: failed | filename='{filename}' | "
+            f"error='{str(e)}' | user_id={current_user.id}"
+        )
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.error(
+            f"RESUME_PARSE: error | filename='{filename}' | "
+            f"error='{str(e)}' | user_id={current_user.id}"
+        )
+        raise HTTPException(500, f"Ошибка парсинга резюме: {str(e)}")
+
+
+@router.post("/from-resume", response_model=EntityFromResumeResponse)
+async def create_entity_from_resume(
+    file: UploadFile = File(...),
+    department_id: Optional[int] = Form(None),
+    auto_attach_file: bool = Form(True),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Парсинг резюме и автоматическое создание карточки кандидата.
+
+    Этот endpoint:
+    1. Парсит резюме (PDF, DOC, DOCX)
+    2. Извлекает структурированные данные с помощью AI
+    3. Создаёт Entity типа 'candidate' с заполненными полями
+    4. Опционально прикрепляет оригинал файла к карточке
+
+    Args:
+        file: Файл резюме
+        department_id: ID отдела (опционально)
+        auto_attach_file: Прикреплять ли файл к карточке (по умолчанию True)
+
+    Returns:
+        Созданная карточка кандидата и распарсенные данные
+    """
+    from ..models.database import EntityFile, EntityFileType
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "Нет доступа к организации")
+
+    # Проверяем размер файла
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            413,
+            f"Файл слишком большой. Максимальный размер: {MAX_FILE_SIZE // (1024 * 1024)} МБ"
+        )
+
+    filename = file.filename or "resume"
+
+    # Проверяем расширение файла
+    ext = filename.lower().split('.')[-1] if '.' in filename else ''
+    allowed_extensions = {'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'}
+    if ext not in allowed_extensions:
+        raise HTTPException(
+            400,
+            f"Неподдерживаемый формат файла: .{ext}. "
+            f"Поддерживаются: {', '.join(allowed_extensions)}"
+        )
+
+    # Валидация department_id
+    department_name = None
+    if department_id:
+        dept_result = await db.execute(
+            select(Department).where(
+                Department.id == department_id,
+                Department.org_id == org.id
+            )
+        )
+        dept = dept_result.scalar_one_or_none()
+        if not dept:
+            raise HTTPException(400, "Недействительный отдел")
+        department_name = dept.name
+
+    try:
+        # Шаг 1: Парсим резюме
+        parsed = await resume_parser_service.parse_resume(content, filename)
+
+        # Шаг 2: Конвертируем в данные для Entity
+        entity_data = parsed.to_entity_data()
+
+        # Нормализуем идентификаторы
+        normalized_usernames, validated_emails, filtered_phones = normalize_and_validate_identifiers(
+            telegram_usernames=entity_data.get("telegram_usernames", []),
+            emails=entity_data.get("emails", []),
+            phones=entity_data.get("phones", [])
+        )
+
+        # Шаг 3: Создаём Entity
+        entity = Entity(
+            org_id=org.id,
+            type=EntityType.candidate,
+            name=entity_data["name"],
+            status=EntityStatus.new,
+            phone=entity_data.get("phone"),
+            email=entity_data.get("email"),
+            telegram_usernames=normalized_usernames,
+            emails=validated_emails,
+            phones=filtered_phones,
+            company=entity_data.get("company"),
+            position=entity_data.get("position"),
+            tags=entity_data.get("tags", []),
+            extra_data=entity_data.get("extra_data", {}),
+            created_by=current_user.id,
+            department_id=department_id,
+            expected_salary_min=entity_data.get("expected_salary_min"),
+            expected_salary_max=entity_data.get("expected_salary_max"),
+            expected_salary_currency=entity_data.get("expected_salary_currency", "RUB")
+        )
+        db.add(entity)
+        await db.flush()  # Получаем ID entity
+
+        # Шаг 4: Прикрепляем файл (если нужно)
+        file_id = None
+        if auto_attach_file:
+            # Создаём директорию для файлов
+            entity_dir = ENTITY_FILES_DIR / str(entity.id)
+            entity_dir.mkdir(parents=True, exist_ok=True)
+
+            # Генерируем уникальное имя файла
+            safe_filename = re.sub(r'[^\w\-\.]', '_', filename)
+            unique_name = f"{uuid.uuid4().hex[:8]}_{safe_filename}"
+            file_path = entity_dir / unique_name
+
+            # Сохраняем файл
+            with open(file_path, 'wb') as f:
+                f.write(content)
+
+            # Определяем MIME-тип
+            content_type = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+            # Создаём запись EntityFile
+            entity_file = EntityFile(
+                entity_id=entity.id,
+                org_id=org.id,
+                file_type=EntityFileType.resume,
+                file_name=filename,
+                file_path=str(file_path),
+                file_size=len(content),
+                mime_type=content_type,
+                description="Резюме (автоматически загружено при парсинге)",
+                uploaded_by=current_user.id
+            )
+            db.add(entity_file)
+            await db.flush()
+            file_id = entity_file.id
+
+        await db.commit()
+        await db.refresh(entity)
+
+        # Формируем response
+        entity_response = {
+            "id": entity.id,
+            "type": entity.type.value if hasattr(entity.type, 'value') else entity.type,
+            "name": entity.name,
+            "status": entity.status.value if hasattr(entity.status, 'value') else entity.status,
+            "phone": entity.phone,
+            "email": entity.email,
+            "telegram_usernames": entity.telegram_usernames or [],
+            "emails": entity.emails or [],
+            "phones": entity.phones or [],
+            "company": entity.company,
+            "position": entity.position,
+            "tags": entity.tags or [],
+            "extra_data": entity.extra_data or {},
+            "created_by": entity.created_by,
+            "department_id": entity.department_id,
+            "department_name": department_name,
+            "created_at": entity.created_at.isoformat() if entity.created_at else None,
+            "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
+            "chats_count": 0,
+            "calls_count": 0,
+            "expected_salary_min": entity.expected_salary_min,
+            "expected_salary_max": entity.expected_salary_max,
+            "expected_salary_currency": entity.expected_salary_currency or 'RUB'
+        }
+
+        parsed_response = ParsedResumeResponse(
+            name=parsed.name,
+            phone=parsed.phone,
+            email=parsed.email,
+            telegram=parsed.telegram,
+            position=parsed.position,
+            company=parsed.company,
+            experience_years=parsed.experience_years,
+            expected_salary_min=parsed.expected_salary_min,
+            expected_salary_max=parsed.expected_salary_max,
+            expected_salary_currency=parsed.expected_salary_currency,
+            skills=parsed.skills or [],
+            education=parsed.education or [],
+            experience=parsed.experience or [],
+            languages=parsed.languages or [],
+            location=parsed.location,
+            about=parsed.about,
+            links=parsed.links or [],
+            parse_confidence=parsed.parse_confidence,
+            parse_warnings=parsed.parse_warnings or []
+        )
+
+        logger.info(
+            f"ENTITY_FROM_RESUME: success | entity_id={entity.id} | "
+            f"name='{entity.name}' | confidence={parsed.parse_confidence} | "
+            f"file_attached={file_id is not None} | user_id={current_user.id} | org_id={org.id}"
+        )
+
+        # Broadcast entity.created event
+        await broadcast_entity_created(org.id, entity_response)
+
+        return EntityFromResumeResponse(
+            entity=entity_response,
+            parsed_data=parsed_response,
+            file_id=file_id
+        )
+
+    except ValueError as e:
+        logger.warning(
+            f"ENTITY_FROM_RESUME: failed | filename='{filename}' | "
+            f"error='{str(e)}' | user_id={current_user.id}"
+        )
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.error(
+            f"ENTITY_FROM_RESUME: error | filename='{filename}' | "
+            f"error='{str(e)}' | user_id={current_user.id}"
+        )
+        await db.rollback()
+        raise HTTPException(500, f"Ошибка создания карточки из резюме: {str(e)}")
+
+
+# === Vacancy Recommendations ===
+
+class VacancyRecommendationResponse(BaseModel):
+    """Response model for vacancy recommendation."""
+    vacancy_id: int
+    vacancy_title: str
+    match_score: int
+    match_reasons: List[str]
+    missing_requirements: List[str]
+    salary_compatible: bool
+    location_match: bool = True
+    salary_min: Optional[int] = None
+    salary_max: Optional[int] = None
+    salary_currency: str = "RUB"
+    location: Optional[str] = None
+    employment_type: Optional[str] = None
+    experience_level: Optional[str] = None
+    department_name: Optional[str] = None
+    applications_count: int = 0
+
+
+@router.get("/{entity_id}/recommended-vacancies", response_model=List[VacancyRecommendationResponse])
+async def get_recommended_vacancies(
+    entity_id: int,
+    limit: int = Query(5, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get vacancy recommendations for a candidate.
+
+    This endpoint analyzes the candidate's profile (skills, salary expectations,
+    position) and returns a list of matching vacancies sorted by match score.
+
+    Args:
+        entity_id: ID of the candidate entity
+        limit: Maximum number of recommendations (1-20)
+
+    Returns:
+        List of VacancyRecommendationResponse objects sorted by match_score descending
+    """
+    from ..services.vacancy_recommender import vacancy_recommender
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Get the entity
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    if entity.type != EntityType.candidate:
+        raise HTTPException(400, "Рекомендации доступны только для кандидатов")
+
+    # Get recommendations
+    recommendations = await vacancy_recommender.get_recommendations(
+        db=db,
+        entity=entity,
+        limit=limit,
+        org_id=org.id
+    )
+
+    return [
+        VacancyRecommendationResponse(
+            vacancy_id=rec.vacancy_id,
+            vacancy_title=rec.vacancy_title,
+            match_score=rec.match_score,
+            match_reasons=rec.match_reasons,
+            missing_requirements=rec.missing_requirements,
+            salary_compatible=rec.salary_compatible,
+            location_match=rec.location_match,
+            salary_min=rec.salary_min,
+            salary_max=rec.salary_max,
+            salary_currency=rec.salary_currency,
+            location=rec.location,
+            employment_type=rec.employment_type,
+            experience_level=rec.experience_level,
+            department_name=rec.department_name,
+            applications_count=rec.applications_count,
+        )
+        for rec in recommendations
+    ]
+
+
+@router.post("/{entity_id}/auto-apply/{vacancy_id}")
+async def auto_apply_to_vacancy(
+    entity_id: int,
+    vacancy_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Automatically apply a candidate to a vacancy.
+
+    Creates a new application with stage 'applied' and source 'auto_recommendation'.
+
+    Args:
+        entity_id: ID of the candidate entity
+        vacancy_id: ID of the target vacancy
+
+    Returns:
+        Created application details or error if already applied
+    """
+    from ..services.vacancy_recommender import vacancy_recommender
+    from ..models.database import Vacancy
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Get the entity
+    entity_result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = entity_result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    if entity.type != EntityType.candidate:
+        raise HTTPException(400, "Только кандидаты могут подавать заявки")
+
+    # Get the vacancy
+    vacancy_result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id, Vacancy.org_id == org.id)
+    )
+    vacancy = vacancy_result.scalar_one_or_none()
+
+    if not vacancy:
+        raise HTTPException(404, "Vacancy not found")
+
+    # Apply
+    application = await vacancy_recommender.auto_apply(
+        db=db,
+        entity=entity,
+        vacancy=vacancy,
+        source="recommendation",
+        created_by=current_user.id
+    )
+
+    if not application:
+        raise HTTPException(400, "Кандидат уже подавал заявку на эту вакансию")
+
+    return {
+        "id": application.id,
+        "vacancy_id": application.vacancy_id,
+        "entity_id": application.entity_id,
+        "stage": application.stage.value,
+        "source": application.source,
+        "applied_at": application.applied_at.isoformat() if application.applied_at else None,
+        "message": "Заявка успешно создана"
+    }
+
+
+# === SIMILAR CANDIDATES & DUPLICATES ===
+
+
+class SimilarCandidateResponse(BaseModel):
+    """Ответ с информацией о похожем кандидате."""
+    entity_id: int
+    entity_name: str
+    similarity_score: int  # 0-100
+    common_skills: List[str] = []
+    similar_experience: bool = False
+    similar_salary: bool = False
+    similar_location: bool = False
+    match_reasons: List[str] = []
+
+    class Config:
+        from_attributes = True
+
+
+class DuplicateCandidateResponse(BaseModel):
+    """Ответ с информацией о возможном дубликате."""
+    entity_id: int
+    entity_name: str
+    confidence: int  # 0-100
+    match_reasons: List[str] = []
+    matched_fields: dict = {}  # {field: [value1, value2]}
+
+    class Config:
+        from_attributes = True
+
+
+class MergeEntitiesRequest(BaseModel):
+    """Запрос на объединение сущностей."""
+    source_entity_id: int  # Будет удалена
+    keep_source_data: bool = False  # Приоритет данных source
+
+
+class MergeEntitiesResponse(BaseModel):
+    """Ответ после объединения сущностей."""
+    success: bool
+    message: str
+    merged_entity_id: int
+    deleted_entity_id: int
+
+
+@router.get("/{entity_id}/similar", response_model=List[SimilarCandidateResponse])
+async def get_similar_candidates(
+    entity_id: int,
+    limit: int = Query(default=10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Получить список похожих кандидатов.
+
+    Поиск ведется по:
+    - Навыкам (skills в extra_data) - 50% веса
+    - Опыту работы - 20% веса
+    - Зарплатным ожиданиям - 15% веса
+    - Локации - 15% веса
+
+    Args:
+        entity_id: ID кандидата
+        limit: Максимальное количество результатов (1-50)
+
+    Returns:
+        Список похожих кандидатов, отсортированных по убыванию similarity_score
+    """
+    from ..services.similarity import similarity_service
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Получаем сущность
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    if entity.type != EntityType.candidate:
+        raise HTTPException(400, "Поиск похожих доступен только для кандидатов")
+
+    # Поиск похожих
+    similar = await similarity_service.find_similar(
+        db=db,
+        entity=entity,
+        limit=limit,
+        org_id=org.id
+    )
+
+    return [
+        SimilarCandidateResponse(
+            entity_id=s.entity_id,
+            entity_name=s.entity_name,
+            similarity_score=s.similarity_score,
+            common_skills=s.common_skills,
+            similar_experience=s.similar_experience,
+            similar_salary=s.similar_salary,
+            similar_location=s.similar_location,
+            match_reasons=s.match_reasons
+        )
+        for s in similar
+    ]
+
+
+@router.get("/{entity_id}/duplicates", response_model=List[DuplicateCandidateResponse])
+async def get_duplicate_candidates(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Получить список возможных дубликатов.
+
+    Проверяется:
+    - Имя (с учетом транслитерации рус/eng)
+    - Email
+    - Телефон
+    - Навыки + компания
+
+    Args:
+        entity_id: ID сущности
+
+    Returns:
+        Список возможных дубликатов с вероятностью совпадения
+    """
+    from ..services.similarity import similarity_service
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Получаем сущность
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Поиск дубликатов
+    duplicates = await similarity_service.detect_duplicates(
+        db=db,
+        entity=entity,
+        org_id=org.id
+    )
+
+    return [
+        DuplicateCandidateResponse(
+            entity_id=d.entity_id,
+            entity_name=d.entity_name,
+            confidence=d.confidence,
+            match_reasons=d.match_reasons,
+            matched_fields={k: list(v) for k, v in d.matched_fields.items()}
+        )
+        for d in duplicates
+    ]
+
+
+@router.post("/{entity_id}/merge", response_model=MergeEntitiesResponse)
+async def merge_entities(
+    entity_id: int,
+    request: MergeEntitiesRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Объединить два дубликата.
+
+    Целевая сущность (entity_id) остается, исходная (source_entity_id) удаляется.
+    Все связанные данные (чаты, звонки, анализы) переносятся на целевую сущность.
+
+    При объединении:
+    - Контактные данные (телефоны, email, telegram) объединяются
+    - Теги объединяются
+    - extra_data объединяется (приоритет определяется параметром keep_source_data)
+    - Навыки всегда объединяются
+    - Зарплатные ожидания расширяются (берется минимум из min и максимум из max)
+
+    Args:
+        entity_id: ID целевой сущности (останется)
+        request: Параметры объединения
+            - source_entity_id: ID исходной сущности (будет удалена)
+            - keep_source_data: True - данные source имеют приоритет при конфликтах
+
+    Returns:
+        Результат операции объединения
+    """
+    from ..services.similarity import similarity_service
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Проверяем права (только admin/owner могут объединять)
+    org_role = await get_user_org_role(current_user, org.id, db)
+    if org_role not in [OrgRole.admin, OrgRole.owner]:
+        raise HTTPException(403, "Только администраторы могут объединять дубликаты")
+
+    if entity_id == request.source_entity_id:
+        raise HTTPException(400, "Нельзя объединить сущность саму с собой")
+
+    # Получаем целевую сущность
+    target_result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    target_entity = target_result.scalar_one_or_none()
+
+    if not target_entity:
+        raise HTTPException(404, "Целевая сущность не найдена")
+
+    # Получаем исходную сущность
+    source_result = await db.execute(
+        select(Entity).where(Entity.id == request.source_entity_id, Entity.org_id == org.id)
+    )
+    source_entity = source_result.scalar_one_or_none()
+
+    if not source_entity:
+        raise HTTPException(404, "Исходная сущность не найдена")
+
+    # Объединяем
+    try:
+        merged = await similarity_service.merge_entities(
+            db=db,
+            source_entity=source_entity,
+            target_entity=target_entity,
+            keep_source_data=request.keep_source_data
+        )
+
+        # Broadcast обновление
+        await broadcast_entity_updated(org.id, merged.id)
+        await broadcast_entity_deleted(org.id, request.source_entity_id)
+
+        return MergeEntitiesResponse(
+            success=True,
+            message=f"Сущности успешно объединены. {source_entity.name} была удалена.",
+            merged_entity_id=merged.id,
+            deleted_entity_id=request.source_entity_id
+        )
+    except Exception as e:
+        logger.error(f"Error merging entities: {e}")
+        raise HTTPException(500, f"Ошибка при объединении: {str(e)}")
+
+
+@router.get("/{entity_id}/compare/{other_entity_id}", response_model=SimilarCandidateResponse)
+async def compare_candidates(
+    entity_id: int,
+    other_entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Сравнить двух кандидатов.
+
+    Args:
+        entity_id: ID первого кандидата
+        other_entity_id: ID второго кандидата
+
+    Returns:
+        Результат сравнения с оценкой сходства
+    """
+    from ..services.similarity import similarity_service
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    if entity_id == other_entity_id:
+        raise HTTPException(400, "Нельзя сравнить сущность саму с собой")
+
+    # Получаем первую сущность
+    result1 = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity1 = result1.scalar_one_or_none()
+
+    if not entity1:
+        raise HTTPException(404, "Первая сущность не найдена")
+
+    # Получаем вторую сущность
+    result2 = await db.execute(
+        select(Entity).where(Entity.id == other_entity_id, Entity.org_id == org.id)
+    )
+    entity2 = result2.scalar_one_or_none()
+
+    if not entity2:
+        raise HTTPException(404, "Вторая сущность не найдена")
+
+    # Сравниваем
+    comparison = similarity_service.calculate_similarity(entity1, entity2)
+
+    return SimilarCandidateResponse(
+        entity_id=comparison.entity_id,
+        entity_name=comparison.entity_name,
+        similarity_score=comparison.similarity_score,
+        common_skills=comparison.common_skills,
+        similar_experience=comparison.similar_experience,
+        similar_salary=comparison.similar_salary,
+        similar_location=comparison.similar_location,
+        match_reasons=comparison.match_reasons
+    )

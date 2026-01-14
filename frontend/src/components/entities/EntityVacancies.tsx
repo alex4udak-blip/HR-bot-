@@ -6,7 +6,7 @@ import clsx from 'clsx';
 import { getEntityVacancies } from '@/services/api';
 import type { VacancyApplication } from '@/types';
 import { APPLICATION_STAGE_LABELS, APPLICATION_STAGE_COLORS } from '@/types';
-import { ListSkeleton, EmptyState, NoEntityVacanciesEmpty } from '@/components/ui';
+import { ListSkeleton, EmptyState, EmptyEntityVacancies } from '@/components/ui';
 
 interface EntityVacanciesProps {
   entityId: number;
@@ -66,7 +66,7 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
   }
 
   if (applications.length === 0) {
-    return <NoEntityVacanciesEmpty />;
+    return <EmptyEntityVacancies />;
   }
 
   return (

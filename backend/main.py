@@ -13,7 +13,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
-from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser
+from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser, search, scoring, currency
 from api.config import settings
 
 # Configure logging - show important messages
@@ -807,6 +807,30 @@ try:
     logger.info("Parser router registered successfully at /api/parser")
 except Exception as e:
     logger.error(f"FAILED to register parser router: {e}")
+    raise
+
+logger.info("=== REGISTERING SEARCH ROUTER ===")
+try:
+    app.include_router(search.router, prefix="/api/search", tags=["search"])
+    logger.info("Search router registered successfully at /api/search")
+except Exception as e:
+    logger.error(f"FAILED to register search router: {e}")
+    raise
+
+logger.info("=== REGISTERING SCORING ROUTER ===")
+try:
+    app.include_router(scoring.router, prefix="/api/scoring", tags=["scoring"])
+    logger.info("Scoring router registered successfully at /api/scoring")
+except Exception as e:
+    logger.error(f"FAILED to register scoring router: {e}")
+    raise
+
+logger.info("=== REGISTERING CURRENCY ROUTER ===")
+try:
+    app.include_router(currency.router, prefix="/api/currency", tags=["currency"])
+    logger.info("Currency router registered successfully at /api/currency")
+except Exception as e:
+    logger.error(f"FAILED to register currency router: {e}")
     raise
 
 

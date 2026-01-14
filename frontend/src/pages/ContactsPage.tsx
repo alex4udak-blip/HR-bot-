@@ -678,6 +678,7 @@ export default function ContactsPage() {
               <div className="flex gap-2">
                 <button
                   onClick={() => setShowAIPanel(!showAIPanel)}
+                  data-tour="ai-button"
                   className={clsx(
                     'p-2 sm:px-3 sm:py-2 rounded-lg flex items-center gap-2 transition-colors',
                     showAIPanel

@@ -15,6 +15,7 @@ import {
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { getEntityFiles, uploadEntityFile, deleteEntityFile, downloadEntityFile } from '@/services/api';
+import { EmptyFiles } from '@/components/ui';
 import type { EntityFile } from '@/services/api';
 
 interface EntityFilesProps {
@@ -354,10 +355,7 @@ export default function EntityFiles({ entityId, canEdit = true }: EntityFilesPro
 
       {/* Files List */}
       {files.length === 0 ? (
-        <div className="text-center py-8 text-white/40">
-          <FolderOpen className="mx-auto mb-2" size={40} />
-          <p>Нет загруженных файлов</p>
-        </div>
+        canEdit ? null : <EmptyFiles />
       ) : (
         <div className="space-y-2">
           {files.map((file) => {

@@ -1016,6 +1016,55 @@ export const unlinkChatFromEntity = async (entityId: number, chatId: number): Pr
   await debouncedMutation<void>('delete', `/entities/${entityId}/unlink-chat/${chatId}`);
 };
 
+// === RED FLAGS ANALYSIS ===
+
+export interface RedFlag {
+  type: string;
+  type_label: string;
+  severity: 'low' | 'medium' | 'high';
+  description: string;
+  suggestion: string;
+  evidence?: string;
+}
+
+export interface RedFlagsAnalysis {
+  flags: RedFlag[];
+  risk_score: number;
+  summary: string;
+  flags_count: number;
+  high_severity_count: number;
+  medium_severity_count: number;
+  low_severity_count: number;
+}
+
+export interface RiskScoreResponse {
+  entity_id: number;
+  risk_score: number;
+  risk_level: 'low' | 'medium' | 'high';
+}
+
+/**
+ * Get full red flags analysis for an entity.
+ * Includes AI analysis of communications.
+ */
+export const getEntityRedFlags = async (
+  entityId: number,
+  vacancyId?: number
+): Promise<RedFlagsAnalysis> => {
+  const params = vacancyId ? { vacancy_id: vacancyId } : undefined;
+  const { data } = await deduplicatedGet<RedFlagsAnalysis>(`/entities/${entityId}/red-flags`, { params });
+  return data;
+};
+
+/**
+ * Get quick risk score for an entity (0-100).
+ * Fast calculation without AI analysis.
+ */
+export const getEntityRiskScore = async (entityId: number): Promise<RiskScoreResponse> => {
+  const { data } = await deduplicatedGet<RiskScoreResponse>(`/entities/${entityId}/risk-score`);
+  return data;
+};
+
 export const getEntityStatsByType = async (): Promise<Record<string, number>> => {
   const { data } = await deduplicatedGet<Record<string, number>>('/entities/stats/by-type');
   return data;
@@ -1024,6 +1073,68 @@ export const getEntityStatsByType = async (): Promise<Record<string, number>> =>
 export const getEntityStatsByStatus = async (type?: EntityType): Promise<Record<string, number>> => {
   const params = type ? { type } : undefined;
   const { data } = await deduplicatedGet<Record<string, number>>('/entities/stats/by-status', { params });
+  return data;
+};
+
+// === SMART SEARCH ===
+
+export interface SmartSearchResult {
+  id: number;
+  type: EntityType;
+  name: string;
+  status: EntityStatus;
+  phone?: string;
+  email?: string;
+  company?: string;
+  position?: string;
+  tags: string[];
+  extra_data: Record<string, unknown>;
+  department_id?: number;
+  department_name?: string;
+  created_at: string;
+  updated_at: string;
+  relevance_score: number;
+  expected_salary_min?: number;
+  expected_salary_max?: number;
+  expected_salary_currency?: string;
+  ai_summary?: string;
+}
+
+export interface SmartSearchResponse {
+  results: SmartSearchResult[];
+  total: number;
+  parsed_query: Record<string, unknown>;
+  offset: number;
+  limit: number;
+}
+
+export interface SmartSearchParams {
+  query: string;
+  type?: EntityType;
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * Smart search for entities with AI-powered natural language understanding.
+ *
+ * Examples:
+ * - "Python developers with 3+ years experience"
+ * - "Frontend React salary up to 200000"
+ * - "Moscow Java senior"
+ *
+ * @param params Search parameters including query string and optional filters
+ * @returns Search results with relevance scores and parsed query info
+ */
+export const smartSearch = async (params: SmartSearchParams): Promise<SmartSearchResponse> => {
+  const searchParams: Record<string, string> = {
+    query: params.query,
+  };
+  if (params.type) searchParams.type = params.type;
+  if (params.limit !== undefined) searchParams.limit = String(params.limit);
+  if (params.offset !== undefined) searchParams.offset = String(params.offset);
+
+  const { data } = await deduplicatedGet<SmartSearchResponse>('/entities/search', { params: searchParams });
   return data;
 };
 
@@ -1054,6 +1165,120 @@ export const downloadEntityReport = async (entityId: number, reportType: string,
   }
 
   return response.blob();
+};
+
+// === SIMILAR CANDIDATES & DUPLICATES ===
+
+export interface SimilarCandidateResult {
+  entity_id: number;
+  entity_name: string;
+  similarity_score: number;
+  common_skills: string[];
+  similar_experience: boolean;
+  similar_salary: boolean;
+  similar_location: boolean;
+  match_reasons: string[];
+}
+
+export interface DuplicateCandidateResult {
+  entity_id: number;
+  entity_name: string;
+  confidence: number;
+  match_reasons: string[];
+  matched_fields: Record<string, string[]>;
+}
+
+export interface MergeEntitiesResponse {
+  success: boolean;
+  message: string;
+  merged_entity_id: number;
+  deleted_entity_id: number;
+}
+
+/**
+ * Get similar candidates for an entity.
+ *
+ * Searches by:
+ * - Skills (50% weight)
+ * - Work experience (20% weight)
+ * - Salary expectations (15% weight)
+ * - Location (15% weight)
+ *
+ * @param entityId ID of the source candidate
+ * @param limit Maximum number of results (1-50)
+ * @returns List of similar candidates sorted by similarity_score descending
+ */
+export const getSimilarCandidates = async (
+  entityId: number,
+  limit: number = 10
+): Promise<SimilarCandidateResult[]> => {
+  const { data } = await deduplicatedGet<SimilarCandidateResult[]>(
+    `/entities/${entityId}/similar`,
+    { params: { limit: String(limit) } }
+  );
+  return data;
+};
+
+/**
+ * Get possible duplicates for an entity.
+ *
+ * Checks:
+ * - Name (with transliteration support Rus<->Eng)
+ * - Email
+ * - Phone
+ * - Skills + company combination
+ *
+ * @param entityId ID of the entity to check
+ * @returns List of possible duplicates with confidence scores
+ */
+export const getDuplicateCandidates = async (
+  entityId: number
+): Promise<DuplicateCandidateResult[]> => {
+  const { data } = await deduplicatedGet<DuplicateCandidateResult[]>(
+    `/entities/${entityId}/duplicates`
+  );
+  return data;
+};
+
+/**
+ * Merge two entities (duplicates).
+ *
+ * The target entity remains, source entity is deleted.
+ * All related data (chats, calls, analyses) is transferred to target.
+ *
+ * @param targetEntityId ID of entity to keep
+ * @param sourceEntityId ID of entity to merge and delete
+ * @param keepSourceData If true, source data has priority on conflicts
+ * @returns Merge operation result
+ */
+export const mergeEntities = async (
+  targetEntityId: number,
+  sourceEntityId: number,
+  keepSourceData: boolean = false
+): Promise<MergeEntitiesResponse> => {
+  const { data } = await debouncedMutation<MergeEntitiesResponse>(
+    'post',
+    `/entities/${targetEntityId}/merge`,
+    { source_entity_id: sourceEntityId, keep_source_data: keepSourceData }
+  );
+  return data;
+};
+
+/**
+ * Compare two candidates.
+ *
+ * @param entityId ID of first candidate
+ * @param otherEntityId ID of second candidate
+ * @returns Comparison result with similarity score
+ */
+export const compareCandidates = async (
+  entityId: number,
+  otherEntityId: number
+): Promise<SimilarCandidateResult> => {
+  const { data } = await deduplicatedGet<SimilarCandidateResult>(
+    `/entities/${entityId}/compare/${otherEntityId}`
+  );
+  return data;
 };
 
 // === CALLS ===
@@ -1932,6 +2157,91 @@ export const applyEntityToVacancy = async (
   return data;
 };
 
+// === Vacancy Recommendations ===
+
+import type { VacancyRecommendation, CandidateMatch, NotifyCandidatesResponse } from '@/types';
+
+export const getRecommendedVacancies = async (
+  entityId: number,
+  limit: number = 5
+): Promise<VacancyRecommendation[]> => {
+  const { data } = await deduplicatedGet<VacancyRecommendation[]>(
+    `/entities/${entityId}/recommended-vacancies`,
+    { params: { limit } }
+  );
+  return data;
+};
+
+export const autoApplyToVacancy = async (
+  entityId: number,
+  vacancyId: number
+): Promise<{ id: number; vacancy_id: number; entity_id: number; stage: string; message: string }> => {
+  const { data } = await debouncedMutation<{ id: number; vacancy_id: number; entity_id: number; stage: string; message: string }>('post', `/entities/${entityId}/auto-apply/${vacancyId}`);
+  return data;
+};
+
+export const getMatchingCandidates = async (
+  vacancyId: number,
+  options?: { limit?: number; minScore?: number; excludeApplied?: boolean }
+): Promise<CandidateMatch[]> => {
+  const params: Record<string, string | number | boolean> = {};
+  if (options?.limit) params.limit = options.limit;
+  if (options?.minScore !== undefined) params.min_score = options.minScore;
+  if (options?.excludeApplied !== undefined) params.exclude_applied = options.excludeApplied;
+
+  const { data } = await deduplicatedGet<CandidateMatch[]>(
+    `/vacancies/${vacancyId}/matching-candidates`,
+    { params }
+  );
+  return data;
+};
+
+export const notifyMatchingCandidates = async (
+  vacancyId: number,
+  options?: { minScore?: number; limit?: number }
+): Promise<NotifyCandidatesResponse> => {
+  const params: Record<string, string | number> = {};
+  if (options?.minScore !== undefined) params.min_score = options.minScore;
+  if (options?.limit) params.limit = options.limit;
+
+  const { data } = await debouncedMutation<NotifyCandidatesResponse>(
+    'post',
+    `/vacancies/${vacancyId}/notify-candidates`,
+    undefined,
+    { params }
+  );
+  return data;
+};
+
+interface InviteCandidateResponse {
+  id: number;
+  vacancy_id: number;
+  vacancy_title: string;
+  entity_id: number;
+  entity_name: string;
+  stage: string;
+  message: string;
+}
+
+export const inviteCandidateToVacancy = async (
+  vacancyId: number,
+  entityId: number,
+  stage?: string,
+  notes?: string
+): Promise<InviteCandidateResponse> => {
+  const params: Record<string, string> = {};
+  if (stage) params.stage = stage;
+  if (notes) params.notes = notes;
+
+  const { data } = await debouncedMutation<InviteCandidateResponse>(
+    'post',
+    `/vacancies/${vacancyId}/invite-candidate/${entityId}`,
+    undefined,
+    { params }
+  );
+  return data;
+};
+
 // Entity files
 export interface EntityFile {
   id: number;
@@ -1984,6 +2294,125 @@ export const downloadEntityFile = async (entityId: number, fileId: number): Prom
   return response.blob();
 };
 
+// === AI SCORING API ===
+
+import type {
+  CalculateScoreRequest,
+  CalculateScoreResponse,
+  EntityScoreResult,
+  BestMatchesRequest,
+  BestMatchesResponse,
+  MatchingVacanciesRequest,
+  MatchingVacanciesResponse
+} from '@/types';
+
+/**
+ * Calculate AI compatibility score between a candidate and vacancy.
+ * @param request - Entity ID and Vacancy ID
+ * @returns Detailed compatibility score
+ */
+export const calculateCompatibilityScore = async (
+  request: CalculateScoreRequest
+): Promise<CalculateScoreResponse> => {
+  const { data } = await debouncedMutation<CalculateScoreResponse>(
+    'post',
+    '/scoring/calculate',
+    request
+  );
+  return data;
+};
+
+/**
+ * Find best matching candidates for a vacancy.
+ * @param vacancyId - Vacancy ID
+ * @param request - Limit and filter options
+ * @returns List of top matching candidates with scores
+ */
+export const findBestMatchesForVacancy = async (
+  vacancyId: number,
+  request: BestMatchesRequest = {}
+): Promise<BestMatchesResponse> => {
+  const { data } = await debouncedMutation<BestMatchesResponse>(
+    'post',
+    `/scoring/vacancy/${vacancyId}/matches`,
+    request
+  );
+  return data;
+};
+
+/**
+ * Find matching vacancies for a candidate.
+ * @param entityId - Entity (candidate) ID
+ * @param request - Limit and filter options
+ * @returns List of matching vacancies with scores
+ */
+export const findMatchingVacanciesForEntity = async (
+  entityId: number,
+  request: MatchingVacanciesRequest = {}
+): Promise<MatchingVacanciesResponse> => {
+  const { data } = await debouncedMutation<MatchingVacanciesResponse>(
+    'post',
+    `/scoring/entity/${entityId}/vacancies`,
+    request
+  );
+  return data;
+};
+
+/**
+ * Get compatibility score for an application.
+ * @param applicationId - Application ID
+ * @param recalculate - Force recalculation
+ * @returns Compatibility score
+ */
+export const getApplicationScore = async (
+  applicationId: number,
+  recalculate: boolean = false
+): Promise<CalculateScoreResponse> => {
+  const { data } = await deduplicatedGet<CalculateScoreResponse>(
+    `/scoring/application/${applicationId}`,
+    { params: { recalculate } }
+  );
+  return data;
+};
+
+/**
+ * Recalculate compatibility score for an application.
+ * @param applicationId - Application ID
+ * @returns Updated compatibility score
+ */
+export const recalculateApplicationScore = async (
+  applicationId: number
+): Promise<CalculateScoreResponse> => {
+  const { data } = await debouncedMutation<CalculateScoreResponse>(
+    'post',
+    `/scoring/application/${applicationId}/recalculate`,
+    {}
+  );
+  return data;
+};
+
+/**
+ * Bulk calculate compatibility scores for multiple candidates against a vacancy.
+ * @param vacancyId - Vacancy ID
+ * @param entityIds - List of entity IDs to score
+ * @returns List of entity scores
+ */
+export const bulkCalculateScores = async (
+  vacancyId: number,
+  entityIds: number[]
+): Promise<EntityScoreResult[]> => {
+  const params = new URLSearchParams();
+  params.append('vacancy_id', String(vacancyId));
+  entityIds.forEach(id => params.append('entity_ids', String(id)));
+
+  const { data } = await debouncedMutation<EntityScoreResult[]>(
+    'post',
+    `/scoring/bulk?${params.toString()}`,
+    {}
+  );
+  return data;
+};
+
 // === PARSER API ===
 
 export interface ParsedResume {
@@ -2034,6 +2463,30 @@ export const parseResumeFromFile = async (file: File): Promise<ParsedResume> => 
 
 export const parseVacancyFromUrl = async (url: string): Promise<ParsedVacancy> => {
   const { data } = await debouncedMutation<ParsedVacancy>('post', '/parser/vacancy/url', { url });
+  return data;
+};
+
+/**
+ * Response from creating entity from resume
+ */
+export interface CreateEntityFromResumeResponse {
+  entity_id: number;
+  parsed_data: ParsedResume;
+  message: string;
+}
+
+/**
+ * Create a new candidate entity from uploaded resume file.
+ * This will parse the resume and create an entity in one step.
+ * @param file - Resume file (PDF, DOC, DOCX)
+ * @returns Created entity ID and parsed data
+ */
+export const createEntityFromResume = async (file: File): Promise<CreateEntityFromResumeResponse> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await api.post('/parser/resume/create-entity', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
   return data;
 };
 
@@ -2111,6 +2564,60 @@ export const getFeatureAuditLogs = async (params?: {
   offset?: number;
 }): Promise<FeatureAuditLog[]> => {
   const { data } = await deduplicatedGet<FeatureAuditLog[]>('/admin/features/audit-logs', { params });
+  return data;
+};
+
+// === GLOBAL SEARCH (Command Palette) ===
+
+export interface GlobalSearchCandidate {
+  id: number;
+  name: string;
+  email?: string;
+  phone?: string;
+  position?: string;
+  company?: string;
+  status: string;
+  relevance_score: number;
+}
+
+export interface GlobalSearchVacancy {
+  id: number;
+  title: string;
+  status: string;
+  location?: string;
+  department_name?: string;
+  relevance_score: number;
+}
+
+export interface GlobalSearchResult {
+  type: 'candidate' | 'vacancy';
+  id: number;
+  title: string;
+  subtitle?: string;
+  relevance_score: number;
+}
+
+export interface GlobalSearchResponse {
+  candidates: GlobalSearchCandidate[];
+  vacancies: GlobalSearchVacancy[];
+  total: number;
+}
+
+/**
+ * Global search for Command Palette.
+ * Searches across candidates and vacancies.
+ *
+ * @param query - Search query string
+ * @param limit - Maximum number of results per category (default: 5)
+ * @returns Search results grouped by type
+ */
+export const globalSearch = async (
+  query: string,
+  limit: number = 5
+): Promise<GlobalSearchResponse> => {
+  const { data } = await deduplicatedGet<GlobalSearchResponse>('/search/global', {
+    params: { query, limit: String(limit) }
+  });
   return data;
 };
 

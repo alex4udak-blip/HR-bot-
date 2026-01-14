@@ -763,6 +763,10 @@ class VacancyApplication(Base):
     source = Column(String(100), nullable=True)  # How candidate was sourced (linkedin, referral, etc)
     # Interview scheduling
     next_interview_at = Column(DateTime, nullable=True)
+    # AI Compatibility Score (cached from AI scoring service)
+    # Format: {overall_score, skills_match, experience_match, salary_match, culture_fit,
+    #          strengths: [], weaknesses: [], recommendation, summary, key_factors: []}
+    compatibility_score = Column(JSON, nullable=True)
     # Timestamps for analytics
     applied_at = Column(DateTime, default=func.now())
     last_stage_change_at = Column(DateTime, default=func.now())
