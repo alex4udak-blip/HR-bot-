@@ -7,6 +7,74 @@ echo "Current directory: $(pwd)"
 echo "Python version: $(python --version)"
 
 echo ""
+echo "=== Pre-migration: Adding enum values (requires separate transaction) ==="
+# PostgreSQL ALTER TYPE ADD VALUE cannot run inside a transaction
+# So we MUST do this BEFORE alembic starts its transaction
+timeout 30 python -c "
+import os
+import sys
+
+# Try psycopg2 for enum changes (requires autocommit)
+try:
+    import psycopg2
+except ImportError:
+    print('psycopg2 not available, skipping enum additions')
+    sys.exit(0)
+
+db_url = os.environ.get('DATABASE_URL', '')
+if not db_url:
+    print('No DATABASE_URL, skipping enum additions')
+    sys.exit(0)
+
+# Convert URL format for psycopg2
+if db_url.startswith('postgresql+asyncpg://'):
+    db_url = db_url.replace('postgresql+asyncpg://', 'postgresql://')
+elif db_url.startswith('postgres://'):
+    db_url = db_url.replace('postgres://', 'postgresql://')
+
+conn = None
+try:
+    print('Connecting to database for enum updates...')
+    conn = psycopg2.connect(db_url, connect_timeout=10)
+    conn.autocommit = True  # CRITICAL: enum changes require autocommit
+    cursor = conn.cursor()
+    cursor.execute('SET statement_timeout = 5000')  # 5 second timeout
+
+    # Check if callsource enum exists
+    cursor.execute(\"\"\"
+        SELECT 1 FROM pg_type WHERE typname = 'callsource'
+    \"\"\")
+    if cursor.fetchone():
+        # Get existing values
+        cursor.execute(\"\"\"
+            SELECT e.enumlabel FROM pg_enum e
+            JOIN pg_type t ON e.enumtypid = t.oid
+            WHERE t.typname = 'callsource'
+        \"\"\")
+        existing = {row[0] for row in cursor.fetchall()}
+
+        # Add missing values
+        for value in ['google_doc', 'google_drive', 'direct_url', 'fireflies']:
+            if value not in existing:
+                try:
+                    cursor.execute(f\"ALTER TYPE callsource ADD VALUE '{value}'\")
+                    print(f'Added enum value: {value}')
+                except Exception as e:
+                    print(f'Could not add {value}: {e}')
+            else:
+                print(f'Enum value exists: {value}')
+    else:
+        print('callsource enum does not exist yet (will be created by migration)')
+
+    print('Enum pre-migration complete!')
+except Exception as e:
+    print(f'Enum pre-migration error (non-critical): {e}')
+finally:
+    if conn:
+        conn.close()
+" && echo "Enum additions done" || echo "Enum additions skipped (non-critical)"
+
+echo ""
 echo "=== Running database migrations ==="
 
 # First, fix any multiple heads in alembic_version table
@@ -36,10 +104,10 @@ async def fix_alembic_version():
 
         if len(versions) > 1:
             print(f'Found multiple heads: {versions}')
-            print('Consolidating to single head: add_feature_audit_logs')
+            print('Consolidating to single head: add_compatibility_score')
             # Delete all and insert the correct one
             await conn.execute(text('DELETE FROM alembic_version'))
-            await conn.execute(text(\"INSERT INTO alembic_version (version_num) VALUES ('add_feature_audit_logs')\"))
+            await conn.execute(text(\"INSERT INTO alembic_version (version_num) VALUES ('add_compatibility_score')\"))
             print('Fixed: now single head')
         elif len(versions) == 1:
             print(f'Single head found: {versions[0]}')
@@ -56,10 +124,10 @@ echo "Checking current alembic version..."
 python -m alembic current || echo "No current version (fresh database)"
 
 echo ""
-echo "Upgrading to latest migration (add_feature_audit_logs)..."
+echo "Upgrading to latest migration (add_compatibility_score)..."
 # Use timeout to prevent migration from blocking forever (max 120 seconds)
 # First try specific target, then heads if that fails
-timeout 120 python -m alembic upgrade add_feature_audit_logs 2>&1 && echo "Migration successful" || {
+timeout 120 python -m alembic upgrade add_compatibility_score 2>&1 && echo "Migration successful" || {
     ALEMBIC_EXIT=$?
     if [ $ALEMBIC_EXIT -eq 124 ]; then
         echo "WARNING: Migration timed out after 120 seconds!"
