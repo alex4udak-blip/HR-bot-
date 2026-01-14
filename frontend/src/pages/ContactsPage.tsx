@@ -610,9 +610,19 @@ export default function ContactsPage() {
                       {/* Compact/Very compact mode: show minimal info */}
                       {isCompact ? (
                         <div className={clsx(
-                          'flex items-center mt-0.5 text-white/40',
+                          'flex items-center flex-wrap mt-0.5 text-white/40',
                           isVeryCompact ? 'gap-1.5 text-[10px]' : 'gap-2 text-xs'
                         )}>
+                          {/* Owner info - show in compact mode too */}
+                          {!entity.is_mine && entity.owner_name && !entity.is_transferred && (
+                            <span className={clsx(
+                              'flex items-center gap-0.5',
+                              entity.is_shared ? 'text-purple-400' : 'text-blue-400'
+                            )}>
+                              <User size={isVeryCompact ? 8 : 10} />
+                              <span className="truncate max-w-[60px]">{entity.owner_name}</span>
+                            </span>
+                          )}
                           {entity.chats_count !== undefined && entity.chats_count > 0 && (
                             <span className="flex items-center gap-0.5">
                               <MessageSquare size={isVeryCompact ? 8 : 10} />
