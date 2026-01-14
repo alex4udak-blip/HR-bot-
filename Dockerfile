@@ -14,15 +14,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies (ffmpeg for audio, libreoffice for documents)
+# Install system dependencies (ffmpeg for audio processing)
+# Note: LibreOffice removed temporarily due to Railway build issues
 # Use DEBIAN_FRONTEND=noninteractive to avoid interactive prompts
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ffmpeg \
-    libreoffice-common \
-    libreoffice-writer \
-    libreoffice-calc \
-    libreoffice-impress \
     unrar-free \
     libheif-dev \
     # Playwright dependencies
