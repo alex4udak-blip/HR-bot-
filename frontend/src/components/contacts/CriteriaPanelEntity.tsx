@@ -131,9 +131,7 @@ export default function CriteriaPanelEntity({ entityId }: CriteriaPanelEntityPro
         name: templateName.trim(),
         criteria: criteria,
         category: 'custom',
-        chat_type: null,
         is_global: false,
-        is_default: false,
       });
       queryClient.invalidateQueries({ queryKey: ['criteria-presets'] });
       toast.success('Шаблон сохранён');
