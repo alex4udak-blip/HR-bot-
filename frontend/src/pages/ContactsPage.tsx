@@ -322,10 +322,10 @@ export default function ContactsPage() {
   };
 
   // Calculate layout mode based on AI panel state
-  // When AI panel is open on xl+ screens, we need to manage space better
+  // When AI panel is open on xl+ screens, we use a 3-column grid layout
   const layoutMode = currentEntity
     ? showAIPanel
-      ? 'ai-open' // content + AI panel (sidebar hidden on xl, overlay on smaller)
+      ? 'ai-open' // sidebar (narrow) + content + AI panel
       : 'detail' // sidebar + content
     : 'list'; // full width list
 
@@ -333,21 +333,22 @@ export default function ContactsPage() {
     <div
       className={clsx(
         'h-full',
-        // Use CSS Grid for precise layout control
-        layoutMode === 'ai-open' && 'xl:grid xl:grid-cols-[1fr_480px]',
+        // Use CSS Grid for 3-column layout when AI panel is open
+        // Sidebar 240px + Main content flex + AI panel 480px
+        layoutMode === 'ai-open' && 'xl:grid xl:grid-cols-[240px_1fr_480px]',
         layoutMode === 'detail' && 'flex',
         layoutMode === 'list' && 'flex'
       )}
     >
       {/* Sidebar - Entity List */}
-      {/* Hide sidebar when AI panel is open on xl+ to give more space to main content */}
+      {/* Keep sidebar visible but narrower when AI panel is open */}
       <motion.div
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         className={clsx(
           'border-r border-white/5 flex flex-col bg-black/20 transition-all duration-200',
           layoutMode === 'ai-open'
-            ? 'hidden' // Hide sidebar when AI panel is open
+            ? 'hidden xl:flex xl:w-[240px] flex-shrink-0' // Narrower sidebar on xl+, hidden on smaller screens
             : layoutMode === 'detail'
               ? 'w-80 flex-shrink-0'
               : 'w-full max-w-2xl'
@@ -681,11 +682,12 @@ export default function ContactsPage() {
             exit={{ opacity: 0, x: 20 }}
             className={clsx(
               'flex flex-col overflow-hidden',
-              // When AI panel is open, this is the first grid column (1fr = takes remaining space)
-              // When AI panel is closed, use flex-1 to fill available space
+              // In grid mode (ai-open): middle column takes 1fr (flexible space)
+              // In flex mode: use flex-1 to fill available space
+              // min-w-0 allows content to shrink below its natural size for proper truncation
               layoutMode === 'ai-open'
-                ? 'min-w-0' // Allow shrinking in grid, no flex needed
-                : 'flex-1 min-w-0' // Flex layout with min-w-0 to allow truncation
+                ? 'min-w-0 overflow-x-hidden' // Grid column, allow shrinking
+                : 'flex-1 min-w-0' // Flex layout
             )}
           >
             {/* Header */}
@@ -769,7 +771,7 @@ export default function ContactsPage() {
       </AnimatePresence>
 
       {/* AI Panel - Right Column */}
-      {/* On xl+ screens: fixed 480px width as second grid column */}
+      {/* On xl+ screens: fixed 480px width as third grid column */}
       {/* On smaller screens: uses mobile overlay below */}
       <AnimatePresence>
         {currentEntity && showAIPanel && (
@@ -778,7 +780,7 @@ export default function ContactsPage() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="hidden xl:flex flex-col border-l border-white/5 glass overflow-hidden w-[480px]"
+            className="hidden xl:flex flex-col border-l border-white/5 glass overflow-hidden"
           >
             <div className="p-4 border-b border-white/5 flex items-center justify-between flex-shrink-0">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">
