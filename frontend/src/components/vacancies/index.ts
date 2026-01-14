@@ -5,3 +5,4 @@ export { default as VacancyDetail } from './VacancyDetail';
 export { default as KanbanBoard } from './KanbanBoard';
 export { default as AddCandidateModal } from './AddCandidateModal';
 export { default as ApplicationDetailModal } from './ApplicationDetailModal';
+export { default as CandidatesDatabase } from './CandidatesDatabase';
