@@ -151,12 +151,8 @@ export default function CandidatesPage() {
     }
   }, [selectedVacancyId, fetchKanbanBoard]);
 
-  // Select first vacancy if none selected
-  useEffect(() => {
-    if (!selectedVacancyId && openVacancies.length > 0) {
-      setSelectedVacancyId(openVacancies[0].id);
-    }
-  }, [selectedVacancyId, openVacancies]);
+  // NOTE: We no longer auto-select first vacancy
+  // The "База кандидатов" view is shown by default when selectedVacancyId is null
 
   // Drag handlers
   const handleDragStart = (app: VacancyApplication) => {
@@ -576,6 +572,30 @@ export default function CandidatesPage() {
 
             {/* Vacancies List */}
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {/* All Candidates Database Card - Always on top */}
+              <button
+                onClick={() => setSelectedVacancyId(null)}
+                className={clsx(
+                  'w-full text-left p-3 rounded-lg border transition-all duration-200',
+                  selectedVacancyId === null
+                    ? 'bg-purple-500/20 border-purple-500/50'
+                    : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-purple-400" />
+                  <div className="flex-1 min-w-0">
+                    <h4 className={clsx('font-medium text-sm', selectedVacancyId === null && 'text-purple-300')}>
+                      База кандидатов
+                    </h4>
+                    <p className="text-xs text-white/40">Все кандидаты без привязки к вакансии</p>
+                  </div>
+                </div>
+              </button>
+
+              {/* Divider */}
+              <div className="border-t border-white/10 my-2" />
+
               {vacanciesLoading && vacancies.length === 0 ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map(i => (
@@ -603,6 +623,22 @@ export default function CandidatesPage() {
         {/* Collapsed state icons */}
         {sidebarCollapsed && (
           <div className="flex-1 flex flex-col items-center py-3 space-y-2">
+            {/* All Candidates Database Icon */}
+            <button
+              onClick={() => setSelectedVacancyId(null)}
+              className={clsx(
+                'w-10 h-10 rounded-lg flex items-center justify-center transition-colors',
+                selectedVacancyId === null
+                  ? 'bg-purple-500/20 text-purple-300'
+                  : 'bg-white/5 hover:bg-white/10 text-white/60'
+              )}
+              title="База кандидатов"
+            >
+              <Users className="w-5 h-5" />
+            </button>
+
+            <div className="w-6 border-t border-white/10" />
+
             <button
               onClick={() => setShowCreateVacancyModal(true)}
               className="p-2 hover:bg-white/5 rounded-lg transition-colors"
