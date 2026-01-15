@@ -275,7 +275,8 @@ class DocumentParser:
                     content=text,
                     status="parsed" if text.strip() else "partial"
                 )
-            except:
+            except (UnicodeDecodeError, Exception) as e:
+                logger.warning(f"RTF decode failed with {encoding}: {e}")
                 continue
 
         return DocumentParseResult(
@@ -291,10 +292,12 @@ class DocumentParser:
 
         try:
             text = file_bytes.decode(encoding)
-        except:
+        except UnicodeDecodeError as e:
+            logger.warning(f"Text decode failed with {encoding}: {e}, falling back to utf-8")
             try:
                 text = file_bytes.decode('utf-8', errors='ignore')
-            except:
+            except UnicodeDecodeError as e2:
+                logger.warning(f"Text decode failed with utf-8: {e2}, falling back to cp1251")
                 text = file_bytes.decode('cp1251', errors='ignore')
 
         return DocumentParseResult(
@@ -669,7 +672,8 @@ class DocumentParser:
                         if result.content:
                             all_content.append(f"=== {name} ===\n{result.content}")
                             extracted_files.append({"name": name, "status": result.status})
-                    except:
+                    except Exception as e:
+                        logger.warning(f"7z file extraction failed for {name}: {e}")
                         extracted_files.append({"name": name, "status": "failed"})
 
             return DocumentParseResult(
@@ -695,7 +699,8 @@ class DocumentParser:
                 status="parsed",
                 metadata={"json_type": type(data).__name__}
             )
-        except:
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON parsing failed: {e}")
             return DocumentParseResult(
                 content=text_result.content,
                 status="partial",
@@ -713,7 +718,8 @@ class DocumentParser:
                 content=text,
                 status="parsed"
             )
-        except:
+        except Exception as e:
+            logger.warning(f"XML parsing failed: {e}")
             return DocumentParseResult(
                 content=text_result.content,
                 status="partial"

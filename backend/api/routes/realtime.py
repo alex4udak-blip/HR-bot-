@@ -318,8 +318,9 @@ async def websocket_endpoint(
                             "type": "ping",
                             "timestamp": datetime.utcnow().isoformat() + "Z"
                         }))
-                    except:
+                    except Exception as e:
                         # Connection lost
+                        logger.warning(f"WebSocket ping failed for user {user.id}: {e}")
                         break
 
         except WebSocketDisconnect:
@@ -335,8 +336,8 @@ async def websocket_endpoint(
         # Close database session
         try:
             await db_gen.aclose()
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Error closing database session: {e}")
 
 
 # ============================================================================
