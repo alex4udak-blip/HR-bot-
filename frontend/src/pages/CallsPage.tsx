@@ -174,7 +174,7 @@ export default function CallsPage() {
   };
 
   return (
-    <div className="h-full flex">
+    <div className="h-full w-full max-w-full flex overflow-hidden">
       {/* Sidebar - Call List */}
       <motion.div
         initial={{ opacity: 0, x: -20 }}

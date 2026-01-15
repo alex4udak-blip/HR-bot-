@@ -25,8 +25,8 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
-import type { EntityWithRelations, Chat, CallRecording } from '@/types';
-import { EmptyChats, EmptyCalls, EmptyHistory } from '@/components/ui';
+import type { EntityWithRelations, Chat, CallRecording, VacancyApplication } from '@/types';
+import { EmptyChats, EmptyCalls } from '@/components/ui';
 import { STATUS_LABELS, STATUS_COLORS, CALL_STATUS_LABELS, CALL_STATUS_COLORS, formatSalary } from '@/types';
 import EntityAI from './EntityAI';
 import CriteriaPanelEntity from './CriteriaPanelEntity';
@@ -37,6 +37,7 @@ import EntityFiles from '../entities/EntityFiles';
 import RedFlagsPanel from '../entities/RedFlagsPanel';
 import SimilarCandidates from '../entities/SimilarCandidates';
 import DuplicateWarning from '../entities/DuplicateWarning';
+import InteractionTimeline from '../entities/InteractionTimeline';
 import * as api from '@/services/api';
 import { useEntityStore } from '@/stores/entityStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -61,6 +62,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
   const [loadingData, setLoadingData] = useState(false);
   const [downloadingReport, setDownloadingReport] = useState<string | null>(null);
   const [vacanciesKey, setVacanciesKey] = useState(0); // Key to force reload vacancies
+  const [entityApplications, setEntityApplications] = useState<VacancyApplication[]>([]);
   const { fetchEntity } = useEntityStore();
   const { canAccessFeature } = useCanAccessFeature();
   const { isAdmin, canEditResource, canAccessDepartment } = useAuthStore();
@@ -94,6 +96,19 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
       loadUnlinkedCalls();
     }
   }, [showLinkCallModal]);
+
+  // Load entity applications for timeline
+  useEffect(() => {
+    const loadApplications = async () => {
+      try {
+        const data = await api.getEntityVacancies(entity.id);
+        setEntityApplications(data);
+      } catch (e) {
+        console.error('Failed to load entity applications:', e);
+      }
+    };
+    loadApplications();
+  }, [entity.id, vacanciesKey]);
 
   const loadUnlinkedChats = async () => {
     setLoadingData(true);
@@ -644,11 +659,45 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
         )}
 
         {activeTab === 'history' && (
-          <div className="space-y-4">
+          <div className="space-y-6">
+            {/* Interaction Timeline */}
+            <div className="glass rounded-xl border border-white/10 p-4">
+              <InteractionTimeline
+                entityId={entity.id}
+                chats={entity.chats?.map(chat => ({
+                  id: chat.id,
+                  title: chat.title || 'Чат'
+                }))}
+                calls={entity.calls?.map(call => ({
+                  id: call.id,
+                  title: 'Звонок',
+                  duration_seconds: call.duration_seconds,
+                  created_at: call.created_at,
+                  summary: call.summary
+                }))}
+                files={entity.files?.map(file => ({
+                  id: file.id,
+                  file_name: file.file_name,
+                  file_type: file.file_type,
+                  created_at: file.created_at
+                }))}
+                applications={entityApplications?.map(app => ({
+                  id: app.id,
+                  vacancy_title: app.vacancy_title || 'Вакансия',
+                  stage: app.stage,
+                  applied_at: app.applied_at,
+                  updated_at: app.updated_at
+                }))}
+              />
+            </div>
+
             {/* Transfers */}
             {entity.transfers && entity.transfers.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium text-white/60 mb-2">Передачи</h4>
+              <div className="glass rounded-xl border border-white/10 p-4">
+                <h4 className="text-sm font-medium text-white/60 mb-3 flex items-center gap-2">
+                  <ArrowRightLeft size={16} className="text-purple-400" />
+                  Передачи между сотрудниками
+                </h4>
                 <div className="space-y-2">
                   {entity.transfers.map((transfer) => (
                     <div key={transfer.id} className="p-3 bg-white/5 rounded-lg flex items-start gap-3">
@@ -674,8 +723,11 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
             {/* Analyses */}
             {entity.analyses && entity.analyses.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium text-white/60 mb-2">Анализы</h4>
+              <div className="glass rounded-xl border border-white/10 p-4">
+                <h4 className="text-sm font-medium text-white/60 mb-3 flex items-center gap-2">
+                  <FileText size={16} className="text-cyan-400" />
+                  AI Анализы
+                </h4>
                 <div className="space-y-2">
                   {entity.analyses.map((analysis) => (
                     <div key={analysis.id} className="p-3 bg-white/5 rounded-lg flex items-start gap-3">
@@ -696,11 +748,6 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </div>
               </div>
             )}
-
-            {(!entity.transfers || entity.transfers.length === 0) &&
-              (!entity.analyses || entity.analyses.length === 0) && (
-                <EmptyHistory />
-              )}
           </div>
         )}
 

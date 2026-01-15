@@ -172,34 +172,120 @@ RESUME_PROMPT = """Ты - HR-эксперт. Извлеки ВСЮ информ�
 Текст для анализа:
 """
 
-VACANCY_PROMPT = """Извлеки информацию о вакансии. Верни ТОЛЬКО валидный JSON без markdown форматирования:
+VACANCY_PROMPT = """Ты - опытный HR-эксперт. Твоя задача - ТОЧНО и ПОЛНОСТЬЮ разделить информацию о вакансии по полям.
+
+ФОРМАТ ОТВЕТА (только JSON, без ```):
 {
-  "title": "Название вакансии",
-  "description": "Общее описание вакансии",
-  "requirements": "Требования к кандидату (образование, опыт, качества)",
-  "responsibilities": "Обязанности на должности",
-  "skills": ["Python", "FastAPI", "PostgreSQL"],
-  "salary_min": 200000,
-  "salary_max": 350000,
+  "title": "Название должности",
+  "description": "1-2 предложения о компании/позиции",
+  "requirements": "Все требования к кандидату (включая soft skills, образование, опыт)",
+  "responsibilities": "Все обязанности и задачи",
+  "skills": ["массив", "технических", "навыков"],
+  "salary_min": число_или_null,
+  "salary_max": число_или_null,
   "salary_currency": "RUB",
-  "location": "Москва",
+  "location": "Город",
   "employment_type": "full-time",
-  "experience_level": "senior",
+  "experience_level": "middle",
   "company_name": "Компания"
 }
 
-ВАЖНО:
-- skills - это список конкретных технологий и навыков (массив строк)
-- requirements - это общие требования (образование, опыт работы, soft skills) в виде текста
-- responsibilities - это обязанности и задачи на позиции
-- Не путай skills с requirements!
+=== КРИТИЧЕСКИ ВАЖНО: ПРАВИЛА РАСПРЕДЕЛЕНИЯ ===
 
-Если какое-то поле отсутствует в тексте, установи его в null (для skills - пустой массив []).
-Для employment_type используй: full-time, part-time, remote, hybrid.
-Для experience_level используй: intern, junior, middle, senior, lead.
-Для salary_min и salary_max укажи числа без валюты (только если указаны).
+1. **skills** (МАССИВ СТРОК) - ТОЛЬКО технологии и инструменты:
+   ✓ Языки программирования: Python, Java, JavaScript, TypeScript, Go, C++, PHP, Ruby, Kotlin, Swift
+   ✓ Фреймворки: React, Vue, Angular, Next.js, FastAPI, Django, Flask, Spring, Laravel, Rails
+   ✓ Базы данных: PostgreSQL, MySQL, MongoDB, Redis, Elasticsearch, ClickHouse, Cassandra
+   ✓ Инфраструктура: Docker, Kubernetes, AWS, GCP, Azure, Linux, Nginx, Terraform
+   ✓ Инструменты: Git, CI/CD, Jenkins, GitLab, Jira, Figma, Postman
+   ✓ Протоколы/паттерны: REST API, GraphQL, gRPC, Microservices, WebSocket, Kafka, RabbitMQ
+   ✗ НИКОГДА не включай сюда: "опыт работы", "образование", "коммуникабельность"
+
+2. **requirements** (ТЕКСТ, несколько предложений) - ВСЕ требования к человеку:
+   ✓ "Высшее техническое образование"
+   ✓ "Опыт работы от 3 лет в разработке"
+   ✓ "Английский язык B2+"
+   ✓ "Умение работать в команде"
+   ✓ "Опыт работы с высоконагруженными системами"
+   ✓ "Понимание принципов SOLID, DRY, KISS"
+   ✓ "Опыт написания unit-тестов"
+   СОБИРАЙ ВСЁ из секций "Требования", "Мы ожидаем", "Что нужно", "Requirements"
+
+3. **responsibilities** (ТЕКСТ, несколько предложений) - ВСЕ обязанности:
+   ✓ "Разработка и поддержка backend-сервисов"
+   ✓ "Проведение code review"
+   ✓ "Участие в планировании спринтов"
+   ✓ "Менторинг junior-разработчиков"
+   ✓ "Оптимизация производительности"
+   ✓ "Интеграция с внешними API"
+   ✓ "Написание технической документации"
+   СОБИРАЙ ВСЁ из секций "Обязанности", "Задачи", "Чем предстоит заниматься", "Responsibilities"
+
+4. **description** (ТЕКСТ, 1-3 предложения) - ТОЛЬКО краткое описание компании/вакансии:
+   ✓ "Крупная IT-компания ищет senior backend разработчика для развития e-commerce платформы."
+   ✓ "Стартап в сфере fintech приглашает разработчика для создания нового продукта."
+   ✗ НЕ ДУБЛИРУЙ сюда requirements и responsibilities!
+
+=== ПРИМЕРЫ ПРАВИЛЬНОГО РАЗБОРА ===
+
+ПРИМЕР 1:
+Вход: "IT-компания ищет Python-разработчика. Требования: опыт от 3 лет, знание FastAPI, PostgreSQL, английский B1+. Обязанности: разработка API, code review, участие в архитектурных решениях."
+
+Выход:
+- title: "Python-разработчик"
+- description: "IT-компания ищет Python-разработчика"
+- skills: ["Python", "FastAPI", "PostgreSQL"]
+- requirements: "Опыт работы от 3 лет. Английский язык уровня B1+."
+- responsibilities: "Разработка API. Проведение code review. Участие в архитектурных решениях."
+
+ПРИМЕР 2:
+Вход: "Требуется Senior Frontend. Стек: React, TypeScript, Redux. Нужен опыт 5+ лет, знание тестирования. Задачи: разработка UI компонентов, оптимизация производительности."
+
+Выход:
+- title: "Senior Frontend разработчик"
+- skills: ["React", "TypeScript", "Redux"]
+- requirements: "Опыт работы от 5 лет. Знание тестирования."
+- responsibilities: "Разработка UI компонентов. Оптимизация производительности."
+
+=== ФИНАЛЬНЫЕ ПРАВИЛА ===
+- Если видишь "Ключевые навыки", "Key skills", "Стек", "Технологии" → skills
+- Если видишь "Требования", "Requirements", "Мы ожидаем" → requirements (НЕ skills!)
+- Если видишь "Обязанности", "Задачи", "Responsibilities" → responsibilities
+- Технологии из "Требований" → skills (отдельно), остальное → requirements
+- Пустые поля = null, пустой skills = []
+- НЕ СОКРАЩАЙ информацию - копируй ВСЁ из каждой секции!
 
 Текст для анализа:
+"""
+
+VACANCY_SPLIT_PROMPT = """Раздели текст описания вакансии на структурированные поля.
+
+ВХОДНЫЕ ДАННЫЕ УЖЕ СОДЕРЖАТ:
+- title: есть
+- skills: есть (массив ключевых навыков)
+- salary, location, company: есть
+
+ТВОЯ ЗАДАЧА - из description извлечь:
+1. requirements - требования к кандидату
+2. responsibilities - обязанности/задачи
+3. short_description - краткое описание (1-2 предложения)
+
+ФОРМАТ ОТВЕТА (только JSON):
+{
+  "requirements": "Все требования к кандидату (образование, опыт, soft skills)",
+  "responsibilities": "Все обязанности и задачи",
+  "short_description": "Краткое описание вакансии"
+}
+
+ПРАВИЛА:
+- Ищи секции "Требования", "Обязанности", "Задачи", "Мы ожидаем" и т.д.
+- requirements: опыт работы, образование, языки, личные качества
+- responsibilities: что нужно делать, задачи, обязанности
+- short_description: 1-2 предложения о компании/позиции
+- Если секция не найдена - верни null
+- НЕ включай технологии в requirements (они уже в skills)
+
+Текст описания:
 """
 
 
@@ -334,6 +420,51 @@ async def parse_with_ai(
         raise
 
 
+async def split_vacancy_description(description: str) -> Dict[str, Optional[str]]:
+    """Use AI to split vacancy description into requirements and responsibilities.
+
+    Args:
+        description: Full vacancy description text
+
+    Returns:
+        Dict with 'requirements', 'responsibilities', 'short_description'
+    """
+    if not description or len(description.strip()) < 50:
+        return {
+            "requirements": None,
+            "responsibilities": None,
+            "short_description": description
+        }
+
+    client = _get_ai_client()
+    prompt = VACANCY_SPLIT_PROMPT + description
+
+    try:
+        response = await client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        response_text = response.content[0].text
+        json_str = _clean_json_response(response_text)
+        result = json.loads(json_str)
+
+        return {
+            "requirements": result.get("requirements"),
+            "responsibilities": result.get("responsibilities"),
+            "short_description": result.get("short_description") or description[:200]
+        }
+
+    except Exception as e:
+        logger.warning(f"Failed to split vacancy description: {e}")
+        return {
+            "requirements": None,
+            "responsibilities": None,
+            "short_description": description[:200] if description else None
+        }
+
+
 async def parse_resume_from_pdf(file_content: bytes, filename: str) -> ParsedResume:
     """Parse resume from PDF file using AI"""
     # Use existing DocumentParser to extract text
@@ -379,7 +510,7 @@ async def parse_vacancy_from_url(url: str) -> Tuple[ParsedVacancy, str]:
         url: The vacancy URL to parse
 
     Returns:
-        Tuple of (ParsedVacancy, method) where method is "api" or "ai"
+        Tuple of (ParsedVacancy, method) where method is "api+ai" or "ai"
     """
     # Detect source
     source = detect_source(url)
@@ -390,14 +521,25 @@ async def parse_vacancy_from_url(url: str) -> Tuple[ParsedVacancy, str]:
         api_result = await parse_vacancy_via_api(url)
         if api_result:
             logger.info(f"Successfully parsed via hh.ru API: {api_result.title}")
+
+            # Use AI to split description into requirements/responsibilities
+            requirements = None
+            responsibilities = None
+            short_description = api_result.description
+
+            if api_result.description and len(api_result.description) > 100:
+                logger.info("Splitting description with AI...")
+                split_result = await split_vacancy_description(api_result.description)
+                requirements = split_result.get("requirements")
+                responsibilities = split_result.get("responsibilities")
+                short_description = split_result.get("short_description") or api_result.description[:300]
+
             vacancy = ParsedVacancy(
                 title=api_result.title,
-                description=api_result.description,
-                # Note: hh.ru API doesn't provide separate requirements/responsibilities fields
-                # The description contains all text; user can split manually if needed
-                requirements=None,
-                responsibilities=None,
-                skills=api_result.skills,  # Keep skills as skills, not requirements
+                description=short_description,
+                requirements=requirements,
+                responsibilities=responsibilities,
+                skills=api_result.skills,
                 salary_min=api_result.salary_min,
                 salary_max=api_result.salary_max,
                 salary_currency=api_result.salary_currency,
@@ -407,7 +549,7 @@ async def parse_vacancy_from_url(url: str) -> Tuple[ParsedVacancy, str]:
                 company_name=api_result.company_name,
                 source_url=url,
             )
-            return vacancy, "api"
+            return vacancy, "api+ai"
         logger.warning("hh.ru API failed, falling back to AI parsing")
 
     # Fallback to AI parsing
@@ -429,3 +571,32 @@ async def parse_vacancy_from_url(url: str) -> Tuple[ParsedVacancy, str]:
         data["title"] = "Untitled Vacancy"
 
     return ParsedVacancy(**data), "ai"
+
+
+async def parse_vacancy_from_file(file_content: bytes, filename: str) -> ParsedVacancy:
+    """Parse vacancy from uploaded file using AI.
+
+    Args:
+        file_content: Raw bytes of the file
+        filename: Original filename (used for format detection)
+
+    Returns:
+        ParsedVacancy with extracted data
+    """
+    # Use existing DocumentParser to extract text
+    parse_result = await document_parser.parse(file_content, filename)
+
+    if parse_result.status == "failed":
+        raise ValueError(f"Failed to parse document: {parse_result.error}")
+
+    if not parse_result.content or not parse_result.content.strip():
+        raise ValueError("Document appears to be empty or unreadable")
+
+    # Use AI to extract structured vacancy data
+    data = await parse_with_ai(parse_result.content, "vacancy")
+
+    # Ensure title is present (required field)
+    if not data.get("title"):
+        data["title"] = "Untitled Vacancy"
+
+    return ParsedVacancy(**data)

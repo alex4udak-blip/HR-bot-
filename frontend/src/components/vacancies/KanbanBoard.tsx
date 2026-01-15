@@ -34,15 +34,16 @@ interface DropTarget {
   index: number | null; // null means end of column, number means before that index
 }
 
+// Use existing PostgreSQL enum values (mapped to HR labels in backend stage_config)
 const VISIBLE_STAGES: ApplicationStage[] = [
-  'applied',
-  'screening',
-  'phone_screen',
-  'interview',
-  'assessment',
-  'offer',
-  'hired',
-  'rejected'
+  'applied',      // Новый
+  'screening',    // Скрининг
+  'phone_screen', // Практика
+  'interview',    // Тех-практика
+  'assessment',   // ИС (итоговое собеседование)
+  'offer',        // Оффер
+  'hired',        // Принят
+  'rejected'      // Отказ
 ];
 
 export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
@@ -54,6 +55,11 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   const [isDragging, setIsDragging] = useState(false);
   const boardRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef<Map<string, number>>(new Map());
+  const autoScrollIntervalRef = useRef<number | null>(null);
+
+  // Auto-scroll configuration
+  const AUTO_SCROLL_THRESHOLD = 100; // pixels from edge to trigger scroll
+  const AUTO_SCROLL_SPEED = 15; // pixels per frame
 
   // Confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -82,6 +88,62 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   useEffect(() => {
     fetchKanbanBoard(vacancy.id);
   }, [vacancy.id, fetchKanbanBoard]);
+
+  // Cleanup auto-scroll on unmount
+  useEffect(() => {
+    return () => {
+      if (autoScrollIntervalRef.current !== null) {
+        cancelAnimationFrame(autoScrollIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // Stop auto-scroll
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollIntervalRef.current !== null) {
+      cancelAnimationFrame(autoScrollIntervalRef.current);
+      autoScrollIntervalRef.current = null;
+    }
+  }, []);
+
+  // Start auto-scroll based on mouse position
+  const handleBoardDragOver = useCallback((e: React.DragEvent) => {
+    if (!boardRef.current || !isDragging) return;
+
+    const board = boardRef.current;
+    const rect = board.getBoundingClientRect();
+    const mouseX = e.clientX;
+
+    // Calculate distance from edges
+    const distanceFromLeft = mouseX - rect.left;
+    const distanceFromRight = rect.right - mouseX;
+
+    // Determine scroll direction and speed
+    let scrollDirection = 0;
+    if (distanceFromLeft < AUTO_SCROLL_THRESHOLD) {
+      // Scroll left - speed increases as mouse gets closer to edge
+      scrollDirection = -1 * (1 - distanceFromLeft / AUTO_SCROLL_THRESHOLD);
+    } else if (distanceFromRight < AUTO_SCROLL_THRESHOLD) {
+      // Scroll right - speed increases as mouse gets closer to edge
+      scrollDirection = 1 * (1 - distanceFromRight / AUTO_SCROLL_THRESHOLD);
+    }
+
+    if (scrollDirection !== 0) {
+      // Start auto-scroll if not already running
+      if (autoScrollIntervalRef.current === null) {
+        const scroll = () => {
+          if (boardRef.current) {
+            boardRef.current.scrollLeft += AUTO_SCROLL_SPEED * scrollDirection;
+          }
+          autoScrollIntervalRef.current = requestAnimationFrame(scroll);
+        };
+        autoScrollIntervalRef.current = requestAnimationFrame(scroll);
+      }
+    } else {
+      // Stop auto-scroll when not near edges
+      stopAutoScroll();
+    }
+  }, [isDragging, stopAutoScroll]);
 
   const handleDragStart = (e: React.DragEvent, app: VacancyApplication) => {
     setDraggedApp(app);
@@ -142,6 +204,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     setDropTarget(null);
     setIsDragging(false);
     dragCounterRef.current.clear();
+    stopAutoScroll();
   };
 
   const handleColumnDragOver = (e: React.DragEvent, stage: ApplicationStage) => {
@@ -384,6 +447,8 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
         className="flex-1 overflow-x-auto overflow-y-hidden p-3 sm:p-4 touch-pan-x"
         ref={boardRef}
         style={{ WebkitOverflowScrolling: 'touch' }}
+        onDragOver={handleBoardDragOver}
+        onDragLeave={stopAutoScroll}
       >
         <div className="flex gap-3 sm:gap-4 h-full min-w-max pb-2">
           {VISIBLE_STAGES.map((stage) => {

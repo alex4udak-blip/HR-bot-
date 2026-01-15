@@ -456,11 +456,11 @@ export default function AdminSimulatorPage() {
   const testResult = testScenario();
 
   return (
-    <div className="h-full overflow-y-auto p-6 bg-dark-900 min-h-screen">
+    <div className="h-full w-full max-w-full overflow-y-auto overflow-x-hidden p-6 bg-dark-900 min-h-screen">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-7xl mx-auto space-y-6"
+        className="max-w-7xl mx-auto space-y-6 w-full"
       >
         {/* Заголовок */}
         <div className="flex items-center gap-4">

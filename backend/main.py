@@ -54,7 +54,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "font-src 'self' https://fonts.gstatic.com; "
             "img-src 'self' data: blob:; "
             "connect-src 'self' ws: wss:; "
-            "script-src 'self' 'unsafe-inline'"
+            "script-src 'self'"
         )
         return response
 
@@ -71,6 +71,42 @@ async def run_migration(engine, sql: str, description: str):
         # Log at WARNING level so errors are visible in production
         logger.warning(f"Migration failed ({description}): {e}")
         return False
+
+
+def add_enum_value_sync(enum_name: str, value: str, description: str):
+    """Add a value to an existing enum type using psycopg2 with autocommit.
+
+    PostgreSQL requires ALTER TYPE ADD VALUE to run outside of a transaction block.
+    We use synchronous psycopg2 with autocommit=True to ensure no transaction wrapping.
+    """
+    import psycopg2
+    from api.config import settings
+
+    try:
+        # Parse DATABASE_URL for psycopg2 (convert postgresql+asyncpg:// to postgresql://)
+        db_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+
+        # Connect with autocommit enabled
+        conn = psycopg2.connect(db_url)
+        conn.autocommit = True
+        try:
+            cur = conn.cursor()
+            cur.execute(f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS '{value}'")
+            cur.close()
+            logger.info(f"Enum value OK: {description}")
+            return True
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning(f"Enum value failed ({description}): {e}")
+        return False
+
+
+async def add_enum_value(engine, enum_name: str, value: str, description: str):
+    """Async wrapper for add_enum_value_sync - runs in executor to not block event loop."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, add_enum_value_sync, enum_name, value, description)
 
 
 async def init_database():
@@ -411,6 +447,12 @@ async def init_database():
             WHEN duplicate_object THEN null;
         END $$
     """, "Create applicationstage enum")
+
+    # Add HR Pipeline stages to applicationstage enum (MUST use autocommit - no transaction)
+    await add_enum_value(engine, "applicationstage", "new", "Add new to applicationstage enum")
+    await add_enum_value(engine, "applicationstage", "practice", "Add practice to applicationstage enum")
+    await add_enum_value(engine, "applicationstage", "tech_practice", "Add tech_practice to applicationstage enum")
+    await add_enum_value(engine, "applicationstage", "is_interview", "Add is_interview to applicationstage enum")
 
     # Create vacancies table
     create_vacancies = """
@@ -758,6 +800,7 @@ app = FastAPI(
     description="API for HR candidate analysis with Telegram integration",
     version="1.0.0",
     lifespan=lifespan,
+    redirect_slashes=False,  # Prevent 307 redirects that convert POST to GET
 )
 
 # Rate limiting
@@ -769,7 +812,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_allowed_origins_list(),
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -839,7 +882,50 @@ except Exception as e:
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """
+    Health check endpoint for Railway.
+    Always returns 200 OK for Railway healthcheck to pass.
+    DB status is informational only.
+    """
+    from datetime import datetime
+    from api.database import AsyncSessionLocal
+
+    health = {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+    # Check database (informational, doesn't affect status code)
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        health["database"] = "connected"
+    except Exception as e:
+        health["database"] = f"degraded: {str(e)}"
+        health["status"] = "degraded"  # Informational only
+
+    # Always return 200 for Railway healthcheck
+    return health
+
+
+@app.get("/health/deep")
+async def health_check_deep():
+    """
+    Deep health check that returns 503 if DB is unavailable.
+    Use for monitoring/alerting, not for Railway healthcheck.
+    """
+    from datetime import datetime
+    from api.database import AsyncSessionLocal
+
+    health = {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        health["database"] = "connected"
+    except Exception as e:
+        health["database"] = f"error: {str(e)}"
+        health["status"] = "unhealthy"
+        raise HTTPException(status_code=503, detail=health)
+
+    return health
 
 
 @app.get("/debug/routes")

@@ -212,18 +212,29 @@ export interface RefreshTokenResponse {
 export type EntityType = 'candidate' | 'client' | 'contractor' | 'lead' | 'partner' | 'custom';
 
 export type EntityStatus =
-  | 'new'
+  // HR Pipeline stages (using existing PostgreSQL enum values)
+  | 'applied'         // Новый (using 'applied' from DB)
   | 'screening'
-  | 'interview'
+  | 'phone_screen'    // Практика (using 'phone_screen' from DB)
+  | 'interview'       // Тех-практика (using 'interview' from DB)
+  | 'assessment'      // ИС (using 'assessment' from DB)
   | 'offer'
   | 'hired'
   | 'rejected'
+  // General statuses
+  | 'new'             // For other entity types (clients, leads, etc.)
   | 'active'
   | 'paused'
   | 'churned'
   | 'converted'
   | 'ended'
-  | 'negotiation';
+  | 'negotiation'
+  | 'withdrawn';
+
+// HR Pipeline stages for candidates (in order) - using existing PostgreSQL enum values
+export const CANDIDATE_PIPELINE_STAGES: EntityStatus[] = [
+  'applied', 'screening', 'phone_screen', 'interview', 'assessment', 'offer', 'hired', 'rejected'
+];
 
 export interface Entity {
   id: number;
@@ -261,6 +272,21 @@ export interface Entity {
   expected_salary_min?: number;
   expected_salary_max?: number;
   expected_salary_currency?: string;
+  // Vacancy tracking for candidates
+  vacancies_count?: number;
+  vacancy_names?: string[];
+}
+
+export interface EntityFile {
+  id: number;
+  entity_id: number;
+  file_type: 'resume' | 'cover_letter' | 'test_assignment' | 'certificate' | 'portfolio' | 'other';
+  file_name: string;
+  file_path: string;
+  file_size?: number;
+  mime_type?: string;
+  description?: string;
+  created_at: string;
 }
 
 export interface EntityWithRelations extends Entity {
@@ -285,6 +311,7 @@ export interface EntityWithRelations extends Entity {
     result?: string;
     created_at: string;
   }>;
+  files?: EntityFile[];
 }
 
 export interface EntityTransfer {
@@ -388,7 +415,7 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
     description: 'Соискатели на вакансии',
     icon: 'UserCheck',
     color: 'blue',
-    statuses: ['new', 'screening', 'interview', 'offer', 'hired', 'rejected']
+    statuses: ['applied', 'screening', 'phone_screen', 'interview', 'assessment', 'offer', 'hired', 'rejected']
   },
   client: {
     id: 'client',
@@ -438,12 +465,18 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
 };
 
 export const STATUS_LABELS: Record<EntityStatus, string> = {
-  new: 'Новый',
+  // HR Pipeline (using existing PostgreSQL enum values with HR-friendly labels)
+  applied: 'Новый',           // 'applied' displayed as "Новый"
   screening: 'Скрининг',
-  interview: 'Интервью',
+  phone_screen: 'Практика',   // 'phone_screen' displayed as "Практика"
+  interview: 'Тех-практика',  // 'interview' displayed as "Тех-практика"
+  assessment: 'ИС',           // 'assessment' displayed as "ИС"
   offer: 'Оффер',
   hired: 'Принят',
   rejected: 'Отклонён',
+  withdrawn: 'Отозван',
+  // General statuses
+  new: 'Новый',               // For other entity types
   active: 'Активный',
   paused: 'На паузе',
   churned: 'Ушёл',
@@ -453,12 +486,18 @@ export const STATUS_LABELS: Record<EntityStatus, string> = {
 };
 
 export const STATUS_COLORS: Record<EntityStatus, string> = {
-  new: 'bg-blue-500/20 text-blue-300',
-  screening: 'bg-yellow-500/20 text-yellow-300',
-  interview: 'bg-purple-500/20 text-purple-300',
-  offer: 'bg-green-500/20 text-green-300',
-  hired: 'bg-emerald-500/20 text-emerald-300',
-  rejected: 'bg-red-500/20 text-red-300',
+  // HR Pipeline - matching APPLICATION_STAGE_COLORS (using existing PostgreSQL enum values)
+  applied: 'bg-blue-500/20 text-blue-300 border-blue-500/30',      // "Новый"
+  screening: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+  phone_screen: 'bg-amber-500/20 text-amber-300 border-amber-500/30', // "Практика"
+  interview: 'bg-orange-500/20 text-orange-300 border-orange-500/30', // "Тех-практика"
+  assessment: 'bg-purple-500/20 text-purple-300 border-purple-500/30', // "ИС"
+  offer: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+  hired: 'bg-green-500/20 text-green-300 border-green-500/30',
+  rejected: 'bg-red-500/20 text-red-300 border-red-500/30',
+  withdrawn: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+  // General statuses
+  new: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
   active: 'bg-green-500/20 text-green-300',
   paused: 'bg-gray-500/20 text-gray-300',
   churned: 'bg-red-500/20 text-red-300',
@@ -494,25 +533,20 @@ export const CALL_STATUS_COLORS: Record<CallStatus, string> = {
 export type VacancyStatus = 'draft' | 'open' | 'paused' | 'closed' | 'cancelled';
 
 export type ApplicationStage =
-  // Main pipeline stages
-  | 'new'           // Новый
+  // Main pipeline stages (using existing PostgreSQL enum values)
+  | 'applied'       // Новый (displayed as "Новый" in UI)
   | 'screening'     // Скрининг
-  | 'practice'      // Практика
-  | 'tech_practice' // Тех-практика
-  | 'is_interview'  // ИС (итоговое собеседование)
+  | 'phone_screen'  // Практика (displayed as "Практика" in UI)
+  | 'interview'     // Тех-практика (displayed as "Тех-практика" in UI)
+  | 'assessment'    // ИС (displayed as "ИС" in UI)
   | 'offer'         // Оффер
   | 'hired'         // Принят
   | 'rejected'      // Отказ
-  // Legacy stages (backward compatibility)
-  | 'applied'
-  | 'phone_screen'
-  | 'interview'
-  | 'assessment'
-  | 'withdrawn';
+  | 'withdrawn';    // Отозван
 
-// Main pipeline stages in order
+// Main pipeline stages in order (using existing PostgreSQL enum values)
 export const PIPELINE_STAGES: ApplicationStage[] = [
-  'new', 'screening', 'practice', 'tech_practice', 'is_interview', 'offer', 'hired', 'rejected'
+  'applied', 'screening', 'phone_screen', 'interview', 'assessment', 'offer', 'hired', 'rejected'
 ];
 
 export interface Vacancy {
@@ -542,6 +576,7 @@ export interface Vacancy {
   updated_at: string;
   applications_count: number;
   stage_counts: Record<string, number>;
+  source_url?: string;
 }
 
 export interface VacancyApplication {
@@ -670,38 +705,28 @@ export const VACANCY_STATUS_COLORS: Record<VacancyStatus, string> = {
 };
 
 export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = {
-  // Main pipeline stages
-  new: 'Новый',
+  // HR Pipeline stages (using existing PostgreSQL enum values with HR labels)
+  applied: 'Новый',           // 'applied' displayed as "Новый"
   screening: 'Скрининг',
-  practice: 'Практика',
-  tech_practice: 'Тех-практика',
-  is_interview: 'ИС',
+  phone_screen: 'Практика',   // 'phone_screen' displayed as "Практика"
+  interview: 'Тех-практика',  // 'interview' displayed as "Тех-практика"
+  assessment: 'ИС',           // 'assessment' displayed as "ИС"
   offer: 'Оффер',
   hired: 'Принят',
   rejected: 'Отказ',
-  // Legacy stages (backward compatibility)
-  applied: 'Отклик',
-  phone_screen: 'Телефонный скрининг',
-  interview: 'Собеседование',
-  assessment: 'Тестирование',
   withdrawn: 'Отозван'
 };
 
 export const APPLICATION_STAGE_COLORS: Record<ApplicationStage, string> = {
-  // Main pipeline stages
-  new: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  // HR Pipeline stages (using existing PostgreSQL enum values)
+  applied: 'bg-blue-500/20 text-blue-300 border-blue-500/30',      // "Новый"
   screening: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
-  practice: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-  tech_practice: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
-  is_interview: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+  phone_screen: 'bg-purple-500/20 text-purple-300 border-purple-500/30', // "Практика"
+  interview: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',    // "Тех-практика"
+  assessment: 'bg-orange-500/20 text-orange-300 border-orange-500/30',   // "ИС"
   offer: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
   hired: 'bg-green-500/20 text-green-300 border-green-500/30',
   rejected: 'bg-red-500/20 text-red-300 border-red-500/30',
-  // Legacy stages (backward compatibility)
-  applied: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-  phone_screen: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-  interview: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
-  assessment: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
   withdrawn: 'bg-gray-500/20 text-gray-300 border-gray-500/30'
 };
 

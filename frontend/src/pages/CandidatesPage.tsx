@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -14,10 +14,13 @@ import {
   List,
   Users,
   ChevronRight,
+  ChevronLeft,
   Star,
   Clock,
   ExternalLink,
-  GripVertical
+  GripVertical,
+  Eye,
+  Sparkles
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -31,14 +34,17 @@ import {
   VACANCY_STATUS_LABELS,
   VACANCY_STATUS_COLORS
 } from '@/types';
-import type { ParsedResume } from '@/services/api';
+import type { ParsedResume, ParsedVacancy } from '@/services/api';
 import ContactForm from '@/components/contacts/ContactForm';
 import ParserModal from '@/components/parser/ParserModal';
 import VacancyForm from '@/components/vacancies/VacancyForm';
+import VacancyImportModal from '@/components/vacancies/VacancyImportModal';
+import VacancyDetailModal from '@/components/vacancies/VacancyDetailModal';
 import AddCandidateModal from '@/components/vacancies/AddCandidateModal';
 import ApplicationDetailModal from '@/components/vacancies/ApplicationDetailModal';
 import { ConfirmDialog, ErrorMessage, Skeleton } from '@/components/ui';
 import { OnboardingTooltip } from '@/components/onboarding';
+import { CandidatesDatabase } from '@/components/vacancies';
 
 // View modes
 type ViewMode = 'list' | 'kanban';
@@ -59,14 +65,21 @@ export default function CandidatesPage() {
   const [showCreateCandidateModal, setShowCreateCandidateModal] = useState(false);
   const [showCreateVacancyModal, setShowCreateVacancyModal] = useState(false);
   const [showAddToVacancyModal, setShowAddToVacancyModal] = useState(false);
+  const [showImportVacancyModal, setShowImportVacancyModal] = useState(false);
+  const [showVacancyDetail, setShowVacancyDetail] = useState(false);
   const [editingCandidate, setEditingCandidate] = useState<Entity | null>(null);
   const [showParserModal, setShowParserModal] = useState(false);
   const [prefillData, setPrefillData] = useState<Partial<Entity> | null>(null);
+  const [vacancyPrefillData, setVacancyPrefillData] = useState<Partial<Vacancy> | null>(null);
   const [selectedApplication, setSelectedApplication] = useState<VacancyApplication | null>(null);
 
   // Drag state for kanban
   const [draggedApp, setDraggedApp] = useState<VacancyApplication | null>(null);
   const [dropTargetStage, setDropTargetStage] = useState<ApplicationStage | null>(null);
+
+  // Ref for kanban scroll container
+  const kanbanContainerRef = useRef<HTMLDivElement>(null);
+  const [highlightedStage, setHighlightedStage] = useState<ApplicationStage | null>(null);
 
   // Confirmation dialogs
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -95,9 +108,9 @@ export default function CandidatesPage() {
     removeApplication
   } = useVacancyStore();
 
-  // Open vacancies only
+  // Active vacancies (not closed)
   const openVacancies = useMemo(() => {
-    return vacancies.filter(v => v.status === 'open' || v.status === 'paused');
+    return vacancies.filter(v => v.status !== 'closed');
   }, [vacancies]);
 
   // Current vacancy
@@ -143,12 +156,8 @@ export default function CandidatesPage() {
     }
   }, [selectedVacancyId, fetchKanbanBoard]);
 
-  // Select first vacancy if none selected
-  useEffect(() => {
-    if (!selectedVacancyId && openVacancies.length > 0) {
-      setSelectedVacancyId(openVacancies[0].id);
-    }
-  }, [selectedVacancyId, openVacancies]);
+  // NOTE: We no longer auto-select first vacancy
+  // The "База кандидатов" view is shown by default when selectedVacancyId is null
 
   // Drag handlers
   const handleDragStart = (app: VacancyApplication) => {
@@ -177,6 +186,49 @@ export default function CandidatesPage() {
 
   const handleColumnDragLeave = () => {
     setDropTargetStage(null);
+  };
+
+  // Scroll to specific stage column in kanban
+  const scrollToStage = useCallback((stage: ApplicationStage) => {
+    if (!kanbanContainerRef.current || viewMode !== 'kanban') return;
+
+    const container = kanbanContainerRef.current;
+    const columnIndex = PIPELINE_STAGES.indexOf(stage);
+    if (columnIndex === -1) return;
+
+    // Each column is ~288px (w-72) + 16px gap
+    const columnWidth = 288 + 16;
+    const scrollPosition = columnIndex * columnWidth;
+
+    // Center the column in view
+    const containerWidth = container.clientWidth;
+    const centeredPosition = scrollPosition - (containerWidth / 2) + (columnWidth / 2);
+
+    container.scrollTo({
+      left: Math.max(0, centeredPosition),
+      behavior: 'smooth'
+    });
+
+    // Highlight the column briefly
+    setHighlightedStage(stage);
+    setTimeout(() => setHighlightedStage(null), 1500);
+  }, [viewMode]);
+
+  // Move application to previous/next stage
+  const handleMoveStage = async (app: VacancyApplication, direction: 'prev' | 'next') => {
+    const currentIndex = PIPELINE_STAGES.indexOf(app.stage);
+    if (currentIndex === -1) return;
+
+    const newIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+    if (newIndex < 0 || newIndex >= PIPELINE_STAGES.length) return;
+
+    const newStage = PIPELINE_STAGES[newIndex];
+    try {
+      await moveApplication(app.id, newStage);
+      toast.success(`Перемещён в "${APPLICATION_STAGE_LABELS[newStage]}"`);
+    } catch {
+      toast.error('Ошибка при перемещении');
+    }
   };
 
   // Other handlers
@@ -241,6 +293,25 @@ export default function CandidatesPage() {
     toast.success('Данные распознаны');
   };
 
+  const handleParsedVacancy = (data: ParsedVacancy) => {
+    const prefill: Partial<Vacancy> = {
+      title: data.title,
+      description: data.description,
+      requirements: data.requirements,
+      responsibilities: data.responsibilities,
+      salary_min: data.salary_min,
+      salary_max: data.salary_max,
+      salary_currency: data.salary_currency || 'RUB',
+      location: data.location,
+      employment_type: data.employment_type,
+      experience_level: data.experience_level,
+      tags: data.skills || [],
+    };
+    setVacancyPrefillData(prefill);
+    setShowImportVacancyModal(false);
+    setShowCreateVacancyModal(true);
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('ru-RU', {
       day: 'numeric',
@@ -262,35 +333,78 @@ export default function CandidatesPage() {
     const isSelected = vacancy.id === selectedVacancyId;
 
     return (
-      <button
+      <div
         key={vacancy.id}
-        onClick={() => handleVacancySelect(vacancy.id)}
         className={clsx(
-          'w-full text-left p-3 rounded-lg border transition-all duration-200',
+          'w-full text-left p-3 rounded-lg border transition-all duration-200 group',
           isSelected
             ? 'bg-cyan-500/20 border-cyan-500/50'
             : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'
         )}
       >
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <h4 className={clsx('font-medium truncate text-sm', isSelected && 'text-cyan-300')}>
-              {vacancy.title}
-            </h4>
-            {vacancy.department_name && (
-              <p className="text-xs text-white/40 truncate mt-0.5">{vacancy.department_name}</p>
-            )}
+        <button
+          onClick={() => handleVacancySelect(vacancy.id)}
+          className="w-full text-left"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <h4 className={clsx('font-medium truncate text-sm', isSelected && 'text-cyan-300')}>
+                {vacancy.title}
+              </h4>
+              {vacancy.department_name && (
+                <p className="text-xs text-white/40 truncate mt-0.5">{vacancy.department_name}</p>
+              )}
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <span className={clsx('text-xs px-1.5 py-0.5 rounded', VACANCY_STATUS_COLORS[vacancy.status])}>
+                {VACANCY_STATUS_LABELS[vacancy.status]}
+              </span>
+              <span className="text-xs text-white/40">
+                {vacancy.applications_count} канд.
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <span className={clsx('text-xs px-1.5 py-0.5 rounded', VACANCY_STATUS_COLORS[vacancy.status])}>
-              {VACANCY_STATUS_LABELS[vacancy.status]}
-            </span>
-            <span className="text-xs text-white/40">
-              {vacancy.applications_count} канд.
-            </span>
+        </button>
+        {/* Quick action buttons */}
+        {isSelected && (
+          <div className="flex items-center gap-1 mt-2 pt-2 border-t border-white/10">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/vacancies/${vacancy.id}`);
+              }}
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 rounded text-xs transition-colors"
+              title="Открыть страницу вакансии"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              Открыть
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowVacancyDetail(true);
+              }}
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-xs transition-colors"
+              title="Просмотр деталей"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              Детали
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setVacancyPrefillData(null);
+                setShowCreateVacancyModal(true);
+              }}
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-xs transition-colors"
+              title="Редактировать"
+            >
+              <Edit className="w-3.5 h-3.5" />
+              Изменить
+            </button>
           </div>
-        </div>
-      </button>
+        )}
+      </div>
     );
   };
 
@@ -409,7 +523,7 @@ export default function CandidatesPage() {
   );
 
   // Render kanban column
-  const renderKanbanColumn = (stage: ApplicationStage) => {
+  const renderKanbanColumn = (stage: ApplicationStage, isHighlighted: boolean = false) => {
     const column = kanbanBoard?.columns.find(c => c.stage === stage);
     const apps = column?.applications || [];
     const isDropTarget = dropTargetStage === stage && draggedApp?.stage !== stage;
@@ -417,11 +531,14 @@ export default function CandidatesPage() {
     return (
       <div
         key={stage}
+        data-stage={stage}
         className={clsx(
           'w-72 flex-shrink-0 flex flex-col rounded-xl border transition-all duration-200',
           isDropTarget
             ? 'border-cyan-500 bg-cyan-500/10 shadow-lg shadow-cyan-500/20'
-            : 'border-white/10 bg-white/5'
+            : isHighlighted
+              ? 'border-yellow-500 bg-yellow-500/10 shadow-lg shadow-yellow-500/20 ring-2 ring-yellow-500/50'
+              : 'border-white/10 bg-white/5'
         )}
         onDragOver={(e) => handleColumnDragOver(e, stage)}
         onDragLeave={handleColumnDragLeave}
@@ -466,7 +583,7 @@ export default function CandidatesPage() {
   };
 
   return (
-    <div className="h-full flex">
+    <div className="h-full w-full max-w-full flex overflow-hidden">
       {/* Vacancy Sidebar */}
       <div className={clsx(
         'flex flex-col border-r border-white/10 bg-gray-900/50 transition-all duration-300',
@@ -494,19 +611,53 @@ export default function CandidatesPage() {
         {/* Sidebar Content */}
         {!sidebarCollapsed && (
           <>
-            {/* Add Vacancy Button */}
-            <div className="p-3 border-b border-white/10">
+            {/* Add Vacancy Buttons */}
+            <div className="p-3 border-b border-white/10 space-y-2">
               <button
-                onClick={() => setShowCreateVacancyModal(true)}
+                onClick={() => {
+                  setVacancyPrefillData(null);
+                  setShowCreateVacancyModal(true);
+                }}
                 className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 Новая вакансия
               </button>
+              <button
+                onClick={() => setShowImportVacancyModal(true)}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+              >
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                Импорт из URL/файла
+              </button>
             </div>
 
             {/* Vacancies List */}
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {/* All Candidates Database Card - Always on top */}
+              <button
+                onClick={() => setSelectedVacancyId(null)}
+                className={clsx(
+                  'w-full text-left p-3 rounded-lg border transition-all duration-200',
+                  selectedVacancyId === null
+                    ? 'bg-purple-500/20 border-purple-500/50'
+                    : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-purple-400" />
+                  <div className="flex-1 min-w-0">
+                    <h4 className={clsx('font-medium text-sm', selectedVacancyId === null && 'text-purple-300')}>
+                      База кандидатов
+                    </h4>
+                    <p className="text-xs text-white/40">Все кандидаты без привязки к вакансии</p>
+                  </div>
+                </div>
+              </button>
+
+              {/* Divider */}
+              <div className="border-t border-white/10 my-2" />
+
               {vacanciesLoading && vacancies.length === 0 ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map(i => (
@@ -534,6 +685,22 @@ export default function CandidatesPage() {
         {/* Collapsed state icons */}
         {sidebarCollapsed && (
           <div className="flex-1 flex flex-col items-center py-3 space-y-2">
+            {/* All Candidates Database Icon */}
+            <button
+              onClick={() => setSelectedVacancyId(null)}
+              className={clsx(
+                'w-10 h-10 rounded-lg flex items-center justify-center transition-colors',
+                selectedVacancyId === null
+                  ? 'bg-purple-500/20 text-purple-300'
+                  : 'bg-white/5 hover:bg-white/10 text-white/60'
+              )}
+              title="База кандидатов"
+            >
+              <Users className="w-5 h-5" />
+            </button>
+
+            <div className="w-6 border-t border-white/10" />
+
             <button
               onClick={() => setShowCreateVacancyModal(true)}
               className="p-2 hover:bg-white/5 rounded-lg transition-colors"
@@ -583,51 +750,64 @@ export default function CandidatesPage() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              {/* View Mode Toggle */}
-              <div className="flex items-center bg-white/5 rounded-lg p-1">
-                <button
-                  onClick={() => setViewMode('kanban')}
-                  className={clsx(
-                    'p-1.5 rounded transition-colors',
-                    viewMode === 'kanban' ? 'bg-cyan-600 text-white' : 'text-white/60 hover:text-white'
-                  )}
-                  title="Kanban"
-                >
-                  <LayoutGrid className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={clsx(
-                    'p-1.5 rounded transition-colors',
-                    viewMode === 'list' ? 'bg-cyan-600 text-white' : 'text-white/60 hover:text-white'
-                  )}
-                  title="Список"
-                >
-                  <List className="w-4 h-4" />
-                </button>
-              </div>
-
+              {/* Navigation to vacancies page */}
               <button
-                onClick={() => setShowParserModal(true)}
-                className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+                onClick={() => navigate('/vacancies')}
+                className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg text-sm transition-colors"
+                title="Перейти к вакансиям"
               >
-                <Upload className="w-4 h-4" />
-                Загрузить резюме
+                <Briefcase className="w-4 h-4" />
+                К вакансиям
               </button>
+              {/* View Mode Toggle - only when vacancy selected */}
+              {currentVacancy && (
+                <div className="flex items-center bg-white/5 rounded-lg p-1">
+                  <button
+                    onClick={() => setViewMode('kanban')}
+                    className={clsx(
+                      'p-1.5 rounded transition-colors',
+                      viewMode === 'kanban' ? 'bg-cyan-600 text-white' : 'text-white/60 hover:text-white'
+                    )}
+                    title="Kanban"
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setViewMode('list')}
+                    className={clsx(
+                      'p-1.5 rounded transition-colors',
+                      viewMode === 'list' ? 'bg-cyan-600 text-white' : 'text-white/60 hover:text-white'
+                    )}
+                    title="Список"
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
 
               {currentVacancy && (
-                <button
-                  onClick={() => setShowAddToVacancyModal(true)}
-                  className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  Добавить кандидата
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowParserModal(true)}
+                    className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Загрузить резюме
+                  </button>
+
+                  <button
+                    onClick={() => setShowAddToVacancyModal(true)}
+                    className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Добавить кандидата
+                  </button>
+                </>
               )}
             </div>
           </div>
 
-          {/* Stage Tabs */}
+          {/* Stage Tabs - only when vacancy selected */}
           {currentVacancy && (
             <div className="flex items-center gap-1 overflow-x-auto pb-1">
               <button
@@ -644,7 +824,13 @@ export default function CandidatesPage() {
               {PIPELINE_STAGES.map(stage => (
                 <button
                   key={stage}
-                  onClick={() => setSelectedStage(stage)}
+                  onClick={() => {
+                    setSelectedStage(stage);
+                    // In kanban mode, also scroll to the column
+                    if (viewMode === 'kanban') {
+                      scrollToStage(stage);
+                    }
+                  }}
                   className={clsx(
                     'px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors',
                     selectedStage === stage
@@ -662,20 +848,11 @@ export default function CandidatesPage() {
         {/* Content Area */}
         <div className="flex-1 overflow-hidden">
           {!currentVacancy ? (
-            // No vacancy selected - show all candidates
-            <div className="h-full flex items-center justify-center text-white/40">
-              <div className="text-center">
-                <Briefcase className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-medium mb-2">Выберите вакансию</h3>
-                <p className="text-sm">Выберите вакансию в боковой панели для просмотра кандидатов</p>
-                <button
-                  onClick={() => setShowCreateVacancyModal(true)}
-                  className="mt-4 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-white text-sm transition-colors"
-                >
-                  Создать вакансию
-                </button>
-              </div>
-            </div>
+            // No vacancy selected - show all candidates database
+            <CandidatesDatabase
+              vacancies={vacancies}
+              onRefreshVacancies={fetchVacancies}
+            />
           ) : kanbanLoading ? (
             // Loading
             <div className="h-full flex items-center justify-center">
@@ -688,9 +865,9 @@ export default function CandidatesPage() {
             </div>
           ) : viewMode === 'kanban' ? (
             // Kanban View
-            <div className="h-full overflow-x-auto p-4">
+            <div ref={kanbanContainerRef} className="h-full overflow-x-auto p-4">
               <div className="flex gap-4 h-full min-w-max">
-                {PIPELINE_STAGES.map(stage => renderKanbanColumn(stage))}
+                {PIPELINE_STAGES.map(stage => renderKanbanColumn(stage, highlightedStage === stage))}
               </div>
             </div>
           ) : (
@@ -721,10 +898,45 @@ export default function CandidatesPage() {
                             <p className="text-sm text-white/50">{app.entity_position || app.entity_email}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className={clsx('text-xs px-2 py-1 rounded-full', APPLICATION_STAGE_COLORS[app.stage])}>
-                            {APPLICATION_STAGE_LABELS[app.stage]}
-                          </span>
+                        <div className="flex items-center gap-2">
+                          {/* Stage navigation buttons */}
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMoveStage(app, 'prev');
+                              }}
+                              disabled={PIPELINE_STAGES.indexOf(app.stage) === 0}
+                              className={clsx(
+                                'p-1.5 rounded transition-colors',
+                                PIPELINE_STAGES.indexOf(app.stage) === 0
+                                  ? 'text-white/20 cursor-not-allowed'
+                                  : 'hover:bg-white/10 text-white/60 hover:text-white'
+                              )}
+                              title="Предыдущий этап"
+                            >
+                              <ChevronLeft className="w-4 h-4" />
+                            </button>
+                            <span className={clsx('text-xs px-2 py-1 rounded-full min-w-[80px] text-center', APPLICATION_STAGE_COLORS[app.stage])}>
+                              {APPLICATION_STAGE_LABELS[app.stage]}
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMoveStage(app, 'next');
+                              }}
+                              disabled={PIPELINE_STAGES.indexOf(app.stage) === PIPELINE_STAGES.length - 1}
+                              className={clsx(
+                                'p-1.5 rounded transition-colors',
+                                PIPELINE_STAGES.indexOf(app.stage) === PIPELINE_STAGES.length - 1
+                                  ? 'text-white/20 cursor-not-allowed'
+                                  : 'hover:bg-white/10 text-white/60 hover:text-white'
+                              )}
+                              title="Следующий этап"
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </button>
+                          </div>
                           <span className="text-sm text-white/40">{formatDate(app.applied_at)}</span>
                           <button
                             onClick={(e) => {
@@ -778,11 +990,36 @@ export default function CandidatesPage() {
 
         {showCreateVacancyModal && (
           <VacancyForm
-            onClose={() => setShowCreateVacancyModal(false)}
+            vacancy={vacancyPrefillData ? undefined : currentVacancy || undefined}
+            prefillData={vacancyPrefillData || undefined}
+            onClose={() => {
+              setShowCreateVacancyModal(false);
+              setVacancyPrefillData(null);
+            }}
             onSuccess={() => {
               setShowCreateVacancyModal(false);
+              setVacancyPrefillData(null);
               fetchVacancies();
-              toast.success('Вакансия создана');
+              toast.success(vacancyPrefillData ? 'Вакансия создана' : 'Вакансия обновлена');
+            }}
+          />
+        )}
+
+        {showImportVacancyModal && (
+          <VacancyImportModal
+            onClose={() => setShowImportVacancyModal(false)}
+            onImportSuccess={handleParsedVacancy}
+          />
+        )}
+
+        {showVacancyDetail && currentVacancy && (
+          <VacancyDetailModal
+            vacancy={currentVacancy}
+            onClose={() => setShowVacancyDetail(false)}
+            onEdit={() => {
+              setShowVacancyDetail(false);
+              setVacancyPrefillData(null);
+              setShowCreateVacancyModal(true);
             }}
           />
         )}

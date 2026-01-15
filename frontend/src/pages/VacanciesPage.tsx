@@ -20,7 +20,8 @@ import {
   X,
   Check,
   ChevronDown,
-  Calendar
+  Calendar,
+  Database
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -36,6 +37,7 @@ import {
   KanbanBoard,
   VacancyCardSkeleton,
   VacancyStatusBadge,
+  CandidatesDatabase,
 } from '@/components/vacancies';
 import ParserModal from '@/components/parser/ParserModal';
 import {
@@ -46,6 +48,9 @@ import {
   ErrorMessage
 } from '@/components/ui';
 import { OnboardingTooltip } from '@/components/onboarding';
+
+// Main tabs
+type MainTab = 'vacancies' | 'database';
 
 const STATUS_FILTERS: { id: VacancyStatus | 'all'; name: string }[] = [
   { id: 'all', name: 'Все' },
@@ -82,6 +87,12 @@ export default function VacanciesPage() {
   const { vacancyId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Main tab state
+  const [mainTab, setMainTab] = useState<MainTab>(() => {
+    const tabParam = searchParams.get('tab');
+    return tabParam === 'database' ? 'database' : 'vacancies';
+  });
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
@@ -366,14 +377,27 @@ export default function VacanciesPage() {
     toast.success('Данные успешно извлечены');
   };
 
+  // Handle main tab change
+  const handleMainTabChange = (tab: MainTab) => {
+    setMainTab(tab);
+    const newParams = new URLSearchParams(searchParams);
+    if (tab === 'database') {
+      newParams.set('tab', 'database');
+    } else {
+      newParams.delete('tab');
+    }
+    setSearchParams(newParams, { replace: true });
+  };
+
   // Detail view
   if (currentVacancy && vacancyId) {
     return (
-      <div className="h-full flex flex-col">
+      <div className="h-full w-full max-w-full flex flex-col overflow-hidden">
         <div className="flex items-center gap-4 p-4 border-b border-white/10">
           <button
             onClick={handleBack}
             className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+            title="К списку вакансий"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
@@ -381,6 +405,15 @@ export default function VacanciesPage() {
             <h1 className="text-xl font-semibold">{currentVacancy.title}</h1>
             <VacancyStatusBadge status={currentVacancy.status} size="sm" />
           </div>
+          {/* Navigation to candidates page */}
+          <button
+            onClick={() => navigate('/candidates')}
+            className="flex items-center gap-2 px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg text-sm transition-colors"
+            title="Перейти к базе кандидатов"
+          >
+            <Users className="w-4 h-4" />
+            К кандидатам
+          </button>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setViewMode(viewMode === 'list' ? 'kanban' : 'list')}
@@ -423,43 +456,77 @@ export default function VacanciesPage() {
 
   // List view
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full w-full max-w-full flex flex-col overflow-hidden">
       {/* Header */}
       <div className="p-4 border-b border-white/10">
         <div className="flex items-center justify-between mb-4">
-          <OnboardingTooltip
-            id="vacancies-page"
-            content="Создавайте вакансии и отслеживайте кандидатов через воронку найма"
-            position="bottom"
-          >
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Briefcase className="w-7 h-7 text-blue-400" />
-              Вакансии
-            </h1>
-          </OnboardingTooltip>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowParserModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
+          <div className="flex items-center gap-4">
+            <OnboardingTooltip
+              id="vacancies-page"
+              content="Создавайте вакансии и отслеживайте кандидатов через воронку найма"
+              position="bottom"
             >
-              <Upload className="w-4 h-4" />
-              Импорт
-            </button>
-            <button
-              onClick={() => {
-                setPrefillData(null);
-                setShowCreateModal(true);
-              }}
-              data-tour="create-vacancy"
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
-            >
-              <Plus className="w-5 h-5" />
-              Новая вакансия
-            </button>
+              <h1 className="text-2xl font-bold flex items-center gap-2">
+                <Briefcase className="w-7 h-7 text-blue-400" />
+                Вакансии
+              </h1>
+            </OnboardingTooltip>
+
+            {/* Main Tabs */}
+            <div className="flex items-center bg-white/5 rounded-lg p-1">
+              <button
+                onClick={() => handleMainTabChange('vacancies')}
+                className={clsx(
+                  'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                  mainTab === 'vacancies'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                )}
+              >
+                <Briefcase className="w-4 h-4" />
+                Вакансии
+              </button>
+              <button
+                onClick={() => handleMainTabChange('database')}
+                className={clsx(
+                  'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                  mainTab === 'database'
+                    ? 'bg-purple-600 text-white'
+                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                )}
+              >
+                <Database className="w-4 h-4" />
+                База
+              </button>
+            </div>
           </div>
+
+          {mainTab === 'vacancies' && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowParserModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
+              >
+                <Upload className="w-4 h-4" />
+                Импорт
+              </button>
+              <button
+                onClick={() => {
+                  setPrefillData(null);
+                  setShowCreateModal(true);
+                }}
+                data-tour="create-vacancy"
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
+              >
+                <Plus className="w-5 h-5" />
+                Новая вакансия
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Filters */}
+        {/* Filters - only show for vacancies tab */}
+        {mainTab === 'vacancies' && (
         <div className="flex flex-wrap items-center gap-3">
           {/* Search */}
           <div className="relative flex-1 min-w-[200px] max-w-md">
@@ -636,9 +703,17 @@ export default function VacanciesPage() {
             </AnimatePresence>
           </div>
         </div>
+        )}
       </div>
 
-      {/* Vacancies list */}
+      {/* Content - conditional based on mainTab */}
+      {mainTab === 'database' ? (
+        <CandidatesDatabase
+          vacancies={vacancies}
+          onRefreshVacancies={fetchVacancies}
+        />
+      ) : (
+      /* Vacancies list */
       <div className="flex-1 overflow-auto p-3 sm:p-4">
         {error ? (
           <ErrorMessage
@@ -759,6 +834,7 @@ export default function VacanciesPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Create/Edit Modal */}
       <AnimatePresence>

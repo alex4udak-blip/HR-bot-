@@ -999,6 +999,22 @@ export const deleteEntity = async (id: number): Promise<void> => {
   await debouncedMutation<void>('delete', `/entities/${id}`);
 };
 
+/**
+ * Quick status update for Kanban drag & drop
+ */
+export const updateEntityStatus = async (id: number, status: EntityStatus): Promise<{
+  id: number;
+  status: EntityStatus;
+  previous_status: EntityStatus;
+}> => {
+  const { data } = await debouncedMutation<{
+    id: number;
+    status: EntityStatus;
+    previous_status: EntityStatus;
+  }>('patch', `/entities/${id}/status`, { status });
+  return data;
+};
+
 export const transferEntity = async (entityId: number, transferData: {
   to_user_id: number;
   to_department_id?: number;
@@ -2458,6 +2474,7 @@ export interface ParsedVacancy {
   description?: string;
   requirements?: string;
   responsibilities?: string;
+  skills?: string[];
   salary_min?: number;
   salary_max?: number;
   salary_currency: string;
@@ -2502,6 +2519,56 @@ export const parseVacancyFromUrl = async (url: string): Promise<ParsedVacancy> =
     throw new Error(response.error || 'Ошибка парсинга вакансии');
   }
   return response.data;
+};
+
+export const parseVacancyFromFile = async (file: File): Promise<ParsedVacancy> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data: response } = await api.post<ParseResponse<ParsedVacancy>>('/parser/vacancy/file', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'Ошибка парсинга файла вакансии');
+  }
+  return response.data;
+};
+
+/**
+ * Result for a single resume in bulk import
+ */
+export interface BulkImportResult {
+  filename: string;
+  success: boolean;
+  entity_id?: number;
+  entity_name?: string;
+  error?: string;
+}
+
+/**
+ * Response from bulk resume import
+ */
+export interface BulkImportResponse {
+  success: boolean;
+  total_files: number;
+  successful: number;
+  failed: number;
+  results: BulkImportResult[];
+  error?: string;
+}
+
+/**
+ * Bulk import resumes from a ZIP file.
+ * Each resume will be parsed using AI and a candidate entity will be created.
+ * @param file - ZIP file containing resume files (PDF, DOC, DOCX)
+ * @returns Import results for each file
+ */
+export const bulkImportResumes = async (file: File): Promise<BulkImportResponse> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await api.post<BulkImportResponse>('/parser/resume/bulk-import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+  return data;
 };
 
 /**

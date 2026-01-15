@@ -20,8 +20,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     unrar-free \
     libheif-dev \
+    libmagic1 \
     wget \
     gnupg \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Stage 2: LibreOffice (for document parsing - docx, xlsx, pptx)
@@ -61,6 +63,10 @@ RUN chmod +x start.sh
 # Railway injects PORT environment variable
 ENV PORT=8000
 EXPOSE 8000
+
+# Health check for container orchestration
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
 
 # Start with migrations + server
 CMD ["./start.sh"]

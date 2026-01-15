@@ -268,7 +268,7 @@ class VacancyResponse(BaseModel):
 class ApplicationCreate(BaseModel):
     vacancy_id: int
     entity_id: int
-    stage: ApplicationStage = ApplicationStage.applied
+    stage: ApplicationStage = ApplicationStage.applied  # Default to 'applied' (exists in DB enum, shown as "Новый" in UI)
     rating: Optional[int] = None
     notes: Optional[str] = None
     source: Optional[str] = None
@@ -331,7 +331,7 @@ class BulkStageUpdate(BaseModel):
 
 # === Vacancy CRUD Endpoints ===
 
-@router.get("/", response_model=List[VacancyResponse])
+@router.get("", response_model=List[VacancyResponse])
 async def list_vacancies(
     status: Optional[VacancyStatus] = None,
     department_id: Optional[int] = None,
@@ -448,7 +448,7 @@ async def list_vacancies(
     return responses
 
 
-@router.post("/", response_model=VacancyResponse, status_code=201)
+@router.post("", response_model=VacancyResponse, status_code=201)
 async def create_vacancy(
     data: VacancyCreate,
     db: AsyncSession = Depends(get_db),
@@ -953,17 +953,18 @@ async def get_kanban_board(
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
-    # Define stage order and titles
+    # Define stage order and titles (using existing DB enum values with HR labels)
+    # Mapping: applied=Новый, screening=Скрининг, phone_screen=Практика,
+    #          interview=Тех-практика, assessment=ИС, offer=Оффер, hired=Принят, rejected=Отказ
     stage_config = [
-        (ApplicationStage.applied, "Отклики"),
-        (ApplicationStage.screening, "Скрининг"),
-        (ApplicationStage.phone_screen, "Телефонное интервью"),
-        (ApplicationStage.interview, "Интервью"),
-        (ApplicationStage.assessment, "Тестовое задание"),
-        (ApplicationStage.offer, "Оффер"),
-        (ApplicationStage.hired, "Наняты"),
-        (ApplicationStage.rejected, "Отклонены"),
-        (ApplicationStage.withdrawn, "Отозвали заявку"),
+        (ApplicationStage.applied, "Новый", [ApplicationStage.applied]),
+        (ApplicationStage.screening, "Скрининг", [ApplicationStage.screening]),
+        (ApplicationStage.phone_screen, "Практика", [ApplicationStage.phone_screen]),
+        (ApplicationStage.interview, "Тех-практика", [ApplicationStage.interview]),
+        (ApplicationStage.assessment, "ИС", [ApplicationStage.assessment]),
+        (ApplicationStage.offer, "Оффер", [ApplicationStage.offer]),
+        (ApplicationStage.hired, "Принят", [ApplicationStage.hired]),
+        (ApplicationStage.rejected, "Отказ", [ApplicationStage.rejected]),
     ]
 
     # Get total counts per stage (for UI to show "X more" indicators)
@@ -976,12 +977,12 @@ async def get_kanban_board(
 
     # Get applications per stage with limit (optimized queries)
     all_apps = []
-    for stage, _ in stage_config:
+    for display_stage, _, query_stages in stage_config:
         stage_result = await db.execute(
             select(VacancyApplication)
             .where(
                 VacancyApplication.vacancy_id == vacancy_id,
-                VacancyApplication.stage == stage
+                VacancyApplication.stage.in_(query_stages)
             )
             .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
             .limit(limit_per_column)
@@ -1002,9 +1003,11 @@ async def get_kanban_board(
     columns = []
     total_count = sum(stage_total_counts.values())
 
-    for stage, title in stage_config:
-        stage_apps = [app for app in all_apps if app.stage == stage]
-        stage_total = stage_total_counts.get(stage, 0)
+    for display_stage, title, query_stages in stage_config:
+        # Filter apps that belong to this column (including legacy stages)
+        stage_apps = [app for app in all_apps if app.stage in query_stages]
+        # Sum counts for all stages in this column
+        stage_total = sum(stage_total_counts.get(s, 0) for s in query_stages)
 
         app_responses = []
         for app in stage_apps:
@@ -1032,7 +1035,7 @@ async def get_kanban_board(
             ))
 
         columns.append(KanbanColumn(
-            stage=stage,
+            stage=display_stage,
             title=title,
             applications=app_responses,
             count=len(app_responses),
@@ -1069,17 +1072,17 @@ async def get_kanban_column(
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
-    # Define stage titles
+    # Define stage titles (HR Pipeline stages - using existing DB enum values)
     stage_titles = {
-        ApplicationStage.applied: "Отклики",
+        ApplicationStage.applied: "Новый",
         ApplicationStage.screening: "Скрининг",
-        ApplicationStage.phone_screen: "Телефонное интервью",
-        ApplicationStage.interview: "Интервью",
-        ApplicationStage.assessment: "Тестовое задание",
+        ApplicationStage.phone_screen: "Практика",
+        ApplicationStage.interview: "Тех-практика",
+        ApplicationStage.assessment: "ИС",
         ApplicationStage.offer: "Оффер",
-        ApplicationStage.hired: "Наняты",
-        ApplicationStage.rejected: "Отклонены",
-        ApplicationStage.withdrawn: "Отозвали заявку",
+        ApplicationStage.hired: "Принят",
+        ApplicationStage.rejected: "Отказ",
+        ApplicationStage.withdrawn: "Отозван",
     }
 
     # Get total count for this stage

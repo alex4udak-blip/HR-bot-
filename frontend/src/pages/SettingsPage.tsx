@@ -21,7 +21,8 @@ import {
   ToggleLeft,
   ToggleRight,
   Briefcase,
-  Brain
+  Brain,
+  Users
 } from 'lucide-react';
 import {
   getCriteriaPresets,
@@ -60,6 +61,11 @@ const featureConfig: Record<string, { icon: typeof Briefcase; label: string; des
     icon: Brain,
     label: 'AI Анализ',
     description: 'AI-анализ для контактов и звонков'
+  },
+  candidate_database: {
+    icon: Users,
+    label: 'База кандидатов',
+    description: 'Доступ к базе кандидатов в разделе Вакансии'
   }
 };
 
@@ -342,11 +348,11 @@ export default function SettingsPage() {
   }, {} as Record<string, CriteriaPreset[]>);
 
   return (
-    <div className="h-full overflow-y-auto p-6">
+    <div className="h-full w-full max-w-full overflow-y-auto overflow-x-hidden p-6">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-4xl mx-auto space-y-6"
+        className="max-w-4xl mx-auto space-y-6 w-full"
       >
         {/* Header */}
         <div className="flex items-center justify-between">

@@ -80,7 +80,7 @@ async def get_chat_type_details(type_id: str):
 async def get_chats(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-    search: str = Query(None),
+    search: str = Query(None, max_length=255),
     chat_type: str = Query(None, description="Filter by chat type"),
     limit: int = Query(100, le=200),
     offset: int = Query(0, ge=0),

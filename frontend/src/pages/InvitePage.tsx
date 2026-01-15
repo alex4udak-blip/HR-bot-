@@ -83,7 +83,7 @@ export default function InvitePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 relative">
+      <div className="min-h-screen w-full max-w-full flex items-center justify-center p-4 relative overflow-x-hidden">
         <BackgroundEffects />
         <div className="w-8 h-8 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
       </div>
@@ -93,7 +93,7 @@ export default function InvitePage() {
   // Registration complete - show Telegram binding option
   if (registrationComplete) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 relative">
+      <div className="min-h-screen w-full max-w-full flex items-center justify-center p-4 relative overflow-x-hidden">
         <BackgroundEffects />
 
         <motion.div
@@ -162,7 +162,7 @@ export default function InvitePage() {
   // Invalid, expired or used invitation
   if (!invitation?.valid) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 relative">
+      <div className="min-h-screen w-full max-w-full flex items-center justify-center p-4 relative overflow-x-hidden">
         <BackgroundEffects />
 
         <motion.div
@@ -210,7 +210,7 @@ export default function InvitePage() {
 
   // Valid invitation - show registration form
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative">
+    <div className="min-h-screen w-full max-w-full flex items-center justify-center p-4 relative overflow-x-hidden">
       <BackgroundEffects />
 
       <motion.div

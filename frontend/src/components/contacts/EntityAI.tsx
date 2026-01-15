@@ -260,7 +260,9 @@ export default function EntityAI({ entity }: EntityAIProps) {
   };
 
   // Check if entity has any data (use actual arrays for EntityWithRelations)
-  const hasData = (entity.chats && entity.chats.length > 0) || (entity.calls && entity.calls.length > 0);
+  const hasData = (entity.chats && entity.chats.length > 0) ||
+                  (entity.calls && entity.calls.length > 0) ||
+                  (entity.files && entity.files.length > 0);
 
   return (
     <div className="h-full flex flex-col p-4">
@@ -268,7 +270,7 @@ export default function EntityAI({ entity }: EntityAIProps) {
       {!hasData && (
         <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 mb-4 flex-shrink-0">
           <p className="text-sm text-yellow-400/80">
-            К контакту не привязаны чаты или звонки. Привяжите данные для полноценного анализа.
+            К контакту не привязаны чаты, звонки или файлы. Привяжите данные для полноценного анализа.
           </p>
         </div>
       )}
