@@ -74,25 +74,26 @@ async def run_migration(engine, sql: str, description: str):
 
 
 async def add_enum_value(engine, enum_name: str, value: str, description: str):
-    """Add a value to an existing enum type using raw connection (no transaction).
+    """Add a value to an existing enum type using raw asyncpg connection (no transaction).
 
     PostgreSQL requires ALTER TYPE ADD VALUE to run outside of a transaction block.
+    We use raw asyncpg connection to bypass SQLAlchemy's transaction management.
     """
-    from sqlalchemy import text
-    from sqlalchemy.ext.asyncio import create_async_engine
+    import asyncpg
     from api.config import settings
 
     try:
-        # Create a separate connection with autocommit for ALTER TYPE
-        raw_engine = create_async_engine(
-            settings.DATABASE_URL,
-            isolation_level="AUTOCOMMIT"
-        )
-        async with raw_engine.connect() as conn:
-            await conn.execute(text(f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS '{value}'"))
-        await raw_engine.dispose()
-        logger.info(f"Enum value OK: {description}")
-        return True
+        # Parse DATABASE_URL for asyncpg (convert postgresql+asyncpg:// to postgresql://)
+        db_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+
+        # Connect directly with asyncpg (no transaction by default)
+        conn = await asyncpg.connect(db_url)
+        try:
+            await conn.execute(f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS '{value}'")
+            logger.info(f"Enum value OK: {description}")
+            return True
+        finally:
+            await conn.close()
     except Exception as e:
         logger.warning(f"Enum value failed ({description}): {e}")
         return False
