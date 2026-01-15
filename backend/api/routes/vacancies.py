@@ -954,15 +954,16 @@ async def get_kanban_board(
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
     # Define stage order and titles (HR Pipeline stages)
+    # Note: 'applied' is legacy and maps to 'new' for display
     stage_config = [
-        (ApplicationStage.new, "Новый"),
-        (ApplicationStage.screening, "Скрининг"),
-        (ApplicationStage.practice, "Практика"),
-        (ApplicationStage.tech_practice, "Тех-практика"),
-        (ApplicationStage.is_interview, "ИС"),
-        (ApplicationStage.offer, "Оффер"),
-        (ApplicationStage.hired, "Принят"),
-        (ApplicationStage.rejected, "Отказ"),
+        (ApplicationStage.new, "Новый", [ApplicationStage.new, ApplicationStage.applied]),  # Include legacy 'applied'
+        (ApplicationStage.screening, "Скрининг", [ApplicationStage.screening]),
+        (ApplicationStage.practice, "Практика", [ApplicationStage.practice]),
+        (ApplicationStage.tech_practice, "Тех-практика", [ApplicationStage.tech_practice]),
+        (ApplicationStage.is_interview, "ИС", [ApplicationStage.is_interview]),
+        (ApplicationStage.offer, "Оффер", [ApplicationStage.offer]),
+        (ApplicationStage.hired, "Принят", [ApplicationStage.hired]),
+        (ApplicationStage.rejected, "Отказ", [ApplicationStage.rejected]),
     ]
 
     # Get total counts per stage (for UI to show "X more" indicators)
@@ -975,12 +976,12 @@ async def get_kanban_board(
 
     # Get applications per stage with limit (optimized queries)
     all_apps = []
-    for stage, _ in stage_config:
+    for display_stage, _, query_stages in stage_config:
         stage_result = await db.execute(
             select(VacancyApplication)
             .where(
                 VacancyApplication.vacancy_id == vacancy_id,
-                VacancyApplication.stage == stage
+                VacancyApplication.stage.in_(query_stages)
             )
             .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
             .limit(limit_per_column)
@@ -1001,9 +1002,11 @@ async def get_kanban_board(
     columns = []
     total_count = sum(stage_total_counts.values())
 
-    for stage, title in stage_config:
-        stage_apps = [app for app in all_apps if app.stage == stage]
-        stage_total = stage_total_counts.get(stage, 0)
+    for display_stage, title, query_stages in stage_config:
+        # Filter apps that belong to this column (including legacy stages)
+        stage_apps = [app for app in all_apps if app.stage in query_stages]
+        # Sum counts for all stages in this column
+        stage_total = sum(stage_total_counts.get(s, 0) for s in query_stages)
 
         app_responses = []
         for app in stage_apps:
@@ -1031,7 +1034,7 @@ async def get_kanban_board(
             ))
 
         columns.append(KanbanColumn(
-            stage=stage,
+            stage=display_stage,
             title=title,
             applications=app_responses,
             count=len(app_responses),
