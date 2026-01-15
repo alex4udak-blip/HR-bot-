@@ -34,13 +34,13 @@ interface DropTarget {
   index: number | null; // null means end of column, number means before that index
 }
 
-// Use HR Pipeline stages (matching PIPELINE_STAGES from types)
+// Use existing PostgreSQL enum values (mapped to HR labels in backend stage_config)
 const VISIBLE_STAGES: ApplicationStage[] = [
-  'new',          // Новый
+  'applied',      // Новый
   'screening',    // Скрининг
-  'practice',     // Практика
-  'tech_practice',// Тех-практика
-  'is_interview', // ИС (итоговое собеседование)
+  'phone_screen', // Практика
+  'interview',    // Тех-практика
+  'assessment',   // ИС (итоговое собеседование)
   'offer',        // Оффер
   'hired',        // Принят
   'rejected'      // Отказ

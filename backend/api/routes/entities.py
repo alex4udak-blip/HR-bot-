@@ -2435,12 +2435,12 @@ async def apply_entity_to_vacancy(
     if existing:
         raise HTTPException(400, "Entity already applied to this vacancy")
 
-    # Get max stage_order for the 'new' stage (HR pipeline)
+    # Get max stage_order for the 'applied' stage (HR pipeline - shown as "Новый" in UI)
     max_order_result = await db.execute(
         select(func.max(VacancyApplication.stage_order))
         .where(
             VacancyApplication.vacancy_id == data.vacancy_id,
-            VacancyApplication.stage == ApplicationStage.new
+            VacancyApplication.stage == ApplicationStage.applied
         )
     )
     max_order = max_order_result.scalar() or 0
@@ -2449,7 +2449,7 @@ async def apply_entity_to_vacancy(
     application = VacancyApplication(
         vacancy_id=data.vacancy_id,
         entity_id=entity_id,
-        stage=ApplicationStage.new,  # Use 'new' for HR pipeline
+        stage=ApplicationStage.applied,  # Use 'applied' (exists in DB enum, shown as "Новый" in UI)
         stage_order=max_order + 1,
         source=data.source,
         notes=data.notes,

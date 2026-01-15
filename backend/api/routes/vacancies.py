@@ -268,7 +268,7 @@ class VacancyResponse(BaseModel):
 class ApplicationCreate(BaseModel):
     vacancy_id: int
     entity_id: int
-    stage: ApplicationStage = ApplicationStage.new  # Default to 'new' for HR pipeline
+    stage: ApplicationStage = ApplicationStage.applied  # Default to 'applied' (exists in DB enum, shown as "Новый" in UI)
     rating: Optional[int] = None
     notes: Optional[str] = None
     source: Optional[str] = None
@@ -953,14 +953,15 @@ async def get_kanban_board(
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
-    # Define stage order and titles (HR Pipeline stages)
-    # Note: 'applied' is legacy and maps to 'new' for display
+    # Define stage order and titles (using existing DB enum values with HR labels)
+    # Mapping: applied=Новый, screening=Скрининг, phone_screen=Практика,
+    #          interview=Тех-практика, assessment=ИС, offer=Оффер, hired=Принят, rejected=Отказ
     stage_config = [
-        (ApplicationStage.new, "Новый", [ApplicationStage.new, ApplicationStage.applied]),  # Include legacy 'applied'
+        (ApplicationStage.applied, "Новый", [ApplicationStage.applied]),
         (ApplicationStage.screening, "Скрининг", [ApplicationStage.screening]),
-        (ApplicationStage.practice, "Практика", [ApplicationStage.practice]),
-        (ApplicationStage.tech_practice, "Тех-практика", [ApplicationStage.tech_practice]),
-        (ApplicationStage.is_interview, "ИС", [ApplicationStage.is_interview]),
+        (ApplicationStage.phone_screen, "Практика", [ApplicationStage.phone_screen]),
+        (ApplicationStage.interview, "Тех-практика", [ApplicationStage.interview]),
+        (ApplicationStage.assessment, "ИС", [ApplicationStage.assessment]),
         (ApplicationStage.offer, "Оффер", [ApplicationStage.offer]),
         (ApplicationStage.hired, "Принят", [ApplicationStage.hired]),
         (ApplicationStage.rejected, "Отказ", [ApplicationStage.rejected]),
@@ -1071,22 +1072,17 @@ async def get_kanban_column(
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
-    # Define stage titles (HR Pipeline stages)
+    # Define stage titles (HR Pipeline stages - using existing DB enum values)
     stage_titles = {
-        ApplicationStage.new: "Новый",
+        ApplicationStage.applied: "Новый",
         ApplicationStage.screening: "Скрининг",
-        ApplicationStage.practice: "Практика",
-        ApplicationStage.tech_practice: "Тех-практика",
-        ApplicationStage.is_interview: "ИС",
+        ApplicationStage.phone_screen: "Практика",
+        ApplicationStage.interview: "Тех-практика",
+        ApplicationStage.assessment: "ИС",
         ApplicationStage.offer: "Оффер",
         ApplicationStage.hired: "Принят",
         ApplicationStage.rejected: "Отказ",
-        # Legacy (kept for backward compatibility)
-        ApplicationStage.applied: "Отклик (legacy)",
-        ApplicationStage.phone_screen: "Телефонный скрининг (legacy)",
-        ApplicationStage.interview: "Собеседование (legacy)",
-        ApplicationStage.assessment: "Тестирование (legacy)",
-        ApplicationStage.withdrawn: "Отозван (legacy)",
+        ApplicationStage.withdrawn: "Отозван",
     }
 
     # Get total count for this stage

@@ -1037,12 +1037,12 @@ class VacancyRecommenderService:
             )
             return None
 
-        # Get max stage_order for 'new' stage (HR pipeline)
+        # Get max stage_order for 'applied' stage (HR pipeline - shown as "Новый" in UI)
         max_order_result = await db.execute(
             select(func.max(VacancyApplication.stage_order))
             .where(
                 VacancyApplication.vacancy_id == vacancy.id,
-                VacancyApplication.stage == ApplicationStage.new
+                VacancyApplication.stage == ApplicationStage.applied
             )
         )
         max_order = max_order_result.scalar() or 0
@@ -1051,7 +1051,7 @@ class VacancyRecommenderService:
         application = VacancyApplication(
             vacancy_id=vacancy.id,
             entity_id=entity.id,
-            stage=ApplicationStage.new,  # Use 'new' for HR pipeline
+            stage=ApplicationStage.applied,  # Use 'applied' (exists in DB enum, shown as "Новый" in UI)
             stage_order=max_order + 1,
             source=source,
             created_by=created_by,

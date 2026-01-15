@@ -126,10 +126,10 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     CANDIDATE_PIPELINE_STAGES.forEach(stage => {
       counts[stage] = searchFilteredCandidates.filter(c => c.status === stage).length;
     });
-    // Count candidates with unknown status as 'new'
+    // Count candidates with unknown status as 'applied' (displayed as "Новый")
     const knownStatuses = new Set(CANDIDATE_PIPELINE_STAGES);
     const unknownCount = searchFilteredCandidates.filter(c => !knownStatuses.has(c.status as EntityStatus)).length;
-    counts['new'] = (counts['new'] || 0) + unknownCount;
+    counts['applied'] = (counts['applied'] || 0) + unknownCount;
     return counts;
   }, [searchFilteredCandidates]);
 
@@ -139,8 +139,8 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
     return searchFilteredCandidates.filter(c => {
       if (c.status === selectedStage) return true;
-      // Include unknown statuses in 'new'
-      if (selectedStage === 'new' && !CANDIDATE_PIPELINE_STAGES.includes(c.status as EntityStatus)) {
+      // Include unknown statuses in 'applied' (displayed as "Новый")
+      if (selectedStage === 'applied' && !CANDIDATE_PIPELINE_STAGES.includes(c.status as EntityStatus)) {
         return true;
       }
       return false;
@@ -158,7 +158,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
       if (grouped[status]) {
         grouped[status].push(candidate);
       } else {
-        grouped['new'].push(candidate);
+        grouped['applied'].push(candidate);  // Unknown statuses go to 'applied' (displayed as "Новый")
       }
     });
     return grouped;

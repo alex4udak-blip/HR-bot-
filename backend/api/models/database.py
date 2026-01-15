@@ -78,24 +78,29 @@ class VacancyStatus(str, enum.Enum):
 class ApplicationStage(str, enum.Enum):
     """Pipeline stage for candidate application
 
-    Main stages: new → screening → practice → tech_practice → is_interview → offer → hired/rejected
+    HR Pipeline (using existing PostgreSQL enum values with HR labels):
+    applied (Новый) → screening (Скрининг) → phone_screen (Практика) →
+    interview (Тех-практика) → assessment (ИС) → offer (Оффер) → hired/rejected
+
+    Note: We use the existing PostgreSQL enum values but display HR-friendly labels in the UI.
     """
-    # Main pipeline stages
-    new = "new"                   # Новый - just added to vacancy
+    # HR Pipeline stages (these exist in PostgreSQL enum)
+    applied = "applied"           # Новый - just added to vacancy (displayed as "Новый")
     screening = "screening"       # Скрининг - initial review
-    practice = "practice"         # Практика - practical task/test
-    tech_practice = "tech_practice"  # Тех-практика - technical practice
-    is_interview = "is_interview" # ИС - final interview (Information Security / Important Stage)
+    phone_screen = "phone_screen" # Практика - practical task/test (displayed as "Практика")
+    interview = "interview"       # Тех-практика - technical interview (displayed as "Тех-практика")
+    assessment = "assessment"     # ИС - final interview (displayed as "ИС")
     offer = "offer"               # Оффер - offer extended
     hired = "hired"               # Принят - accepted and hired
     rejected = "rejected"         # Отказ - rejected at any stage
+    withdrawn = "withdrawn"       # Отозван - candidate withdrew
 
-    # Legacy stages (kept for backward compatibility)
-    applied = "applied"           # Legacy: same as 'new'
-    phone_screen = "phone_screen" # Legacy: phone screening
-    interview = "interview"       # Legacy: interview stage
-    assessment = "assessment"     # Legacy: technical assessment
-    withdrawn = "withdrawn"       # Candidate withdrew
+    # Deprecated values (these do NOT exist in PostgreSQL enum and will cause errors)
+    # DO NOT USE these - they were added but never migrated to the database:
+    # new = "new"
+    # practice = "practice"
+    # tech_practice = "tech_practice"
+    # is_interview = "is_interview"
 
 
 class EntityFileType(str, enum.Enum):
@@ -780,7 +785,7 @@ class VacancyApplication(Base):
     id = Column(Integer, primary_key=True)
     vacancy_id = Column(Integer, ForeignKey("vacancies.id", ondelete="CASCADE"), nullable=False, index=True)
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
-    stage = Column(SQLEnum(ApplicationStage), default=ApplicationStage.new, index=True)  # HR pipeline default
+    stage = Column(SQLEnum(ApplicationStage), default=ApplicationStage.applied, index=True)  # HR pipeline default (using 'applied' which exists in DB enum)
     stage_order = Column(Integer, default=0)  # For custom ordering within a stage
     rating = Column(Integer, nullable=True)  # 1-5 rating
     notes = Column(Text, nullable=True)  # Internal notes about candidate
