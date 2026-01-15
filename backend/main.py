@@ -73,30 +73,40 @@ async def run_migration(engine, sql: str, description: str):
         return False
 
 
-async def add_enum_value(engine, enum_name: str, value: str, description: str):
-    """Add a value to an existing enum type using raw asyncpg connection (no transaction).
+def add_enum_value_sync(enum_name: str, value: str, description: str):
+    """Add a value to an existing enum type using psycopg2 with autocommit.
 
     PostgreSQL requires ALTER TYPE ADD VALUE to run outside of a transaction block.
-    We use raw asyncpg connection to bypass SQLAlchemy's transaction management.
+    We use synchronous psycopg2 with autocommit=True to ensure no transaction wrapping.
     """
-    import asyncpg
+    import psycopg2
     from api.config import settings
 
     try:
-        # Parse DATABASE_URL for asyncpg (convert postgresql+asyncpg:// to postgresql://)
+        # Parse DATABASE_URL for psycopg2 (convert postgresql+asyncpg:// to postgresql://)
         db_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 
-        # Connect directly with asyncpg (no transaction by default)
-        conn = await asyncpg.connect(db_url)
+        # Connect with autocommit enabled
+        conn = psycopg2.connect(db_url)
+        conn.autocommit = True
         try:
-            await conn.execute(f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS '{value}'")
+            cur = conn.cursor()
+            cur.execute(f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS '{value}'")
+            cur.close()
             logger.info(f"Enum value OK: {description}")
             return True
         finally:
-            await conn.close()
+            conn.close()
     except Exception as e:
         logger.warning(f"Enum value failed ({description}): {e}")
         return False
+
+
+async def add_enum_value(engine, enum_name: str, value: str, description: str):
+    """Async wrapper for add_enum_value_sync - runs in executor to not block event loop."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, add_enum_value_sync, enum_name, value, description)
 
 
 async def init_database():
