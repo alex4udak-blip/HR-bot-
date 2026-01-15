@@ -268,7 +268,7 @@ class VacancyResponse(BaseModel):
 class ApplicationCreate(BaseModel):
     vacancy_id: int
     entity_id: int
-    stage: ApplicationStage = ApplicationStage.applied
+    stage: ApplicationStage = ApplicationStage.new  # Default to 'new' for HR pipeline
     rating: Optional[int] = None
     notes: Optional[str] = None
     source: Optional[str] = None
@@ -953,17 +953,16 @@ async def get_kanban_board(
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
-    # Define stage order and titles
+    # Define stage order and titles (HR Pipeline stages)
     stage_config = [
-        (ApplicationStage.applied, "Отклики"),
+        (ApplicationStage.new, "Новый"),
         (ApplicationStage.screening, "Скрининг"),
-        (ApplicationStage.phone_screen, "Телефонное интервью"),
-        (ApplicationStage.interview, "Интервью"),
-        (ApplicationStage.assessment, "Тестовое задание"),
+        (ApplicationStage.practice, "Практика"),
+        (ApplicationStage.tech_practice, "Тех-практика"),
+        (ApplicationStage.is_interview, "ИС"),
         (ApplicationStage.offer, "Оффер"),
-        (ApplicationStage.hired, "Наняты"),
-        (ApplicationStage.rejected, "Отклонены"),
-        (ApplicationStage.withdrawn, "Отозвали заявку"),
+        (ApplicationStage.hired, "Принят"),
+        (ApplicationStage.rejected, "Отказ"),
     ]
 
     # Get total counts per stage (for UI to show "X more" indicators)
@@ -1069,17 +1068,22 @@ async def get_kanban_column(
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
-    # Define stage titles
+    # Define stage titles (HR Pipeline stages)
     stage_titles = {
-        ApplicationStage.applied: "Отклики",
+        ApplicationStage.new: "Новый",
         ApplicationStage.screening: "Скрининг",
-        ApplicationStage.phone_screen: "Телефонное интервью",
-        ApplicationStage.interview: "Интервью",
-        ApplicationStage.assessment: "Тестовое задание",
+        ApplicationStage.practice: "Практика",
+        ApplicationStage.tech_practice: "Тех-практика",
+        ApplicationStage.is_interview: "ИС",
         ApplicationStage.offer: "Оффер",
-        ApplicationStage.hired: "Наняты",
-        ApplicationStage.rejected: "Отклонены",
-        ApplicationStage.withdrawn: "Отозвали заявку",
+        ApplicationStage.hired: "Принят",
+        ApplicationStage.rejected: "Отказ",
+        # Legacy (kept for backward compatibility)
+        ApplicationStage.applied: "Отклик (legacy)",
+        ApplicationStage.phone_screen: "Телефонный скрининг (legacy)",
+        ApplicationStage.interview: "Собеседование (legacy)",
+        ApplicationStage.assessment: "Тестирование (legacy)",
+        ApplicationStage.withdrawn: "Отозван (legacy)",
     }
 
     # Get total count for this stage

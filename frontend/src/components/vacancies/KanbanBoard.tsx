@@ -34,15 +34,16 @@ interface DropTarget {
   index: number | null; // null means end of column, number means before that index
 }
 
+// Use HR Pipeline stages (matching PIPELINE_STAGES from types)
 const VISIBLE_STAGES: ApplicationStage[] = [
-  'applied',
-  'screening',
-  'phone_screen',
-  'interview',
-  'assessment',
-  'offer',
-  'hired',
-  'rejected'
+  'new',          // Новый
+  'screening',    // Скрининг
+  'practice',     // Практика
+  'tech_practice',// Тех-практика
+  'is_interview', // ИС (итоговое собеседование)
+  'offer',        // Оффер
+  'hired',        // Принят
+  'rejected'      // Отказ
 ];
 
 export default function KanbanBoard({ vacancy }: KanbanBoardProps) {

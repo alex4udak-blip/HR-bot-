@@ -780,7 +780,7 @@ class VacancyApplication(Base):
     id = Column(Integer, primary_key=True)
     vacancy_id = Column(Integer, ForeignKey("vacancies.id", ondelete="CASCADE"), nullable=False, index=True)
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
-    stage = Column(SQLEnum(ApplicationStage), default=ApplicationStage.applied, index=True)
+    stage = Column(SQLEnum(ApplicationStage), default=ApplicationStage.new, index=True)  # HR pipeline default
     stage_order = Column(Integer, default=0)  # For custom ordering within a stage
     rating = Column(Integer, nullable=True)  # 1-5 rating
     notes = Column(Text, nullable=True)  # Internal notes about candidate
