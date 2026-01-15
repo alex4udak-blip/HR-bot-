@@ -412,6 +412,12 @@ async def init_database():
         END $$
     """, "Create applicationstage enum")
 
+    # Add HR Pipeline stages to applicationstage enum
+    await run_migration(engine, "ALTER TYPE applicationstage ADD VALUE IF NOT EXISTS 'new'", "Add new to applicationstage enum")
+    await run_migration(engine, "ALTER TYPE applicationstage ADD VALUE IF NOT EXISTS 'practice'", "Add practice to applicationstage enum")
+    await run_migration(engine, "ALTER TYPE applicationstage ADD VALUE IF NOT EXISTS 'tech_practice'", "Add tech_practice to applicationstage enum")
+    await run_migration(engine, "ALTER TYPE applicationstage ADD VALUE IF NOT EXISTS 'is_interview'", "Add is_interview to applicationstage enum")
+
     # Create vacancies table
     create_vacancies = """
         CREATE TABLE IF NOT EXISTS vacancies (
