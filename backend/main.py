@@ -73,6 +73,31 @@ async def run_migration(engine, sql: str, description: str):
         return False
 
 
+async def add_enum_value(engine, enum_name: str, value: str, description: str):
+    """Add a value to an existing enum type using raw connection (no transaction).
+
+    PostgreSQL requires ALTER TYPE ADD VALUE to run outside of a transaction block.
+    """
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from api.config import settings
+
+    try:
+        # Create a separate connection with autocommit for ALTER TYPE
+        raw_engine = create_async_engine(
+            settings.DATABASE_URL,
+            isolation_level="AUTOCOMMIT"
+        )
+        async with raw_engine.connect() as conn:
+            await conn.execute(text(f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS '{value}'"))
+        await raw_engine.dispose()
+        logger.info(f"Enum value OK: {description}")
+        return True
+    except Exception as e:
+        logger.warning(f"Enum value failed ({description}): {e}")
+        return False
+
+
 async def init_database():
     """Initialize database with separate transactions for each migration."""
     from api.database import engine, AsyncSessionLocal
@@ -412,11 +437,11 @@ async def init_database():
         END $$
     """, "Create applicationstage enum")
 
-    # Add HR Pipeline stages to applicationstage enum
-    await run_migration(engine, "ALTER TYPE applicationstage ADD VALUE IF NOT EXISTS 'new'", "Add new to applicationstage enum")
-    await run_migration(engine, "ALTER TYPE applicationstage ADD VALUE IF NOT EXISTS 'practice'", "Add practice to applicationstage enum")
-    await run_migration(engine, "ALTER TYPE applicationstage ADD VALUE IF NOT EXISTS 'tech_practice'", "Add tech_practice to applicationstage enum")
-    await run_migration(engine, "ALTER TYPE applicationstage ADD VALUE IF NOT EXISTS 'is_interview'", "Add is_interview to applicationstage enum")
+    # Add HR Pipeline stages to applicationstage enum (MUST use autocommit - no transaction)
+    await add_enum_value(engine, "applicationstage", "new", "Add new to applicationstage enum")
+    await add_enum_value(engine, "applicationstage", "practice", "Add practice to applicationstage enum")
+    await add_enum_value(engine, "applicationstage", "tech_practice", "Add tech_practice to applicationstage enum")
+    await add_enum_value(engine, "applicationstage", "is_interview", "Add is_interview to applicationstage enum")
 
     # Create vacancies table
     create_vacancies = """
