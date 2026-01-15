@@ -758,6 +758,7 @@ app = FastAPI(
     description="API for HR candidate analysis with Telegram integration",
     version="1.0.0",
     lifespan=lifespan,
+    redirect_slashes=False,  # Prevent 307 redirects that convert POST to GET
 )
 
 # Rate limiting

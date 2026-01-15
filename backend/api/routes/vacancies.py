@@ -331,7 +331,7 @@ class BulkStageUpdate(BaseModel):
 
 # === Vacancy CRUD Endpoints ===
 
-@router.get("/", response_model=List[VacancyResponse])
+@router.get("", response_model=List[VacancyResponse])
 async def list_vacancies(
     status: Optional[VacancyStatus] = None,
     department_id: Optional[int] = None,
@@ -448,7 +448,7 @@ async def list_vacancies(
     return responses
 
 
-@router.post("/", response_model=VacancyResponse, status_code=201)
+@router.post("", response_model=VacancyResponse, status_code=201)
 async def create_vacancy(
     data: VacancyCreate,
     db: AsyncSession = Depends(get_db),

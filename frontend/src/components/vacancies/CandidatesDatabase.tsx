@@ -507,38 +507,179 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                 </button>
               </div>
             </div>
-          ) : viewMode === 'grid' ? (
-            /* Grid View */
-            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              <AnimatePresence mode="popLayout">
-                {filteredCandidates.map(candidate => (
-                  <motion.div
-                    key={candidate.id}
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{
-                      opacity: draggedCandidate?.id === candidate.id ? 0.5 : 1,
-                      scale: draggedCandidate?.id === candidate.id ? 0.98 : 1
-                    }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    draggable
-                    onDragStart={() => handleDragStart(candidate)}
-                    onDragEnd={handleDragEnd}
-                    onClick={() => handleCandidateClick(candidate)}
-                    className={clsx(
-                      'p-3 bg-white/5 hover:bg-white/10 border rounded-xl cursor-pointer transition-all group overflow-hidden',
-                      selectedCandidates.has(candidate.id)
-                        ? 'border-purple-500/50 bg-purple-500/10'
-                        : 'border-white/10'
-                    )}
-                  >
-                    {/* Header */}
-                    <div className="flex items-start gap-2 mb-2">
+          ) : (
+            <AnimatePresence mode="wait">
+              {viewMode === 'grid' ? (
+                /* Grid View */
+                <motion.div
+                  key="grid-view"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                >
+                  {filteredCandidates.map(candidate => (
+                    <motion.div
+                      key={candidate.id}
+                      layout
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{
+                        opacity: draggedCandidate?.id === candidate.id ? 0.5 : 1,
+                        scale: draggedCandidate?.id === candidate.id ? 0.98 : 1
+                      }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      draggable
+                      onDragStart={() => handleDragStart(candidate)}
+                      onDragEnd={handleDragEnd}
+                      onClick={() => handleCandidateClick(candidate)}
+                      className={clsx(
+                        'p-3 bg-white/5 hover:bg-white/10 border rounded-xl cursor-pointer transition-all group overflow-hidden',
+                        selectedCandidates.has(candidate.id)
+                          ? 'border-purple-500/50 bg-purple-500/10'
+                          : 'border-white/10'
+                      )}
+                    >
+                      {/* Header */}
+                      <div className="flex items-start gap-2 mb-2">
+                        {/* Checkbox */}
+                        <button
+                          onClick={(e) => handleToggleSelect(candidate.id, e)}
+                          className={clsx(
+                            'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition-colors mt-0.5',
+                            selectedCandidates.has(candidate.id)
+                              ? 'bg-purple-600 border-purple-600'
+                              : 'border-white/20 hover:border-white/40'
+                          )}
+                        >
+                          {selectedCandidates.has(candidate.id) && (
+                            <Check className="w-3 h-3" />
+                          )}
+                        </button>
+
+                        {/* Avatar */}
+                        <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-sm flex-shrink-0">
+                          {getAvatarInitials(candidate.name || 'UK')}
+                        </div>
+
+                        {/* Name & Position */}
+                        <div className="flex-1 min-w-0 overflow-hidden">
+                          <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
+                          {candidate.position && (
+                            <p className="text-xs text-white/50 truncate">{candidate.position}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Contact Info */}
+                      <div className="space-y-1 text-xs text-white/60 ml-7">
+                        {candidate.email && (
+                          <div className="flex items-center gap-1.5 overflow-hidden">
+                            <Mail className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{candidate.email}</span>
+                          </div>
+                        )}
+                        {candidate.phone && (
+                          <div className="flex items-center gap-1.5">
+                            <Phone className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{candidate.phone}</span>
+                          </div>
+                        )}
+                        {typeof candidate.extra_data?.location === 'string' && candidate.extra_data.location && (
+                          <div className="flex items-center gap-1.5 overflow-hidden">
+                            <MapPin className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{candidate.extra_data.location}</span>
+                          </div>
+                        )}
+                        {(candidate.expected_salary_min || candidate.expected_salary_max) && (
+                          <div className="flex items-center gap-1.5 text-green-400">
+                            <DollarSign className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">
+                              {formatSalary(
+                                candidate.expected_salary_min,
+                                candidate.expected_salary_max,
+                                candidate.expected_salary_currency
+                              )}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Tags */}
+                      {candidate.tags && candidate.tags.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1 ml-7">
+                          {candidate.tags.slice(0, 3).map(tag => (
+                            <span
+                              key={tag}
+                              className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/60 truncate max-w-[80px]"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                          {candidate.tags.length > 3 && (
+                            <span className="px-1.5 py-0.5 text-xs text-white/40">
+                              +{candidate.tags.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Footer */}
+                      <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-xs text-white/40 ml-7">
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {formatDate(candidate.created_at)}
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCandidateClick(candidate);
+                          }}
+                          className="p-1 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </motion.div>
+              ) : (
+                /* List View */
+                <motion.div
+                  key="list-view"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="space-y-2"
+                >
+                  {filteredCandidates.map(candidate => (
+                    <motion.div
+                      key={candidate.id}
+                      layout
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{
+                        opacity: draggedCandidate?.id === candidate.id ? 0.5 : 1
+                      }}
+                      exit={{ opacity: 0, y: -5 }}
+                      transition={{ duration: 0.15 }}
+                      draggable
+                      onDragStart={() => handleDragStart(candidate)}
+                      onDragEnd={handleDragEnd}
+                      onClick={() => handleCandidateClick(candidate)}
+                      className={clsx(
+                        'flex items-center gap-4 p-3 bg-white/5 hover:bg-white/10 border rounded-lg cursor-pointer transition-all group',
+                        selectedCandidates.has(candidate.id)
+                          ? 'border-purple-500/50 bg-purple-500/10'
+                          : 'border-white/10'
+                      )}
+                    >
                       {/* Checkbox */}
                       <button
                         onClick={(e) => handleToggleSelect(candidate.id, e)}
                         className={clsx(
-                          'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition-colors mt-0.5',
+                          'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
                           selectedCandidates.has(candidate.id)
                             ? 'bg-purple-600 border-purple-600'
                             : 'border-white/20 hover:border-white/40'
@@ -554,196 +695,71 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                         {getAvatarInitials(candidate.name || 'UK')}
                       </div>
 
-                      {/* Name & Position */}
-                      <div className="flex-1 min-w-0 overflow-hidden">
-                        <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
-                        {candidate.position && (
-                          <p className="text-xs text-white/50 truncate">{candidate.position}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Contact Info */}
-                    <div className="space-y-1 text-xs text-white/60 ml-7">
-                      {candidate.email && (
-                        <div className="flex items-center gap-1.5 overflow-hidden">
-                          <Mail className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">{candidate.email}</span>
+                      {/* Main Info */}
+                      <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {/* Name & Position */}
+                        <div className="min-w-0">
+                          <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
+                          {candidate.position && (
+                            <p className="text-xs text-white/50 truncate">{candidate.position}</p>
+                          )}
                         </div>
-                      )}
-                      {candidate.phone && (
-                        <div className="flex items-center gap-1.5">
-                          <Phone className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">{candidate.phone}</span>
+
+                        {/* Contact Info */}
+                        <div className="text-xs text-white/60 space-y-0.5 min-w-0">
+                          {candidate.email && (
+                            <div className="flex items-center gap-1.5 truncate">
+                              <Mail className="w-3 h-3 flex-shrink-0" />
+                              <span className="truncate">{candidate.email}</span>
+                            </div>
+                          )}
+                          {candidate.phone && (
+                            <div className="flex items-center gap-1.5">
+                              <Phone className="w-3 h-3 flex-shrink-0" />
+                              <span>{candidate.phone}</span>
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {typeof candidate.extra_data?.location === 'string' && candidate.extra_data.location && (
-                        <div className="flex items-center gap-1.5 overflow-hidden">
-                          <MapPin className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">{candidate.extra_data.location}</span>
+
+                        {/* Tags */}
+                        <div className="flex flex-wrap gap-1 items-start">
+                          {candidate.tags?.slice(0, 4).map(tag => (
+                            <span
+                              key={tag}
+                              className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/60"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                          {(candidate.tags?.length || 0) > 4 && (
+                            <span className="px-1.5 py-0.5 text-xs text-white/40">
+                              +{candidate.tags!.length - 4}
+                            </span>
+                          )}
                         </div>
-                      )}
-                      {(candidate.expected_salary_min || candidate.expected_salary_max) && (
-                        <div className="flex items-center gap-1.5 text-green-400">
-                          <DollarSign className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">
-                            {formatSalary(
-                              candidate.expected_salary_min,
-                              candidate.expected_salary_max,
-                              candidate.expected_salary_currency
-                            )}
-                          </span>
+                      </div>
+
+                      {/* Date & Actions */}
+                      <div className="flex items-center gap-2 flex-shrink-0 text-xs text-white/40">
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {formatDate(candidate.created_at)}
                         </div>
-                      )}
-                    </div>
-
-                    {/* Tags */}
-                    {candidate.tags && candidate.tags.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1 ml-7">
-                        {candidate.tags.slice(0, 3).map(tag => (
-                          <span
-                            key={tag}
-                            className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/60 truncate max-w-[80px]"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                        {candidate.tags.length > 3 && (
-                          <span className="px-1.5 py-0.5 text-xs text-white/40">
-                            +{candidate.tags.length - 3}
-                          </span>
-                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCandidateClick(candidate);
+                          }}
+                          className="p-1.5 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </button>
                       </div>
-                    )}
-
-                    {/* Footer */}
-                    <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-xs text-white/40 ml-7">
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {formatDate(candidate.created_at)}
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCandidateClick(candidate);
-                        }}
-                        className="p-1 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-          ) : (
-            /* List View */
-            <div className="space-y-2">
-              <AnimatePresence mode="popLayout">
-                {filteredCandidates.map(candidate => (
-                  <motion.div
-                    key={candidate.id}
-                    layout
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{
-                      opacity: draggedCandidate?.id === candidate.id ? 0.5 : 1
-                    }}
-                    exit={{ opacity: 0, y: -10 }}
-                    draggable
-                    onDragStart={() => handleDragStart(candidate)}
-                    onDragEnd={handleDragEnd}
-                    onClick={() => handleCandidateClick(candidate)}
-                    className={clsx(
-                      'flex items-center gap-4 p-3 bg-white/5 hover:bg-white/10 border rounded-lg cursor-pointer transition-all group',
-                      selectedCandidates.has(candidate.id)
-                        ? 'border-purple-500/50 bg-purple-500/10'
-                        : 'border-white/10'
-                    )}
-                  >
-                    {/* Checkbox */}
-                    <button
-                      onClick={(e) => handleToggleSelect(candidate.id, e)}
-                      className={clsx(
-                        'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
-                        selectedCandidates.has(candidate.id)
-                          ? 'bg-purple-600 border-purple-600'
-                          : 'border-white/20 hover:border-white/40'
-                      )}
-                    >
-                      {selectedCandidates.has(candidate.id) && (
-                        <Check className="w-3 h-3" />
-                      )}
-                    </button>
-
-                    {/* Avatar */}
-                    <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-sm flex-shrink-0">
-                      {getAvatarInitials(candidate.name || 'UK')}
-                    </div>
-
-                    {/* Main Info */}
-                    <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      {/* Name & Position */}
-                      <div className="min-w-0">
-                        <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
-                        {candidate.position && (
-                          <p className="text-xs text-white/50 truncate">{candidate.position}</p>
-                        )}
-                      </div>
-
-                      {/* Contact Info */}
-                      <div className="text-xs text-white/60 space-y-0.5 min-w-0">
-                        {candidate.email && (
-                          <div className="flex items-center gap-1.5 truncate">
-                            <Mail className="w-3 h-3 flex-shrink-0" />
-                            <span className="truncate">{candidate.email}</span>
-                          </div>
-                        )}
-                        {candidate.phone && (
-                          <div className="flex items-center gap-1.5">
-                            <Phone className="w-3 h-3 flex-shrink-0" />
-                            <span>{candidate.phone}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Tags */}
-                      <div className="flex flex-wrap gap-1 items-start">
-                        {candidate.tags?.slice(0, 4).map(tag => (
-                          <span
-                            key={tag}
-                            className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/60"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                        {(candidate.tags?.length || 0) > 4 && (
-                          <span className="px-1.5 py-0.5 text-xs text-white/40">
-                            +{candidate.tags!.length - 4}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Date & Actions */}
-                    <div className="flex items-center gap-2 flex-shrink-0 text-xs text-white/40">
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {formatDate(candidate.created_at)}
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCandidateClick(candidate);
-                        }}
-                        className="p-1.5 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
+                    </motion.div>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
           )}
         </div>
 
