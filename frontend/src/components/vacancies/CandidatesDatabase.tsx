@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -78,6 +78,12 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
   // Drag state for Kanban stage change
   const [draggedForKanban, setDraggedForKanban] = useState<Entity | null>(null);
   const [dropTargetStage, setDropTargetStage] = useState<EntityStatus | null>(null);
+
+  // Kanban auto-scroll refs
+  const kanbanContainerRef = useRef<HTMLDivElement>(null);
+  const autoScrollIntervalRef = useRef<number | null>(null);
+  const AUTO_SCROLL_THRESHOLD = 100;
+  const AUTO_SCROLL_SPEED = 15;
 
   // Store
   const {
@@ -212,6 +218,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
   };
 
   const handleKanbanDragEnd = async () => {
+    stopAutoScroll();
     if (draggedForKanban && dropTargetStage && draggedForKanban.status !== dropTargetStage) {
       try {
         await updateEntityStatus(draggedForKanban.id, dropTargetStage);
@@ -235,6 +242,55 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
   const handleStageDragLeave = () => {
     setDropTargetStage(null);
   };
+
+  // Auto-scroll for kanban view
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollIntervalRef.current !== null) {
+      cancelAnimationFrame(autoScrollIntervalRef.current);
+      autoScrollIntervalRef.current = null;
+    }
+  }, []);
+
+  const handleKanbanBoardDragOver = useCallback((e: React.DragEvent) => {
+    if (!kanbanContainerRef.current || !draggedForKanban) return;
+
+    const board = kanbanContainerRef.current;
+    const rect = board.getBoundingClientRect();
+    const mouseX = e.clientX;
+
+    const distanceFromLeft = mouseX - rect.left;
+    const distanceFromRight = rect.right - mouseX;
+
+    let scrollDirection = 0;
+    if (distanceFromLeft < AUTO_SCROLL_THRESHOLD) {
+      scrollDirection = -1 * (1 - distanceFromLeft / AUTO_SCROLL_THRESHOLD);
+    } else if (distanceFromRight < AUTO_SCROLL_THRESHOLD) {
+      scrollDirection = 1 * (1 - distanceFromRight / AUTO_SCROLL_THRESHOLD);
+    }
+
+    if (scrollDirection !== 0) {
+      if (autoScrollIntervalRef.current === null) {
+        const scroll = () => {
+          if (kanbanContainerRef.current) {
+            kanbanContainerRef.current.scrollLeft += AUTO_SCROLL_SPEED * scrollDirection;
+          }
+          autoScrollIntervalRef.current = requestAnimationFrame(scroll);
+        };
+        autoScrollIntervalRef.current = requestAnimationFrame(scroll);
+      }
+    } else {
+      stopAutoScroll();
+    }
+  }, [draggedForKanban, stopAutoScroll]);
+
+  // Cleanup auto-scroll on unmount
+  useEffect(() => {
+    return () => {
+      if (autoScrollIntervalRef.current !== null) {
+        cancelAnimationFrame(autoScrollIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Other handlers
   const handleCandidateClick = (candidate: Entity) => {
@@ -877,7 +933,12 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             </div>
           ) : viewMode === 'kanban' ? (
             /* Kanban View */
-            <div className="h-full overflow-x-auto">
+            <div
+              ref={kanbanContainerRef}
+              className="h-full overflow-x-auto"
+              onDragOver={handleKanbanBoardDragOver}
+              onDragLeave={stopAutoScroll}
+            >
               <div className="flex gap-3 h-full min-w-max p-1">
                 {CANDIDATE_PIPELINE_STAGES.map(stage => (
                   <div

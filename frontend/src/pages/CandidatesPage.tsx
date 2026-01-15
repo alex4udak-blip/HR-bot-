@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -14,6 +14,7 @@ import {
   List,
   Users,
   ChevronRight,
+  ChevronLeft,
   Star,
   Clock,
   ExternalLink,
@@ -75,6 +76,10 @@ export default function CandidatesPage() {
   // Drag state for kanban
   const [draggedApp, setDraggedApp] = useState<VacancyApplication | null>(null);
   const [dropTargetStage, setDropTargetStage] = useState<ApplicationStage | null>(null);
+
+  // Ref for kanban scroll container
+  const kanbanContainerRef = useRef<HTMLDivElement>(null);
+  const [highlightedStage, setHighlightedStage] = useState<ApplicationStage | null>(null);
 
   // Confirmation dialogs
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -181,6 +186,49 @@ export default function CandidatesPage() {
 
   const handleColumnDragLeave = () => {
     setDropTargetStage(null);
+  };
+
+  // Scroll to specific stage column in kanban
+  const scrollToStage = useCallback((stage: ApplicationStage) => {
+    if (!kanbanContainerRef.current || viewMode !== 'kanban') return;
+
+    const container = kanbanContainerRef.current;
+    const columnIndex = PIPELINE_STAGES.indexOf(stage);
+    if (columnIndex === -1) return;
+
+    // Each column is ~288px (w-72) + 16px gap
+    const columnWidth = 288 + 16;
+    const scrollPosition = columnIndex * columnWidth;
+
+    // Center the column in view
+    const containerWidth = container.clientWidth;
+    const centeredPosition = scrollPosition - (containerWidth / 2) + (columnWidth / 2);
+
+    container.scrollTo({
+      left: Math.max(0, centeredPosition),
+      behavior: 'smooth'
+    });
+
+    // Highlight the column briefly
+    setHighlightedStage(stage);
+    setTimeout(() => setHighlightedStage(null), 1500);
+  }, [viewMode]);
+
+  // Move application to previous/next stage
+  const handleMoveStage = async (app: VacancyApplication, direction: 'prev' | 'next') => {
+    const currentIndex = PIPELINE_STAGES.indexOf(app.stage);
+    if (currentIndex === -1) return;
+
+    const newIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+    if (newIndex < 0 || newIndex >= PIPELINE_STAGES.length) return;
+
+    const newStage = PIPELINE_STAGES[newIndex];
+    try {
+      await moveApplication(app.id, newStage);
+      toast.success(`Перемещён в "${APPLICATION_STAGE_LABELS[newStage]}"`);
+    } catch {
+      toast.error('Ошибка при перемещении');
+    }
   };
 
   // Other handlers
@@ -475,7 +523,7 @@ export default function CandidatesPage() {
   );
 
   // Render kanban column
-  const renderKanbanColumn = (stage: ApplicationStage) => {
+  const renderKanbanColumn = (stage: ApplicationStage, isHighlighted: boolean = false) => {
     const column = kanbanBoard?.columns.find(c => c.stage === stage);
     const apps = column?.applications || [];
     const isDropTarget = dropTargetStage === stage && draggedApp?.stage !== stage;
@@ -483,11 +531,14 @@ export default function CandidatesPage() {
     return (
       <div
         key={stage}
+        data-stage={stage}
         className={clsx(
           'w-72 flex-shrink-0 flex flex-col rounded-xl border transition-all duration-200',
           isDropTarget
             ? 'border-cyan-500 bg-cyan-500/10 shadow-lg shadow-cyan-500/20'
-            : 'border-white/10 bg-white/5'
+            : isHighlighted
+              ? 'border-yellow-500 bg-yellow-500/10 shadow-lg shadow-yellow-500/20 ring-2 ring-yellow-500/50'
+              : 'border-white/10 bg-white/5'
         )}
         onDragOver={(e) => handleColumnDragOver(e, stage)}
         onDragLeave={handleColumnDragLeave}
@@ -764,7 +815,13 @@ export default function CandidatesPage() {
               {PIPELINE_STAGES.map(stage => (
                 <button
                   key={stage}
-                  onClick={() => setSelectedStage(stage)}
+                  onClick={() => {
+                    setSelectedStage(stage);
+                    // In kanban mode, also scroll to the column
+                    if (viewMode === 'kanban') {
+                      scrollToStage(stage);
+                    }
+                  }}
                   className={clsx(
                     'px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors',
                     selectedStage === stage
@@ -799,9 +856,9 @@ export default function CandidatesPage() {
             </div>
           ) : viewMode === 'kanban' ? (
             // Kanban View
-            <div className="h-full overflow-x-auto p-4">
+            <div ref={kanbanContainerRef} className="h-full overflow-x-auto p-4">
               <div className="flex gap-4 h-full min-w-max">
-                {PIPELINE_STAGES.map(stage => renderKanbanColumn(stage))}
+                {PIPELINE_STAGES.map(stage => renderKanbanColumn(stage, highlightedStage === stage))}
               </div>
             </div>
           ) : (
@@ -832,10 +889,45 @@ export default function CandidatesPage() {
                             <p className="text-sm text-white/50">{app.entity_position || app.entity_email}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className={clsx('text-xs px-2 py-1 rounded-full', APPLICATION_STAGE_COLORS[app.stage])}>
-                            {APPLICATION_STAGE_LABELS[app.stage]}
-                          </span>
+                        <div className="flex items-center gap-2">
+                          {/* Stage navigation buttons */}
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMoveStage(app, 'prev');
+                              }}
+                              disabled={PIPELINE_STAGES.indexOf(app.stage) === 0}
+                              className={clsx(
+                                'p-1.5 rounded transition-colors',
+                                PIPELINE_STAGES.indexOf(app.stage) === 0
+                                  ? 'text-white/20 cursor-not-allowed'
+                                  : 'hover:bg-white/10 text-white/60 hover:text-white'
+                              )}
+                              title="Предыдущий этап"
+                            >
+                              <ChevronLeft className="w-4 h-4" />
+                            </button>
+                            <span className={clsx('text-xs px-2 py-1 rounded-full min-w-[80px] text-center', APPLICATION_STAGE_COLORS[app.stage])}>
+                              {APPLICATION_STAGE_LABELS[app.stage]}
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMoveStage(app, 'next');
+                              }}
+                              disabled={PIPELINE_STAGES.indexOf(app.stage) === PIPELINE_STAGES.length - 1}
+                              className={clsx(
+                                'p-1.5 rounded transition-colors',
+                                PIPELINE_STAGES.indexOf(app.stage) === PIPELINE_STAGES.length - 1
+                                  ? 'text-white/20 cursor-not-allowed'
+                                  : 'hover:bg-white/10 text-white/60 hover:text-white'
+                              )}
+                              title="Следующий этап"
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </button>
+                          </div>
                           <span className="text-sm text-white/40">{formatDate(app.applied_at)}</span>
                           <button
                             onClick={(e) => {
