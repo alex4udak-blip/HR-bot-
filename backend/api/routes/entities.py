@@ -114,6 +114,9 @@ class EntityResponse(BaseModel):
     expected_salary_min: Optional[int] = None
     expected_salary_max: Optional[int] = None
     expected_salary_currency: Optional[str] = 'RUB'
+    # Vacancy tracking for candidates
+    vacancies_count: int = 0
+    vacancy_names: List[str] = []  # Names of vacancies (first 3)
 
     class Config:
         from_attributes = True
@@ -604,6 +607,43 @@ async def list_entities(
         )
         calls_counts = {row[0]: row[1] for row in calls_counts_result.fetchall()}
 
+    # Batch query: Get vacancy application counts and vacancy names
+    vacancies_counts = {}
+    vacancy_names_map = {}
+    try:
+        # Get vacancy applications grouped by entity
+        apps_result = await db.execute(
+            select(VacancyApplication.entity_id, VacancyApplication.vacancy_id)
+            .where(VacancyApplication.entity_id.in_(entity_ids))
+        )
+        apps_data = apps_result.fetchall()
+
+        # Collect vacancy IDs and count per entity
+        vacancy_ids = set()
+        entity_vacancy_ids = {}  # {entity_id: [vacancy_ids]}
+        for entity_id, vacancy_id in apps_data:
+            vacancy_ids.add(vacancy_id)
+            if entity_id not in entity_vacancy_ids:
+                entity_vacancy_ids[entity_id] = []
+            entity_vacancy_ids[entity_id].append(vacancy_id)
+
+        # Get vacancy names
+        if vacancy_ids:
+            vacancies_result = await db.execute(
+                select(Vacancy.id, Vacancy.title).where(Vacancy.id.in_(vacancy_ids))
+            )
+            vacancy_titles = {v.id: v.title for v in vacancies_result.fetchall()}
+
+            # Build counts and names for each entity
+            for entity_id, vac_ids in entity_vacancy_ids.items():
+                vacancies_counts[entity_id] = len(vac_ids)
+                # Get first 3 vacancy names
+                names = [vacancy_titles.get(vid, "Unknown") for vid in vac_ids[:3]]
+                vacancy_names_map[entity_id] = names
+    except Exception as e:
+        logger.warning(f"Failed to fetch vacancy data: {e}")
+        # Continue without vacancy data
+
     # Build response using pre-fetched data
     response = []
     for entity in entities:
@@ -645,7 +685,10 @@ async def list_entities(
             # Expected salary for candidates
             "expected_salary_min": entity.expected_salary_min,
             "expected_salary_max": entity.expected_salary_max,
-            "expected_salary_currency": entity.expected_salary_currency or 'RUB'
+            "expected_salary_currency": entity.expected_salary_currency or 'RUB',
+            # Vacancy tracking
+            "vacancies_count": vacancies_counts.get(entity.id, 0),
+            "vacancy_names": vacancy_names_map.get(entity.id, [])
         })
 
     return response

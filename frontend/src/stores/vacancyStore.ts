@@ -186,31 +186,54 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
     const { kanbanBoard } = get();
     if (!kanbanBoard) return;
 
-    // Optimistic update
-    const updatedBoard = { ...kanbanBoard };
+    // Find the application and its current stage
     let movedApp: VacancyApplication | null = null;
+    let sourceColumnIndex = -1;
 
-    // Find and remove from current column
-    for (const column of updatedBoard.columns) {
-      const appIndex = column.applications.findIndex((a) => a.id === applicationId);
-      if (appIndex !== -1) {
-        movedApp = column.applications[appIndex];
-        column.applications.splice(appIndex, 1);
-        column.count--;
+    for (let i = 0; i < kanbanBoard.columns.length; i++) {
+      const app = kanbanBoard.columns[i].applications.find((a) => a.id === applicationId);
+      if (app) {
+        movedApp = { ...app }; // Clone the application
+        sourceColumnIndex = i;
         break;
       }
     }
 
-    // Add to new column
-    if (movedApp) {
-      const targetColumn = updatedBoard.columns.find((c) => c.stage === newStage);
-      if (targetColumn) {
-        movedApp.stage = newStage;
-        targetColumn.applications.push(movedApp);
-        targetColumn.count++;
-      }
+    if (!movedApp || sourceColumnIndex === -1) {
+      console.error(`Application ${applicationId} not found in kanban board`);
+      return;
     }
 
+    // Skip if already in target stage
+    if (movedApp.stage === newStage) {
+      return;
+    }
+
+    // Create deep copy of board for immutable update
+    const updatedBoard = {
+      ...kanbanBoard,
+      columns: kanbanBoard.columns.map((col, idx) => {
+        if (idx === sourceColumnIndex) {
+          // Remove from source column
+          return {
+            ...col,
+            applications: col.applications.filter((a) => a.id !== applicationId),
+            count: col.count - 1
+          };
+        }
+        if (col.stage === newStage) {
+          // Add to target column
+          return {
+            ...col,
+            applications: [...col.applications, { ...movedApp!, stage: newStage }],
+            count: col.count + 1
+          };
+        }
+        return col;
+      })
+    };
+
+    // Optimistic update
     set({ kanbanBoard: updatedBoard });
 
     try {

@@ -272,6 +272,9 @@ export interface Entity {
   expected_salary_min?: number;
   expected_salary_max?: number;
   expected_salary_currency?: string;
+  // Vacancy tracking for candidates
+  vacancies_count?: number;
+  vacancy_names?: string[];
 }
 
 export interface EntityFile {

@@ -217,12 +217,16 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     setDraggedForKanban(candidate);
   };
 
-  const handleKanbanDragEnd = async () => {
+  const handleKanbanDragEnd = async (_e?: React.DragEvent | unknown, targetStage?: EntityStatus) => {
     stopAutoScroll();
-    if (draggedForKanban && dropTargetStage && draggedForKanban.status !== dropTargetStage) {
+
+    // Use targetStage from onDrop event if available, otherwise use state
+    const finalStage = targetStage || dropTargetStage;
+
+    if (draggedForKanban && finalStage && draggedForKanban.status !== finalStage) {
       try {
-        await updateEntityStatus(draggedForKanban.id, dropTargetStage);
-        toast.success(`${draggedForKanban.name} → ${STATUS_LABELS[dropTargetStage]}`);
+        await updateEntityStatus(draggedForKanban.id, finalStage);
+        toast.success(`${draggedForKanban.name} → ${STATUS_LABELS[finalStage]}`);
         fetchEntities();
       } catch {
         toast.error('Не удалось изменить статус');
@@ -234,13 +238,26 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
   const handleStageDragOver = (e: React.DragEvent, stage: EntityStatus) => {
     e.preventDefault();
+    e.stopPropagation();
     if (draggedForKanban) {
       setDropTargetStage(stage);
     }
   };
 
-  const handleStageDragLeave = () => {
-    setDropTargetStage(null);
+  const handleStageDragLeave = (e: React.DragEvent) => {
+    // Only clear if leaving to outside the column, not to a child element
+    const relatedTarget = e.relatedTarget as HTMLElement;
+    const currentTarget = e.currentTarget as HTMLElement;
+    if (!currentTarget.contains(relatedTarget)) {
+      setDropTargetStage(null);
+    }
+  };
+
+  // Wrapper for onDrop to pass the stage
+  const handleStageDrop = (e: React.DragEvent, stage: EntityStatus) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handleKanbanDragEnd(e, stage);
   };
 
   // Auto-scroll for kanban view
@@ -546,6 +563,21 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             </div>
           </div>
 
+          {/* Vacancy info */}
+          <div className="text-xs hidden sm:block flex-shrink-0 min-w-[100px]">
+            {candidate.vacancies_count && candidate.vacancies_count > 0 ? (
+              <span className="text-emerald-400 flex items-center gap-1">
+                <Briefcase className="w-3 h-3" />
+                {candidate.vacancies_count}
+              </span>
+            ) : (
+              <span className="text-white/30 flex items-center gap-1">
+                <Briefcase className="w-3 h-3" />
+                --
+              </span>
+            )}
+          </div>
+
           {/* Date */}
           <div className="flex items-center gap-1 text-xs text-white/40 flex-shrink-0">
             <Clock className="w-3 h-3" />
@@ -667,6 +699,24 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             )}
           </div>
         )}
+
+        {/* Vacancy Association */}
+        <div className="mt-2 ml-7 text-xs">
+          {candidate.vacancies_count && candidate.vacancies_count > 0 ? (
+            <div className="flex items-center gap-1.5 text-emerald-400">
+              <Briefcase className="w-3 h-3" />
+              <span className="truncate">
+                {candidate.vacancy_names?.slice(0, 2).join(', ')}
+                {candidate.vacancies_count > 2 && ` +${candidate.vacancies_count - 2}`}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-white/30">
+              <Briefcase className="w-3 h-3" />
+              <span>Без вакансии</span>
+            </div>
+          )}
+        </div>
 
         {/* Footer */}
         <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-xs text-white/40 ml-7">
@@ -945,7 +995,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                     key={stage}
                     onDragOver={(e) => handleStageDragOver(e, stage)}
                     onDragLeave={handleStageDragLeave}
-                    onDrop={handleKanbanDragEnd}
+                    onDrop={(e) => handleStageDrop(e, stage)}
                     className={clsx(
                       'w-72 flex-shrink-0 flex flex-col bg-white/5 rounded-xl border transition-all',
                       dropTargetStage === stage
@@ -966,12 +1016,11 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                     {/* Column Content */}
                     <div className="flex-1 overflow-y-auto p-2 space-y-2">
                       {candidatesByStatus[stage]?.map(candidate => (
-                        <motion.div
+                        <div
                           key={candidate.id}
-                          layout
                           draggable
                           onDragStart={() => handleKanbanDragStart(candidate)}
-                          onDragEnd={handleKanbanDragEnd}
+                          onDragEnd={() => handleKanbanDragEnd()}
                           onClick={() => handleCandidateClick(candidate)}
                           className={clsx(
                             'p-3 bg-gray-800/50 hover:bg-gray-800 border border-white/10 rounded-lg cursor-grab active:cursor-grabbing transition-all group',
@@ -1005,14 +1054,25 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                               )}
                             </div>
                           )}
-                          <div className="mt-2 ml-6 flex items-center justify-between text-xs text-white/40">
+                          {/* Vacancy info in kanban cards */}
+                          <div className="mt-1.5 ml-6 text-xs">
+                            {candidate.vacancies_count && candidate.vacancies_count > 0 ? (
+                              <span className="text-emerald-400/80 truncate block" title={candidate.vacancy_names?.join(', ')}>
+                                {candidate.vacancy_names?.[0]}
+                                {candidate.vacancies_count > 1 && ` +${candidate.vacancies_count - 1}`}
+                              </span>
+                            ) : (
+                              <span className="text-white/25">Без вакансии</span>
+                            )}
+                          </div>
+                          <div className="mt-1.5 ml-6 flex items-center justify-between text-xs text-white/40">
                             <span className="flex items-center gap-1">
                               <Clock className="w-3 h-3" />
                               {formatDate(candidate.created_at)}
                             </span>
                             {candidate.email && <Mail className="w-3 h-3" />}
                           </div>
-                        </motion.div>
+                        </div>
                       ))}
                       {(!candidatesByStatus[stage] || candidatesByStatus[stage].length === 0) && (
                         <div className="text-center py-8 text-white/30 text-sm">
