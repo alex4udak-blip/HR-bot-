@@ -323,6 +323,17 @@ export default function CandidatesPage() {
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                navigate(`/vacancies/${vacancy.id}`);
+              }}
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 rounded text-xs transition-colors"
+              title="Открыть страницу вакансии"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              Открыть
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
                 setShowVacancyDetail(true);
               }}
               className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-xs transition-colors"
