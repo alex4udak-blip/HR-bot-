@@ -702,38 +702,28 @@ export const VACANCY_STATUS_COLORS: Record<VacancyStatus, string> = {
 };
 
 export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = {
-  // Main pipeline stages
-  new: 'Новый',
+  // HR Pipeline stages (using existing PostgreSQL enum values with HR labels)
+  applied: 'Новый',           // 'applied' displayed as "Новый"
   screening: 'Скрининг',
-  practice: 'Практика',
-  tech_practice: 'Тех-практика',
-  is_interview: 'ИС',
+  phone_screen: 'Практика',   // 'phone_screen' displayed as "Практика"
+  interview: 'Тех-практика',  // 'interview' displayed as "Тех-практика"
+  assessment: 'ИС',           // 'assessment' displayed as "ИС"
   offer: 'Оффер',
   hired: 'Принят',
   rejected: 'Отказ',
-  // Legacy stages (backward compatibility)
-  applied: 'Отклик',
-  phone_screen: 'Телефонный скрининг',
-  interview: 'Собеседование',
-  assessment: 'Тестирование',
   withdrawn: 'Отозван'
 };
 
 export const APPLICATION_STAGE_COLORS: Record<ApplicationStage, string> = {
-  // Main pipeline stages
-  new: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  // HR Pipeline stages (using existing PostgreSQL enum values)
+  applied: 'bg-blue-500/20 text-blue-300 border-blue-500/30',      // "Новый"
   screening: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
-  practice: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-  tech_practice: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
-  is_interview: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+  phone_screen: 'bg-purple-500/20 text-purple-300 border-purple-500/30', // "Практика"
+  interview: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',    // "Тех-практика"
+  assessment: 'bg-orange-500/20 text-orange-300 border-orange-500/30',   // "ИС"
   offer: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
   hired: 'bg-green-500/20 text-green-300 border-green-500/30',
   rejected: 'bg-red-500/20 text-red-300 border-red-500/30',
-  // Legacy stages (backward compatibility)
-  applied: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-  phone_screen: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-  interview: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
-  assessment: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
   withdrawn: 'bg-gray-500/20 text-gray-300 border-gray-500/30'
 };
 
