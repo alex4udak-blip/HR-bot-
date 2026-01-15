@@ -88,7 +88,7 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/candidates" replace />} />
+        <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="candidates" element={<CandidatesPage />} />
         <Route path="chats" element={<ChatsPage />} />

@@ -112,8 +112,9 @@ export default function Layout() {
     ];
 
     // Add "База кандидатов" only for HR department (feature-gated) - after "Контакты"
+    // Points to vacancies page with database tab - shows all candidates without requiring vacancy selection
     if (hasFeature('candidate_database')) {
-      items.push({ path: '/candidates', icon: UserCheck, label: 'База кандидатов' });
+      items.push({ path: '/vacancies?tab=database', icon: UserCheck, label: 'База кандидатов' });
     }
 
     // Add remaining items
