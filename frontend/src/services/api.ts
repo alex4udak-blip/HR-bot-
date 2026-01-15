@@ -2458,6 +2458,7 @@ export interface ParsedVacancy {
   description?: string;
   requirements?: string;
   responsibilities?: string;
+  skills?: string[];
   salary_min?: number;
   salary_max?: number;
   salary_currency: string;
@@ -2500,6 +2501,18 @@ export const parseVacancyFromUrl = async (url: string): Promise<ParsedVacancy> =
   const { data: response } = await debouncedMutation<ParseResponse<ParsedVacancy>>('post', '/parser/vacancy/url', { url });
   if (!response.success || !response.data) {
     throw new Error(response.error || 'Ошибка парсинга вакансии');
+  }
+  return response.data;
+};
+
+export const parseVacancyFromFile = async (file: File): Promise<ParsedVacancy> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data: response } = await api.post<ParseResponse<ParsedVacancy>>('/parser/vacancy/file', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'Ошибка парсинга файла вакансии');
   }
   return response.data;
 };

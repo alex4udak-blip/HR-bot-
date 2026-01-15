@@ -28,6 +28,7 @@ from ..services.parser import (
     parse_resume_from_pdf,
     parse_resume_from_url,
     parse_vacancy_from_url,
+    parse_vacancy_from_file,
     detect_source,
 )
 from ..services.auth import get_current_user, get_user_org
@@ -440,6 +441,127 @@ async def parse_resume_file(
         return ParseResumeResponse(
             success=False,
             error=f"Failed to parse resume: {str(e)}"
+        )
+
+
+@router.post("/vacancy/file", response_model=ParseVacancyResponse)
+@limiter.limit("5/minute", key_func=_get_rate_limit_key)
+async def parse_vacancy_file(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Parse vacancy from uploaded file.
+
+    Supported formats:
+    - PDF (.pdf)
+    - Word documents (.docx, .doc)
+    - Text files (.txt, .rtf)
+
+    Requires authentication and is rate-limited to 5 requests per minute.
+
+    Returns structured vacancy data extracted using AI.
+    """
+    # Store user in request state for rate limiter
+    request.state._rate_limit_user = current_user
+
+    try:
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="File is required")
+
+        # Sanitize filename to prevent path traversal
+        safe_filename = re.sub(r'[<>:"/\\|?*]', '_', file.filename)
+
+        # Check file extension
+        allowed_extensions = {'pdf', 'docx', 'doc', 'txt', 'rtf'}
+        ext = safe_filename.rsplit('.', 1)[-1].lower() if '.' in safe_filename else ''
+
+        if ext not in allowed_extensions:
+            logger.warning(
+                f"Vacancy file REJECTED | user_id={current_user.id} | "
+                f"filename={safe_filename} | reason=unsupported_format"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file format: {ext}. Allowed: {', '.join(sorted(allowed_extensions))}"
+            )
+
+        # Read file content
+        file_content = await file.read()
+
+        if not file_content:
+            logger.warning(
+                f"Vacancy file REJECTED | user_id={current_user.id} | "
+                f"filename={safe_filename} | reason=empty_file"
+            )
+            raise HTTPException(status_code=400, detail="File is empty")
+
+        # Check file size (max 20MB)
+        max_size = 20 * 1024 * 1024
+        if len(file_content) > max_size:
+            logger.warning(
+                f"Vacancy file REJECTED | user_id={current_user.id} | "
+                f"filename={safe_filename} | reason=file_too_large | size={len(file_content)}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large: {len(file_content) / 1024 / 1024:.1f}MB (max 20MB)"
+            )
+
+        # Validate magic bytes to prevent file type spoofing
+        is_valid, magic_error = validate_file_magic(file_content, safe_filename)
+        if not is_valid:
+            logger.warning(
+                f"Vacancy file REJECTED | user_id={current_user.id} | "
+                f"filename={safe_filename} | reason=magic_bytes_mismatch | error={magic_error}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"File validation failed: {magic_error}"
+            )
+
+        # Log parsing request
+        logger.info(
+            f"Vacancy file parsing requested | user_id={current_user.id} | "
+            f"user_email={current_user.email} | filename={safe_filename} | "
+            f"size={len(file_content)} bytes"
+        )
+
+        vacancy = await parse_vacancy_from_file(file_content, safe_filename)
+
+        # Log successful parsing
+        logger.info(
+            f"Vacancy file parsing SUCCESS | user_id={current_user.id} | "
+            f"filename={safe_filename}"
+        )
+
+        return ParseVacancyResponse(
+            success=True,
+            data=vacancy,
+            source="file",
+            method="ai"
+        )
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.warning(
+            f"Vacancy file parsing FAILED | user_id={current_user.id} | "
+            f"filename={file.filename} | error={e}"
+        )
+        return ParseVacancyResponse(
+            success=False,
+            error=str(e)
+        )
+    except Exception as e:
+        logger.error(
+            f"Vacancy file parsing ERROR | user_id={current_user.id} | "
+            f"filename={file.filename} | error={e}"
+        )
+        return ParseVacancyResponse(
+            success=False,
+            error=f"Failed to parse vacancy: {str(e)}"
         )
 
 

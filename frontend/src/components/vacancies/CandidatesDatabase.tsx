@@ -7,7 +7,6 @@ import {
   Mail,
   MapPin,
   Briefcase,
-  GripVertical,
   ExternalLink,
   Plus,
   Upload,
@@ -23,7 +22,9 @@ import {
   FolderArchive,
   Loader2,
   CheckCircle,
-  XCircle
+  XCircle,
+  LayoutGrid,
+  List
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -45,7 +46,11 @@ interface CandidatesDatabaseProps {
 export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: CandidatesDatabaseProps) {
   const navigate = useNavigate();
 
+  // View modes
+  type ViewMode = 'grid' | 'list';
+
   // Local state
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -295,37 +300,42 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="p-4 border-b border-white/10">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <Users className="w-5 h-5 text-purple-400" />
-              База кандидатов
-              <span className="text-sm font-normal text-white/50">
-                ({typeCounts.candidate || 0})
-              </span>
-            </h2>
-          </div>
-          <div className="flex items-center gap-2">
+      <div className="p-4 border-b border-white/10 space-y-3">
+        {/* Title row */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Users className="w-5 h-5 text-purple-400" />
+            База кандидатов
+            <span className="text-sm font-normal text-white/50">
+              ({typeCounts.candidate || 0})
+            </span>
+          </h2>
+
+          {/* Actions - wrapped on mobile */}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* Selection action */}
             {selectedCandidates.size > 0 && (
               <button
                 onClick={() => setShowAddToVacancyModal(true)}
-                className="flex items-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm transition-colors whitespace-nowrap"
               >
                 <Briefcase className="w-4 h-4" />
-                Добавить в вакансию ({selectedCandidates.size})
+                <span className="hidden sm:inline">В вакансию</span>
+                <span className="font-medium">({selectedCandidates.size})</span>
               </button>
             )}
             <button
               onClick={() => setShowParserModal(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors whitespace-nowrap"
             >
               <Upload className="w-4 h-4" />
-              Загрузить резюме
+              <span className="hidden sm:inline">Загрузить резюме</span>
+              <span className="sm:hidden">Резюме</span>
             </button>
-            <label className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors cursor-pointer">
+            <label className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors cursor-pointer whitespace-nowrap">
               <FolderArchive className="w-4 h-4" />
-              Массовый импорт
+              <span className="hidden sm:inline">Массовый импорт</span>
+              <span className="sm:hidden">ZIP</span>
               <input
                 ref={bulkImportInputRef}
                 type="file"
@@ -339,17 +349,19 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                 setPrefillData(null);
                 setShowCreateModal(true);
               }}
-              className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors whitespace-nowrap"
             >
               <Plus className="w-4 h-4" />
-              Новый кандидат
+              <span className="hidden sm:inline">Новый кандидат</span>
+              <span className="sm:hidden">Новый</span>
             </button>
           </div>
         </div>
 
-        {/* Search and Filters */}
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 max-w-md">
+        {/* Search, Filters & View Toggle */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Search */}
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
             <input
               type="text"
@@ -360,10 +372,11 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             />
           </div>
 
+          {/* Filters */}
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={clsx(
-              'flex items-center gap-2 px-3 py-2 border rounded-lg text-sm transition-colors',
+              'flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition-colors whitespace-nowrap',
               selectedTags.length > 0
                 ? 'bg-purple-600/20 border-purple-500/50 text-purple-300'
                 : 'bg-white/5 border-white/10 hover:bg-white/10'
@@ -379,15 +392,45 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             <ChevronDown className={clsx('w-4 h-4 transition-transform', showFilters && 'rotate-180')} />
           </button>
 
+          {/* Select All */}
           {filteredCandidates.length > 0 && (
             <button
               onClick={handleSelectAll}
-              className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+              className={clsx(
+                'flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition-colors whitespace-nowrap',
+                selectedCandidates.size === filteredCandidates.length
+                  ? 'bg-purple-600/20 border-purple-500/50 text-purple-300'
+                  : 'bg-white/5 border-white/10 hover:bg-white/10'
+              )}
             >
               <Check className="w-4 h-4" />
-              {selectedCandidates.size === filteredCandidates.length ? 'Снять всё' : 'Выбрать всё'}
+              {selectedCandidates.size === filteredCandidates.length ? 'Снять' : 'Выбрать'}
             </button>
           )}
+
+          {/* View Mode Toggle */}
+          <div className="flex items-center bg-white/5 rounded-lg p-1 border border-white/10">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={clsx(
+                'p-1.5 rounded transition-colors',
+                viewMode === 'grid' ? 'bg-purple-600 text-white' : 'text-white/60 hover:text-white'
+              )}
+              title="Сетка"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={clsx(
+                'p-1.5 rounded transition-colors',
+                viewMode === 'list' ? 'bg-purple-600 text-white' : 'text-white/60 hover:text-white'
+              )}
+              title="Список"
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Tags Filter Dropdown */}
@@ -464,7 +507,8 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                 </button>
               </div>
             </div>
-          ) : (
+          ) : viewMode === 'grid' ? (
+            /* Grid View */
             <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               <AnimatePresence mode="popLayout">
                 {filteredCandidates.map(candidate => (
@@ -482,70 +526,67 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                     onDragEnd={handleDragEnd}
                     onClick={() => handleCandidateClick(candidate)}
                     className={clsx(
-                      'p-4 bg-white/5 hover:bg-white/10 border rounded-xl cursor-grab active:cursor-grabbing transition-all group',
+                      'p-3 bg-white/5 hover:bg-white/10 border rounded-xl cursor-pointer transition-all group overflow-hidden',
                       selectedCandidates.has(candidate.id)
                         ? 'border-purple-500/50 bg-purple-500/10'
                         : 'border-white/10'
                     )}
                   >
                     {/* Header */}
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        {/* Checkbox */}
-                        <button
-                          onClick={(e) => handleToggleSelect(candidate.id, e)}
-                          className={clsx(
-                            'w-5 h-5 rounded border flex items-center justify-center transition-colors',
-                            selectedCandidates.has(candidate.id)
-                              ? 'bg-purple-600 border-purple-600'
-                              : 'border-white/20 hover:border-white/40'
-                          )}
-                        >
-                          {selectedCandidates.has(candidate.id) && (
-                            <Check className="w-3 h-3" />
-                          )}
-                        </button>
+                    <div className="flex items-start gap-2 mb-2">
+                      {/* Checkbox */}
+                      <button
+                        onClick={(e) => handleToggleSelect(candidate.id, e)}
+                        className={clsx(
+                          'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition-colors mt-0.5',
+                          selectedCandidates.has(candidate.id)
+                            ? 'bg-purple-600 border-purple-600'
+                            : 'border-white/20 hover:border-white/40'
+                        )}
+                      >
+                        {selectedCandidates.has(candidate.id) && (
+                          <Check className="w-3 h-3" />
+                        )}
+                      </button>
 
-                        {/* Avatar */}
-                        <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-sm">
-                          {getAvatarInitials(candidate.name || 'UK')}
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-medium truncate">{candidate.name}</h4>
-                          {candidate.position && (
-                            <p className="text-xs text-white/50 truncate">{candidate.position}</p>
-                          )}
-                        </div>
+                      {/* Avatar */}
+                      <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-sm flex-shrink-0">
+                        {getAvatarInitials(candidate.name || 'UK')}
                       </div>
 
-                      <GripVertical className="w-4 h-4 text-white/30 flex-shrink-0" />
+                      {/* Name & Position */}
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
+                        {candidate.position && (
+                          <p className="text-xs text-white/50 truncate">{candidate.position}</p>
+                        )}
+                      </div>
                     </div>
 
                     {/* Contact Info */}
-                    <div className="space-y-1.5 text-xs text-white/60">
+                    <div className="space-y-1 text-xs text-white/60 ml-7">
                       {candidate.email && (
-                        <div className="flex items-center gap-2 truncate">
-                          <Mail className="w-3.5 h-3.5 flex-shrink-0" />
+                        <div className="flex items-center gap-1.5 overflow-hidden">
+                          <Mail className="w-3 h-3 flex-shrink-0" />
                           <span className="truncate">{candidate.email}</span>
                         </div>
                       )}
                       {candidate.phone && (
-                        <div className="flex items-center gap-2">
-                          <Phone className="w-3.5 h-3.5 flex-shrink-0" />
-                          <span>{candidate.phone}</span>
+                        <div className="flex items-center gap-1.5">
+                          <Phone className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{candidate.phone}</span>
                         </div>
                       )}
                       {typeof candidate.extra_data?.location === 'string' && candidate.extra_data.location && (
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
-                          <span>{candidate.extra_data.location}</span>
+                        <div className="flex items-center gap-1.5 overflow-hidden">
+                          <MapPin className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{candidate.extra_data.location}</span>
                         </div>
                       )}
                       {(candidate.expected_salary_min || candidate.expected_salary_max) && (
-                        <div className="flex items-center gap-2 text-green-400">
-                          <DollarSign className="w-3.5 h-3.5 flex-shrink-0" />
-                          <span>
+                        <div className="flex items-center gap-1.5 text-green-400">
+                          <DollarSign className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">
                             {formatSalary(
                               candidate.expected_salary_min,
                               candidate.expected_salary_max,
@@ -558,11 +599,11 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
                     {/* Tags */}
                     {candidate.tags && candidate.tags.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1">
+                      <div className="mt-2 flex flex-wrap gap-1 ml-7">
                         {candidate.tags.slice(0, 3).map(tag => (
                           <span
                             key={tag}
-                            className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/60"
+                            className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/60 truncate max-w-[80px]"
                           >
                             {tag}
                           </span>
@@ -576,7 +617,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                     )}
 
                     {/* Footer */}
-                    <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between text-xs text-white/40">
+                    <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-xs text-white/40 ml-7">
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {formatDate(candidate.created_at)}
@@ -588,7 +629,115 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                         }}
                         className="p-1 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                       >
-                        <ExternalLink className="w-3.5 h-3.5" />
+                        <ExternalLink className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          ) : (
+            /* List View */
+            <div className="space-y-2">
+              <AnimatePresence mode="popLayout">
+                {filteredCandidates.map(candidate => (
+                  <motion.div
+                    key={candidate.id}
+                    layout
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{
+                      opacity: draggedCandidate?.id === candidate.id ? 0.5 : 1
+                    }}
+                    exit={{ opacity: 0, y: -10 }}
+                    draggable
+                    onDragStart={() => handleDragStart(candidate)}
+                    onDragEnd={handleDragEnd}
+                    onClick={() => handleCandidateClick(candidate)}
+                    className={clsx(
+                      'flex items-center gap-4 p-3 bg-white/5 hover:bg-white/10 border rounded-lg cursor-pointer transition-all group',
+                      selectedCandidates.has(candidate.id)
+                        ? 'border-purple-500/50 bg-purple-500/10'
+                        : 'border-white/10'
+                    )}
+                  >
+                    {/* Checkbox */}
+                    <button
+                      onClick={(e) => handleToggleSelect(candidate.id, e)}
+                      className={clsx(
+                        'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
+                        selectedCandidates.has(candidate.id)
+                          ? 'bg-purple-600 border-purple-600'
+                          : 'border-white/20 hover:border-white/40'
+                      )}
+                    >
+                      {selectedCandidates.has(candidate.id) && (
+                        <Check className="w-3 h-3" />
+                      )}
+                    </button>
+
+                    {/* Avatar */}
+                    <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-sm flex-shrink-0">
+                      {getAvatarInitials(candidate.name || 'UK')}
+                    </div>
+
+                    {/* Main Info */}
+                    <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {/* Name & Position */}
+                      <div className="min-w-0">
+                        <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
+                        {candidate.position && (
+                          <p className="text-xs text-white/50 truncate">{candidate.position}</p>
+                        )}
+                      </div>
+
+                      {/* Contact Info */}
+                      <div className="text-xs text-white/60 space-y-0.5 min-w-0">
+                        {candidate.email && (
+                          <div className="flex items-center gap-1.5 truncate">
+                            <Mail className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{candidate.email}</span>
+                          </div>
+                        )}
+                        {candidate.phone && (
+                          <div className="flex items-center gap-1.5">
+                            <Phone className="w-3 h-3 flex-shrink-0" />
+                            <span>{candidate.phone}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Tags */}
+                      <div className="flex flex-wrap gap-1 items-start">
+                        {candidate.tags?.slice(0, 4).map(tag => (
+                          <span
+                            key={tag}
+                            className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/60"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                        {(candidate.tags?.length || 0) > 4 && (
+                          <span className="px-1.5 py-0.5 text-xs text-white/40">
+                            +{candidate.tags!.length - 4}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Date & Actions */}
+                    <div className="flex items-center gap-2 flex-shrink-0 text-xs text-white/40">
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {formatDate(candidate.created_at)}
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCandidateClick(candidate);
+                        }}
+                        className="p-1.5 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <ExternalLink className="w-4 h-4" />
                       </button>
                     </div>
                   </motion.div>

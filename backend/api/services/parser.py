@@ -429,3 +429,32 @@ async def parse_vacancy_from_url(url: str) -> Tuple[ParsedVacancy, str]:
         data["title"] = "Untitled Vacancy"
 
     return ParsedVacancy(**data), "ai"
+
+
+async def parse_vacancy_from_file(file_content: bytes, filename: str) -> ParsedVacancy:
+    """Parse vacancy from uploaded file using AI.
+
+    Args:
+        file_content: Raw bytes of the file
+        filename: Original filename (used for format detection)
+
+    Returns:
+        ParsedVacancy with extracted data
+    """
+    # Use existing DocumentParser to extract text
+    parse_result = await document_parser.parse(file_content, filename)
+
+    if parse_result.status == "failed":
+        raise ValueError(f"Failed to parse document: {parse_result.error}")
+
+    if not parse_result.content or not parse_result.content.strip():
+        raise ValueError("Document appears to be empty or unreadable")
+
+    # Use AI to extract structured vacancy data
+    data = await parse_with_ai(parse_result.content, "vacancy")
+
+    # Ensure title is present (required field)
+    if not data.get("title"):
+        data["title"] = "Untitled Vacancy"
+
+    return ParsedVacancy(**data)

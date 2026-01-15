@@ -17,7 +17,10 @@ import {
   Star,
   Clock,
   ExternalLink,
-  GripVertical
+  GripVertical,
+  Import,
+  Eye,
+  Sparkles
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -31,10 +34,12 @@ import {
   VACANCY_STATUS_LABELS,
   VACANCY_STATUS_COLORS
 } from '@/types';
-import type { ParsedResume } from '@/services/api';
+import type { ParsedResume, ParsedVacancy } from '@/services/api';
 import ContactForm from '@/components/contacts/ContactForm';
 import ParserModal from '@/components/parser/ParserModal';
 import VacancyForm from '@/components/vacancies/VacancyForm';
+import VacancyImportModal from '@/components/vacancies/VacancyImportModal';
+import VacancyDetailModal from '@/components/vacancies/VacancyDetailModal';
 import AddCandidateModal from '@/components/vacancies/AddCandidateModal';
 import ApplicationDetailModal from '@/components/vacancies/ApplicationDetailModal';
 import { ConfirmDialog, ErrorMessage, Skeleton } from '@/components/ui';
@@ -60,9 +65,12 @@ export default function CandidatesPage() {
   const [showCreateCandidateModal, setShowCreateCandidateModal] = useState(false);
   const [showCreateVacancyModal, setShowCreateVacancyModal] = useState(false);
   const [showAddToVacancyModal, setShowAddToVacancyModal] = useState(false);
+  const [showImportVacancyModal, setShowImportVacancyModal] = useState(false);
+  const [showVacancyDetail, setShowVacancyDetail] = useState(false);
   const [editingCandidate, setEditingCandidate] = useState<Entity | null>(null);
   const [showParserModal, setShowParserModal] = useState(false);
   const [prefillData, setPrefillData] = useState<Partial<Entity> | null>(null);
+  const [vacancyPrefillData, setVacancyPrefillData] = useState<Partial<Vacancy> | null>(null);
   const [selectedApplication, setSelectedApplication] = useState<VacancyApplication | null>(null);
 
   // Drag state for kanban
@@ -242,6 +250,25 @@ export default function CandidatesPage() {
     toast.success('Данные распознаны');
   };
 
+  const handleParsedVacancy = (data: ParsedVacancy) => {
+    const prefill: Partial<Vacancy> = {
+      title: data.title,
+      description: data.description,
+      requirements: data.requirements,
+      responsibilities: data.responsibilities,
+      salary_min: data.salary_min,
+      salary_max: data.salary_max,
+      salary_currency: data.salary_currency || 'RUB',
+      location: data.location,
+      employment_type: data.employment_type,
+      experience_level: data.experience_level,
+      tags: data.skills || [],
+    };
+    setVacancyPrefillData(prefill);
+    setShowImportVacancyModal(false);
+    setShowCreateVacancyModal(true);
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('ru-RU', {
       day: 'numeric',
@@ -263,35 +290,67 @@ export default function CandidatesPage() {
     const isSelected = vacancy.id === selectedVacancyId;
 
     return (
-      <button
+      <div
         key={vacancy.id}
-        onClick={() => handleVacancySelect(vacancy.id)}
         className={clsx(
-          'w-full text-left p-3 rounded-lg border transition-all duration-200',
+          'w-full text-left p-3 rounded-lg border transition-all duration-200 group',
           isSelected
             ? 'bg-cyan-500/20 border-cyan-500/50'
             : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'
         )}
       >
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <h4 className={clsx('font-medium truncate text-sm', isSelected && 'text-cyan-300')}>
-              {vacancy.title}
-            </h4>
-            {vacancy.department_name && (
-              <p className="text-xs text-white/40 truncate mt-0.5">{vacancy.department_name}</p>
-            )}
+        <button
+          onClick={() => handleVacancySelect(vacancy.id)}
+          className="w-full text-left"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <h4 className={clsx('font-medium truncate text-sm', isSelected && 'text-cyan-300')}>
+                {vacancy.title}
+              </h4>
+              {vacancy.department_name && (
+                <p className="text-xs text-white/40 truncate mt-0.5">{vacancy.department_name}</p>
+              )}
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <span className={clsx('text-xs px-1.5 py-0.5 rounded', VACANCY_STATUS_COLORS[vacancy.status])}>
+                {VACANCY_STATUS_LABELS[vacancy.status]}
+              </span>
+              <span className="text-xs text-white/40">
+                {vacancy.applications_count} канд.
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <span className={clsx('text-xs px-1.5 py-0.5 rounded', VACANCY_STATUS_COLORS[vacancy.status])}>
-              {VACANCY_STATUS_LABELS[vacancy.status]}
-            </span>
-            <span className="text-xs text-white/40">
-              {vacancy.applications_count} канд.
-            </span>
+        </button>
+        {/* Quick action buttons */}
+        {isSelected && (
+          <div className="flex items-center gap-1 mt-2 pt-2 border-t border-white/10">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowVacancyDetail(true);
+              }}
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-xs transition-colors"
+              title="Просмотр деталей"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              Детали
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setVacancyPrefillData(null);
+                setShowCreateVacancyModal(true);
+              }}
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-xs transition-colors"
+              title="Редактировать"
+            >
+              <Edit className="w-3.5 h-3.5" />
+              Изменить
+            </button>
           </div>
-        </div>
-      </button>
+        )}
+      </div>
     );
   };
 
@@ -495,14 +554,24 @@ export default function CandidatesPage() {
         {/* Sidebar Content */}
         {!sidebarCollapsed && (
           <>
-            {/* Add Vacancy Button */}
-            <div className="p-3 border-b border-white/10">
+            {/* Add Vacancy Buttons */}
+            <div className="p-3 border-b border-white/10 space-y-2">
               <button
-                onClick={() => setShowCreateVacancyModal(true)}
+                onClick={() => {
+                  setVacancyPrefillData(null);
+                  setShowCreateVacancyModal(true);
+                }}
                 className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 Новая вакансия
+              </button>
+              <button
+                onClick={() => setShowImportVacancyModal(true)}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+              >
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                Импорт из URL/файла
               </button>
             </div>
 
@@ -774,11 +843,36 @@ export default function CandidatesPage() {
 
         {showCreateVacancyModal && (
           <VacancyForm
-            onClose={() => setShowCreateVacancyModal(false)}
+            vacancy={vacancyPrefillData ? undefined : currentVacancy || undefined}
+            prefillData={vacancyPrefillData || undefined}
+            onClose={() => {
+              setShowCreateVacancyModal(false);
+              setVacancyPrefillData(null);
+            }}
             onSuccess={() => {
               setShowCreateVacancyModal(false);
+              setVacancyPrefillData(null);
               fetchVacancies();
-              toast.success('Вакансия создана');
+              toast.success(vacancyPrefillData ? 'Вакансия создана' : 'Вакансия обновлена');
+            }}
+          />
+        )}
+
+        {showImportVacancyModal && (
+          <VacancyImportModal
+            onClose={() => setShowImportVacancyModal(false)}
+            onImportSuccess={handleParsedVacancy}
+          />
+        )}
+
+        {showVacancyDetail && currentVacancy && (
+          <VacancyDetailModal
+            vacancy={currentVacancy}
+            onClose={() => setShowVacancyDetail(false)}
+            onEdit={() => {
+              setShowVacancyDetail(false);
+              setVacancyPrefillData(null);
+              setShowCreateVacancyModal(true);
             }}
           />
         )}
