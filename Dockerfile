@@ -3,7 +3,9 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /frontend
 
-COPY frontend/package.json frontend/package-lock.json* ./
+# Copy only package.json first (npm install will create fresh lock file for alpine)
+# This avoids rollup native module mismatch issues between glibc and musl
+COPY frontend/package.json ./
 RUN npm install
 
 COPY frontend/ ./
