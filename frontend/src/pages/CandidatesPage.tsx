@@ -18,7 +18,6 @@ import {
   Clock,
   ExternalLink,
   GripVertical,
-  Import,
   Eye,
   Sparkles
 } from 'lucide-react';

@@ -555,6 +555,7 @@ export interface Vacancy {
   updated_at: string;
   applications_count: number;
   stage_counts: Record<string, number>;
+  source_url?: string;
 }
 
 export interface VacancyApplication {
