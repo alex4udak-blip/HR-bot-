@@ -999,6 +999,22 @@ export const deleteEntity = async (id: number): Promise<void> => {
   await debouncedMutation<void>('delete', `/entities/${id}`);
 };
 
+/**
+ * Quick status update for Kanban drag & drop
+ */
+export const updateEntityStatus = async (id: number, status: EntityStatus): Promise<{
+  id: number;
+  status: EntityStatus;
+  previous_status: EntityStatus;
+}> => {
+  const { data } = await debouncedMutation<{
+    id: number;
+    status: EntityStatus;
+    previous_status: EntityStatus;
+  }>('patch', `/entities/${id}/status`, { status });
+  return data;
+};
+
 export const transferEntity = async (entityId: number, transferData: {
   to_user_id: number;
   to_department_id?: number;

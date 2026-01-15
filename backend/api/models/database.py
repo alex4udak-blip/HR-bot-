@@ -42,12 +42,22 @@ class EntityType(str, enum.Enum):
 
 
 class EntityStatus(str, enum.Enum):
-    new = "new"
-    screening = "screening"
-    interview = "interview"
-    offer = "offer"
-    hired = "hired"
-    rejected = "rejected"
+    """Status/stage for entities (especially candidates)
+
+    HR Pipeline stages: new → screening → practice → tech_practice → is_interview → offer → hired/rejected
+    """
+    # HR Pipeline stages (match ApplicationStage for consistency)
+    new = "new"                   # Новый - just added
+    screening = "screening"       # Скрининг - initial review
+    practice = "practice"         # Практика - practical task/test
+    tech_practice = "tech_practice"  # Тех-практика - technical practice
+    is_interview = "is_interview" # ИС - final interview
+    offer = "offer"               # Оффер - offer extended
+    hired = "hired"               # Принят - accepted and hired
+    rejected = "rejected"         # Отказ - rejected
+
+    # General entity statuses (for clients, partners, etc.)
+    interview = "interview"       # Legacy: interview stage
     active = "active"
     paused = "paused"
     churned = "churned"

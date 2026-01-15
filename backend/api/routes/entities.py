@@ -1419,6 +1419,65 @@ async def update_entity(
     return response_data
 
 
+class StatusUpdate(BaseModel):
+    """Quick status update for Kanban drag & drop"""
+    status: EntityStatus
+
+
+@router.patch("/{entity_id}/status")
+async def update_entity_status(
+    entity_id: int,
+    data: StatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Quick status update for drag & drop in Kanban board.
+
+    This is a simplified endpoint for updating only the status field,
+    optimized for Kanban drag & drop operations.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    result = await db.execute(
+        select(Entity)
+        .where(Entity.id == entity_id, Entity.org_id == org.id)
+        .with_for_update()
+    )
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    if entity.is_transferred:
+        raise HTTPException(400, "Cannot edit a transferred entity")
+
+    # Update status
+    old_status = entity.status
+    entity.status = data.status
+
+    await db.commit()
+    await db.refresh(entity)
+
+    logger.info(f"Entity {entity_id} status changed: {old_status} -> {data.status}")
+
+    # Broadcast update
+    await broadcast_entity_updated(org.id, {
+        "id": entity.id,
+        "type": entity.type,
+        "name": entity.name,
+        "status": entity.status
+    })
+
+    return {
+        "id": entity.id,
+        "status": entity.status,
+        "previous_status": old_status
+    }
+
+
 @router.delete("/{entity_id}")
 async def delete_entity(
     entity_id: int,

@@ -212,18 +212,28 @@ export interface RefreshTokenResponse {
 export type EntityType = 'candidate' | 'client' | 'contractor' | 'lead' | 'partner' | 'custom';
 
 export type EntityStatus =
+  // HR Pipeline stages
   | 'new'
   | 'screening'
-  | 'interview'
+  | 'practice'        // Практика
+  | 'tech_practice'   // Тех-практика
+  | 'is_interview'    // ИС (итоговое собеседование)
   | 'offer'
   | 'hired'
   | 'rejected'
+  // Legacy/General statuses
+  | 'interview'
   | 'active'
   | 'paused'
   | 'churned'
   | 'converted'
   | 'ended'
   | 'negotiation';
+
+// HR Pipeline stages for candidates (in order)
+export const CANDIDATE_PIPELINE_STAGES: EntityStatus[] = [
+  'new', 'screening', 'practice', 'tech_practice', 'is_interview', 'offer', 'hired', 'rejected'
+];
 
 export interface Entity {
   id: number;
@@ -401,7 +411,7 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
     description: 'Соискатели на вакансии',
     icon: 'UserCheck',
     color: 'blue',
-    statuses: ['new', 'screening', 'interview', 'offer', 'hired', 'rejected']
+    statuses: ['new', 'screening', 'practice', 'tech_practice', 'is_interview', 'offer', 'hired', 'rejected']
   },
   client: {
     id: 'client',
@@ -451,12 +461,17 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
 };
 
 export const STATUS_LABELS: Record<EntityStatus, string> = {
+  // HR Pipeline
   new: 'Новый',
   screening: 'Скрининг',
-  interview: 'Интервью',
+  practice: 'Практика',
+  tech_practice: 'Тех-практика',
+  is_interview: 'ИС',
   offer: 'Оффер',
   hired: 'Принят',
   rejected: 'Отклонён',
+  // Legacy/General
+  interview: 'Интервью',
   active: 'Активный',
   paused: 'На паузе',
   churned: 'Ушёл',
@@ -466,12 +481,17 @@ export const STATUS_LABELS: Record<EntityStatus, string> = {
 };
 
 export const STATUS_COLORS: Record<EntityStatus, string> = {
-  new: 'bg-blue-500/20 text-blue-300',
-  screening: 'bg-yellow-500/20 text-yellow-300',
+  // HR Pipeline - matching APPLICATION_STAGE_COLORS
+  new: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  screening: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+  practice: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+  tech_practice: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+  is_interview: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+  offer: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+  hired: 'bg-green-500/20 text-green-300 border-green-500/30',
+  rejected: 'bg-red-500/20 text-red-300 border-red-500/30',
+  // Legacy/General
   interview: 'bg-purple-500/20 text-purple-300',
-  offer: 'bg-green-500/20 text-green-300',
-  hired: 'bg-emerald-500/20 text-emerald-300',
-  rejected: 'bg-red-500/20 text-red-300',
   active: 'bg-green-500/20 text-green-300',
   paused: 'bg-gray-500/20 text-gray-300',
   churned: 'bg-red-500/20 text-red-300',

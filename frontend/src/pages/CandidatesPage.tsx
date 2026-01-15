@@ -103,9 +103,9 @@ export default function CandidatesPage() {
     removeApplication
   } = useVacancyStore();
 
-  // Open vacancies only
+  // Active vacancies (not closed)
   const openVacancies = useMemo(() => {
-    return vacancies.filter(v => v.status === 'open' || v.status === 'paused');
+    return vacancies.filter(v => v.status !== 'closed');
   }, [vacancies]);
 
   // Current vacancy

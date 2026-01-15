@@ -24,16 +24,18 @@ import {
   CheckCircle,
   XCircle,
   LayoutGrid,
-  List
+  List,
+  Kanban
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
 import { useVacancyStore } from '@/stores/vacancyStore';
-import type { Entity, Vacancy } from '@/types';
+import type { Entity, Vacancy, EntityStatus } from '@/types';
+import { CANDIDATE_PIPELINE_STAGES, STATUS_LABELS, STATUS_COLORS } from '@/types';
 import type { ParsedResume, BulkImportResponse } from '@/services/api';
 import { formatSalary } from '@/utils';
-import { bulkImportResumes } from '@/services/api';
+import { bulkImportResumes, updateEntityStatus } from '@/services/api';
 import ContactForm from '@/components/contacts/ContactForm';
 import ParserModal from '@/components/parser/ParserModal';
 import { Skeleton } from '@/components/ui';
@@ -46,11 +48,11 @@ interface CandidatesDatabaseProps {
 export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: CandidatesDatabaseProps) {
   const navigate = useNavigate();
 
-  // View modes
-  type ViewMode = 'grid' | 'list';
+  // View modes: grid, list, or kanban
+  type ViewMode = 'grid' | 'list' | 'kanban';
 
   // Local state
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -66,9 +68,13 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
   const [bulkImportResult, setBulkImportResult] = useState<BulkImportResponse | null>(null);
   const bulkImportInputRef = useRef<HTMLInputElement>(null);
 
-  // Drag state
+  // Drag state for vacancy assignment
   const [draggedCandidate, setDraggedCandidate] = useState<Entity | null>(null);
   const [dropTargetVacancy, setDropTargetVacancy] = useState<number | null>(null);
+
+  // Drag state for Kanban
+  const [draggedForKanban, setDraggedForKanban] = useState<Entity | null>(null);
+  const [dropTargetStage, setDropTargetStage] = useState<EntityStatus | null>(null);
 
   // Store
   const {
@@ -123,6 +129,24 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     return vacancies.filter(v => v.status === 'open' || v.status === 'paused');
   }, [vacancies]);
 
+  // Group candidates by status for Kanban view
+  const candidatesByStatus = useMemo(() => {
+    const grouped: Record<EntityStatus, Entity[]> = {} as Record<EntityStatus, Entity[]>;
+    CANDIDATE_PIPELINE_STAGES.forEach(stage => {
+      grouped[stage] = [];
+    });
+    filteredCandidates.forEach(candidate => {
+      const status = candidate.status as EntityStatus;
+      if (grouped[status]) {
+        grouped[status].push(candidate);
+      } else {
+        // Default to 'new' if status not in pipeline
+        grouped['new'].push(candidate);
+      }
+    });
+    return grouped;
+  }, [filteredCandidates]);
+
   // Handlers
   const handleDragStart = (candidate: Entity) => {
     setDraggedCandidate(candidate);
@@ -151,6 +175,36 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
   const handleVacancyDragLeave = () => {
     setDropTargetVacancy(null);
+  };
+
+  // Kanban drag handlers
+  const handleKanbanDragStart = (candidate: Entity) => {
+    setDraggedForKanban(candidate);
+  };
+
+  const handleKanbanDragEnd = async () => {
+    if (draggedForKanban && dropTargetStage && draggedForKanban.status !== dropTargetStage) {
+      try {
+        await updateEntityStatus(draggedForKanban.id, dropTargetStage);
+        toast.success(`${draggedForKanban.name} перемещён в "${STATUS_LABELS[dropTargetStage]}"`);
+        fetchEntities(); // Refresh to get updated data
+      } catch {
+        toast.error('Не удалось изменить статус');
+      }
+    }
+    setDraggedForKanban(null);
+    setDropTargetStage(null);
+  };
+
+  const handleStageDragOver = (e: React.DragEvent, stage: EntityStatus) => {
+    e.preventDefault();
+    if (draggedForKanban) {
+      setDropTargetStage(stage);
+    }
+  };
+
+  const handleStageDragLeave = () => {
+    setDropTargetStage(null);
   };
 
   const handleCandidateClick = (candidate: Entity) => {
@@ -411,6 +465,16 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           {/* View Mode Toggle */}
           <div className="flex items-center bg-white/5 rounded-lg p-1 border border-white/10">
             <button
+              onClick={() => setViewMode('kanban')}
+              className={clsx(
+                'p-1.5 rounded transition-colors',
+                viewMode === 'kanban' ? 'bg-purple-600 text-white' : 'text-white/60 hover:text-white'
+              )}
+              title="Kanban"
+            >
+              <Kanban className="w-4 h-4" />
+            </button>
+            <button
               onClick={() => setViewMode('grid')}
               className={clsx(
                 'p-1.5 rounded transition-colors',
@@ -505,6 +569,95 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                 >
                   Добавить кандидата
                 </button>
+              </div>
+            </div>
+          ) : viewMode === 'kanban' ? (
+            /* Kanban View */
+            <div className="h-full overflow-x-auto">
+              <div className="flex gap-3 h-full min-w-max p-1">
+                {CANDIDATE_PIPELINE_STAGES.map(stage => (
+                  <div
+                    key={stage}
+                    onDragOver={(e) => handleStageDragOver(e, stage)}
+                    onDragLeave={handleStageDragLeave}
+                    onDrop={handleKanbanDragEnd}
+                    className={clsx(
+                      'w-72 flex-shrink-0 flex flex-col bg-white/5 rounded-xl border transition-all',
+                      dropTargetStage === stage
+                        ? 'border-purple-500 bg-purple-500/10'
+                        : 'border-white/10'
+                    )}
+                  >
+                    {/* Column Header */}
+                    <div className={clsx('p-3 border-b border-white/10 rounded-t-xl', STATUS_COLORS[stage])}>
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-medium text-sm">{STATUS_LABELS[stage]}</h3>
+                        <span className="text-xs px-2 py-0.5 bg-black/20 rounded-full">
+                          {candidatesByStatus[stage]?.length || 0}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Column Content */}
+                    <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                      {candidatesByStatus[stage]?.map(candidate => (
+                        <motion.div
+                          key={candidate.id}
+                          layout
+                          draggable
+                          onDragStart={() => handleKanbanDragStart(candidate)}
+                          onDragEnd={handleKanbanDragEnd}
+                          onClick={() => handleCandidateClick(candidate)}
+                          className={clsx(
+                            'p-3 bg-gray-800/50 hover:bg-gray-800 border border-white/10 rounded-lg cursor-pointer transition-all',
+                            draggedForKanban?.id === candidate.id && 'opacity-50'
+                          )}
+                        >
+                          <div className="flex items-start gap-2">
+                            <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-xs flex-shrink-0">
+                              {getAvatarInitials(candidate.name || 'UK')}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
+                              {candidate.position && (
+                                <p className="text-xs text-white/50 truncate">{candidate.position}</p>
+                              )}
+                            </div>
+                          </div>
+                          {candidate.tags && candidate.tags.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {candidate.tags.slice(0, 2).map(tag => (
+                                <span
+                                  key={tag}
+                                  className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/50 truncate max-w-[70px]"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                              {candidate.tags.length > 2 && (
+                                <span className="text-xs text-white/30">+{candidate.tags.length - 2}</span>
+                              )}
+                            </div>
+                          )}
+                          <div className="mt-2 flex items-center justify-between text-xs text-white/40">
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {formatDate(candidate.created_at)}
+                            </span>
+                            {candidate.email && (
+                              <Mail className="w-3 h-3" />
+                            )}
+                          </div>
+                        </motion.div>
+                      ))}
+                      {(!candidatesByStatus[stage] || candidatesByStatus[stage].length === 0) && (
+                        <div className="text-center py-8 text-white/30 text-sm">
+                          Нет кандидатов
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ) : (
