@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
 import toast from 'react-hot-toast';
 import type { EntityWithRelations } from '@/types';
 
@@ -404,7 +405,7 @@ export default function EntityAI({ entity }: EntityAIProps) {
             {msg.role === 'assistant' ? (
               <div className="relative">
                 <div className="prose prose-invert prose-sm max-w-none break-words overflow-wrap-anywhere">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{msg.content}</ReactMarkdown>
                 </div>
                 <button
                   onClick={() => handleCopy(i, msg.content)}
@@ -420,7 +421,7 @@ export default function EntityAI({ entity }: EntityAIProps) {
               </div>
             ) : (
               <div className="prose prose-invert prose-sm max-w-none break-words overflow-wrap-anywhere">
-                <ReactMarkdown>{msg.content}</ReactMarkdown>
+                <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{msg.content}</ReactMarkdown>
               </div>
             )}
           </div>
@@ -429,7 +430,7 @@ export default function EntityAI({ entity }: EntityAIProps) {
         {streamingContent && (
           <div className="p-3 rounded-lg bg-white/5 mr-2 sm:mr-4 overflow-hidden">
             <div className="prose prose-invert prose-sm max-w-none break-words overflow-wrap-anywhere">
-              <ReactMarkdown>{streamingContent}</ReactMarkdown>
+              <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{streamingContent}</ReactMarkdown>
             </div>
           </div>
         )}

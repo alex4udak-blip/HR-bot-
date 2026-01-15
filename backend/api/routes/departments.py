@@ -504,24 +504,25 @@ async def get_department(
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
 
-    # Count members
-    members_result = await db.execute(
-        select(DepartmentMember).where(DepartmentMember.department_id == dept.id)
+    # Count members using func.count (efficient single query)
+    from sqlalchemy import func
+    members_count_result = await db.execute(
+        select(func.count(DepartmentMember.id)).where(DepartmentMember.department_id == dept.id)
     )
-    members_count = len(list(members_result.scalars().all()))
+    members_count = members_count_result.scalar() or 0
 
-    # Count entities
+    # Count entities using func.count
     from ..models.database import Entity
-    entities_result = await db.execute(
-        select(Entity).where(Entity.department_id == dept.id)
+    entities_count_result = await db.execute(
+        select(func.count(Entity.id)).where(Entity.department_id == dept.id)
     )
-    entities_count = len(list(entities_result.scalars().all()))
+    entities_count = entities_count_result.scalar() or 0
 
-    # Count children
-    children_result = await db.execute(
-        select(Department).where(Department.parent_id == dept.id)
+    # Count children using func.count
+    children_count_result = await db.execute(
+        select(func.count(Department.id)).where(Department.parent_id == dept.id)
     )
-    children_count = len(list(children_result.scalars().all()))
+    children_count = children_count_result.scalar() or 0
 
     # Get parent name
     parent_name = None
@@ -744,9 +745,11 @@ async def list_department_members(
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
 
-    # Get members
+    # Get members with User data in a single query (batch query to avoid N+1)
+    from sqlalchemy.orm import selectinload
     result = await db.execute(
         select(DepartmentMember)
+        .options(selectinload(DepartmentMember.user))
         .where(DepartmentMember.department_id == department_id)
         .order_by(DepartmentMember.role, DepartmentMember.created_at)
     )
@@ -754,14 +757,12 @@ async def list_department_members(
 
     response = []
     for member in members:
-        user_result = await db.execute(select(User).where(User.id == member.user_id))
-        user = user_result.scalar_one_or_none()
-        if user:
+        if member.user:
             response.append(DepartmentMemberResponse(
                 id=member.id,
-                user_id=user.id,
-                user_name=user.name,
-                user_email=user.email,
+                user_id=member.user.id,
+                user_name=member.user.name,
+                user_email=member.user.email,
                 role=member.role,
                 created_at=member.created_at
             ))

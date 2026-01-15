@@ -239,28 +239,32 @@ async def share_resource(
             )
             linked_chats = chats_result.scalars().all()
 
-            for chat in linked_chats:
-                # Check if already shared
-                existing_chat_share = await db.execute(
-                    select(SharedAccess).where(
+            if linked_chats:
+                # Batch query: Get all existing chat shares for this user (avoid N+1)
+                chat_ids = [chat.id for chat in linked_chats]
+                existing_chat_shares_result = await db.execute(
+                    select(SharedAccess.resource_id).where(
                         SharedAccess.resource_type == ResourceType.chat,
-                        SharedAccess.resource_id == chat.id,
+                        SharedAccess.resource_id.in_(chat_ids),
                         SharedAccess.shared_with_id == data.shared_with_id
                     )
                 )
-                if not existing_chat_share.scalar_one_or_none():
-                    chat_share = SharedAccess(
-                        resource_type=ResourceType.chat,
-                        resource_id=chat.id,
-                        chat_id=chat.id,
-                        shared_by_id=current_user.id,
-                        shared_with_id=data.shared_with_id,
-                        access_level=data.access_level,
-                        note=f"Автоматически расшарено вместе с контактом: {entity.name}",
-                        expires_at=data.expires_at
-                    )
-                    db.add(chat_share)
-                    shared_related["chats"] += 1
+                existing_chat_share_ids = {r for r in existing_chat_shares_result.scalars().all()}
+
+                for chat in linked_chats:
+                    if chat.id not in existing_chat_share_ids:
+                        chat_share = SharedAccess(
+                            resource_type=ResourceType.chat,
+                            resource_id=chat.id,
+                            chat_id=chat.id,
+                            shared_by_id=current_user.id,
+                            shared_with_id=data.shared_with_id,
+                            access_level=data.access_level,
+                            note=f"Автоматически расшарено вместе с контактом: {entity.name}",
+                            expires_at=data.expires_at
+                        )
+                        db.add(chat_share)
+                        shared_related["chats"] += 1
 
             # Find all calls linked to this entity
             calls_result = await db.execute(
@@ -268,28 +272,32 @@ async def share_resource(
             )
             linked_calls = calls_result.scalars().all()
 
-            for call in linked_calls:
-                # Check if already shared
-                existing_call_share = await db.execute(
-                    select(SharedAccess).where(
+            if linked_calls:
+                # Batch query: Get all existing call shares for this user (avoid N+1)
+                call_ids = [call.id for call in linked_calls]
+                existing_call_shares_result = await db.execute(
+                    select(SharedAccess.resource_id).where(
                         SharedAccess.resource_type == ResourceType.call,
-                        SharedAccess.resource_id == call.id,
+                        SharedAccess.resource_id.in_(call_ids),
                         SharedAccess.shared_with_id == data.shared_with_id
                     )
                 )
-                if not existing_call_share.scalar_one_or_none():
-                    call_share = SharedAccess(
-                        resource_type=ResourceType.call,
-                        resource_id=call.id,
-                        call_id=call.id,
-                        shared_by_id=current_user.id,
-                        shared_with_id=data.shared_with_id,
-                        access_level=data.access_level,
-                        note=f"Автоматически расшарено вместе с контактом: {entity.name}",
-                        expires_at=data.expires_at
-                    )
-                    db.add(call_share)
-                    shared_related["calls"] += 1
+                existing_call_share_ids = {r for r in existing_call_shares_result.scalars().all()}
+
+                for call in linked_calls:
+                    if call.id not in existing_call_share_ids:
+                        call_share = SharedAccess(
+                            resource_type=ResourceType.call,
+                            resource_id=call.id,
+                            call_id=call.id,
+                            shared_by_id=current_user.id,
+                            shared_with_id=data.shared_with_id,
+                            access_level=data.access_level,
+                            note=f"Автоматически расшарено вместе с контактом: {entity.name}",
+                            expires_at=data.expires_at
+                        )
+                        db.add(call_share)
+                        shared_related["calls"] += 1
 
             if shared_related["chats"] > 0 or shared_related["calls"] > 0:
                 await db.commit()
@@ -420,45 +428,41 @@ async def revoke_share(
         entity = entity_result.scalar_one_or_none()
 
         if entity:
-            # Find all chats linked to this entity
+            # Find all chats linked to this entity (only IDs needed)
             chats_result = await db.execute(
-                select(Chat).where(Chat.entity_id == resource_id, Chat.org_id == entity.org_id)
+                select(Chat.id).where(Chat.entity_id == resource_id, Chat.org_id == entity.org_id)
             )
-            linked_chats = chats_result.scalars().all()
+            linked_chat_ids = [r for r in chats_result.scalars().all()]
 
-            # Delete shares for linked chats
-            for chat in linked_chats:
-                chat_share_result = await db.execute(
-                    select(SharedAccess).where(
+            # Batch delete shares for linked chats (avoid N+1)
+            if linked_chat_ids:
+                from sqlalchemy import delete
+                delete_result = await db.execute(
+                    delete(SharedAccess).where(
                         SharedAccess.resource_type == ResourceType.chat,
-                        SharedAccess.resource_id == chat.id,
+                        SharedAccess.resource_id.in_(linked_chat_ids),
                         SharedAccess.shared_with_id == shared_with_id
                     )
                 )
-                chat_share = chat_share_result.scalar_one_or_none()
-                if chat_share:
-                    await db.delete(chat_share)
-                    related_deleted["chats"] += 1
+                related_deleted["chats"] = delete_result.rowcount
 
-            # Find all calls linked to this entity
+            # Find all calls linked to this entity (only IDs needed)
             calls_result = await db.execute(
-                select(CallRecording).where(CallRecording.entity_id == resource_id, CallRecording.org_id == entity.org_id)
+                select(CallRecording.id).where(CallRecording.entity_id == resource_id, CallRecording.org_id == entity.org_id)
             )
-            linked_calls = calls_result.scalars().all()
+            linked_call_ids = [r for r in calls_result.scalars().all()]
 
-            # Delete shares for linked calls
-            for call in linked_calls:
-                call_share_result = await db.execute(
-                    select(SharedAccess).where(
+            # Batch delete shares for linked calls (avoid N+1)
+            if linked_call_ids:
+                from sqlalchemy import delete
+                delete_result = await db.execute(
+                    delete(SharedAccess).where(
                         SharedAccess.resource_type == ResourceType.call,
-                        SharedAccess.resource_id == call.id,
+                        SharedAccess.resource_id.in_(linked_call_ids),
                         SharedAccess.shared_with_id == shared_with_id
                     )
                 )
-                call_share = call_share_result.scalar_one_or_none()
-                if call_share:
-                    await db.delete(call_share)
-                    related_deleted["calls"] += 1
+                related_deleted["calls"] = delete_result.rowcount
 
     await db.delete(share)
     await db.commit()
@@ -734,15 +738,22 @@ async def cleanup_orphaned_shares(
     chat_shares_result = await db.execute(chat_shares_query)
     chat_shares = chat_shares_result.scalars().all()
 
+    # Batch load all chats for chat shares (avoid N+1)
+    chat_ids = [cs.resource_id for cs in chat_shares]
+    chats_map = {}
+    if chat_ids:
+        chats_result = await db.execute(
+            select(Chat.id, Chat.entity_id).where(Chat.id.in_(chat_ids))
+        )
+        for chat_id, entity_id in chats_result.all():
+            chats_map[chat_id] = entity_id
+
     orphaned_chats = []
     for cs in chat_shares:
-        # Get the chat to find its entity_id
-        chat_result = await db.execute(select(Chat).where(Chat.id == cs.resource_id))
-        chat = chat_result.scalar_one_or_none()
-
-        if chat and chat.entity_id:
+        entity_id = chats_map.get(cs.resource_id)
+        if entity_id:
             # Check if there's a valid entity share for this user
-            if (chat.entity_id, cs.shared_with_id) not in valid_entity_user_pairs:
+            if (entity_id, cs.shared_with_id) not in valid_entity_user_pairs:
                 orphaned_chats.append(cs)
 
     # Find orphaned call shares
@@ -755,27 +766,42 @@ async def cleanup_orphaned_shares(
     call_shares_result = await db.execute(call_shares_query)
     call_shares = call_shares_result.scalars().all()
 
+    # Batch load all calls for call shares (avoid N+1)
+    call_ids = [cs.resource_id for cs in call_shares]
+    calls_map = {}
+    if call_ids:
+        calls_result = await db.execute(
+            select(CallRecording.id, CallRecording.entity_id).where(CallRecording.id.in_(call_ids))
+        )
+        for call_id, entity_id in calls_result.all():
+            calls_map[call_id] = entity_id
+
     orphaned_calls = []
     for cs in call_shares:
-        # Get the call to find its entity_id
-        call_result = await db.execute(select(CallRecording).where(CallRecording.id == cs.resource_id))
-        call = call_result.scalar_one_or_none()
-
-        if call and call.entity_id:
+        entity_id = calls_map.get(cs.resource_id)
+        if entity_id:
             # Check if there's a valid entity share for this user
-            if (call.entity_id, cs.shared_with_id) not in valid_entity_user_pairs:
+            if (entity_id, cs.shared_with_id) not in valid_entity_user_pairs:
                 orphaned_calls.append(cs)
 
-    # Delete if not dry run
+    # Delete if not dry run - use batch delete for efficiency
     deleted_count = {"chats": 0, "calls": 0}
     if not dry_run:
-        for share in orphaned_chats:
-            await db.delete(share)
-            deleted_count["chats"] += 1
+        if orphaned_chats:
+            orphaned_chat_ids = [share.id for share in orphaned_chats]
+            from sqlalchemy import delete
+            await db.execute(
+                delete(SharedAccess).where(SharedAccess.id.in_(orphaned_chat_ids))
+            )
+            deleted_count["chats"] = len(orphaned_chat_ids)
 
-        for share in orphaned_calls:
-            await db.delete(share)
-            deleted_count["calls"] += 1
+        if orphaned_calls:
+            orphaned_call_ids = [share.id for share in orphaned_calls]
+            from sqlalchemy import delete
+            await db.execute(
+                delete(SharedAccess).where(SharedAccess.id.in_(orphaned_call_ids))
+            )
+            deleted_count["calls"] = len(orphaned_call_ids)
 
         await db.commit()
 

@@ -45,15 +45,38 @@ import ImportHistoryModal from './ImportHistoryModal';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
-// Helper to get file URL with auth token (img/video tags can't send headers)
-const getFileUrl = (fileId: string) => {
+// Cache for blob URLs to avoid re-fetching
+const blobUrlCache = new Map<string, string>();
+
+// Helper to fetch file with auth header and return blob URL
+const fetchWithAuth = async (url: string): Promise<string> => {
+  // Check cache first
+  if (blobUrlCache.has(url)) {
+    return blobUrlCache.get(url)!;
+  }
+
   const token = localStorage.getItem('token');
-  return `/api/chats/file/${fileId}${token ? `?token=${token}` : ''}`;
+  const response = await fetch(url, {
+    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  blobUrlCache.set(url, blobUrl);
+  return blobUrl;
 };
 
-// Helper to get local file URL for imported media
+// Helper to get file URL (without token in query string)
+const getFileUrl = (fileId: string) => {
+  return `/api/chats/file/${fileId}`;
+};
+
+// Helper to get local file URL for imported media (without token in query string)
 const getLocalFileUrl = (filePath: string) => {
-  const token = localStorage.getItem('token');
   // filePath format: "uploads/{chat_id}/{filename}"
   // Convert to: "/api/chats/local/{chat_id}/{filename}"
   const parts = filePath.replace('uploads/', '').split('/');
@@ -62,7 +85,7 @@ const getLocalFileUrl = (filePath: string) => {
     const filename = parts.slice(1).join('/');
     // URL-encode the filename to handle special characters like @, spaces, etc.
     const encodedFilename = encodeURIComponent(filename);
-    return `/api/chats/local/${chatId}/${encodedFilename}${token ? `?token=${token}` : ''}`;
+    return `/api/chats/local/${chatId}/${encodedFilename}`;
   }
   return '';
 };
@@ -76,6 +99,120 @@ const getMediaUrl = (message: { file_id?: string; file_path?: string }) => {
     return getLocalFileUrl(message.file_path);
   }
   return '';
+};
+
+// Hook to fetch media with auth and return blob URL
+const useAuthMedia = (url: string) => {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!url) return;
+
+    let cancelled = false;
+    fetchWithAuth(url)
+      .then((result) => {
+        if (!cancelled) setBlobUrl(result);
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [url]);
+
+  return { blobUrl, error };
+};
+
+// Authenticated Image component
+const AuthImage = ({ src, alt, className, onClick }: {
+  src: string;
+  alt: string;
+  className?: string;
+  onClick?: () => void;
+}) => {
+  const { blobUrl, error } = useAuthMedia(src);
+
+  if (error || !blobUrl) {
+    return error ? (
+      <div className="flex items-center gap-2 text-dark-400">
+        <Image className="w-5 h-5" />
+        <span className="text-sm">[Фото недоступно]</span>
+      </div>
+    ) : null;
+  }
+
+  return (
+    <img
+      src={blobUrl}
+      alt={alt}
+      className={className}
+      onClick={onClick}
+      loading="lazy"
+    />
+  );
+};
+
+// Authenticated Video component
+const AuthVideo = ({ src, className, controls, preload, isRound }: {
+  src: string;
+  className?: string;
+  controls?: boolean;
+  preload?: string;
+  isRound?: boolean;
+}) => {
+  const { blobUrl, error } = useAuthMedia(src);
+
+  if (error) {
+    return (
+      <div
+        className={isRound
+          ? "w-32 h-32 rounded-full bg-dark-700 flex items-center justify-center text-dark-400"
+          : "flex items-center gap-2 text-dark-400"
+        }
+      >
+        <span className="text-sm">{isRound ? 'Видео' : '[Видео недоступно]'}</span>
+      </div>
+    );
+  }
+
+  if (!blobUrl) return null;
+
+  return (
+    <video
+      src={blobUrl}
+      className={className}
+      controls={controls}
+      preload={preload}
+    />
+  );
+};
+
+// Authenticated Audio component
+const AuthAudio = ({ src, className }: {
+  src: string;
+  className?: string;
+}) => {
+  const { blobUrl, error } = useAuthMedia(src);
+
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 text-dark-400">
+        <span className="text-sm">[Голосовое сообщение недоступно]</span>
+      </div>
+    );
+  }
+
+  if (!blobUrl) return null;
+
+  return (
+    <audio
+      src={blobUrl}
+      controls
+      preload="metadata"
+      className={className}
+    />
+  );
 };
 
 // Chat type options
@@ -678,15 +815,14 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                     ) : message.content_type === 'photo' ? (
                       <div className="space-y-2">
                         {(message.file_id || message.file_path) ? (
-                          <img
+                          <AuthImage
                             src={getMediaUrl(message)}
                             alt="Photo"
                             className="max-w-xs max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                            onClick={() => window.open(getMediaUrl(message), '_blank')}
-                            loading="lazy"
-                            onError={(e) => {
-                              // Hide broken images
-                              (e.target as HTMLImageElement).style.display = 'none';
+                            onClick={() => {
+                              // Open in new tab with fetch
+                              const url = getMediaUrl(message);
+                              fetchWithAuth(url).then(blobUrl => window.open(blobUrl, '_blank'));
                             }}
                           />
                         ) : (
@@ -702,26 +838,18 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                     ) : message.content_type === 'video_note' ? (
                       <div className="space-y-2">
                         {(message.file_id || message.file_path) ? (
-                          <video
+                          <AuthVideo
                             src={getMediaUrl(message)}
                             className="w-32 h-32 rounded-full object-cover cursor-pointer"
                             controls
                             preload="metadata"
-                            onError={(e) => {
-                              // Show placeholder on load error
-                              const video = e.target as HTMLVideoElement;
-                              video.style.display = 'none';
-                              const placeholder = video.parentElement?.querySelector('.video-placeholder');
-                              if (placeholder) (placeholder as HTMLElement).style.display = 'flex';
-                            }}
+                            isRound
                           />
-                        ) : null}
-                        <div
-                          className="video-placeholder w-32 h-32 rounded-full bg-dark-700 flex items-center justify-center text-dark-400"
-                          style={{ display: (message.file_id || message.file_path) ? 'none' : 'flex' }}
-                        >
-                          <span className="text-xs">Видео</span>
-                        </div>
+                        ) : (
+                          <div className="w-32 h-32 rounded-full bg-dark-700 flex items-center justify-center text-dark-400">
+                            <span className="text-xs">Видео</span>
+                          </div>
+                        )}
                         {message.content && !message.content.startsWith('[Video') && !message.content.startsWith('[Видео') && !message.content.includes('transcription failed') && (
                           <p className="text-sm text-dark-300">{message.content}</p>
                         )}
@@ -729,15 +857,10 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                     ) : message.content_type === 'sticker' ? (
                       <div className="flex items-center gap-2">
                         {(message.file_id || message.file_path) && (
-                          <img
+                          <AuthImage
                             src={getMediaUrl(message)}
                             alt="Sticker"
                             className="w-32 h-32 object-contain"
-                            loading="lazy"
-                            onError={(e) => {
-                              // Hide broken sticker images (animated .tgs stickers)
-                              (e.target as HTMLImageElement).style.display = 'none';
-                            }}
                           />
                         )}
                         {message.content.includes('[Sticker') || message.content.includes('[Стикер') ? (
@@ -749,26 +872,15 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                     ) : message.content_type === 'voice' ? (
                       <div className="space-y-2">
                         {(message.file_id || message.file_path) ? (
-                          <audio
+                          <AuthAudio
                             src={getMediaUrl(message)}
-                            controls
-                            preload="metadata"
                             className="w-full max-w-xs max-w-full"
-                            onError={(e) => {
-                              // Show placeholder on load error
-                              const audio = e.target as HTMLAudioElement;
-                              audio.style.display = 'none';
-                              const placeholder = audio.parentElement?.querySelector('.audio-error-placeholder');
-                              if (placeholder) (placeholder as HTMLElement).style.display = 'flex';
-                            }}
                           />
-                        ) : null}
-                        <div
-                          className="audio-error-placeholder flex items-center gap-2 text-dark-400"
-                          style={{ display: (message.file_id || message.file_path) ? 'none' : 'flex' }}
-                        >
-                          <span className="text-sm">[Голосовое сообщение недоступно]</span>
-                        </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-dark-400">
+                            <span className="text-sm">[Голосовое сообщение недоступно]</span>
+                          </div>
+                        )}
                         {message.content && !message.content.startsWith('[Голосов') && !message.content.startsWith('[Voice') && (
                           <p className="text-sm text-dark-300">{message.content}</p>
                         )}
@@ -776,26 +888,17 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                     ) : message.content_type === 'video' ? (
                       <div className="space-y-2">
                         {(message.file_id || message.file_path) ? (
-                          <video
+                          <AuthVideo
                             src={getMediaUrl(message)}
                             className="max-w-xs max-w-full rounded-lg"
                             controls
                             preload="metadata"
-                            onError={(e) => {
-                              // Show placeholder on load error
-                              const video = e.target as HTMLVideoElement;
-                              video.style.display = 'none';
-                              const placeholder = video.parentElement?.querySelector('.video-error-placeholder');
-                              if (placeholder) (placeholder as HTMLElement).style.display = 'flex';
-                            }}
                           />
-                        ) : null}
-                        <div
-                          className="video-error-placeholder flex items-center gap-2 text-dark-400"
-                          style={{ display: (message.file_id || message.file_path) ? 'none' : 'flex' }}
-                        >
-                          <span className="text-sm">[Видео недоступно]</span>
-                        </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-dark-400">
+                            <span className="text-sm">[Видео недоступно]</span>
+                          </div>
+                        )}
                         {message.content && !message.content.startsWith('[Видео') && !message.content.startsWith('[Video') && (
                           <p className="text-sm text-dark-300">{message.content}</p>
                         )}
