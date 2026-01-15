@@ -397,6 +397,7 @@ export default function VacanciesPage() {
           <button
             onClick={handleBack}
             className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+            title="К списку вакансий"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
@@ -404,6 +405,15 @@ export default function VacanciesPage() {
             <h1 className="text-xl font-semibold">{currentVacancy.title}</h1>
             <VacancyStatusBadge status={currentVacancy.status} size="sm" />
           </div>
+          {/* Navigation to candidates page */}
+          <button
+            onClick={() => navigate('/candidates')}
+            className="flex items-center gap-2 px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg text-sm transition-colors"
+            title="Перейти к базе кандидатов"
+          >
+            <Users className="w-4 h-4" />
+            К кандидатам
+          </button>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setViewMode(viewMode === 'list' ? 'kanban' : 'list')}

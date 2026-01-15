@@ -750,6 +750,15 @@ export default function CandidatesPage() {
               )}
             </div>
             <div className="flex items-center gap-2">
+              {/* Navigation to vacancies page */}
+              <button
+                onClick={() => navigate('/vacancies')}
+                className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg text-sm transition-colors"
+                title="Перейти к вакансиям"
+              >
+                <Briefcase className="w-4 h-4" />
+                К вакансиям
+              </button>
               {/* View Mode Toggle - only when vacancy selected */}
               {currentVacancy && (
                 <div className="flex items-center bg-white/5 rounded-lg p-1">
