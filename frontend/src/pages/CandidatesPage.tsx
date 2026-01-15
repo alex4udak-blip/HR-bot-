@@ -39,6 +39,7 @@ import AddCandidateModal from '@/components/vacancies/AddCandidateModal';
 import ApplicationDetailModal from '@/components/vacancies/ApplicationDetailModal';
 import { ConfirmDialog, ErrorMessage, Skeleton } from '@/components/ui';
 import { OnboardingTooltip } from '@/components/onboarding';
+import { CandidatesDatabase } from '@/components/vacancies';
 
 // View modes
 type ViewMode = 'list' | 'kanban';
@@ -583,51 +584,55 @@ export default function CandidatesPage() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              {/* View Mode Toggle */}
-              <div className="flex items-center bg-white/5 rounded-lg p-1">
-                <button
-                  onClick={() => setViewMode('kanban')}
-                  className={clsx(
-                    'p-1.5 rounded transition-colors',
-                    viewMode === 'kanban' ? 'bg-cyan-600 text-white' : 'text-white/60 hover:text-white'
-                  )}
-                  title="Kanban"
-                >
-                  <LayoutGrid className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={clsx(
-                    'p-1.5 rounded transition-colors',
-                    viewMode === 'list' ? 'bg-cyan-600 text-white' : 'text-white/60 hover:text-white'
-                  )}
-                  title="Список"
-                >
-                  <List className="w-4 h-4" />
-                </button>
-              </div>
-
-              <button
-                onClick={() => setShowParserModal(true)}
-                className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
-              >
-                <Upload className="w-4 h-4" />
-                Загрузить резюме
-              </button>
+              {/* View Mode Toggle - only when vacancy selected */}
+              {currentVacancy && (
+                <div className="flex items-center bg-white/5 rounded-lg p-1">
+                  <button
+                    onClick={() => setViewMode('kanban')}
+                    className={clsx(
+                      'p-1.5 rounded transition-colors',
+                      viewMode === 'kanban' ? 'bg-cyan-600 text-white' : 'text-white/60 hover:text-white'
+                    )}
+                    title="Kanban"
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setViewMode('list')}
+                    className={clsx(
+                      'p-1.5 rounded transition-colors',
+                      viewMode === 'list' ? 'bg-cyan-600 text-white' : 'text-white/60 hover:text-white'
+                    )}
+                    title="Список"
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
 
               {currentVacancy && (
-                <button
-                  onClick={() => setShowAddToVacancyModal(true)}
-                  className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  Добавить кандидата
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowParserModal(true)}
+                    className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Загрузить резюме
+                  </button>
+
+                  <button
+                    onClick={() => setShowAddToVacancyModal(true)}
+                    className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Добавить кандидата
+                  </button>
+                </>
               )}
             </div>
           </div>
 
-          {/* Stage Tabs */}
+          {/* Stage Tabs - only when vacancy selected */}
           {currentVacancy && (
             <div className="flex items-center gap-1 overflow-x-auto pb-1">
               <button
@@ -662,20 +667,11 @@ export default function CandidatesPage() {
         {/* Content Area */}
         <div className="flex-1 overflow-hidden">
           {!currentVacancy ? (
-            // No vacancy selected - show all candidates
-            <div className="h-full flex items-center justify-center text-white/40">
-              <div className="text-center">
-                <Briefcase className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-medium mb-2">Выберите вакансию</h3>
-                <p className="text-sm">Выберите вакансию в боковой панели для просмотра кандидатов</p>
-                <button
-                  onClick={() => setShowCreateVacancyModal(true)}
-                  className="mt-4 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-white text-sm transition-colors"
-                >
-                  Создать вакансию
-                </button>
-              </div>
-            </div>
+            // No vacancy selected - show all candidates database
+            <CandidatesDatabase
+              vacancies={vacancies}
+              onRefreshVacancies={fetchVacancies}
+            />
           ) : kanbanLoading ? (
             // Loading
             <div className="h-full flex items-center justify-center">
