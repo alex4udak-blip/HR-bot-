@@ -82,8 +82,9 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
   // Kanban auto-scroll refs
   const kanbanContainerRef = useRef<HTMLDivElement>(null);
   const autoScrollIntervalRef = useRef<number | null>(null);
-  const AUTO_SCROLL_THRESHOLD = 100;
-  const AUTO_SCROLL_SPEED = 15;
+  const scrollDirectionRef = useRef<number>(0);
+  const AUTO_SCROLL_THRESHOLD = 200;
+  const AUTO_SCROLL_SPEED = 30;
 
   // Store
   const {
@@ -215,6 +216,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
   // Handlers - Kanban stage drag
   const handleKanbanDragStart = (candidate: Entity) => {
     setDraggedForKanban(candidate);
+    setDraggedCandidate(candidate); // Allow dragging to vacancies sidebar
   };
 
   const handleKanbanDragEnd = async (_e?: React.DragEvent | unknown, targetStage?: EntityStatus) => {
@@ -233,12 +235,13 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
       }
     }
     setDraggedForKanban(null);
+    setDraggedCandidate(null);
     setDropTargetStage(null);
   };
 
   const handleStageDragOver = (e: React.DragEvent, stage: EntityStatus) => {
     e.preventDefault();
-    e.stopPropagation();
+    // Removed e.stopPropagation() to allow parent container auto-scroll to work
     if (draggedForKanban) {
       setDropTargetStage(stage);
     }
@@ -266,10 +269,26 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
       cancelAnimationFrame(autoScrollIntervalRef.current);
       autoScrollIntervalRef.current = null;
     }
+    scrollDirectionRef.current = 0;
   }, []);
 
+  const startAutoScroll = useCallback(() => {
+    if (autoScrollIntervalRef.current !== null) return;
+
+    const scroll = () => {
+      if (kanbanContainerRef.current && scrollDirectionRef.current !== 0) {
+        kanbanContainerRef.current.scrollLeft += AUTO_SCROLL_SPEED * scrollDirectionRef.current;
+        autoScrollIntervalRef.current = requestAnimationFrame(scroll);
+      } else {
+        stopAutoScroll();
+      }
+    };
+    autoScrollIntervalRef.current = requestAnimationFrame(scroll);
+  }, [stopAutoScroll]);
+
   const handleKanbanBoardDragOver = useCallback((e: React.DragEvent) => {
-    if (!kanbanContainerRef.current || !draggedForKanban) return;
+    e.preventDefault(); // Ensure we allow dropping
+    if (!kanbanContainerRef.current || (!draggedForKanban && !draggedCandidate)) return;
 
     const board = kanbanContainerRef.current;
     const rect = board.getBoundingClientRect();
@@ -278,27 +297,20 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     const distanceFromLeft = mouseX - rect.left;
     const distanceFromRight = rect.right - mouseX;
 
-    let scrollDirection = 0;
+    let newDirection = 0;
     if (distanceFromLeft < AUTO_SCROLL_THRESHOLD) {
-      scrollDirection = -1 * (1 - distanceFromLeft / AUTO_SCROLL_THRESHOLD);
+      newDirection = -1 * (1 - Math.max(0, distanceFromLeft) / AUTO_SCROLL_THRESHOLD);
     } else if (distanceFromRight < AUTO_SCROLL_THRESHOLD) {
-      scrollDirection = 1 * (1 - distanceFromRight / AUTO_SCROLL_THRESHOLD);
+      newDirection = 1 * (1 - Math.max(0, distanceFromRight) / AUTO_SCROLL_THRESHOLD);
     }
 
-    if (scrollDirection !== 0) {
-      if (autoScrollIntervalRef.current === null) {
-        const scroll = () => {
-          if (kanbanContainerRef.current) {
-            kanbanContainerRef.current.scrollLeft += AUTO_SCROLL_SPEED * scrollDirection;
-          }
-          autoScrollIntervalRef.current = requestAnimationFrame(scroll);
-        };
-        autoScrollIntervalRef.current = requestAnimationFrame(scroll);
-      }
+    if (newDirection !== 0) {
+      scrollDirectionRef.current = newDirection;
+      startAutoScroll();
     } else {
       stopAutoScroll();
     }
-  }, [draggedForKanban, stopAutoScroll]);
+  }, [draggedForKanban, startAutoScroll, stopAutoScroll]);
 
   // Cleanup auto-scroll on unmount
   useEffect(() => {
@@ -454,11 +466,18 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
   // Quick status change handler for cards/list view
   const handleQuickStatusChange = async (candidate: Entity, newStatus: EntityStatus) => {
+    console.log('[Diagnostic] Quick status change:', {
+      candidateId: candidate.id,
+      candidateName: candidate.name,
+      currentStatus: candidate.status,
+      newStatus
+    });
     try {
       await updateEntityStatus(candidate.id, newStatus);
       toast.success(`${candidate.name} → ${STATUS_LABELS[newStatus]}`);
       fetchEntities();
-    } catch {
+    } catch (error) {
+      console.error('[Diagnostic] Status change failed:', error);
       toast.error('Не удалось изменить статус');
     }
   };
@@ -748,7 +767,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             <Users className="w-5 h-5 text-purple-400" />
             База кандидатов
             <span className="text-sm font-normal text-white/50">
-              ({typeCounts.candidate || 0})
+              ({isLoading ? '...' : (typeCounts?.candidate || entities.length)})
             </span>
           </h2>
 

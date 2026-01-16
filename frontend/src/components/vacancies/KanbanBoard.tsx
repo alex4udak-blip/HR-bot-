@@ -58,8 +58,8 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   const autoScrollIntervalRef = useRef<number | null>(null);
 
   // Auto-scroll configuration
-  const AUTO_SCROLL_THRESHOLD = 100; // pixels from edge to trigger scroll
-  const AUTO_SCROLL_SPEED = 15; // pixels per frame
+  const AUTO_SCROLL_THRESHOLD = 200; // pixels from edge to trigger scroll
+  const AUTO_SCROLL_SPEED = 30; // pixels per frame
 
   // Confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -98,15 +98,33 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     };
   }, []);
 
+  const scrollDirectionRef = useRef<number>(0);
+
   // Stop auto-scroll
   const stopAutoScroll = useCallback(() => {
     if (autoScrollIntervalRef.current !== null) {
       cancelAnimationFrame(autoScrollIntervalRef.current);
       autoScrollIntervalRef.current = null;
     }
+    scrollDirectionRef.current = 0;
   }, []);
 
-  // Start auto-scroll based on mouse position
+  // Start auto-scroll loop
+  const startAutoScroll = useCallback(() => {
+    if (autoScrollIntervalRef.current !== null) return;
+
+    const scroll = () => {
+      if (boardRef.current && scrollDirectionRef.current !== 0) {
+        boardRef.current.scrollLeft += AUTO_SCROLL_SPEED * scrollDirectionRef.current;
+        autoScrollIntervalRef.current = requestAnimationFrame(scroll);
+      } else {
+        stopAutoScroll();
+      }
+    };
+    autoScrollIntervalRef.current = requestAnimationFrame(scroll);
+  }, [stopAutoScroll]);
+
+  // Handle drag over for auto-scroll
   const handleBoardDragOver = useCallback((e: React.DragEvent) => {
     if (!boardRef.current || !isDragging) return;
 
@@ -119,31 +137,22 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     const distanceFromRight = rect.right - mouseX;
 
     // Determine scroll direction and speed
-    let scrollDirection = 0;
+    let newDirection = 0;
     if (distanceFromLeft < AUTO_SCROLL_THRESHOLD) {
       // Scroll left - speed increases as mouse gets closer to edge
-      scrollDirection = -1 * (1 - distanceFromLeft / AUTO_SCROLL_THRESHOLD);
+      newDirection = -1 * (1 - Math.max(0, distanceFromLeft) / AUTO_SCROLL_THRESHOLD);
     } else if (distanceFromRight < AUTO_SCROLL_THRESHOLD) {
       // Scroll right - speed increases as mouse gets closer to edge
-      scrollDirection = 1 * (1 - distanceFromRight / AUTO_SCROLL_THRESHOLD);
+      newDirection = 1 * (1 - Math.max(0, distanceFromRight) / AUTO_SCROLL_THRESHOLD);
     }
 
-    if (scrollDirection !== 0) {
-      // Start auto-scroll if not already running
-      if (autoScrollIntervalRef.current === null) {
-        const scroll = () => {
-          if (boardRef.current) {
-            boardRef.current.scrollLeft += AUTO_SCROLL_SPEED * scrollDirection;
-          }
-          autoScrollIntervalRef.current = requestAnimationFrame(scroll);
-        };
-        autoScrollIntervalRef.current = requestAnimationFrame(scroll);
-      }
+    if (newDirection !== 0) {
+      scrollDirectionRef.current = newDirection;
+      startAutoScroll();
     } else {
-      // Stop auto-scroll when not near edges
       stopAutoScroll();
     }
-  }, [isDragging, stopAutoScroll]);
+  }, [isDragging, startAutoScroll, stopAutoScroll]);
 
   const handleDragStart = (e: React.DragEvent, app: VacancyApplication) => {
     setDraggedApp(app);
@@ -467,7 +476,10 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                     ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20'
                     : 'border-white/10 bg-white/5'
                 )}
-                onDragOver={(e) => handleColumnDragOver(e, stage)}
+                onDragOver={(e) => {
+                  handleColumnDragOver(e, stage);
+                  // Allow bubbling to board container for auto-scroll
+                }}
                 onDragEnter={(e) => handleColumnDragEnter(e, stage)}
                 onDragLeave={(e) => handleColumnDragLeave(e, stage)}
                 onDrop={handleDragEnd}
