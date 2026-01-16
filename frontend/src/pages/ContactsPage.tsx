@@ -576,8 +576,8 @@ export default function ContactsPage() {
                     entity.is_transferred
                       ? 'bg-white/3 border border-white/5 opacity-60'
                       : isSelected
-                      ? 'bg-cyan-500/20 border border-cyan-500/30'
-                      : 'bg-white/5 border border-white/5 hover:bg-white/10'
+                        ? 'bg-cyan-500/20 border border-cyan-500/30'
+                        : 'bg-white/5 border border-white/5 hover:bg-white/10'
                   )}
                 >
                   <div className={clsx('flex items-center', isVeryCompact ? 'gap-2' : 'gap-3')}>
@@ -755,6 +755,17 @@ export default function ContactsPage() {
               >
                 <ChevronLeft size={20} className="text-white/60" />
               </button>
+              {/* Back to candidates button for candidate entities */}
+              {currentEntity.type === 'candidate' && (
+                <button
+                  onClick={() => navigate('/candidates')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg text-sm transition-colors flex-shrink-0"
+                  title="Перейти к базе кандидатов"
+                >
+                  <Users size={16} />
+                  <span className="hidden sm:inline">К кандидатам</span>
+                </button>
+              )}
               <div className="flex-1 min-w-0 overflow-hidden">
                 <div className="flex items-center gap-2 overflow-hidden">
                   <h2 className="text-base sm:text-lg xl:text-xl font-semibold text-white truncate">{currentEntity.name}</h2>
