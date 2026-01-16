@@ -99,8 +99,8 @@ export default function CandidatesPage() {
   const {
     vacancies,
     kanbanBoard,
-    kanbanLoading,
-    loading: vacanciesLoading,
+    isKanbanLoading,
+    isLoading: vacanciesLoading,
     error: vacanciesError,
     fetchVacancies,
     fetchKanbanBoard,
@@ -853,7 +853,7 @@ export default function CandidatesPage() {
               vacancies={vacancies}
               onRefreshVacancies={fetchVacancies}
             />
-          ) : kanbanLoading ? (
+          ) : isKanbanLoading ? (
             // Loading
             <div className="h-full flex items-center justify-center">
               <div className="animate-spin w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full" />

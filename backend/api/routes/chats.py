@@ -12,6 +12,7 @@ import shutil
 import uuid
 import asyncio
 import logging
+import threading
 from html.parser import HTMLParser
 
 logger = logging.getLogger("hr-analyzer.chats")
@@ -19,7 +20,8 @@ logger = logging.getLogger("hr-analyzer.chats")
 # Uploads directory for imported media
 UPLOADS_DIR = Path(__file__).parent.parent.parent / "uploads"
 
-# Import progress tracking (in-memory)
+# Import progress tracking (in-memory) with thread-safe access
+_import_progress_lock = threading.Lock()
 import_progress: Dict[str, Dict[str, Any]] = {}
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -30,6 +32,7 @@ from sqlalchemy.orm import selectinload
 from ..database import get_db
 from ..models.database import User, UserRole, Chat, Message, ChatCriteria, AIConversation, AnalysisHistory, Entity, OrgRole, DepartmentMember, DeptRole, SharedAccess, ResourceType, AccessLevel
 from ..models.schemas import ChatResponse, ChatUpdate, ChatTypeConfig
+from ..models.sharing import BaseShareRequest as ShareRequest
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to
 from ..services.permissions import PermissionService
 from ..services.chat_types import (
@@ -41,15 +44,6 @@ from ..services.documents import document_parser
 from .realtime import broadcast_chat_updated, broadcast_chat_deleted
 
 router = APIRouter()
-
-
-# === Pydantic Schemas ===
-
-class ShareRequest(BaseModel):
-    shared_with_id: int
-    access_level: AccessLevel = AccessLevel.view
-    note: Optional[str] = None
-    expires_at: Optional[datetime] = None
 
 
 @router.get("/types", response_model=List[Dict[str, Any]])
@@ -1153,15 +1147,16 @@ async def import_telegram_history(
 
     # Initialize progress tracking
     if import_id:
-        import_progress[import_id] = {
-            "status": "starting",
-            "phase": "reading_file",
-            "current": 0,
-            "total": 0,
-            "imported": 0,
-            "skipped": 0,
-            "current_file": None
-        }
+        with _import_progress_lock:
+            import_progress[import_id] = {
+                "status": "starting",
+                "phase": "reading_file",
+                "current": 0,
+                "total": 0,
+                "imported": 0,
+                "skipped": 0,
+                "current_file": None
+            }
 
     user = await db.merge(user)
 
@@ -1274,17 +1269,19 @@ async def import_telegram_history(
     # Validate structure
     if not messages_data:
         if import_id:
-            import_progress[import_id] = {"status": "error", "error": "Файл не содержит сообщений"}
+            with _import_progress_lock:
+                import_progress[import_id] = {"status": "error", "error": "Файл не содержит сообщений"}
         raise HTTPException(status_code=400, detail="Файл не содержит сообщений")
 
     # Update progress - parsing complete
     if import_id:
-        import_progress[import_id].update({
-            "status": "processing",
-            "phase": "importing",
-            "total": len(messages_data),
-            "current": 0
-        })
+        with _import_progress_lock:
+            import_progress[import_id].update({
+                "status": "processing",
+                "phase": "importing",
+                "total": len(messages_data),
+                "current": 0
+            })
 
     # Get existing message IDs and hashes for deduplication
     existing_result = await db.execute(
@@ -1304,11 +1301,12 @@ async def import_telegram_history(
         try:
             # Update progress every 10 messages
             if import_id and msg_idx % 10 == 0:
-                import_progress[import_id].update({
-                    "current": msg_idx,
-                    "imported": imported_count,
-                    "skipped": skipped_count
-                })
+                with _import_progress_lock:
+                    import_progress[import_id].update({
+                        "current": msg_idx,
+                        "imported": imported_count,
+                        "skipped": skipped_count
+                    })
 
             # Skip service messages
             if msg.get('type') != 'message':
@@ -1387,10 +1385,11 @@ async def import_telegram_history(
                         elif auto_process and file_data:
                             # Update progress with current file
                             if import_id:
-                                import_progress[import_id].update({
-                                    "current_file": os.path.basename(media_file),
-                                    "phase": "processing_media"
-                                })
+                                with _import_progress_lock:
+                                    import_progress[import_id].update({
+                                        "current_file": os.path.basename(media_file),
+                                        "phase": "processing_media"
+                                    })
 
                             # Auto-transcribe voice and video files (only if auto_process=True)
                             if content_type in ('voice', 'video_note', 'video'):
@@ -1537,17 +1536,21 @@ async def import_telegram_history(
 
     # Update final progress
     if import_id:
-        import_progress[import_id] = {
-            "status": "completed",
-            "phase": "done",
-            "current": len(messages_data),
-            "total": len(messages_data),
-            "imported": imported_count,
-            "skipped": skipped_count,
-            "current_file": None
-        }
-        # Schedule cleanup after 60 seconds
-        asyncio.get_event_loop().call_later(60, lambda: import_progress.pop(import_id, None))
+        with _import_progress_lock:
+            import_progress[import_id] = {
+                "status": "completed",
+                "phase": "done",
+                "current": len(messages_data),
+                "total": len(messages_data),
+                "imported": imported_count,
+                "skipped": skipped_count,
+                "current_file": None
+            }
+        # Schedule cleanup after 60 seconds (thread-safe pop)
+        def _cleanup_progress():
+            with _import_progress_lock:
+                import_progress.pop(import_id, None)
+        asyncio.get_event_loop().call_later(60, _cleanup_progress)
 
     return {
         "success": True,
@@ -1566,10 +1569,12 @@ async def get_import_progress(
     user: User = Depends(get_current_user),
 ):
     """Get import progress by import_id."""
-    progress = import_progress.get(import_id)
-    if not progress:
-        return {"status": "not_found"}
-    return progress
+    with _import_progress_lock:
+        progress = import_progress.get(import_id)
+        if not progress:
+            return {"status": "not_found"}
+        # Return a copy to avoid race conditions
+        return dict(progress)
 
 
 @router.post("/{chat_id}/repair-video-notes")

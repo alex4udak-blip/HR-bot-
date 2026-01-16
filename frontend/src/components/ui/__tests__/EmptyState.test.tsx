@@ -13,12 +13,7 @@ import EmptyState, {
   EmptyHistory,
   EmptyEntityVacancies,
   EmptyError,
-  EmptyRecommendations,
-  NoVacanciesEmpty,
-  NoCandidatesEmpty,
-  NoResultsEmpty,
-  NoDataEmpty,
-  NoEntityVacanciesEmpty
+  EmptyRecommendations
 } from '../EmptyState';
 import { Briefcase } from 'lucide-react';
 

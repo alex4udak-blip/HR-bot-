@@ -23,7 +23,7 @@ describe('callStore', () => {
       calls: [],
       currentCall: null,
       activeRecording: null,
-      loading: false,
+      isLoading: false,
       error: null,
       pollingInterval: null,
       pollingAbortController: null,
@@ -51,7 +51,7 @@ describe('callStore', () => {
       expect(state.calls).toEqual([]);
       expect(state.currentCall).toBeNull();
       expect(state.activeRecording).toBeNull();
-      expect(state.loading).toBe(false);
+      expect(state.isLoading).toBe(false);
       expect(state.error).toBeNull();
       expect(state.pollingInterval).toBeNull();
       expect(state.pollingAbortController).toBeNull();
@@ -76,7 +76,7 @@ describe('callStore', () => {
 
       expect(api.getCalls).toHaveBeenCalledWith({});
       expect(useCallStore.getState().calls).toEqual(mockCalls);
-      expect(useCallStore.getState().loading).toBe(false);
+      expect(useCallStore.getState().isLoading).toBe(false);
       expect(useCallStore.getState().error).toBeNull();
     });
 
@@ -96,7 +96,7 @@ describe('callStore', () => {
       await useCallStore.getState().fetchCalls();
 
       expect(useCallStore.getState().error).toBe(errorMessage);
-      expect(useCallStore.getState().loading).toBe(false);
+      expect(useCallStore.getState().isLoading).toBe(false);
       expect(useCallStore.getState().calls).toEqual([]);
     });
   });
@@ -117,7 +117,7 @@ describe('callStore', () => {
 
       expect(api.getCall).toHaveBeenCalledWith(1);
       expect(useCallStore.getState().currentCall).toEqual(mockCall);
-      expect(useCallStore.getState().loading).toBe(false);
+      expect(useCallStore.getState().isLoading).toBe(false);
       expect(useCallStore.getState().error).toBeNull();
     });
 
@@ -128,7 +128,7 @@ describe('callStore', () => {
       await useCallStore.getState().fetchCall(1);
 
       expect(useCallStore.getState().error).toBe(errorMessage);
-      expect(useCallStore.getState().loading).toBe(false);
+      expect(useCallStore.getState().isLoading).toBe(false);
       expect(useCallStore.getState().currentCall).toBeNull();
     });
   });
@@ -153,7 +153,7 @@ describe('callStore', () => {
         status: 'processing',
         duration: 0,
       });
-      expect(useCallStore.getState().loading).toBe(false);
+      expect(useCallStore.getState().isLoading).toBe(false);
       expect(useCallStore.getState().pollingInterval).not.toBeNull();
     });
 
@@ -181,7 +181,7 @@ describe('callStore', () => {
       await expect(useCallStore.getState().uploadCall(mockFile)).rejects.toThrow(errorMessage);
 
       expect(useCallStore.getState().error).toBe(errorMessage);
-      expect(useCallStore.getState().loading).toBe(false);
+      expect(useCallStore.getState().isLoading).toBe(false);
     });
   });
 
@@ -255,7 +255,7 @@ describe('callStore', () => {
       ).rejects.toThrow(errorMessage);
 
       expect(useCallStore.getState().error).toBe(errorMessage);
-      expect(useCallStore.getState().loading).toBe(false);
+      expect(useCallStore.getState().isLoading).toBe(false);
     });
   });
 
@@ -318,7 +318,7 @@ describe('callStore', () => {
       await useCallStore.getState().deleteCall(1);
 
       expect(useCallStore.getState().calls).toEqual([call2]);
-      expect(useCallStore.getState().loading).toBe(false);
+      expect(useCallStore.getState().isLoading).toBe(false);
     });
 
     it('should clear current call if it matches deleted call', async () => {
@@ -345,7 +345,7 @@ describe('callStore', () => {
       await expect(useCallStore.getState().deleteCall(1)).rejects.toThrow(errorMessage);
 
       expect(useCallStore.getState().error).toBe(errorMessage);
-      expect(useCallStore.getState().loading).toBe(false);
+      expect(useCallStore.getState().isLoading).toBe(false);
     });
   });
 
@@ -375,7 +375,7 @@ describe('callStore', () => {
       await expect(useCallStore.getState().reprocessCall(1)).rejects.toThrow(errorMessage);
 
       expect(useCallStore.getState().error).toBe(errorMessage);
-      expect(useCallStore.getState().loading).toBe(false);
+      expect(useCallStore.getState().isLoading).toBe(false);
     });
   });
 
@@ -413,7 +413,7 @@ describe('callStore', () => {
       await expect(useCallStore.getState().updateCall(1, {})).rejects.toThrow(errorMessage);
 
       expect(useCallStore.getState().error).toBe(errorMessage);
-      expect(useCallStore.getState().loading).toBe(false);
+      expect(useCallStore.getState().isLoading).toBe(false);
     });
   });
 

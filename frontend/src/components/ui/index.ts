@@ -3,7 +3,7 @@ export { default as ContextMenu, createVacancyContextMenu, createEntityContextMe
 export type { ContextMenuItem } from './ContextMenu';
 export {
   default as EmptyState,
-  // New specialized empty states
+  // Specialized empty states
   EmptyCandidates,
   EmptyVacancies,
   EmptySearch,
@@ -15,13 +15,7 @@ export {
   EmptyHistory,
   EmptyEntityVacancies,
   EmptyError,
-  EmptyRecommendations,
-  // Legacy exports for backwards compatibility
-  NoVacanciesEmpty,
-  NoCandidatesEmpty,
-  NoResultsEmpty,
-  NoDataEmpty,
-  NoEntityVacanciesEmpty
+  EmptyRecommendations
 } from './EmptyState';
 export type { EmptyStateVariant } from './EmptyState';
 export {

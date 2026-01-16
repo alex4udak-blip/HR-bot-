@@ -22,9 +22,12 @@ import logging
 from ..database import get_db
 from ..models.database import (
     User, UserRole, Entity, Chat, Message, CallRecording,
-    EntityAIConversation, EntityCriteria, AnalysisHistory, EntityFile
+    EntityAIConversation, EntityCriteria, AnalysisHistory, EntityFile,
+    OrgRole, DepartmentMember, DeptRole
 )
-from ..services.auth import get_current_user
+from ..services.entity_memory import entity_memory_service
+from ..services.cache import format_messages_optimized
+from ..services.auth import get_current_user, get_user_org, get_user_org_role
 from ..services.entity_ai import entity_ai_service
 from ..services.reports import generate_pdf_report, generate_docx_report
 from ..services.permissions import PermissionService
@@ -308,9 +311,6 @@ async def update_entity_ai_summary(
     This creates/updates the ai_summary field based on all chats and calls.
     Useful for rebuilding context after significant interactions.
     """
-    from ..services.entity_memory import entity_memory_service
-    from ..services.cache import format_messages_optimized
-
     user = await db.merge(user)
 
     # Get entity with all data
@@ -416,15 +416,9 @@ async def batch_update_entity_summaries(
     - Initial setup: generate summaries for existing entities
     - Periodic refresh: update old summaries
     """
-    from ..services.entity_memory import entity_memory_service
-    from ..services.cache import format_messages_optimized
-
     user = await db.merge(user)
 
     # Check if user has admin-level access (org admin, dept lead, or superadmin)
-    from ..services.auth import get_user_org, get_user_org_role
-    from ..models.database import OrgRole, DepartmentMember, DeptRole
-
     is_admin = False
     if user.role == UserRole.superadmin:
         is_admin = True
@@ -518,8 +512,6 @@ async def generate_entity_report(
     Generates a comprehensive report analyzing all chats and calls
     associated with this entity.
     """
-    from ..services.cache import format_messages_optimized
-
     user = await db.merge(user)
 
     # Get entity with all data

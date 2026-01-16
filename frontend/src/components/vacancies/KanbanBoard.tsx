@@ -77,7 +77,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
 
   const {
     kanbanBoard,
-    kanbanLoading,
+    isKanbanLoading,
     error,
     fetchKanbanBoard,
     moveApplication,
@@ -337,7 +337,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     };
   }, [scoringState]);
 
-  if (kanbanLoading) {
+  if (isKanbanLoading) {
     return (
       <div className="h-full flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-white/10">

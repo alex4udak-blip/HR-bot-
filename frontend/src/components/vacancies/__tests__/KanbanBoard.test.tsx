@@ -132,7 +132,7 @@ const createKanbanBoard = (applications: VacancyApplication[]): KanbanBoardData 
 
 const mockStore = {
   kanbanBoard: createKanbanBoard(mockApplications),
-  kanbanLoading: false,
+  isKanbanLoading: false,
   error: null,
   fetchKanbanBoard: vi.fn(),
   moveApplication: vi.fn().mockResolvedValue(undefined),
@@ -226,7 +226,7 @@ describe('KanbanBoard', () => {
     it('should show loading skeletons when loading', () => {
       (useVacancyStore as ReturnType<typeof vi.fn>).mockReturnValue({
         ...mockStore,
-        kanbanLoading: true,
+        isKanbanLoading: true,
         kanbanBoard: null,
       });
 

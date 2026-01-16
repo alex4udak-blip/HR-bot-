@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Entity, EntityType, EntityStatus, EntityWithRelations } from '@/types';
+import type { EntityCreatedPayload, EntityUpdatedPayload, EntityDeletedPayload } from '@/types/websocket';
 import * as api from '@/services/api';
 import type { OwnershipFilter } from '@/services/api';
 
@@ -25,7 +26,7 @@ interface TypeCounts {
 interface EntityState {
   entities: Entity[];
   currentEntity: EntityWithRelations | null;
-  loading: boolean;
+  isLoading: boolean;
   error: string | null;
   filters: EntityFilters;
   fetchVersion: number; // Track request version to discard stale responses
@@ -45,9 +46,9 @@ interface EntityState {
   clearError: () => void;
 
   // WebSocket handlers
-  handleEntityCreated: (data: Record<string, unknown>) => void;
-  handleEntityUpdated: (data: Record<string, unknown>) => void;
-  handleEntityDeleted: (data: { id: number }) => void;
+  handleEntityCreated: (data: EntityCreatedPayload) => void;
+  handleEntityUpdated: (data: EntityUpdatedPayload) => void;
+  handleEntityDeleted: (data: EntityDeletedPayload) => void;
 }
 
 const initialTypeCounts: TypeCounts = {
@@ -63,7 +64,7 @@ const initialTypeCounts: TypeCounts = {
 export const useEntityStore = create<EntityState>((set, get) => ({
   entities: [],
   currentEntity: null,
-  loading: false,
+  isLoading: false,
   error: null,
   filters: {},
   fetchVersion: 0,
@@ -72,18 +73,18 @@ export const useEntityStore = create<EntityState>((set, get) => ({
   fetchEntities: async () => {
     // Increment version to track this request
     const version = get().fetchVersion + 1;
-    set({ loading: true, error: null, fetchVersion: version });
+    set({ isLoading: true, error: null, fetchVersion: version });
     try {
       const entities = await api.getEntities(get().filters);
       // Only update if this is still the latest request
       if (get().fetchVersion === version) {
-        set({ entities, loading: false });
+        set({ entities, isLoading: false });
       }
     } catch (err) {
       // Only update error if this is still the latest request
       if (get().fetchVersion === version) {
         const message = err instanceof Error ? err.message : 'Failed to fetch entities';
-        set({ error: message, loading: false });
+        set({ error: message, isLoading: false });
       }
     }
   },
@@ -124,34 +125,34 @@ export const useEntityStore = create<EntityState>((set, get) => ({
   },
 
   fetchEntity: async (id) => {
-    set({ loading: true, error: null });
+    set({ isLoading: true, error: null });
     try {
       const entity = await api.getEntity(id);
-      set({ currentEntity: entity, loading: false });
+      set({ currentEntity: entity, isLoading: false });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch entity';
-      set({ error: message, loading: false });
+      set({ error: message, isLoading: false });
     }
   },
 
   createEntity: async (data) => {
-    set({ loading: true, error: null });
+    set({ isLoading: true, error: null });
     try {
       const entity = await api.createEntity(data);
       set((state) => ({
         entities: [entity, ...state.entities],
-        loading: false
+        isLoading: false
       }));
       return entity;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create entity';
-      set({ error: message, loading: false });
+      set({ error: message, isLoading: false });
       throw err;
     }
   },
 
   updateEntity: async (id, data) => {
-    set({ loading: true, error: null });
+    set({ isLoading: true, error: null });
     try {
       const updated = await api.updateEntity(id, data);
       set((state) => ({
@@ -160,41 +161,41 @@ export const useEntityStore = create<EntityState>((set, get) => ({
           state.currentEntity?.id === id
             ? { ...state.currentEntity, ...updated }
             : state.currentEntity,
-        loading: false
+        isLoading: false
       }));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update entity';
-      set({ error: message, loading: false });
+      set({ error: message, isLoading: false });
       throw err;
     }
   },
 
   deleteEntity: async (id) => {
-    set({ loading: true, error: null });
+    set({ isLoading: true, error: null });
     try {
       await api.deleteEntity(id);
       set((state) => ({
         entities: state.entities.filter((e) => e.id !== id),
         currentEntity: state.currentEntity?.id === id ? null : state.currentEntity,
-        loading: false
+        isLoading: false
       }));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete entity';
-      set({ error: message, loading: false });
+      set({ error: message, isLoading: false });
       throw err;
     }
   },
 
   transferEntity: async (entityId, toUserId, comment) => {
-    set({ loading: true, error: null });
+    set({ isLoading: true, error: null });
     try {
       await api.transferEntity(entityId, { to_user_id: toUserId, comment });
-      // Refresh entity to get updated transfers (fetchEntity sets loading: false)
+      // Refresh entity to get updated transfers (fetchEntity sets isLoading: false)
       await get().fetchEntity(entityId);
-      set({ loading: false });
+      set({ isLoading: false });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to transfer entity';
-      set({ error: message, loading: false });
+      set({ error: message, isLoading: false });
       throw err;
     }
   },
@@ -228,8 +229,7 @@ export const useEntityStore = create<EntityState>((set, get) => ({
   clearError: () => set({ error: null }),
 
   // WebSocket handlers for real-time updates
-  handleEntityCreated: (data: Record<string, unknown>) => {
-    const entity = data as unknown as Entity;
+  handleEntityCreated: (entity: EntityCreatedPayload) => {
     console.log('[EntityStore] Entity created via WebSocket:', entity.id, entity.name);
 
     set((state) => {
@@ -276,8 +276,7 @@ export const useEntityStore = create<EntityState>((set, get) => ({
     });
   },
 
-  handleEntityUpdated: (data: Record<string, unknown>) => {
-    const entity = data as unknown as Entity;
+  handleEntityUpdated: (entity: EntityUpdatedPayload) => {
     console.log('[EntityStore] Entity updated via WebSocket:', entity.id, entity.name);
 
     set((state) => ({
@@ -289,7 +288,7 @@ export const useEntityStore = create<EntityState>((set, get) => ({
     }));
   },
 
-  handleEntityDeleted: (data: { id: number }) => {
+  handleEntityDeleted: (data: EntityDeletedPayload) => {
     console.log('[EntityStore] Entity deleted via WebSocket:', data.id);
 
     set((state) => {

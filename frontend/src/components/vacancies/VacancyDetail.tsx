@@ -25,7 +25,7 @@ import {
 import { formatSalary } from '@/utils';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import AddCandidateModal from './AddCandidateModal';
-import { NoCandidatesEmpty } from '@/components/ui';
+import { EmptyKanban } from '@/components/ui';
 
 interface VacancyDetailProps {
   vacancy: Vacancy;
@@ -187,7 +187,7 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
                   );
                 })
               ) : (
-                <NoCandidatesEmpty onAdd={() => setShowAddCandidate(true)} />
+                <EmptyKanban onAddFromBase={() => setShowAddCandidate(true)} />
               )}
             </div>
           </div>

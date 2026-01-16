@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useReducer } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -27,7 +27,8 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import type { EntityWithRelations, Chat, CallRecording, VacancyApplication } from '@/types';
 import { EmptyChats, EmptyCalls } from '@/components/ui';
-import { STATUS_LABELS, STATUS_COLORS, CALL_STATUS_LABELS, CALL_STATUS_COLORS, formatSalary } from '@/types';
+import { STATUS_LABELS, STATUS_COLORS, CALL_STATUS_LABELS, CALL_STATUS_COLORS } from '@/types';
+import { formatSalary } from '@/utils';
 import EntityAI from './EntityAI';
 import CriteriaPanelEntity from './CriteriaPanelEntity';
 import AddToVacancyModal from '../entities/AddToVacancyModal';
@@ -50,19 +51,94 @@ interface ContactDetailProps {
   showAIInOverview?: boolean;
 }
 
+// Reducer for modal states (logically related - one modal at a time)
+type ModalType = 'none' | 'linkChat' | 'linkCall' | 'addToVacancy';
+
+interface ModalState {
+  activeModal: ModalType;
+  unlinkedChats: Chat[];
+  unlinkedCalls: CallRecording[];
+}
+
+type ModalAction =
+  | { type: 'OPEN_MODAL'; modal: ModalType }
+  | { type: 'CLOSE_MODAL' }
+  | { type: 'SET_UNLINKED_CHATS'; chats: Chat[] }
+  | { type: 'SET_UNLINKED_CALLS'; calls: CallRecording[] };
+
+function modalReducer(state: ModalState, action: ModalAction): ModalState {
+  switch (action.type) {
+    case 'OPEN_MODAL':
+      return { ...state, activeModal: action.modal };
+    case 'CLOSE_MODAL':
+      return { ...state, activeModal: 'none' };
+    case 'SET_UNLINKED_CHATS':
+      return { ...state, unlinkedChats: action.chats };
+    case 'SET_UNLINKED_CALLS':
+      return { ...state, unlinkedCalls: action.calls };
+    default:
+      return state;
+  }
+}
+
+const initialModalState: ModalState = {
+  activeModal: 'none',
+  unlinkedChats: [],
+  unlinkedCalls: []
+};
+
+// Reducer for async operations (loading states that are mutually exclusive)
+interface AsyncState {
+  loadingData: boolean;
+  loadingLink: boolean;
+  downloadingReport: string | null;
+}
+
+type AsyncAction =
+  | { type: 'START_LOADING_DATA' }
+  | { type: 'STOP_LOADING_DATA' }
+  | { type: 'START_LOADING_LINK' }
+  | { type: 'STOP_LOADING_LINK' }
+  | { type: 'START_DOWNLOAD'; format: string }
+  | { type: 'STOP_DOWNLOAD' };
+
+function asyncReducer(state: AsyncState, action: AsyncAction): AsyncState {
+  switch (action.type) {
+    case 'START_LOADING_DATA':
+      return { ...state, loadingData: true };
+    case 'STOP_LOADING_DATA':
+      return { ...state, loadingData: false };
+    case 'START_LOADING_LINK':
+      return { ...state, loadingLink: true };
+    case 'STOP_LOADING_LINK':
+      return { ...state, loadingLink: false };
+    case 'START_DOWNLOAD':
+      return { ...state, downloadingReport: action.format };
+    case 'STOP_DOWNLOAD':
+      return { ...state, downloadingReport: null };
+    default:
+      return state;
+  }
+}
+
+const initialAsyncState: AsyncState = {
+  loadingData: false,
+  loadingLink: false,
+  downloadingReport: null
+};
+
 export default function ContactDetail({ entity, showAIInOverview = true }: ContactDetailProps) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'overview' | 'chats' | 'calls' | 'vacancies' | 'files' | 'history' | 'criteria' | 'reports' | 'red-flags'>('overview');
-  const [showLinkChatModal, setShowLinkChatModal] = useState(false);
-  const [showLinkCallModal, setShowLinkCallModal] = useState(false);
-  const [showAddToVacancyModal, setShowAddToVacancyModal] = useState(false);
-  const [unlinkedChats, setUnlinkedChats] = useState<Chat[]>([]);
-  const [unlinkedCalls, setUnlinkedCalls] = useState<CallRecording[]>([]);
-  const [loadingLink, setLoadingLink] = useState(false);
-  const [loadingData, setLoadingData] = useState(false);
-  const [downloadingReport, setDownloadingReport] = useState<string | null>(null);
+
+  // Reducers for related states
+  const [modalState, dispatchModal] = useReducer(modalReducer, initialModalState);
+  const [asyncState, dispatchAsync] = useReducer(asyncReducer, initialAsyncState);
+
+  // Independent states that don't need reducer
   const [vacanciesKey, setVacanciesKey] = useState(0); // Key to force reload vacancies
   const [entityApplications, setEntityApplications] = useState<VacancyApplication[]>([]);
+
   const { fetchEntity } = useEntityStore();
   const { canAccessFeature } = useCanAccessFeature();
   const { isAdmin, canEditResource, canAccessDepartment } = useAuthStore();
@@ -85,80 +161,90 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
   // Load unlinked chats when modal opens
   useEffect(() => {
-    if (showLinkChatModal) {
+    if (modalState.activeModal === 'linkChat') {
       loadUnlinkedChats();
     }
-  }, [showLinkChatModal]);
+  }, [modalState.activeModal]);
 
   // Load unlinked calls when modal opens
   useEffect(() => {
-    if (showLinkCallModal) {
+    if (modalState.activeModal === 'linkCall') {
       loadUnlinkedCalls();
     }
-  }, [showLinkCallModal]);
+  }, [modalState.activeModal]);
 
   // Load entity applications for timeline
   useEffect(() => {
+    let isMounted = true;
+
     const loadApplications = async () => {
       try {
         const data = await api.getEntityVacancies(entity.id);
-        setEntityApplications(data);
+        if (isMounted) {
+          setEntityApplications(data);
+        }
       } catch (e) {
-        console.error('Failed to load entity applications:', e);
+        if (isMounted) {
+          console.error('Failed to load entity applications:', e);
+        }
       }
     };
     loadApplications();
+
+    return () => {
+      isMounted = false;
+    };
   }, [entity.id, vacanciesKey]);
 
   const loadUnlinkedChats = async () => {
-    setLoadingData(true);
+    dispatchAsync({ type: 'START_LOADING_DATA' });
     try {
       const allChats = await api.getChats();
-      setUnlinkedChats(allChats.filter(c => !c.entity_id));
+      dispatchModal({ type: 'SET_UNLINKED_CHATS', chats: allChats.filter(c => !c.entity_id) });
     } catch (e) {
       console.error('Failed to load chats:', e);
     } finally {
-      setLoadingData(false);
+      dispatchAsync({ type: 'STOP_LOADING_DATA' });
     }
   };
 
   const loadUnlinkedCalls = async () => {
-    setLoadingData(true);
+    dispatchAsync({ type: 'START_LOADING_DATA' });
     try {
       const allCalls = await api.getCalls({});
-      setUnlinkedCalls(allCalls.filter(c => !c.entity_id));
+      dispatchModal({ type: 'SET_UNLINKED_CALLS', calls: allCalls.filter(c => !c.entity_id) });
     } catch (e) {
       console.error('Failed to load calls:', e);
     } finally {
-      setLoadingData(false);
+      dispatchAsync({ type: 'STOP_LOADING_DATA' });
     }
   };
 
   const handleLinkChat = async (chatId: number) => {
-    setLoadingLink(true);
+    dispatchAsync({ type: 'START_LOADING_LINK' });
     try {
       await api.linkChatToEntity(entity.id, chatId);
       toast.success('Чат привязан к контакту');
-      setShowLinkChatModal(false);
+      dispatchModal({ type: 'CLOSE_MODAL' });
       fetchEntity(entity.id);
     } catch (e) {
       toast.error('Не удалось привязать чат');
     } finally {
-      setLoadingLink(false);
+      dispatchAsync({ type: 'STOP_LOADING_LINK' });
     }
   };
 
   const handleLinkCall = async (callId: number) => {
-    setLoadingLink(true);
+    dispatchAsync({ type: 'START_LOADING_LINK' });
     try {
       await api.linkCallToEntity(callId, entity.id);
       toast.success('Звонок привязан к контакту');
-      setShowLinkCallModal(false);
+      dispatchModal({ type: 'CLOSE_MODAL' });
       fetchEntity(entity.id);
     } catch (e) {
       toast.error('Не удалось привязать звонок');
     } finally {
-      setLoadingLink(false);
+      dispatchAsync({ type: 'STOP_LOADING_LINK' });
     }
   };
 
@@ -180,9 +266,9 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
   };
 
   const handleDownloadReport = async (format: string) => {
-    if (downloadingReport) return;
+    if (asyncState.downloadingReport) return;
 
-    setDownloadingReport(format);
+    dispatchAsync({ type: 'START_DOWNLOAD', format });
     try {
       const blob = await api.downloadEntityReport(entity.id, 'full_analysis', format);
       const url = URL.createObjectURL(blob);
@@ -197,7 +283,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
     } catch {
       toast.error('Ошибка скачивания');
     } finally {
-      setDownloadingReport(null);
+      dispatchAsync({ type: 'STOP_DOWNLOAD' });
     }
   };
 
@@ -425,7 +511,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </h3>
                 {canEditEntity(entity) && (
                   <button
-                    onClick={() => setShowLinkChatModal(true)}
+                    onClick={() => dispatchModal({ type: 'OPEN_MODAL', modal: 'linkChat' })}
                     className="flex items-center gap-1 px-2 py-1 text-xs bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors flex-shrink-0 whitespace-nowrap"
                   >
                     <Link2 size={12} />
@@ -450,7 +536,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   ))}
                 </div>
               ) : (
-                <EmptyChats onLink={canEditEntity(entity) ? () => setShowLinkChatModal(true) : undefined} />
+                <EmptyChats onLink={canEditEntity(entity) ? () => dispatchModal({ type: 'OPEN_MODAL', modal: 'linkChat' }) : undefined} />
               )}
             </div>
 
@@ -463,7 +549,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </h3>
                 {canEditEntity(entity) && (
                   <button
-                    onClick={() => setShowLinkCallModal(true)}
+                    onClick={() => dispatchModal({ type: 'OPEN_MODAL', modal: 'linkCall' })}
                     className="flex items-center gap-1 px-2 py-1 text-xs bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors flex-shrink-0 whitespace-nowrap"
                   >
                     <Link2 size={12} />
@@ -492,7 +578,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   ))}
                 </div>
               ) : (
-                <EmptyCalls onLink={canEditEntity(entity) ? () => setShowLinkCallModal(true) : undefined} />
+                <EmptyCalls onLink={canEditEntity(entity) ? () => dispatchModal({ type: 'OPEN_MODAL', modal: 'linkCall' }) : undefined} />
               )}
             </div>
 
@@ -577,7 +663,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </motion.div>
               ))
             ) : (
-              <EmptyChats onLink={canEditEntity(entity) ? () => setShowLinkChatModal(true) : undefined} />
+              <EmptyChats onLink={canEditEntity(entity) ? () => dispatchModal({ type: 'OPEN_MODAL', modal: 'linkChat' }) : undefined} />
             )}
           </div>
         )}
@@ -620,7 +706,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </motion.div>
               ))
             ) : (
-              <EmptyCalls onLink={canEditEntity(entity) ? () => setShowLinkCallModal(true) : undefined} />
+              <EmptyCalls onLink={canEditEntity(entity) ? () => dispatchModal({ type: 'OPEN_MODAL', modal: 'linkCall' }) : undefined} />
             )}
           </div>
         )}
@@ -635,7 +721,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               {entity.type === 'candidate' && canEditEntity(entity) && (
                 <FeatureGatedButton
                   feature="candidate_database"
-                  onClick={() => setShowAddToVacancyModal(true)}
+                  onClick={() => dispatchModal({ type: 'OPEN_MODAL', modal: 'addToVacancy' })}
                   className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors disabled:bg-blue-600/50 disabled:hover:bg-blue-600/50"
                   disabledTooltip="You don't have access to this feature"
                 >
@@ -765,7 +851,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 <p className="text-sm text-dark-400 mb-4">
                   Скачайте полный аналитический отчёт по этому контакту
                 </p>
-                {downloadingReport && (
+                {asyncState.downloadingReport && (
                   <div className="flex items-center gap-2 mb-4 p-3 rounded-lg bg-accent-500/10 text-accent-400">
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span className="text-sm">Генерация отчёта... Это может занять до минуты</span>
@@ -774,10 +860,10 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => handleDownloadReport('pdf')}
-                    disabled={!!downloadingReport}
+                    disabled={!!asyncState.downloadingReport}
                     className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50 disabled:cursor-wait transition-colors"
                   >
-                    {downloadingReport === 'pdf' ? (
+                    {asyncState.downloadingReport === 'pdf' ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <Download className="w-4 h-4" />
@@ -786,10 +872,10 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   </button>
                   <button
                     onClick={() => handleDownloadReport('docx')}
-                    disabled={!!downloadingReport}
+                    disabled={!!asyncState.downloadingReport}
                     className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 disabled:opacity-50 disabled:cursor-wait transition-colors"
                   >
-                    {downloadingReport === 'docx' ? (
+                    {asyncState.downloadingReport === 'docx' ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <Download className="w-4 h-4" />
@@ -798,10 +884,10 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   </button>
                   <button
                     onClick={() => handleDownloadReport('markdown')}
-                    disabled={!!downloadingReport}
+                    disabled={!!asyncState.downloadingReport}
                     className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-wait transition-colors"
                   >
-                    {downloadingReport === 'markdown' ? (
+                    {asyncState.downloadingReport === 'markdown' ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <Download className="w-4 h-4" />
@@ -832,13 +918,13 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
       {/* Link Chat Modal */}
       <AnimatePresence>
-        {showLinkChatModal && (
+        {modalState.activeModal === 'linkChat' && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-            onClick={() => setShowLinkChatModal(false)}
+            onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -850,7 +936,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               <div className="flex items-center justify-between mb-4 flex-shrink-0">
                 <h3 className="text-lg font-semibold text-white">Привязать чат</h3>
                 <button
-                  onClick={() => setShowLinkChatModal(false)}
+                  onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
                   className="p-1 rounded-lg hover:bg-white/10"
                 >
                   <X size={20} className="text-white/60" />
@@ -858,29 +944,29 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               </div>
 
               <div className="flex-1 overflow-y-auto space-y-2 max-h-[60vh]">
-                {loadingData ? (
+                {asyncState.loadingData ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
                   </div>
-                ) : unlinkedChats.length === 0 ? (
+                ) : modalState.unlinkedChats.length === 0 ? (
                   <div className="text-center py-8 text-white/40">
                     <MessageSquare className="mx-auto mb-2" size={40} />
                     <p>Нет доступных чатов для привязки</p>
                     <p className="text-sm mt-1">Все чаты уже привязаны к контактам</p>
                   </div>
                 ) : (
-                  unlinkedChats.map((chat) => (
+                  modalState.unlinkedChats.map((chat) => (
                     <button
                       key={chat.id}
                       onClick={() => handleLinkChat(chat.id)}
-                      disabled={loadingLink}
+                      disabled={asyncState.loadingLink}
                       className="w-full p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-3 disabled:opacity-50"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-white font-medium truncate">{chat.title}</p>
                         <p className="text-xs text-white/40 truncate">{chat.chat_type} • {formatDate(chat.created_at)}</p>
                       </div>
-                      {loadingLink ? (
+                      {asyncState.loadingLink ? (
                         <Loader2 size={16} className="text-cyan-400 animate-spin flex-shrink-0" />
                       ) : (
                         <Link2 size={16} className="text-cyan-400 flex-shrink-0" />
@@ -896,13 +982,13 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
       {/* Link Call Modal */}
       <AnimatePresence>
-        {showLinkCallModal && (
+        {modalState.activeModal === 'linkCall' && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-            onClick={() => setShowLinkCallModal(false)}
+            onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -914,7 +1000,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               <div className="flex items-center justify-between mb-4 flex-shrink-0">
                 <h3 className="text-lg font-semibold text-white">Привязать звонок</h3>
                 <button
-                  onClick={() => setShowLinkCallModal(false)}
+                  onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
                   className="p-1 rounded-lg hover:bg-white/10"
                 >
                   <X size={20} className="text-white/60" />
@@ -922,22 +1008,22 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               </div>
 
               <div className="flex-1 overflow-y-auto space-y-2 max-h-[60vh]">
-                {loadingData ? (
+                {asyncState.loadingData ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-6 h-6 text-green-400 animate-spin" />
                   </div>
-                ) : unlinkedCalls.length === 0 ? (
+                ) : modalState.unlinkedCalls.length === 0 ? (
                   <div className="text-center py-8 text-white/40">
                     <Phone className="mx-auto mb-2" size={40} />
                     <p>Нет доступных звонков для привязки</p>
                     <p className="text-sm mt-1">Все звонки уже привязаны к контактам</p>
                   </div>
                 ) : (
-                  unlinkedCalls.map((call) => (
+                  modalState.unlinkedCalls.map((call) => (
                     <button
                       key={call.id}
                       onClick={() => handleLinkCall(call.id)}
-                      disabled={loadingLink}
+                      disabled={asyncState.loadingLink}
                       className="w-full p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-3 disabled:opacity-50"
                     >
                       <div className="min-w-0 flex-1">
@@ -951,7 +1037,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                           {CALL_STATUS_LABELS[call.status]}
                         </span>
                       </div>
-                      {loadingLink ? (
+                      {asyncState.loadingLink ? (
                         <Loader2 size={16} className="text-green-400 animate-spin flex-shrink-0" />
                       ) : (
                         <Link2 size={16} className="text-green-400 flex-shrink-0" />
@@ -967,13 +1053,13 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
       {/* Add to Vacancy Modal */}
       <AnimatePresence>
-        {showAddToVacancyModal && (
+        {modalState.activeModal === 'addToVacancy' && (
           <AddToVacancyModal
             entityId={entity.id}
             entityName={entity.name}
-            onClose={() => setShowAddToVacancyModal(false)}
+            onClose={() => dispatchModal({ type: 'CLOSE_MODAL' })}
             onSuccess={() => {
-              setShowAddToVacancyModal(false);
+              dispatchModal({ type: 'CLOSE_MODAL' });
               setVacanciesKey(prev => prev + 1); // Force reload vacancies
             }}
           />

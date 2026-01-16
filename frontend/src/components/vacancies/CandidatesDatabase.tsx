@@ -31,7 +31,7 @@ import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import type { Entity, Vacancy, EntityStatus } from '@/types';
-import { CANDIDATE_PIPELINE_STAGES, STATUS_LABELS, STATUS_COLORS } from '@/types';
+import { PIPELINE_STAGES, STATUS_LABELS, STATUS_COLORS } from '@/types';
 import type { ParsedResume, BulkImportResponse } from '@/services/api';
 import { formatSalary } from '@/utils';
 import { bulkImportResumes, updateEntityStatus } from '@/services/api';
@@ -129,11 +129,11 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
   // Count candidates by stage
   const stageCounts = useMemo(() => {
     const counts: Record<string, number> = { all: searchFilteredCandidates.length };
-    CANDIDATE_PIPELINE_STAGES.forEach(stage => {
+    PIPELINE_STAGES.forEach(stage => {
       counts[stage] = searchFilteredCandidates.filter(c => c.status === stage).length;
     });
     // Count candidates with unknown status as 'applied' (displayed as "Новый")
-    const knownStatuses = new Set(CANDIDATE_PIPELINE_STAGES);
+    const knownStatuses = new Set(PIPELINE_STAGES);
     const unknownCount = searchFilteredCandidates.filter(c => !knownStatuses.has(c.status as EntityStatus)).length;
     counts['applied'] = (counts['applied'] || 0) + unknownCount;
     return counts;
@@ -146,7 +146,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     return searchFilteredCandidates.filter(c => {
       if (c.status === selectedStage) return true;
       // Include unknown statuses in 'applied' (displayed as "Новый")
-      if (selectedStage === 'applied' && !CANDIDATE_PIPELINE_STAGES.includes(c.status as EntityStatus)) {
+      if (selectedStage === 'applied' && !PIPELINE_STAGES.includes(c.status as EntityStatus)) {
         return true;
       }
       return false;
@@ -156,7 +156,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
   // Group candidates by status for Kanban view
   const candidatesByStatus = useMemo(() => {
     const grouped: Record<EntityStatus, Entity[]> = {} as Record<EntityStatus, Entity[]>;
-    CANDIDATE_PIPELINE_STAGES.forEach(stage => {
+    PIPELINE_STAGES.forEach(stage => {
       grouped[stage] = [];
     });
     searchFilteredCandidates.forEach(candidate => {
@@ -465,9 +465,9 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
   // Render candidate card (for cards & list views)
   const renderCandidateCard = (candidate: Entity, isListView: boolean = false) => {
-    const currentStageIndex = CANDIDATE_PIPELINE_STAGES.indexOf(candidate.status as EntityStatus);
-    const nextStage = currentStageIndex >= 0 && currentStageIndex < CANDIDATE_PIPELINE_STAGES.length - 1
-      ? CANDIDATE_PIPELINE_STAGES[currentStageIndex + 1]
+    const currentStageIndex = PIPELINE_STAGES.indexOf(candidate.status as EntityStatus);
+    const nextStage = currentStageIndex >= 0 && currentStageIndex < PIPELINE_STAGES.length - 1
+      ? PIPELINE_STAGES[currentStageIndex + 1]
       : null;
 
     if (isListView) {
@@ -808,7 +808,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           >
             Все ({stageCounts.all})
           </button>
-          {CANDIDATE_PIPELINE_STAGES.map(stage => (
+          {PIPELINE_STAGES.map(stage => (
             <button
               key={stage}
               onClick={() => setSelectedStage(stage)}
@@ -990,7 +990,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               onDragLeave={stopAutoScroll}
             >
               <div className="flex gap-3 h-full min-w-max p-1">
-                {CANDIDATE_PIPELINE_STAGES.map(stage => (
+                {PIPELINE_STAGES.map(stage => (
                   <div
                     key={stage}
                     onDragOver={(e) => handleStageDragOver(e, stage)}

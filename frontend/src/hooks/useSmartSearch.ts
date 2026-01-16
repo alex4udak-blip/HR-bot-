@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { smartSearch, type SmartSearchResponse, type SmartSearchResult, type SmartSearchParams } from '@/services/api';
 import type { EntityType } from '@/types';
+import { getLocalStorage, setLocalStorage, removeLocalStorage } from '@/utils/localStorage';
 
 /**
  * Local storage key for search history
@@ -25,92 +26,69 @@ interface CachedSearch {
  * Get search history from localStorage
  */
 function getSearchHistory(): string[] {
-  try {
-    const stored = localStorage.getItem(SEARCH_HISTORY_KEY);
-    return stored ? JSON.parse(stored) : [];
-  } catch {
-    return [];
-  }
+  return getLocalStorage<string[]>(SEARCH_HISTORY_KEY, []);
 }
 
 /**
  * Save search query to history
  */
 function saveToHistory(query: string): void {
-  try {
-    const history = getSearchHistory();
-    // Remove duplicate if exists
-    const filtered = history.filter(q => q.toLowerCase() !== query.toLowerCase());
-    // Add to beginning
-    filtered.unshift(query);
-    // Limit size
-    const limited = filtered.slice(0, MAX_HISTORY_ITEMS);
-    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(limited));
-  } catch {
-    console.warn('Failed to save search history');
-  }
+  const history = getSearchHistory();
+  // Remove duplicate if exists
+  const filtered = history.filter(q => q.toLowerCase() !== query.toLowerCase());
+  // Add to beginning
+  filtered.unshift(query);
+  // Limit size
+  const limited = filtered.slice(0, MAX_HISTORY_ITEMS);
+  setLocalStorage(SEARCH_HISTORY_KEY, limited);
 }
 
 /**
  * Get cached search result
  */
 function getCachedResult(query: string, type?: EntityType): SmartSearchResponse | null {
-  try {
-    const stored = localStorage.getItem(SEARCH_CACHE_KEY);
-    if (!stored) return null;
+  const cache = getLocalStorage<CachedSearch[]>(SEARCH_CACHE_KEY, []);
+  if (cache.length === 0) return null;
 
-    const cache: CachedSearch[] = JSON.parse(stored);
-    const now = Date.now();
+  const now = Date.now();
 
-    // Find matching cache entry
-    const entry = cache.find(
-      c => c.query.toLowerCase() === query.toLowerCase() &&
-           c.type === type &&
-           (now - c.timestamp) < CACHE_TTL_MS
-    );
+  // Find matching cache entry
+  const entry = cache.find(
+    c => c.query.toLowerCase() === query.toLowerCase() &&
+         c.type === type &&
+         (now - c.timestamp) < CACHE_TTL_MS
+  );
 
-    return entry?.response || null;
-  } catch {
-    return null;
-  }
+  return entry?.response || null;
 }
 
 /**
  * Save search result to cache
  */
 function saveToCache(query: string, type: EntityType | undefined, response: SmartSearchResponse): void {
-  try {
-    const stored = localStorage.getItem(SEARCH_CACHE_KEY);
-    let cache: CachedSearch[] = stored ? JSON.parse(stored) : [];
-    const now = Date.now();
+  let cache = getLocalStorage<CachedSearch[]>(SEARCH_CACHE_KEY, []);
+  const now = Date.now();
 
-    // Remove expired entries and duplicate
-    cache = cache.filter(
-      c => (now - c.timestamp) < CACHE_TTL_MS &&
-           !(c.query.toLowerCase() === query.toLowerCase() && c.type === type)
-    );
+  // Remove expired entries and duplicate
+  cache = cache.filter(
+    c => (now - c.timestamp) < CACHE_TTL_MS &&
+         !(c.query.toLowerCase() === query.toLowerCase() && c.type === type)
+  );
 
-    // Add new entry
-    cache.unshift({ query, type, response, timestamp: now });
+  // Add new entry
+  cache.unshift({ query, type, response, timestamp: now });
 
-    // Limit cache size
-    cache = cache.slice(0, 20);
+  // Limit cache size
+  cache = cache.slice(0, 20);
 
-    localStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify(cache));
-  } catch {
-    console.warn('Failed to save search cache');
-  }
+  setLocalStorage(SEARCH_CACHE_KEY, cache);
 }
 
 /**
  * Clear search history
  */
 export function clearSearchHistory(): void {
-  try {
-    localStorage.removeItem(SEARCH_HISTORY_KEY);
-  } catch {
-    // Ignore
-  }
+  removeLocalStorage(SEARCH_HISTORY_KEY);
 }
 
 /**

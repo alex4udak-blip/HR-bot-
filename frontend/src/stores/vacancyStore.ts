@@ -13,13 +13,13 @@ interface VacancyState {
   vacancies: Vacancy[];
   vacanciesForSelect: Vacancy[]; // Open vacancies for dropdown selection
   currentVacancy: Vacancy | null;
-  loading: boolean;
+  isLoading: boolean;
   error: string | null;
   filters: VacancyFilters;
 
   // Kanban board
   kanbanBoard: KanbanBoard | null;
-  kanbanLoading: boolean;
+  isKanbanLoading: boolean;
 
   // Stats
   stats: VacancyStats | null;
@@ -65,24 +65,24 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
   vacancies: [],
   vacanciesForSelect: [],
   currentVacancy: null,
-  loading: false,
+  isLoading: false,
   error: null,
   filters: {},
   kanbanBoard: null,
-  kanbanLoading: false,
+  isKanbanLoading: false,
   stats: null,
   selectedApplicationIds: [],
 
   // === VACANCIES ===
 
   fetchVacancies: async () => {
-    set({ loading: true, error: null });
+    set({ isLoading: true, error: null });
     try {
       const vacancies = await api.getVacancies(get().filters);
-      set({ vacancies, loading: false });
+      set({ vacancies, isLoading: false });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch vacancies';
-      set({ error: message, loading: false });
+      set({ error: message, isLoading: false });
     }
   },
 
@@ -97,60 +97,60 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
   },
 
   fetchVacancy: async (id) => {
-    set({ loading: true, error: null });
+    set({ isLoading: true, error: null });
     try {
       const vacancy = await api.getVacancy(id);
-      set({ currentVacancy: vacancy, loading: false });
+      set({ currentVacancy: vacancy, isLoading: false });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch vacancy';
-      set({ error: message, loading: false });
+      set({ error: message, isLoading: false });
     }
   },
 
   createVacancy: async (data) => {
-    set({ loading: true, error: null });
+    set({ isLoading: true, error: null });
     try {
       const vacancy = await api.createVacancy(data);
       set((state) => ({
         vacancies: [vacancy, ...state.vacancies],
-        loading: false
+        isLoading: false
       }));
       return vacancy;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create vacancy';
-      set({ error: message, loading: false });
+      set({ error: message, isLoading: false });
       throw err;
     }
   },
 
   updateVacancy: async (id, data) => {
-    set({ loading: true, error: null });
+    set({ isLoading: true, error: null });
     try {
       const updated = await api.updateVacancy(id, data);
       set((state) => ({
         vacancies: state.vacancies.map((v) => (v.id === id ? updated : v)),
         currentVacancy: state.currentVacancy?.id === id ? updated : state.currentVacancy,
-        loading: false
+        isLoading: false
       }));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update vacancy';
-      set({ error: message, loading: false });
+      set({ error: message, isLoading: false });
       throw err;
     }
   },
 
   deleteVacancy: async (id) => {
-    set({ loading: true, error: null });
+    set({ isLoading: true, error: null });
     try {
       await api.deleteVacancy(id);
       set((state) => ({
         vacancies: state.vacancies.filter((v) => v.id !== id),
         currentVacancy: state.currentVacancy?.id === id ? null : state.currentVacancy,
-        loading: false
+        isLoading: false
       }));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete vacancy';
-      set({ error: message, loading: false });
+      set({ error: message, isLoading: false });
       throw err;
     }
   },
@@ -172,13 +172,13 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
   // === KANBAN BOARD ===
 
   fetchKanbanBoard: async (vacancyId) => {
-    set({ kanbanLoading: true, error: null });
+    set({ isKanbanLoading: true, error: null });
     try {
       const board = await api.getKanbanBoard(vacancyId);
-      set({ kanbanBoard: board, kanbanLoading: false });
+      set({ kanbanBoard: board, isKanbanLoading: false });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch Kanban board';
-      set({ error: message, kanbanLoading: false });
+      set({ error: message, isKanbanLoading: false });
     }
   },
 

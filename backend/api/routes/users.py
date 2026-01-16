@@ -10,7 +10,7 @@ from ..models.database import (
     EntityTransfer, CallRecording, Invitation, CriteriaPreset, ReportSubscription
 )
 from ..models.schemas import UserCreate, UserUpdate, UserProfileUpdate, UserResponse
-from ..services.auth import get_superadmin, get_current_user, get_current_user_allow_inactive, hash_password
+from ..services.auth import get_superadmin, get_current_user, get_current_user_dependency, hash_password
 from ..services.password_policy import validate_password
 
 router = APIRouter()
@@ -19,12 +19,12 @@ router = APIRouter()
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user_allow_inactive)
+    current_user: User = Depends(get_current_user_dependency(allow_inactive=True))
 ):
     """Get current user information.
 
     Note: This endpoint allows inactive users to access their info
-    to see their is_active status. We use get_current_user_allow_inactive
+    to see their is_active status. We use get_current_user_dependency(allow_inactive=True)
     instead of get_current_user to bypass the is_active check.
     """
     current_user = await db.merge(current_user)

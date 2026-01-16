@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from .config import settings
 from .models.database import Base, User, Chat, Message, ChatType, OrgMember
 from .services.transcription import transcription_service
+from .utils.db_url import get_database_url
 from .services.documents import document_parser
 from .services.external_links import external_link_processor, LinkType
 
@@ -33,15 +34,8 @@ def get_bot() -> Bot:
     return bot
 
 
-# Database session - convert to asyncpg format
-# Railway sometimes provides postgres:// (old Heroku format)
-database_url = settings.database_url
-if database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
-elif database_url.startswith("postgresql://"):
-    database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-
-engine = create_async_engine(database_url, echo=False, pool_pre_ping=True)
+# Database session
+engine = create_async_engine(get_database_url(), echo=False, pool_pre_ping=True)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 
 

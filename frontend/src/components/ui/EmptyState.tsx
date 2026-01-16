@@ -3,7 +3,6 @@ import {
   LucideIcon,
   Briefcase,
   Users,
-  FileText,
   Search,
   Inbox,
   Upload,
@@ -72,10 +71,6 @@ interface EmptyStateProps {
   icon?: LucideIcon;
   title: string;
   description?: string;
-  action?: {
-    label: string;
-    onClick: () => void;
-  };
   actions?: ActionButton[];
   link?: {
     label: string;
@@ -94,7 +89,6 @@ export default function EmptyState({
   icon: Icon = Inbox,
   title,
   description,
-  action,
   actions,
   link,
   className,
@@ -165,9 +159,6 @@ export default function EmptyState({
   const styles = sizeStyles[size];
   const variantStyle = variantStyles[variant];
 
-  // Convert legacy action prop to actions array
-  const allActions = actions || (action ? [{ ...action, variant: 'primary' as const }] : []);
-
   const Wrapper = animated ? motion.div : 'div';
   const wrapperProps = animated ? {
     variants: containerVariants,
@@ -236,10 +227,10 @@ export default function EmptyState({
       )}
 
       {/* Actions */}
-      {allActions.length > 0 && (
+      {actions && actions.length > 0 && (
         <ItemWrapper {...itemProps}>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            {allActions.map((actionItem, index) => {
+            {actions.map((actionItem, index) => {
               const ActionIcon = actionItem.icon;
               const buttonVariantStyles = {
                 primary: 'bg-cyan-600 hover:bg-cyan-500 text-white',
@@ -513,11 +504,6 @@ export function EmptyVacancies({
   );
 }
 
-// Legacy export for backwards compatibility
-export function NoVacanciesEmpty({ onCreate }: { onCreate: () => void }) {
-  return <EmptyVacancies onCreate={onCreate} />;
-}
-
 interface EmptySearchProps {
   query: string;
   onClear?: () => void;
@@ -582,11 +568,6 @@ export function EmptyKanban({ onAddFromBase, onUploadResume }: EmptyKanbanProps)
       size="lg"
     />
   );
-}
-
-// Legacy export
-export function NoCandidatesEmpty({ onAdd }: { onAdd?: () => void }) {
-  return <EmptyKanban onAddFromBase={onAdd} />;
 }
 
 interface EmptyAnalysisProps {
@@ -703,26 +684,6 @@ export function EmptyEntityVacancies({ onAdd }: EmptyEntityVacanciesProps) {
         variant: 'primary' as const,
         icon: Plus
       }] : []}
-      size="sm"
-    />
-  );
-}
-
-// Legacy exports
-export function NoEntityVacanciesEmpty({ onAdd }: { onAdd?: () => void }) {
-  return <EmptyEntityVacancies onAdd={onAdd} />;
-}
-
-export function NoResultsEmpty({ query }: { query: string }) {
-  return <EmptySearch query={query} entity="generic" />;
-}
-
-export function NoDataEmpty() {
-  return (
-    <EmptyState
-      icon={FileText}
-      title="Нет данных"
-      description="Данные пока отсутствуют"
       size="sm"
     />
   );
