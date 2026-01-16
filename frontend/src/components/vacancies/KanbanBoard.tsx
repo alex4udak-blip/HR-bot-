@@ -164,27 +164,34 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     }
   };
 
+  const isMovingRef = useRef(false);
+
   const handleDragEnd = async () => {
-    if (draggedApp && dropTarget) {
+    if (draggedApp && dropTarget && !isMovingRef.current) {
+      isMovingRef.current = true;
       const column = kanbanBoard?.columns.find(c => c.stage === dropTarget.stage);
       const apps = column?.applications || [];
 
+      // Capture before resetting
+      const currentApp = draggedApp;
+      const currentTarget = dropTarget;
+
       // Check if moving to different stage
-      if (dropTarget.stage !== draggedApp.stage) {
+      if (currentTarget.stage !== currentApp.stage) {
         try {
-          await moveApplication(draggedApp.id, dropTarget.stage);
-          toast.success(`Кандидат перемещён в "${APPLICATION_STAGE_LABELS[dropTarget.stage]}"`);
+          await moveApplication(currentApp.id, currentTarget.stage);
+          toast.success(`Кандидат перемещён в "${APPLICATION_STAGE_LABELS[currentTarget.stage]}"`);
         } catch {
           toast.error('Ошибка при перемещении кандидата');
         }
-      } else if (dropTarget.index !== null) {
+      } else if (currentTarget.index !== null) {
         // Reordering within same column
-        const currentIndex = apps.findIndex(a => a.id === draggedApp.id);
-        if (currentIndex !== -1 && currentIndex !== dropTarget.index && currentIndex !== dropTarget.index - 1) {
+        const currentIndex = apps.findIndex(a => a.id === currentApp.id);
+        if (currentIndex !== -1 && currentIndex !== currentTarget.index && currentIndex !== currentTarget.index - 1) {
           try {
             // Calculate new stage_order
             let newOrder: number;
-            const targetIndex = dropTarget.index;
+            const targetIndex = currentTarget.index;
 
             if (targetIndex === 0) {
               // Moving to the beginning
@@ -199,7 +206,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
               newOrder = Math.floor((prevOrder + nextOrder) / 2);
             }
 
-            await updateApplication(draggedApp.id, { stage_order: newOrder });
+            await updateApplication(currentApp.id, { stage_order: newOrder });
             await fetchKanbanBoard(vacancy.id); // Refresh to get updated order
             toast.success('Карточка переупорядочена');
           } catch {
@@ -214,6 +221,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     setIsDragging(false);
     dragCounterRef.current.clear();
     stopAutoScroll();
+    isMovingRef.current = false;
   };
 
   const handleColumnDragOver = (e: React.DragEvent, stage: ApplicationStage) => {

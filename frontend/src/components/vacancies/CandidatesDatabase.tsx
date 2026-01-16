@@ -219,24 +219,36 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     setDraggedCandidate(candidate); // Allow dragging to vacancies sidebar
   };
 
+  const isMovingRef = useRef(false);
+
   const handleKanbanDragEnd = async (_e?: React.DragEvent | unknown, targetStage?: EntityStatus) => {
     stopAutoScroll();
 
     // Use targetStage from onDrop event if available, otherwise use state
     const finalStage = targetStage || dropTargetStage;
 
-    if (draggedForKanban && finalStage && draggedForKanban.status !== finalStage) {
-      try {
-        await updateEntityStatus(draggedForKanban.id, finalStage);
-        toast.success(`${draggedForKanban.name} → ${STATUS_LABELS[finalStage]}`);
-        fetchEntities();
-      } catch {
-        toast.error('Не удалось изменить статус');
-      }
-    }
+    // Capture current dragged item before clearing state
+    const itemToMove = draggedForKanban;
+
+    // Reset drag state immediately to prevent double calls and UI flickering
     setDraggedForKanban(null);
     setDraggedCandidate(null);
     setDropTargetStage(null);
+
+    if (itemToMove && finalStage && itemToMove.status !== finalStage && !isMovingRef.current) {
+      isMovingRef.current = true;
+      try {
+        console.log(`[Kanban] Moving ${itemToMove.name} from ${itemToMove.status} to ${finalStage}`);
+        await updateEntityStatus(itemToMove.id, finalStage);
+        toast.success(`${itemToMove.name} → ${STATUS_LABELS[finalStage]}`);
+        fetchEntities();
+      } catch (error) {
+        console.error('[Kanban] Move failed:', error);
+        toast.error('Не удалось изменить статус');
+      } finally {
+        isMovingRef.current = false;
+      }
+    }
   };
 
   const handleStageDragOver = (e: React.DragEvent, stage: EntityStatus) => {
