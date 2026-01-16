@@ -11,3 +11,9 @@ export {
   getCurrencyDropdownOptions,
 } from './currency';
 export type { CurrencyCode } from './currency';
+
+export {
+  getLocalStorage,
+  setLocalStorage,
+  removeLocalStorage,
+} from './localStorage';

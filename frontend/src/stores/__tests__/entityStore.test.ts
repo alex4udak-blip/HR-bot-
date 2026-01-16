@@ -29,7 +29,7 @@ describe('entityStore', () => {
     useEntityStore.setState({
       entities: [],
       currentEntity: null,
-      loading: false,
+      isLoading: false,
       error: null,
       filters: {},
       fetchVersion: 0,
@@ -47,7 +47,7 @@ describe('entityStore', () => {
       const state = useEntityStore.getState();
       expect(state.entities).toEqual([]);
       expect(state.currentEntity).toBeNull();
-      expect(state.loading).toBe(false);
+      expect(state.isLoading).toBe(false);
       expect(state.error).toBeNull();
       expect(state.filters).toEqual({});
       expect(state.fetchVersion).toBe(0);
@@ -76,7 +76,7 @@ describe('entityStore', () => {
 
       expect(api.getEntities).toHaveBeenCalledWith({});
       expect(useEntityStore.getState().entities).toEqual(mockEntities);
-      expect(useEntityStore.getState().loading).toBe(false);
+      expect(useEntityStore.getState().isLoading).toBe(false);
       expect(useEntityStore.getState().error).toBeNull();
     });
 
@@ -85,7 +85,7 @@ describe('entityStore', () => {
       vi.mocked(api.getEntities).mockImplementation(
         () =>
           new Promise((resolve) => {
-            expect(useEntityStore.getState().loading).toBe(true);
+            expect(useEntityStore.getState().isLoading).toBe(true);
             resolve(mockEntities);
           })
       );
@@ -100,7 +100,7 @@ describe('entityStore', () => {
       await useEntityStore.getState().fetchEntities();
 
       expect(useEntityStore.getState().error).toBe(errorMessage);
-      expect(useEntityStore.getState().loading).toBe(false);
+      expect(useEntityStore.getState().isLoading).toBe(false);
       expect(useEntityStore.getState().entities).toEqual([]);
     });
 
@@ -193,7 +193,7 @@ describe('entityStore', () => {
 
       expect(api.getEntity).toHaveBeenCalledWith(1);
       expect(useEntityStore.getState().currentEntity).toEqual(mockEntity);
-      expect(useEntityStore.getState().loading).toBe(false);
+      expect(useEntityStore.getState().isLoading).toBe(false);
       expect(useEntityStore.getState().error).toBeNull();
     });
 
@@ -204,7 +204,7 @@ describe('entityStore', () => {
       await useEntityStore.getState().fetchEntity(1);
 
       expect(useEntityStore.getState().error).toBe(errorMessage);
-      expect(useEntityStore.getState().loading).toBe(false);
+      expect(useEntityStore.getState().isLoading).toBe(false);
       expect(useEntityStore.getState().currentEntity).toBeNull();
     });
   });
@@ -232,7 +232,7 @@ describe('entityStore', () => {
 
       expect(result).toEqual(newEntity);
       expect(useEntityStore.getState().entities).toContainEqual(newEntity);
-      expect(useEntityStore.getState().loading).toBe(false);
+      expect(useEntityStore.getState().isLoading).toBe(false);
       expect(useEntityStore.getState().error).toBeNull();
     });
 
@@ -286,7 +286,7 @@ describe('entityStore', () => {
       ).rejects.toThrow(errorMessage);
 
       expect(useEntityStore.getState().error).toBe(errorMessage);
-      expect(useEntityStore.getState().loading).toBe(false);
+      expect(useEntityStore.getState().isLoading).toBe(false);
       expect(useEntityStore.getState().entities).toEqual([]);
     });
   });
@@ -314,7 +314,7 @@ describe('entityStore', () => {
       const entities = useEntityStore.getState().entities;
       expect(entities[0].name).toBe('Jane Doe');
       expect(entities[0].status).toBe('interview');
-      expect(useEntityStore.getState().loading).toBe(false);
+      expect(useEntityStore.getState().isLoading).toBe(false);
       expect(useEntityStore.getState().error).toBeNull();
     });
 
@@ -351,7 +351,7 @@ describe('entityStore', () => {
       await expect(useEntityStore.getState().updateEntity(1, {})).rejects.toThrow(errorMessage);
 
       expect(useEntityStore.getState().error).toBe(errorMessage);
-      expect(useEntityStore.getState().loading).toBe(false);
+      expect(useEntityStore.getState().isLoading).toBe(false);
     });
   });
 
@@ -385,7 +385,7 @@ describe('entityStore', () => {
       await useEntityStore.getState().deleteEntity(1);
 
       expect(useEntityStore.getState().entities).toEqual([entity2]);
-      expect(useEntityStore.getState().loading).toBe(false);
+      expect(useEntityStore.getState().isLoading).toBe(false);
       expect(useEntityStore.getState().error).toBeNull();
     });
 
@@ -444,7 +444,7 @@ describe('entityStore', () => {
       await expect(useEntityStore.getState().deleteEntity(1)).rejects.toThrow(errorMessage);
 
       expect(useEntityStore.getState().error).toBe(errorMessage);
-      expect(useEntityStore.getState().loading).toBe(false);
+      expect(useEntityStore.getState().isLoading).toBe(false);
     });
   });
 
@@ -475,7 +475,7 @@ describe('entityStore', () => {
         comment: 'Transfer comment',
       });
       expect(api.getEntity).toHaveBeenCalledWith(1);
-      expect(useEntityStore.getState().loading).toBe(false);
+      expect(useEntityStore.getState().isLoading).toBe(false);
       expect(useEntityStore.getState().error).toBeNull();
     });
 
@@ -513,7 +513,7 @@ describe('entityStore', () => {
       await expect(useEntityStore.getState().transferEntity(1, 2)).rejects.toThrow(errorMessage);
 
       expect(useEntityStore.getState().error).toBe(errorMessage);
-      expect(useEntityStore.getState().loading).toBe(false);
+      expect(useEntityStore.getState().isLoading).toBe(false);
     });
   });
 

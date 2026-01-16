@@ -15,6 +15,7 @@ from slowapi.errors import RateLimitExceeded
 from api.limiter import limiter
 from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser, search, scoring, currency
 from api.config import settings
+from api.utils.db_url import get_sync_database_url
 
 # Configure logging - show important messages
 logging.basicConfig(
@@ -80,11 +81,10 @@ def add_enum_value_sync(enum_name: str, value: str, description: str):
     We use synchronous psycopg2 with autocommit=True to ensure no transaction wrapping.
     """
     import psycopg2
-    from api.config import settings
 
     try:
-        # Parse DATABASE_URL for psycopg2 (convert postgresql+asyncpg:// to postgresql://)
-        db_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+        # Get sync database URL for psycopg2
+        db_url = get_sync_database_url()
 
         # Connect with autocommit enabled
         conn = psycopg2.connect(db_url)

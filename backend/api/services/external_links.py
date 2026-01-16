@@ -14,6 +14,7 @@ import logging
 import tempfile
 import asyncio
 import subprocess
+import threading
 import aiohttp
 from datetime import datetime
 from typing import Optional, Tuple
@@ -26,9 +27,10 @@ from .call_processor import call_processor
 
 logger = logging.getLogger("hr-analyzer.external_links")
 
-# Track Playwright installation status
+# Track Playwright installation status with thread-safe access
 _playwright_installed = False
 _playwright_install_attempted = False
+_playwright_lock = threading.Lock()
 
 
 async def ensure_playwright_installed() -> bool:
@@ -36,16 +38,19 @@ async def ensure_playwright_installed() -> bool:
     Ensure Playwright browsers are installed.
     Auto-installs chromium if not present.
     Returns True if Playwright is ready to use.
+
+    Thread-safe: Uses lock for accessing global state.
     """
     global _playwright_installed, _playwright_install_attempted
 
-    if _playwright_installed:
-        return True
+    with _playwright_lock:
+        if _playwright_installed:
+            return True
 
-    if _playwright_install_attempted:
-        return False
+        if _playwright_install_attempted:
+            return False
 
-    _playwright_install_attempted = True
+        _playwright_install_attempted = True
 
     # Log environment info for debugging
     browsers_path = os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'not set')
@@ -68,7 +73,8 @@ async def ensure_playwright_installed() -> bool:
                 ]
             )
             await browser.close()
-            _playwright_installed = True
+            with _playwright_lock:
+                _playwright_installed = True
             logger.info("Playwright chromium is ready and working")
             return True
     except Exception as e:
@@ -86,7 +92,8 @@ async def ensure_playwright_installed() -> bool:
 
         if result.returncode == 0:
             logger.info("Playwright chromium installed successfully")
-            _playwright_installed = True
+            with _playwright_lock:
+                _playwright_installed = True
             return True
         else:
             logger.error(f"Playwright install failed: {stderr.decode()}")
@@ -364,7 +371,8 @@ class ExternalLinkProcessor:
                                 transcript_loaded = True
                                 logger.info(f"Found transcript element with selector: {wait_selector}")
                                 break
-                            except Exception:
+                            except Exception as e:
+                                logger.debug(f"Selector {wait_selector} not found: {e}")
                                 continue
 
                         if not transcript_loaded:
@@ -1048,8 +1056,8 @@ class ExternalLinkProcessor:
                                                                         if sp_text != speaker_name and not sp_text.startswith('Speaker'):
                                                                             speaker_name = sp_text
                                                                             break
-                                                            except Exception:
-                                                                pass
+                                                            except Exception as e:
+                                                                logger.warning(f"Speaker name extraction from parent failed: {e}")
 
                                                         # Also look for timestamp in parent
                                                         if not timestamp_text:
@@ -1059,8 +1067,8 @@ class ExternalLinkProcessor:
                                                                     if time_el:
                                                                         timestamp_text = await time_el.text_content()
                                                                         break
-                                                                except Exception:
-                                                                    pass
+                                                                except Exception as e:
+                                                                    logger.warning(f"Timestamp extraction with selector {time_selector} failed: {e}")
 
                                                 # Approach 2: Look in previous sibling
                                                 if speaker_name == "Speaker":
@@ -1070,8 +1078,8 @@ class ExternalLinkProcessor:
                                                             sib_text = await prev_sibling.text_content()
                                                             if sib_text and len(sib_text.strip()) < 50:
                                                                 speaker_name = sib_text.strip()
-                                                    except Exception:
-                                                        pass
+                                                    except Exception as e:
+                                                        logger.warning(f"Speaker extraction from previous sibling failed: {e}")
 
                                                 # Approach 3: Direct child elements
                                                 if speaker_name == "Speaker":
@@ -1103,8 +1111,8 @@ class ExternalLinkProcessor:
                                                         try:
                                                             start_time = float(await el.get_attribute('data-start') or 0)
                                                             end_time = float(await el.get_attribute('data-end') or 0)
-                                                        except Exception:
-                                                            pass
+                                                        except Exception as e:
+                                                            logger.warning(f"Timestamp extraction from data attributes failed: {e}")
 
                                                     # Fallback: parse timestamp from text like "01:15"
                                                     if start_time == 0 and timestamp_text:
@@ -1115,8 +1123,8 @@ class ExternalLinkProcessor:
                                                                 start_time = int(parts[0]) * 60 + int(parts[1])
                                                             elif len(parts) == 3:
                                                                 start_time = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-                                                        except Exception:
-                                                            pass
+                                                        except Exception as e:
+                                                            logger.warning(f"Timestamp parsing from text '{timestamp_text}' failed: {e}")
 
                                                     speaker_data.append({
                                                         "speaker": speaker_name.strip() if speaker_name else "Speaker",

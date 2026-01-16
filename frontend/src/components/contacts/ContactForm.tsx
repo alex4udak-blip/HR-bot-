@@ -24,7 +24,7 @@ const ENTITY_TYPE_OPTIONS: { id: EntityType; icon: typeof User }[] = [
 ];
 
 export default function ContactForm({ entity, prefillData, defaultType, onClose, onSuccess }: ContactFormProps) {
-  const { createEntity, updateEntity, loading } = useEntityStore();
+  const { createEntity, updateEntity, isLoading } = useEntityStore();
 
   // Use prefillData when creating new entity, entity when editing
   const initialData = entity || prefillData;
@@ -348,10 +348,10 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={isLoading}
               className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              {loading && (
+              {isLoading && (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               )}
               {entity ? 'Сохранить' : 'Создать контакт'}

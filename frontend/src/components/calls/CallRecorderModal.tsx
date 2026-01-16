@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useReducer } from 'react';
 import { motion } from 'framer-motion';
 import { X, Upload, Video, Link as LinkIcon, User } from 'lucide-react';
 import clsx from 'clsx';
@@ -13,18 +13,74 @@ interface CallRecorderModalProps {
 
 type RecordMode = 'upload' | 'bot';
 
+// Reducer for entity search state (related states that change together)
+interface EntitySearchState {
+  entities: Entity[];
+  selectedEntityId: number | null;
+  searchQuery: string;
+  showDropdown: boolean;
+}
+
+type EntitySearchAction =
+  | { type: 'SET_ENTITIES'; entities: Entity[] }
+  | { type: 'SELECT_ENTITY'; entityId: number }
+  | { type: 'CLEAR_SELECTION' }
+  | { type: 'UPDATE_SEARCH'; query: string }
+  | { type: 'SHOW_DROPDOWN' }
+  | { type: 'HIDE_DROPDOWN' };
+
+function entitySearchReducer(state: EntitySearchState, action: EntitySearchAction): EntitySearchState {
+  switch (action.type) {
+    case 'SET_ENTITIES':
+      return { ...state, entities: action.entities };
+    case 'SELECT_ENTITY':
+      return {
+        ...state,
+        selectedEntityId: action.entityId,
+        searchQuery: '',
+        showDropdown: false
+      };
+    case 'CLEAR_SELECTION':
+      return {
+        ...state,
+        selectedEntityId: null,
+        searchQuery: ''
+      };
+    case 'UPDATE_SEARCH':
+      return {
+        ...state,
+        searchQuery: action.query,
+        selectedEntityId: null,
+        showDropdown: true
+      };
+    case 'SHOW_DROPDOWN':
+      return { ...state, showDropdown: true };
+    case 'HIDE_DROPDOWN':
+      return { ...state, showDropdown: false };
+    default:
+      return state;
+  }
+}
+
+const initialEntitySearchState: EntitySearchState = {
+  entities: [],
+  selectedEntityId: null,
+  searchQuery: '',
+  showDropdown: false
+};
+
 export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderModalProps) {
-  const { uploadCall, startBot, loading } = useCallStore();
+  const { uploadCall, startBot, isLoading } = useCallStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Form states (independent, rarely change together)
   const [mode, setMode] = useState<RecordMode>('bot');
   const [file, setFile] = useState<File | null>(null);
   const [meetingUrl, setMeetingUrl] = useState('');
   const [botName, setBotName] = useState('HR Recorder');
-  const [selectedEntityId, setSelectedEntityId] = useState<number | null>(null);
-  const [entities, setEntities] = useState<Entity[]>([]);
-  const [searchEntity, setSearchEntity] = useState('');
-  const [showEntityDropdown, setShowEntityDropdown] = useState(false);
+
+  // Entity search state (related states that change together)
+  const [entitySearch, dispatchEntitySearch] = useReducer(entitySearchReducer, initialEntitySearchState);
 
   useEffect(() => {
     loadEntities();
@@ -33,17 +89,17 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
   const loadEntities = async () => {
     try {
       const data = await getEntities({ limit: 100 });
-      setEntities(data);
+      dispatchEntitySearch({ type: 'SET_ENTITIES', entities: data });
     } catch (err) {
       console.error('Failed to load entities:', err);
     }
   };
 
-  const filteredEntities = entities.filter((e) =>
-    e.name.toLowerCase().includes(searchEntity.toLowerCase())
+  const filteredEntities = entitySearch.entities.filter((e) =>
+    e.name.toLowerCase().includes(entitySearch.searchQuery.toLowerCase())
   );
 
-  const selectedEntity = entities.find((e) => e.id === selectedEntityId);
+  const selectedEntity = entitySearch.entities.find((e) => e.id === entitySearch.selectedEntityId);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -68,10 +124,10 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
 
       if (mode === 'upload') {
         if (!file) return;
-        callId = await uploadCall(file, selectedEntityId || undefined);
+        callId = await uploadCall(file, entitySearch.selectedEntityId || undefined);
       } else {
         if (!meetingUrl) return;
-        callId = await startBot(meetingUrl, botName, selectedEntityId || undefined);
+        callId = await startBot(meetingUrl, botName, entitySearch.selectedEntityId || undefined);
       }
 
       onSuccess(callId);
@@ -237,23 +293,16 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
               <User className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 flex-shrink-0" size={18} />
               <input
                 type="text"
-                value={selectedEntity ? selectedEntity.name : searchEntity}
-                onChange={(e) => {
-                  setSearchEntity(e.target.value);
-                  setSelectedEntityId(null);
-                  setShowEntityDropdown(true);
-                }}
-                onFocus={() => setShowEntityDropdown(true)}
+                value={selectedEntity ? selectedEntity.name : entitySearch.searchQuery}
+                onChange={(e) => dispatchEntitySearch({ type: 'UPDATE_SEARCH', query: e.target.value })}
+                onFocus={() => dispatchEntitySearch({ type: 'SHOW_DROPDOWN' })}
                 className="w-full pl-10 pr-10 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50 truncate"
                 placeholder="Поиск контактов..."
               />
-              {selectedEntityId && (
+              {entitySearch.selectedEntityId && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedEntityId(null);
-                    setSearchEntity('');
-                  }}
+                  onClick={() => dispatchEntitySearch({ type: 'CLEAR_SELECTION' })}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/60 flex-shrink-0"
                 >
                   <X size={16} />
@@ -262,7 +311,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
             </div>
 
             {/* Entity Dropdown */}
-            {showEntityDropdown && !selectedEntityId && (
+            {entitySearch.showDropdown && !entitySearch.selectedEntityId && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -273,11 +322,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
                     <button
                       key={entity.id}
                       type="button"
-                      onClick={() => {
-                        setSelectedEntityId(entity.id);
-                        setSearchEntity('');
-                        setShowEntityDropdown(false);
-                      }}
+                      onClick={() => dispatchEntitySearch({ type: 'SELECT_ENTITY', entityId: entity.id })}
                       className="w-full px-4 py-2 text-left hover:bg-white/10 transition-colors flex items-center gap-3 overflow-hidden min-w-0"
                     >
                       <User size={16} className="text-white/40 flex-shrink-0" />
@@ -305,10 +350,10 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
             </button>
             <button
               type="submit"
-              disabled={loading || (mode === 'upload' ? !file : !meetingUrl || !isValidUrl(meetingUrl))}
+              disabled={isLoading || (mode === 'upload' ? !file : !meetingUrl || !isValidUrl(meetingUrl))}
               className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[120px]"
             >
-              {loading && (
+              {isLoading && (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin flex-shrink-0" />
               )}
               <span className="whitespace-nowrap">{mode === 'upload' ? 'Загрузить и обработать' : 'Начать запись'}</span>

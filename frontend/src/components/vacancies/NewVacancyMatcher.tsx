@@ -126,10 +126,10 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
         title="Ошибка загрузки"
         description={error}
         size="sm"
-        action={{
+        actions={[{
           label: "Попробовать снова",
           onClick: loadCandidates
-        }}
+        }]}
       />
     );
   }

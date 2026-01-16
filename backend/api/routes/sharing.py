@@ -1,71 +1,28 @@
 """API routes for sharing resources between users"""
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel
 
 from ..database import get_db
 from ..models.database import (
     User, UserRole, SharedAccess, ResourceType, AccessLevel,
-    Chat, Entity, CallRecording, OrgMember
+    Chat, Entity, CallRecording, OrgMember,
+    Department, DepartmentMember
+)
+from ..models.sharing import (
+    GenericShareRequest as ShareRequest,
+    ShareResponse,
+    UpdateShareRequest,
+    UserSimple
 )
 from ..services.auth import get_current_user, get_user_org
 from ..services.permissions import PermissionService
 from .realtime import broadcast_share_created, broadcast_share_revoked
 
 router = APIRouter()
-
-
-# === Pydantic Schemas ===
-
-class ShareRequest(BaseModel):
-    resource_type: ResourceType
-    resource_id: int
-    shared_with_id: int
-    access_level: AccessLevel = AccessLevel.view
-    note: Optional[str] = None
-    expires_at: Optional[datetime] = None
-    auto_share_related: bool = True  # For entities: auto-share linked chats/calls
-
-
-class ShareResponse(BaseModel):
-    id: int
-    resource_type: ResourceType
-    resource_id: int
-    resource_name: Optional[str] = None
-    shared_by_id: int
-    shared_by_name: str
-    shared_with_id: int
-    shared_with_name: str
-    access_level: AccessLevel
-    note: Optional[str] = None
-    expires_at: Optional[datetime] = None
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class UpdateShareRequest(BaseModel):
-    access_level: AccessLevel
-    note: Optional[str] = None
-    expires_at: Optional[datetime] = None
-
-
-class UserSimple(BaseModel):
-    id: int
-    name: str
-    email: str
-    org_role: Optional[str] = None
-    department_id: Optional[int] = None
-    department_name: Optional[str] = None
-    department_role: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
 
 # === Helper functions ===
@@ -436,7 +393,6 @@ async def revoke_share(
 
             # Batch delete shares for linked chats (avoid N+1)
             if linked_chat_ids:
-                from sqlalchemy import delete
                 delete_result = await db.execute(
                     delete(SharedAccess).where(
                         SharedAccess.resource_type == ResourceType.chat,
@@ -454,7 +410,6 @@ async def revoke_share(
 
             # Batch delete shares for linked calls (avoid N+1)
             if linked_call_ids:
-                from sqlalchemy import delete
                 delete_result = await db.execute(
                     delete(SharedAccess).where(
                         SharedAccess.resource_type == ResourceType.call,
@@ -635,9 +590,6 @@ async def get_sharable_users(
     if not org:
         return []
 
-    # Import models here to avoid circular imports
-    from ..models.database import Department, DepartmentMember
-
     # Get all users in the same organization with their roles and departments
     result = await db.execute(
         select(User, OrgMember)
@@ -789,7 +741,6 @@ async def cleanup_orphaned_shares(
     if not dry_run:
         if orphaned_chats:
             orphaned_chat_ids = [share.id for share in orphaned_chats]
-            from sqlalchemy import delete
             await db.execute(
                 delete(SharedAccess).where(SharedAccess.id.in_(orphaned_chat_ids))
             )
@@ -797,7 +748,6 @@ async def cleanup_orphaned_shares(
 
         if orphaned_calls:
             orphaned_call_ids = [share.id for share in orphaned_calls]
-            from sqlalchemy import delete
             await db.execute(
                 delete(SharedAccess).where(SharedAccess.id.in_(orphaned_call_ids))
             )

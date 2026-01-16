@@ -231,11 +231,6 @@ export type EntityStatus =
   | 'negotiation'
   | 'withdrawn';
 
-// HR Pipeline stages for candidates (in order) - using existing PostgreSQL enum values
-export const CANDIDATE_PIPELINE_STAGES: EntityStatus[] = [
-  'applied', 'screening', 'phone_screen', 'interview', 'assessment', 'offer', 'hired', 'rejected'
-];
-
 export interface Entity {
   id: number;
   type: EntityType;
@@ -808,21 +803,3 @@ export interface NotifyCandidatesResponse {
   message: string;
 }
 
-/**
- * @deprecated Use formatSalary from '@/utils' instead for consistent currency formatting.
- * This function is kept for backwards compatibility and will be removed in a future version.
- */
-export const formatSalary = (
-  min?: number,
-  max?: number,
-  currency: CurrencyCode | string = 'RUB'
-): string => {
-  const curr = CURRENCIES.find(c => c.code === currency);
-  const symbol = curr?.symbol || currency;
-  const formatter = new Intl.NumberFormat('ru-RU');
-
-  if (min && max) return `${formatter.format(min)} - ${formatter.format(max)} ${symbol}`;
-  if (min) return `от ${formatter.format(min)} ${symbol}`;
-  if (max) return `до ${formatter.format(max)} ${symbol}`;
-  return 'Не указана';
-};

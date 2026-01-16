@@ -13,7 +13,7 @@ from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, update
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, EmailStr, Field
 
@@ -23,7 +23,7 @@ from ..models.database import (
     Entity, Chat, CallRecording, AnalysisHistory,
     AIConversation, EntityTransfer, Invitation, CriteriaPreset,
     Department, DepartmentMember, DeptRole, SharedAccess,
-    UserCustomRole, CustomRole
+    UserCustomRole, CustomRole, ReportSubscription, EntityAIConversation
 )
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, hash_password
 
@@ -449,9 +449,6 @@ async def remove_member(
 
         # If no other memberships (count was 1, just this membership) and not superadmin, delete user entirely
         if other_memberships <= 1 and target_user.role != UserRole.superadmin:
-            from sqlalchemy import update
-            from ..models.database import ReportSubscription, EntityAIConversation
-
             # Delete records where user is required (NOT NULL) - order matters for foreign keys
             await db.execute(delete(DepartmentMember).where(DepartmentMember.user_id == user_id))
             await db.execute(delete(SharedAccess).where(SharedAccess.shared_with_id == user_id))

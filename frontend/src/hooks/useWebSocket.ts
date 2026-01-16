@@ -1,54 +1,33 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+import type {
+  WebSocketStatus,
+  WebSocketMessage,
+  WebSocketPayload,
+  UseWebSocketOptions,
+  CallProgressPayload,
+  CallCompletedPayload,
+  CallFailedPayload,
+  EntityDeletedPayload,
+  ChatDeletedPayload,
+  EntityCreatedPayload,
+  EntityUpdatedPayload,
+  ChatCreatedPayload,
+  ChatUpdatedPayload,
+  ChatMessagePayload
+} from '@/types/websocket';
 
-export type WebSocketStatus = 'connecting' | 'connected' | 'disconnected' | 'reconnecting' | 'error';
+// Re-export types for backwards compatibility
+export type { WebSocketStatus };
+export type { CallProgressPayload as CallProgressEvent };
+export type { CallCompletedPayload as CallCompletedEvent };
+export type { CallFailedPayload as CallFailedEvent };
 
+// Re-export WebSocketEvent for backwards compatibility
 export interface WebSocketEvent {
   type: string;
   payload: Record<string, unknown>;
   timestamp: string;
-}
-
-export interface CallProgressEvent {
-  id: number;
-  progress: number;
-  progress_stage: string;
-  status: string;
-}
-
-export interface CallCompletedEvent {
-  id: number;
-  title: string;
-  status: 'done';
-  has_summary: boolean;
-  has_transcript: boolean;
-  duration_seconds?: number;
-  speaker_stats?: Record<string, unknown>;
-  progress: number;
-  progress_stage: string;
-}
-
-export interface CallFailedEvent {
-  id: number;
-  status: 'failed';
-  error_message: string;
-  progress: number;
-  progress_stage: string;
-}
-
-interface UseWebSocketOptions {
-  onCallProgress?: (data: CallProgressEvent) => void;
-  onCallCompleted?: (data: CallCompletedEvent) => void;
-  onCallFailed?: (data: CallFailedEvent) => void;
-  onEntityCreated?: (data: Record<string, unknown>) => void;
-  onEntityUpdated?: (data: Record<string, unknown>) => void;
-  onEntityDeleted?: (data: { id: number }) => void;
-  onChatCreated?: (data: Record<string, unknown>) => void;
-  onChatUpdated?: (data: Record<string, unknown>) => void;
-  onChatDeleted?: (data: { id: number }) => void;
-  onChatMessage?: (data: Record<string, unknown>) => void;
-  autoReconnect?: boolean;
-  reconnectInterval?: number;
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}) {
@@ -137,7 +116,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
       ws.onmessage = (event) => {
         try {
-          const data: WebSocketEvent = JSON.parse(event.data);
+          const data = JSON.parse(event.data) as WebSocketMessage<WebSocketPayload>;
           console.log('[WebSocket] Message:', data.type, data.payload);
 
           // Handle different event types
@@ -147,43 +126,43 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
               break;
 
             case 'call.progress':
-              onCallProgress?.(data.payload as unknown as CallProgressEvent);
+              onCallProgress?.(data.payload as CallProgressPayload);
               break;
 
             case 'call.completed':
-              onCallCompleted?.(data.payload as unknown as CallCompletedEvent);
+              onCallCompleted?.(data.payload as CallCompletedPayload);
               break;
 
             case 'call.failed':
-              onCallFailed?.(data.payload as unknown as CallFailedEvent);
+              onCallFailed?.(data.payload as CallFailedPayload);
               break;
 
             case 'entity.created':
-              onEntityCreated?.(data.payload);
+              onEntityCreated?.(data.payload as EntityCreatedPayload);
               break;
 
             case 'entity.updated':
-              onEntityUpdated?.(data.payload);
+              onEntityUpdated?.(data.payload as EntityUpdatedPayload);
               break;
 
             case 'entity.deleted':
-              onEntityDeleted?.(data.payload as unknown as { id: number });
+              onEntityDeleted?.(data.payload as EntityDeletedPayload);
               break;
 
             case 'chat.created':
-              onChatCreated?.(data.payload);
+              onChatCreated?.(data.payload as ChatCreatedPayload);
               break;
 
             case 'chat.updated':
-              onChatUpdated?.(data.payload);
+              onChatUpdated?.(data.payload as ChatUpdatedPayload);
               break;
 
             case 'chat.deleted':
-              onChatDeleted?.(data.payload as unknown as { id: number });
+              onChatDeleted?.(data.payload as ChatDeletedPayload);
               break;
 
             case 'chat.message':
-              onChatMessage?.(data.payload);
+              onChatMessage?.(data.payload as ChatMessagePayload);
               break;
 
             default:

@@ -1,7 +1,10 @@
 import io
+import logging
 import os
 import re
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -42,12 +45,12 @@ def _register_fonts():
             addMapping('DejaVuSans', 0, 1, 'DejaVuSans')  # italic (use regular)
             addMapping('DejaVuSans', 1, 1, 'DejaVuSans-Bold')  # bold italic
             _use_cyrillic_fonts = True
-            print("DejaVu fonts registered successfully")
+            logger.info("DejaVu fonts registered successfully")
             return True
         except Exception as e:
-            print(f"Warning: Could not register DejaVu fonts: {e}")
+            logger.warning(f"Could not register DejaVu fonts: {e}")
     else:
-        print(f"Warning: Font files not found at {FONTS_DIR}")
+        logger.warning(f"Font files not found at {FONTS_DIR}")
 
     _use_cyrillic_fonts = False
     return False

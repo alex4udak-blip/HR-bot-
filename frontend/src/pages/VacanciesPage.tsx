@@ -131,7 +131,7 @@ export default function VacanciesPage() {
   const {
     vacancies,
     currentVacancy,
-    loading,
+    isLoading,
     error,
     fetchVacancies,
     fetchVacancy,
@@ -720,7 +720,7 @@ export default function VacanciesPage() {
             error={error}
             onRetry={handleRetryFetch}
           />
-        ) : loading ? (
+        ) : isLoading ? (
           <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <VacancyCardSkeleton key={i} />

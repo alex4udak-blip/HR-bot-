@@ -14,7 +14,7 @@ interface TransferModalProps {
 }
 
 export default function TransferModal({ entity, onClose, onSuccess }: TransferModalProps) {
-  const { transferEntity, loading } = useEntityStore();
+  const { transferEntity, isLoading } = useEntityStore();
   const [users, setUsers] = useState<UserSimple[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [comment, setComment] = useState('');
@@ -191,10 +191,10 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
             </button>
             <button
               type="submit"
-              disabled={loading || !selectedUserId}
+              disabled={isLoading || !selectedUserId}
               className="flex-1 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              {loading && (
+              {isLoading && (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               )}
               Передать

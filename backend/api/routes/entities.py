@@ -19,6 +19,7 @@ from ..models.database import (
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to
 from ..services.red_flags import red_flags_service
 from ..services.cache import scoring_cache
+from ..models.sharing import ShareRequestWithRelated as ShareRequest
 from .realtime import broadcast_entity_created, broadcast_entity_updated, broadcast_entity_deleted
 
 # Ownership filter type
@@ -138,14 +139,6 @@ class TransferResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-class ShareRequest(BaseModel):
-    shared_with_id: int
-    access_level: AccessLevel = AccessLevel.view
-    note: Optional[str] = None
-    expires_at: Optional[datetime] = None
-    auto_share_related: bool = True  # Auto-share related chats and calls
 
 
 # === Helper Functions ===

@@ -14,6 +14,8 @@ from ..database import get_db
 from ..models.database import User, UserRole, Organization, OrgMember, OrgRole, Entity, Chat, CallRecording, Department, DepartmentMember, RefreshToken
 
 settings = get_settings()
+# CryptContext is thread-safe by design - it uses internal synchronization
+# for all hash/verify operations. Safe to use as a global singleton.
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
@@ -99,60 +101,27 @@ async def get_current_user(
     request: Request,
     access_token: Optional[str] = Cookie(None),
     db: AsyncSession = Depends(get_db),
+    allow_inactive: bool = False
 ) -> User:
     """Get current user from httpOnly cookie or Authorization header.
 
     Checks for JWT token in the following order:
     1. access_token cookie (preferred, XSS-protected)
     2. Authorization: Bearer header (for API clients and tests)
-    """
-    # Get token from cookie first
-    token = access_token
 
-    # Fallback to Authorization header
-    if not token:
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header[7:]  # Remove "Bearer " prefix
+    Args:
+        request: FastAPI request object
+        access_token: JWT token from httpOnly cookie
+        db: Database session
+        allow_inactive: If True, allows inactive users to authenticate.
+                       Used for endpoints like /me where inactive users
+                       need to see their account status.
 
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    Returns:
+        User object if authentication successful
 
-    try:
-        payload = jwt.decode(
-            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
-        )
-        user_id = payload.get("sub")
-        token_version = payload.get("token_version", 0)  # Default to 0 for old tokens
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    result = await db.execute(select(User).where(User.id == int(user_id)))
-    user = result.scalar_one_or_none()
-
-    if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="User not found or inactive")
-
-    # Verify token version matches - invalidates old tokens on password change
-    # Treat None as 0 (for users created before token_version was added)
-    db_token_version = user.token_version if user.token_version is not None else 0
-    if db_token_version != token_version:
-        raise HTTPException(status_code=401, detail="Token has been invalidated")
-
-    return user
-
-
-async def get_current_user_allow_inactive(
-    request: Request,
-    access_token: Optional[str] = Cookie(None),
-    db: AsyncSession = Depends(get_db),
-) -> User:
-    """Get current user without checking is_active status.
-
-    This is used for endpoints like /me where we want inactive users
-    to be able to see their account status.
+    Raises:
+        HTTPException: 401 if not authenticated or token invalid
     """
     # Get token from cookie first
     token = access_token
@@ -183,6 +152,9 @@ async def get_current_user_allow_inactive(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
+    if not allow_inactive and not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+
     # Verify token version matches - invalidates old tokens on password change
     # Treat None as 0 (for users created before token_version was added)
     db_token_version = user.token_version if user.token_version is not None else 0
@@ -190,6 +162,40 @@ async def get_current_user_allow_inactive(
         raise HTTPException(status_code=401, detail="Token has been invalidated")
 
     return user
+
+
+def get_current_user_dependency(allow_inactive: bool = False):
+    """Factory function to create get_current_user dependency with custom settings.
+
+    Usage:
+        # Require active user (default)
+        current_user: User = Depends(get_current_user)
+
+        # Allow inactive users
+        current_user: User = Depends(get_current_user_dependency(allow_inactive=True))
+
+    Args:
+        allow_inactive: If True, allows inactive users to authenticate
+
+    Returns:
+        Dependency function for FastAPI
+    """
+    async def dependency(
+        request: Request,
+        access_token: Optional[str] = Cookie(None),
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+        return await get_current_user(
+            request=request,
+            access_token=access_token,
+            db=db,
+            allow_inactive=allow_inactive
+        )
+    return dependency
+
+
+# Alias for backward compatibility
+get_current_user_allow_inactive = get_current_user_dependency(allow_inactive=True)
 
 
 async def get_superadmin(user: User = Depends(get_current_user)) -> User:

@@ -149,11 +149,30 @@ export default function EntityAI({ entity }: EntityAIProps) {
     }
   };
 
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup copy timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const handleCopy = (idx: number, content: string) => {
     navigator.clipboard.writeText(content);
     setCopiedIdx(idx);
     toast.success('Скопировано');
-    setTimeout(() => setCopiedIdx(null), 2000);
+
+    // Clear previous timeout if exists
+    if (copyTimeoutRef.current) {
+      clearTimeout(copyTimeoutRef.current);
+    }
+    copyTimeoutRef.current = setTimeout(() => {
+      setCopiedIdx(null);
+      copyTimeoutRef.current = null;
+    }, 2000);
   };
 
   const sendMessage = async (message?: string, quickAction?: string) => {

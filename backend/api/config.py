@@ -48,11 +48,20 @@ class Settings(BaseSettings):
 
     # Superadmin credentials - MUST be set in Railway Variables
     superadmin_email: str = Field(
-        default="admin@example.com",
         alias="SUPERADMIN_EMAIL"
     )
     superadmin_password: str = Field(
         alias="SUPERADMIN_PASSWORD"
+    )
+
+    # Call recordings settings
+    upload_dir: str = Field(
+        default="/app/uploads/calls",
+        alias="UPLOAD_DIR"
+    )
+    default_bot_name: str = Field(
+        default="HR Recorder",
+        alias="DEFAULT_BOT_NAME"
     )
 
     # CORS allowed origins - comma-separated list
@@ -80,6 +89,8 @@ class Settings(BaseSettings):
         """Validate that required secrets are set (no default fallback)"""
         if not self.jwt_secret or self.jwt_secret == "":
             raise ValueError("SECRET_KEY environment variable must be set")
+        if not self.superadmin_email or self.superadmin_email == "":
+            raise ValueError("SUPERADMIN_EMAIL environment variable must be set")
         if not self.superadmin_password or self.superadmin_password == "":
             raise ValueError("SUPERADMIN_PASSWORD environment variable must be set")
 

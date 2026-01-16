@@ -2,6 +2,7 @@ import { useCallback, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { create } from 'zustand';
 import { globalSearch, type GlobalSearchResponse } from '@/services/api';
+import { getLocalStorage, setLocalStorage, removeLocalStorage } from '@/utils/localStorage';
 
 /**
  * Local storage keys
@@ -56,38 +57,25 @@ export interface PageItem {
  * Get command history from localStorage
  */
 function getCommandHistory(): string[] {
-  try {
-    const stored = localStorage.getItem(COMMAND_HISTORY_KEY);
-    return stored ? JSON.parse(stored) : [];
-  } catch {
-    return [];
-  }
+  return getLocalStorage<string[]>(COMMAND_HISTORY_KEY, []);
 }
 
 /**
  * Save command to history
  */
 function saveToHistory(command: string): void {
-  try {
-    const history = getCommandHistory();
-    const filtered = history.filter(q => q.toLowerCase() !== command.toLowerCase());
-    filtered.unshift(command);
-    const limited = filtered.slice(0, MAX_HISTORY_ITEMS);
-    localStorage.setItem(COMMAND_HISTORY_KEY, JSON.stringify(limited));
-  } catch {
-    console.warn('Failed to save command history');
-  }
+  const history = getCommandHistory();
+  const filtered = history.filter(q => q.toLowerCase() !== command.toLowerCase());
+  filtered.unshift(command);
+  const limited = filtered.slice(0, MAX_HISTORY_ITEMS);
+  setLocalStorage(COMMAND_HISTORY_KEY, limited);
 }
 
 /**
  * Clear command history
  */
 export function clearCommandHistory(): void {
-  try {
-    localStorage.removeItem(COMMAND_HISTORY_KEY);
-  } catch {
-    // Ignore
-  }
+  removeLocalStorage(COMMAND_HISTORY_KEY);
 }
 
 /**

@@ -17,30 +17,24 @@ from ..models.database import (
     CallRecording, CallSource, CallStatus, Entity, User, OrgRole, UserRole,
     DepartmentMember, DeptRole, SharedAccess, ResourceType, AccessLevel
 )
+from ..models.sharing import BaseShareRequest as ShareRequest
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to
 from ..services.permissions import PermissionService
+from ..config import get_settings
 from datetime import datetime as dt
 
 router = APIRouter()
 logger = logging.getLogger("hr-analyzer.calls")
 
-# Upload directory for call recordings
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads/calls")
+# Get settings
+settings = get_settings()
+
 # Only create directory if not in test environment (avoids permission errors in CI)
 if not os.getenv("TESTING"):
     try:
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        os.makedirs(settings.upload_dir, exist_ok=True)
     except PermissionError:
-        logger.warning(f"Cannot create upload directory {UPLOAD_DIR} - permission denied")
-
-
-# === Pydantic Schemas (in addition to existing) ===
-
-class ShareRequest(BaseModel):
-    shared_with_id: int
-    access_level: AccessLevel = AccessLevel.view
-    note: Optional[str] = None
-    expires_at: Optional[datetime] = None
+        logger.warning(f"Cannot create upload directory {settings.upload_dir} - permission denied")
 
 
 # === Pydantic Schemas ===
@@ -48,13 +42,13 @@ class ShareRequest(BaseModel):
 class CallCreate(BaseModel):
     entity_id: Optional[int] = None
     source_url: Optional[str] = None
-    bot_name: str = "HR Recorder"
+    bot_name: Optional[str] = None
     title: Optional[str] = None
 
 
 class StartBotRequest(BaseModel):
     source_url: str
-    bot_name: str = "HR Recorder"
+    bot_name: Optional[str] = None
     entity_id: Optional[int] = None
     title: Optional[str] = None
     max_duration: int = 90  # Max recording duration in minutes (15-120)
@@ -297,7 +291,7 @@ async def upload_call(
 
     # Save file
     file_id = str(uuid.uuid4())
-    file_path = os.path.join(UPLOAD_DIR, f"{file_id}{ext}")
+    file_path = os.path.join(settings.upload_dir, f"{file_id}{ext}")
 
     async with aiofiles.open(file_path, 'wb') as f:
         content = await file.read()
@@ -350,6 +344,9 @@ async def start_bot(
     elif "meet.google.com" not in url_lower:
         raise HTTPException(400, "Unsupported meeting URL. Use Google Meet, Zoom, or Microsoft Teams.")
 
+    # Use default bot name if not provided
+    bot_name = data.bot_name or settings.default_bot_name
+
     # Create record
     call = CallRecording(
         org_id=org.id,
@@ -357,7 +354,7 @@ async def start_bot(
         owner_id=current_user.id,
         source_type=source_type,
         source_url=data.source_url,
-        bot_name=data.bot_name,
+        bot_name=bot_name,
         status=CallStatus.pending
     )
     db.add(call)
@@ -370,7 +367,7 @@ async def start_bot(
         result = await call_recorder.start_recording(
             call.id,
             data.source_url,
-            data.bot_name,
+            bot_name,
             duration=data.max_duration
         )
 

@@ -30,7 +30,7 @@ interface CallDetailProps {
 }
 
 export default function CallDetail({ call }: CallDetailProps) {
-  const { reprocessCall, updateCall, loading } = useCallStore();
+  const { reprocessCall, updateCall, isLoading } = useCallStore();
   const { entities, fetchEntities } = useEntityStore();
   const { user, canEditResource } = useAuthStore();
 
@@ -357,10 +357,10 @@ export default function CallDetail({ call }: CallDetailProps) {
             {canEdit() && (
               <button
                 onClick={handleReprocess}
-                disabled={loading}
+                disabled={isLoading}
                 className="px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors flex items-center gap-2"
               >
-                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
                 Повторить
               </button>
             )}
@@ -579,11 +579,11 @@ export default function CallDetail({ call }: CallDetailProps) {
                     {canEdit() && (
                       <button
                         onClick={handleReprocess}
-                        disabled={loading}
+                        disabled={isLoading}
                         className="px-3 py-2 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 transition-colors flex items-center gap-2 flex-shrink-0"
                         title="Переанализировать с обновлённым AI промптом"
                       >
-                        <RefreshCw size={16} className={clsx('text-purple-400 flex-shrink-0', loading && 'animate-spin')} />
+                        <RefreshCw size={16} className={clsx('text-purple-400 flex-shrink-0', isLoading && 'animate-spin')} />
                         <span className="text-sm text-purple-400 whitespace-nowrap">Переанализировать</span>
                       </button>
                     )}

@@ -1,5 +1,11 @@
 import { create } from 'zustand';
 import type { Chat } from '@/types';
+import type {
+  ChatCreatedPayload,
+  ChatUpdatedPayload,
+  ChatDeletedPayload,
+  ChatMessagePayload
+} from '@/types/websocket';
 
 interface ChatState {
   selectedChatId: number | null;
@@ -8,10 +14,10 @@ interface ChatState {
   setChats: (chats: Chat[]) => void;
 
   // WebSocket handlers
-  handleChatCreated: (data: Record<string, unknown>) => void;
-  handleChatUpdated: (data: Record<string, unknown>) => void;
-  handleChatDeleted: (data: { id: number }) => void;
-  handleChatMessage: (data: Record<string, unknown>) => void;
+  handleChatCreated: (data: ChatCreatedPayload) => void;
+  handleChatUpdated: (data: ChatUpdatedPayload) => void;
+  handleChatDeleted: (data: ChatDeletedPayload) => void;
+  handleChatMessage: (data: ChatMessagePayload) => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -21,8 +27,7 @@ export const useChatStore = create<ChatState>((set) => ({
   setChats: (chats) => set({ chats }),
 
   // WebSocket handlers for real-time updates
-  handleChatCreated: (data: Record<string, unknown>) => {
-    const chat = data as unknown as Chat;
+  handleChatCreated: (chat: ChatCreatedPayload) => {
     console.log('[ChatStore] Chat created via WebSocket:', chat.id, chat.title);
 
     set((state) => {
@@ -36,8 +41,7 @@ export const useChatStore = create<ChatState>((set) => ({
     });
   },
 
-  handleChatUpdated: (data: Record<string, unknown>) => {
-    const chat = data as unknown as Chat;
+  handleChatUpdated: (chat: ChatUpdatedPayload) => {
     console.log('[ChatStore] Chat updated via WebSocket:', chat.id, chat.title);
 
     set((state) => ({
@@ -45,7 +49,7 @@ export const useChatStore = create<ChatState>((set) => ({
     }));
   },
 
-  handleChatDeleted: (data: { id: number }) => {
+  handleChatDeleted: (data: ChatDeletedPayload) => {
     console.log('[ChatStore] Chat deleted via WebSocket:', data.id);
 
     set((state) => ({
@@ -54,18 +58,17 @@ export const useChatStore = create<ChatState>((set) => ({
     }));
   },
 
-  handleChatMessage: (data: Record<string, unknown>) => {
-    const { chat_id, message_count } = data as { chat_id: number; message_count?: number };
-    console.log('[ChatStore] New message in chat via WebSocket:', chat_id);
+  handleChatMessage: (data: ChatMessagePayload) => {
+    console.log('[ChatStore] New message in chat via WebSocket:', data.chat_id);
 
     // Update chat's message count and move it to top of list
     set((state) => {
-      const chatIndex = state.chats.findIndex((c) => c.id === chat_id);
+      const chatIndex = state.chats.findIndex((c) => c.id === data.chat_id);
       if (chatIndex === -1) return state;
 
       const updatedChats = [...state.chats];
       const chat = { ...updatedChats[chatIndex] };
-      chat.messages_count = message_count ?? (chat.messages_count || 0) + 1;
+      chat.messages_count = data.message_count ?? (chat.messages_count || 0) + 1;
       chat.last_activity = new Date().toISOString();
 
       // Move chat to top
