@@ -1052,7 +1052,20 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                               {getAvatarInitials(candidate.name || 'UK')}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
+                              <div className="flex items-center justify-between gap-2">
+                                <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCandidateClick(candidate);
+                                    }}
+                                    className="p-1 hover:bg-white/10 rounded"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5 text-white/40" />
+                                  </button>
+                                </div>
+                              </div>
                               {candidate.position && (
                                 <p className="text-xs text-white/50 truncate">{candidate.position}</p>
                               )}
@@ -1084,12 +1097,35 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                               <span className="text-white/25">Без вакансии</span>
                             )}
                           </div>
-                          <div className="mt-1.5 ml-6 flex items-center justify-between text-xs text-white/40">
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {formatDate(candidate.created_at)}
-                            </span>
-                            {candidate.email && <Mail className="w-3 h-3" />}
+                          <div className="mt-1.5 ml-6 flex items-center justify-between">
+                            <div className="flex items-center gap-3 text-xs text-white/40">
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {formatDate(candidate.created_at)}
+                              </span>
+                              {candidate.email && <Mail className="w-3 h-3" />}
+                            </div>
+
+                            {/* Quick status change in Kanban */}
+                            {(() => {
+                              const currentIndex = PIPELINE_STAGES.indexOf(stage as any);
+                              const nextStage = currentIndex >= 0 && currentIndex < PIPELINE_STAGES.length - 1
+                                ? PIPELINE_STAGES[currentIndex + 1]
+                                : null;
+
+                              return nextStage && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleQuickStatusChange(candidate, nextStage as EntityStatus);
+                                  }}
+                                  className="p-1 hover:bg-white/10 rounded text-white/40 hover:text-white/80 transition-colors"
+                                  title={`Перевести в "${STATUS_LABELS[nextStage as EntityStatus]}"`}
+                                >
+                                  <span className="text-[10px] mr-0.5">→</span>
+                                </button>
+                              );
+                            })()}
                           </div>
                         </div>
                       ))}
