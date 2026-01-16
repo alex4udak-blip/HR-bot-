@@ -14,7 +14,8 @@ from ..models.database import (
     Entity, EntityType, EntityStatus, EntityTransfer,
     Chat, CallRecording, AnalysisHistory, User, Organization,
     SharedAccess, ResourceType, UserRole, AccessLevel, OrgRole,
-    Department, DepartmentMember, DeptRole, Vacancy, Message
+    Department, DepartmentMember, DeptRole, Vacancy, Message,
+    VacancyApplication
 )
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to
 from ..services.red_flags import red_flags_service
