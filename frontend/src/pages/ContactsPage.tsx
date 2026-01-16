@@ -98,7 +98,7 @@ export default function ContactsPage() {
   const {
     entities,
     currentEntity,
-    loading,
+    isLoading,
     fetchEntity,
     deleteEntity,
     setFilters,
@@ -536,7 +536,7 @@ export default function ContactsPage() {
           'flex-1 overflow-y-auto overflow-x-hidden',
           layoutMode === 'ai-open' ? 'p-2 space-y-1' : 'p-4 space-y-2'
         )}>
-          {loading && accessibleEntities.length === 0 ? (
+          {isLoading && accessibleEntities.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
             </div>

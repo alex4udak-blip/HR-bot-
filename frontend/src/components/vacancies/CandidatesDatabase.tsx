@@ -88,7 +88,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
   // Store
   const {
     entities,
-    loading,
+    isLoading,
     setFilters,
     fetchEntities,
     typeCounts
@@ -133,8 +133,8 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
       counts[stage] = searchFilteredCandidates.filter(c => c.status === stage).length;
     });
     // Count candidates with unknown status as 'applied' (displayed as "Новый")
-    const knownStatuses = new Set(PIPELINE_STAGES);
-    const unknownCount = searchFilteredCandidates.filter(c => !knownStatuses.has(c.status as EntityStatus)).length;
+    const knownStatuses = new Set<string>(PIPELINE_STAGES);
+    const unknownCount = searchFilteredCandidates.filter(c => !knownStatuses.has(c.status)).length;
     counts['applied'] = (counts['applied'] || 0) + unknownCount;
     return counts;
   }, [searchFilteredCandidates]);
@@ -146,7 +146,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     return searchFilteredCandidates.filter(c => {
       if (c.status === selectedStage) return true;
       // Include unknown statuses in 'applied' (displayed as "Новый")
-      if (selectedStage === 'applied' && !PIPELINE_STAGES.includes(c.status as EntityStatus)) {
+      if (selectedStage === 'applied' && !(PIPELINE_STAGES as readonly string[]).includes(c.status)) {
         return true;
       }
       return false;
@@ -465,7 +465,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
   // Render candidate card (for cards & list views)
   const renderCandidateCard = (candidate: Entity, isListView: boolean = false) => {
-    const currentStageIndex = PIPELINE_STAGES.indexOf(candidate.status as EntityStatus);
+    const currentStageIndex = (PIPELINE_STAGES as readonly string[]).indexOf(candidate.status);
     const nextStage = currentStageIndex >= 0 && currentStageIndex < PIPELINE_STAGES.length - 1
       ? PIPELINE_STAGES[currentStageIndex + 1]
       : null;
@@ -952,7 +952,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
       {/* Content */}
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 overflow-auto p-4">
-          {loading && entities.length === 0 ? (
+          {isLoading && entities.length === 0 ? (
             <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {[1, 2, 3, 4, 5, 6].map(i => (
                 <Skeleton key={i} variant="rounded" className="h-48 w-full" />

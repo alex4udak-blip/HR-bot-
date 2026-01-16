@@ -41,7 +41,7 @@ export default function CallsPage() {
     calls,
     currentCall,
     activeRecording,
-    loading,
+    isLoading,
     fetchCalls,
     fetchCall,
     deleteCall,
@@ -295,7 +295,7 @@ export default function CallsPage() {
 
         {/* Call List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {loading && accessibleCalls.length === 0 ? (
+          {isLoading && accessibleCalls.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
             </div>

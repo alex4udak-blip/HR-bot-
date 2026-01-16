@@ -100,10 +100,10 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
         title="Ошибка загрузки"
         description={error}
         size="sm"
-        action={{
+        actions={[{
           label: 'Повторить',
           onClick: loadSimilarCandidates,
-        }}
+        }]}
       />
     );
   }

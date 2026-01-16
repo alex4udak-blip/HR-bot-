@@ -2,7 +2,7 @@ import type {
   Chat, Message, Participant, CriteriaPreset,
   ChatCriteria, AIConversation, AnalysisResult, Stats
 } from '@/types';
-import api, { deduplicatedGet, debouncedMutation, createStreamController } from './client';
+import { deduplicatedGet, debouncedMutation, createStreamController } from './client';
 
 // ============================================================
 // CHATS API
