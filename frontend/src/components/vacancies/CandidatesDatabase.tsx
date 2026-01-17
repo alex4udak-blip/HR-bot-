@@ -38,7 +38,7 @@ import {
   PIPELINE_STAGES,
   STATUS_TO_STAGE_MAP,
   STAGE_TO_STATUS_MAP
-} from '../../types';
+} from '@/types';
 import type { ParsedResume, BulkImportResponse } from '@/services/api';
 import { formatSalary } from '@/utils';
 import { bulkImportResumes, updateEntityStatus } from '@/services/api';
@@ -869,7 +869,19 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             <div ref={kanbanContainerRef} className="h-full overflow-x-auto" onDragOver={handleKanbanBoardDragOver} onDragLeave={stopAutoScroll}>
               <div className="flex gap-3 h-full min-w-max p-1">
                 {PIPELINE_STAGES.map(stage => (
-                  <div key={stage} onDragOver={(e) => handleStageDragOver(e, stage)} onDragLeave={handleStageDragLeave} onDrop={(e) => handleStageDrop(e, stage)} className={clsx('w-72 flex-shrink-0 flex flex-col bg-white/5 rounded-xl border transition-all', dropTargetStage === stage ? 'border-purple-500 bg-purple-500/10 scale-[1.02]' : 'border-white/10')}>
+                  <div
+                    key={stage}
+                    onDragOver={(e) => handleStageDragOver(e, stage)}
+                    onDragLeave={handleStageDragLeave}
+                    onDrop={(e) => handleStageDrop(e, stage)}
+                    className={clsx(
+                      'w-72 flex-shrink-0 flex flex-col bg-white/5 rounded-xl border transition-all',
+                      dropTargetStage === stage
+                        ? 'border-purple-500 bg-purple-500/10 scale-[1.02]'
+                        : 'border-white/10'
+                    )}
+                  >
+                    {/* Column Header */}
                     <div className={clsx('p-3 border-b border-white/10 rounded-t-xl', STATUS_COLORS[stage])}>
                       <div className="flex items-center justify-between">
                         <h3 className="font-medium text-sm">{STATUS_LABELS[stage]}</h3>
