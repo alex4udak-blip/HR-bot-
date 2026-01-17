@@ -212,24 +212,27 @@ export interface RefreshTokenResponse {
 export type EntityType = 'candidate' | 'client' | 'contractor' | 'lead' | 'partner' | 'custom';
 
 export type EntityStatus =
-  // HR Pipeline stages (using existing PostgreSQL enum values)
-  | 'applied'         // Новый (using 'applied' from DB)
-  | 'screening'
-  | 'phone_screen'    // Практика (using 'phone_screen' from DB)
-  | 'interview'       // Тех-практика (using 'interview' from DB)
-  | 'assessment'      // ИС (using 'assessment' from DB)
-  | 'offer'
-  | 'hired'
-  | 'rejected'
+  // HR Pipeline stages (must match backend EntityStatus enum)
+  | 'new'             // Новый
+  | 'screening'       // Скрининг
+  | 'practice'        // Практика
+  | 'tech_practice'   // Тех-практика
+  | 'is_interview'    // ИС
+  | 'offer'           // Оффер
+  | 'hired'           // Принят
+  | 'rejected'        // Отклонён
   // General statuses
-  | 'new'             // For other entity types (clients, leads, etc.)
   | 'active'
   | 'paused'
   | 'churned'
   | 'converted'
   | 'ended'
   | 'negotiation'
-  | 'withdrawn';
+  | 'withdrawn'
+  | 'interview'       // Legacy
+  | 'applied'         // Legacy
+  | 'phone_screen'    // Legacy
+  | 'assessment';     // Legacy
 
 export interface Entity {
   id: number;
@@ -460,45 +463,51 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
 };
 
 export const STATUS_LABELS: Record<EntityStatus, string> = {
-  // HR Pipeline (using existing PostgreSQL enum values with HR-friendly labels)
-  applied: 'Новый',           // 'applied' displayed as "Новый"
+  // HR Pipeline (matching backend EntityStatus)
+  new: 'Новый',
   screening: 'Скрининг',
-  phone_screen: 'Практика',   // 'phone_screen' displayed as "Практика"
-  interview: 'Тех-практика',  // 'interview' displayed as "Тех-практика"
-  assessment: 'ИС',           // 'assessment' displayed as "ИС"
+  practice: 'Практика',
+  tech_practice: 'Тех-практика',
+  is_interview: 'ИС',
   offer: 'Оффер',
   hired: 'Принят',
   rejected: 'Отклонён',
   withdrawn: 'Отозван',
-  // General statuses
-  new: 'Новый',               // For other entity types
+  // General/Legacy statuses
   active: 'Активный',
   paused: 'На паузе',
   churned: 'Ушёл',
   converted: 'Сконвертирован',
   ended: 'Завершён',
-  negotiation: 'Переговоры'
+  negotiation: 'Переговоры',
+  interview: 'Тех-практика',
+  applied: 'Новый',
+  phone_screen: 'Практика',
+  assessment: 'ИС'
 };
 
 export const STATUS_COLORS: Record<EntityStatus, string> = {
-  // HR Pipeline - matching APPLICATION_STAGE_COLORS (using existing PostgreSQL enum values)
-  applied: 'bg-blue-500/20 text-blue-300 border-blue-500/30',      // "Новый"
+  // HR Pipeline
+  new: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
   screening: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
-  phone_screen: 'bg-amber-500/20 text-amber-300 border-amber-500/30', // "Практика"
-  interview: 'bg-orange-500/20 text-orange-300 border-orange-500/30', // "Тех-практика"
-  assessment: 'bg-purple-500/20 text-purple-300 border-purple-500/30', // "ИС"
+  practice: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+  tech_practice: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+  is_interview: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
   offer: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
   hired: 'bg-green-500/20 text-green-300 border-green-500/30',
   rejected: 'bg-red-500/20 text-red-300 border-red-500/30',
   withdrawn: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
-  // General statuses
-  new: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  // General/Legacy
   active: 'bg-green-500/20 text-green-300',
   paused: 'bg-gray-500/20 text-gray-300',
   churned: 'bg-red-500/20 text-red-300',
   converted: 'bg-emerald-500/20 text-emerald-300',
   ended: 'bg-gray-500/20 text-gray-300',
-  negotiation: 'bg-yellow-500/20 text-yellow-300'
+  negotiation: 'bg-yellow-500/20 text-yellow-300',
+  interview: 'bg-orange-500/20 text-orange-300',
+  applied: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  phone_screen: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+  assessment: 'bg-purple-500/20 text-purple-300 border-purple-500/30'
 };
 
 export const CALL_STATUS_LABELS: Record<CallStatus, string> = {
@@ -723,6 +732,35 @@ export const APPLICATION_STAGE_COLORS: Record<ApplicationStage, string> = {
   hired: 'bg-green-500/20 text-green-300 border-green-500/30',
   rejected: 'bg-red-500/20 text-red-300 border-red-500/30',
   withdrawn: 'bg-gray-500/20 text-gray-300 border-gray-500/30'
+};
+
+// Map EntityStatus to ApplicationStage for synchronization logic
+export const STATUS_TO_STAGE_MAP: Partial<Record<EntityStatus, ApplicationStage>> = {
+  new: 'applied',
+  screening: 'screening',
+  practice: 'phone_screen',
+  tech_practice: 'interview',
+  is_interview: 'assessment',
+  offer: 'offer',
+  hired: 'hired',
+  rejected: 'rejected',
+  // Legacy aliases
+  applied: 'applied',
+  phone_screen: 'phone_screen',
+  interview: 'interview',
+  assessment: 'assessment'
+};
+
+export const STAGE_TO_STATUS_MAP: Record<ApplicationStage, EntityStatus> = {
+  applied: 'new',
+  screening: 'screening',
+  phone_screen: 'practice',
+  interview: 'tech_practice',
+  assessment: 'is_interview',
+  offer: 'offer',
+  hired: 'hired',
+  rejected: 'rejected',
+  withdrawn: 'withdrawn'
 };
 
 export const EMPLOYMENT_TYPES = [

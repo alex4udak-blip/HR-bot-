@@ -3,6 +3,7 @@ import type { Entity, EntityType, EntityStatus, EntityWithRelations } from '@/ty
 import type { EntityCreatedPayload, EntityUpdatedPayload, EntityDeletedPayload } from '@/types/websocket';
 import * as api from '@/services/api';
 import type { OwnershipFilter } from '@/services/api';
+import { logger } from '@/utils/logger';
 
 interface EntityFilters {
   type?: EntityType;
@@ -120,7 +121,7 @@ export const useEntityStore = create<EntityState>((set, get) => ({
 
       set({ typeCounts: counts });
     } catch (err) {
-      console.error('Failed to fetch type counts:', err);
+      logger.error('Failed to fetch type counts:', err);
     }
   },
 
@@ -230,7 +231,7 @@ export const useEntityStore = create<EntityState>((set, get) => ({
 
   // WebSocket handlers for real-time updates
   handleEntityCreated: (entity: EntityCreatedPayload) => {
-    console.log('[EntityStore] Entity created via WebSocket:', entity.id, entity.name);
+    logger.log('[EntityStore] Entity created via WebSocket:', entity.id, entity.name);
 
     set((state) => {
       // Check if entity already exists (avoid duplicates)
@@ -277,7 +278,7 @@ export const useEntityStore = create<EntityState>((set, get) => ({
   },
 
   handleEntityUpdated: (entity: EntityUpdatedPayload) => {
-    console.log('[EntityStore] Entity updated via WebSocket:', entity.id, entity.name);
+    logger.log('[EntityStore] Entity updated via WebSocket:', entity.id, entity.name);
 
     set((state) => ({
       entities: state.entities.map((e) => (e.id === entity.id ? { ...e, ...entity } : e)),
@@ -289,7 +290,7 @@ export const useEntityStore = create<EntityState>((set, get) => ({
   },
 
   handleEntityDeleted: (data: EntityDeletedPayload) => {
-    console.log('[EntityStore] Entity deleted via WebSocket:', data.id);
+    logger.log('[EntityStore] Entity deleted via WebSocket:', data.id);
 
     set((state) => {
       const deletedEntity = state.entities.find((e) => e.id === data.id);

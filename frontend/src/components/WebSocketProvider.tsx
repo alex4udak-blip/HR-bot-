@@ -3,6 +3,7 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { useCallStore } from '@/stores/callStore';
 import { useEntityStore } from '@/stores/entityStore';
 import { useChatStore } from '@/stores/chatStore';
+import { logger } from '@/utils/logger';
 
 /**
  * WebSocket Provider Component
@@ -21,7 +22,8 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     setWebSocketConnected,
     handleCallProgress,
     handleCallCompleted,
-    handleCallFailed
+    handleCallFailed,
+    cleanup: cleanupCallStore
   } = useCallStore();
 
   // Entity store handlers
@@ -65,8 +67,15 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
   // Log connection status for debugging
   useEffect(() => {
-    console.log(`[WebSocketProvider] Status: ${status}, Connected: ${isConnected}`);
+    logger.log(`[WebSocketProvider] Status: ${status}, Connected: ${isConnected}`);
   }, [status, isConnected]);
+
+  // Cleanup polling on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      cleanupCallStore();
+    };
+  }, [cleanupCallStore]);
 
   return <>{children}</>;
 }

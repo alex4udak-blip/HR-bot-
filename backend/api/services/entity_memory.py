@@ -76,12 +76,12 @@ class EntityMemoryService:
 
     def __init__(self):
         self._client: Optional[anthropic.AsyncAnthropic] = None
-        self.model = "claude-sonnet-4-20250514"
+        self.model = settings.claude_model
 
     @property
     def client(self) -> anthropic.AsyncAnthropic:
         if self._client is None:
-            self._client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+            self._client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         return self._client
 
     def should_update_summary(self, entity, new_content_length: int = 0) -> bool:

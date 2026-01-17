@@ -35,6 +35,7 @@ import {
   Check
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
 import { getAIHistory, clearAIHistory, streamAIMessage, streamQuickAction } from '@/services/api';
 import type { AIMessage, ChatTypeId } from '@/types';
 import toast from 'react-hot-toast';
@@ -421,7 +422,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
             {msg.role === 'assistant' ? (
               <div className="relative">
                 <div className="prose prose-sm max-w-none prose-invert prose-headings:text-dark-100 prose-p:text-dark-200 prose-strong:text-dark-100 prose-li:text-dark-200 break-words">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{msg.content}</ReactMarkdown>
                 </div>
                 <button
                   onClick={() => handleCopyMessage(msg.id, msg.content)}
@@ -449,7 +450,7 @@ export default function AIPanel({ chatId, chatTitle, chatType = 'hr' }: AIPanelP
             className="glass-light rounded-xl p-3 max-w-[85%] mr-auto"
           >
             <div className="prose prose-sm max-w-none prose-invert prose-headings:text-dark-100 prose-p:text-dark-200 prose-strong:text-dark-100 prose-li:text-dark-200 break-words">
-              <ReactMarkdown>{streamingContent}</ReactMarkdown>
+              <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{streamingContent}</ReactMarkdown>
             </div>
           </motion.div>
         )}

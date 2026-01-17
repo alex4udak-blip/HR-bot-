@@ -48,6 +48,12 @@ import clsx from 'clsx';
 // Cache for blob URLs to avoid re-fetching
 const blobUrlCache = new Map<string, string>();
 
+// Helper function to cleanup all blob URLs from cache
+const cleanupBlobUrls = () => {
+  blobUrlCache.forEach((url) => URL.revokeObjectURL(url));
+  blobUrlCache.clear();
+};
+
 // Helper to fetch file with auth header and return blob URL
 const fetchWithAuth = async (url: string): Promise<string> => {
   // Check cache first
@@ -435,6 +441,13 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Cleanup blob URLs on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      cleanupBlobUrls();
+    };
+  }, []);
 
   const updateNameMutation = useMutation({
     mutationFn: (name: string) => updateChat(chat.id, { custom_name: name }),

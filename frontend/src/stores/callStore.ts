@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { CallRecording, CallStatus } from '@/types';
 import * as api from '@/services/api';
+import { logger } from '@/utils/logger';
 
 interface ActiveRecording {
   id: number;
@@ -34,6 +35,8 @@ interface CallState {
   stopPolling: () => void;
   clearActiveRecording: () => void;
   clearError: () => void;
+  // Cleanup method to prevent memory leaks
+  cleanup: () => void;
 
   // WebSocket event handlers
   setWebSocketConnected: (connected: boolean) => void;
@@ -178,7 +181,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   pollStatus: (id) => {
     // Don't poll if WebSocket is connected - real-time updates will come via WebSocket
     if (get().useWebSocket) {
-      console.log('[CallStore] WebSocket connected, skipping polling');
+      logger.log('[CallStore] WebSocket connected, skipping polling');
       return;
     }
 
@@ -269,6 +272,29 @@ export const useCallStore = create<CallState>((set, get) => ({
 
   clearError: () => set({ error: null }),
 
+  // Cleanup all polling and abort controllers to prevent memory leaks
+  cleanup: () => {
+    const { pollingInterval, pollingAbortController } = get();
+
+    // Abort any in-flight requests
+    if (pollingAbortController) {
+      pollingAbortController.abort();
+    }
+
+    // Clear the interval
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+    }
+
+    // Reset state
+    set({
+      pollingInterval: null,
+      pollingAbortController: null,
+      activeRecording: null,
+      useWebSocket: false,
+    });
+  },
+
   // WebSocket event handlers
   setWebSocketConnected: (connected) => {
     set({ useWebSocket: connected });
@@ -294,7 +320,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       });
     }
 
-    console.log(`[WebSocket] Call ${data.id} progress: ${data.progress}% - ${data.progress_stage}`);
+    logger.log(`[WebSocket] Call ${data.id} progress: ${data.progress}% - ${data.progress_stage}`);
   },
 
   handleCallCompleted: (data) => {
@@ -326,7 +352,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       });
     }
 
-    console.log(`[WebSocket] Call ${data.id} completed`);
+    logger.log(`[WebSocket] Call ${data.id} completed`);
   },
 
   handleCallFailed: (data) => {
@@ -357,6 +383,6 @@ export const useCallStore = create<CallState>((set, get) => ({
       });
     }
 
-    console.log(`[WebSocket] Call ${data.id} failed: ${data.error_message}`);
+    logger.log(`[WebSocket] Call ${data.id} failed: ${data.error_message}`);
   }
 }));

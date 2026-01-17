@@ -7,16 +7,20 @@ Provides:
 - Role identification (system user, employee, target, contact, unknown)
 - Participant lists for chats and calls
 """
+import json
+import logging
 from enum import Enum
 from typing import Optional, List, Tuple
 from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func
-import logging
+from anthropic import AsyncAnthropic, APIError, APIConnectionError
 
 from ..models.database import User, Entity, Message, Chat, CallRecording, EntityType
+from ..config import get_settings
 
 logger = logging.getLogger("hr-analyzer.participants")
+settings = get_settings()
 
 
 class ParticipantRole(str, Enum):
@@ -529,14 +533,8 @@ async def ai_identify_unknown_participants(
     Returns:
         Обновленный список участников с AI-определенными ролями
     """
-    import json
-    from anthropic import AsyncAnthropic
-    from ..config import get_settings
-
     if not unknown_participants:
         return []
-
-    settings = get_settings()
 
     if not settings.anthropic_api_key:
         logger.warning("ANTHROPIC_API_KEY not configured, skipping AI identification")
@@ -572,7 +570,7 @@ async def ai_identify_unknown_participants(
         client = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=settings.claude_model,
             max_tokens=1000,
             messages=[
                 {
@@ -620,9 +618,14 @@ async def ai_identify_unknown_participants(
         logger.info(f"AI identified {len(identifications)} participants")
         return unknown_participants
 
-    except Exception as e:
-        logger.error(f"AI identification failed: {e}", exc_info=True)
-        # Return participants unchanged on error
+    except (APIError, APIConnectionError) as e:
+        logger.error(f"AI identification API error: {e}", exc_info=True)
+        return unknown_participants
+    except json.JSONDecodeError as e:
+        logger.error(f"AI identification JSON parsing failed: {e}", exc_info=True)
+        return unknown_participants
+    except ValueError as e:
+        logger.error(f"AI identification value error: {e}", exc_info=True)
         return unknown_participants
 
 
@@ -643,14 +646,8 @@ async def ai_identify_call_speakers(
     Returns:
         Обновленный список спикеров с AI-определенными ролями
     """
-    import json
-    from anthropic import AsyncAnthropic
-    from ..config import get_settings
-
     if not unknown_speakers:
         return []
-
-    settings = get_settings()
 
     if not settings.anthropic_api_key:
         logger.warning("ANTHROPIC_API_KEY not configured, skipping AI speaker identification")
@@ -673,7 +670,7 @@ async def ai_identify_call_speakers(
         client = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=settings.claude_model,
             max_tokens=1000,
             messages=[
                 {
@@ -720,8 +717,14 @@ async def ai_identify_call_speakers(
         logger.info(f"AI identified {len(identifications)} call speakers")
         return unknown_speakers
 
-    except Exception as e:
-        logger.error(f"AI call speaker identification failed: {e}", exc_info=True)
+    except (APIError, APIConnectionError) as e:
+        logger.error(f"AI call speaker identification API error: {e}", exc_info=True)
+        return unknown_speakers
+    except json.JSONDecodeError as e:
+        logger.error(f"AI call speaker identification JSON parsing failed: {e}", exc_info=True)
+        return unknown_speakers
+    except ValueError as e:
+        logger.error(f"AI call speaker identification value error: {e}", exc_info=True)
         return unknown_speakers
 
 

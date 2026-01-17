@@ -63,9 +63,12 @@ ALLOWED_MIME_TYPES = {
     'image/png',
     'image/gif',
     'image/webp',
-    # Archives (for bulk import)
+    # Archives (for bulk import and individual parsing)
     'application/zip',
     'application/x-zip-compressed',
+    'application/x-zip',
+    # HTML
+    'text/html',
 }
 
 # Mapping of file extensions to expected MIME types
@@ -80,7 +83,9 @@ EXTENSION_MIME_MAP = {
     'png': {'image/png'},
     'gif': {'image/gif'},
     'webp': {'image/webp'},
-    'zip': {'application/zip', 'application/x-zip-compressed'},
+    'zip': {'application/zip', 'application/x-zip-compressed', 'application/x-zip'},
+    'html': {'text/html'},
+    'htm': {'text/html'},
 }
 
 
@@ -353,7 +358,8 @@ async def parse_resume_file(
         # Check file extension
         allowed_extensions = {
             'pdf', 'docx', 'doc', 'txt', 'rtf',
-            'jpg', 'jpeg', 'png', 'gif', 'webp'
+            'jpg', 'jpeg', 'png', 'gif', 'webp',
+            'zip', 'html', 'htm'
         }
         ext = safe_filename.rsplit('.', 1)[-1].lower() if '.' in safe_filename else ''
 
@@ -408,7 +414,7 @@ async def parse_resume_file(
             f"size={len(file_content)} bytes"
         )
 
-        resume = await parse_resume_from_pdf(file_content, safe_filename)
+        resume = await parse_resume_from_file(file_content, safe_filename)
 
         # Log successful parsing
         logger.info(
@@ -474,7 +480,7 @@ async def parse_vacancy_file(
         safe_filename = re.sub(r'[<>:"/\\|?*]', '_', file.filename)
 
         # Check file extension
-        allowed_extensions = {'pdf', 'docx', 'doc', 'txt', 'rtf'}
+        allowed_extensions = {'pdf', 'docx', 'doc', 'txt', 'rtf', 'html', 'htm', 'zip'}
         ext = safe_filename.rsplit('.', 1)[-1].lower() if '.' in safe_filename else ''
 
         if ext not in allowed_extensions:

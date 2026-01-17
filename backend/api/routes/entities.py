@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List, Literal
 from datetime import datetime
@@ -15,7 +15,7 @@ from ..models.database import (
     Chat, CallRecording, AnalysisHistory, User, Organization,
     SharedAccess, ResourceType, UserRole, AccessLevel, OrgRole,
     Department, DepartmentMember, DeptRole, Vacancy, Message,
-    VacancyApplication
+    VacancyApplication, STATUS_SYNC_MAP
 )
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to
 from ..services.red_flags import red_flags_service
@@ -1499,6 +1499,16 @@ async def update_entity_status(
     await db.refresh(entity)
 
     logger.info(f"Entity {entity_id} status changed: {old_status} -> {data.status}")
+
+    # Synchronize with vacancy applications if this is a candidate
+    if entity.type == EntityType.candidate and data.status in STATUS_SYNC_MAP:
+        new_stage = STATUS_SYNC_MAP[data.status]
+        await db.execute(
+            update(VacancyApplication)
+            .where(VacancyApplication.entity_id == entity_id)
+            .values(stage=new_stage, last_stage_change_at=datetime.utcnow())
+        )
+        logger.info(f"Synchronized {entity_id} status {data.status} to vacancy applications as {new_stage}")
 
     # Broadcast update
     await broadcast_entity_updated(org.id, {
@@ -3459,7 +3469,7 @@ async def create_entity_from_resume(
 
     # Проверяем расширение файла
     ext = filename.lower().split('.')[-1] if '.' in filename else ''
-    allowed_extensions = {'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'}
+    allowed_extensions = {'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'html', 'htm', 'zip'}
     if ext not in allowed_extensions:
         raise HTTPException(
             400,

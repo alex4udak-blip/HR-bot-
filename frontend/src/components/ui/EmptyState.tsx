@@ -215,8 +215,8 @@ export default function EmptyState({
           <div className="mt-4 p-4 bg-white/5 rounded-xl border border-white/10 max-w-md">
             <p className="text-xs text-white/40 uppercase tracking-wider mb-2">Советы</p>
             <ul className="space-y-1.5">
-              {tips.map((tip, index) => (
-                <li key={index} className="text-sm text-white/60 flex items-start gap-2">
+              {tips.map((tip) => (
+                <li key={tip} className="text-sm text-white/60 flex items-start gap-2">
                   <span className="text-cyan-400 flex-shrink-0">-</span>
                   {tip}
                 </li>
@@ -230,7 +230,7 @@ export default function EmptyState({
       {actions && actions.length > 0 && (
         <ItemWrapper {...itemProps}>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            {actions.map((actionItem, index) => {
+            {actions.map((actionItem) => {
               const ActionIcon = actionItem.icon;
               const buttonVariantStyles = {
                 primary: 'bg-cyan-600 hover:bg-cyan-500 text-white',
@@ -239,7 +239,7 @@ export default function EmptyState({
               };
               return (
                 <button
-                  key={index}
+                  key={actionItem.label}
                   onClick={actionItem.onClick}
                   className={clsx(
                     'rounded-lg transition-all duration-200',
@@ -347,7 +347,7 @@ function KanbanIllustration({ className }: { className?: string }) {
             )}
           >
             {Array.from({ length: i }).map((_, j) => (
-              <div key={j} className="w-5 h-3 bg-blue-500/20 rounded" />
+              <div key={`kanban-item-${i}-${j}`} className="w-5 h-3 bg-blue-500/20 rounded" />
             ))}
           </div>
         ))}

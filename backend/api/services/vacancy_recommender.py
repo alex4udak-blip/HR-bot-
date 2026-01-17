@@ -271,7 +271,7 @@ class VacancyRecommenderService:
             cache_ttl_minutes: TTL for AI analysis cache in minutes
         """
         self._client: Optional[AsyncAnthropic] = None
-        self.model = "claude-sonnet-4-20250514"
+        self.model = settings.claude_model
         self.use_ai = use_ai
         self._cache = AIMatchCache(ttl_minutes=cache_ttl_minutes)
 

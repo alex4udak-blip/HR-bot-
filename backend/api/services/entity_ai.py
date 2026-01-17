@@ -135,7 +135,7 @@ class EntityAIService:
 
     def __init__(self):
         self._client: Optional[AsyncAnthropic] = None
-        self.model = "claude-sonnet-4-20250514"
+        self.model = settings.claude_model
 
     @property
     def client(self) -> AsyncAnthropic:

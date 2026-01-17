@@ -398,7 +398,7 @@ async def parse_with_ai(
 
     try:
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=settings.claude_model,
             max_tokens=2048,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -441,7 +441,7 @@ async def split_vacancy_description(description: str) -> Dict[str, Optional[str]
 
     try:
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=settings.claude_model,
             max_tokens=1500,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -465,8 +465,8 @@ async def split_vacancy_description(description: str) -> Dict[str, Optional[str]
         }
 
 
-async def parse_resume_from_pdf(file_content: bytes, filename: str) -> ParsedResume:
-    """Parse resume from PDF file using AI"""
+async def parse_resume_from_file(file_content: bytes, filename: str) -> ParsedResume:
+    """Parse resume from file using AI"""
     # Use existing DocumentParser to extract text
     parse_result = await document_parser.parse(file_content, filename)
 
