@@ -333,6 +333,8 @@ class ParsedResume:
             extra_data["has_car"] = self.has_car
         if self.military_status:
             extra_data["military_status"] = self.military_status
+        if self.raw_text:
+            extra_data["full_text"] = self.raw_text
 
         # Контакты
         if self.whatsapp:
@@ -575,12 +577,12 @@ class ResumeParserService:
         """
         # Проверяем расширение
         ext = filename.lower().split('.')[-1] if '.' in filename else ''
-        supported_extensions = {'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'}
+        allowed_extensions = {'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'html', 'htm', 'zip'}
 
-        if ext not in supported_extensions:
+        if ext not in allowed_extensions:
             raise ValueError(
                 f"Неподдерживаемый формат файла: .{ext}. "
-                f"Поддерживаются: {', '.join(supported_extensions)}"
+                f"Поддерживаются: {', '.join(allowed_extensions)}"
             )
 
         # Используем существующий DocumentParser
@@ -643,7 +645,7 @@ class ResumeParserService:
 
             # Создаём ParsedResume из данных
             resume = self._dict_to_parsed_resume(parsed_data)
-            resume.raw_text = text[:2000]  # Сохраняем часть текста для отладки
+            resume.raw_text = text
 
             # Постобработка: нормализация контактов
             resume = self._postprocess_resume(resume)

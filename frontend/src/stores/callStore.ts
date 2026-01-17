@@ -34,6 +34,8 @@ interface CallState {
   stopPolling: () => void;
   clearActiveRecording: () => void;
   clearError: () => void;
+  // Cleanup method to prevent memory leaks
+  cleanup: () => void;
 
   // WebSocket event handlers
   setWebSocketConnected: (connected: boolean) => void;
@@ -268,6 +270,29 @@ export const useCallStore = create<CallState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  // Cleanup all polling and abort controllers to prevent memory leaks
+  cleanup: () => {
+    const { pollingInterval, pollingAbortController } = get();
+
+    // Abort any in-flight requests
+    if (pollingAbortController) {
+      pollingAbortController.abort();
+    }
+
+    // Clear the interval
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+    }
+
+    // Reset state
+    set({
+      pollingInterval: null,
+      pollingAbortController: null,
+      activeRecording: null,
+      useWebSocket: false,
+    });
+  },
 
   // WebSocket event handlers
   setWebSocketConnected: (connected) => {

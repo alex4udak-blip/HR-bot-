@@ -1,6 +1,26 @@
 import axios, { AxiosError, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 
 // ============================================================
+// CSRF TOKEN MANAGEMENT
+// ============================================================
+
+/**
+ * Get CSRF token from cookie (set by backend)
+ */
+const getCSRFToken = (): string | null => {
+  const name = 'csrf_token=';
+  const decodedCookie = decodeURIComponent(document.cookie);
+  const cookies = decodedCookie.split(';');
+  for (const cookie of cookies) {
+    const trimmed = cookie.trim();
+    if (trimmed.indexOf(name) === 0) {
+      return trimmed.substring(name.length);
+    }
+  }
+  return null;
+};
+
+// ============================================================
 // REFRESH TOKEN MANAGEMENT
 // ============================================================
 
@@ -248,11 +268,21 @@ const api = axios.create({
   timeout: API_TIMEOUT,   // Request timeout
 });
 
-// Request interceptor - add retry metadata
+// Request interceptor - add CSRF token and retry metadata
 api.interceptors.request.use(
   (config) => {
     // Add request timestamp for debugging
     (config as AxiosRequestConfig & { metadata?: { startTime: number } }).metadata = { startTime: Date.now() };
+
+    // Add CSRF token for state-changing requests (POST, PUT, PATCH, DELETE)
+    const method = config.method?.toUpperCase();
+    if (method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      const csrfToken = getCSRFToken();
+      if (csrfToken) {
+        config.headers['X-CSRF-Token'] = csrfToken;
+      }
+    }
+
     return config;
   },
   (error) => Promise.reject(error)

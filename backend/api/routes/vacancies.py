@@ -2,7 +2,7 @@
 API routes for vacancy management and candidate pipeline (Kanban board).
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import select, func, or_, and_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing import Optional, List, Literal
@@ -15,7 +15,7 @@ logger = logging.getLogger("hr-analyzer.vacancies")
 from ..database import get_db
 from ..models.database import (
     Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
-    Entity, EntityType, User, Organization, Department
+    Entity, EntityType, User, Organization, Department, STAGE_SYNC_MAP
 )
 from ..services.auth import get_current_user, get_user_org
 from ..services.features import can_access_feature
@@ -873,6 +873,16 @@ async def update_application(
     # Check if stage_order went negative and rebalance if needed
     if application.stage_order is not None and application.stage_order < 0:
         await rebalance_stage_orders(db, application.vacancy_id, application.stage)
+
+    # Synchronize with entity status
+    if data.stage and data.stage in STAGE_SYNC_MAP:
+        new_status = STAGE_SYNC_MAP[data.stage]
+        await db.execute(
+            update(Entity)
+            .where(Entity.id == application.entity_id)
+            .values(status=new_status, updated_at=datetime.utcnow())
+        )
+        logger.info(f"Synchronized application {application_id} stage {data.stage} to entity {application.entity_id} status as {new_status}")
 
     await db.commit()
     await db.refresh(application)

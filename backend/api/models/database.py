@@ -102,6 +102,19 @@ class ApplicationStage(str, enum.Enum):
     # tech_practice = "tech_practice"
     # is_interview = "is_interview"
 
+# Sync mappings between EntityStatus and ApplicationStage
+STATUS_SYNC_MAP = {
+    EntityStatus.new: ApplicationStage.applied,
+    EntityStatus.screening: ApplicationStage.screening,
+    EntityStatus.practice: ApplicationStage.phone_screen,
+    EntityStatus.tech_practice: ApplicationStage.interview,
+    EntityStatus.is_interview: ApplicationStage.assessment,
+    EntityStatus.offer: ApplicationStage.offer,
+    EntityStatus.hired: ApplicationStage.hired,
+    EntityStatus.rejected: ApplicationStage.rejected,
+}
+
+STAGE_SYNC_MAP = {v: k for k, v in STATUS_SYNC_MAP.items()}
 
 class EntityFileType(str, enum.Enum):
     """Type of file attached to an entity"""

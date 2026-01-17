@@ -77,8 +77,25 @@ class Settings(BaseSettings):
     )
 
     def get_allowed_origins_list(self) -> list[str]:
-        """Parse comma-separated origins into a list"""
-        return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
+        """Parse comma-separated origins into a list.
+
+        SECURITY: Rejects wildcard (*) origins in production to prevent CORS attacks.
+        Only specific domains should be allowed in production.
+        """
+        origins = [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
+
+        # Security check: reject wildcards
+        if "*" in origins:
+            import logging
+            logger = logging.getLogger("hr-analyzer.config")
+            logger.warning("SECURITY WARNING: Wildcard (*) CORS origin detected! Removing for security.")
+            origins = [o for o in origins if o != "*"]
+
+        # Ensure at least localhost for development if no valid origins
+        if not origins:
+            return ["http://localhost:3000", "http://localhost:5173"]
+
+        return origins
 
     class Config:
         env_file = ".env"

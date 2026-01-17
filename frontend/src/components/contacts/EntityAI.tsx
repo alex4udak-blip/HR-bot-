@@ -19,6 +19,7 @@ import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
 import toast from 'react-hot-toast';
+import api from '@/services/api';
 import type { EntityWithRelations } from '@/types';
 
 interface Message {
@@ -72,14 +73,8 @@ export default function EntityAI({ entity }: EntityAIProps) {
 
   const loadMemory = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/entities/${entity.id}/ai/memory`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setMemory(data);
-      }
+      const response = await api.get(`/entities/${entity.id}/ai/memory`);
+      setMemory(response.data);
     } catch (e) {
       console.error('Failed to load AI memory:', e);
     }
@@ -88,21 +83,12 @@ export default function EntityAI({ entity }: EntityAIProps) {
   const updateMemory = async () => {
     setUpdatingMemory(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/entities/${entity.id}/ai/update-summary`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        toast.success(`Память обновлена! Новых событий: ${data.new_events_count}`);
-        loadMemory();
-      } else {
-        const error = await response.json();
-        toast.error(error.error || 'Не удалось обновить память');
-      }
+      const response = await api.post(`/entities/${entity.id}/ai/update-summary`);
+      toast.success(`Память обновлена! Новых событий: ${response.data.new_events_count}`);
+      loadMemory();
     } catch (e) {
-      toast.error('Ошибка при обновлении памяти');
+      const errorMessage = (e as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast.error(errorMessage || 'Не удалось обновить память');
     } finally {
       setUpdatingMemory(false);
     }
@@ -115,16 +101,8 @@ export default function EntityAI({ entity }: EntityAIProps) {
 
   const loadHistory = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/entities/${entity.id}/ai/history`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setMessages(data.messages || []);
-      }
+      const response = await api.get(`/entities/${entity.id}/ai/history`);
+      setMessages(response.data.messages || []);
     } catch (e) {
       console.error('Failed to load AI history:', e);
     }
@@ -132,17 +110,9 @@ export default function EntityAI({ entity }: EntityAIProps) {
 
   const clearHistory = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/entities/${entity.id}/ai/history`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (response.ok) {
-        setMessages([]);
-        toast.success('История очищена');
-      }
+      await api.delete(`/entities/${entity.id}/ai/history`);
+      setMessages([]);
+      toast.success('История очищена');
     } catch (e) {
       console.error('Failed to clear history:', e);
       toast.error('Не удалось очистить историю');
@@ -199,13 +169,13 @@ export default function EntityAI({ entity }: EntityAIProps) {
     setMessages(newMessages);
 
     try {
-      const token = localStorage.getItem('token');
+      // Use fetch with credentials for streaming (cookies sent automatically)
       const response = await fetch(`/api/entities/${entity.id}/ai/message`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
+        credentials: 'include', // Send httpOnly cookies
         body: JSON.stringify(
           quickAction ? { quick_action: quickAction } : { message }
         ),

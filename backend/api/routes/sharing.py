@@ -131,6 +131,16 @@ async def share_resource(
     if not current_user_org and current_user.role != UserRole.superadmin:
         raise HTTPException(status_code=403, detail="Вы не состоите в организации")
 
+    # CRITICAL SECURITY CHECK: Verify target user is in the same organization
+    # This prevents cross-organization sharing attacks
+    if current_user.role != UserRole.superadmin:
+        target_user_org = await get_user_org(target_user, db)
+        if not target_user_org or (current_user_org and target_user_org.id != current_user_org.id):
+            raise HTTPException(
+                status_code=403,
+                detail="Невозможно предоставить доступ пользователю из другой организации"
+            )
+
     # Verify sharing permissions (organization and department rules)
     # This checks:
     # - SUPERADMIN can share with anyone

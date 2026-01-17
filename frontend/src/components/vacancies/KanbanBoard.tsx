@@ -508,13 +508,20 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                 {/* Cards */}
                 <div
                   data-cards-container
-                  className="flex-1 overflow-y-auto p-1.5 sm:p-2 space-y-2"
+                  className="flex-1 overflow-y-auto p-1.5 sm:p-2 space-y-3"
                 >
                   <AnimatePresence mode="popLayout">
                     {apps.map((app, appIndex) => {
                       const showDropIndicatorBefore = isReorderTarget &&
                         dropTarget?.index === appIndex &&
                         draggedApp?.id !== app.id;
+
+                      const nextStage = (() => {
+                        const currentIndex = VISIBLE_STAGES.indexOf(stage);
+                        return currentIndex >= 0 && currentIndex < VISIBLE_STAGES.length - 1
+                          ? VISIBLE_STAGES[currentIndex + 1]
+                          : null;
+                      })();
 
                       return (
                         <div key={app.id}>
@@ -531,92 +538,91 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                           <motion.div
                             layout
                             data-card-id={app.id}
-                            initial={{ opacity: 0, y: 20 }}
+                            initial={{ opacity: 0, scale: 0.95 }}
                             animate={{
                               opacity: draggedApp?.id === app.id ? 0.5 : 1,
-                              y: 0,
                               scale: draggedApp?.id === app.id ? 0.98 : 1,
                             }}
-                            exit={{ opacity: 0, scale: 0.9 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
                             draggable
                             onDragStart={(e) => handleDragStart(e as unknown as React.DragEvent, app)}
                             onDragEnd={handleDragEnd}
                             className={clsx(
-                              'p-2.5 sm:p-3 bg-gray-800 rounded-lg border cursor-grab active:cursor-grabbing',
-                              'hover:border-white/30 transition-all duration-200 group touch-manipulation',
+                              'p-3 bg-white/5 hover:bg-white/10 border rounded-xl cursor-grab active:cursor-grabbing transition-all duration-200 group touch-manipulation',
                               draggedApp?.id === app.id
-                                ? 'border-blue-500/50 shadow-lg shadow-blue-500/20 ring-2 ring-blue-500/30'
+                                ? 'border-blue-500/50 bg-blue-500/10 shadow-lg shadow-blue-500/20'
                                 : 'border-white/10',
                               isDragging && draggedApp?.id !== app.id && 'pointer-events-none'
                             )}
                           >
                             {/* Card Header */}
-                            <div className="flex items-start justify-between gap-2 mb-2">
-                              <div className="flex items-center gap-2 flex-1 min-w-0">
-                                {/* Drag handle */}
-                                <GripVertical className="w-4 h-4 text-white/30 flex-shrink-0 cursor-grab" />
-                                <div className="flex-1 min-w-0">
-                                  <h4 className="font-medium truncate text-sm sm:text-base">{app.entity_name}</h4>
-                                  {app.entity_position && (
-                                    <p className="text-xs text-white/40 truncate">{app.entity_position}</p>
-                                  )}
-                                </div>
+                            <div className="flex items-start gap-2 mb-2">
+                              {/* Drag handle */}
+                              <GripVertical className="w-4 h-4 text-white/20 flex-shrink-0 mt-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" />
+
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-medium truncate text-sm sm:text-base group-hover:text-white transition-colors">
+                                  {app.entity_name}
+                                </h4>
+                                {app.entity_position && (
+                                  <p className="text-xs text-white/40 truncate">{app.entity_position}</p>
+                                )}
                               </div>
-                              {/* Action buttons - always visible on touch, hover on desktop */}
-                              <div className="flex items-center gap-0.5 sm:gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+
+                              {/* Action buttons */}
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setSelectedApplication(app);
                                   }}
-                                  className="p-1.5 sm:p-1 hover:bg-white/10 rounded touch-manipulation"
+                                  className="p-1.5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all active:scale-90"
                                   title="Детали"
                                 >
-                                  <Edit className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                                  <Edit className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleViewCandidate(app);
                                   }}
-                                  className="p-1.5 sm:p-1 hover:bg-white/10 rounded touch-manipulation"
+                                  className="p-1.5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all active:scale-90"
                                   title="Профиль"
                                 >
-                                  <ExternalLink className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                                  <ExternalLink className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleDeleteClick(app);
                                   }}
-                                  className="p-1.5 sm:p-1 hover:bg-red-500/20 text-red-400 rounded touch-manipulation"
+                                  className="p-1.5 hover:bg-red-500/20 text-red-400 rounded-lg transition-all active:scale-90"
                                   title="Удалить"
                                 >
-                                  <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </div>
 
                             {/* Contact Info */}
-                            <div className="space-y-1 text-xs text-white/60 ml-6">
+                            <div className="space-y-1.5 text-xs text-white/50 ml-6">
                               {app.entity_email && (
-                                <div className="flex items-center gap-1.5 truncate">
+                                <div className="flex items-center gap-2 truncate">
                                   <Mail className="w-3 h-3 flex-shrink-0" />
                                   <span className="truncate">{app.entity_email}</span>
                                 </div>
                               )}
                               {app.entity_phone && (
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-2 truncate">
                                   <Phone className="w-3 h-3 flex-shrink-0" />
-                                  <span>{app.entity_phone}</span>
+                                  <span className="truncate">{app.entity_phone}</span>
                                 </div>
                               )}
                             </div>
 
-                            {/* Footer */}
-                            <div className="flex items-center justify-between mt-3 pt-2 border-t border-white/5 ml-6">
+                            {/* Footer / Scoring */}
+                            <div className="mt-3 pt-2 border-t border-white/5 ml-6 flex items-center justify-between">
                               <div className="flex items-center gap-2">
-                                {/* AI Compatibility Badge */}
                                 {(() => {
                                   const { score, isLoading, error } = getScoreState(app);
                                   return (
@@ -631,32 +637,42 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                                   );
                                 })()}
                                 {app.rating && (
-                                  <div className="flex items-center gap-0.5 text-yellow-400">
+                                  <div className="flex items-center gap-1 text-yellow-400">
                                     <Star className="w-3 h-3 fill-current" />
-                                    <span className="text-xs">{app.rating}</span>
+                                    <span className="text-xs font-medium">{app.rating}</span>
                                   </div>
                                 )}
-                                {app.source && (
-                                  <span className="text-xs px-1.5 py-0.5 bg-white/5 rounded text-white/40">
-                                    {app.source}
-                                  </span>
+                              </div>
+
+                              <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-1 text-[10px] text-white/30">
+                                  <Clock className="w-3 h-3" />
+                                  {new Date(app.applied_at).toLocaleDateString('ru-RU', {
+                                    day: 'numeric',
+                                    month: 'short'
+                                  })}
+                                </div>
+
+                                {/* Quick stage transition arrow */}
+                                {nextStage && (
+                                  <button
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      try {
+                                        await moveApplication(app.id, nextStage);
+                                        toast.success(`→ ${APPLICATION_STAGE_LABELS[nextStage]}`);
+                                      } catch {
+                                        toast.error('Ошибка при смене этапа');
+                                      }
+                                    }}
+                                    className="p-1 hover:bg-white/10 rounded-lg text-white/30 hover:text-blue-400 transition-all active:scale-90"
+                                    title={`В "${APPLICATION_STAGE_LABELS[nextStage]}"`}
+                                  >
+                                    <span className="text-sm font-bold">→</span>
+                                  </button>
                                 )}
                               </div>
-                              <div className="flex items-center gap-1 text-xs text-white/40">
-                                <Clock className="w-3 h-3" />
-                                {new Date(app.applied_at).toLocaleDateString('ru-RU', {
-                                  day: 'numeric',
-                                  month: 'short'
-                                })}
-                              </div>
                             </div>
-
-                            {/* Notes Preview */}
-                            {app.notes && (
-                              <div className="mt-2 p-2 bg-white/5 rounded text-xs text-white/60 line-clamp-2 ml-6">
-                                {app.notes}
-                              </div>
-                            )}
                           </motion.div>
                         </div>
                       );
@@ -675,17 +691,27 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
 
                   {/* Empty state */}
                   {apps.length === 0 && !isDropping && (
-                    <div className="h-24 flex flex-col items-center justify-center text-white/20 text-sm">
-                      <Users className="w-6 h-6 mb-1" />
-                      <span>Пусто</span>
+                    <div className="flex-1 flex flex-col items-center justify-center py-12 px-4 text-center">
+                      <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mb-3">
+                        <Users className="w-6 h-6 text-white/20" />
+                      </div>
+                      <p className="text-sm font-medium text-white/30">Пусто</p>
+                      <p className="text-xs text-white/20 mt-1 max-w-[140px]">
+                        Перетащите сюда кандидата или добавьте нового
+                      </p>
                     </div>
                   )}
 
                   {/* Drop zone indicator for empty columns */}
                   {apps.length === 0 && isDropping && (
-                    <div className="h-24 flex flex-col items-center justify-center border-2 border-dashed border-blue-500/50 rounded-lg text-blue-400 text-sm">
-                      <span>Отпустите здесь</span>
-                    </div>
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="h-32 flex flex-col items-center justify-center border-2 border-dashed border-blue-500/50 rounded-xl bg-blue-500/5 text-blue-400/80 text-sm"
+                    >
+                      <Plus className="w-6 h-6 mb-2 animate-bounce" />
+                      <span className="font-medium">Отпустите здесь</span>
+                    </motion.div>
                   )}
                 </div>
               </div>

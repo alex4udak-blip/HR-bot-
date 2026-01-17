@@ -465,8 +465,8 @@ async def split_vacancy_description(description: str) -> Dict[str, Optional[str]
         }
 
 
-async def parse_resume_from_pdf(file_content: bytes, filename: str) -> ParsedResume:
-    """Parse resume from PDF file using AI"""
+async def parse_resume_from_file(file_content: bytes, filename: str) -> ParsedResume:
+    """Parse resume from file using AI"""
     # Use existing DocumentParser to extract text
     parse_result = await document_parser.parse(file_content, filename)
 

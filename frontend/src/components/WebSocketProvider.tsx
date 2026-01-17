@@ -21,7 +21,8 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     setWebSocketConnected,
     handleCallProgress,
     handleCallCompleted,
-    handleCallFailed
+    handleCallFailed,
+    cleanup: cleanupCallStore
   } = useCallStore();
 
   // Entity store handlers
@@ -67,6 +68,13 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     console.log(`[WebSocketProvider] Status: ${status}, Connected: ${isConnected}`);
   }, [status, isConnected]);
+
+  // Cleanup polling on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      cleanupCallStore();
+    };
+  }, [cleanupCallStore]);
 
   return <>{children}</>;
 }
