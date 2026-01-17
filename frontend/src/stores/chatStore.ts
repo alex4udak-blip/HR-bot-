@@ -6,6 +6,7 @@ import type {
   ChatDeletedPayload,
   ChatMessagePayload
 } from '@/types/websocket';
+import { logger } from '@/utils/logger';
 
 interface ChatState {
   selectedChatId: number | null;
@@ -28,7 +29,7 @@ export const useChatStore = create<ChatState>((set) => ({
 
   // WebSocket handlers for real-time updates
   handleChatCreated: (chat: ChatCreatedPayload) => {
-    console.log('[ChatStore] Chat created via WebSocket:', chat.id, chat.title);
+    logger.log('[ChatStore] Chat created via WebSocket:', chat.id, chat.title);
 
     set((state) => {
       // Check if chat already exists (avoid duplicates)
@@ -42,7 +43,7 @@ export const useChatStore = create<ChatState>((set) => ({
   },
 
   handleChatUpdated: (chat: ChatUpdatedPayload) => {
-    console.log('[ChatStore] Chat updated via WebSocket:', chat.id, chat.title);
+    logger.log('[ChatStore] Chat updated via WebSocket:', chat.id, chat.title);
 
     set((state) => ({
       chats: state.chats.map((c) => (c.id === chat.id ? { ...c, ...chat } : c)),
@@ -50,7 +51,7 @@ export const useChatStore = create<ChatState>((set) => ({
   },
 
   handleChatDeleted: (data: ChatDeletedPayload) => {
-    console.log('[ChatStore] Chat deleted via WebSocket:', data.id);
+    logger.log('[ChatStore] Chat deleted via WebSocket:', data.id);
 
     set((state) => ({
       chats: state.chats.filter((c) => c.id !== data.id),
@@ -59,7 +60,7 @@ export const useChatStore = create<ChatState>((set) => ({
   },
 
   handleChatMessage: (data: ChatMessagePayload) => {
-    console.log('[ChatStore] New message in chat via WebSocket:', data.chat_id);
+    logger.log('[ChatStore] New message in chat via WebSocket:', data.chat_id);
 
     // Update chat's message count and move it to top of list
     set((state) => {

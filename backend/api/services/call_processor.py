@@ -15,9 +15,12 @@ from datetime import datetime
 from typing import Optional
 
 from openai import AsyncOpenAI
-from anthropic import AsyncAnthropic
+from anthropic import AsyncAnthropic, APIError, APIConnectionError
+from sqlalchemy import select
 
 from ..config import settings
+from ..database import AsyncSessionLocal
+from ..models.database import CallRecording, CallStatus
 
 logger = logging.getLogger("hr-analyzer.call_processor")
 
@@ -42,10 +45,6 @@ class CallProcessor:
 
     async def process_call(self, call_id: int):
         """Full processing pipeline for a call recording."""
-        from ..database import AsyncSessionLocal
-        from ..models.database import CallRecording, CallStatus
-        from sqlalchemy import select
-
         self._init_clients()
 
         async with AsyncSessionLocal() as db:
@@ -104,8 +103,23 @@ class CallProcessor:
                 if audio_path != call.audio_file_path and os.path.exists(audio_path):
                     os.remove(audio_path)
 
+            except (APIError, APIConnectionError) as e:
+                logger.error(f"API error processing call {call_id}: {e}", exc_info=True)
+                call.status = CallStatus.failed
+                call.error_message = f"API error: {str(e)}"
+                await db.commit()
+            except (OSError, IOError) as e:
+                logger.error(f"File I/O error processing call {call_id}: {e}", exc_info=True)
+                call.status = CallStatus.failed
+                call.error_message = f"File error: {str(e)}"
+                await db.commit()
+            except ValueError as e:
+                logger.error(f"Value error processing call {call_id}: {e}", exc_info=True)
+                call.status = CallStatus.failed
+                call.error_message = str(e)
+                await db.commit()
             except Exception as e:
-                logger.error(f"Error processing call {call_id}: {e}")
+                logger.error(f"Unexpected error processing call {call_id}: {e}", exc_info=True)
                 call.status = CallStatus.failed
                 call.error_message = str(e)
                 await db.commit()
@@ -140,8 +154,11 @@ class CallProcessor:
 
             return output_path
 
-        except Exception as e:
-            logger.warning(f"Conversion failed, using original: {e}")
+        except FileNotFoundError as e:
+            logger.warning(f"ffmpeg not found, using original: {e}")
+            return input_path
+        except (OSError, IOError) as e:
+            logger.warning(f"File I/O error during conversion, using original: {e}")
             return input_path
 
     async def _transcribe(self, audio_path: str) -> str:
@@ -247,10 +264,16 @@ class CallProcessor:
             logger.info(f"Split audio into {len(chunk_files)} chunks")
             return chunk_files
 
-        except Exception as e:
+        except RuntimeError as e:
+            logger.error(f"FFmpeg split runtime error: {e}", exc_info=True)
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
-            raise e
+            raise
+        except (OSError, IOError) as e:
+            logger.error(f"File I/O error during audio split: {e}", exc_info=True)
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+            raise
 
     async def _get_duration(self, audio_path: str) -> int:
         """Get audio duration in seconds using ffprobe."""
@@ -288,10 +311,6 @@ class CallProcessor:
             speakers: List of speaker segments with timestamps
             fireflies_summary: Optional summary from Fireflies
         """
-        from ..database import AsyncSessionLocal
-        from ..models.database import CallRecording, CallStatus
-        from sqlalchemy import select
-
         self._init_clients()
 
         async with AsyncSessionLocal() as db:
@@ -332,8 +351,18 @@ class CallProcessor:
 
                 logger.info(f"Call {call_id} transcript analyzed successfully")
 
+            except (APIError, APIConnectionError) as e:
+                logger.error(f"API error analyzing transcript for call {call_id}: {e}", exc_info=True)
+                call.status = CallStatus.failed
+                call.error_message = f"API error: {str(e)}"
+                await db.commit()
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON parsing error for call {call_id}: {e}", exc_info=True)
+                call.status = CallStatus.failed
+                call.error_message = f"Response parsing error: {str(e)}"
+                await db.commit()
             except Exception as e:
-                logger.error(f"Error analyzing transcript for call {call_id}: {e}")
+                logger.error(f"Unexpected error analyzing transcript for call {call_id}: {e}", exc_info=True)
                 call.status = CallStatus.failed
                 call.error_message = str(e)
                 await db.commit()
@@ -407,7 +436,7 @@ class CallProcessor:
 
             try:
                 response = await self.anthropic.messages.create(
-                    model="claude-sonnet-4-20250514",
+                    model=settings.claude_model,
                     max_tokens=8000,
                     messages=[{"role": "user", "content": chunk_prompt}]
                 )
@@ -416,8 +445,10 @@ class CallProcessor:
                 end = text.rfind('}') + 1
                 if start != -1 and end > start:
                     chunk_analyses.append(json.loads(text[start:end]))
-            except Exception as e:
-                logger.error(f"Chunk {i + 1} analysis failed: {e}")
+            except (APIError, APIConnectionError) as e:
+                logger.error(f"Chunk {i + 1} API error: {e}", exc_info=True)
+            except json.JSONDecodeError as e:
+                logger.error(f"Chunk {i + 1} JSON parsing failed: {e}", exc_info=True)
 
         # Combine all chunk analyses into final analysis
         return await self._combine_chunk_analyses(chunk_analyses, len(transcript))
@@ -512,7 +543,7 @@ class CallProcessor:
 
         try:
             response = await self.anthropic.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=settings.claude_model,
                 max_tokens=16000,
                 messages=[{"role": "user", "content": synthesis_prompt}]
             )
@@ -525,8 +556,10 @@ class CallProcessor:
                 if all_formatted_transcripts:
                     result["formatted_transcript"] = "\n\n".join(all_formatted_transcripts)
                 return result
-        except Exception as e:
-            logger.error(f"Synthesis failed: {e}")
+        except (APIError, APIConnectionError) as e:
+            logger.error(f"Synthesis API error: {e}", exc_info=True)
+        except json.JSONDecodeError as e:
+            logger.error(f"Synthesis JSON parsing failed: {e}", exc_info=True)
 
         # Fallback: just concatenate key points
         result = {
@@ -716,7 +749,7 @@ class CallProcessor:
 
         try:
             response = await self.anthropic.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=settings.claude_model,
                 max_tokens=16000,
                 messages=[{"role": "user", "content": prompt}]
             )

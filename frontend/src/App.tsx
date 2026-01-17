@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { useAuthStore } from '@/stores/authStore';
 import { getCurrentUser } from '@/services/api';
 import LoginPage from '@/pages/LoginPage';
@@ -75,39 +76,41 @@ export default function App() {
   }, []);
 
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/invite/:token" element={<InvitePage />} />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <WebSocketProvider>
-              <Layout />
-            </WebSocketProvider>
-          </ProtectedRoute>
-        }
-      >
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<DashboardPage />} />
-        <Route path="candidates" element={<CandidatesPage />} />
-        <Route path="chats" element={<ChatsPage />} />
-        <Route path="chats/:chatId" element={<ChatsPage />} />
-        <Route path="contacts" element={<ContactsPage />} />
-        <Route path="contacts/:entityId" element={<ContactsPage />} />
-        <Route path="calls" element={<CallsPage />} />
-        <Route path="calls/:callId" element={<CallsPage />} />
-        <Route path="vacancies" element={<VacanciesPage />} />
-        <Route path="vacancies/:vacancyId" element={<VacanciesPage />} />
-        <Route path="trash" element={<TrashPage />} />
-        <Route path="users" element={<UsersPage />} />
-        <Route path="departments" element={<DepartmentsPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route path="admin" element={<Navigate to="/admin/simulator" replace />} />
-        <Route path="admin/simulator" element={<AdminSimulatorPage />} />
-        {/* Catch-all for unknown routes */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Route>
-    </Routes>
+    <ErrorBoundary>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/invite/:token" element={<InvitePage />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <WebSocketProvider>
+                <Layout />
+              </WebSocketProvider>
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="candidates" element={<CandidatesPage />} />
+          <Route path="chats" element={<ChatsPage />} />
+          <Route path="chats/:chatId" element={<ChatsPage />} />
+          <Route path="contacts" element={<ContactsPage />} />
+          <Route path="contacts/:entityId" element={<ContactsPage />} />
+          <Route path="calls" element={<CallsPage />} />
+          <Route path="calls/:callId" element={<CallsPage />} />
+          <Route path="vacancies" element={<VacanciesPage />} />
+          <Route path="vacancies/:vacancyId" element={<VacanciesPage />} />
+          <Route path="trash" element={<TrashPage />} />
+          <Route path="users" element={<UsersPage />} />
+          <Route path="departments" element={<DepartmentsPage />} />
+          <Route path="settings" element={<SettingsPage />} />
+          <Route path="admin" element={<Navigate to="/admin/simulator" replace />} />
+          <Route path="admin/simulator" element={<AdminSimulatorPage />} />
+          {/* Catch-all for unknown routes */}
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Route>
+      </Routes>
+    </ErrorBoundary>
   );
 }

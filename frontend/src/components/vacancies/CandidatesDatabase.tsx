@@ -30,6 +30,7 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
 import { useVacancyStore } from '@/stores/vacancyStore';
+import { logger } from '@/utils/logger';
 import type { Entity, Vacancy, EntityStatus, ApplicationStage } from '@/types';
 import {
   STATUS_LABELS,
@@ -244,12 +245,12 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     if (itemToMove && finalStage && itemToMove.status !== finalStage && !isMovingRef.current) {
       isMovingRef.current = true;
       try {
-        console.log(`[Kanban] Moving ${itemToMove.name} from ${itemToMove.status} to ${finalStage}`);
+        logger.log(`[Kanban] Moving ${itemToMove.name} from ${itemToMove.status} to ${finalStage}`);
         await updateEntityStatus(itemToMove.id, finalStage);
         toast.success(`${itemToMove.name} → ${STATUS_LABELS[finalStage]}`);
         fetchEntities();
       } catch (error) {
-        console.error('[Kanban] Move failed:', error);
+        logger.error('[Kanban] Move failed:', error);
         toast.error('Не удалось изменить статус');
       } finally {
         isMovingRef.current = false;
@@ -438,7 +439,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
         toast.error(`Не удалось импортировать ${result.failed} файлов`);
       }
     } catch (err) {
-      console.error('Bulk import error:', err);
+      logger.error('Bulk import error:', err);
       toast.error('Ошибка массового импорта');
       setBulkImportResult({
         success: false,
@@ -484,7 +485,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
       toast.success(`${candidate.name} → ${STATUS_LABELS[newStatus]}`);
       fetchEntities();
     } catch (error) {
-      console.error('Status change failed:', error);
+      logger.error('Status change failed:', error);
       toast.error('Не удалось изменить статус');
     }
   };

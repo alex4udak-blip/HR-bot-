@@ -398,7 +398,7 @@ async def parse_with_ai(
 
     try:
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=settings.claude_model,
             max_tokens=2048,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -441,7 +441,7 @@ async def split_vacancy_description(description: str) -> Dict[str, Optional[str]
 
     try:
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=settings.claude_model,
             max_tokens=1500,
             messages=[{"role": "user", "content": prompt}],
         )

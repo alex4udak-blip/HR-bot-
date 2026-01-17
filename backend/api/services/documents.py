@@ -495,7 +495,7 @@ class DocumentParser:
 
         try:
             response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=settings.claude_model,
                 max_tokens=4096,
                 messages=[{
                     "role": "user",

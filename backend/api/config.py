@@ -34,6 +34,12 @@ class Settings(BaseSettings):
         alias="OPENAI_API_KEY"
     )
 
+    # Claude model name
+    claude_model: str = Field(
+        default="claude-sonnet-4-20250514",
+        alias="CLAUDE_MODEL"
+    )
+
     # Redis (optional, for future use)
     redis_url: str = Field(
         default="redis://localhost:6379",

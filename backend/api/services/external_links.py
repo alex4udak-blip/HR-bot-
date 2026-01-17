@@ -77,8 +77,10 @@ async def ensure_playwright_installed() -> bool:
                 _playwright_installed = True
             logger.info("Playwright chromium is ready and working")
             return True
-    except Exception as e:
-        logger.warning(f"Playwright launch failed: {type(e).__name__}: {e}", exc_info=True)
+    except RuntimeError as e:
+        logger.warning(f"Playwright runtime error: {type(e).__name__}: {e}", exc_info=True)
+    except OSError as e:
+        logger.warning(f"Playwright OS error: {type(e).__name__}: {e}", exc_info=True)
 
     # Try to install chromium
     logger.info("Installing Playwright chromium browser...")
@@ -104,8 +106,11 @@ async def ensure_playwright_installed() -> bool:
     except FileNotFoundError:
         logger.error("Playwright CLI not found - pip install playwright first")
         return False
-    except Exception as e:
-        logger.error(f"Failed to install Playwright: {e}")
+    except OSError as e:
+        logger.error(f"OS error during Playwright install: {e}", exc_info=True)
+        return False
+    except RuntimeError as e:
+        logger.error(f"Runtime error during Playwright install: {e}", exc_info=True)
         return False
 
 

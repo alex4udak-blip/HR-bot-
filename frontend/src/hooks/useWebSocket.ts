@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+import { logger } from '@/utils/logger';
 import type {
   WebSocketStatus,
   WebSocketMessage,
@@ -82,13 +83,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log('[WebSocket] Connected');
+        logger.log('[WebSocket] Connected');
         setStatus('connected');
         setError(null);
       };
 
       ws.onclose = (event) => {
-        console.log('[WebSocket] Disconnected:', event.code, event.reason);
+        logger.log('[WebSocket] Disconnected:', event.code, event.reason);
         wsRef.current = null;
 
         if (isManualClose.current) {
@@ -100,7 +101,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         if (autoReconnect && user) {
           setStatus('reconnecting');
           reconnectTimeoutRef.current = setTimeout(() => {
-            console.log('[WebSocket] Attempting to reconnect...');
+            logger.log('[WebSocket] Attempting to reconnect...');
             connect();
           }, reconnectInterval);
         } else {
@@ -109,7 +110,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       };
 
       ws.onerror = (event) => {
-        console.error('[WebSocket] Error:', event);
+        logger.error('[WebSocket] Error:', event);
         setError(new Error('WebSocket connection error'));
         setStatus('error');
       };
@@ -117,7 +118,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data) as WebSocketMessage<WebSocketPayload>;
-          console.log('[WebSocket] Message:', data.type, data.payload);
+          logger.log('[WebSocket] Message:', data.type, data.payload);
 
           // Handle different event types
           switch (data.type) {
@@ -166,14 +167,14 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
               break;
 
             default:
-              console.log('[WebSocket] Unknown event type:', data.type);
+              logger.log('[WebSocket] Unknown event type:', data.type);
           }
         } catch (err) {
-          console.error('[WebSocket] Failed to parse message:', err);
+          logger.error('[WebSocket] Failed to parse message:', err);
         }
       };
     } catch (err) {
-      console.error('[WebSocket] Failed to create connection:', err);
+      logger.error('[WebSocket] Failed to create connection:', err);
       setError(err instanceof Error ? err : new Error('Failed to connect'));
       setStatus('error');
     }

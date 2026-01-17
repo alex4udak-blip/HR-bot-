@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { CallRecording, CallStatus } from '@/types';
 import * as api from '@/services/api';
+import { logger } from '@/utils/logger';
 
 interface ActiveRecording {
   id: number;
@@ -180,7 +181,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   pollStatus: (id) => {
     // Don't poll if WebSocket is connected - real-time updates will come via WebSocket
     if (get().useWebSocket) {
-      console.log('[CallStore] WebSocket connected, skipping polling');
+      logger.log('[CallStore] WebSocket connected, skipping polling');
       return;
     }
 
@@ -319,7 +320,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       });
     }
 
-    console.log(`[WebSocket] Call ${data.id} progress: ${data.progress}% - ${data.progress_stage}`);
+    logger.log(`[WebSocket] Call ${data.id} progress: ${data.progress}% - ${data.progress_stage}`);
   },
 
   handleCallCompleted: (data) => {
@@ -351,7 +352,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       });
     }
 
-    console.log(`[WebSocket] Call ${data.id} completed`);
+    logger.log(`[WebSocket] Call ${data.id} completed`);
   },
 
   handleCallFailed: (data) => {
@@ -382,6 +383,6 @@ export const useCallStore = create<CallState>((set, get) => ({
       });
     }
 
-    console.log(`[WebSocket] Call ${data.id} failed: ${data.error_message}`);
+    logger.log(`[WebSocket] Call ${data.id} failed: ${data.error_message}`);
   }
 }));
