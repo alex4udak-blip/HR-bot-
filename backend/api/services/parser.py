@@ -600,3 +600,7 @@ async def parse_vacancy_from_file(file_content: bytes, filename: str) -> ParsedV
         data["title"] = "Untitled Vacancy"
 
     return ParsedVacancy(**data)
+
+
+# Alias for backward compatibility
+parse_resume_from_pdf = parse_resume_from_file
