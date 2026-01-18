@@ -1500,15 +1500,13 @@ async def update_entity_status(
 
     logger.info(f"Entity {entity_id} status changed: {old_status} -> {data.status}")
 
-    # Synchronize with vacancy applications if this is a candidate
-    if entity.type == EntityType.candidate and data.status in STATUS_SYNC_MAP:
-        new_stage = STATUS_SYNC_MAP[data.status]
-        await db.execute(
-            update(VacancyApplication)
-            .where(VacancyApplication.entity_id == entity_id)
-            .values(stage=new_stage, last_stage_change_at=datetime.utcnow())
-        )
-        logger.info(f"Synchronized {entity_id} status {data.status} to vacancy applications as {new_stage}")
+    # NOTE: We intentionally DO NOT synchronize Entity.status to VacancyApplication.stage
+    # Each vacancy has independent pipeline stages. Entity.status represents the candidate's
+    # general status, while each VacancyApplication.stage represents their progress in that
+    # specific vacancy. Updating Entity.status should not affect individual vacancy pipelines.
+    #
+    # The reverse sync (VacancyApplication.stage -> Entity.status) happens in vacancies.py
+    # when a candidate is moved in the Kanban board, keeping Entity.status as the "latest" status.
 
     # Broadcast update
     await broadcast_entity_updated(org.id, {
