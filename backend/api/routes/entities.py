@@ -1770,8 +1770,6 @@ async def transfer_entity(
 
     await db.commit()
 
-    # TODO: Send notification to recipient via Telegram
-
     return {
         "success": True,
         "transfer_id": transfer.id,
