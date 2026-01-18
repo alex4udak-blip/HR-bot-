@@ -1405,6 +1405,26 @@ async def update_entity(
     entity.updated_at = datetime.utcnow()
     # Increment version for optimistic locking
     entity.version = (entity.version or 1) + 1
+
+    # Synchronize Entity.status → VacancyApplication.stage if status changed
+    if 'status' in update_data and data.status in STATUS_SYNC_MAP:
+        new_stage = STATUS_SYNC_MAP[data.status]
+        # Find active application for this entity
+        from ..models.database import VacancyStatus
+        app_result = await db.execute(
+            select(VacancyApplication)
+            .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+            .where(
+                VacancyApplication.entity_id == entity_id,
+                Vacancy.status != VacancyStatus.closed
+            )
+        )
+        application = app_result.scalar()
+        if application and application.stage != new_stage:
+            application.stage = new_stage
+            application.last_stage_change_at = datetime.utcnow()
+            logger.info(f"PUT /entities/{entity_id}: Synchronized status {data.status} → application {application.id} stage {new_stage}")
+
     await db.commit()
     await db.refresh(entity)
 
@@ -2478,17 +2498,27 @@ async def apply_entity_to_vacancy(
     if not vacancy:
         raise HTTPException(404, "Vacancy not found")
 
-    # Check if entity is already applied to this vacancy
-    existing_result = await db.execute(
-        select(VacancyApplication).where(
-            VacancyApplication.vacancy_id == data.vacancy_id,
-            VacancyApplication.entity_id == entity_id
+    # Check if entity is already in ANY active vacancy (one candidate = max one vacancy)
+    from ..models.database import VacancyStatus
+    existing_any_vacancy = await db.execute(
+        select(VacancyApplication)
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(
+            VacancyApplication.entity_id == entity_id,
+            Vacancy.status != VacancyStatus.closed  # Only active vacancies
         )
     )
-    existing = existing_result.scalar_one_or_none()
-
-    if existing:
-        raise HTTPException(400, "Entity already applied to this vacancy")
+    existing_app = existing_any_vacancy.scalar()
+    if existing_app:
+        # Get vacancy title for better error message
+        existing_vacancy_result = await db.execute(
+            select(Vacancy.title).where(Vacancy.id == existing_app.vacancy_id)
+        )
+        existing_vacancy_title = existing_vacancy_result.scalar() or "другую вакансию"
+        raise HTTPException(
+            status_code=400,
+            detail=f"Кандидат уже добавлен в вакансию \"{existing_vacancy_title}\". Сначала удалите его оттуда."
+        )
 
     # Get max stage_order for the 'applied' stage (HR pipeline - shown as "Новый" in UI)
     max_order_result = await db.execute(
@@ -2512,6 +2542,15 @@ async def apply_entity_to_vacancy(
     )
 
     db.add(application)
+
+    # Synchronize Entity.status to match VacancyApplication.stage
+    from ..models.database import STAGE_SYNC_MAP
+    expected_entity_status = STAGE_SYNC_MAP.get(ApplicationStage.applied)
+    if expected_entity_status and entity.status != expected_entity_status:
+        entity.status = expected_entity_status
+        entity.updated_at = datetime.utcnow()
+        logger.info(f"apply-to-vacancy: Synchronized entity {entity_id} status to {expected_entity_status}")
+
     await db.commit()
     await db.refresh(application)
 

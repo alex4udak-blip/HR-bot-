@@ -820,6 +820,16 @@ async def create_application(
     )
 
     db.add(application)
+
+    # Sync Entity.status if the application stage differs from current entity status
+    # This ensures Entity.status matches VacancyApplication.stage
+    if initial_stage in STAGE_SYNC_MAP:
+        expected_entity_status = STAGE_SYNC_MAP[initial_stage]
+        if entity.status != expected_entity_status:
+            entity.status = expected_entity_status
+            entity.updated_at = datetime.utcnow()
+            logger.info(f"POST /applications: Synchronized entity {entity.id} status to {expected_entity_status} (from stage {initial_stage})")
+
     await db.commit()
     await db.refresh(application)
 
@@ -945,6 +955,8 @@ async def delete_application(
     current_user: User = Depends(check_vacancy_access)
 ):
     """Remove a candidate from a vacancy pipeline."""
+    from ..models.database import EntityStatus
+
     result = await db.execute(
         select(VacancyApplication).where(VacancyApplication.id == application_id)
     )
@@ -953,7 +965,21 @@ async def delete_application(
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
 
+    # Get the entity to reset its status
+    entity_id = application.entity_id
+    entity_result = await db.execute(
+        select(Entity).where(Entity.id == entity_id)
+    )
+    entity = entity_result.scalar()
+
     await db.delete(application)
+
+    # Reset Entity.status to 'new' since candidate is no longer in any vacancy
+    if entity:
+        entity.status = EntityStatus.new
+        entity.updated_at = datetime.utcnow()
+        logger.info(f"DELETE /applications/{application_id}: Reset entity {entity_id} status to 'new'")
+
     await db.commit()
 
     logger.info(f"Deleted application {application_id}")
@@ -1286,10 +1312,22 @@ async def bulk_move_applications(
     max_order = max_order_result.scalar() or 0
 
     now = datetime.utcnow()
+
+    # Synchronize VacancyApplication.stage → Entity.status
+    new_entity_status = STAGE_SYNC_MAP.get(data.stage)
+
     for i, app in enumerate(applications):
         app.stage = data.stage
         app.stage_order = max_order + (i + 1) * 1000
         app.last_stage_change_at = now
+
+        # Sync entity status
+        if new_entity_status:
+            entity = entities_map.get(app.entity_id)
+            if entity and entity.status != new_entity_status:
+                entity.status = new_entity_status
+                entity.updated_at = now
+                logger.info(f"bulk-move: Synchronized application {app.id} stage {data.stage} → entity {entity.id} status {new_entity_status}")
 
     await db.commit()
 

@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models.database import (
     Entity, EntityType, EntityStatus,
     Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
-    User
+    User, STAGE_SYNC_MAP
 )
 from ..config import get_settings
 
@@ -1059,6 +1059,14 @@ class VacancyRecommenderService:
         )
 
         db.add(application)
+
+        # Synchronize Entity.status to match VacancyApplication.stage
+        expected_entity_status = STAGE_SYNC_MAP.get(ApplicationStage.applied)
+        if expected_entity_status and entity.status != expected_entity_status:
+            entity.status = expected_entity_status
+            entity.updated_at = datetime.utcnow()
+            logger.info(f"auto_apply: Synchronized entity {entity.id} status to {expected_entity_status}")
+
         await db.commit()
         await db.refresh(application)
 
