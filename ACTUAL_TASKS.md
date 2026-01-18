@@ -5,10 +5,10 @@
 
 ---
 
-## СТАТУС ПРОЕКТА: 9.5/10 ✅
+## СТАТУС ПРОЕКТА: 10/10 ✅
 
 Проект прошёл полный рефакторинг безопасности, архитектуры и функционала.
-**ВСЕ задачи выполнены.**
+**ВСЕ задачи выполнены.** Полная синхронизация Entity.status ↔ VacancyApplication.stage.
 
 ---
 
@@ -79,6 +79,17 @@ DocumentParser (`backend/api/services/documents.py`) поддерживает:
 - ✅ UNIQUE constraints добавлены
 - ✅ Cascade delete настроен
 - ✅ Entity.status синхронизация исправлена
+
+### Синхронизация Entity.status ↔ VacancyApplication.stage (ПОЛНАЯ)
+- ✅ PUT /entities/{id} → sync to application.stage
+- ✅ PATCH /entities/{id}/status → sync to application.stage
+- ✅ PUT /applications/{id} → sync to entity.status
+- ✅ POST /applications/bulk-move → sync to entity.status
+- ✅ POST /{vacancy_id}/applications → uses entity.status as initial stage
+- ✅ POST /entities/{id}/apply-to-vacancy → one-vacancy restriction + sync
+- ✅ DELETE /applications/{id} → reset entity.status to 'new'
+- ✅ vacancy_recommender.auto_apply → sync entity.status
+- ✅ Double-click защита во всех UI компонентах
 
 ---
 
