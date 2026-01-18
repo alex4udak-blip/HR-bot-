@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -30,6 +30,7 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
 import { useVacancyStore } from '@/stores/vacancyStore';
+import { logger } from '@/utils/logger';
 import type { Entity, Vacancy, EntityStatus, ApplicationStage } from '@/types';
 import {
   STATUS_LABELS,
@@ -43,7 +44,8 @@ import { formatSalary } from '@/utils';
 import { bulkImportResumes, updateEntityStatus } from '@/services/api';
 import ContactForm from '@/components/contacts/ContactForm';
 import ParserModal from '@/components/parser/ParserModal';
-import { Skeleton } from '@/components/ui';
+import { Skeleton, ScrollIndicators } from '@/components/ui';
+import { useAutoScroll } from '@/hooks/useAutoScroll';
 
 interface CandidatesDatabaseProps {
   vacancies: Vacancy[];
@@ -87,10 +89,20 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
   // Kanban auto-scroll refs
   const kanbanContainerRef = useRef<HTMLDivElement>(null);
-  const autoScrollIntervalRef = useRef<number | null>(null);
-  const scrollDirectionRef = useRef<number>(0);
-  const AUTO_SCROLL_THRESHOLD = 200;
-  const AUTO_SCROLL_SPEED = 30;
+
+  // Smooth auto-scroll for kanban
+  const {
+    direction: kanbanScrollDirection,
+    intensity: kanbanScrollIntensity,
+    canScrollLeft: kanbanCanScrollLeft,
+    canScrollRight: kanbanCanScrollRight,
+    handleDragMove: handleKanbanScrollMove,
+    stopScroll: stopKanbanScroll,
+  } = useAutoScroll(kanbanContainerRef, {
+    threshold: 150,
+    maxSpeed: 20,
+    easingPower: 2.5,
+  });
 
   // Store
   const {
@@ -228,7 +240,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
   const isMovingRef = useRef(false);
 
   const handleKanbanDragEnd = async (_e?: React.DragEvent | unknown, targetStage?: EntityStatus) => {
-    stopAutoScroll();
+    stopKanbanScroll();
 
     // Use targetStage from onDrop event if available, otherwise use state
     const finalStage = targetStage || dropTargetStage;
@@ -244,12 +256,12 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     if (itemToMove && finalStage && itemToMove.status !== finalStage && !isMovingRef.current) {
       isMovingRef.current = true;
       try {
-        console.log(`[Kanban] Moving ${itemToMove.name} from ${itemToMove.status} to ${finalStage}`);
+        logger.log(`[Kanban] Moving ${itemToMove.name} from ${itemToMove.status} to ${finalStage}`);
         await updateEntityStatus(itemToMove.id, finalStage);
         toast.success(`${itemToMove.name} → ${STATUS_LABELS[finalStage]}`);
         fetchEntities();
       } catch (error) {
-        console.error('[Kanban] Move failed:', error);
+        logger.error('[Kanban] Move failed:', error);
         toast.error('Не удалось изменить статус');
       } finally {
         isMovingRef.current = false;
@@ -277,63 +289,6 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     e.stopPropagation();
     handleKanbanDragEnd(e, stage);
   };
-
-  // Auto-scroll for kanban view
-  const stopAutoScroll = useCallback(() => {
-    if (autoScrollIntervalRef.current !== null) {
-      cancelAnimationFrame(autoScrollIntervalRef.current);
-      autoScrollIntervalRef.current = null;
-    }
-    scrollDirectionRef.current = 0;
-  }, []);
-
-  const startAutoScroll = useCallback(() => {
-    if (autoScrollIntervalRef.current !== null) return;
-
-    const scroll = () => {
-      if (kanbanContainerRef.current && scrollDirectionRef.current !== 0) {
-        kanbanContainerRef.current.scrollLeft += AUTO_SCROLL_SPEED * scrollDirectionRef.current;
-        autoScrollIntervalRef.current = requestAnimationFrame(scroll);
-      } else {
-        stopAutoScroll();
-      }
-    };
-    autoScrollIntervalRef.current = requestAnimationFrame(scroll);
-  }, [stopAutoScroll]);
-
-  const handleKanbanBoardDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    if (!kanbanContainerRef.current || (!draggedForKanban && !draggedCandidate)) return;
-
-    const board = kanbanContainerRef.current;
-    const rect = board.getBoundingClientRect();
-    const mouseX = e.clientX;
-
-    const distanceFromLeft = mouseX - rect.left;
-    const distanceFromRight = rect.right - mouseX;
-
-    let newDirection = 0;
-    if (distanceFromLeft < AUTO_SCROLL_THRESHOLD) {
-      newDirection = -1 * (1 - Math.max(0, distanceFromLeft) / AUTO_SCROLL_THRESHOLD);
-    } else if (distanceFromRight < AUTO_SCROLL_THRESHOLD) {
-      newDirection = 1 * (1 - Math.max(0, distanceFromRight) / AUTO_SCROLL_THRESHOLD);
-    }
-
-    if (newDirection !== 0) {
-      scrollDirectionRef.current = newDirection;
-      startAutoScroll();
-    } else {
-      stopAutoScroll();
-    }
-  }, [draggedForKanban, draggedCandidate, startAutoScroll, stopAutoScroll]);
-
-  useEffect(() => {
-    return () => {
-      if (autoScrollIntervalRef.current !== null) {
-        cancelAnimationFrame(autoScrollIntervalRef.current);
-      }
-    };
-  }, []);
 
   const handleCandidateClick = (candidate: Entity) => {
     navigate(`/contacts/${candidate.id}`);
@@ -438,7 +393,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
         toast.error(`Не удалось импортировать ${result.failed} файлов`);
       }
     } catch (err) {
-      console.error('Bulk import error:', err);
+      logger.error('Bulk import error:', err);
       toast.error('Ошибка массового импорта');
       setBulkImportResult({
         success: false,
@@ -484,7 +439,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
       toast.success(`${candidate.name} → ${STATUS_LABELS[newStatus]}`);
       fetchEntities();
     } catch (error) {
-      console.error('Status change failed:', error);
+      logger.error('Status change failed:', error);
       toast.error('Не удалось изменить статус');
     }
   };
@@ -865,58 +820,77 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               </div>
             </div>
           ) : viewMode === 'kanban' ? (
-            <div ref={kanbanContainerRef} className="h-full overflow-x-auto" onDragOver={handleKanbanBoardDragOver} onDragLeave={stopAutoScroll}>
-              <div className="flex gap-3 h-full min-w-max p-1">
-                {PIPELINE_STAGES.map(stage => (
-                  <div key={stage} onDragOver={(e) => handleStageDragOver(e, stage)} onDragLeave={handleStageDragLeave} onDrop={(e) => handleStageDrop(e, stage)} className={clsx('w-72 flex-shrink-0 flex flex-col bg-white/5 rounded-xl border transition-all', dropTargetStage === stage ? 'border-purple-500 bg-purple-500/10 scale-[1.02]' : 'border-white/10')}>
-                    <div className={clsx('p-3 border-b border-white/10 rounded-t-xl', STATUS_COLORS[stage])}>
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-medium text-sm">{STATUS_LABELS[stage]}</h3>
-                        <span className="text-xs px-2 py-0.5 bg-black/20 rounded-full">{candidatesByStatus[stage]?.length || 0}</span>
+            <ScrollIndicators
+              isActive={!!draggedForKanban || !!draggedCandidate}
+              direction={kanbanScrollDirection}
+              intensity={kanbanScrollIntensity}
+              canScrollLeft={kanbanCanScrollLeft}
+              canScrollRight={kanbanCanScrollRight}
+              className="flex-1 overflow-hidden"
+            >
+              <div
+                ref={kanbanContainerRef}
+                className="h-full overflow-x-auto"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (draggedForKanban || draggedCandidate) {
+                    handleKanbanScrollMove(e);
+                  }
+                }}
+                onDragLeave={stopKanbanScroll}
+              >
+                <div className="flex gap-3 h-full min-w-max p-1">
+                  {PIPELINE_STAGES.map(stage => (
+                    <div key={stage} onDragOver={(e) => handleStageDragOver(e, stage)} onDragLeave={handleStageDragLeave} onDrop={(e) => handleStageDrop(e, stage)} className={clsx('w-72 flex-shrink-0 flex flex-col bg-white/5 rounded-xl border transition-all', dropTargetStage === stage ? 'border-purple-500 bg-purple-500/10 scale-[1.02]' : 'border-white/10')}>
+                      <div className={clsx('p-3 border-b border-white/10 rounded-t-xl', STATUS_COLORS[stage])}>
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-medium text-sm">{STATUS_LABELS[stage]}</h3>
+                          <span className="text-xs px-2 py-0.5 bg-black/20 rounded-full">{candidatesByStatus[stage]?.length || 0}</span>
+                        </div>
+                      </div>
+                      <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                        {candidatesByStatus[stage]?.map(candidate => (
+                          <div key={candidate.id} draggable onDragStart={() => handleKanbanDragStart(candidate)} onDragEnd={() => handleKanbanDragEnd()} onClick={() => handleCandidateClick(candidate)} className={clsx('p-3 bg-gray-800/50 hover:bg-gray-800 border border-white/10 rounded-lg cursor-grab active:cursor-grabbing transition-all group', draggedForKanban?.id === candidate.id && 'opacity-50 scale-95')}>
+                            <div className="flex items-start gap-2">
+                              <GripVertical className="w-4 h-4 text-white/20 flex-shrink-0 mt-1" />
+                              <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-xs flex-shrink-0">{getAvatarInitials(candidate.name || 'UK')}</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
+                                  <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <ExternalLink className="w-3.5 h-3.5 text-white/40" />
+                                  </div>
+                                </div>
+                                {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
+                              </div>
+                            </div>
+                            {candidate.tags && candidate.tags.length > 0 && (
+                              <div className="mt-2 ml-6 flex flex-wrap gap-1">
+                                {candidate.tags.slice(0, 2).map(tag => <span key={tag} className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/50 truncate max-w-[70px]">{tag}</span>)}
+                                {candidate.tags.length > 2 && <span className="text-xs text-white/30">+{candidate.tags.length - 2}</span>}
+                              </div>
+                            )}
+                            <div className="mt-1.5 ml-6 flex items-center justify-between text-xs text-white/40">
+                              <div className="flex items-center gap-2">
+                                <Clock className="w-3 h-3" />
+                                {formatDate(candidate.created_at)}
+                              </div>
+                              {(() => {
+                                const currentIndex = PIPELINE_STAGES.indexOf(stage as any);
+                                const nStage = currentIndex >= 0 && currentIndex < PIPELINE_STAGES.length - 1 ? PIPELINE_STAGES[currentIndex + 1] : null;
+                                return nStage && (
+                                  <button onClick={(e) => { e.stopPropagation(); handleQuickStatusChange(candidate, nStage as EntityStatus); }} className="hover:text-white transition-colors">→</button>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                      {candidatesByStatus[stage]?.map(candidate => (
-                        <div key={candidate.id} draggable onDragStart={() => handleKanbanDragStart(candidate)} onDragEnd={() => handleKanbanDragEnd()} onClick={() => handleCandidateClick(candidate)} className={clsx('p-3 bg-gray-800/50 hover:bg-gray-800 border border-white/10 rounded-lg cursor-grab active:cursor-grabbing transition-all group', draggedForKanban?.id === candidate.id && 'opacity-50 scale-95')}>
-                          <div className="flex items-start gap-2">
-                            <GripVertical className="w-4 h-4 text-white/20 flex-shrink-0 mt-1" />
-                            <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-xs flex-shrink-0">{getAvatarInitials(candidate.name || 'UK')}</div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-2">
-                                <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
-                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <ExternalLink className="w-3.5 h-3.5 text-white/40" />
-                                </div>
-                              </div>
-                              {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
-                            </div>
-                          </div>
-                          {candidate.tags && candidate.tags.length > 0 && (
-                            <div className="mt-2 ml-6 flex flex-wrap gap-1">
-                              {candidate.tags.slice(0, 2).map(tag => <span key={tag} className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/50 truncate max-w-[70px]">{tag}</span>)}
-                              {candidate.tags.length > 2 && <span className="text-xs text-white/30">+{candidate.tags.length - 2}</span>}
-                            </div>
-                          )}
-                          <div className="mt-1.5 ml-6 flex items-center justify-between text-xs text-white/40">
-                            <div className="flex items-center gap-2">
-                              <Clock className="w-3 h-3" />
-                              {formatDate(candidate.created_at)}
-                            </div>
-                            {(() => {
-                              const currentIndex = PIPELINE_STAGES.indexOf(stage as any);
-                              const nStage = currentIndex >= 0 && currentIndex < PIPELINE_STAGES.length - 1 ? PIPELINE_STAGES[currentIndex + 1] : null;
-                              return nStage && (
-                                <button onClick={(e) => { e.stopPropagation(); handleQuickStatusChange(candidate, nStage as EntityStatus); }} className="hover:text-white transition-colors">→</button>
-                              );
-                            })()}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            </ScrollIndicators>
           ) : viewMode === 'list' ? (
             <div className="space-y-2">
               {filteredCandidates.map(candidate => renderCandidateCard(candidate, true))}

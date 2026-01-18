@@ -602,3 +602,28 @@ async def broadcast_call_failed(org_id: int, call_data: Dict[str, Any]):
             - status: "failed"
     """
     await manager.broadcast_to_org(org_id, "call.failed", call_data)
+
+
+async def broadcast_applications_moved(
+    org_id: int,
+    entity_id: int,
+    new_stage: str,
+    affected_vacancy_ids: list[int]
+):
+    """Broadcast application.moved event when entity status changes.
+
+    This notifies all clients that applications for this entity have been
+    moved to a new stage, so they can update their Kanban boards.
+
+    Args:
+        org_id: Organization ID to broadcast to
+        entity_id: Entity (candidate) ID that was moved
+        new_stage: New application stage (e.g., 'screening')
+        affected_vacancy_ids: List of vacancy IDs with affected applications
+    """
+    payload = {
+        "entity_id": entity_id,
+        "new_stage": new_stage,
+        "affected_vacancy_ids": affected_vacancy_ids
+    }
+    await manager.broadcast_to_org(org_id, "application.moved", payload)

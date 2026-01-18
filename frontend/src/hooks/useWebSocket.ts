@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+import { logger } from '@/utils/logger';
 import type {
   WebSocketStatus,
   WebSocketMessage,
@@ -14,7 +15,8 @@ import type {
   EntityUpdatedPayload,
   ChatCreatedPayload,
   ChatUpdatedPayload,
-  ChatMessagePayload
+  ChatMessagePayload,
+  ApplicationMovedPayload
 } from '@/types/websocket';
 
 // Re-export types for backwards compatibility
@@ -42,6 +44,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     onChatUpdated,
     onChatDeleted,
     onChatMessage,
+    onApplicationMoved,
     autoReconnect = true,
     reconnectInterval = 3000,
   } = options;
@@ -82,13 +85,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log('[WebSocket] Connected');
+        logger.log('[WebSocket] Connected');
         setStatus('connected');
         setError(null);
       };
 
       ws.onclose = (event) => {
-        console.log('[WebSocket] Disconnected:', event.code, event.reason);
+        logger.log('[WebSocket] Disconnected:', event.code, event.reason);
         wsRef.current = null;
 
         if (isManualClose.current) {
@@ -100,7 +103,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         if (autoReconnect && user) {
           setStatus('reconnecting');
           reconnectTimeoutRef.current = setTimeout(() => {
-            console.log('[WebSocket] Attempting to reconnect...');
+            logger.log('[WebSocket] Attempting to reconnect...');
             connect();
           }, reconnectInterval);
         } else {
@@ -109,7 +112,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       };
 
       ws.onerror = (event) => {
-        console.error('[WebSocket] Error:', event);
+        logger.error('[WebSocket] Error:', event);
         setError(new Error('WebSocket connection error'));
         setStatus('error');
       };
@@ -117,7 +120,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data) as WebSocketMessage<WebSocketPayload>;
-          console.log('[WebSocket] Message:', data.type, data.payload);
+          logger.log('[WebSocket] Message:', data.type, data.payload);
 
           // Handle different event types
           switch (data.type) {
@@ -165,19 +168,23 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
               onChatMessage?.(data.payload as ChatMessagePayload);
               break;
 
+            case 'application.moved':
+              onApplicationMoved?.(data.payload as ApplicationMovedPayload);
+              break;
+
             default:
-              console.log('[WebSocket] Unknown event type:', data.type);
+              logger.log('[WebSocket] Unknown event type:', data.type);
           }
         } catch (err) {
-          console.error('[WebSocket] Failed to parse message:', err);
+          logger.error('[WebSocket] Failed to parse message:', err);
         }
       };
     } catch (err) {
-      console.error('[WebSocket] Failed to create connection:', err);
+      logger.error('[WebSocket] Failed to create connection:', err);
       setError(err instanceof Error ? err : new Error('Failed to connect'));
       setStatus('error');
     }
-  }, [user, autoReconnect, reconnectInterval, onCallProgress, onCallCompleted, onCallFailed, onEntityCreated, onEntityUpdated, onEntityDeleted, onChatCreated, onChatUpdated, onChatDeleted, onChatMessage]);
+  }, [user, autoReconnect, reconnectInterval, onCallProgress, onCallCompleted, onCallFailed, onEntityCreated, onEntityUpdated, onEntityDeleted, onChatCreated, onChatUpdated, onChatDeleted, onChatMessage, onApplicationMoved]);
 
   const disconnect = useCallback(() => {
     isManualClose.current = true;

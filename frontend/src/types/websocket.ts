@@ -19,7 +19,8 @@ export type WebSocketEventType =
   | 'chat.created'
   | 'chat.updated'
   | 'chat.deleted'
-  | 'chat.message';
+  | 'chat.message'
+  | 'application.moved';
 
 // ============================================
 // Call Event Payloads
@@ -108,6 +109,20 @@ export interface ChatMessagePayload {
 }
 
 // ============================================
+// Application Event Payloads
+// ============================================
+
+/**
+ * Payload for application.moved event
+ * Sent when a VacancyApplication stage changes (from Entity sync)
+ */
+export interface ApplicationMovedPayload {
+  entity_id: number;
+  new_stage: string;
+  affected_vacancy_ids: number[];
+}
+
+// ============================================
 // WebSocket Event Union Types
 // ============================================
 
@@ -121,7 +136,8 @@ export type WebSocketPayload =
   | ChatCreatedPayload
   | ChatUpdatedPayload
   | ChatDeletedPayload
-  | ChatMessagePayload;
+  | ChatMessagePayload
+  | ApplicationMovedPayload;
 
 // ============================================
 // WebSocket Event Structure
@@ -144,6 +160,7 @@ export type ChatCreatedMessage = WebSocketMessage<ChatCreatedPayload>;
 export type ChatUpdatedMessage = WebSocketMessage<ChatUpdatedPayload>;
 export type ChatDeletedMessage = WebSocketMessage<ChatDeletedPayload>;
 export type ChatMessageMessage = WebSocketMessage<ChatMessagePayload>;
+export type ApplicationMovedMessage = WebSocketMessage<ApplicationMovedPayload>;
 
 // ============================================
 // WebSocket Hook Options Types
@@ -160,6 +177,7 @@ export interface WebSocketEventHandlers {
   onChatUpdated?: (data: ChatUpdatedPayload) => void;
   onChatDeleted?: (data: ChatDeletedPayload) => void;
   onChatMessage?: (data: ChatMessagePayload) => void;
+  onApplicationMoved?: (data: ApplicationMovedPayload) => void;
 }
 
 export interface WebSocketConnectionOptions {

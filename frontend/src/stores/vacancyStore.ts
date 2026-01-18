@@ -27,6 +27,8 @@ interface VacancyState {
   // Selected applications (for bulk operations)
   selectedApplicationIds: number[];
 
+  // WebSocket sync
+
   // Actions - Vacancies
   fetchVacancies: () => Promise<void>;
   fetchVacanciesForSelect: () => Promise<void>;
@@ -56,6 +58,9 @@ interface VacancyState {
 
   // Actions - Stats
   fetchStats: () => Promise<void>;
+
+  // WebSocket sync
+  handleApplicationMoved: (entityId: number, newStage: ApplicationStage, affectedVacancyIds: number[]) => void;
 
   // Utility
   clearError: () => void;
@@ -428,6 +433,56 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
       set({ stats });
     } catch (err) {
       console.error('Failed to fetch vacancy stats:', err);
+    }
+  },
+
+  // === WEBSOCKET SYNC ===
+
+  handleApplicationMoved: (entityId, newStage, affectedVacancyIds) => {
+    const { kanbanBoard } = get();
+
+    // If current kanban board is for an affected vacancy, move the application
+    if (kanbanBoard && affectedVacancyIds.includes(kanbanBoard.vacancy_id)) {
+      // Find the application by entity_id
+      let movedApp: VacancyApplication | null = null;
+      let sourceColumnIndex = -1;
+
+      for (let i = 0; i < kanbanBoard.columns.length; i++) {
+        const app = kanbanBoard.columns[i].applications.find((a) => a.entity_id === entityId);
+        if (app) {
+          movedApp = { ...app };
+          sourceColumnIndex = i;
+          break;
+        }
+      }
+
+      // If application found and stage changed
+      if (movedApp && sourceColumnIndex !== -1 && movedApp.stage !== newStage) {
+        const updatedBoard = {
+          ...kanbanBoard,
+          columns: kanbanBoard.columns.map((col, idx) => {
+            if (idx === sourceColumnIndex) {
+              // Remove from source column
+              return {
+                ...col,
+                applications: col.applications.filter((a) => a.entity_id !== entityId),
+                count: col.count - 1
+              };
+            }
+            if (col.stage === newStage) {
+              // Add to target column
+              return {
+                ...col,
+                applications: [...col.applications, { ...movedApp!, stage: newStage }],
+                count: col.count + 1
+              };
+            }
+            return col;
+          })
+        };
+
+        set({ kanbanBoard: updatedBoard });
+      }
     }
   },
 

@@ -21,7 +21,7 @@ from ..services.auth import get_current_user, get_user_org, get_user_org_role, c
 from ..services.red_flags import red_flags_service
 from ..services.cache import scoring_cache
 from ..models.sharing import ShareRequestWithRelated as ShareRequest
-from .realtime import broadcast_entity_created, broadcast_entity_updated, broadcast_entity_deleted
+from .realtime import broadcast_entity_created, broadcast_entity_updated, broadcast_entity_deleted, broadcast_applications_moved
 
 # Ownership filter type
 OwnershipFilter = Literal["all", "mine", "shared"]
@@ -1503,12 +1503,30 @@ async def update_entity_status(
     # Synchronize with vacancy applications if this is a candidate
     if entity.type == EntityType.candidate and data.status in STATUS_SYNC_MAP:
         new_stage = STATUS_SYNC_MAP[data.status]
+
+        # Get affected vacancy IDs before update
+        affected_result = await db.execute(
+            select(VacancyApplication.vacancy_id)
+            .where(VacancyApplication.entity_id == entity_id)
+        )
+        affected_vacancy_ids = list(affected_result.scalars().all())
+
         await db.execute(
             update(VacancyApplication)
             .where(VacancyApplication.entity_id == entity_id)
             .values(stage=new_stage, last_stage_change_at=datetime.utcnow())
         )
+        await db.commit()
         logger.info(f"Synchronized {entity_id} status {data.status} to vacancy applications as {new_stage}")
+
+        # Broadcast application.moved event for Kanban board updates
+        if affected_vacancy_ids:
+            await broadcast_applications_moved(
+                org.id,
+                entity_id,
+                new_stage.value,
+                affected_vacancy_ids
+            )
 
     # Broadcast update
     await broadcast_entity_updated(org.id, {

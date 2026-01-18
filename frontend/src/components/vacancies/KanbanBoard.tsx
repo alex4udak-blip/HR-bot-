@@ -21,9 +21,10 @@ import { useVacancyStore } from '@/stores/vacancyStore';
 import { updateApplication, calculateCompatibilityScore } from '@/services/api';
 import AddCandidateModal from './AddCandidateModal';
 import ApplicationDetailModal from './ApplicationDetailModal';
-import { KanbanCardSkeleton, Skeleton, EmptyKanban, ConfirmDialog, ErrorMessage } from '@/components/ui';
+import { KanbanCardSkeleton, Skeleton, EmptyKanban, ConfirmDialog, ErrorMessage, ScrollIndicators } from '@/components/ui';
 import { OnboardingTooltip } from '@/components/onboarding';
 import CompatibilityBadge from '@/components/CompatibilityBadge';
+import { useAutoScroll } from '@/hooks/useAutoScroll';
 
 interface KanbanBoardProps {
   vacancy: Vacancy;
@@ -55,11 +56,20 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   const [isDragging, setIsDragging] = useState(false);
   const boardRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef<Map<string, number>>(new Map());
-  const autoScrollIntervalRef = useRef<number | null>(null);
 
-  // Auto-scroll configuration
-  const AUTO_SCROLL_THRESHOLD = 200; // pixels from edge to trigger scroll
-  const AUTO_SCROLL_SPEED = 30; // pixels per frame
+  // Smooth auto-scroll hook
+  const {
+    direction: scrollDirection,
+    intensity: scrollIntensity,
+    canScrollLeft,
+    canScrollRight,
+    handleDragMove,
+    stopScroll,
+  } = useAutoScroll(boardRef, {
+    threshold: 150,
+    maxSpeed: 20,
+    easingPower: 2.5,
+  });
 
   // Confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -89,70 +99,11 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     fetchKanbanBoard(vacancy.id);
   }, [vacancy.id, fetchKanbanBoard]);
 
-  // Cleanup auto-scroll on unmount
-  useEffect(() => {
-    return () => {
-      if (autoScrollIntervalRef.current !== null) {
-        cancelAnimationFrame(autoScrollIntervalRef.current);
-      }
-    };
-  }, []);
-
-  const scrollDirectionRef = useRef<number>(0);
-
-  // Stop auto-scroll
-  const stopAutoScroll = useCallback(() => {
-    if (autoScrollIntervalRef.current !== null) {
-      cancelAnimationFrame(autoScrollIntervalRef.current);
-      autoScrollIntervalRef.current = null;
-    }
-    scrollDirectionRef.current = 0;
-  }, []);
-
-  // Start auto-scroll loop
-  const startAutoScroll = useCallback(() => {
-    if (autoScrollIntervalRef.current !== null) return;
-
-    const scroll = () => {
-      if (boardRef.current && scrollDirectionRef.current !== 0) {
-        boardRef.current.scrollLeft += AUTO_SCROLL_SPEED * scrollDirectionRef.current;
-        autoScrollIntervalRef.current = requestAnimationFrame(scroll);
-      } else {
-        stopAutoScroll();
-      }
-    };
-    autoScrollIntervalRef.current = requestAnimationFrame(scroll);
-  }, [stopAutoScroll]);
-
   // Handle drag over for auto-scroll
   const handleBoardDragOver = useCallback((e: React.DragEvent) => {
-    if (!boardRef.current || !isDragging) return;
-
-    const board = boardRef.current;
-    const rect = board.getBoundingClientRect();
-    const mouseX = e.clientX;
-
-    // Calculate distance from edges
-    const distanceFromLeft = mouseX - rect.left;
-    const distanceFromRight = rect.right - mouseX;
-
-    // Determine scroll direction and speed
-    let newDirection = 0;
-    if (distanceFromLeft < AUTO_SCROLL_THRESHOLD) {
-      // Scroll left - speed increases as mouse gets closer to edge
-      newDirection = -1 * (1 - Math.max(0, distanceFromLeft) / AUTO_SCROLL_THRESHOLD);
-    } else if (distanceFromRight < AUTO_SCROLL_THRESHOLD) {
-      // Scroll right - speed increases as mouse gets closer to edge
-      newDirection = 1 * (1 - Math.max(0, distanceFromRight) / AUTO_SCROLL_THRESHOLD);
-    }
-
-    if (newDirection !== 0) {
-      scrollDirectionRef.current = newDirection;
-      startAutoScroll();
-    } else {
-      stopAutoScroll();
-    }
-  }, [isDragging, startAutoScroll, stopAutoScroll]);
+    if (!isDragging) return;
+    handleDragMove(e);
+  }, [isDragging, handleDragMove]);
 
   const handleDragStart = (e: React.DragEvent, app: VacancyApplication) => {
     setDraggedApp(app);
@@ -220,7 +171,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     setDropTarget(null);
     setIsDragging(false);
     dragCounterRef.current.clear();
-    stopAutoScroll();
+    stopScroll();
     isMovingRef.current = false;
   };
 
@@ -460,13 +411,21 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
       </div>
 
       {/* Board - horizontal scroll on mobile with touch-friendly spacing */}
-      <div
-        className="flex-1 overflow-x-auto overflow-y-hidden p-3 sm:p-4 touch-pan-x"
-        ref={boardRef}
-        style={{ WebkitOverflowScrolling: 'touch' }}
-        onDragOver={handleBoardDragOver}
-        onDragLeave={stopAutoScroll}
+      <ScrollIndicators
+        isActive={isDragging}
+        direction={scrollDirection}
+        intensity={scrollIntensity}
+        canScrollLeft={canScrollLeft}
+        canScrollRight={canScrollRight}
+        className="flex-1 overflow-hidden"
       >
+        <div
+          className="h-full overflow-x-auto overflow-y-hidden p-3 sm:p-4 touch-pan-x"
+          ref={boardRef}
+          style={{ WebkitOverflowScrolling: 'touch' }}
+          onDragOver={handleBoardDragOver}
+          onDragLeave={stopScroll}
+        >
         <div className="flex gap-3 sm:gap-4 h-full min-w-max pb-2">
           {VISIBLE_STAGES.map((stage) => {
             const column = kanbanBoard.columns.find((c) => c.stage === stage);
@@ -718,7 +677,8 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
             );
           })}
         </div>
-      </div>
+        </div>
+      </ScrollIndicators>
 
       {/* Modals */}
       {showAddCandidate && (
