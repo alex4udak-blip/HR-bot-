@@ -1,8 +1,8 @@
 # TODO: Архитектурный рефакторинг HR-bot
 
 > Создано: 15 января 2026
-> Обновлено: 16 января 2026
-> Статус: Фаза 2-3 завершена ✅
+> Обновлено: 18 января 2026
+> Статус: Фаза 4 завершена ✅
 
 ---
 
@@ -11,7 +11,7 @@
 - [x] Исправить ошибку enum PostgreSQL (applied вместо new)
 - [x] Обновить frontend типы
 - [x] Деплой на Railway
-- [ ] Проверить drag & drop между колонками
+- [x] Проверить drag & drop между колонками - ✅ Работает на проде!
 - [ ] Проверить добавление кандидата в вакансию
 - [ ] Проверить удаление кандидата из вакансии
 
@@ -99,7 +99,7 @@
 #### WebSocket типизация
 - [x] `stores/entityStore.ts:232, 280` - ✅ PR #402 (types/websocket.ts)
 - [x] `stores/chatStore.ts:25, 40` - ✅ PR #402
-- [x] `hooks/useWebSocket.ts:150, 154, 158, 170, 182` - ✅ PR #402
+- [x] `hooks/useWebSocket.ts:150, 154, 158, 170, 182` - ✅ PR #402, улучшено в PR #408 (discriminated unions)
 
 #### Много useState
 - [x] `ContactDetail.tsx` - ✅ PR #402 (useReducer: modalReducer, asyncReducer)
@@ -189,3 +189,9 @@
 - `frontend/src/services/api/` - модульная API структура
 - `frontend/src/types/websocket.ts` - типы для WebSocket событий
 - `frontend/src/utils/localStorage.ts` - утилиты для localStorage
+
+### PR #408: WebSocket Type Safety
+- Рефакторинг `WebSocketMessage` с generic interface на discriminated union
+- TypeScript автоматически определяет тип payload по полю `type`
+- Убраны `as PayloadType` assertions в useWebSocket hook
+- Добавлена exhaustiveness check для обработки сообщений
