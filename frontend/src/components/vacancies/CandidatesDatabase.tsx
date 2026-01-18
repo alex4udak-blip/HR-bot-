@@ -84,7 +84,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
   // Drag state for Kanban stage change
   const [draggedForKanban, setDraggedForKanban] = useState<Entity | null>(null);
-  const [dropTargetStage, setDropTargetStage] = useState<EntityStatus | null>(null);
+  const [dropTargetStage, setDropTargetStage] = useState<ApplicationStage | null>(null);
 
   // Kanban auto-scroll refs
   const kanbanContainerRef = useRef<HTMLDivElement>(null);
@@ -161,16 +161,19 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     });
   }, [searchFilteredCandidates, selectedStage]);
 
-  // Group candidates by status for Kanban view
+  // Group candidates by ApplicationStage for Kanban view
+  // Maps EntityStatus -> ApplicationStage for grouping
   const candidatesByStatus = useMemo(() => {
-    const grouped: Record<EntityStatus, Entity[]> = {} as Record<EntityStatus, Entity[]>;
+    const grouped: Record<ApplicationStage, Entity[]> = {} as Record<ApplicationStage, Entity[]>;
     PIPELINE_STAGES.forEach(stage => {
       grouped[stage] = [];
     });
     searchFilteredCandidates.forEach(candidate => {
-      const status = candidate.status as EntityStatus;
-      if (grouped[status]) {
-        grouped[status].push(candidate);
+      // Convert EntityStatus to ApplicationStage for display
+      const entityStatus = candidate.status as EntityStatus;
+      const stage = STATUS_TO_STAGE_MAP[entityStatus] || 'applied';
+      if (grouped[stage]) {
+        grouped[stage].push(candidate);
       } else {
         grouped['applied'].push(candidate);  // Unknown statuses go to 'applied' (displayed as "Новый")
       }
@@ -228,7 +231,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
   const isMovingRef = useRef(false);
 
-  const handleKanbanDragEnd = async (_e?: React.DragEvent | unknown, targetStage?: EntityStatus) => {
+  const handleKanbanDragEnd = async (_e?: React.DragEvent | unknown, targetStage?: ApplicationStage) => {
     stopAutoScroll();
 
     // Use targetStage from onDrop event if available, otherwise use state
@@ -242,12 +245,20 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     setDraggedCandidate(null);
     setDropTargetStage(null);
 
-    if (itemToMove && finalStage && itemToMove.status !== finalStage && !isMovingRef.current) {
+    if (itemToMove && finalStage && !isMovingRef.current) {
+      // Convert ApplicationStage to EntityStatus for API call
+      const entityStatus = STAGE_TO_STATUS_MAP[finalStage];
+
+      // Check if status actually changed
+      if (itemToMove.status === entityStatus) {
+        return;
+      }
+
       isMovingRef.current = true;
       try {
-        logger.log(`[Kanban] Moving ${itemToMove.name} from ${itemToMove.status} to ${finalStage}`);
-        await updateEntityStatus(itemToMove.id, finalStage);
-        toast.success(`${itemToMove.name} → ${STATUS_LABELS[finalStage]}`);
+        logger.log(`[Kanban] Moving ${itemToMove.name} from ${itemToMove.status} to ${entityStatus}`);
+        await updateEntityStatus(itemToMove.id, entityStatus);
+        toast.success(`${itemToMove.name} → ${STATUS_LABELS[entityStatus]}`);
         fetchEntities();
       } catch (error) {
         logger.error('[Kanban] Move failed:', error);
@@ -258,7 +269,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     }
   };
 
-  const handleStageDragOver = (e: React.DragEvent, stage: EntityStatus) => {
+  const handleStageDragOver = (e: React.DragEvent, stage: ApplicationStage) => {
     e.preventDefault();
     if (draggedForKanban) {
       setDropTargetStage(stage);
@@ -273,7 +284,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     }
   };
 
-  const handleStageDrop = (e: React.DragEvent, stage: EntityStatus) => {
+  const handleStageDrop = (e: React.DragEvent, stage: ApplicationStage) => {
     e.preventDefault();
     e.stopPropagation();
     handleKanbanDragEnd(e, stage);
@@ -626,11 +637,11 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                handleQuickStatusChange(candidate, nextStage);
+                handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nextStage]);
               }}
               className="opacity-0 group-hover:opacity-100 px-2 py-0.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all"
             >
-              → {STATUS_LABELS[nextStage]}
+              → {STATUS_LABELS[STAGE_TO_STATUS_MAP[nextStage]]}
             </button>
           )}
         </div>
@@ -919,7 +930,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                               const currentIndex = PIPELINE_STAGES.indexOf(stage as any);
                               const nStage = currentIndex >= 0 && currentIndex < PIPELINE_STAGES.length - 1 ? PIPELINE_STAGES[currentIndex + 1] : null;
                               return nStage && (
-                                <button onClick={(e) => { e.stopPropagation(); handleQuickStatusChange(candidate, nStage as EntityStatus); }} className="hover:text-white transition-colors">→</button>
+                                <button onClick={(e) => { e.stopPropagation(); handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nStage]); }} className="hover:text-white transition-colors">→</button>
                               );
                             })()}
                           </div>
