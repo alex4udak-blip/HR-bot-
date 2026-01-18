@@ -15,7 +15,7 @@ logger = logging.getLogger("hr-analyzer.vacancies")
 from ..database import get_db
 from ..models.database import (
     Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
-    Entity, EntityType, User, Organization, Department, STAGE_SYNC_MAP
+    Entity, EntityType, User, Organization, Department, STAGE_SYNC_MAP, STATUS_SYNC_MAP
 )
 from ..services.auth import get_current_user, get_user_org
 from ..services.features import can_access_feature
@@ -771,25 +771,39 @@ async def create_application(
             detail="Cannot add candidate from different organization"
         )
 
-    # Check for existing application
-    existing = await db.execute(
-        select(VacancyApplication).where(
-            VacancyApplication.vacancy_id == vacancy_id,
-            VacancyApplication.entity_id == data.entity_id
+    # Check if candidate is already in ANY active vacancy (one candidate = max one vacancy)
+    existing_any_vacancy = await db.execute(
+        select(VacancyApplication)
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(
+            VacancyApplication.entity_id == data.entity_id,
+            Vacancy.status != VacancyStatus.closed  # Only active vacancies
         )
     )
-    if existing.scalar():
+    existing_app = existing_any_vacancy.scalar()
+    if existing_app:
+        # Get vacancy title for better error message
+        existing_vacancy_result = await db.execute(
+            select(Vacancy.title).where(Vacancy.id == existing_app.vacancy_id)
+        )
+        existing_vacancy_title = existing_vacancy_result.scalar() or "другую вакансию"
         raise HTTPException(
             status_code=400,
-            detail="Candidate already applied to this vacancy"
+            detail=f"Кандидат уже добавлен в вакансию \"{existing_vacancy_title}\". Сначала удалите его оттуда."
         )
+
+    # Use candidate's current Entity.status as initial stage (converted via STATUS_SYNC_MAP)
+    initial_stage = data.stage
+    if entity.status in STATUS_SYNC_MAP:
+        initial_stage = STATUS_SYNC_MAP[entity.status]
+        logger.info(f"Using entity status {entity.status} -> stage {initial_stage} for new application")
 
     # Get max stage_order for this stage
     max_order_result = await db.execute(
         select(func.max(VacancyApplication.stage_order))
         .where(
             VacancyApplication.vacancy_id == vacancy_id,
-            VacancyApplication.stage == data.stage
+            VacancyApplication.stage == initial_stage
         )
     )
     max_order = max_order_result.scalar() or 0
@@ -797,7 +811,7 @@ async def create_application(
     application = VacancyApplication(
         vacancy_id=vacancy_id,
         entity_id=data.entity_id,
-        stage=data.stage,
+        stage=initial_stage,
         stage_order=max_order + 1,
         rating=data.rating,
         notes=data.notes,

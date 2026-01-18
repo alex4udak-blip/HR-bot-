@@ -207,8 +207,9 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
         await addCandidateToVacancy(dropTargetVacancy, draggedCandidate.id, 'database_drag');
         toast.success(`${draggedCandidate.name} добавлен в вакансию`);
         onRefreshVacancies();
-      } catch {
-        toast.error('Не удалось добавить кандидата');
+      } catch (error: any) {
+        const message = error?.response?.data?.detail || 'Не удалось добавить кандидата';
+        toast.error(message);
       }
     }
     setDraggedCandidate(null);
