@@ -12,6 +12,7 @@ from ..models.database import (
 from ..models.schemas import UserCreate, UserUpdate, UserProfileUpdate, UserResponse
 from ..services.auth import get_superadmin, get_current_user, get_current_user_dependency, hash_password
 from ..services.password_policy import validate_password
+from ..utils.roles import map_role_string_to_user_role, map_user_role_to_dept_role, map_user_role_to_org_role
 
 router = APIRouter()
 
@@ -203,17 +204,7 @@ async def create_user(
         raise HTTPException(status_code=400, detail=error_message)
 
     # Map role string to enum
-    if data.role == "superadmin":
-        user_role = UserRole.superadmin
-    elif data.role == "sub_admin":
-        user_role = UserRole.sub_admin
-    elif data.role == "member":
-        user_role = UserRole.member
-    elif data.role == "admin":
-        user_role = UserRole.admin
-    else:
-        # Default to member for unknown roles
-        user_role = UserRole.member
+    user_role = map_role_string_to_user_role(data.role)
 
     # Validate department_id for ADMIN and SUB_ADMIN (legacy system roles)
     if user_role in (UserRole.admin, UserRole.sub_admin):
@@ -241,12 +232,7 @@ async def create_user(
     # Add user to department if specified
     if data.department_id:
         # Determine department role based on user role
-        if user_role == UserRole.admin:
-            dept_role = DeptRole.lead
-        elif user_role == UserRole.sub_admin:
-            dept_role = DeptRole.sub_admin
-        else:
-            dept_role = DeptRole.member
+        dept_role = map_user_role_to_dept_role(user_role)
 
         # Get department to find its organization
         from ..models.database import Department, OrgRole
@@ -263,12 +249,7 @@ async def create_user(
             )
             if not existing_org_member.scalar_one_or_none():
                 # Add user to organization with appropriate role
-                if user_role == UserRole.admin:
-                    org_role = OrgRole.admin
-                elif user_role == UserRole.sub_admin:
-                    org_role = OrgRole.admin  # sub_admin is still org admin level
-                else:
-                    org_role = OrgRole.member
+                org_role = map_user_role_to_org_role(user_role)
 
                 org_member = OrgMember(
                     org_id=dept.org_id,
@@ -310,17 +291,7 @@ async def update_user(
     # Map role string to enum if role is being updated
     new_role = None
     if data.role:
-        if data.role == "superadmin":
-            new_role = UserRole.superadmin
-        elif data.role == "sub_admin":
-            new_role = UserRole.sub_admin
-        elif data.role == "member":
-            new_role = UserRole.member
-        elif data.role == "admin":
-            new_role = UserRole.admin
-        else:
-            # Default to member for unknown roles
-            new_role = UserRole.member
+        new_role = map_role_string_to_user_role(data.role)
 
         # Validate department_id for ADMIN and SUB_ADMIN (legacy system roles)
         if new_role in (UserRole.admin, UserRole.sub_admin):
@@ -363,12 +334,7 @@ async def update_user(
         existing_dept_member = dept_member_result.scalar_one_or_none()
 
         # Determine department role based on user role
-        if user.role == UserRole.admin:
-            dept_role = DeptRole.lead
-        elif user.role == UserRole.sub_admin:
-            dept_role = DeptRole.sub_admin
-        else:
-            dept_role = DeptRole.member
+        dept_role = map_user_role_to_dept_role(user.role)
 
         if existing_dept_member:
             # Update existing membership
