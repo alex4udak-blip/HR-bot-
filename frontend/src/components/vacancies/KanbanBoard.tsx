@@ -111,6 +111,9 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   }>({ open: false, application: null });
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  // Track which applications are currently being moved (prevents double-click)
+  const [movingApps, setMovingApps] = useState<Set<number>>(new Set());
+
   // AI Scoring state - tracks loading and errors per application
   const [scoringState, setScoringState] = useState<Record<number, {
     loading: boolean;
@@ -696,19 +699,33 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                                 {/* Quick stage transition arrow */}
                                 {nextStage && (
                                   <button
+                                    disabled={movingApps.has(app.id)}
                                     onClick={async (e) => {
                                       e.stopPropagation();
+                                      // Prevent double-click
+                                      if (movingApps.has(app.id)) return;
+
+                                      setMovingApps(prev => new Set(prev).add(app.id));
                                       try {
                                         await moveApplication(app.id, nextStage);
                                         toast.success(`→ ${APPLICATION_STAGE_LABELS[nextStage]}`);
                                       } catch {
                                         toast.error('Ошибка при смене этапа');
+                                      } finally {
+                                        setMovingApps(prev => {
+                                          const next = new Set(prev);
+                                          next.delete(app.id);
+                                          return next;
+                                        });
                                       }
                                     }}
-                                    className="p-1 hover:bg-white/10 rounded-lg text-white/30 hover:text-blue-400 transition-all active:scale-90"
+                                    className={clsx(
+                                      "p-1 hover:bg-white/10 rounded-lg text-white/30 hover:text-blue-400 transition-all active:scale-90",
+                                      movingApps.has(app.id) && "opacity-50 cursor-not-allowed"
+                                    )}
                                     title={`В "${APPLICATION_STAGE_LABELS[nextStage]}"`}
                                   >
-                                    <span className="text-sm font-bold">→</span>
+                                    <span className="text-sm font-bold">{movingApps.has(app.id) ? '...' : '→'}</span>
                                   </button>
                                 )}
                               </div>

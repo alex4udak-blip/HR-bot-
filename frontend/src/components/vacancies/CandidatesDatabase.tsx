@@ -86,6 +86,9 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
   const [draggedForKanban, setDraggedForKanban] = useState<Entity | null>(null);
   const [dropTargetStage, setDropTargetStage] = useState<ApplicationStage | null>(null);
 
+  // Track which candidates are currently being moved (prevents double-click)
+  const [movingCandidates, setMovingCandidates] = useState<Set<number>>(new Set());
+
   // Kanban auto-scroll refs
   const kanbanContainerRef = useRef<HTMLDivElement>(null);
   const autoScrollIntervalRef = useRef<number | null>(null);
@@ -489,8 +492,12 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     });
   };
 
-  // Quick status change handler for cards/list view
+  // Quick status change handler for cards/list view (with double-click protection)
   const handleQuickStatusChange = async (candidate: Entity, newStatus: EntityStatus) => {
+    // Prevent double-click
+    if (movingCandidates.has(candidate.id)) return;
+
+    setMovingCandidates(prev => new Set(prev).add(candidate.id));
     try {
       await updateEntityStatus(candidate.id, newStatus);
       toast.success(`${candidate.name} → ${STATUS_LABELS[newStatus]}`);
@@ -498,8 +505,17 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     } catch (error) {
       logger.error('Status change failed:', error);
       toast.error('Не удалось изменить статус');
+    } finally {
+      setMovingCandidates(prev => {
+        const next = new Set(prev);
+        next.delete(candidate.id);
+        return next;
+      });
     }
   };
+
+  // Check if a candidate is currently being moved
+  const isMovingCandidate = (id: number) => movingCandidates.has(id);
 
   // Render candidate card
   const renderCandidateCard = (candidate: Entity, isListView: boolean = false) => {
@@ -557,13 +573,17 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               </span>
               {nextStage && (
                 <button
+                  disabled={isMovingCandidate(candidate.id)}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nextStage]);
                   }}
-                  className="opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all"
+                  className={clsx(
+                    "opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all",
+                    isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
+                  )}
                 >
-                  → {STATUS_LABELS[nextStage]}
+                  {isMovingCandidate(candidate.id) ? '...' : `→ ${STATUS_LABELS[STAGE_TO_STATUS_MAP[nextStage]]}`}
                 </button>
               )}
             </div>
@@ -635,13 +655,17 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           </span>
           {nextStage && (
             <button
+              disabled={isMovingCandidate(candidate.id)}
               onClick={(e) => {
                 e.stopPropagation();
                 handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nextStage]);
               }}
-              className="opacity-0 group-hover:opacity-100 px-2 py-0.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all"
+              className={clsx(
+                "opacity-0 group-hover:opacity-100 px-2 py-0.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all",
+                isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
+              )}
             >
-              → {STATUS_LABELS[STAGE_TO_STATUS_MAP[nextStage]]}
+              {isMovingCandidate(candidate.id) ? '...' : `→ ${STATUS_LABELS[STAGE_TO_STATUS_MAP[nextStage]]}`}
             </button>
           )}
         </div>
@@ -930,7 +954,13 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                               const currentIndex = PIPELINE_STAGES.indexOf(stage as any);
                               const nStage = currentIndex >= 0 && currentIndex < PIPELINE_STAGES.length - 1 ? PIPELINE_STAGES[currentIndex + 1] : null;
                               return nStage && (
-                                <button onClick={(e) => { e.stopPropagation(); handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nStage]); }} className="hover:text-white transition-colors">→</button>
+                                <button
+                                  disabled={isMovingCandidate(candidate.id)}
+                                  onClick={(e) => { e.stopPropagation(); handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nStage]); }}
+                                  className={clsx("hover:text-white transition-colors", isMovingCandidate(candidate.id) && "opacity-50 cursor-not-allowed")}
+                                >
+                                  {isMovingCandidate(candidate.id) ? '...' : '→'}
+                                </button>
                               );
                             })()}
                           </div>
