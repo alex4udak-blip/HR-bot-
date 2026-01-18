@@ -26,6 +26,7 @@ import {
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useVacancyStore } from '@/stores/vacancyStore';
+import { useAuthStore } from '@/stores/authStore';
 import type { Vacancy, VacancyStatus } from '@/types';
 import { EMPLOYMENT_TYPES } from '@/types';
 import { formatSalary } from '@/utils';
@@ -88,10 +89,17 @@ export default function VacanciesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Main tab state
+  // Check if user has access to candidate database feature
+  const { hasFeature } = useAuthStore();
+  const hasCandidateDatabase = hasFeature('candidate_database');
+
+  // Main tab state - default to 'vacancies' if user doesn't have access to database
   const [mainTab, setMainTab] = useState<MainTab>(() => {
     const tabParam = searchParams.get('tab');
-    return tabParam === 'database' ? 'database' : 'vacancies';
+    if (tabParam === 'database' && hasCandidateDatabase) {
+      return 'database';
+    }
+    return 'vacancies';
   });
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -472,33 +480,35 @@ export default function VacanciesPage() {
               </h1>
             </OnboardingTooltip>
 
-            {/* Main Tabs */}
-            <div className="flex items-center bg-white/5 rounded-lg p-1">
-              <button
-                onClick={() => handleMainTabChange('vacancies')}
-                className={clsx(
-                  'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                  mainTab === 'vacancies'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-white/60 hover:text-white hover:bg-white/5'
-                )}
-              >
-                <Briefcase className="w-4 h-4" />
-                Вакансии
-              </button>
-              <button
-                onClick={() => handleMainTabChange('database')}
-                className={clsx(
-                  'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                  mainTab === 'database'
-                    ? 'bg-purple-600 text-white'
-                    : 'text-white/60 hover:text-white hover:bg-white/5'
-                )}
-              >
-                <Database className="w-4 h-4" />
-                База
-              </button>
-            </div>
+            {/* Main Tabs - Show "База" tab only if user has candidate_database feature */}
+            {hasCandidateDatabase && (
+              <div className="flex items-center bg-white/5 rounded-lg p-1">
+                <button
+                  onClick={() => handleMainTabChange('vacancies')}
+                  className={clsx(
+                    'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                    mainTab === 'vacancies'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-white/60 hover:text-white hover:bg-white/5'
+                  )}
+                >
+                  <Briefcase className="w-4 h-4" />
+                  Вакансии
+                </button>
+                <button
+                  onClick={() => handleMainTabChange('database')}
+                  className={clsx(
+                    'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                    mainTab === 'database'
+                      ? 'bg-purple-600 text-white'
+                      : 'text-white/60 hover:text-white hover:bg-white/5'
+                  )}
+                >
+                  <Database className="w-4 h-4" />
+                  База
+                </button>
+              </div>
+            )}
           </div>
 
           {mainTab === 'vacancies' && (
@@ -707,7 +717,7 @@ export default function VacanciesPage() {
       </div>
 
       {/* Content - conditional based on mainTab */}
-      {mainTab === 'database' ? (
+      {mainTab === 'database' && hasCandidateDatabase ? (
         <CandidatesDatabase
           vacancies={vacancies}
           onRefreshVacancies={fetchVacancies}

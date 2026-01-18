@@ -26,6 +26,7 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
 import { useVacancyStore } from '@/stores/vacancyStore';
+import { useAuthStore } from '@/stores/authStore';
 import type { Entity, Vacancy, VacancyApplication, ApplicationStage } from '@/types';
 import {
   PIPELINE_STAGES,
@@ -54,6 +55,18 @@ const ALL_STAGES_TAB = 'all';
 
 export default function CandidatesPage() {
   const navigate = useNavigate();
+
+  // Check if user has access to candidate database feature
+  const { hasFeature } = useAuthStore();
+  const hasCandidateDatabase = hasFeature('candidate_database');
+
+  // Redirect to dashboard if user doesn't have access
+  useEffect(() => {
+    if (!hasCandidateDatabase) {
+      navigate('/dashboard', { replace: true });
+      toast.error('У вас нет доступа к базе кандидатов');
+    }
+  }, [hasCandidateDatabase, navigate]);
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
