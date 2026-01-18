@@ -124,26 +124,84 @@ export type WebSocketPayload =
   | ChatMessagePayload;
 
 // ============================================
-// WebSocket Event Structure
+// WebSocket Event Structure (Discriminated Union)
 // ============================================
 
-export interface WebSocketMessage<T extends WebSocketPayload = WebSocketPayload> {
-  type: WebSocketEventType;
-  payload: T;
+interface BaseWebSocketMessage {
   timestamp: string;
 }
 
-// Specific typed messages
-export type CallProgressMessage = WebSocketMessage<CallProgressPayload>;
-export type CallCompletedMessage = WebSocketMessage<CallCompletedPayload>;
-export type CallFailedMessage = WebSocketMessage<CallFailedPayload>;
-export type EntityCreatedMessage = WebSocketMessage<EntityCreatedPayload>;
-export type EntityUpdatedMessage = WebSocketMessage<EntityUpdatedPayload>;
-export type EntityDeletedMessage = WebSocketMessage<EntityDeletedPayload>;
-export type ChatCreatedMessage = WebSocketMessage<ChatCreatedPayload>;
-export type ChatUpdatedMessage = WebSocketMessage<ChatUpdatedPayload>;
-export type ChatDeletedMessage = WebSocketMessage<ChatDeletedPayload>;
-export type ChatMessageMessage = WebSocketMessage<ChatMessagePayload>;
+export interface PingMessage extends BaseWebSocketMessage {
+  type: 'ping';
+  payload: Record<string, never>;
+}
+
+export interface CallProgressMessage extends BaseWebSocketMessage {
+  type: 'call.progress';
+  payload: CallProgressPayload;
+}
+
+export interface CallCompletedMessage extends BaseWebSocketMessage {
+  type: 'call.completed';
+  payload: CallCompletedPayload;
+}
+
+export interface CallFailedMessage extends BaseWebSocketMessage {
+  type: 'call.failed';
+  payload: CallFailedPayload;
+}
+
+export interface EntityCreatedMessage extends BaseWebSocketMessage {
+  type: 'entity.created';
+  payload: EntityCreatedPayload;
+}
+
+export interface EntityUpdatedMessage extends BaseWebSocketMessage {
+  type: 'entity.updated';
+  payload: EntityUpdatedPayload;
+}
+
+export interface EntityDeletedMessage extends BaseWebSocketMessage {
+  type: 'entity.deleted';
+  payload: EntityDeletedPayload;
+}
+
+export interface ChatCreatedMessage extends BaseWebSocketMessage {
+  type: 'chat.created';
+  payload: ChatCreatedPayload;
+}
+
+export interface ChatUpdatedMessage extends BaseWebSocketMessage {
+  type: 'chat.updated';
+  payload: ChatUpdatedPayload;
+}
+
+export interface ChatDeletedMessage extends BaseWebSocketMessage {
+  type: 'chat.deleted';
+  payload: ChatDeletedPayload;
+}
+
+export interface ChatMessageMessage extends BaseWebSocketMessage {
+  type: 'chat.message';
+  payload: ChatMessagePayload;
+}
+
+/**
+ * Discriminated union of all WebSocket messages.
+ * TypeScript will narrow the payload type based on the `type` field.
+ */
+export type WebSocketMessage =
+  | PingMessage
+  | CallProgressMessage
+  | CallCompletedMessage
+  | CallFailedMessage
+  | EntityCreatedMessage
+  | EntityUpdatedMessage
+  | EntityDeletedMessage
+  | ChatCreatedMessage
+  | ChatUpdatedMessage
+  | ChatDeletedMessage
+  | ChatMessageMessage;
 
 // ============================================
 // WebSocket Hook Options Types

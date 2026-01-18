@@ -4,18 +4,10 @@ import { logger } from '@/utils/logger';
 import type {
   WebSocketStatus,
   WebSocketMessage,
-  WebSocketPayload,
   UseWebSocketOptions,
   CallProgressPayload,
   CallCompletedPayload,
-  CallFailedPayload,
-  EntityDeletedPayload,
-  ChatDeletedPayload,
-  EntityCreatedPayload,
-  EntityUpdatedPayload,
-  ChatCreatedPayload,
-  ChatUpdatedPayload,
-  ChatMessagePayload
+  CallFailedPayload
 } from '@/types/websocket';
 
 // Re-export types for backwards compatibility
@@ -117,57 +109,61 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data) as WebSocketMessage<WebSocketPayload>;
-          logger.log('[WebSocket] Message:', data.type, data.payload);
+          const message = JSON.parse(event.data) as WebSocketMessage;
+          logger.log('[WebSocket] Message:', message.type, message.payload);
 
-          // Handle different event types
-          switch (data.type) {
+          // Handle different event types using discriminated union
+          // TypeScript narrows payload type automatically based on message.type
+          switch (message.type) {
             case 'ping':
               // Ignore ping events
               break;
 
             case 'call.progress':
-              onCallProgress?.(data.payload as CallProgressPayload);
+              onCallProgress?.(message.payload);
               break;
 
             case 'call.completed':
-              onCallCompleted?.(data.payload as CallCompletedPayload);
+              onCallCompleted?.(message.payload);
               break;
 
             case 'call.failed':
-              onCallFailed?.(data.payload as CallFailedPayload);
+              onCallFailed?.(message.payload);
               break;
 
             case 'entity.created':
-              onEntityCreated?.(data.payload as EntityCreatedPayload);
+              onEntityCreated?.(message.payload);
               break;
 
             case 'entity.updated':
-              onEntityUpdated?.(data.payload as EntityUpdatedPayload);
+              onEntityUpdated?.(message.payload);
               break;
 
             case 'entity.deleted':
-              onEntityDeleted?.(data.payload as EntityDeletedPayload);
+              onEntityDeleted?.(message.payload);
               break;
 
             case 'chat.created':
-              onChatCreated?.(data.payload as ChatCreatedPayload);
+              onChatCreated?.(message.payload);
               break;
 
             case 'chat.updated':
-              onChatUpdated?.(data.payload as ChatUpdatedPayload);
+              onChatUpdated?.(message.payload);
               break;
 
             case 'chat.deleted':
-              onChatDeleted?.(data.payload as ChatDeletedPayload);
+              onChatDeleted?.(message.payload);
               break;
 
             case 'chat.message':
-              onChatMessage?.(data.payload as ChatMessagePayload);
+              onChatMessage?.(message.payload);
               break;
 
-            default:
-              logger.log('[WebSocket] Unknown event type:', data.type);
+            default: {
+              // Exhaustiveness check - TypeScript will error if we miss a case
+              const _exhaustive: never = message;
+              logger.log('[WebSocket] Unknown event type:', (_exhaustive as WebSocketMessage).type);
+            }
           }
         } catch (err) {
           logger.error('[WebSocket] Failed to parse message:', err);

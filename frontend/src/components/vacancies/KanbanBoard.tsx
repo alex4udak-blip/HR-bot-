@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useReducer } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Mail,
@@ -34,6 +34,47 @@ interface DropTarget {
   index: number | null; // null means end of column, number means before that index
 }
 
+// Drag state management with useReducer
+type DragState = {
+  isDragging: boolean;
+  draggedApp: VacancyApplication | null;
+  dropTarget: DropTarget | null;
+};
+
+type DragAction =
+  | { type: 'START_DRAG'; payload: { app: VacancyApplication } }
+  | { type: 'UPDATE_TARGET'; payload: DropTarget | null }
+  | { type: 'END_DRAG' }
+  | { type: 'CANCEL_DRAG' };
+
+const initialDragState: DragState = {
+  isDragging: false,
+  draggedApp: null,
+  dropTarget: null,
+};
+
+function dragReducer(state: DragState, action: DragAction): DragState {
+  switch (action.type) {
+    case 'START_DRAG':
+      return {
+        isDragging: true,
+        draggedApp: action.payload.app,
+        dropTarget: null,
+      };
+    case 'UPDATE_TARGET':
+      return {
+        ...state,
+        dropTarget: action.payload,
+      };
+    case 'END_DRAG':
+      return initialDragState;
+    case 'CANCEL_DRAG':
+      return initialDragState;
+    default:
+      return state;
+  }
+}
+
 // Use existing PostgreSQL enum values (mapped to HR labels in backend stage_config)
 const VISIBLE_STAGES: ApplicationStage[] = [
   'applied',      // Новый
@@ -50,9 +91,11 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   const navigate = useNavigate();
   const [showAddCandidate, setShowAddCandidate] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<VacancyApplication | null>(null);
-  const [draggedApp, setDraggedApp] = useState<VacancyApplication | null>(null);
-  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+
+  // Drag state managed by useReducer
+  const [dragState, dispatchDrag] = useReducer(dragReducer, initialDragState);
+  const { isDragging, draggedApp, dropTarget } = dragState;
+
   const boardRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef<Map<string, number>>(new Map());
   const autoScrollIntervalRef = useRef<number | null>(null);
@@ -155,8 +198,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   }, [isDragging, startAutoScroll, stopAutoScroll]);
 
   const handleDragStart = (e: React.DragEvent, app: VacancyApplication) => {
-    setDraggedApp(app);
-    setIsDragging(true);
+    dispatchDrag({ type: 'START_DRAG', payload: { app } });
     // Set drag image
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = 'move';
@@ -216,9 +258,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
       }
     }
 
-    setDraggedApp(null);
-    setDropTarget(null);
-    setIsDragging(false);
+    dispatchDrag({ type: 'END_DRAG' });
     dragCounterRef.current.clear();
     stopAutoScroll();
     isMovingRef.current = false;
@@ -255,7 +295,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
       dropIndex = cards.length;
     }
 
-    setDropTarget({ stage, index: dropIndex });
+    dispatchDrag({ type: 'UPDATE_TARGET', payload: { stage, index: dropIndex } });
   };
 
   const handleColumnDragEnter = (e: React.DragEvent, stage: ApplicationStage) => {
@@ -274,7 +314,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     if (count <= 0) {
       dragCounterRef.current.delete(key);
       if (dropTarget?.stage === stage) {
-        setDropTarget(null);
+        dispatchDrag({ type: 'UPDATE_TARGET', payload: null });
       }
     }
   };

@@ -1,19 +1,19 @@
 # TODO: Архитектурный рефакторинг HR-bot
 
 > Создано: 15 января 2026
-> Обновлено: 16 января 2026
-> Статус: Фаза 2-3 завершена ✅
+> Обновлено: 18 января 2026 (вечер)
+> Статус: ВСЕ ФАЗЫ ЗАВЕРШЕНЫ ✅ (Низкоприоритетные задачи проанализированы)
 
 ---
 
-## ТЕКУЩАЯ ЗАДАЧА: Kanban вакансий
+## ТЕКУЩАЯ ЗАДАЧА: ВСЕ ВЫПОЛНЕНО ✅
 
 - [x] Исправить ошибку enum PostgreSQL (applied вместо new)
 - [x] Обновить frontend типы
 - [x] Деплой на Railway
-- [ ] Проверить drag & drop между колонками
-- [ ] Проверить добавление кандидата в вакансию
-- [ ] Проверить удаление кандидата из вакансии
+- [x] Проверить drag & drop между колонками - ✅ Работает на проде!
+- [x] Проверить добавление кандидата в вакансию - ✅ Работает на проде!
+- [x] Проверить удаление кандидата из вакансии - ✅ Работает на проде!
 
 ---
 
@@ -72,12 +72,12 @@
 #### Дублирование кода
 - [x] ShareRequest schemas в 3+ файлах - ✅ Уже организовано в models/sharing.py
 - [x] `get_current_user` vs `get_current_user_allow_inactive` - ✅ PR #402 (объединены с параметром)
-- [ ] Role маппинг в `users.py` - вынести в утилиту
-- [ ] `Count(Chat.id)` запрос повторяется 4 раза
+- [x] Role маппинг в `users.py` - ✅ Вынесено в utils/roles.py (3 функции)
+- [x] `Count(Chat.id)` запрос - ❌ НЕ дублирование (разные контексты: по owner, entity, org)
 
 #### Архитектура
-- [ ] `main.py` - God Module с 20+ импортами роутов
-- [ ] `cache.py` - неправильный Singleton pattern
+- [x] `main.py` - ❌ НЕ God Module (нормальная структура FastAPI entry point)
+- [x] `cache.py` - ❌ Правильный pattern (asyncio.Lock, два сервиса кэша)
 - [x] `reports.py:45, 48, 50` - ✅ PR #402 (print() → logger)
 
 #### Dead code
@@ -99,7 +99,7 @@
 #### WebSocket типизация
 - [x] `stores/entityStore.ts:232, 280` - ✅ PR #402 (types/websocket.ts)
 - [x] `stores/chatStore.ts:25, 40` - ✅ PR #402
-- [x] `hooks/useWebSocket.ts:150, 154, 158, 170, 182` - ✅ PR #402
+- [x] `hooks/useWebSocket.ts:150, 154, 158, 170, 182` - ✅ PR #402, улучшено в PR #408 (discriminated unions)
 
 #### Много useState
 - [x] `ContactDetail.tsx` - ✅ PR #402 (useReducer: modalReducer, asyncReducer)
@@ -148,13 +148,13 @@
 4. ✅ Удалить dead code
 
 ### Оставшиеся задачи (низкий приоритет)
-- [ ] Role маппинг в users.py
-- [ ] Count(Chat.id) запросы
-- [ ] main.py God Module
-- [ ] cache.py Singleton pattern
-- [ ] KanbanBoard.tsx useReducer
-- [ ] Legacy enum значения
-- [ ] User-Agent парсинг
+- [x] Role маппинг в users.py - ✅ Вынесено в utils/roles.py
+- [x] Count(Chat.id) запросы - ❌ НЕ нужно (разные контексты)
+- [x] main.py God Module - ❌ НЕ нужно (нормальная структура)
+- [x] cache.py Singleton pattern - ❌ НЕ нужно (уже правильно)
+- [x] KanbanBoard.tsx useReducer - ✅ PR #409
+- [x] Legacy enum значения - ❌ НЕ нужно (закомментированы с документацией)
+- [ ] User-Agent парсинг (очень низкий приоритет)
 
 ---
 
@@ -189,3 +189,12 @@
 - `frontend/src/services/api/` - модульная API структура
 - `frontend/src/types/websocket.ts` - типы для WebSocket событий
 - `frontend/src/utils/localStorage.ts` - утилиты для localStorage
+
+### Новые файлы созданные в сессии 18.01.2026
+- `backend/api/utils/roles.py` - утилиты для маппинга ролей (3 функции)
+
+### PR #408: WebSocket Type Safety
+- Рефакторинг `WebSocketMessage` с generic interface на discriminated union
+- TypeScript автоматически определяет тип payload по полю `type`
+- Убраны `as PayloadType` assertions в useWebSocket hook
+- Добавлена exhaustiveness check для обработки сообщений
