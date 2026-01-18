@@ -42,6 +42,9 @@ Pillow==12.1.0
 pillow-heif==1.1.1
 chardet==5.2.0
 
+# User-Agent parsing
+user-agents==2.2.0
+
 # Utils
 python-dotenv==1.2.1
 pydantic==2.12.5

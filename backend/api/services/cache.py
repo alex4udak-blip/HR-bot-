@@ -15,6 +15,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
+from ..config import settings
+
 logger = logging.getLogger("hr-analyzer.cache")
 
 
@@ -27,8 +29,11 @@ class AnalysisCacheService:
     # Lock for thread-safe cache operations
     _lock: asyncio.Lock = None
 
-    # Default TTL for cached results (1 hour)
-    DEFAULT_TTL_SECONDS = 3600
+    @classmethod
+    @property
+    def DEFAULT_TTL_SECONDS(cls) -> int:
+        """Default TTL for cached results (configurable via CACHE_TTL_DEFAULT env var)."""
+        return settings.cache_ttl_default
 
     @classmethod
     def _get_lock(cls) -> asyncio.Lock:
@@ -325,8 +330,11 @@ class ScoringCacheService:
     # Lock for thread-safe operations
     _lock: asyncio.Lock = None
 
-    # Default TTL for scoring cache (1 hour)
-    DEFAULT_TTL_SECONDS = 3600
+    @classmethod
+    @property
+    def DEFAULT_TTL_SECONDS(cls) -> int:
+        """Default TTL for scoring cache (configurable via CACHE_TTL_SCORING env var)."""
+        return settings.cache_ttl_scoring
 
     @classmethod
     def _get_lock(cls) -> asyncio.Lock:

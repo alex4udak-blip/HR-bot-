@@ -82,6 +82,16 @@ class Settings(BaseSettings):
         alias="COOKIE_SECURE"
     )
 
+    # Cache TTL settings (in seconds)
+    cache_ttl_default: int = Field(
+        default=3600,  # 1 hour
+        alias="CACHE_TTL_DEFAULT"
+    )
+    cache_ttl_scoring: int = Field(
+        default=3600,  # 1 hour
+        alias="CACHE_TTL_SCORING"
+    )
+
     def get_allowed_origins_list(self) -> list[str]:
         """Parse comma-separated origins into a list.
 
