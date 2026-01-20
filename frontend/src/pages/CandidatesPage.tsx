@@ -380,28 +380,26 @@ export default function CandidatesPage() {
         </button>
         {/* Quick action buttons */}
         {isSelected && (
-          <div className="flex items-center gap-1 mt-2 pt-2 border-t border-white/10">
+          <div className="flex items-center justify-center gap-1 mt-2 pt-2 border-t border-white/10">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 navigate(`/vacancies/${vacancy.id}`);
               }}
-              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 rounded text-xs transition-colors"
+              className="flex items-center justify-center p-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 rounded text-xs transition-colors"
               title="Открыть страницу вакансии"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              Открыть
             </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 setShowVacancyDetail(true);
               }}
-              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-xs transition-colors"
+              className="flex items-center justify-center p-1.5 bg-white/5 hover:bg-white/10 rounded text-xs transition-colors"
               title="Просмотр деталей"
             >
               <Eye className="w-3.5 h-3.5" />
-              Детали
             </button>
             <button
               onClick={(e) => {
@@ -409,11 +407,10 @@ export default function CandidatesPage() {
                 setVacancyPrefillData(null);
                 setShowCreateVacancyModal(true);
               }}
-              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded text-xs transition-colors"
+              className="flex items-center justify-center p-1.5 bg-white/5 hover:bg-white/10 rounded text-xs transition-colors"
               title="Редактировать"
             >
               <Edit className="w-3.5 h-3.5" />
-              Изменить
             </button>
           </div>
         )}
