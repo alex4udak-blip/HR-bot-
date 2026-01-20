@@ -901,12 +901,15 @@ async def update_application(
     # Synchronize with entity status
     if data.stage and data.stage in STAGE_SYNC_MAP:
         new_status = STAGE_SYNC_MAP[data.stage]
-        await db.execute(
-            update(Entity)
-            .where(Entity.id == application.entity_id)
-            .values(status=new_status, updated_at=datetime.utcnow())
+        # Get entity and update its status
+        entity_result = await db.execute(
+            select(Entity).where(Entity.id == application.entity_id)
         )
-        logger.info(f"Synchronized application {application_id} stage {data.stage} to entity {application.entity_id} status as {new_status}")
+        entity_to_sync = entity_result.scalar()
+        if entity_to_sync and entity_to_sync.status != new_status:
+            entity_to_sync.status = new_status
+            entity_to_sync.updated_at = datetime.utcnow()
+            logger.info(f"Synchronized application {application_id} stage {data.stage} to entity {application.entity_id} status {new_status}")
 
     await db.commit()
     await db.refresh(application)
