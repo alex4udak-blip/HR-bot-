@@ -145,6 +145,11 @@ async def init_database():
     for role_val in ['superadmin', 'admin', 'sub_admin']:
         await run_migration(engine, f"ALTER TYPE userrole ADD VALUE IF NOT EXISTS '{role_val}'", f"Add {role_val} to userrole enum")
 
+    # Step 2.3: Add HR pipeline stages to entitystatus enum (for Entity.status sync)
+    # These are needed for bidirectional sync between Entity.status and VacancyApplication.stage
+    for status_val in ['practice', 'tech_practice', 'is_interview']:
+        await run_migration(engine, f"ALTER TYPE entitystatus ADD VALUE IF NOT EXISTS '{status_val}'", f"Add {status_val} to entitystatus enum")
+
     # Step 3: Create all tables
     logger.info("Creating tables with create_all...")
     try:
