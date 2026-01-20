@@ -94,6 +94,10 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
       str.split(',').map(s => s.trim()).filter(s => s.length > 0);
 
     try {
+      // Parse salary values, ensuring they are valid numbers or undefined
+      const salaryMin = formData.expected_salary_min ? parseInt(formData.expected_salary_min, 10) : undefined;
+      const salaryMax = formData.expected_salary_max ? parseInt(formData.expected_salary_max, 10) : undefined;
+
       const data = {
         type: formData.type,
         name: formData.name.trim(),
@@ -110,11 +114,14 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
           .split(',')
           .map((t) => t.trim())
           .filter((t) => t.length > 0),
-        // Expected salary for candidates
-        expected_salary_min: formData.expected_salary_min ? parseInt(formData.expected_salary_min, 10) : undefined,
-        expected_salary_max: formData.expected_salary_max ? parseInt(formData.expected_salary_max, 10) : undefined,
+        // Expected salary for candidates (only include if valid number)
+        expected_salary_min: (salaryMin && !isNaN(salaryMin)) ? salaryMin : undefined,
+        expected_salary_max: (salaryMax && !isNaN(salaryMax)) ? salaryMax : undefined,
         expected_salary_currency: formData.expected_salary_currency || 'RUB'
       };
+
+      // Debug: log what we're sending
+      console.log('[ContactForm] Creating entity with data:', JSON.stringify(data, null, 2));
 
       let result: Entity;
       if (entity) {
