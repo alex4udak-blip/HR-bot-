@@ -428,7 +428,6 @@ export default function CandidatesPage() {
       layout
       draggable
       onDragStart={() => handleDragStart(app)}
-      onDragEnd={handleDragEnd}
       initial={{ opacity: 0, y: 10 }}
       animate={{
         opacity: draggedApp?.id === app.id ? 0.5 : 1,
@@ -744,25 +743,25 @@ export default function CandidatesPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <div className="p-4 border-b border-white/10">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
               <OnboardingTooltip
                 id="candidates-page"
                 content="Управляйте кандидатами по вакансиям, перетаскивайте между этапами"
                 position="bottom"
               >
-                <h1 className="text-xl font-bold flex items-center gap-2">
-                  <UserCheck className="w-6 h-6 text-cyan-400" />
-                  {currentVacancy ? currentVacancy.title : 'База кандидатов'}
+                <h1 className="text-xl font-bold flex items-center gap-2 min-w-0">
+                  <UserCheck className="w-6 h-6 text-cyan-400 flex-shrink-0" />
+                  <span className="truncate">{currentVacancy ? currentVacancy.title : 'База кандидатов'}</span>
                 </h1>
               </OnboardingTooltip>
               {currentVacancy && (
-                <span className="text-sm text-white/40">
-                  {kanbanBoard?.total_count || 0} кандидатов
+                <span className="text-sm text-white/40 whitespace-nowrap flex-shrink-0">
+                  {kanbanBoard?.total_count || 0} канд.
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               {/* Navigation to vacancies page */}
               <button
                 onClick={() => navigate('/vacancies')}
