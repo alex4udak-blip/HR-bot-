@@ -480,14 +480,14 @@ export default function SettingsPage() {
                           onClick={() => handleOrgWideToggle(featureName, !isOrgWideEnabled)}
                           disabled={featureMutation.isPending}
                           className={clsx(
-                            'relative w-12 h-6 rounded-full transition-colors overflow-hidden',
+                            'relative w-12 h-6 rounded-full transition-colors',
                             isOrgWideEnabled ? 'bg-accent-500' : 'bg-white/10'
                           )}
                         >
                           <span
                             className={clsx(
-                              'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                              isOrgWideEnabled ? 'translate-x-7' : 'translate-x-1'
+                              'absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform',
+                              isOrgWideEnabled ? 'translate-x-6' : 'translate-x-0'
                             )}
                           />
                         </button>
@@ -1058,14 +1058,14 @@ export default function SettingsPage() {
                   toast.success(newValue ? 'Анимации включены' : 'Анимации отключены');
                 }}
                 className={clsx(
-                  'relative w-12 h-6 rounded-full transition-colors overflow-hidden',
+                  'relative w-12 h-6 rounded-full transition-colors',
                   animationsEnabled ? 'bg-accent-500' : 'bg-white/10'
                 )}
               >
                 <span
                   className={clsx(
-                    'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                    animationsEnabled ? 'translate-x-7' : 'translate-x-1'
+                    'absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform',
+                    animationsEnabled ? 'translate-x-6' : 'translate-x-0'
                   )}
                 />
               </button>
