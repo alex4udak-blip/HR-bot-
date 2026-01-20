@@ -349,7 +349,7 @@ export default function CandidatesPage() {
       <div
         key={vacancy.id}
         className={clsx(
-          'w-full text-left p-3 rounded-lg border transition-all duration-200 group',
+          'w-full text-left p-3 rounded-lg border transition-all duration-200 group overflow-hidden',
           isSelected
             ? 'bg-cyan-500/20 border-cyan-500/50'
             : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'
@@ -357,22 +357,22 @@ export default function CandidatesPage() {
       >
         <button
           onClick={() => handleVacancySelect(vacancy.id)}
-          className="w-full text-left"
+          className="w-full text-left overflow-hidden"
         >
           <div className="flex items-start justify-between gap-2">
-            <div className="flex-1 min-w-0">
-              <h4 className={clsx('font-medium truncate text-sm', isSelected && 'text-cyan-300')}>
+            <div className="flex-1 min-w-0 overflow-hidden">
+              <h4 className={clsx('font-medium text-sm truncate', isSelected && 'text-cyan-300')}>
                 {vacancy.title}
               </h4>
               {vacancy.department_name && (
                 <p className="text-xs text-white/40 truncate mt-0.5">{vacancy.department_name}</p>
               )}
             </div>
-            <div className="flex flex-col items-end gap-1">
-              <span className={clsx('text-xs px-1.5 py-0.5 rounded', VACANCY_STATUS_COLORS[vacancy.status])}>
+            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+              <span className={clsx('text-xs px-1.5 py-0.5 rounded whitespace-nowrap', VACANCY_STATUS_COLORS[vacancy.status])}>
                 {VACANCY_STATUS_LABELS[vacancy.status]}
               </span>
-              <span className="text-xs text-white/40">
+              <span className="text-xs text-white/40 whitespace-nowrap">
                 {vacancy.applications_count} канд.
               </span>
             </div>
@@ -743,33 +743,33 @@ export default function CandidatesPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <div className="p-4 border-b border-white/10">
-          <div className="flex items-center justify-between gap-4 mb-4">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
               <OnboardingTooltip
                 id="candidates-page"
                 content="Управляйте кандидатами по вакансиям, перетаскивайте между этапами"
                 position="bottom"
               >
-                <h1 className="text-xl font-bold flex items-center gap-2 min-w-0">
-                  <UserCheck className="w-6 h-6 text-cyan-400 flex-shrink-0" />
+                <h1 className="text-lg font-bold flex items-center gap-2 min-w-0 overflow-hidden">
+                  <UserCheck className="w-5 h-5 text-cyan-400 flex-shrink-0" />
                   <span className="truncate">{currentVacancy ? currentVacancy.title : 'База кандидатов'}</span>
                 </h1>
               </OnboardingTooltip>
               {currentVacancy && (
-                <span className="text-sm text-white/40 whitespace-nowrap flex-shrink-0">
+                <span className="text-xs text-white/40 whitespace-nowrap flex-shrink-0">
                   {kanbanBoard?.total_count || 0} канд.
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
               {/* Navigation to vacancies page */}
               <button
                 onClick={() => navigate('/vacancies')}
-                className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg text-sm transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg text-xs transition-colors"
                 title="Перейти к вакансиям"
               >
-                <Briefcase className="w-4 h-4" />
-                К вакансиям
+                <Briefcase className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">К вакансиям</span>
               </button>
               {/* View Mode Toggle - only when vacancy selected */}
               {currentVacancy && (
@@ -801,18 +801,20 @@ export default function CandidatesPage() {
                 <>
                   <button
                     onClick={() => setShowParserModal(true)}
-                    className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs transition-colors"
+                    title="Загрузить резюме"
                   >
-                    <Upload className="w-4 h-4" />
-                    Загрузить резюме
+                    <Upload className="w-3.5 h-3.5" />
+                    <span className="hidden md:inline">Загрузить резюме</span>
                   </button>
 
                   <button
                     onClick={() => setShowAddToVacancyModal(true)}
-                    className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm transition-colors"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-xs transition-colors"
+                    title="Добавить кандидата"
                   >
-                    <Plus className="w-4 h-4" />
-                    Добавить кандидата
+                    <Plus className="w-3.5 h-3.5" />
+                    <span className="hidden md:inline">Добавить кандидата</span>
                   </button>
                 </>
               )}
