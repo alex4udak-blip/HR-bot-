@@ -38,14 +38,23 @@ export const createEntity = async (entityData: {
   type: EntityType;
   name: string;
   status?: EntityStatus;
+  // Legacy single identifiers
   phone?: string;
   email?: string;
   telegram_user_id?: number;
+  // Multiple identifiers
+  telegram_usernames?: string[];
+  emails?: string[];
+  phones?: string[];
   company?: string;
   position?: string;
   tags?: string[];
   extra_data?: Record<string, unknown>;
   department_id?: number;
+  // Expected salary for candidates
+  expected_salary_min?: number;
+  expected_salary_max?: number;
+  expected_salary_currency?: string;
 }): Promise<Entity> => {
   const { data } = await debouncedMutation<Entity>('post', '/entities', entityData);
   return data;
@@ -54,13 +63,22 @@ export const createEntity = async (entityData: {
 export const updateEntity = async (id: number, updates: {
   name?: string;
   status?: EntityStatus;
+  // Legacy single identifiers
   phone?: string;
   email?: string;
+  // Multiple identifiers
+  telegram_usernames?: string[];
+  emails?: string[];
+  phones?: string[];
   company?: string;
   position?: string;
   tags?: string[];
   extra_data?: Record<string, unknown>;
   department_id?: number | null;
+  // Expected salary for candidates
+  expected_salary_min?: number;
+  expected_salary_max?: number;
+  expected_salary_currency?: string;
 }): Promise<Entity> => {
   const { data } = await debouncedMutation<Entity>('put', `/entities/${id}`, updates);
   return data;
