@@ -59,13 +59,27 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
     }
   }, [formData.type]);
 
+  // Email validation regex (matches backend validation)
+  const isValidEmail = (email: string): boolean => {
+    return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email);
+  };
+
   const validate = () => {
     const newErrors: Record<string, string> = {};
     if (!formData.name.trim()) {
       newErrors.name = 'Имя обязательно';
     }
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+    // Validate single email field (legacy)
+    if (formData.email && !isValidEmail(formData.email.trim())) {
       newErrors.email = 'Неверный формат email';
+    }
+    // Validate multiple emails field
+    if (formData.emails) {
+      const emailList = formData.emails.split(',').map(e => e.trim()).filter(e => e.length > 0);
+      const invalidEmails = emailList.filter(email => !isValidEmail(email));
+      if (invalidEmails.length > 0) {
+        newErrors.emails = `Неверный формат email: ${invalidEmails.join(', ')}`;
+      }
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -232,11 +246,11 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
                 onChange={(e) => setFormData((prev) => ({ ...prev, emails: e.target.value }))}
                 className={clsx(
                   'w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50',
-                  errors.email ? 'border-red-500/50' : 'border-white/10'
+                  errors.emails ? 'border-red-500/50' : 'border-white/10'
                 )}
                 placeholder="john@example.com, john.doe@company.com"
               />
-              {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}
+              {errors.emails && <p className="text-red-400 text-xs mt-1">{errors.emails}</p>}
             </div>
 
             <div>
