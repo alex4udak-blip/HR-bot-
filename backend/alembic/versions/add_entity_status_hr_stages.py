@@ -13,7 +13,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = 'add_entity_status_hr_stages'
-down_revision = 'add_entity_version'
+down_revision = 'add_entity_type_criteria'
 branch_labels = None
 depends_on = None
 
