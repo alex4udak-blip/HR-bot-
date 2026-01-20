@@ -413,7 +413,7 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
     description: 'Соискатели на вакансии',
     icon: 'UserCheck',
     color: 'blue',
-    statuses: ['applied', 'screening', 'phone_screen', 'interview', 'assessment', 'offer', 'hired', 'rejected']
+    statuses: ['new', 'screening', 'practice', 'tech_practice', 'is_interview', 'offer', 'hired', 'rejected']
   },
   client: {
     id: 'client',
