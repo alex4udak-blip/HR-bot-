@@ -480,7 +480,7 @@ export default function SettingsPage() {
                           onClick={() => handleOrgWideToggle(featureName, !isOrgWideEnabled)}
                           disabled={featureMutation.isPending}
                           className={clsx(
-                            'relative w-12 h-6 rounded-full transition-colors',
+                            'relative w-12 h-6 rounded-full transition-colors overflow-hidden',
                             isOrgWideEnabled ? 'bg-accent-500' : 'bg-white/10'
                           )}
                         >
@@ -1058,7 +1058,7 @@ export default function SettingsPage() {
                   toast.success(newValue ? 'Анимации включены' : 'Анимации отключены');
                 }}
                 className={clsx(
-                  'relative w-12 h-6 rounded-full transition-colors',
+                  'relative w-12 h-6 rounded-full transition-colors overflow-hidden',
                   animationsEnabled ? 'bg-accent-500' : 'bg-white/10'
                 )}
               >
