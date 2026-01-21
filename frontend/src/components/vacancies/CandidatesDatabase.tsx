@@ -597,7 +597,12 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               {(candidate.tags?.length || 0) > 3 && <span className="text-xs text-white/40">+{candidate.tags!.length - 3}</span>}
             </div>
           </div>
-          <div className="text-xs hidden sm:block flex-shrink-0 min-w-[100px]">
+          <div className="w-[100px] min-w-[100px] flex-shrink-0">
+            <span className={clsx('px-2 py-1 text-xs rounded-full whitespace-nowrap inline-block', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
+              {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
+            </span>
+          </div>
+          <div className="w-[60px] min-w-[60px] flex-shrink-0 text-xs hidden sm:block">
             {candidate.vacancies_count && candidate.vacancies_count > 0 ? (
               <span className="text-emerald-400 flex items-center gap-1">
                 <Briefcase className="w-3 h-3" />
@@ -741,7 +746,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               e.stopPropagation();
               handleCandidateClick(candidate);
             }}
-            className="p-1 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+            className="p-1 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
           >
             <ExternalLink className="w-3 h-3" />
           </button>
