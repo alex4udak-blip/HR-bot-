@@ -110,10 +110,28 @@ export default function CallDetail({ call }: CallDetailProps) {
     setIsEditing(false);
   };
 
+  // Get corrected duration - handles bug where minutes were stored as seconds
+  const getCorrectedDuration = (): number => {
+    if (!call.duration_seconds) return 0;
+
+    // Find max timestamp from speakers to detect duration bug
+    const maxEndTimestamp = call.speakers?.reduce((max, s) => Math.max(max, s.end || 0), 0) || 0;
+
+    // If duration_seconds is much smaller than max speaker timestamp,
+    // it was likely stored in minutes instead of seconds
+    if (maxEndTimestamp > 0 && call.duration_seconds < maxEndTimestamp * 0.5) {
+      return maxEndTimestamp;
+    }
+
+    return call.duration_seconds;
+  };
+
+  const correctedDuration = getCorrectedDuration();
+
   const formatDuration = (seconds?: number) => {
     if (!seconds) return '—';
     const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+    const secs = Math.floor(seconds % 60);
     return `${mins}м ${secs}с`;
   };
 
@@ -152,7 +170,7 @@ export default function CallDetail({ call }: CallDetailProps) {
 
     const content = `Транскрипт: ${call.title || 'Звонок #' + call.id}\n` +
       `Дата: ${new Date(call.created_at).toLocaleString('ru-RU')}\n` +
-      `Длительность: ${formatDuration(call.duration_seconds)}\n` +
+      `Длительность: ${formatDuration(correctedDuration)}\n` +
       `${'='.repeat(50)}\n\n` +
       lines.join('\n');
 
@@ -166,6 +184,8 @@ export default function CallDetail({ call }: CallDetailProps) {
     const stats: Record<string, { talkTime: number; wordCount: number; segmentDuration: number }> = {};
     let totalSegmentDuration = 0;
 
+    let maxEndTimestamp = 0;
+
     call.speakers.forEach(segment => {
       const speaker = segment.speaker;
       const segmentDur = segment.end - segment.start;
@@ -177,11 +197,21 @@ export default function CallDetail({ call }: CallDetailProps) {
       stats[speaker].segmentDuration += segmentDur;
       stats[speaker].wordCount += words;
       totalSegmentDuration += segmentDur;
+
+      // Track max timestamp to detect duration bugs
+      if (segment.end > maxEndTimestamp) {
+        maxEndTimestamp = segment.end;
+      }
     });
 
-    // Use actual call duration if available, otherwise use sum of segment durations
-    // Fireflies segments only cover speech time, not pauses, so we scale proportionally
-    const actualDuration = call.duration_seconds || totalSegmentDuration;
+    // Fix for duration bug: if duration_seconds is much smaller than max speaker timestamp,
+    // it was likely stored in minutes instead of seconds. Use max timestamp as fallback.
+    let actualDuration = call.duration_seconds || totalSegmentDuration;
+    if (call.duration_seconds && maxEndTimestamp > 0 && call.duration_seconds < maxEndTimestamp * 0.5) {
+      // duration_seconds is suspiciously small compared to timestamps - use max timestamp
+      actualDuration = maxEndTimestamp;
+    }
+
     const scaleFactor = totalSegmentDuration > 0 ? actualDuration / totalSegmentDuration : 1;
 
     // Convert to array with percentages and WPM
@@ -217,7 +247,7 @@ export default function CallDetail({ call }: CallDetailProps) {
     const sections: string[] = [
       `Анализ звонка: ${call.title || 'Звонок #' + call.id}`,
       `Дата: ${new Date(call.created_at).toLocaleString('ru-RU')}`,
-      `Длительность: ${formatDuration(call.duration_seconds)}`,
+      `Длительность: ${formatDuration(correctedDuration)}`,
       '='.repeat(50),
       ''
     ];
@@ -421,7 +451,7 @@ export default function CallDetail({ call }: CallDetailProps) {
             Длительность
           </div>
           <p className="text-2xl font-semibold text-white">
-            {formatDuration(call.duration_seconds)}
+            {formatDuration(correctedDuration)}
           </p>
         </div>
 
