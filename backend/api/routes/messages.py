@@ -39,7 +39,7 @@ async def get_messages(
         raise HTTPException(status_code=404, detail="Chat not found")
     # Use PermissionService for access check
     permission_service = PermissionService(db)
-    if not await permission_service.can_access_resource(user, chat, org_id):
+    if not await permission_service.can_access_resource(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
     query = select(Message).where(Message.chat_id == chat_id)
@@ -86,7 +86,7 @@ async def get_participants(
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
     permission_service = PermissionService(db)
-    if not await permission_service.can_access_resource(user, chat, org_id):
+    if not await permission_service.can_access_resource(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Group by telegram_user_id only, take max of other fields to avoid duplicates
@@ -222,7 +222,7 @@ async def get_local_file(
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
     permission_service = PermissionService(db)
-    if not await permission_service.can_access_resource(user, chat, org_id):
+    if not await permission_service.can_access_resource(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Build file path and verify it exists
@@ -336,7 +336,7 @@ async def transcribe_message(
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
     permission_service = PermissionService(db)
-    if not await permission_service.can_access_resource(user, chat, org_id):
+    if not await permission_service.can_access_resource(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Get file bytes - either from local file or from Telegram
@@ -445,7 +445,7 @@ async def transcribe_all_media(
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
     permission_service = PermissionService(db)
-    if not await permission_service.can_access_resource(user, chat, org_id):
+    if not await permission_service.can_access_resource(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Find all messages that need transcription
