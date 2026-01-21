@@ -527,43 +527,25 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-sm flex-shrink-0">
             {getAvatarInitials(candidate.name || 'UK')}
           </div>
-          <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-4 gap-2 items-center">
-            <div className="min-w-0">
-              <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
-              {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
-            </div>
-            <div className="text-xs text-white/60 space-y-0.5 min-w-0 hidden sm:block">
-              {candidate.email && (
-                <div className="flex items-center gap-1.5 truncate">
-                  <Mail className="w-3 h-3 flex-shrink-0" />
-                  <span className="truncate">{candidate.email}</span>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={clsx('px-2 py-1 text-xs rounded-full', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
-                {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
-              </span>
-              {nextStage && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nextStage]);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all"
-                >
-                  → {STATUS_LABELS[nextStage]}
-                </button>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-1 items-center hidden lg:flex">
-              {candidate.tags?.slice(0, 3).map(tag => (
-                <span key={tag} className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/60">{tag}</span>
-              ))}
-              {(candidate.tags?.length || 0) > 3 && <span className="text-xs text-white/40">+{candidate.tags!.length - 3}</span>}
-            </div>
+          {/* Fixed width columns for consistent alignment */}
+          <div className="w-[180px] min-w-[180px] flex-shrink-0">
+            <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
+            {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
           </div>
-          <div className="text-xs hidden sm:block flex-shrink-0 min-w-[100px]">
+          <div className="w-[180px] min-w-[180px] flex-shrink-0 text-xs text-white/60 hidden sm:block">
+            {candidate.email && (
+              <div className="flex items-center gap-1.5">
+                <Mail className="w-3 h-3 flex-shrink-0" />
+                <span className="truncate">{candidate.email}</span>
+              </div>
+            )}
+          </div>
+          <div className="w-[100px] min-w-[100px] flex-shrink-0">
+            <span className={clsx('px-2 py-1 text-xs rounded-full whitespace-nowrap inline-block', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
+              {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
+            </span>
+          </div>
+          <div className="w-[60px] min-w-[60px] flex-shrink-0 text-xs hidden sm:block">
             {candidate.vacancies_count && candidate.vacancies_count > 0 ? (
               <span className="text-emerald-400 flex items-center gap-1">
                 <Briefcase className="w-3 h-3" />
@@ -576,7 +558,17 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1 text-xs text-white/40 flex-shrink-0">
+          <div className="w-[100px] min-w-[100px] flex-shrink-0 text-xs text-white/40">
+            {candidate.owner_name ? (
+              <div className="flex items-center gap-1">
+                <User className="w-3 h-3 flex-shrink-0" />
+                <span className="truncate">{candidate.owner_name}</span>
+              </div>
+            ) : (
+              <span className="text-white/20">—</span>
+            )}
+          </div>
+          <div className="w-[80px] min-w-[80px] flex-shrink-0 flex items-center gap-1 text-xs text-white/40 whitespace-nowrap">
             <Clock className="w-3 h-3" />
             {formatDate(candidate.created_at)}
           </div>
@@ -680,17 +672,25 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             </div>
           )}
         </div>
-        <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-xs text-white/40 ml-7">
-          <div className="flex items-center gap-1">
-            <Clock className="w-3 h-3" />
-            {formatDate(candidate.created_at)}
+        <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between gap-2 text-xs text-white/40 ml-7">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="flex items-center gap-1 whitespace-nowrap flex-shrink-0">
+              <Clock className="w-3 h-3" />
+              {formatDate(candidate.created_at)}
+            </div>
+            {candidate.owner_name && (
+              <div className="flex items-center gap-1 min-w-0">
+                <User className="w-3 h-3 flex-shrink-0" />
+                <span className="truncate">{candidate.owner_name}</span>
+              </div>
+            )}
           </div>
           <button
             onClick={(e) => {
               e.stopPropagation();
               handleCandidateClick(candidate);
             }}
-            className="p-1 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+            className="p-1 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
           >
             <ExternalLink className="w-3 h-3" />
           </button>

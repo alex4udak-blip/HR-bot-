@@ -54,6 +54,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; "
             "img-src 'self' data: blob:; "
+            "media-src 'self' blob:; "
             "connect-src 'self' ws: wss:; "
             "script-src 'self'"
         )
