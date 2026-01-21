@@ -647,7 +647,8 @@ export interface CreateEntityFromResumeResponse {
 export const createEntityFromResume = async (file: File): Promise<CreateEntityFromResumeResponse> => {
   const formData = new FormData();
   formData.append('file', file);
-  const { data } = await api.post('/parser/resume/create-entity', formData, {
+  formData.append('auto_attach_file', 'true');
+  const { data } = await api.post('/entities/from-resume', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   });
   return data;
