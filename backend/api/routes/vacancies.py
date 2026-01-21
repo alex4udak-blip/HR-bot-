@@ -552,9 +552,6 @@ async def list_vacancies(
     is_admin = await is_org_admin_or_owner(current_user, org, db)
 
     if not is_admin:
-        # Get departments where user is lead or sub_admin
-        user_dept_ids = await get_user_department_ids(current_user.id, org.id, db)
-
         # Get departments where user is lead/sub_admin (not just member)
         lead_dept_result = await db.execute(
             select(DepartmentMember.department_id).where(
@@ -564,16 +561,22 @@ async def list_vacancies(
         )
         lead_dept_ids = [row[0] for row in lead_dept_result.all()]
 
+        # Get vacancy IDs shared with user
+        shared_vacancy_ids = await get_shared_vacancy_ids(current_user.id, db)
+
         # User can see:
         # 1. Vacancies they created
         # 2. Vacancies where they are hiring manager
         # 3. Vacancies in departments where they are lead/sub_admin
+        # 4. Vacancies shared with them via SharedAccess
         access_conditions = [
             Vacancy.created_by == current_user.id,
             Vacancy.hiring_manager_id == current_user.id
         ]
         if lead_dept_ids:
             access_conditions.append(Vacancy.department_id.in_(lead_dept_ids))
+        if shared_vacancy_ids:
+            access_conditions.append(Vacancy.id.in_(shared_vacancy_ids))
 
         query = query.where(or_(*access_conditions))
 

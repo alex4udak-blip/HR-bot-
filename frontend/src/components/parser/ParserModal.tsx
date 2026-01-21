@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Search, Link, FileText, Upload, Loader2, Check, AlertCircle, Zap } from 'lucide-react';
+import { X, Search, Link, FileText, Upload, Loader2, Check, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import type { ParsedResume, ParsedVacancy, CreateEntityFromResumeResponse } from '@/services/api';
@@ -70,7 +70,6 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
   const [error, setError] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<ParsedResume | ParsedVacancy | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [directCreateMode, setDirectCreateMode] = useState(true); // Create entity directly from file
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const detectedSource = url ? detectSource(url) : null;
@@ -125,8 +124,8 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
     setParsedData(null);
 
     try {
-      // Direct create mode: create entity immediately with file attached
-      if (directCreateMode && onEntityCreated) {
+      // Always create entity directly from file (no preview)
+      if (onEntityCreated) {
         const response = await createEntityFromResume(file);
         onEntityCreated(response);
         toast.success(`Кандидат "${response.entity.name}" создан`);
@@ -134,7 +133,7 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
         return;
       }
 
-      // Preview mode: parse first, then user can edit before creating
+      // Fallback: parse and show preview if no onEntityCreated callback
       const data = await parseResumeFromFile(file);
       setParsedData(data);
     } catch (err) {
@@ -330,36 +329,6 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
               ) : (
                 // File upload
                 <div className="space-y-4">
-                  {/* Mode toggle for resume files */}
-                  {onEntityCreated && (
-                    <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
-                      <div className="flex items-center gap-2">
-                        <Zap className={clsx(
-                          'w-4 h-4',
-                          directCreateMode ? 'text-yellow-400' : 'text-white/40'
-                        )} />
-                        <span className="text-sm">Быстрое создание</span>
-                      </div>
-                      <button
-                        onClick={() => setDirectCreateMode(!directCreateMode)}
-                        className={clsx(
-                          'relative w-12 h-6 rounded-full transition-colors',
-                          directCreateMode ? 'bg-cyan-600' : 'bg-white/20'
-                        )}
-                      >
-                        <span className={clsx(
-                          'absolute top-1 w-4 h-4 bg-white rounded-full transition-transform',
-                          directCreateMode ? 'translate-x-7' : 'translate-x-1'
-                        )} />
-                      </button>
-                    </div>
-                  )}
-                  {directCreateMode && onEntityCreated && (
-                    <p className="text-xs text-white/40 -mt-2">
-                      Кандидат будет создан сразу с прикреплённым резюме
-                    </p>
-                  )}
-
                   <div
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
