@@ -5,14 +5,14 @@ Adds:
 - vacancy to resourcetype enum
 
 Revision ID: add_vacancy_sharing
-Revises: force_add_entity_status_hr_stages
+Revises: force_add_entity_status_hr
 Create Date: 2026-01-21
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = 'add_vacancy_sharing'
-down_revision = 'force_add_entity_status_hr_stages'
+down_revision = 'force_add_entity_status_hr'
 branch_labels = None
 depends_on = None
 
