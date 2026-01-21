@@ -96,7 +96,7 @@ export default function DuplicateWarning({
   };
 
   const handleNavigateToEntity = (id: number) => {
-    navigate(`/entities/${id}`);
+    navigate(`/contacts/${id}`);
   };
 
   const getConfidenceColor = (confidence: number) => {

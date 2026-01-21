@@ -94,12 +94,12 @@ export function formatSalary(
     return `${formatNumber(min)} - ${formatNumber(max)} ${symbol}`;
   }
   if (min) {
-    return `from ${formatNumber(min)} ${symbol}`;
+    return `от ${formatNumber(min)} ${symbol}`;
   }
   if (max) {
-    return `up to ${formatNumber(max)} ${symbol}`;
+    return `до ${formatNumber(max)} ${symbol}`;
   }
-  return 'Not specified';
+  return 'Не указана';
 }
 
 /**

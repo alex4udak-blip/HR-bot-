@@ -421,8 +421,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               {/* Expected salary for candidates */}
               {entity.type === 'candidate' && (entity.expected_salary_min || entity.expected_salary_max) && (
                 <div className="flex items-center gap-2 text-white/60 min-w-0">
-                  <DollarSign size={16} className="flex-shrink-0" />
-                  <span className="truncate">
+                  <span className="truncate text-green-400">
                     {formatSalary(entity.expected_salary_min, entity.expected_salary_max, entity.expected_salary_currency)}
                   </span>
                 </div>

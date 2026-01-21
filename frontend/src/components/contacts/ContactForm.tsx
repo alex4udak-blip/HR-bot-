@@ -29,6 +29,55 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
   // Use prefillData when creating new entity, entity when editing
   const initialData = entity || prefillData;
 
+  // Helper: get emails from multiple sources (emails array, single email, extra_data)
+  const getInitialEmails = (): string => {
+    // First try emails array
+    if (initialData?.emails && initialData.emails.length > 0) {
+      return initialData.emails.join(', ');
+    }
+    // Fallback to single email
+    if (initialData?.email) {
+      return initialData.email;
+    }
+    // Check extra_data for parsed resume data
+    const extraEmails = initialData?.extra_data?.emails as string[] | undefined;
+    if (extraEmails && extraEmails.length > 0) {
+      return extraEmails.join(', ');
+    }
+    return '';
+  };
+
+  // Helper: get phones from multiple sources (phones array, single phone, extra_data)
+  const getInitialPhones = (): string => {
+    // First try phones array
+    if (initialData?.phones && initialData.phones.length > 0) {
+      return initialData.phones.join(', ');
+    }
+    // Fallback to single phone
+    if (initialData?.phone) {
+      return initialData.phone;
+    }
+    // Check extra_data for parsed resume data
+    const extraPhones = initialData?.extra_data?.phones as string[] | undefined;
+    if (extraPhones && extraPhones.length > 0) {
+      return extraPhones.join(', ');
+    }
+    return '';
+  };
+
+  // Helper: get telegram usernames from multiple sources
+  const getInitialTelegram = (): string => {
+    if (initialData?.telegram_usernames && initialData.telegram_usernames.length > 0) {
+      return initialData.telegram_usernames.join(', ');
+    }
+    // Check extra_data for telegram
+    const extraTelegram = initialData?.extra_data?.telegram as string | undefined;
+    if (extraTelegram) {
+      return extraTelegram;
+    }
+    return '';
+  };
+
   const [formData, setFormData] = useState({
     type: (initialData?.type || defaultType || 'candidate') as EntityType,
     name: initialData?.name || '',
@@ -36,9 +85,9 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
     phone: initialData?.phone || '',
     email: initialData?.email || '',
     // Multiple identifiers (comma-separated in UI, array in API)
-    telegram_usernames: initialData?.telegram_usernames?.join(', ') || '',
-    emails: initialData?.emails?.join(', ') || '',
-    phones: initialData?.phones?.join(', ') || '',
+    telegram_usernames: getInitialTelegram(),
+    emails: getInitialEmails(),
+    phones: getInitialPhones(),
     company: initialData?.company || '',
     position: initialData?.position || '',
     tags: initialData?.tags?.join(', ') || '',

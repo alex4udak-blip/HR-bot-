@@ -569,8 +569,8 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <span className={clsx('px-2 py-1 text-xs rounded-full', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className={clsx('px-2 py-1 text-xs rounded-full whitespace-nowrap', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
                 {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
               </span>
               {nextStage && (
@@ -581,7 +581,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                     handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nextStage]);
                   }}
                   className={clsx(
-                    "opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all",
+                    "opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all whitespace-nowrap",
                     isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
                   )}
                 >
@@ -615,7 +615,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               <span className="truncate">{candidate.owner_name}</span>
             </div>
           )}
-          <div className="flex items-center gap-1 text-xs text-white/40 flex-shrink-0">
+          <div className="flex items-center gap-1 text-xs text-white/40 flex-shrink-0 whitespace-nowrap">
             <Clock className="w-3 h-3" />
             {formatDate(candidate.created_at)}
           </div>
@@ -657,8 +657,8 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
           </div>
         </div>
-        <div className="flex items-center gap-2 mb-2 ml-7">
-          <span className={clsx('px-2 py-0.5 text-xs rounded-full', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
+        <div className="flex items-center gap-2 mb-2 ml-7 flex-wrap">
+          <span className={clsx('px-2 py-0.5 text-xs rounded-full whitespace-nowrap', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
             {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
           </span>
           {nextStage && (
@@ -669,7 +669,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                 handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nextStage]);
               }}
               className={clsx(
-                "opacity-0 group-hover:opacity-100 px-2 py-0.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all",
+                "opacity-0 group-hover:opacity-100 px-2 py-0.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all whitespace-nowrap",
                 isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
               )}
             >
@@ -692,7 +692,6 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           )}
           {(candidate.expected_salary_min || candidate.expected_salary_max) && (
             <div className="flex items-center gap-1.5 text-green-400">
-              <DollarSign className="w-3 h-3 flex-shrink-0" />
               <span>
                 {formatSalary(candidate.expected_salary_min, candidate.expected_salary_max, candidate.expected_salary_currency)}
               </span>
@@ -725,7 +724,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
         </div>
         <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-xs text-white/40 ml-7">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 whitespace-nowrap">
               <Clock className="w-3 h-3" />
               {formatDate(candidate.created_at)}
             </div>
