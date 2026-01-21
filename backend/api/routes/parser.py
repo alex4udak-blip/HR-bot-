@@ -27,6 +27,7 @@ from ..services.parser import (
     ParsedVacancy,
     parse_resume_from_pdf,
     parse_resume_from_url,
+    parse_resume_from_file,
     parse_vacancy_from_url,
     parse_vacancy_from_file,
     detect_source,

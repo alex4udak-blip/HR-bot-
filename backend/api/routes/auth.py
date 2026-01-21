@@ -2,6 +2,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Cookie
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from user_agents import parse as parse_user_agent
 
 from ..database import get_db
 from ..models.database import User, UserRole
@@ -49,23 +50,30 @@ def is_secure_context(request: Request) -> bool:
 
 
 def _get_device_name(request: Request) -> str:
-    """Extract a user-friendly device name from User-Agent header."""
-    user_agent = request.headers.get("user-agent", "Unknown Device")
-    # Simple extraction - in production, use a proper user-agent parser
-    if "Mobile" in user_agent or "Android" in user_agent or "iPhone" in user_agent:
-        if "iPhone" in user_agent:
-            return "iPhone"
-        elif "Android" in user_agent:
-            return "Android Device"
+    """Extract a user-friendly device name from User-Agent header using user-agents library."""
+    user_agent_str = request.headers.get("user-agent", "")
+    if not user_agent_str:
+        return "Unknown Device"
+
+    ua = parse_user_agent(user_agent_str)
+
+    # Build device name from parsed data
+    if ua.is_mobile:
+        if ua.device.family and ua.device.family != "Other":
+            return ua.device.family  # e.g., "iPhone", "Samsung Galaxy"
         return "Mobile Device"
-    elif "Chrome" in user_agent:
-        return "Chrome Browser"
-    elif "Firefox" in user_agent:
-        return "Firefox Browser"
-    elif "Safari" in user_agent:
-        return "Safari Browser"
-    elif "Edge" in user_agent:
-        return "Edge Browser"
+    elif ua.is_tablet:
+        if ua.device.family and ua.device.family != "Other":
+            return ua.device.family  # e.g., "iPad"
+        return "Tablet"
+    elif ua.is_pc:
+        browser = ua.browser.family  # e.g., "Chrome", "Firefox", "Safari"
+        if browser and browser != "Other":
+            return f"{browser} Browser"
+        return "Desktop Browser"
+    elif ua.is_bot:
+        return "Bot"
+
     return "Unknown Device"
 
 

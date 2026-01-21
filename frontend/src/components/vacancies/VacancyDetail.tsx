@@ -141,6 +141,13 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                <User className="w-5 h-5 text-white/40" />
+                <div>
+                  <p className="text-sm text-white/60">Владелец</p>
+                  <p>{vacancy.created_by_name || 'Не указан'}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
                 <Calendar className="w-5 h-5 text-white/40" />
                 <div>
                   <p className="text-sm text-white/60">Опубликована</p>

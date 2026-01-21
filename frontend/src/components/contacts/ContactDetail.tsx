@@ -20,7 +20,6 @@ import {
   Target,
   Plus,
   FolderOpen,
-  DollarSign,
   AlertTriangle
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -421,10 +420,26 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               {/* Expected salary for candidates */}
               {entity.type === 'candidate' && (entity.expected_salary_min || entity.expected_salary_max) && (
                 <div className="flex items-center gap-2 text-white/60 min-w-0">
-                  <DollarSign size={16} className="flex-shrink-0" />
-                  <span className="truncate">
+                  <span className="truncate text-green-400">
                     {formatSalary(entity.expected_salary_min, entity.expected_salary_max, entity.expected_salary_currency)}
                   </span>
+                </div>
+              )}
+              {/* Owner and department info */}
+              {(entity.owner_name || entity.department_name) && (
+                <div className="flex items-center gap-4 text-white/40 mt-2">
+                  {entity.owner_name && (
+                    <span className="flex items-center gap-1" title="Владелец">
+                      <User size={14} />
+                      <span>Владелец: {entity.owner_name}</span>
+                    </span>
+                  )}
+                  {entity.department_name && (
+                    <span className="flex items-center gap-1" title="Департамент">
+                      <Building2 size={14} />
+                      <span>{entity.department_name}</span>
+                    </span>
+                  )}
                 </div>
               )}
             </div>

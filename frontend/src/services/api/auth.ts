@@ -129,6 +129,7 @@ export interface OrgMember {
   user_name: string;
   user_email: string;
   role: OrgRole;
+  has_full_access: boolean;  // Full database access (can see all vacancies/candidates)
   invited_by_name?: string;
   created_at: string;
   custom_role_id?: number;
@@ -163,6 +164,14 @@ export const inviteMember = async (memberData: InviteMemberRequest): Promise<Org
 
 export const updateMemberRole = async (userId: number, role: OrgRole): Promise<{ success: boolean }> => {
   const { data } = await debouncedMutation<{ success: boolean }>('patch', `/organizations/current/members/${userId}/role`, { role });
+  return data;
+};
+
+export const toggleMemberFullAccess = async (userId: number, hasFullAccess: boolean): Promise<{ success: boolean; has_full_access: boolean }> => {
+  const { data } = await debouncedMutation<{ success: boolean; has_full_access: boolean }>(
+    'put',
+    `/organizations/current/members/${userId}/full-access?has_full_access=${hasFullAccess}`
+  );
   return data;
 };
 
@@ -342,6 +351,22 @@ export const removeDepartmentMember = async (departmentId: number, userId: numbe
 
 export const getMyDepartments = async (): Promise<Department[]> => {
   const { data } = await deduplicatedGet<Department[]>('/departments/my/departments');
+  return data;
+};
+
+export interface MyDeptRole {
+  department_id: number;
+  department_name: string;
+  role: DeptRole;
+}
+
+export const getMyDeptRoles = async (): Promise<MyDeptRole[]> => {
+  const { data } = await deduplicatedGet<MyDeptRole[]>('/departments/my/roles');
+  return data;
+};
+
+export const getMyManagedUserIds = async (): Promise<number[]> => {
+  const { data } = await deduplicatedGet<number[]>('/departments/my/managed-users');
   return data;
 };
 

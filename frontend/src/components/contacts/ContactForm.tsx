@@ -29,6 +29,55 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
   // Use prefillData when creating new entity, entity when editing
   const initialData = entity || prefillData;
 
+  // Helper: get emails from multiple sources (emails array, single email, extra_data)
+  const getInitialEmails = (): string => {
+    // First try emails array
+    if (initialData?.emails && initialData.emails.length > 0) {
+      return initialData.emails.join(', ');
+    }
+    // Fallback to single email
+    if (initialData?.email) {
+      return initialData.email;
+    }
+    // Check extra_data for parsed resume data
+    const extraEmails = initialData?.extra_data?.emails as string[] | undefined;
+    if (extraEmails && extraEmails.length > 0) {
+      return extraEmails.join(', ');
+    }
+    return '';
+  };
+
+  // Helper: get phones from multiple sources (phones array, single phone, extra_data)
+  const getInitialPhones = (): string => {
+    // First try phones array
+    if (initialData?.phones && initialData.phones.length > 0) {
+      return initialData.phones.join(', ');
+    }
+    // Fallback to single phone
+    if (initialData?.phone) {
+      return initialData.phone;
+    }
+    // Check extra_data for parsed resume data
+    const extraPhones = initialData?.extra_data?.phones as string[] | undefined;
+    if (extraPhones && extraPhones.length > 0) {
+      return extraPhones.join(', ');
+    }
+    return '';
+  };
+
+  // Helper: get telegram usernames from multiple sources
+  const getInitialTelegram = (): string => {
+    if (initialData?.telegram_usernames && initialData.telegram_usernames.length > 0) {
+      return initialData.telegram_usernames.join(', ');
+    }
+    // Check extra_data for telegram
+    const extraTelegram = initialData?.extra_data?.telegram as string | undefined;
+    if (extraTelegram) {
+      return extraTelegram;
+    }
+    return '';
+  };
+
   const [formData, setFormData] = useState({
     type: (initialData?.type || defaultType || 'candidate') as EntityType,
     name: initialData?.name || '',
@@ -36,9 +85,9 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
     phone: initialData?.phone || '',
     email: initialData?.email || '',
     // Multiple identifiers (comma-separated in UI, array in API)
-    telegram_usernames: initialData?.telegram_usernames?.join(', ') || '',
-    emails: initialData?.emails?.join(', ') || '',
-    phones: initialData?.phones?.join(', ') || '',
+    telegram_usernames: getInitialTelegram(),
+    emails: getInitialEmails(),
+    phones: getInitialPhones(),
     company: initialData?.company || '',
     position: initialData?.position || '',
     tags: initialData?.tags?.join(', ') || '',
@@ -59,13 +108,27 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
     }
   }, [formData.type]);
 
+  // Email validation regex (matches backend validation)
+  const isValidEmail = (email: string): boolean => {
+    return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email);
+  };
+
   const validate = () => {
     const newErrors: Record<string, string> = {};
     if (!formData.name.trim()) {
       newErrors.name = 'Имя обязательно';
     }
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+    // Validate single email field (legacy)
+    if (formData.email && !isValidEmail(formData.email.trim())) {
       newErrors.email = 'Неверный формат email';
+    }
+    // Validate multiple emails field
+    if (formData.emails) {
+      const emailList = formData.emails.split(',').map(e => e.trim()).filter(e => e.length > 0);
+      const invalidEmails = emailList.filter(email => !isValidEmail(email));
+      if (invalidEmails.length > 0) {
+        newErrors.emails = `Неверный формат email: ${invalidEmails.join(', ')}`;
+      }
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -80,6 +143,10 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
       str.split(',').map(s => s.trim()).filter(s => s.length > 0);
 
     try {
+      // Parse salary values, ensuring they are valid numbers or undefined
+      const salaryMin = formData.expected_salary_min ? parseInt(formData.expected_salary_min, 10) : undefined;
+      const salaryMax = formData.expected_salary_max ? parseInt(formData.expected_salary_max, 10) : undefined;
+
       const data = {
         type: formData.type,
         name: formData.name.trim(),
@@ -96,11 +163,14 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
           .split(',')
           .map((t) => t.trim())
           .filter((t) => t.length > 0),
-        // Expected salary for candidates
-        expected_salary_min: formData.expected_salary_min ? parseInt(formData.expected_salary_min, 10) : undefined,
-        expected_salary_max: formData.expected_salary_max ? parseInt(formData.expected_salary_max, 10) : undefined,
+        // Expected salary for candidates (only include if valid number)
+        expected_salary_min: (salaryMin && !isNaN(salaryMin)) ? salaryMin : undefined,
+        expected_salary_max: (salaryMax && !isNaN(salaryMax)) ? salaryMax : undefined,
         expected_salary_currency: formData.expected_salary_currency || 'RUB'
       };
+
+      // Debug: log what we're sending
+      console.log('[ContactForm] Creating entity with data:', JSON.stringify(data, null, 2));
 
       let result: Entity;
       if (entity) {
@@ -232,11 +302,11 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
                 onChange={(e) => setFormData((prev) => ({ ...prev, emails: e.target.value }))}
                 className={clsx(
                   'w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50',
-                  errors.email ? 'border-red-500/50' : 'border-white/10'
+                  errors.emails ? 'border-red-500/50' : 'border-white/10'
                 )}
                 placeholder="john@example.com, john.doe@company.com"
               />
-              {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}
+              {errors.emails && <p className="text-red-400 text-xs mt-1">{errors.emails}</p>}
             </div>
 
             <div>

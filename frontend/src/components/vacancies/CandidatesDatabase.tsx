@@ -13,7 +13,6 @@ import {
   X,
   Check,
   Clock,
-  DollarSign,
   Users,
   UserCheck,
   Sparkles,
@@ -24,7 +23,8 @@ import {
   LayoutGrid,
   List,
   Kanban,
-  GripVertical
+  GripVertical,
+  User
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -84,7 +84,10 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
   // Drag state for Kanban stage change
   const [draggedForKanban, setDraggedForKanban] = useState<Entity | null>(null);
-  const [dropTargetStage, setDropTargetStage] = useState<EntityStatus | null>(null);
+  const [dropTargetStage, setDropTargetStage] = useState<ApplicationStage | null>(null);
+
+  // Track which candidates are currently being moved (prevents double-click)
+  const [movingCandidates, setMovingCandidates] = useState<Set<number>>(new Set());
 
   // Kanban auto-scroll refs
   const kanbanContainerRef = useRef<HTMLDivElement>(null);
@@ -161,16 +164,19 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     });
   }, [searchFilteredCandidates, selectedStage]);
 
-  // Group candidates by status for Kanban view
+  // Group candidates by ApplicationStage for Kanban view
+  // Maps EntityStatus -> ApplicationStage for grouping
   const candidatesByStatus = useMemo(() => {
-    const grouped: Record<EntityStatus, Entity[]> = {} as Record<EntityStatus, Entity[]>;
+    const grouped: Record<ApplicationStage, Entity[]> = {} as Record<ApplicationStage, Entity[]>;
     PIPELINE_STAGES.forEach(stage => {
       grouped[stage] = [];
     });
     searchFilteredCandidates.forEach(candidate => {
-      const status = candidate.status as EntityStatus;
-      if (grouped[status]) {
-        grouped[status].push(candidate);
+      // Convert EntityStatus to ApplicationStage for display
+      const entityStatus = candidate.status as EntityStatus;
+      const stage = STATUS_TO_STAGE_MAP[entityStatus] || 'applied';
+      if (grouped[stage]) {
+        grouped[stage].push(candidate);
       } else {
         grouped['applied'].push(candidate);  // Unknown statuses go to 'applied' (displayed as "Новый")
       }
@@ -201,8 +207,9 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
         await addCandidateToVacancy(dropTargetVacancy, draggedCandidate.id, 'database_drag');
         toast.success(`${draggedCandidate.name} добавлен в вакансию`);
         onRefreshVacancies();
-      } catch {
-        toast.error('Не удалось добавить кандидата');
+      } catch (error: any) {
+        const message = error?.response?.data?.detail || 'Не удалось добавить кандидата';
+        toast.error(message);
       }
     }
     setDraggedCandidate(null);
@@ -228,7 +235,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
   const isMovingRef = useRef(false);
 
-  const handleKanbanDragEnd = async (_e?: React.DragEvent | unknown, targetStage?: EntityStatus) => {
+  const handleKanbanDragEnd = async (_e?: React.DragEvent | unknown, targetStage?: ApplicationStage) => {
     stopAutoScroll();
 
     // Use targetStage from onDrop event if available, otherwise use state
@@ -242,12 +249,20 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     setDraggedCandidate(null);
     setDropTargetStage(null);
 
-    if (itemToMove && finalStage && itemToMove.status !== finalStage && !isMovingRef.current) {
+    if (itemToMove && finalStage && !isMovingRef.current) {
+      // Convert ApplicationStage to EntityStatus for API call
+      const entityStatus = STAGE_TO_STATUS_MAP[finalStage];
+
+      // Check if status actually changed
+      if (itemToMove.status === entityStatus) {
+        return;
+      }
+
       isMovingRef.current = true;
       try {
-        logger.log(`[Kanban] Moving ${itemToMove.name} from ${itemToMove.status} to ${finalStage}`);
-        await updateEntityStatus(itemToMove.id, finalStage);
-        toast.success(`${itemToMove.name} → ${STATUS_LABELS[finalStage]}`);
+        logger.log(`[Kanban] Moving ${itemToMove.name} from ${itemToMove.status} to ${entityStatus}`);
+        await updateEntityStatus(itemToMove.id, entityStatus);
+        toast.success(`${itemToMove.name} → ${STATUS_LABELS[entityStatus]}`);
         fetchEntities();
       } catch (error) {
         logger.error('[Kanban] Move failed:', error);
@@ -258,7 +273,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     }
   };
 
-  const handleStageDragOver = (e: React.DragEvent, stage: EntityStatus) => {
+  const handleStageDragOver = (e: React.DragEvent, stage: ApplicationStage) => {
     e.preventDefault();
     if (draggedForKanban) {
       setDropTargetStage(stage);
@@ -273,7 +288,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     }
   };
 
-  const handleStageDrop = (e: React.DragEvent, stage: EntityStatus) => {
+  const handleStageDrop = (e: React.DragEvent, stage: ApplicationStage) => {
     e.preventDefault();
     e.stopPropagation();
     handleKanbanDragEnd(e, stage);
@@ -478,8 +493,12 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     });
   };
 
-  // Quick status change handler for cards/list view
+  // Quick status change handler for cards/list view (with double-click protection)
   const handleQuickStatusChange = async (candidate: Entity, newStatus: EntityStatus) => {
+    // Prevent double-click
+    if (movingCandidates.has(candidate.id)) return;
+
+    setMovingCandidates(prev => new Set(prev).add(candidate.id));
     try {
       await updateEntityStatus(candidate.id, newStatus);
       toast.success(`${candidate.name} → ${STATUS_LABELS[newStatus]}`);
@@ -487,8 +506,17 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     } catch (error) {
       logger.error('Status change failed:', error);
       toast.error('Не удалось изменить статус');
+    } finally {
+      setMovingCandidates(prev => {
+        const next = new Set(prev);
+        next.delete(candidate.id);
+        return next;
+      });
     }
   };
+
+  // Check if a candidate is currently being moved
+  const isMovingCandidate = (id: number) => movingCandidates.has(id);
 
   // Render candidate card
   const renderCandidateCard = (candidate: Entity, isListView: boolean = false) => {
@@ -527,18 +555,47 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-sm flex-shrink-0">
             {getAvatarInitials(candidate.name || 'UK')}
           </div>
-          {/* Fixed width columns for consistent alignment */}
-          <div className="w-[180px] min-w-[180px] flex-shrink-0">
-            <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
-            {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
-          </div>
-          <div className="w-[180px] min-w-[180px] flex-shrink-0 text-xs text-white/60 hidden sm:block">
-            {candidate.email && (
-              <div className="flex items-center gap-1.5">
-                <Mail className="w-3 h-3 flex-shrink-0" />
-                <span className="truncate">{candidate.email}</span>
-              </div>
-            )}
+          <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-5 gap-2 items-center">
+            <div className="min-w-0">
+              <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
+              {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
+            </div>
+            <div className="text-xs text-white/60 space-y-0.5 min-w-0 hidden sm:block">
+              {candidate.email && (
+                <div className="flex items-center gap-1.5 truncate">
+                  <Mail className="w-3 h-3 flex-shrink-0" />
+                  <span className="truncate">{candidate.email}</span>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center flex-shrink-0">
+              <span className={clsx('px-2 py-1 text-xs rounded-full whitespace-nowrap', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
+                {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
+              </span>
+            </div>
+            <div className="flex items-center flex-shrink-0 min-w-0">
+              {nextStage && (
+                <button
+                  disabled={isMovingCandidate(candidate.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nextStage]);
+                  }}
+                  className={clsx(
+                    "opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all whitespace-nowrap",
+                    isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  {isMovingCandidate(candidate.id) ? '...' : `→ ${STATUS_LABELS[STAGE_TO_STATUS_MAP[nextStage]]}`}
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1 items-center hidden lg:flex">
+              {candidate.tags?.slice(0, 3).map(tag => (
+                <span key={tag} className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/60">{tag}</span>
+              ))}
+              {(candidate.tags?.length || 0) > 3 && <span className="text-xs text-white/40">+{candidate.tags!.length - 3}</span>}
+            </div>
           </div>
           <div className="w-[100px] min-w-[100px] flex-shrink-0">
             <span className={clsx('px-2 py-1 text-xs rounded-full whitespace-nowrap inline-block', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
@@ -558,17 +615,13 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               </span>
             )}
           </div>
-          <div className="w-[100px] min-w-[100px] flex-shrink-0 text-xs text-white/40">
-            {candidate.owner_name ? (
-              <div className="flex items-center gap-1">
-                <User className="w-3 h-3 flex-shrink-0" />
-                <span className="truncate">{candidate.owner_name}</span>
-              </div>
-            ) : (
-              <span className="text-white/20">—</span>
-            )}
-          </div>
-          <div className="w-[80px] min-w-[80px] flex-shrink-0 flex items-center gap-1 text-xs text-white/40 whitespace-nowrap">
+          {candidate.owner_name && (
+            <div className="flex items-center gap-1 text-xs text-white/40 flex-shrink-0 min-w-[80px]">
+              <User className="w-3 h-3" />
+              <span className="truncate">{candidate.owner_name}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-1 text-xs text-white/40 flex-shrink-0 whitespace-nowrap">
             <Clock className="w-3 h-3" />
             {formatDate(candidate.created_at)}
           </div>
@@ -610,19 +663,23 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
           </div>
         </div>
-        <div className="flex items-center gap-2 mb-2 ml-7">
-          <span className={clsx('px-2 py-0.5 text-xs rounded-full', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
+        <div className="flex items-center justify-between gap-2 mb-2 ml-7">
+          <span className={clsx('px-2 py-0.5 text-xs rounded-full whitespace-nowrap flex-shrink-0', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
             {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
           </span>
           {nextStage && (
             <button
+              disabled={isMovingCandidate(candidate.id)}
               onClick={(e) => {
                 e.stopPropagation();
-                handleQuickStatusChange(candidate, nextStage);
+                handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nextStage]);
               }}
-              className="opacity-0 group-hover:opacity-100 px-2 py-0.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all"
+              className={clsx(
+                "opacity-0 group-hover:opacity-100 px-2 py-0.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all whitespace-nowrap flex-shrink-0",
+                isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
+              )}
             >
-              → {STATUS_LABELS[nextStage]}
+              {isMovingCandidate(candidate.id) ? '...' : `→ ${STATUS_LABELS[STAGE_TO_STATUS_MAP[nextStage]]}`}
             </button>
           )}
         </div>
@@ -641,7 +698,6 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           )}
           {(candidate.expected_salary_min || candidate.expected_salary_max) && (
             <div className="flex items-center gap-1.5 text-green-400">
-              <DollarSign className="w-3 h-3 flex-shrink-0" />
               <span>
                 {formatSalary(candidate.expected_salary_min, candidate.expected_salary_max, candidate.expected_salary_currency)}
               </span>
@@ -672,16 +728,16 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             </div>
           )}
         </div>
-        <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between gap-2 text-xs text-white/40 ml-7">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <div className="flex items-center gap-1 whitespace-nowrap flex-shrink-0">
+        <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-xs text-white/40 ml-7">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 whitespace-nowrap">
               <Clock className="w-3 h-3" />
               {formatDate(candidate.created_at)}
             </div>
             {candidate.owner_name && (
-              <div className="flex items-center gap-1 min-w-0">
-                <User className="w-3 h-3 flex-shrink-0" />
-                <span className="truncate">{candidate.owner_name}</span>
+              <div className="flex items-center gap-1">
+                <User className="w-3 h-3" />
+                <span className="truncate max-w-[80px]">{candidate.owner_name}</span>
               </div>
             )}
           </div>
@@ -919,7 +975,13 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                               const currentIndex = PIPELINE_STAGES.indexOf(stage as any);
                               const nStage = currentIndex >= 0 && currentIndex < PIPELINE_STAGES.length - 1 ? PIPELINE_STAGES[currentIndex + 1] : null;
                               return nStage && (
-                                <button onClick={(e) => { e.stopPropagation(); handleQuickStatusChange(candidate, nStage as EntityStatus); }} className="hover:text-white transition-colors">→</button>
+                                <button
+                                  disabled={isMovingCandidate(candidate.id)}
+                                  onClick={(e) => { e.stopPropagation(); handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nStage]); }}
+                                  className={clsx("hover:text-white transition-colors", isMovingCandidate(candidate.id) && "opacity-50 cursor-not-allowed")}
+                                >
+                                  {isMovingCandidate(candidate.id) ? '...' : '→'}
+                                </button>
                               );
                             })()}
                           </div>

@@ -33,6 +33,7 @@ export {
   getOrgMembers,
   inviteMember,
   updateMemberRole,
+  toggleMemberFullAccess,
   removeMember,
   getMyOrgRole,
   // Invitations
@@ -52,6 +53,8 @@ export {
   updateDepartmentMember,
   removeDepartmentMember,
   getMyDepartments,
+  getMyDeptRoles,
+  getMyManagedUserIds,
   // Custom Roles
   getCustomRoles,
   getCustomRole,

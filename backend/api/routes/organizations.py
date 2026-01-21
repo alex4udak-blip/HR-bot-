@@ -59,6 +59,7 @@ class OrgMemberResponse(BaseModel):
     user_email: str
     user_name: str
     role: str
+    has_full_access: bool = False  # Full database access (can see all vacancies/candidates)
     invited_by_name: Optional[str] = None
     created_at: datetime
     custom_role_id: Optional[int] = None
@@ -240,6 +241,7 @@ async def list_organization_members(
             user_email=m.user.email,
             user_name=m.user.name,
             role=m.role.value,
+            has_full_access=m.has_full_access if hasattr(m, 'has_full_access') and m.has_full_access else False,
             invited_by_name=inviter_names.get(m.invited_by) if m.invited_by else None,
             created_at=m.created_at,
             custom_role_id=custom_roles_map.get(m.user_id, {}).get("id"),
@@ -344,6 +346,7 @@ async def invite_member(
         user_email=new_user.email,
         user_name=new_user.name,
         role=membership.role.value,
+        has_full_access=False,
         created_at=membership.created_at
     )
 
@@ -388,6 +391,80 @@ async def update_member_role(
     await db.commit()
 
     return {"success": True, "role": new_role.value}
+
+
+@router.put("/current/members/{user_id}/full-access")
+async def toggle_member_full_access(
+    user_id: int,
+    has_full_access: bool,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    org: Organization = Depends(get_current_org)
+):
+    """
+    Toggle full database access for a member.
+
+    When enabled, the member can see all vacancies and candidates in the organization
+    without being an admin. This is useful for recruiters who need to see all data
+    but shouldn't have admin permissions.
+
+    Can be set by: superadmin, owner, admin, OR department lead/sub_admin (for their dept members)
+    """
+    user = await db.merge(user)
+
+    # Can't change own full_access
+    if user_id == user.id:
+        raise HTTPException(status_code=400, detail="Cannot change own full access setting")
+
+    # Get target membership
+    result = await db.execute(
+        select(OrgMember).where(
+            OrgMember.org_id == org.id,
+            OrgMember.user_id == user_id
+        )
+    )
+    membership = result.scalar_one_or_none()
+    if not membership:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    # Owner already has full access, no need to toggle
+    if membership.role == OrgRole.owner:
+        raise HTTPException(status_code=400, detail="Owner already has full access")
+
+    # Check permissions: org admin/owner OR dept lead/sub_admin for their members
+    org_role = await get_user_org_role(user, org.id, db)
+    is_org_admin = user.role == UserRole.superadmin or org_role in ("owner", "admin")
+
+    if not is_org_admin:
+        # Check if current user is lead/sub_admin in any department where target user is a member
+        # Get departments where current user is lead or sub_admin
+        result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == user.id,
+                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+            )
+        )
+        my_managed_dept_ids = [r[0] for r in result.fetchall()]
+
+        if not my_managed_dept_ids:
+            raise HTTPException(status_code=403, detail="Admin or department lead/sub_admin access required")
+
+        # Check if target user is in any of these departments
+        result = await db.execute(
+            select(DepartmentMember).where(
+                DepartmentMember.user_id == user_id,
+                DepartmentMember.department_id.in_(my_managed_dept_ids)
+            )
+        )
+        target_in_my_dept = result.scalar_one_or_none()
+
+        if not target_in_my_dept:
+            raise HTTPException(status_code=403, detail="Can only change access for members in your department")
+
+    membership.has_full_access = has_full_access
+    await db.commit()
+
+    return {"success": True, "has_full_access": has_full_access}
 
 
 @router.delete("/current/members/{user_id}")

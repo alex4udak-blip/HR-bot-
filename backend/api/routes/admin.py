@@ -14,7 +14,8 @@ from ..models.database import (
     DepartmentMember, ImpersonationLog, Entity, EntityType, EntityStatus,
     Chat, ChatType, Message, CallRecording, CallSource, CallStatus,
     SharedAccess, ResourceType, AccessLevel, CustomRole, RolePermissionOverride,
-    UserCustomRole, PermissionAuditLog, DepartmentFeature, FeatureAuditLog
+    UserCustomRole, PermissionAuditLog, DepartmentFeature, FeatureAuditLog,
+    VacancyApplication
 )
 from ..services.auth import get_superadmin, get_current_user, create_access_token, create_impersonation_token, hash_password, get_user_org
 from ..services.features import can_access_feature, get_user_features, get_org_features as get_org_features_service, set_department_feature, bulk_set_department_features, RESTRICTED_FEATURES, ALL_FEATURES
@@ -3847,3 +3848,138 @@ async def get_feature_audit_logs(
         ))
 
     return response
+
+
+# ==================== Data Sync Endpoints ====================
+
+# Stage to status mapping (same as in database.py STAGE_SYNC_MAP)
+STAGE_TO_STATUS = {
+    'applied': 'new',
+    'screening': 'screening',
+    'phone_screen': 'practice',
+    'interview': 'tech_practice',
+    'assessment': 'is_interview',
+    'offer': 'offer',
+    'hired': 'hired',
+    'rejected': 'rejected',
+    'withdrawn': 'rejected',
+}
+
+STAGE_PRIORITY = {
+    'applied': 1,
+    'screening': 2,
+    'phone_screen': 3,
+    'interview': 4,
+    'assessment': 5,
+    'offer': 6,
+    'hired': 7,
+    'rejected': 0,
+    'withdrawn': 0,
+}
+
+
+class SyncStatusResponse(BaseModel):
+    """Response for data sync operation"""
+    success: bool
+    entities_checked: int
+    entities_updated: int
+    details: List[Dict[str, Any]]
+
+
+@router.post("/sync-entity-status", response_model=SyncStatusResponse)
+async def sync_entity_status_from_applications(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_superadmin)
+):
+    """
+    Sync Entity.status from VacancyApplication.stage.
+
+    For each entity with vacancy applications:
+    - If hired in ANY vacancy: status = hired
+    - Else if offer in ANY vacancy: status = offer
+    - Else: use highest priority non-rejected stage
+    - If ALL applications are rejected: status = rejected
+
+    Requires superadmin role.
+    """
+    import logging
+    logger = logging.getLogger("admin.sync")
+
+    try:
+        # Get all entities that have vacancy applications
+        result = await db.execute(
+            select(Entity.id, Entity.status)
+            .join(VacancyApplication, VacancyApplication.entity_id == Entity.id)
+            .where(Entity.type == EntityType.candidate)
+            .distinct()
+        )
+        entities_to_check = result.fetchall()
+
+        entities_checked = len(entities_to_check)
+        entities_updated = 0
+        details = []
+
+        for entity_id, current_status in entities_to_check:
+            # Get all stages for this entity
+            stages_result = await db.execute(
+                select(VacancyApplication.stage)
+                .where(VacancyApplication.entity_id == entity_id)
+            )
+            stages = [row[0].value if hasattr(row[0], 'value') else str(row[0]) for row in stages_result.fetchall()]
+
+            if not stages:
+                continue
+
+            # Determine best status
+            if 'hired' in stages:
+                new_status = EntityStatus.hired
+            elif 'offer' in stages:
+                new_status = EntityStatus.offer
+            else:
+                non_rejected = [s for s in stages if s not in ('rejected', 'withdrawn')]
+                if non_rejected:
+                    best_stage = max(non_rejected, key=lambda s: STAGE_PRIORITY.get(s, 0))
+                    status_str = STAGE_TO_STATUS.get(best_stage, 'new')
+                    new_status = EntityStatus(status_str)
+                else:
+                    new_status = EntityStatus.rejected
+
+            # Get current status value for comparison
+            current_status_value = current_status.value if hasattr(current_status, 'value') else str(current_status)
+            new_status_value = new_status.value if hasattr(new_status, 'value') else str(new_status)
+
+            # Update if different
+            if new_status_value != current_status_value:
+                await db.execute(
+                    select(Entity).where(Entity.id == entity_id).with_for_update()
+                )
+                entity_result = await db.execute(
+                    select(Entity).where(Entity.id == entity_id)
+                )
+                entity = entity_result.scalar_one()
+                entity.status = new_status
+                entity.updated_at = datetime.utcnow()
+
+                details.append({
+                    "entity_id": entity_id,
+                    "old_status": current_status_value,
+                    "new_status": new_status_value,
+                    "stages": stages
+                })
+                entities_updated += 1
+                logger.info(f"Entity {entity_id}: {current_status_value} -> {new_status_value}")
+
+        await db.commit()
+        logger.info(f"Sync complete: {entities_updated}/{entities_checked} entities updated")
+
+        return SyncStatusResponse(
+            success=True,
+            entities_checked=entities_checked,
+            entities_updated=entities_updated,
+            details=details
+        )
+
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error during sync: {e}")
+        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")

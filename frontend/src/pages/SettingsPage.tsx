@@ -486,8 +486,8 @@ export default function SettingsPage() {
                         >
                           <span
                             className={clsx(
-                              'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                              isOrgWideEnabled ? 'translate-x-7' : 'translate-x-1'
+                              'absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform',
+                              isOrgWideEnabled ? 'translate-x-6' : 'translate-x-0'
                             )}
                           />
                         </button>
@@ -1064,8 +1064,8 @@ export default function SettingsPage() {
               >
                 <span
                   className={clsx(
-                    'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                    animationsEnabled ? 'translate-x-7' : 'translate-x-1'
+                    'absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform',
+                    animationsEnabled ? 'translate-x-6' : 'translate-x-0'
                   )}
                 />
               </button>

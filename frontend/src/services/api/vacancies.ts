@@ -372,3 +372,109 @@ export const bulkCalculateScores = async (
   );
   return data;
 };
+
+// ============================================================
+// VACANCY SHARING API
+// ============================================================
+
+export type AccessLevel = 'view' | 'edit' | 'full';
+
+export interface VacancyShareRequest {
+  shared_with_id: number;
+  access_level?: AccessLevel;
+  note?: string;
+  expires_at?: string;
+}
+
+export interface VacancyShare {
+  id: number;
+  vacancy_id: number;
+  vacancy_title: string;
+  shared_by_id: number;
+  shared_by_name: string;
+  shared_with_id: number;
+  shared_with_name: string;
+  shared_with_email?: string;
+  access_level: AccessLevel;
+  note?: string;
+  expires_at?: string;
+  created_at: string;
+}
+
+export interface SharedVacancy {
+  id: number;
+  title: string;
+  description?: string;
+  status: VacancyStatus;
+  department_id?: number;
+  applications_count: number;
+  share: {
+    id: number;
+    shared_by_id: number;
+    shared_by_name: string;
+    access_level: AccessLevel;
+    note?: string;
+    expires_at?: string;
+    created_at: string;
+  };
+}
+
+/**
+ * Share a vacancy with another user.
+ * @param vacancyId - Vacancy ID
+ * @param request - Share request with user ID and access level
+ * @returns Share details
+ */
+export const shareVacancy = async (
+  vacancyId: number,
+  request: VacancyShareRequest
+): Promise<VacancyShare> => {
+  const { data } = await debouncedMutation<VacancyShare>(
+    'post',
+    `/vacancies/${vacancyId}/share`,
+    request
+  );
+  return data;
+};
+
+/**
+ * Get all shares for a vacancy.
+ * @param vacancyId - Vacancy ID
+ * @returns List of shares
+ */
+export const getVacancyShares = async (
+  vacancyId: number
+): Promise<{ shares: VacancyShare[]; total: number }> => {
+  const { data } = await deduplicatedGet<{ shares: VacancyShare[]; total: number }>(
+    `/vacancies/${vacancyId}/shares`
+  );
+  return data;
+};
+
+/**
+ * Revoke a share for a vacancy.
+ * @param vacancyId - Vacancy ID
+ * @param shareId - Share ID to revoke
+ * @returns Success message
+ */
+export const revokeVacancyShare = async (
+  vacancyId: number,
+  shareId: number
+): Promise<{ message: string; share_id: number }> => {
+  const { data } = await debouncedMutation<{ message: string; share_id: number }>(
+    'delete',
+    `/vacancies/${vacancyId}/share/${shareId}`
+  );
+  return data;
+};
+
+/**
+ * Get all vacancies shared with the current user.
+ * @returns List of shared vacancies
+ */
+export const getVacanciesSharedWithMe = async (): Promise<{ vacancies: SharedVacancy[]; total: number }> => {
+  const { data } = await deduplicatedGet<{ vacancies: SharedVacancy[]; total: number }>(
+    '/vacancies/shared-with-me'
+  );
+  return data;
+};

@@ -38,14 +38,23 @@ export const createEntity = async (entityData: {
   type: EntityType;
   name: string;
   status?: EntityStatus;
+  // Legacy single identifiers
   phone?: string;
   email?: string;
   telegram_user_id?: number;
+  // Multiple identifiers
+  telegram_usernames?: string[];
+  emails?: string[];
+  phones?: string[];
   company?: string;
   position?: string;
   tags?: string[];
   extra_data?: Record<string, unknown>;
   department_id?: number;
+  // Expected salary for candidates
+  expected_salary_min?: number;
+  expected_salary_max?: number;
+  expected_salary_currency?: string;
 }): Promise<Entity> => {
   const { data } = await debouncedMutation<Entity>('post', '/entities', entityData);
   return data;
@@ -54,13 +63,22 @@ export const createEntity = async (entityData: {
 export const updateEntity = async (id: number, updates: {
   name?: string;
   status?: EntityStatus;
+  // Legacy single identifiers
   phone?: string;
   email?: string;
+  // Multiple identifiers
+  telegram_usernames?: string[];
+  emails?: string[];
+  phones?: string[];
   company?: string;
   position?: string;
   tags?: string[];
   extra_data?: Record<string, unknown>;
   department_id?: number | null;
+  // Expected salary for candidates
+  expected_salary_min?: number;
+  expected_salary_max?: number;
+  expected_salary_currency?: string;
 }): Promise<Entity> => {
   const { data } = await debouncedMutation<Entity>('put', `/entities/${id}`, updates);
   return data;
@@ -295,6 +313,19 @@ export interface SimilarCandidateResult {
   similar_salary: boolean;
   similar_location: boolean;
   match_reasons: string[];
+  // Detailed comparison data for both candidates
+  entity1_skills?: string[];
+  entity2_skills?: string[];
+  entity1_experience?: number | null;
+  entity2_experience?: number | null;
+  entity1_salary_min?: number | null;
+  entity1_salary_max?: number | null;
+  entity2_salary_min?: number | null;
+  entity2_salary_max?: number | null;
+  entity1_location?: string | null;
+  entity2_location?: string | null;
+  entity1_position?: string | null;
+  entity2_position?: string | null;
 }
 
 export interface DuplicateCandidateResult {
@@ -580,9 +611,31 @@ export const bulkImportResumes = async (file: File): Promise<BulkImportResponse>
  * Response from creating entity from resume
  */
 export interface CreateEntityFromResumeResponse {
-  entity_id: number;
+  entity: {
+    id: number;
+    type: string;
+    name: string;
+    status: string;
+    phone?: string;
+    email?: string;
+    telegram_usernames?: string[];
+    emails?: string[];
+    phones?: string[];
+    company?: string;
+    position?: string;
+    tags?: string[];
+    extra_data?: Record<string, unknown>;
+    created_by?: number;
+    department_id?: number;
+    department_name?: string;
+    created_at?: string;
+    updated_at?: string;
+    expected_salary_min?: number;
+    expected_salary_max?: number;
+    expected_salary_currency?: string;
+  };
   parsed_data: ParsedResume;
-  message: string;
+  file_id?: number;
 }
 
 /**
@@ -594,7 +647,8 @@ export interface CreateEntityFromResumeResponse {
 export const createEntityFromResume = async (file: File): Promise<CreateEntityFromResumeResponse> => {
   const formData = new FormData();
   formData.append('file', file);
-  const { data } = await api.post('/parser/resume/create-entity', formData, {
+  formData.append('auto_attach_file', 'true');
+  const { data } = await api.post('/entities/from-resume', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   });
   return data;

@@ -511,28 +511,39 @@ export default function VacanciesPage() {
             )}
           </div>
 
-          {mainTab === 'vacancies' && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowParserModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
-              >
-                <Upload className="w-4 h-4" />
-                Импорт
-              </button>
-              <button
-                onClick={() => {
-                  setPrefillData(null);
-                  setShowCreateModal(true);
-                }}
-                data-tour="create-vacancy"
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
-              >
-                <Plus className="w-5 h-5" />
-                Новая вакансия
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Navigation to candidates page */}
+            <button
+              onClick={() => navigate('/candidates')}
+              className="flex items-center gap-2 px-3 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg text-sm transition-colors"
+              title="Перейти к базе кандидатов"
+            >
+              <Users className="w-4 h-4" />
+              К кандидатам
+            </button>
+            {mainTab === 'vacancies' && (
+              <>
+                <button
+                  onClick={() => setShowParserModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
+                >
+                  <Upload className="w-4 h-4" />
+                  Импорт
+                </button>
+                <button
+                  onClick={() => {
+                    setPrefillData(null);
+                    setShowCreateModal(true);
+                  }}
+                  data-tour="create-vacancy"
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
+                >
+                  <Plus className="w-5 h-5" />
+                  Новая вакансия
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Filters - only show for vacancies tab */}
@@ -804,6 +815,18 @@ export default function VacanciesPage() {
                         </div>
                       )}
                     </div>
+
+                    {/* Owner & Department */}
+                    {(vacancy.created_by_name || vacancy.department_name) && (
+                      <div className="mt-3 flex items-center gap-3 text-xs text-white/40">
+                        {vacancy.created_by_name && (
+                          <span title="Владелец вакансии">👤 {vacancy.created_by_name}</span>
+                        )}
+                        {vacancy.department_name && (
+                          <span title="Департамент">📁 {vacancy.department_name}</span>
+                        )}
+                      </div>
+                    )}
 
                     {/* Stats */}
                     <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">

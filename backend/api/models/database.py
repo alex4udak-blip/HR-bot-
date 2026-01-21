@@ -209,6 +209,9 @@ class OrgMember(Base):
     role = Column(SQLEnum(OrgRole), default=OrgRole.member)
     invited_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=func.now())
+    # Full database access flag - allows member to see all vacancies and candidates
+    # without being admin. Can be set by owner/admin/sub_admin.
+    has_full_access = Column(Boolean, default=False, index=True)
 
     __table_args__ = (
         UniqueConstraint('user_id', 'org_id', name='uq_org_member_user_org'),
@@ -593,6 +596,7 @@ class ResourceType(str, enum.Enum):
     chat = "chat"
     entity = "entity"
     call = "call"
+    vacancy = "vacancy"  # Job vacancy
 
 
 class AccessLevel(str, enum.Enum):
@@ -608,11 +612,12 @@ class SharedAccess(Base):
 
     id = Column(Integer, primary_key=True)
     resource_type = Column(SQLEnum(ResourceType), nullable=False, index=True)
-    resource_id = Column(Integer, nullable=False, index=True)  # ID of chat/entity/call
+    resource_id = Column(Integer, nullable=False, index=True)  # ID of chat/entity/call/vacancy
     # Proper foreign keys for cascade delete - only one should be set based on resource_type
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=True, index=True)
     chat_id = Column(Integer, ForeignKey("chats.id", ondelete="CASCADE"), nullable=True, index=True)
     call_id = Column(Integer, ForeignKey("call_recordings.id", ondelete="CASCADE"), nullable=True, index=True)
+    vacancy_id = Column(Integer, ForeignKey("vacancies.id", ondelete="CASCADE"), nullable=True, index=True)
     shared_by_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     shared_with_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     access_level = Column(SQLEnum(AccessLevel), default=AccessLevel.view)
@@ -631,6 +636,7 @@ class SharedAccess(Base):
     entity = relationship("Entity", foreign_keys=[entity_id])
     chat = relationship("Chat", foreign_keys=[chat_id])
     call = relationship("CallRecording", foreign_keys=[call_id])
+    vacancy = relationship("Vacancy", foreign_keys=[vacancy_id])
 
 
 class Invitation(Base):

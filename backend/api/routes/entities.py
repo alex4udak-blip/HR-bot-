@@ -17,7 +17,7 @@ from ..models.database import (
     Department, DepartmentMember, DeptRole, Vacancy, Message,
     VacancyApplication, STATUS_SYNC_MAP
 )
-from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to
+from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to, has_full_database_access
 from ..services.red_flags import red_flags_service
 from ..services.cache import scoring_cache
 from ..models.sharing import ShareRequestWithRelated as ShareRequest
@@ -392,9 +392,9 @@ async def list_entities(
             )
         else:
             # All entities user can see: own + shared + department entities
-            # Org owner see all
-            user_role = await get_user_org_role(current_user, org.id, db)
-            if user_role == "owner":
+            # Full access (superadmin, owner, or member with has_full_access flag) sees all
+            has_full_access = await has_full_database_access(current_user, org.id, db)
+            if has_full_access:
                 query = select(Entity).where(Entity.org_id == org.id)
             else:
                 # Own entities + shared with me + department entities (for admins only)
@@ -513,10 +513,10 @@ async def list_entities(
             dept_names[dept.id] = dept.name
 
     # Batch query: Get chat/call counts WITH ACCESS CONTROL
-    # Superadmin and org owner see all counts, others see only accessible counts
-    user_role = await get_user_org_role(current_user, org.id, db) if org else None
+    # Full access users (superadmin, owner, or member with has_full_access) see all counts
+    user_has_full_access = await has_full_database_access(current_user, org.id, db) if org else False
 
-    if current_user.role == UserRole.superadmin or user_role == "owner":
+    if user_has_full_access:
         # Full access - count all chats/calls
         chats_counts_result = await db.execute(
             select(Chat.entity_id, func.count(Chat.id))
@@ -947,10 +947,10 @@ async def get_entity(
         raise HTTPException(404, "Entity not found")
 
     # Load related data WITH ACCESS CONTROL
-    user_role = await get_user_org_role(current_user, org.id, db)
+    # Full access users (superadmin, owner, or member with has_full_access) see all
+    user_has_full_access = await has_full_database_access(current_user, org.id, db)
 
-    # Superadmin and org owner see all chats/calls
-    if current_user.role == UserRole.superadmin or user_role == "owner":
+    if user_has_full_access:
         chats_result = await db.execute(
             select(Chat).where(Chat.entity_id == entity_id)
         )
@@ -1340,8 +1340,9 @@ async def update_entity(
     if current_user.role == UserRole.superadmin:
         can_edit = True
     else:
-        user_role = await get_user_org_role(current_user, org.id, db)
-        if user_role == "owner":
+        # Full access (owner or member with has_full_access) can edit all
+        user_has_full_access = await has_full_database_access(current_user, org.id, db)
+        if user_has_full_access:
             can_edit = True
         elif entity.created_by == current_user.id:
             can_edit = True  # Owner of record
@@ -1405,6 +1406,26 @@ async def update_entity(
     entity.updated_at = datetime.utcnow()
     # Increment version for optimistic locking
     entity.version = (entity.version or 1) + 1
+
+    # Synchronize Entity.status → VacancyApplication.stage if status changed
+    if 'status' in update_data and data.status in STATUS_SYNC_MAP:
+        new_stage = STATUS_SYNC_MAP[data.status]
+        # Find active application for this entity
+        from ..models.database import VacancyStatus
+        app_result = await db.execute(
+            select(VacancyApplication)
+            .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+            .where(
+                VacancyApplication.entity_id == entity_id,
+                Vacancy.status != VacancyStatus.closed
+            )
+        )
+        application = app_result.scalar()
+        if application and application.stage != new_stage:
+            application.stage = new_stage
+            application.last_stage_change_at = datetime.utcnow()
+            logger.info(f"PUT /entities/{entity_id}: Synchronized status {data.status} → application {application.id} stage {new_stage}")
+
     await db.commit()
     await db.refresh(entity)
 
@@ -1495,18 +1516,30 @@ async def update_entity_status(
     old_status = entity.status
     entity.status = data.status
 
+    # Synchronize Entity.status → VacancyApplication.stage
+    # Since one candidate = max one active vacancy, we sync the stage
+    if data.status in STATUS_SYNC_MAP:
+        new_stage = STATUS_SYNC_MAP[data.status]
+        # Find active application for this entity
+        from ..models.database import VacancyApplication, Vacancy, VacancyStatus
+        app_result = await db.execute(
+            select(VacancyApplication)
+            .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+            .where(
+                VacancyApplication.entity_id == entity_id,
+                Vacancy.status != VacancyStatus.closed
+            )
+        )
+        application = app_result.scalar()
+        if application and application.stage != new_stage:
+            application.stage = new_stage
+            application.last_stage_change_at = datetime.utcnow()
+            logger.info(f"Synchronized entity {entity_id} status {data.status} to application {application.id} stage {new_stage}")
+
     await db.commit()
     await db.refresh(entity)
 
     logger.info(f"Entity {entity_id} status changed: {old_status} -> {data.status}")
-
-    # NOTE: We intentionally DO NOT synchronize Entity.status to VacancyApplication.stage
-    # Each vacancy has independent pipeline stages. Entity.status represents the candidate's
-    # general status, while each VacancyApplication.stage represents their progress in that
-    # specific vacancy. Updating Entity.status should not affect individual vacancy pipelines.
-    #
-    # The reverse sync (VacancyApplication.stage -> Entity.status) happens in vacancies.py
-    # when a candidate is moved in the Kanban board, keeping Entity.status as the "latest" status.
 
     # Broadcast update
     await broadcast_entity_updated(org.id, {
@@ -1555,8 +1588,9 @@ async def delete_entity(
     if current_user.role == UserRole.superadmin:
         can_delete = True
     else:
-        user_role = await get_user_org_role(current_user, org.id, db)
-        if user_role == "owner":
+        # Full access (owner or member with has_full_access) can delete all
+        user_has_full_access = await has_full_database_access(current_user, org.id, db)
+        if user_has_full_access:
             can_delete = True
         elif entity.created_by == current_user.id:
             can_delete = True  # Owner of record
@@ -1769,8 +1803,6 @@ async def transfer_entity(
     db.add(transfer)
 
     await db.commit()
-
-    # TODO: Send notification to recipient via Telegram
 
     return {
         "success": True,
@@ -2074,8 +2106,9 @@ async def share_entity(
     if current_user.role == UserRole.superadmin:
         can_share = True
     else:
-        user_role = await get_user_org_role(current_user, org.id, db)
-        if user_role == "owner":
+        # Full access (owner or member with has_full_access) can share all
+        user_has_full_access = await has_full_database_access(current_user, org.id, db)
+        if user_has_full_access:
             can_share = True
         elif entity.created_by == current_user.id:
             can_share = True  # Owner of entity
@@ -2468,17 +2501,27 @@ async def apply_entity_to_vacancy(
     if not vacancy:
         raise HTTPException(404, "Vacancy not found")
 
-    # Check if entity is already applied to this vacancy
-    existing_result = await db.execute(
-        select(VacancyApplication).where(
-            VacancyApplication.vacancy_id == data.vacancy_id,
-            VacancyApplication.entity_id == entity_id
+    # Check if entity is already in ANY active vacancy (one candidate = max one vacancy)
+    from ..models.database import VacancyStatus
+    existing_any_vacancy = await db.execute(
+        select(VacancyApplication)
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(
+            VacancyApplication.entity_id == entity_id,
+            Vacancy.status != VacancyStatus.closed  # Only active vacancies
         )
     )
-    existing = existing_result.scalar_one_or_none()
-
-    if existing:
-        raise HTTPException(400, "Entity already applied to this vacancy")
+    existing_app = existing_any_vacancy.scalar()
+    if existing_app:
+        # Get vacancy title for better error message
+        existing_vacancy_result = await db.execute(
+            select(Vacancy.title).where(Vacancy.id == existing_app.vacancy_id)
+        )
+        existing_vacancy_title = existing_vacancy_result.scalar() or "другую вакансию"
+        raise HTTPException(
+            status_code=400,
+            detail=f"Кандидат уже добавлен в вакансию \"{existing_vacancy_title}\". Сначала удалите его оттуда."
+        )
 
     # Get max stage_order for the 'applied' stage (HR pipeline - shown as "Новый" in UI)
     max_order_result = await db.execute(
@@ -2502,6 +2545,15 @@ async def apply_entity_to_vacancy(
     )
 
     db.add(application)
+
+    # Synchronize Entity.status to match VacancyApplication.stage
+    from ..models.database import STAGE_SYNC_MAP
+    expected_entity_status = STAGE_SYNC_MAP.get(ApplicationStage.applied)
+    if expected_entity_status and entity.status != expected_entity_status:
+        entity.status = expected_entity_status
+        entity.updated_at = datetime.utcnow()
+        logger.info(f"apply-to-vacancy: Synchronized entity {entity_id} status to {expected_entity_status}")
+
     await db.commit()
     await db.refresh(application)
 
@@ -3818,6 +3870,19 @@ class SimilarCandidateResponse(BaseModel):
     similar_salary: bool = False
     similar_location: bool = False
     match_reasons: List[str] = []
+    # Detailed comparison data for both candidates
+    entity1_skills: List[str] = []
+    entity2_skills: List[str] = []
+    entity1_experience: Optional[int] = None
+    entity2_experience: Optional[int] = None
+    entity1_salary_min: Optional[int] = None
+    entity1_salary_max: Optional[int] = None
+    entity2_salary_min: Optional[int] = None
+    entity2_salary_max: Optional[int] = None
+    entity1_location: Optional[str] = None
+    entity2_location: Optional[str] = None
+    entity1_position: Optional[str] = None
+    entity2_position: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -4112,7 +4177,20 @@ async def compare_candidates(
         similar_experience=comparison.similar_experience,
         similar_salary=comparison.similar_salary,
         similar_location=comparison.similar_location,
-        match_reasons=comparison.match_reasons
+        match_reasons=comparison.match_reasons,
+        # Detailed comparison data
+        entity1_skills=comparison.entity1_skills,
+        entity2_skills=comparison.entity2_skills,
+        entity1_experience=comparison.entity1_experience,
+        entity2_experience=comparison.entity2_experience,
+        entity1_salary_min=comparison.entity1_salary_min,
+        entity1_salary_max=comparison.entity1_salary_max,
+        entity2_salary_min=comparison.entity2_salary_min,
+        entity2_salary_max=comparison.entity2_salary_max,
+        entity1_location=comparison.entity1_location,
+        entity2_location=comparison.entity2_location,
+        entity1_position=comparison.entity1_position,
+        entity2_position=comparison.entity2_position
     )
 
 

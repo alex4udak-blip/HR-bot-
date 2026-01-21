@@ -413,7 +413,7 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
     description: 'Соискатели на вакансии',
     icon: 'UserCheck',
     color: 'blue',
-    statuses: ['applied', 'screening', 'phone_screen', 'interview', 'assessment', 'offer', 'hired', 'rejected']
+    statuses: ['new', 'screening', 'practice', 'tech_practice', 'is_interview', 'offer', 'hired', 'rejected']
   },
   client: {
     id: 'client',
@@ -574,6 +574,7 @@ export interface Vacancy {
   hiring_manager_id?: number;
   hiring_manager_name?: string;
   created_by?: number;
+  created_by_name?: string;
   published_at?: string;
   closes_at?: string;
   created_at: string;

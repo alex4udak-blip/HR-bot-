@@ -420,6 +420,36 @@ async def get_user_org_role(user: User, org_id: int, db: AsyncSession) -> Option
     return member.role if member else None
 
 
+async def has_full_database_access(user: User, org_id: int, db: AsyncSession) -> bool:
+    """
+    Check if user has full database access (can see all vacancies and candidates).
+
+    This includes:
+    - Superadmins (global access)
+    - Organization owners
+    - Members with has_full_access flag enabled by admin
+
+    Use this instead of checking just for owner when determining if user
+    can see all entities/vacancies in the organization.
+    """
+    from sqlalchemy import or_
+
+    if user.role == UserRole.superadmin:
+        return True
+
+    result = await db.execute(
+        select(OrgMember).where(
+            OrgMember.org_id == org_id,
+            OrgMember.user_id == user.id,
+            or_(
+                OrgMember.role == OrgRole.owner,  # Owner always has full access
+                OrgMember.has_full_access == True  # Member with full access flag
+            )
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
 # === Helper functions for role-based access control ===
 
 def is_superadmin(user: User) -> bool:

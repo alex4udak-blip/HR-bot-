@@ -1059,3 +1059,83 @@ async def get_my_departments(
         ))
 
     return response
+
+
+class MyDeptRoleResponse(BaseModel):
+    department_id: int
+    department_name: str
+    role: DeptRole
+
+
+@router.get("/my/roles", response_model=List[MyDeptRoleResponse])
+async def get_my_dept_roles(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get current user's roles in their departments.
+
+    Returns list of {department_id, department_name, role} for departments
+    where user is lead or sub_admin (useful for permission checks).
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        return []
+
+    # Get all department memberships for current user with lead/sub_admin role
+    result = await db.execute(
+        select(DepartmentMember, Department)
+        .join(Department, DepartmentMember.department_id == Department.id)
+        .where(
+            DepartmentMember.user_id == current_user.id,
+            Department.org_id == org.id,
+            DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+        )
+    )
+    rows = result.fetchall()
+
+    return [
+        MyDeptRoleResponse(
+            department_id=membership.department_id,
+            department_name=dept.name,
+            role=membership.role
+        )
+        for membership, dept in rows
+    ]
+
+
+@router.get("/my/managed-users", response_model=List[int])
+async def get_my_managed_user_ids(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get IDs of users that current user can manage (users in departments where current user is lead/sub_admin).
+
+    This is useful for frontend to determine which users the current user can toggle full_access for.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        return []
+
+    # Get departments where current user is lead or sub_admin
+    result = await db.execute(
+        select(DepartmentMember.department_id).where(
+            DepartmentMember.user_id == current_user.id,
+            DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+        )
+    )
+    managed_dept_ids = [r[0] for r in result.fetchall()]
+
+    if not managed_dept_ids:
+        return []
+
+    # Get all user IDs in these departments (excluding current user)
+    result = await db.execute(
+        select(DepartmentMember.user_id).where(
+            DepartmentMember.department_id.in_(managed_dept_ids),
+            DepartmentMember.user_id != current_user.id
+        ).distinct()
+    )
+
+    return [r[0] for r in result.fetchall()]

@@ -3,11 +3,12 @@ import { motion } from 'framer-motion';
 import { X, Search, Link, FileText, Upload, Loader2, Check, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
-import type { ParsedResume, ParsedVacancy } from '@/services/api';
+import type { ParsedResume, ParsedVacancy, CreateEntityFromResumeResponse } from '@/services/api';
 import {
   parseResumeFromUrl,
   parseResumeFromFile,
-  parseVacancyFromUrl
+  parseVacancyFromUrl,
+  createEntityFromResume
 } from '@/services/api';
 import ParsedDataPreview from './ParsedDataPreview';
 import { OnboardingTooltip } from '@/components/onboarding';
@@ -16,6 +17,8 @@ interface ParserModalProps {
   type: 'resume' | 'vacancy';
   onClose: () => void;
   onParsed: (data: ParsedResume | ParsedVacancy) => void;
+  /** Callback when entity is created directly from file (skips preview) */
+  onEntityCreated?: (response: CreateEntityFromResumeResponse) => void;
 }
 
 type TabType = 'url' | 'file';
@@ -60,7 +63,7 @@ const isValidUrl = (url: string): boolean => {
   }
 };
 
-export default function ParserModal({ type, onClose, onParsed }: ParserModalProps) {
+export default function ParserModal({ type, onClose, onParsed, onEntityCreated }: ParserModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('url');
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -121,6 +124,16 @@ export default function ParserModal({ type, onClose, onParsed }: ParserModalProp
     setParsedData(null);
 
     try {
+      // Always create entity directly from file (no preview)
+      if (onEntityCreated) {
+        const response = await createEntityFromResume(file);
+        onEntityCreated(response);
+        toast.success(`Кандидат "${response.entity.name}" создан. Резюме прикреплено во вкладке "Файлы"`);
+        onClose();
+        return;
+      }
+
+      // Fallback: parse and show preview if no onEntityCreated callback
       const data = await parseResumeFromFile(file);
       setParsedData(data);
     } catch (err) {
@@ -315,44 +328,46 @@ export default function ParserModal({ type, onClose, onParsed }: ParserModalProp
                 </div>
               ) : (
                 // File upload
-                <div
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                  className={clsx(
-                    'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors',
-                    isDragging
-                      ? 'border-cyan-500 bg-cyan-500/10'
-                      : 'border-white/20 hover:border-white/40 hover:bg-white/5'
-                  )}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf,.doc,.docx,.txt"
-                    onChange={handleFileInputChange}
-                    className="hidden"
-                  />
-                  <Upload className={clsx(
-                    'w-10 h-10 mx-auto mb-4',
-                    isDragging ? 'text-cyan-400' : 'text-white/40'
-                  )} />
-                  <p className="text-white/60 mb-2">
-                    {isDragging
-                      ? 'Отпустите файл для загрузки'
-                      : 'Перетащите файл сюда или нажмите для выбора'
-                    }
-                  </p>
-                  <p className="text-xs text-white/40">
-                    PDF, DOC, DOCX или TXT (максимум 10 МБ)
-                  </p>
-                  {error && (
-                    <p className="text-xs text-red-400 mt-4 flex items-center justify-center gap-1">
-                      <AlertCircle className="w-3 h-3" />
-                      {error}
+                <div className="space-y-4">
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={clsx(
+                      'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors',
+                      isDragging
+                        ? 'border-cyan-500 bg-cyan-500/10'
+                        : 'border-white/20 hover:border-white/40 hover:bg-white/5'
+                    )}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,.doc,.docx,.txt"
+                      onChange={handleFileInputChange}
+                      className="hidden"
+                    />
+                    <Upload className={clsx(
+                      'w-10 h-10 mx-auto mb-4',
+                      isDragging ? 'text-cyan-400' : 'text-white/40'
+                    )} />
+                    <p className="text-white/60 mb-2">
+                      {isDragging
+                        ? 'Отпустите файл для загрузки'
+                        : 'Перетащите файл сюда или нажмите для выбора'
+                      }
                     </p>
-                  )}
+                    <p className="text-xs text-white/40">
+                      PDF, DOC, DOCX или TXT (максимум 10 МБ)
+                    </p>
+                    {error && (
+                      <p className="text-xs text-red-400 mt-4 flex items-center justify-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        {error}
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 
