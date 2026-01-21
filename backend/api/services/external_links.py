@@ -792,7 +792,16 @@ class ExternalLinkProcessor:
 
                                         transcript_text = "\n".join(lines)
                                         call.speakers = speakers
-                                        call.duration_seconds = transcript_data.get('duration') or transcript_data.get('duration_seconds') or transcript_data.get('duration_sec')
+                                        # Duration from Fireflies API - check if it's in minutes or seconds
+                                        raw_duration = transcript_data.get('duration') or transcript_data.get('duration_seconds') or transcript_data.get('duration_sec')
+                                        if raw_duration:
+                                            # Fireflies 'duration' is typically in minutes, 'duration_seconds' is in seconds
+                                            # If value is small (< 300) and we got it from 'duration' field, it's likely minutes
+                                            if transcript_data.get('duration') and not transcript_data.get('duration_seconds') and raw_duration < 300:
+                                                call.duration_seconds = int(raw_duration * 60)
+                                                logger.info(f"Converted duration from minutes to seconds: {raw_duration} min -> {call.duration_seconds} sec")
+                                            else:
+                                                call.duration_seconds = int(raw_duration)
 
                                         # Log if timestamps were found
                                         has_timestamps = any(sp['start'] > 0 or sp['end'] > 0 for sp in speakers)
@@ -1712,7 +1721,16 @@ class ExternalLinkProcessor:
 
                                     transcript_text = "\n".join(lines)
                                     call.speakers = speakers
-                                    call.duration_seconds = transcript_data.get('duration') or transcript_data.get('duration_seconds')
+                                    # Duration from Fireflies API - check if it's in minutes or seconds
+                                    raw_duration = transcript_data.get('duration') or transcript_data.get('duration_seconds') or transcript_data.get('duration_sec')
+                                    if raw_duration:
+                                        # Fireflies 'duration' is typically in minutes, 'duration_seconds' is in seconds
+                                        # If value is small (< 300) and we got it from 'duration' field, it's likely minutes
+                                        if transcript_data.get('duration') and not transcript_data.get('duration_seconds') and raw_duration < 300:
+                                            call.duration_seconds = int(raw_duration * 60)
+                                            logger.info(f"HTTP fallback: Converted duration from minutes to seconds: {raw_duration} min -> {call.duration_seconds} sec")
+                                        else:
+                                            call.duration_seconds = int(raw_duration)
 
                                     has_timestamps = any(sp['start'] > 0 or sp['end'] > 0 for sp in speakers)
                                     logger.info(f"HTTP fallback extracted {len(transcript_text)} chars from Fireflies (has_timestamps={has_timestamps})")
