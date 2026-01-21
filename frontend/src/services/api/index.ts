@@ -33,6 +33,7 @@ export {
   getOrgMembers,
   inviteMember,
   updateMemberRole,
+  toggleMemberFullAccess,
   removeMember,
   getMyOrgRole,
   // Invitations

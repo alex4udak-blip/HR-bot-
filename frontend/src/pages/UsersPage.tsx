@@ -18,9 +18,10 @@ import {
   Clock,
   Send,
   Sparkles,
-  Key
+  Key,
+  Database
 } from 'lucide-react';
-import { getUsers, createUser, deleteUser, adminResetPassword, getOrgMembers, removeMember, updateMemberRole, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, createInvitation, getInvitations, revokeInvitation, type Department, type DeptRole, type Invitation } from '@/services/api';
+import { getUsers, createUser, deleteUser, adminResetPassword, getOrgMembers, removeMember, updateMemberRole, toggleMemberFullAccess, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, createInvitation, getInvitations, revokeInvitation, type Department, type DeptRole, type Invitation } from '@/services/api';
 import type { OrgMember, OrgRole, Organization } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
@@ -151,6 +152,20 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
       loadData();
     } catch (e) {
       toast.error('Не удалось удалить пользователя');
+    }
+  };
+
+  const handleToggleFullAccess = async (member: OrgMember) => {
+    const newValue = !member.has_full_access;
+    const action = newValue ? 'Включить' : 'Отключить';
+    if (!confirm(`${action} полный доступ к базе для ${member.user_name}?\n\nЭто даст/уберёт доступ ко всем вакансиям и кандидатам организации.`)) return;
+
+    try {
+      await toggleMemberFullAccess(member.user_id, newValue);
+      toast.success(newValue ? 'Полный доступ включён' : 'Полный доступ отключён');
+      loadData();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || 'Не удалось изменить доступ');
     }
   };
 
@@ -295,6 +310,12 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
                             Это вы
                           </span>
                         )}
+                        {member.has_full_access && !isMe && (
+                          <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-400 rounded-full flex items-center gap-1">
+                            <Database size={10} />
+                            Полный доступ
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-white/40">{member.user_email}</p>
                     </div>
@@ -316,6 +337,23 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
                       <span className={clsx('text-sm px-2 py-1 rounded-lg', roleConfig.color)}>
                         {roleConfig.label}
                       </span>
+                    )}
+
+                    {/* Full Access Toggle - for non-owners only */}
+                    {canManageUsers && !isMe && member.role !== 'owner' && (
+                      <button
+                        onClick={() => handleToggleFullAccess(member)}
+                        className={clsx(
+                          'p-2 rounded-lg transition-colors flex items-center gap-1.5',
+                          member.has_full_access
+                            ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                            : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60'
+                        )}
+                        title={member.has_full_access ? 'Полный доступ к базе (нажмите чтобы отключить)' : 'Дать полный доступ к базе'}
+                      >
+                        <Database size={16} />
+                        {member.has_full_access && <span className="text-xs">Полный</span>}
+                      </button>
                     )}
 
                     {canManageUsers && !isMe && (

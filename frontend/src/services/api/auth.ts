@@ -129,6 +129,7 @@ export interface OrgMember {
   user_name: string;
   user_email: string;
   role: OrgRole;
+  has_full_access: boolean;  // Full database access (can see all vacancies/candidates)
   invited_by_name?: string;
   created_at: string;
   custom_role_id?: number;
@@ -163,6 +164,14 @@ export const inviteMember = async (memberData: InviteMemberRequest): Promise<Org
 
 export const updateMemberRole = async (userId: number, role: OrgRole): Promise<{ success: boolean }> => {
   const { data } = await debouncedMutation<{ success: boolean }>('patch', `/organizations/current/members/${userId}/role`, { role });
+  return data;
+};
+
+export const toggleMemberFullAccess = async (userId: number, hasFullAccess: boolean): Promise<{ success: boolean; has_full_access: boolean }> => {
+  const { data } = await debouncedMutation<{ success: boolean; has_full_access: boolean }>(
+    'put',
+    `/organizations/current/members/${userId}/full-access?has_full_access=${hasFullAccess}`
+  );
   return data;
 };
 
