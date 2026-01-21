@@ -569,15 +569,18 @@ async def list_vacancies(
         # 2. Vacancies where they are hiring manager
         # 3. Vacancies in departments where they are lead/sub_admin
         # 4. Vacancies shared with them via SharedAccess
-        access_conditions = [
-            Vacancy.created_by == current_user.id,
-            Vacancy.hiring_manager_id == current_user.id
-        ]
+        access_conditions = []
+
+        # Always add created_by and hiring_manager conditions
+        access_conditions.append(Vacancy.created_by == current_user.id)
+        access_conditions.append(Vacancy.hiring_manager_id == current_user.id)
+
         if lead_dept_ids:
             access_conditions.append(Vacancy.department_id.in_(lead_dept_ids))
         if shared_vacancy_ids:
             access_conditions.append(Vacancy.id.in_(shared_vacancy_ids))
 
+        # Apply OR filter - user must match at least one condition
         query = query.where(or_(*access_conditions))
 
     if status:
