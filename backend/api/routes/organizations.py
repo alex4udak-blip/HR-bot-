@@ -398,7 +398,8 @@ async def toggle_member_full_access(
     user_id: int,
     has_full_access: bool,
     db: AsyncSession = Depends(get_db),
-    auth: tuple = Depends(require_org_admin)
+    user: User = Depends(get_current_user),
+    org: Organization = Depends(get_current_org)
 ):
     """
     Toggle full database access for a member.
@@ -407,15 +408,15 @@ async def toggle_member_full_access(
     without being an admin. This is useful for recruiters who need to see all data
     but shouldn't have admin permissions.
 
-    Can be set by: superadmin, owner, or admin
+    Can be set by: superadmin, owner, admin, OR department lead/sub_admin (for their dept members)
     """
-    current_user, org, current_role = auth
+    user = await db.merge(user)
 
     # Can't change own full_access
-    if user_id == current_user.id:
+    if user_id == user.id:
         raise HTTPException(status_code=400, detail="Cannot change own full access setting")
 
-    # Get membership
+    # Get target membership
     result = await db.execute(
         select(OrgMember).where(
             OrgMember.org_id == org.id,
@@ -429,6 +430,36 @@ async def toggle_member_full_access(
     # Owner already has full access, no need to toggle
     if membership.role == OrgRole.owner:
         raise HTTPException(status_code=400, detail="Owner already has full access")
+
+    # Check permissions: org admin/owner OR dept lead/sub_admin for their members
+    org_role = await get_user_org_role(user, org.id, db)
+    is_org_admin = user.role == UserRole.superadmin or org_role in ("owner", "admin")
+
+    if not is_org_admin:
+        # Check if current user is lead/sub_admin in any department where target user is a member
+        # Get departments where current user is lead or sub_admin
+        result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == user.id,
+                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+            )
+        )
+        my_managed_dept_ids = [r[0] for r in result.fetchall()]
+
+        if not my_managed_dept_ids:
+            raise HTTPException(status_code=403, detail="Admin or department lead/sub_admin access required")
+
+        # Check if target user is in any of these departments
+        result = await db.execute(
+            select(DepartmentMember).where(
+                DepartmentMember.user_id == user_id,
+                DepartmentMember.department_id.in_(my_managed_dept_ids)
+            )
+        )
+        target_in_my_dept = result.scalar_one_or_none()
+
+        if not target_in_my_dept:
+            raise HTTPException(status_code=403, detail="Can only change access for members in your department")
 
     membership.has_full_access = has_full_access
     await db.commit()

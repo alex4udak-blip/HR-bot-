@@ -354,6 +354,22 @@ export const getMyDepartments = async (): Promise<Department[]> => {
   return data;
 };
 
+export interface MyDeptRole {
+  department_id: number;
+  department_name: string;
+  role: DeptRole;
+}
+
+export const getMyDeptRoles = async (): Promise<MyDeptRole[]> => {
+  const { data } = await deduplicatedGet<MyDeptRole[]>('/departments/my/roles');
+  return data;
+};
+
+export const getMyManagedUserIds = async (): Promise<number[]> => {
+  const { data } = await deduplicatedGet<number[]>('/departments/my/managed-users');
+  return data;
+};
+
 // ============================================================
 // CUSTOM ROLES API (Superadmin only)
 // ============================================================

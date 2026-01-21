@@ -21,7 +21,7 @@ import {
   Key,
   Database
 } from 'lucide-react';
-import { getUsers, createUser, deleteUser, adminResetPassword, getOrgMembers, removeMember, updateMemberRole, toggleMemberFullAccess, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, createInvitation, getInvitations, revokeInvitation, type Department, type DeptRole, type Invitation } from '@/services/api';
+import { getUsers, createUser, deleteUser, adminResetPassword, getOrgMembers, removeMember, updateMemberRole, toggleMemberFullAccess, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, getMyManagedUserIds, createInvitation, getInvitations, revokeInvitation, type Department, type DeptRole, type Invitation } from '@/services/api';
 import type { OrgMember, OrgRole, Organization } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
@@ -103,6 +103,7 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [myRole, setMyRole] = useState<OrgRole | null>(null);
   const [myDepartmentIds, setMyDepartmentIds] = useState<number[]>([]);
+  const [myManagedUserIds, setMyManagedUserIds] = useState<number[]>([]); // Users that dept lead/sub_admin can manage
   const [loading, setLoading] = useState(true);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showInvitationsTab, setShowInvitationsTab] = useState(false);
@@ -114,18 +115,20 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [orgData, membersData, roleData, invitationsData, myDepts] = await Promise.all([
+      const [orgData, membersData, roleData, invitationsData, myDepts, managedUsers] = await Promise.all([
         getCurrentOrganization(),
         getOrgMembers(),
         getMyOrgRole(),
         getInvitations(),
-        getMyDepartments()
+        getMyDepartments(),
+        getMyManagedUserIds()
       ]);
       setOrganization(orgData);
       setMembers(membersData);
       setMyRole(roleData.role);
       setInvitations(invitationsData);
       setMyDepartmentIds(myDepts.map(d => d.id));
+      setMyManagedUserIds(managedUsers);
     } catch (e) {
       console.error('Failed to load organization data:', e);
     } finally {
@@ -340,7 +343,8 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
                     )}
 
                     {/* Full Access Toggle - for non-owners only */}
-                    {canManageUsers && !isMe && member.role !== 'owner' && (
+                    {/* Can be toggled by: org admin/owner OR dept lead/sub_admin for their dept members */}
+                    {!isMe && member.role !== 'owner' && (canManageUsers || myManagedUserIds.includes(member.user_id)) && (
                       <button
                         onClick={() => handleToggleFullAccess(member)}
                         className={clsx(

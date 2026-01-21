@@ -53,6 +53,8 @@ export {
   updateDepartmentMember,
   removeDepartmentMember,
   getMyDepartments,
+  getMyDeptRoles,
+  getMyManagedUserIds,
   // Custom Roles
   getCustomRoles,
   getCustomRole,
