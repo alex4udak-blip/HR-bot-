@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -11,10 +11,13 @@ import {
   RefreshCw,
   AlertCircle,
   CheckCircle2,
-  GitCompare
+  GitCompare,
+  Sparkles,
+  X
 } from 'lucide-react';
 import clsx from 'clsx';
-import { getSimilarCandidates, compareCandidates } from '@/services/api';
+import ReactMarkdown from 'react-markdown';
+import { getSimilarCandidates, compareCandidates, compareCandidatesAI } from '@/services/api';
 import { ListSkeleton, EmptyState } from '@/components/ui';
 
 interface SimilarCandidate {
@@ -55,6 +58,12 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
   const [comparisonResult, setComparisonResult] = useState<SimilarCandidate | null>(null);
   const [showCompareModal, setShowCompareModal] = useState(false);
 
+  // AI comparison state
+  const [aiComparison, setAiComparison] = useState<string>('');
+  const [aiComparing, setAiComparing] = useState(false);
+  const [comparingName, setComparingName] = useState<string>('');
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   const loadSimilarCandidates = async () => {
     setLoading(true);
     setError(null);
@@ -73,18 +82,51 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
     loadSimilarCandidates();
   }, [entityId]);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
   const handleCompare = async (otherEntityId: number, otherEntityName: string) => {
     setComparingId(otherEntityId);
+    setComparingName(otherEntityName);
+    setAiComparison('');
+    setAiComparing(true);
+    setShowCompareModal(true);
+
+    // Cancel any previous request
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = new AbortController();
+
     try {
+      // Also get basic comparison for score display
       const result = await compareCandidates(entityId, otherEntityId);
       setComparisonResult({ ...result, entity_name: otherEntityName });
-      setShowCompareModal(true);
+
+      // Start AI comparison streaming
+      await compareCandidatesAI(entityId, otherEntityId, (chunk) => {
+        setAiComparison(prev => prev + chunk);
+      });
     } catch (err) {
       console.error('Failed to compare candidates:', err);
+      if (err instanceof Error && err.name !== 'AbortError') {
+        setAiComparison(prev => prev + '\n\n❌ Ошибка при сравнении');
+      }
     } finally {
       setComparingId(null);
+      setAiComparing(false);
     }
   };
+
+  const handleCloseModal = useCallback(() => {
+    abortControllerRef.current?.abort();
+    setShowCompareModal(false);
+    setAiComparison('');
+    setAiComparing(false);
+    setComparisonResult(null);
+  }, []);
 
   const handleNavigateToCandidate = (candidateId: number) => {
     navigate(`/contacts/${candidateId}`);
@@ -264,236 +306,122 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
         ))}
       </div>
 
-      {/* Comparison Modal */}
+      {/* AI Comparison Modal */}
       <AnimatePresence>
-        {showCompareModal && comparisonResult && (
+        {showCompareModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70"
-            onClick={() => setShowCompareModal(false)}
+            onClick={handleCloseModal}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg bg-gray-900 rounded-2xl border border-white/10 overflow-hidden"
+              className="w-full max-w-2xl bg-gray-900 rounded-2xl border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
             >
-              <div className="p-6 border-b border-white/10">
+              {/* Header */}
+              <div className="p-4 border-b border-white/10 flex items-center justify-between flex-shrink-0">
                 <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <GitCompare size={20} className="text-blue-400" />
+                  <Sparkles size={20} className="text-purple-400" />
                   Сравнение кандидатов
                 </h3>
+                <button
+                  onClick={handleCloseModal}
+                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <X size={20} className="text-white/60" />
+                </button>
               </div>
 
-              <div className="p-6 max-h-[70vh] overflow-y-auto">
-                {/* Header with names and score */}
-                <div className="flex items-center justify-between mb-6">
-                  <div className="text-center flex-1 min-w-0">
-                    <p className="text-sm text-white/60 mb-1">Текущий</p>
-                    <p className="font-medium text-white truncate">{entityName}</p>
-                    {comparisonResult.entity1_position && (
-                      <p className="text-xs text-white/40 truncate">{comparisonResult.entity1_position}</p>
-                    )}
-                  </div>
-                  <div className={clsx(
-                    'px-4 py-2 rounded-full mx-4 flex-shrink-0',
-                    getScoreBgColor(comparisonResult.similarity_score)
-                  )}>
-                    <span className={clsx('font-bold text-lg', getScoreColor(comparisonResult.similarity_score))}>
+              {/* Names header */}
+              <div className="p-4 border-b border-white/5 flex items-center justify-between flex-shrink-0 bg-white/5">
+                <div className="text-center flex-1 min-w-0">
+                  <p className="text-xs text-white/60 mb-0.5">Текущий</p>
+                  <p className="font-medium text-white truncate">{entityName}</p>
+                </div>
+                <div className={clsx(
+                  'px-3 py-1.5 rounded-full mx-3 flex-shrink-0',
+                  comparisonResult ? getScoreBgColor(comparisonResult.similarity_score) : 'bg-purple-500/20'
+                )}>
+                  {comparisonResult ? (
+                    <span className={clsx('font-bold', getScoreColor(comparisonResult.similarity_score))}>
                       {comparisonResult.similarity_score}%
                     </span>
-                  </div>
-                  <div className="text-center flex-1 min-w-0">
-                    <p className="text-sm text-white/60 mb-1">Сравниваемый</p>
-                    <p className="font-medium text-white truncate">{comparisonResult.entity_name}</p>
-                    {comparisonResult.entity2_position && (
-                      <p className="text-xs text-white/40 truncate">{comparisonResult.entity2_position}</p>
-                    )}
-                  </div>
+                  ) : (
+                    <Sparkles size={16} className="text-purple-400 animate-pulse" />
+                  )}
                 </div>
-
-                {/* Detailed comparison table */}
-                <div className="space-y-3 mb-6">
-                  {/* Experience comparison */}
-                  <div className={clsx(
-                    'p-3 rounded-lg border',
-                    comparisonResult.similar_experience ? 'bg-green-500/10 border-green-500/30' : 'bg-white/5 border-white/10'
-                  )}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Briefcase size={14} className={comparisonResult.similar_experience ? 'text-green-400' : 'text-white/40'} />
-                      <span className="text-xs font-medium text-white/60">Опыт работы</span>
-                      {comparisonResult.similar_experience && (
-                        <CheckCircle2 size={12} className="text-green-400 ml-auto" />
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div className="text-white/80">
-                        {comparisonResult.entity1_experience ? `${comparisonResult.entity1_experience} лет` : 'Не указан'}
-                      </div>
-                      <div className="text-white/80">
-                        {comparisonResult.entity2_experience ? `${comparisonResult.entity2_experience} лет` : 'Не указан'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Salary comparison */}
-                  <div className={clsx(
-                    'p-3 rounded-lg border',
-                    comparisonResult.similar_salary ? 'bg-green-500/10 border-green-500/30' : 'bg-white/5 border-white/10'
-                  )}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <DollarSign size={14} className={comparisonResult.similar_salary ? 'text-green-400' : 'text-white/40'} />
-                      <span className="text-xs font-medium text-white/60">Зарплатные ожидания</span>
-                      {comparisonResult.similar_salary && (
-                        <CheckCircle2 size={12} className="text-green-400 ml-auto" />
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div className="text-white/80">
-                        {comparisonResult.entity1_salary_min || comparisonResult.entity1_salary_max ? (
-                          <>
-                            {comparisonResult.entity1_salary_min && `от ${(comparisonResult.entity1_salary_min / 1000).toFixed(0)}к`}
-                            {comparisonResult.entity1_salary_min && comparisonResult.entity1_salary_max && ' — '}
-                            {comparisonResult.entity1_salary_max && `до ${(comparisonResult.entity1_salary_max / 1000).toFixed(0)}к`}
-                          </>
-                        ) : 'Не указана'}
-                      </div>
-                      <div className="text-white/80">
-                        {comparisonResult.entity2_salary_min || comparisonResult.entity2_salary_max ? (
-                          <>
-                            {comparisonResult.entity2_salary_min && `от ${(comparisonResult.entity2_salary_min / 1000).toFixed(0)}к`}
-                            {comparisonResult.entity2_salary_min && comparisonResult.entity2_salary_max && ' — '}
-                            {comparisonResult.entity2_salary_max && `до ${(comparisonResult.entity2_salary_max / 1000).toFixed(0)}к`}
-                          </>
-                        ) : 'Не указана'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Location comparison */}
-                  <div className={clsx(
-                    'p-3 rounded-lg border',
-                    comparisonResult.similar_location ? 'bg-green-500/10 border-green-500/30' : 'bg-white/5 border-white/10'
-                  )}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <MapPin size={14} className={comparisonResult.similar_location ? 'text-green-400' : 'text-white/40'} />
-                      <span className="text-xs font-medium text-white/60">Локация</span>
-                      {comparisonResult.similar_location && (
-                        <CheckCircle2 size={12} className="text-green-400 ml-auto" />
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div className="text-white/80 truncate">
-                        {comparisonResult.entity1_location || 'Не указана'}
-                      </div>
-                      <div className="text-white/80 truncate">
-                        {comparisonResult.entity2_location || 'Не указана'}
-                      </div>
-                    </div>
-                  </div>
+                <div className="text-center flex-1 min-w-0">
+                  <p className="text-xs text-white/60 mb-0.5">Сравниваемый</p>
+                  <p className="font-medium text-white truncate">{comparingName}</p>
                 </div>
+              </div>
 
-                {/* Skills comparison */}
-                {(comparisonResult.entity1_skills?.length || comparisonResult.entity2_skills?.length || comparisonResult.common_skills.length > 0) && (
-                  <div className="mb-6">
-                    <p className="text-sm text-white/60 mb-3">Навыки</p>
-
-                    {/* Common skills */}
-                    {comparisonResult.common_skills.length > 0 && (
-                      <div className="mb-3">
-                        <p className="text-xs text-green-400 mb-1.5 flex items-center gap-1">
-                          <CheckCircle2 size={10} />
-                          Общие ({comparisonResult.common_skills.length})
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {comparisonResult.common_skills.map((skill, i) => (
-                            <span key={i} className="text-xs px-2 py-0.5 bg-green-500/20 text-green-400 rounded">
-                              {skill}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Unique skills comparison */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs text-white/40 mb-1.5">Только у текущего</p>
-                        <div className="flex flex-wrap gap-1">
-                          {comparisonResult.entity1_skills
-                            ?.filter(s => !comparisonResult.common_skills.includes(s))
-                            .slice(0, 5)
-                            .map((skill, i) => (
-                              <span key={i} className="text-xs px-1.5 py-0.5 bg-white/5 text-white/50 rounded">
-                                {skill}
-                              </span>
-                            ))}
-                          {(comparisonResult.entity1_skills?.filter(s => !comparisonResult.common_skills.includes(s)).length || 0) > 5 && (
-                            <span className="text-xs text-white/30">
-                              +{(comparisonResult.entity1_skills?.filter(s => !comparisonResult.common_skills.includes(s)).length || 0) - 5}
-                            </span>
-                          )}
-                          {!comparisonResult.entity1_skills?.filter(s => !comparisonResult.common_skills.includes(s)).length && (
-                            <span className="text-xs text-white/30">—</span>
-                          )}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-xs text-white/40 mb-1.5">Только у сравниваемого</p>
-                        <div className="flex flex-wrap gap-1">
-                          {comparisonResult.entity2_skills
-                            ?.filter(s => !comparisonResult.common_skills.includes(s))
-                            .slice(0, 5)
-                            .map((skill, i) => (
-                              <span key={i} className="text-xs px-1.5 py-0.5 bg-white/5 text-white/50 rounded">
-                                {skill}
-                              </span>
-                            ))}
-                          {(comparisonResult.entity2_skills?.filter(s => !comparisonResult.common_skills.includes(s)).length || 0) > 5 && (
-                            <span className="text-xs text-white/30">
-                              +{(comparisonResult.entity2_skills?.filter(s => !comparisonResult.common_skills.includes(s)).length || 0) - 5}
-                            </span>
-                          )}
-                          {!comparisonResult.entity2_skills?.filter(s => !comparisonResult.common_skills.includes(s)).length && (
-                            <span className="text-xs text-white/30">—</span>
-                          )}
-                        </div>
-                      </div>
+              {/* AI Content */}
+              <div className="flex-1 overflow-y-auto p-4">
+                {aiComparing && !aiComparison && (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="text-center">
+                      <RefreshCw size={32} className="text-purple-400 animate-spin mx-auto mb-3" />
+                      <p className="text-white/60">Анализирую резюме, чаты и звонки...</p>
+                      <p className="text-xs text-white/40 mt-1">Это может занять несколько секунд</p>
                     </div>
                   </div>
                 )}
 
-                {/* No data message */}
-                {!comparisonResult.entity1_skills?.length &&
-                 !comparisonResult.entity2_skills?.length &&
-                 !comparisonResult.entity1_experience &&
-                 !comparisonResult.entity2_experience &&
-                 !comparisonResult.entity1_salary_min &&
-                 !comparisonResult.entity1_salary_max &&
-                 !comparisonResult.entity2_salary_min &&
-                 !comparisonResult.entity2_salary_max &&
-                 !comparisonResult.entity1_location &&
-                 !comparisonResult.entity2_location && (
-                  <div className="text-center py-4 text-white/40 text-sm">
-                    <AlertCircle size={24} className="mx-auto mb-2 opacity-50" />
-                    <p>Недостаточно данных для сравнения</p>
-                    <p className="text-xs mt-1">Заполните навыки, опыт, зарплату и локацию</p>
+                {aiComparison && (
+                  <div className="prose prose-invert prose-sm max-w-none">
+                    <ReactMarkdown
+                      components={{
+                        h2: ({ children }) => (
+                          <h2 className="text-base font-semibold text-white mt-4 mb-2 flex items-center gap-2">
+                            {children}
+                          </h2>
+                        ),
+                        h3: ({ children }) => (
+                          <h3 className="text-sm font-medium text-white/80 mt-3 mb-1">{children}</h3>
+                        ),
+                        p: ({ children }) => (
+                          <p className="text-sm text-white/70 mb-2 leading-relaxed">{children}</p>
+                        ),
+                        ul: ({ children }) => (
+                          <ul className="text-sm text-white/70 space-y-1 mb-2 ml-4">{children}</ul>
+                        ),
+                        li: ({ children }) => (
+                          <li className="flex items-start gap-2">
+                            <span className="text-purple-400 mt-1">•</span>
+                            <span>{children}</span>
+                          </li>
+                        ),
+                        strong: ({ children }) => (
+                          <strong className="text-white font-medium">{children}</strong>
+                        ),
+                      }}
+                    >
+                      {aiComparison}
+                    </ReactMarkdown>
+                    {aiComparing && (
+                      <span className="inline-block w-2 h-4 bg-purple-400 animate-pulse ml-1" />
+                    )}
                   </div>
                 )}
               </div>
 
-              <div className="p-4 border-t border-white/10 flex justify-between">
+              {/* Footer */}
+              <div className="p-4 border-t border-white/10 flex justify-between flex-shrink-0">
                 <button
-                  onClick={() => handleNavigateToCandidate(comparisonResult.entity_id)}
-                  className="px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors"
+                  onClick={() => comparisonResult && handleNavigateToCandidate(comparisonResult.entity_id)}
+                  disabled={!comparisonResult}
+                  className="px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors disabled:opacity-50"
                 >
                   Открыть профиль
                 </button>
                 <button
-                  onClick={() => setShowCompareModal(false)}
+                  onClick={handleCloseModal}
                   className="px-4 py-2 bg-white/10 text-white/80 rounded-lg hover:bg-white/20 transition-colors"
                 >
                   Закрыть

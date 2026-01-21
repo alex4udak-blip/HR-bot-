@@ -4194,6 +4194,96 @@ async def compare_candidates(
     )
 
 
+@router.get("/{entity_id}/compare/{other_entity_id}/ai")
+async def compare_candidates_ai(
+    entity_id: int,
+    other_entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    AI-powered comparison of two candidates using full context.
+
+    Uses files (resumes), chats, and calls to provide intelligent comparison.
+    Returns a streaming response with markdown-formatted comparison.
+
+    Args:
+        entity_id: ID of the first candidate
+        other_entity_id: ID of the second candidate
+
+    Returns:
+        Streaming text response with AI comparison
+    """
+    from ..services.comparison_ai import comparison_ai_service
+    from ..models.database import EntityFile
+    from sqlalchemy.orm import selectinload
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    if entity_id == other_entity_id:
+        raise HTTPException(400, "Нельзя сравнить кандидата с самим собой")
+
+    # Load both entities with related data
+    async def load_entity_with_context(eid: int):
+        # Entity
+        result = await db.execute(
+            select(Entity).where(Entity.id == eid, Entity.org_id == org.id)
+        )
+        entity = result.scalar_one_or_none()
+        if not entity:
+            return None, [], [], []
+
+        # Chats with messages
+        chats_result = await db.execute(
+            select(Chat)
+            .options(selectinload(Chat.messages))
+            .where(Chat.entity_id == eid)
+        )
+        chats = list(chats_result.scalars().all())
+
+        # Calls
+        calls_result = await db.execute(
+            select(CallRecording).where(CallRecording.entity_id == eid)
+        )
+        calls = list(calls_result.scalars().all())
+
+        # Files
+        files_result = await db.execute(
+            select(EntityFile).where(EntityFile.entity_id == eid)
+        )
+        files = list(files_result.scalars().all())
+
+        return entity, chats, calls, files
+
+    entity1, chats1, calls1, files1 = await load_entity_with_context(entity_id)
+    if not entity1:
+        raise HTTPException(404, "Первый кандидат не найден")
+
+    entity2, chats2, calls2, files2 = await load_entity_with_context(other_entity_id)
+    if not entity2:
+        raise HTTPException(404, "Второй кандидат не найден")
+
+    async def generate():
+        try:
+            async for chunk in comparison_ai_service.compare_stream(
+                entity1, chats1, calls1, files1,
+                entity2, chats2, calls2, files2
+            ):
+                yield chunk
+        except Exception as e:
+            logger.error(f"AI comparison error: {e}")
+            yield f"\n\n❌ Ошибка при сравнении: {str(e)}"
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        generate(),
+        media_type="text/plain; charset=utf-8"
+    )
+
+
 # === Entity Chats & Calls API ===
 # These endpoints provide easy access to chats and calls linked to an entity
 

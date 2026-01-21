@@ -150,6 +150,7 @@ export {
   getDuplicateCandidates,
   mergeEntities,
   compareCandidates,
+  compareCandidatesAI,
   // Files
   getEntityFiles,
   uploadEntityFile,

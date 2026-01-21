@@ -429,6 +429,49 @@ export const compareCandidates = async (
   return data;
 };
 
+/**
+ * AI-powered comparison of two candidates using full context.
+ * Uses files (resumes), chats, and calls for intelligent comparison.
+ *
+ * @param entityId ID of first candidate
+ * @param otherEntityId ID of second candidate
+ * @param onChunk Callback for each streaming chunk
+ * @returns Promise that resolves when streaming is complete
+ */
+export const compareCandidatesAI = async (
+  entityId: number,
+  otherEntityId: number,
+  onChunk: (chunk: string) => void
+): Promise<void> => {
+  const response = await fetch(
+    `${api.defaults.baseURL}/entities/${entityId}/compare/${otherEntityId}/ai`,
+    {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Ошибка сравнения' }));
+    throw new Error(error.detail || 'Ошибка сравнения');
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('Streaming not supported');
+  }
+
+  const decoder = new TextDecoder();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    onChunk(chunk);
+  }
+};
+
 // ============================================================
 // ENTITY FILES
 // ============================================================
