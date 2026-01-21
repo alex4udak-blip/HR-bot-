@@ -41,6 +41,7 @@ from ..services.chat_types import (
 )
 from ..services.transcription import transcription_service
 from ..services.documents import document_parser
+from ..services.google_docs import google_docs_service
 from .realtime import broadcast_chat_updated, broadcast_chat_deleted
 
 router = APIRouter()
@@ -1437,6 +1438,32 @@ async def import_telegram_history(
                 content_type = detect_content_type(msg)
                 from_name = msg.get('from', 'Unknown')
                 from_id = msg.get('from_id', '')
+
+            # Auto-parse Google Docs links in text messages
+            if auto_process and content_type == 'text' and content:
+                # Check for Google Docs links in the message
+                google_docs_urls = re.findall(
+                    r'https?://docs\.google\.com/document/d/[a-zA-Z0-9_-]+[^\s]*',
+                    content
+                )
+                if google_docs_urls:
+                    for gdoc_url in google_docs_urls[:3]:  # Limit to 3 links per message
+                        try:
+                            logger.info(f"Auto-parsing Google Doc: {gdoc_url}")
+                            result = await google_docs_service.parse_from_url(gdoc_url)
+                            if result.content and result.status in ('parsed', 'partial'):
+                                # Append parsed content to message
+                                content += f"\n\n--- Содержимое документа ---\n{result.content[:5000]}"
+                                if not document_metadata:
+                                    document_metadata = {}
+                                document_metadata['google_doc_url'] = gdoc_url
+                                document_metadata['google_doc_parsed'] = True
+                                parse_status = result.status
+                                logger.info(f"Google Doc parsed: {result.content[:100]}...")
+                            else:
+                                logger.warning(f"Google Doc parse failed: {result.error}")
+                        except Exception as e:
+                            logger.error(f"Google Doc auto-parse error: {e}")
 
             # Check for duplicates by content hash (when no message_id)
             # For media messages, use media_file for stable hash
