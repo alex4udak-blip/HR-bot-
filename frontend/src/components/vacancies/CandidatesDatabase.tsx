@@ -539,89 +539,77 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           onDragEnd={handleDragEnd}
           onClick={() => handleCandidateClick(candidate)}
           className={clsx(
-            'flex items-center gap-4 p-3 bg-white/5 hover:bg-white/10 border rounded-lg cursor-pointer transition-all group',
+            'flex items-center p-3 bg-white/5 hover:bg-white/10 border rounded-lg cursor-pointer transition-all group',
             selectedCandidates.has(candidate.id) ? 'border-purple-500 bg-purple-500/10' : 'border-white/10'
           )}
         >
+          {/* Checkbox - fixed 24px */}
           <button
             onClick={(e) => handleToggleSelect(candidate.id, e)}
             className={clsx(
-              'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
+              'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition-colors mr-3',
               selectedCandidates.has(candidate.id) ? 'bg-purple-600 border-purple-600' : 'border-white/20 hover:border-white/40'
             )}
           >
             {selectedCandidates.has(candidate.id) && <Check className="w-3 h-3" />}
           </button>
-          <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-sm flex-shrink-0">
+          {/* Avatar - fixed 40px */}
+          <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-sm flex-shrink-0 mr-3">
             {getAvatarInitials(candidate.name || 'UK')}
           </div>
-          <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-5 gap-2 items-center">
-            <div className="min-w-0">
-              <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
-              {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
-            </div>
-            <div className="text-xs text-white/60 space-y-0.5 min-w-0 hidden sm:block">
-              {candidate.email && (
-                <div className="flex items-center gap-1.5 truncate">
-                  <Mail className="w-3 h-3 flex-shrink-0" />
-                  <span className="truncate">{candidate.email}</span>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center flex-shrink-0">
-              <span className={clsx('px-2 py-1 text-xs rounded-full whitespace-nowrap', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
-                {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
-              </span>
-            </div>
-            <div className="flex items-center flex-shrink-0 min-w-0">
-              {nextStage && (
-                <button
-                  disabled={isMovingCandidate(candidate.id)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nextStage]);
-                  }}
-                  className={clsx(
-                    "opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all whitespace-nowrap",
-                    isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  {isMovingCandidate(candidate.id) ? '...' : `→ ${STATUS_LABELS[STAGE_TO_STATUS_MAP[nextStage]]}`}
-                </button>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-1 items-center hidden lg:flex">
-              {candidate.tags?.slice(0, 3).map(tag => (
-                <span key={tag} className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/60">{tag}</span>
-              ))}
-              {(candidate.tags?.length || 0) > 3 && <span className="text-xs text-white/40">+{candidate.tags!.length - 3}</span>}
-            </div>
+          {/* Name - fixed 140px */}
+          <div className="w-[140px] min-w-[140px] flex-shrink-0 mr-3">
+            <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
+            {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
           </div>
-          <div className="w-[100px] min-w-[100px] flex-shrink-0">
+          {/* Status badge - fixed 100px */}
+          <div className="w-[100px] min-w-[100px] flex-shrink-0 mr-3">
             <span className={clsx('px-2 py-1 text-xs rounded-full whitespace-nowrap inline-block', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
               {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
             </span>
           </div>
-          <div className="w-[60px] min-w-[60px] flex-shrink-0 text-xs hidden sm:block">
+          {/* Next stage button - fixed 100px */}
+          <div className="w-[100px] min-w-[100px] flex-shrink-0 mr-3">
+            {nextStage && (
+              <button
+                disabled={isMovingCandidate(candidate.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nextStage]);
+                }}
+                className={clsx(
+                  "opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all whitespace-nowrap",
+                  isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
+                )}
+              >
+                {isMovingCandidate(candidate.id) ? '...' : `→ ${STATUS_LABELS[STAGE_TO_STATUS_MAP[nextStage]]}`}
+              </button>
+            )}
+          </div>
+          {/* Vacancies count - fixed 50px */}
+          <div className="w-[50px] min-w-[50px] flex-shrink-0 text-xs mr-3 hidden sm:block">
             {candidate.vacancies_count && candidate.vacancies_count > 0 ? (
               <span className="text-emerald-400 flex items-center gap-1">
                 <Briefcase className="w-3 h-3" />
                 {candidate.vacancies_count}
               </span>
             ) : (
-              <span className="text-white/30 flex items-center gap-1">
-                <Briefcase className="w-3 h-3" />
-                --
-              </span>
+              <span className="text-white/30">--</span>
             )}
           </div>
-          {candidate.owner_name && (
-            <div className="flex items-center gap-1 text-xs text-white/40 flex-shrink-0 min-w-[80px]">
-              <User className="w-3 h-3" />
-              <span className="truncate">{candidate.owner_name}</span>
-            </div>
-          )}
-          <div className="flex items-center gap-1 text-xs text-white/40 flex-shrink-0 whitespace-nowrap">
+          {/* Owner - fixed 100px */}
+          <div className="w-[100px] min-w-[100px] flex-shrink-0 text-xs text-white/40 mr-3 hidden sm:block">
+            {candidate.owner_name ? (
+              <div className="flex items-center gap-1 truncate">
+                <User className="w-3 h-3 flex-shrink-0" />
+                <span className="truncate">{candidate.owner_name}</span>
+              </div>
+            ) : (
+              <span>—</span>
+            )}
+          </div>
+          {/* Date - fixed 70px */}
+          <div className="w-[70px] min-w-[70px] flex-shrink-0 flex items-center gap-1 text-xs text-white/40 whitespace-nowrap">
             <Clock className="w-3 h-3" />
             {formatDate(candidate.created_at)}
           </div>
@@ -728,25 +716,26 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             </div>
           )}
         </div>
-        <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-xs text-white/40 ml-7">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 whitespace-nowrap">
-              <Clock className="w-3 h-3" />
-              {formatDate(candidate.created_at)}
-            </div>
-            {candidate.owner_name && (
-              <div className="flex items-center gap-1">
-                <User className="w-3 h-3" />
-                <span className="truncate max-w-[80px]">{candidate.owner_name}</span>
-              </div>
-            )}
+        <div className="mt-2 pt-2 border-t border-white/5 flex items-center text-xs text-white/40 ml-7">
+          {/* Date - fixed width */}
+          <div className="flex items-center gap-1 whitespace-nowrap flex-shrink-0">
+            <Clock className="w-3 h-3" />
+            {formatDate(candidate.created_at)}
           </div>
+          {/* Owner - takes remaining space but truncates */}
+          {candidate.owner_name && (
+            <div className="flex items-center gap-1 ml-3 min-w-0 flex-1 overflow-hidden">
+              <User className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate">{candidate.owner_name}</span>
+            </div>
+          )}
+          {/* External link button - always visible, fixed position */}
           <button
             onClick={(e) => {
               e.stopPropagation();
               handleCandidateClick(candidate);
             }}
-            className="p-1 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+            className="p-1 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-2"
           >
             <ExternalLink className="w-3 h-3" />
           </button>

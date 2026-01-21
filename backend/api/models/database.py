@@ -209,9 +209,6 @@ class OrgMember(Base):
     role = Column(SQLEnum(OrgRole), default=OrgRole.member)
     invited_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=func.now())
-    # Full database access flag - allows member to see all vacancies and candidates
-    # without being admin. Can be set by owner/admin/sub_admin.
-    has_full_access = Column(Boolean, default=False, index=True)
 
     __table_args__ = (
         UniqueConstraint('user_id', 'org_id', name='uq_org_member_user_org'),

@@ -68,13 +68,14 @@ async def can_access_feature(
         return True
 
     # Check if user is owner in the organization
+    # Only select specific columns to avoid issues if has_full_access column doesn't exist yet
     org_member_result = await db.execute(
-        select(OrgMember).where(
+        select(OrgMember.id, OrgMember.role).where(
             OrgMember.user_id == user_id,
             OrgMember.org_id == org_id
         )
     )
-    org_member = org_member_result.scalar()
+    org_member = org_member_result.first()
     if org_member:
         org_role = org_member.role.value if hasattr(org_member.role, 'value') else str(org_member.role)
         if org_role == "owner" or org_member.role == OrgRole.owner:
