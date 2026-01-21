@@ -336,6 +336,7 @@ class VacancyResponse(BaseModel):
     hiring_manager_id: Optional[int] = None
     hiring_manager_name: Optional[str] = None
     created_by: Optional[int] = None
+    created_by_name: Optional[str] = None
     published_at: Optional[datetime] = None
     closes_at: Optional[datetime] = None
     created_at: datetime
@@ -492,6 +493,7 @@ async def list_vacancies(
     vacancy_ids = [v.id for v in vacancies]
     dept_ids = [v.department_id for v in vacancies if v.department_id]
     manager_ids = [v.hiring_manager_id for v in vacancies if v.hiring_manager_id]
+    creator_ids = [v.created_by for v in vacancies if v.created_by]
 
     # Bulk load departments
     dept_names = {}
@@ -501,13 +503,18 @@ async def list_vacancies(
         )
         dept_names = {row[0]: row[1] for row in dept_result.all()}
 
-    # Bulk load hiring managers
-    manager_names = {}
-    if manager_ids:
-        manager_result = await db.execute(
-            select(User.id, User.name).where(User.id.in_(manager_ids))
+    # Bulk load hiring managers and creators (combine user IDs for single query)
+    all_user_ids = list(set(manager_ids + creator_ids))
+    user_names = {}
+    if all_user_ids:
+        user_result = await db.execute(
+            select(User.id, User.name).where(User.id.in_(all_user_ids))
         )
-        manager_names = {row[0]: row[1] for row in manager_result.all()}
+        user_names = {row[0]: row[1] for row in user_result.all()}
+
+    # Split for convenience
+    manager_names = {uid: user_names.get(uid) for uid in manager_ids}
+    creator_names = {uid: user_names.get(uid) for uid in creator_ids}
 
     # Bulk load application counts by stage for all vacancies
     stage_counts_result = await db.execute(
@@ -532,6 +539,7 @@ async def list_vacancies(
     for vacancy in vacancies:
         dept_name = dept_names.get(vacancy.department_id)
         manager_name = manager_names.get(vacancy.hiring_manager_id)
+        creator_name = creator_names.get(vacancy.created_by) if vacancy.created_by else None
         stage_counts = all_stage_counts.get(vacancy.id, {})
         total_apps = sum(stage_counts.values())
 
@@ -556,6 +564,7 @@ async def list_vacancies(
             hiring_manager_id=vacancy.hiring_manager_id,
             hiring_manager_name=manager_name,
             created_by=vacancy.created_by,
+            created_by_name=creator_name,
             published_at=vacancy.published_at,
             closes_at=vacancy.closes_at,
             created_at=vacancy.created_at,
@@ -624,6 +633,7 @@ async def create_vacancy(
         department_id=vacancy.department_id,
         hiring_manager_id=vacancy.hiring_manager_id,
         created_by=vacancy.created_by,
+        created_by_name=current_user.name,  # Creator is current user
         published_at=vacancy.published_at,
         closes_at=vacancy.closes_at,
         created_at=vacancy.created_at,
@@ -670,6 +680,14 @@ async def get_vacancy(
         )
         manager_name = manager_result.scalar()
 
+    # Get creator name
+    creator_name = None
+    if vacancy.created_by:
+        creator_result = await db.execute(
+            select(User.name).where(User.id == vacancy.created_by)
+        )
+        creator_name = creator_result.scalar()
+
     # Get application counts by stage
     stage_counts_result = await db.execute(
         select(
@@ -703,6 +721,7 @@ async def get_vacancy(
         hiring_manager_id=vacancy.hiring_manager_id,
         hiring_manager_name=manager_name,
         created_by=vacancy.created_by,
+        created_by_name=creator_name,
         published_at=vacancy.published_at,
         closes_at=vacancy.closes_at,
         created_at=vacancy.created_at,
