@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy import select, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List, Literal
@@ -6,6 +6,7 @@ from datetime import datetime
 from pydantic import BaseModel
 import re
 import logging
+import asyncio
 
 logger = logging.getLogger("hr-analyzer.entities")
 
@@ -27,6 +28,64 @@ from .realtime import broadcast_entity_created, broadcast_entity_updated, broadc
 OwnershipFilter = Literal["all", "mine", "shared"]
 
 router = APIRouter()
+
+
+# === Background Profile Regeneration ===
+
+async def regenerate_entity_profile_background(entity_id: int, org_id: int):
+    """
+    Background task to regenerate entity AI profile when new context is added.
+    Called when files, chats, or calls are linked to an entity.
+    """
+    from ..database import AsyncSessionLocal
+    from ..services.entity_profile import entity_profile_service
+    from sqlalchemy.orm import selectinload
+
+    try:
+        async with AsyncSessionLocal() as db:
+            # Load entity with files
+            entity_result = await db.execute(
+                select(Entity)
+                .options(selectinload(Entity.files))
+                .where(Entity.id == entity_id, Entity.org_id == org_id)
+            )
+            entity = entity_result.scalar_one_or_none()
+            if not entity:
+                logger.warning(f"Profile regen: entity {entity_id} not found")
+                return
+
+            # Load chats with messages
+            chats_result = await db.execute(
+                select(Chat)
+                .options(selectinload(Chat.messages))
+                .where(Chat.entity_id == entity_id, Chat.org_id == org_id)
+            )
+            chats = list(chats_result.scalars().all())
+
+            # Load calls
+            calls_result = await db.execute(
+                select(CallRecording)
+                .where(CallRecording.entity_id == entity_id, CallRecording.org_id == org_id)
+            )
+            calls = list(calls_result.scalars().all())
+
+            # Generate new profile
+            profile = await entity_profile_service.generate_profile(
+                entity=entity,
+                chats=chats,
+                calls=calls,
+                files=entity.files
+            )
+
+            # Save profile
+            if not entity.extra_data:
+                entity.extra_data = {}
+            entity.extra_data['ai_profile'] = profile
+            await db.commit()
+
+            logger.info(f"Profile regen: success for entity {entity_id}")
+    except Exception as e:
+        logger.error(f"Profile regen: error for entity {entity_id}: {e}")
 
 
 # === Pydantic Schemas ===
@@ -1947,6 +2006,7 @@ async def get_pending_transfers(
 async def link_chat_to_entity(
     entity_id: int,
     chat_id: int,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1979,12 +2039,15 @@ async def link_chat_to_entity(
         raise HTTPException(404, "Chat not found")
 
     chat.entity_id = entity_id
-
-    # Mark profile as needing update (new context available)
-    if entity.extra_data and entity.extra_data.get('ai_profile'):
-        entity.extra_data['ai_profile']['needs_update'] = True
-
     await db.commit()
+
+    # Regenerate AI profile in background with new chat context
+    if entity.extra_data and entity.extra_data.get('ai_profile'):
+        background_tasks.add_task(
+            asyncio.create_task,
+            regenerate_entity_profile_background(entity_id, org.id)
+        )
+
     return {"success": True}
 
 
@@ -2909,6 +2972,7 @@ async def get_entity_files(
 @router.post("/{entity_id}/files")
 async def upload_entity_file(
     entity_id: int,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     file_type: str = Form("other"),
     description: str = Form(None),
@@ -2918,6 +2982,7 @@ async def upload_entity_file(
     """
     Upload a file for an entity.
     Saves file to uploads/entities/{entity_id}/ and creates EntityFile record.
+    Automatically triggers AI profile regeneration if profile exists.
     """
     from ..models.database import EntityFile, EntityFileType
 
@@ -3077,6 +3142,13 @@ async def upload_entity_file(
         f"user_id={current_user.id} | user_name='{current_user.name}' | "
         f"org_id={org.id} | path={file_path}"
     )
+
+    # Regenerate AI profile in background with new file context
+    if entity.extra_data and entity.extra_data.get('ai_profile'):
+        background_tasks.add_task(
+            asyncio.create_task,
+            regenerate_entity_profile_background(entity_id, org.id)
+        )
 
     return EntityFileResponse(
         id=entity_file.id,
@@ -4501,6 +4573,7 @@ async def get_entity_calls(
 async def link_call_to_entity(
     entity_id: int,
     call_id: int,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -4539,6 +4612,14 @@ async def link_call_to_entity(
 
     call.entity_id = entity_id
     await db.commit()
+
+    # Regenerate AI profile in background with new call context
+    if entity.extra_data and entity.extra_data.get('ai_profile'):
+        background_tasks.add_task(
+            asyncio.create_task,
+            regenerate_entity_profile_background(entity_id, org.id)
+        )
+
     return {"success": True, "entity_id": entity_id, "call_id": call_id}
 
 
