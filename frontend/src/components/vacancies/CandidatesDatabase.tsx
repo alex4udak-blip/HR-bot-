@@ -41,7 +41,7 @@ import {
 } from '@/types';
 import type { ParsedResume, BulkImportResponse } from '@/services/api';
 import { formatSalary } from '@/utils';
-import { bulkImportResumes, updateEntityStatus } from '@/services/api';
+import { bulkImportResumes, updateEntityStatus, generateAllProfiles } from '@/services/api';
 import ContactForm from '@/components/contacts/ContactForm';
 import ParserModal from '@/components/parser/ParserModal';
 import { Skeleton } from '@/components/ui';
@@ -77,6 +77,9 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
   const [bulkImportLoading, setBulkImportLoading] = useState(false);
   const [bulkImportResult, setBulkImportResult] = useState<BulkImportResponse | null>(null);
   const bulkImportInputRef = useRef<HTMLInputElement>(null);
+
+  // Profile generation state
+  const [profileGenerating, setProfileGenerating] = useState(false);
 
   // Drag state for vacancy assignment
   const [draggedCandidate, setDraggedCandidate] = useState<Entity | null>(null);
@@ -477,6 +480,29 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     setBulkImportResult(null);
   };
 
+  const handleGenerateAllProfiles = async () => {
+    setProfileGenerating(true);
+    try {
+      const result = await generateAllProfiles(false);
+      if (result.profiles_generated > 0) {
+        toast.success(`Сгенерировано ${result.profiles_generated} профилей из ${result.total_candidates} кандидатов`);
+        fetchEntities(); // Обновить список для отображения профилей
+      } else if (result.total_candidates === 0) {
+        toast.error('Нет кандидатов для генерации профилей');
+      } else {
+        toast.success('Все профили уже сгенерированы');
+      }
+      if (result.errors && result.errors > 0) {
+        toast.error(`Ошибки при генерации: ${result.errors} кандидатов`);
+      }
+    } catch (err) {
+      logger.error('Profile generation error:', err);
+      toast.error('Ошибка генерации профилей');
+    } finally {
+      setProfileGenerating(false);
+    }
+  };
+
   const getAvatarInitials = (name: string) => {
     return name
       .split(' ')
@@ -779,6 +805,19 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               <span>ZIP</span>
               <input ref={bulkImportInputRef} type="file" accept=".zip" onChange={handleBulkImport} className="hidden" />
             </label>
+            <button
+              onClick={handleGenerateAllProfiles}
+              disabled={profileGenerating}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 bg-gradient-to-r from-purple-600/80 to-pink-600/80 hover:from-purple-500/80 hover:to-pink-500/80 border border-purple-500/30 rounded-xl text-sm font-medium transition-all active:scale-95 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Сгенерировать AI-профили для всех кандидатов"
+            >
+              {profileGenerating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )}
+              <span>AI-профили</span>
+            </button>
             <button
               onClick={() => {
                 setPrefillData(null);

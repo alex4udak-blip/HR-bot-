@@ -832,3 +832,20 @@ export const getSimilarByProfile = async (
   });
   return data;
 };
+
+export interface BulkProfileResponse {
+  total_candidates: number;
+  profiles_generated: number;
+  profiles_skipped: number;
+  errors: number;
+}
+
+/**
+ * Generate AI profiles for all candidates in the organization.
+ */
+export const generateAllProfiles = async (forceRegenerate = false): Promise<BulkProfileResponse> => {
+  const { data } = await api.post('/entities/profiles/generate-all', null, {
+    params: { force_regenerate: forceRegenerate }
+  });
+  return data;
+};

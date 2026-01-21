@@ -168,7 +168,8 @@ export {
   // AI Profiles
   generateEntityProfile,
   getEntityProfile,
-  getSimilarByProfile
+  getSimilarByProfile,
+  generateAllProfiles
 } from './entities';
 
 // Entity types
@@ -196,7 +197,8 @@ export type {
   GlobalSearchResponse,
   AIProfile,
   ProfileResponse,
-  SimilarByProfileResponse
+  SimilarByProfileResponse,
+  BulkProfileResponse
 } from './entities';
 
 // Chats

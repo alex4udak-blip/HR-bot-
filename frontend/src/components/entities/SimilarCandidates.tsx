@@ -20,8 +20,7 @@ import {
   getSimilarByProfile,
   generateEntityProfile,
   compareCandidatesAI,
-  type SimilarByProfileResponse,
-  type AIProfile
+  type SimilarByProfileResponse
 } from '@/services/api';
 import { ListSkeleton, EmptyState } from '@/components/ui';
 

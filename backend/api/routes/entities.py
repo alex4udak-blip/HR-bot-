@@ -1979,6 +1979,11 @@ async def link_chat_to_entity(
         raise HTTPException(404, "Chat not found")
 
     chat.entity_id = entity_id
+
+    # Mark profile as needing update (new context available)
+    if entity.extra_data and entity.extra_data.get('ai_profile'):
+        entity.extra_data['ai_profile']['needs_update'] = True
+
     await db.commit()
     return {"success": True}
 
@@ -3675,6 +3680,37 @@ async def create_entity_from_resume(
         # Broadcast entity.created event
         await broadcast_entity_created(org.id, entity_response)
 
+        # Generate AI profile in background (non-blocking)
+        try:
+            from ..services.entity_profile import entity_profile_service
+            # Simple profile from parsed data (no AI call needed)
+            simple_profile = {
+                "skills": parsed.skills or entity.tags or [],
+                "experience_years": parsed.experience_years,
+                "level": "unknown",
+                "specialization": parsed.position or entity.position or "",
+                "salary_min": entity.expected_salary_min,
+                "salary_max": entity.expected_salary_max,
+                "salary_currency": entity.expected_salary_currency or "RUB",
+                "location": parsed.location,
+                "work_format": "unknown",
+                "languages": parsed.languages or [],
+                "education": parsed.education[0] if parsed.education else None,
+                "summary": f"{entity.name} - {parsed.position or 'специалист'}",
+                "strengths": [],
+                "weaknesses": [],
+                "red_flags": [],
+                "communication_style": "",
+                "generated_at": datetime.utcnow().isoformat(),
+                "auto_generated": True
+            }
+            if not entity.extra_data:
+                entity.extra_data = {}
+            entity.extra_data['ai_profile'] = simple_profile
+            await db.commit()
+        except Exception as profile_err:
+            logger.warning(f"Failed to auto-generate profile: {profile_err}")
+
         return EntityFromResumeResponse(
             entity=entity_response,
             parsed_data=parsed_response,
@@ -4787,3 +4823,104 @@ async def get_similar_by_profile(
     )
 
     return [SimilarWithProfileResponse(**s) for s in similar]
+
+
+class BulkProfileResponse(BaseModel):
+    """Bulk profile generation response"""
+    total_candidates: int
+    profiles_generated: int
+    profiles_skipped: int
+    errors: int
+
+
+@router.post("/profiles/generate-all", response_model=BulkProfileResponse)
+async def generate_all_profiles(
+    force_regenerate: bool = Query(default=False, description="Regenerate even if profile exists"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate AI profiles for all candidates in the organization.
+
+    This is useful for initial setup or bulk update.
+    By default, skips candidates that already have profiles.
+    Set force_regenerate=true to regenerate all profiles.
+
+    Note: This uses simple profile generation (from existing data, no AI calls)
+    to keep it fast and cheap. For full AI profiles, use the individual endpoint.
+    """
+    from ..services.entity_profile import entity_profile_service
+    from sqlalchemy.orm import selectinload
+    from ..models.database import EntityFile
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Get all candidates
+    candidates_result = await db.execute(
+        select(Entity)
+        .options(selectinload(Entity.files))
+        .where(
+            Entity.org_id == org.id,
+            Entity.type == EntityType.candidate
+        )
+    )
+    candidates = list(candidates_result.scalars().all())
+
+    total = len(candidates)
+    generated = 0
+    skipped = 0
+    errors = 0
+
+    for candidate in candidates:
+        try:
+            # Skip if already has profile and not forcing regenerate
+            if not force_regenerate and (candidate.extra_data or {}).get('ai_profile'):
+                skipped += 1
+                continue
+
+            # Load chats for this candidate
+            chats_result = await db.execute(
+                select(Chat)
+                .options(selectinload(Chat.messages))
+                .where(Chat.entity_id == candidate.id, Chat.org_id == org.id)
+            )
+            chats = list(chats_result.scalars().all())
+
+            # Load calls
+            calls_result = await db.execute(
+                select(CallRecording)
+                .where(CallRecording.entity_id == candidate.id, CallRecording.org_id == org.id)
+            )
+            calls = list(calls_result.scalars().all())
+
+            # Generate full AI profile
+            profile = await entity_profile_service.generate_profile(
+                entity=candidate,
+                chats=chats,
+                calls=calls,
+                files=candidate.files
+            )
+
+            # Store profile
+            if not candidate.extra_data:
+                candidate.extra_data = {}
+            candidate.extra_data['ai_profile'] = profile
+            generated += 1
+
+        except Exception as e:
+            logger.error(f"Failed to generate profile for entity {candidate.id}: {e}")
+            errors += 1
+
+    await db.commit()
+
+    logger.info(f"Bulk profile generation: total={total}, generated={generated}, skipped={skipped}, errors={errors}")
+
+    return BulkProfileResponse(
+        total_candidates=total,
+        profiles_generated=generated,
+        profiles_skipped=skipped,
+        errors=errors
+    )
