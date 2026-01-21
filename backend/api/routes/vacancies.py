@@ -551,6 +551,9 @@ async def list_vacancies(
     # Apply access control based on user role
     is_admin = await is_org_admin_or_owner(current_user, org, db)
 
+    # Debug logging
+    logger.info(f"[ACCESS] User {current_user.id} ({current_user.email}), role={current_user.role}, is_admin={is_admin}")
+
     if not is_admin:
         # Get departments where user is lead/sub_admin (not just member)
         lead_dept_result = await db.execute(
@@ -582,6 +585,7 @@ async def list_vacancies(
 
         # Apply OR filter - user must match at least one condition
         query = query.where(or_(*access_conditions))
+        logger.info(f"[ACCESS] Non-admin filter applied: lead_depts={lead_dept_ids}, shared_vacancies={shared_vacancy_ids}")
 
     if status:
         query = query.where(Vacancy.status == status)
