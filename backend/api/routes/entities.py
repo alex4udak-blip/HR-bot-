@@ -4551,3 +4551,239 @@ async def unlink_call_from_entity(
     call.entity_id = None
     await db.commit()
     return {"success": True}
+
+
+# =============================================================================
+# AI Profile Endpoints
+# =============================================================================
+
+class ProfileResponse(BaseModel):
+    """AI Profile response"""
+    entity_id: int
+    profile: dict
+    generated_at: Optional[str] = None
+
+
+class SimilarWithProfileResponse(BaseModel):
+    """Similar candidate with profile-based matching"""
+    entity_id: int
+    entity_name: str
+    entity_position: Optional[str] = None
+    entity_status: str
+    score: int  # 0-100
+    matches: List[str] = []
+    differences: List[str] = []
+    summary: str
+    profile_summary: Optional[str] = None
+    profile_level: Optional[str] = None
+    profile_specialization: Optional[str] = None
+
+
+@router.post("/{entity_id}/profile/generate", response_model=ProfileResponse)
+async def generate_entity_profile(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate AI profile for entity based on all available context.
+
+    Profile is stored in entity.extra_data['ai_profile'] and used for similarity matching.
+
+    Includes:
+    - Skills extracted from resume, chats, calls
+    - Experience level and years
+    - Salary expectations
+    - Communication style
+    - Strengths and weaknesses
+    - Red flags
+    """
+    from ..services.entity_profile import entity_profile_service
+    from sqlalchemy.orm import selectinload
+    from ..models.database import EntityFile
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Load entity with all related data
+    entity_result = await db.execute(
+        select(Entity)
+        .options(selectinload(Entity.files))
+        .where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = entity_result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Load chats
+    chats_result = await db.execute(
+        select(Chat)
+        .options(selectinload(Chat.messages))
+        .where(Chat.entity_id == entity_id, Chat.org_id == org.id)
+    )
+    chats = list(chats_result.scalars().all())
+
+    # Load calls
+    calls_result = await db.execute(
+        select(CallRecording)
+        .where(CallRecording.entity_id == entity_id, CallRecording.org_id == org.id)
+    )
+    calls = list(calls_result.scalars().all())
+
+    # Generate profile
+    profile = await entity_profile_service.generate_profile(
+        entity=entity,
+        chats=chats,
+        calls=calls,
+        files=entity.files
+    )
+
+    # Store profile in entity
+    if not entity.extra_data:
+        entity.extra_data = {}
+    entity.extra_data['ai_profile'] = profile
+    await db.commit()
+
+    return ProfileResponse(
+        entity_id=entity_id,
+        profile=profile,
+        generated_at=profile.get('generated_at')
+    )
+
+
+@router.get("/{entity_id}/profile", response_model=ProfileResponse)
+async def get_entity_profile(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get existing AI profile for entity.
+
+    Returns 404 if profile hasn't been generated yet.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    entity_result = await db.execute(
+        select(Entity)
+        .where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = entity_result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    profile = (entity.extra_data or {}).get('ai_profile')
+    if not profile:
+        raise HTTPException(404, "Profile not generated. Call POST /profile/generate first.")
+
+    return ProfileResponse(
+        entity_id=entity_id,
+        profile=profile,
+        generated_at=profile.get('generated_at')
+    )
+
+
+@router.get("/{entity_id}/similar-profiles", response_model=List[SimilarWithProfileResponse])
+async def get_similar_by_profile(
+    entity_id: int,
+    min_score: int = Query(default=30, ge=0, le=100),
+    limit: int = Query(default=10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Find similar candidates using AI profile matching.
+
+    This endpoint uses pre-generated AI profiles for fast matching.
+    Profiles must be generated first using POST /{entity_id}/profile/generate.
+
+    Algorithm:
+    1. Gets target entity's AI profile
+    2. Finds all other candidates with AI profiles in the org
+    3. Calculates similarity based on skills, level, salary, experience
+    4. Returns sorted list of similar candidates
+
+    If target entity has no profile, generates one automatically.
+    """
+    from ..services.entity_profile import entity_profile_service
+    from sqlalchemy.orm import selectinload
+    from ..models.database import EntityFile
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Load target entity
+    entity_result = await db.execute(
+        select(Entity)
+        .options(selectinload(Entity.files))
+        .where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = entity_result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Get or generate target profile
+    target_profile = (entity.extra_data or {}).get('ai_profile')
+
+    if not target_profile:
+        # Generate profile on-the-fly
+        chats_result = await db.execute(
+            select(Chat)
+            .options(selectinload(Chat.messages))
+            .where(Chat.entity_id == entity_id, Chat.org_id == org.id)
+        )
+        chats = list(chats_result.scalars().all())
+
+        calls_result = await db.execute(
+            select(CallRecording)
+            .where(CallRecording.entity_id == entity_id, CallRecording.org_id == org.id)
+        )
+        calls = list(calls_result.scalars().all())
+
+        target_profile = await entity_profile_service.generate_profile(
+            entity=entity,
+            chats=chats,
+            calls=calls,
+            files=entity.files
+        )
+
+        # Store it
+        if not entity.extra_data:
+            entity.extra_data = {}
+        entity.extra_data['ai_profile'] = target_profile
+        await db.commit()
+
+    # Find all other candidates with profiles
+    candidates_result = await db.execute(
+        select(Entity)
+        .where(
+            Entity.org_id == org.id,
+            Entity.id != entity_id,
+            Entity.type == EntityType.candidate
+        )
+    )
+    all_candidates = list(candidates_result.scalars().all())
+
+    # Filter to those with profiles and build list
+    candidates_with_profiles = []
+    for candidate in all_candidates:
+        profile = (candidate.extra_data or {}).get('ai_profile')
+        if profile:
+            candidates_with_profiles.append((candidate, profile))
+
+    # Calculate similarities
+    similar = entity_profile_service.find_similar(
+        target_profile=target_profile,
+        candidates=candidates_with_profiles,
+        min_score=min_score,
+        limit=limit
+    )
+
+    return [SimilarWithProfileResponse(**s) for s in similar]

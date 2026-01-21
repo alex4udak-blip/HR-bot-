@@ -164,7 +164,11 @@ export {
   bulkImportResumes,
   createEntityFromResume,
   // Global search
-  globalSearch
+  globalSearch,
+  // AI Profiles
+  generateEntityProfile,
+  getEntityProfile,
+  getSimilarByProfile
 } from './entities';
 
 // Entity types
@@ -189,7 +193,10 @@ export type {
   GlobalSearchCandidate,
   GlobalSearchVacancy,
   GlobalSearchResult,
-  GlobalSearchResponse
+  GlobalSearchResponse,
+  AIProfile,
+  ProfileResponse,
+  SimilarByProfileResponse
 } from './entities';
 
 // Chats

@@ -4,45 +4,26 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users,
   Target,
-  Briefcase,
-  MapPin,
-  DollarSign,
   ChevronRight,
   RefreshCw,
   AlertCircle,
   CheckCircle2,
   GitCompare,
   Sparkles,
-  X
+  X,
+  Zap,
+  Brain
 } from 'lucide-react';
 import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
-import { getSimilarCandidates, compareCandidates, compareCandidatesAI } from '@/services/api';
+import {
+  getSimilarByProfile,
+  generateEntityProfile,
+  compareCandidatesAI,
+  type SimilarByProfileResponse,
+  type AIProfile
+} from '@/services/api';
 import { ListSkeleton, EmptyState } from '@/components/ui';
-
-interface SimilarCandidate {
-  entity_id: number;
-  entity_name: string;
-  similarity_score: number;
-  common_skills: string[];
-  similar_experience: boolean;
-  similar_salary: boolean;
-  similar_location: boolean;
-  match_reasons: string[];
-  // Detailed comparison data for both candidates
-  entity1_skills?: string[];
-  entity2_skills?: string[];
-  entity1_experience?: number | null;
-  entity2_experience?: number | null;
-  entity1_salary_min?: number | null;
-  entity1_salary_max?: number | null;
-  entity2_salary_min?: number | null;
-  entity2_salary_max?: number | null;
-  entity1_location?: string | null;
-  entity2_location?: string | null;
-  entity1_position?: string | null;
-  entity2_position?: string | null;
-}
 
 interface SimilarCandidatesProps {
   entityId: number;
@@ -51,30 +32,46 @@ interface SimilarCandidatesProps {
 
 export default function SimilarCandidates({ entityId, entityName }: SimilarCandidatesProps) {
   const navigate = useNavigate();
-  const [candidates, setCandidates] = useState<SimilarCandidate[]>([]);
+  const [candidates, setCandidates] = useState<SimilarByProfileResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [comparingId, setComparingId] = useState<number | null>(null);
-  const [comparisonResult, setComparisonResult] = useState<SimilarCandidate | null>(null);
-  const [showCompareModal, setShowCompareModal] = useState(false);
 
-  // AI comparison state
+  // AI comparison modal state
+  const [showCompareModal, setShowCompareModal] = useState(false);
+  const [comparingId, setComparingId] = useState<number | null>(null);
+  const [comparingName, setComparingName] = useState<string>('');
   const [aiComparison, setAiComparison] = useState<string>('');
   const [aiComparing, setAiComparing] = useState(false);
-  const [comparingName, setComparingName] = useState<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const loadSimilarCandidates = async () => {
+  const loadSimilarCandidates = async (forceGenerate = false) => {
     setLoading(true);
     setError(null);
+
     try {
-      const data = await getSimilarCandidates(entityId, 10);
+      // If force generate, first generate profile then search
+      if (forceGenerate) {
+        setGenerating(true);
+        await generateEntityProfile(entityId);
+        setGenerating(false);
+      }
+
+      const data = await getSimilarByProfile(entityId, 30, 10);
       setCandidates(data);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to load similar candidates:', err);
-      setError('Не удалось загрузить похожих кандидатов');
+      const errorMessage = err instanceof Error ? err.message : String(err);
+
+      // If profile not found, show generate option
+      if (errorMessage.includes('404') || errorMessage.includes('not generated')) {
+        setError('profile_not_found');
+      } else {
+        setError('Не удалось загрузить похожих кандидатов');
+      }
     } finally {
       setLoading(false);
+      setGenerating(false);
     }
   };
 
@@ -89,6 +86,20 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
     };
   }, []);
 
+  const handleGenerateProfile = async () => {
+    setGenerating(true);
+    setError(null);
+    try {
+      await generateEntityProfile(entityId);
+      await loadSimilarCandidates();
+    } catch (err) {
+      console.error('Failed to generate profile:', err);
+      setError('Не удалось сгенерировать профиль');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const handleCompare = async (otherEntityId: number, otherEntityName: string) => {
     setComparingId(otherEntityId);
     setComparingName(otherEntityName);
@@ -101,10 +112,6 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
     abortControllerRef.current = new AbortController();
 
     try {
-      // Also get basic comparison for score display
-      const result = await compareCandidates(entityId, otherEntityId);
-      setComparisonResult({ ...result, entity_name: otherEntityName });
-
       // Start AI comparison streaming
       await compareCandidatesAI(entityId, otherEntityId, (chunk) => {
         setAiComparison(prev => prev + chunk);
@@ -125,7 +132,6 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
     setShowCompareModal(false);
     setAiComparison('');
     setAiComparing(false);
-    setComparisonResult(null);
   }, []);
 
   const handleNavigateToCandidate = (candidateId: number) => {
@@ -134,18 +140,85 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
 
   const getScoreColor = (score: number) => {
     if (score >= 70) return 'text-green-400';
-    if (score >= 40) return 'text-yellow-400';
+    if (score >= 50) return 'text-yellow-400';
     return 'text-orange-400';
   };
 
   const getScoreBgColor = (score: number) => {
     if (score >= 70) return 'bg-green-500/20';
-    if (score >= 40) return 'bg-yellow-500/20';
+    if (score >= 50) return 'bg-yellow-500/20';
     return 'bg-orange-500/20';
   };
 
+  const getLevelLabel = (level: string | null) => {
+    const labels: Record<string, string> = {
+      junior: 'Junior',
+      middle: 'Middle',
+      senior: 'Senior',
+      lead: 'Lead',
+      unknown: ''
+    };
+    return labels[level || 'unknown'] || '';
+  };
+
   if (loading) {
-    return <ListSkeleton count={3} />;
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 mb-4">
+          <Users size={16} className="text-white/40" />
+          <span className="text-sm text-white/60">Поиск похожих...</span>
+          {generating && (
+            <span className="flex items-center gap-1 text-xs text-purple-400">
+              <Brain size={12} className="animate-pulse" />
+              Генерация профиля...
+            </span>
+          )}
+        </div>
+        <ListSkeleton count={3} />
+      </div>
+    );
+  }
+
+  // Special case: profile not generated yet
+  if (error === 'profile_not_found') {
+    return (
+      <div className="p-6 bg-purple-500/10 rounded-xl border border-purple-500/20">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-purple-500/20 rounded-lg">
+            <Brain size={20} className="text-purple-400" />
+          </div>
+          <div>
+            <h3 className="font-medium text-white">AI-профиль не создан</h3>
+            <p className="text-sm text-white/60">Создайте профиль для поиска похожих кандидатов</p>
+          </div>
+        </div>
+        <p className="text-sm text-white/50 mb-4">
+          AI проанализирует резюме, переписки и звонки, чтобы найти кандидатов с похожими навыками, опытом и ожиданиями.
+        </p>
+        <button
+          onClick={handleGenerateProfile}
+          disabled={generating}
+          className={clsx(
+            'w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors',
+            generating
+              ? 'bg-purple-500/20 text-purple-300 cursor-wait'
+              : 'bg-purple-500 hover:bg-purple-600 text-white'
+          )}
+        >
+          {generating ? (
+            <>
+              <RefreshCw size={16} className="animate-spin" />
+              Анализ данных...
+            </>
+          ) : (
+            <>
+              <Zap size={16} />
+              Создать AI-профиль
+            </>
+          )}
+        </button>
+      </div>
+    );
   }
 
   if (error) {
@@ -157,7 +230,7 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
         size="sm"
         actions={[{
           label: 'Повторить',
-          onClick: loadSimilarCandidates,
+          onClick: () => loadSimilarCandidates(true),
         }]}
       />
     );
@@ -165,12 +238,20 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
 
   if (candidates.length === 0) {
     return (
-      <EmptyState
-        icon={Users}
-        title="Похожие кандидаты не найдены"
-        description="Заполните навыки, опыт и зарплатные ожидания для поиска похожих кандидатов"
-        size="sm"
-      />
+      <div className="text-center py-6">
+        <Users size={32} className="mx-auto text-white/20 mb-3" />
+        <p className="text-white/60 mb-2">Похожие кандидаты не найдены</p>
+        <p className="text-xs text-white/40 mb-4">
+          Возможно, профили других кандидатов ещё не созданы
+        </p>
+        <button
+          onClick={() => loadSimilarCandidates(true)}
+          className="text-sm text-purple-400 hover:text-purple-300 flex items-center gap-1 mx-auto"
+        >
+          <RefreshCw size={14} />
+          Обновить профиль и поиск
+        </button>
+      </div>
     );
   }
 
@@ -183,11 +264,12 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
             Похожие кандидаты ({candidates.length})
           </h3>
           <button
-            onClick={loadSimilarCandidates}
+            onClick={() => loadSimilarCandidates(true)}
+            disabled={generating}
             className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
-            title="Обновить"
+            title="Обновить профиль и поиск"
           >
-            <RefreshCw size={14} className="text-white/40" />
+            <RefreshCw size={14} className={clsx('text-white/40', generating && 'animate-spin')} />
           </button>
         </div>
 
@@ -202,57 +284,49 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
             <div className="flex items-start justify-between gap-3">
               {/* Candidate Info */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3 mb-2">
+                <div className="flex items-center gap-2 mb-1">
                   <button
                     onClick={() => handleNavigateToCandidate(candidate.entity_id)}
                     className="font-medium text-white hover:text-blue-400 transition-colors truncate text-left"
                   >
                     {candidate.entity_name}
                   </button>
-                  <ChevronRight
-                    size={14}
-                    className="text-white/40 flex-shrink-0"
-                  />
+                  <ChevronRight size={14} className="text-white/40 flex-shrink-0" />
                 </div>
 
-                {/* Match indicators */}
-                <div className="flex flex-wrap items-center gap-2 mb-3">
-                  {candidate.similar_experience && (
-                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded-full">
-                      <Briefcase size={10} />
-                      Опыт
+                {/* Position and level */}
+                <div className="flex items-center gap-2 mb-2">
+                  {candidate.profile_specialization && (
+                    <span className="text-xs text-white/50">
+                      {candidate.profile_specialization}
                     </span>
                   )}
-                  {candidate.similar_salary && (
-                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 bg-green-500/20 text-green-400 rounded-full">
-                      <DollarSign size={10} />
-                      Зарплата
-                    </span>
-                  )}
-                  {candidate.similar_location && (
-                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded-full">
-                      <MapPin size={10} />
-                      Локация
+                  {candidate.profile_level && candidate.profile_level !== 'unknown' && (
+                    <span className="text-xs px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded">
+                      {getLevelLabel(candidate.profile_level)}
                     </span>
                   )}
                 </div>
 
-                {/* Common skills */}
-                {candidate.common_skills.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {candidate.common_skills.slice(0, 5).map((skill, i) => (
+                {/* Summary */}
+                {candidate.profile_summary && (
+                  <p className="text-xs text-white/40 line-clamp-2 mb-2">
+                    {candidate.profile_summary}
+                  </p>
+                )}
+
+                {/* Match reasons */}
+                {candidate.matches.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {candidate.matches.slice(0, 3).map((match, i) => (
                       <span
                         key={i}
-                        className="text-xs px-2 py-0.5 bg-white/5 text-white/60 rounded"
+                        className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-green-500/10 text-green-400 rounded"
                       >
-                        {skill}
+                        <CheckCircle2 size={10} />
+                        {match}
                       </span>
                     ))}
-                    {candidate.common_skills.length > 5 && (
-                      <span className="text-xs px-2 py-0.5 bg-white/5 text-white/40 rounded">
-                        +{candidate.common_skills.length - 5}
-                      </span>
-                    )}
                   </div>
                 )}
               </div>
@@ -261,11 +335,11 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
               <div className="flex flex-col items-end gap-2 flex-shrink-0">
                 <div className={clsx(
                   'flex items-center gap-1.5 px-3 py-1.5 rounded-full',
-                  getScoreBgColor(candidate.similarity_score)
+                  getScoreBgColor(candidate.score)
                 )}>
-                  <Target size={14} className={getScoreColor(candidate.similarity_score)} />
-                  <span className={clsx('font-bold text-sm', getScoreColor(candidate.similarity_score))}>
-                    {candidate.similarity_score}%
+                  <Target size={14} className={getScoreColor(candidate.score)} />
+                  <span className={clsx('font-bold text-sm', getScoreColor(candidate.score))}>
+                    {candidate.score}%
                   </span>
                 </div>
 
@@ -276,32 +350,18 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
                     'flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors',
                     comparingId === candidate.entity_id
                       ? 'bg-white/5 text-white/30 cursor-wait'
-                      : 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
+                      : 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
                   )}
                 >
                   {comparingId === candidate.entity_id ? (
                     <RefreshCw size={12} className="animate-spin" />
                   ) : (
-                    <GitCompare size={12} />
+                    <Sparkles size={12} />
                   )}
-                  Сравнить
+                  AI-анализ
                 </button>
               </div>
             </div>
-
-            {/* Match reasons */}
-            {candidate.match_reasons.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-white/5">
-                <div className="text-xs text-white/40">
-                  {candidate.match_reasons.map((reason, i) => (
-                    <div key={i} className="flex items-center gap-1.5 mb-1">
-                      <CheckCircle2 size={10} className="text-green-400" />
-                      <span>{reason}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </motion.div>
         ))}
       </div>
@@ -327,7 +387,7 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
               <div className="p-4 border-b border-white/10 flex items-center justify-between flex-shrink-0">
                 <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                   <Sparkles size={20} className="text-purple-400" />
-                  Сравнение кандидатов
+                  AI-сравнение кандидатов
                 </h3>
                 <button
                   onClick={handleCloseModal}
@@ -343,17 +403,8 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
                   <p className="text-xs text-white/60 mb-0.5">Текущий</p>
                   <p className="font-medium text-white truncate">{entityName}</p>
                 </div>
-                <div className={clsx(
-                  'px-3 py-1.5 rounded-full mx-3 flex-shrink-0',
-                  comparisonResult ? getScoreBgColor(comparisonResult.similarity_score) : 'bg-purple-500/20'
-                )}>
-                  {comparisonResult ? (
-                    <span className={clsx('font-bold', getScoreColor(comparisonResult.similarity_score))}>
-                      {comparisonResult.similarity_score}%
-                    </span>
-                  ) : (
-                    <Sparkles size={16} className="text-purple-400 animate-pulse" />
-                  )}
+                <div className="px-3 py-1.5 rounded-full mx-3 flex-shrink-0 bg-purple-500/20">
+                  <GitCompare size={16} className="text-purple-400" />
                 </div>
                 <div className="text-center flex-1 min-w-0">
                   <p className="text-xs text-white/60 mb-0.5">Сравниваемый</p>
@@ -366,8 +417,8 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
                 {aiComparing && !aiComparison && (
                   <div className="flex items-center justify-center py-12">
                     <div className="text-center">
-                      <RefreshCw size={32} className="text-purple-400 animate-spin mx-auto mb-3" />
-                      <p className="text-white/60">Анализирую резюме, чаты и звонки...</p>
+                      <Brain size={32} className="text-purple-400 animate-pulse mx-auto mb-3" />
+                      <p className="text-white/60">Анализирую профили, чаты и звонки...</p>
                       <p className="text-xs text-white/40 mt-1">Это может занять несколько секунд</p>
                     </div>
                   </div>
@@ -414,9 +465,10 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
               {/* Footer */}
               <div className="p-4 border-t border-white/10 flex justify-between flex-shrink-0">
                 <button
-                  onClick={() => comparisonResult && handleNavigateToCandidate(comparisonResult.entity_id)}
-                  disabled={!comparisonResult}
-                  className="px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors disabled:opacity-50"
+                  onClick={() => comparingName && handleNavigateToCandidate(
+                    candidates.find(c => c.entity_name === comparingName)?.entity_id || 0
+                  )}
+                  className="px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors"
                 >
                   Открыть профиль
                 </button>

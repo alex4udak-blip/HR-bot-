@@ -752,3 +752,83 @@ export const globalSearch = async (
   });
   return data;
 };
+
+// ============================================================
+// AI PROFILES & SIMILARITY
+// ============================================================
+
+export interface AIProfile {
+  skills: string[];
+  experience_years: number | null;
+  level: 'junior' | 'middle' | 'senior' | 'lead' | 'unknown';
+  specialization: string;
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string;
+  location: string | null;
+  work_format: 'office' | 'remote' | 'hybrid' | 'unknown';
+  languages: string[];
+  education: string | null;
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  red_flags: string[];
+  communication_style: string;
+  generated_at: string;
+  context_sources?: {
+    chats_count: number;
+    calls_count: number;
+    files_count: number;
+  };
+}
+
+export interface ProfileResponse {
+  entity_id: number;
+  profile: AIProfile;
+  generated_at: string | null;
+}
+
+export interface SimilarByProfileResponse {
+  entity_id: number;
+  entity_name: string;
+  entity_position: string | null;
+  entity_status: string;
+  score: number;
+  matches: string[];
+  differences: string[];
+  summary: string;
+  profile_summary: string | null;
+  profile_level: string | null;
+  profile_specialization: string | null;
+}
+
+/**
+ * Generate AI profile for entity.
+ * Analyzes all context (files, chats, calls) to create structured profile.
+ */
+export const generateEntityProfile = async (entityId: number): Promise<ProfileResponse> => {
+  const { data } = await api.post(`/entities/${entityId}/profile/generate`);
+  return data;
+};
+
+/**
+ * Get existing AI profile for entity.
+ */
+export const getEntityProfile = async (entityId: number): Promise<ProfileResponse> => {
+  const { data } = await api.get(`/entities/${entityId}/profile`);
+  return data;
+};
+
+/**
+ * Find similar candidates using AI profile matching.
+ */
+export const getSimilarByProfile = async (
+  entityId: number,
+  minScore: number = 30,
+  limit: number = 10
+): Promise<SimilarByProfileResponse[]> => {
+  const { data } = await api.get(`/entities/${entityId}/similar-profiles`, {
+    params: { min_score: minScore, limit }
+  });
+  return data;
+};
