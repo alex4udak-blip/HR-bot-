@@ -28,8 +28,8 @@ router = APIRouter()
 
 # === Vacancy Access Control Helpers ===
 
-async def is_org_admin_or_owner(user: User, org: Organization, db: AsyncSession) -> bool:
-    """Check if user is admin or owner of organization."""
+async def is_org_owner(user: User, org: Organization, db: AsyncSession) -> bool:
+    """Check if user is owner of organization (not admin - they follow same rules as members)."""
     if user.role == UserRole.superadmin:
         return True
 
@@ -37,7 +37,7 @@ async def is_org_admin_or_owner(user: User, org: Organization, db: AsyncSession)
         select(OrgMember).where(
             OrgMember.org_id == org.id,
             OrgMember.user_id == user.id,
-            OrgMember.role.in_([OrgRole.owner, OrgRole.admin])
+            OrgMember.role == OrgRole.owner  # Only owner, not admin
         )
     )
     return result.scalar_one_or_none() is not None
@@ -132,13 +132,13 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
     Check if user can access (view) a specific vacancy.
 
     Access rules:
-    - Superadmin/Owner/Admin: can access all vacancies in org
+    - Superadmin/Owner: can access all vacancies in org
     - Lead/Sub_admin of department: can access all vacancies in their department
     - Member: can only access vacancies they created or where they are hiring manager
     - Member with SharedAccess: can access vacancies shared with them
     """
     # Org admin/owner can access all
-    if await is_org_admin_or_owner(user, org, db):
+    if await is_org_owner(user, org, db):
         return True
 
     # User is the creator or hiring manager
@@ -162,14 +162,14 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
     Check if user can edit a specific vacancy.
 
     Edit rules:
-    - Superadmin/Owner/Admin: can edit all vacancies in org
+    - Superadmin/Owner: can edit all vacancies in org
     - Lead/Sub_admin of department: can edit vacancies in their department
     - Creator: can edit their own vacancies
     - Hiring manager: can edit vacancies where they are hiring manager
     - User with SharedAccess (edit or full level): can edit vacancies shared with them
     """
     # Org admin/owner can edit all
-    if await is_org_admin_or_owner(user, org, db):
+    if await is_org_owner(user, org, db):
         return True
 
     # User is the creator or hiring manager
@@ -193,13 +193,13 @@ async def can_share_vacancy(vacancy: Vacancy, user: User, org: Organization, db:
     Check if user can share a specific vacancy with others.
 
     Share rules:
-    - Superadmin/Owner/Admin: can share all vacancies in org
+    - Superadmin/Owner: can share all vacancies in org
     - Lead/Sub_admin of department: can share vacancies in their department
     - Creator: can share their own vacancies
     - User with SharedAccess (full level): can share vacancies shared with them
     """
     # Org admin/owner can share all
-    if await is_org_admin_or_owner(user, org, db):
+    if await is_org_owner(user, org, db):
         return True
 
     # User is the creator
@@ -539,7 +539,7 @@ async def list_vacancies(
     """List vacancies filtered by user access rights.
 
     Access rules:
-    - Superadmin/Owner/Admin: sees all vacancies in org
+    - Superadmin/Owner: sees all vacancies in org
     - Lead/Sub_admin: sees vacancies in their department + own vacancies
     - Member: sees only own vacancies (created_by or hiring_manager)
     """
@@ -549,9 +549,10 @@ async def list_vacancies(
     query = select(Vacancy).where(Vacancy.org_id == org.id if org else True)
 
     # Apply access control based on user role
-    is_admin = await is_org_admin_or_owner(current_user, org, db)
+    # Only org owner sees all vacancies, admin follows same rules as members
+    is_owner = await is_org_owner(current_user, org, db)
 
-    if not is_admin:
+    if not is_owner:
         # Get departments where user is lead/sub_admin (not just member)
         lead_dept_result = await db.execute(
             select(DepartmentMember.department_id).where(
