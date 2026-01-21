@@ -944,6 +944,12 @@ export default function ContactsPage() {
             type="resume"
             onClose={() => setShowParserModal(false)}
             onParsed={(data) => handleParsedResume(data as ParsedResume)}
+            onEntityCreated={(response) => {
+              // Entity created directly from file
+              setShowParserModal(false);
+              // Navigate to the new entity (this will fetch the entity)
+              navigate(`/contacts/${response.entity.id}`);
+            }}
           />
         )}
       </AnimatePresence>

@@ -324,8 +324,8 @@ export function useResumeUpload(): UseResumeUploadReturn {
 
     try {
       const result = await createEntityFromResume(fileEntry.file);
-      updateFile(id, { entityId: result.entity_id });
-      return result.entity_id;
+      updateFile(id, { entityId: result.entity.id });
+      return result.entity.id;
     } catch (error) {
       const errorMessage = error instanceof Error
         ? error.message

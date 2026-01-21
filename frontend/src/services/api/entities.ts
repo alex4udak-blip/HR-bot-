@@ -598,9 +598,31 @@ export const bulkImportResumes = async (file: File): Promise<BulkImportResponse>
  * Response from creating entity from resume
  */
 export interface CreateEntityFromResumeResponse {
-  entity_id: number;
+  entity: {
+    id: number;
+    type: string;
+    name: string;
+    status: string;
+    phone?: string;
+    email?: string;
+    telegram_usernames?: string[];
+    emails?: string[];
+    phones?: string[];
+    company?: string;
+    position?: string;
+    tags?: string[];
+    extra_data?: Record<string, unknown>;
+    created_by?: number;
+    department_id?: number;
+    department_name?: string;
+    created_at?: string;
+    updated_at?: string;
+    expected_salary_min?: number;
+    expected_salary_max?: number;
+    expected_salary_currency?: string;
+  };
   parsed_data: ParsedResume;
-  message: string;
+  file_id?: number;
 }
 
 /**
