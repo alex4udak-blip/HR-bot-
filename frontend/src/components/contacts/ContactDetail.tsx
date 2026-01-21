@@ -20,7 +20,6 @@ import {
   Target,
   Plus,
   FolderOpen,
-  DollarSign,
   AlertTriangle
 } from 'lucide-react';
 import clsx from 'clsx';

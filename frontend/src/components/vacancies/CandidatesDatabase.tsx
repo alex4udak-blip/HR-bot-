@@ -13,7 +13,6 @@ import {
   X,
   Check,
   Clock,
-  DollarSign,
   Users,
   UserCheck,
   Sparkles,
