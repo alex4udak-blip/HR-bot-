@@ -40,21 +40,17 @@ alembic upgrade head                        # Миграции
 - DB: PostgreSQL
 - Deploy: Railway + Docker
 
-## Git Workflow — AUTO PR
+## Git Workflow — ПРЯМОЙ PUSH В MAIN
 ```bash
-# 1. Новая ветка
-git checkout -b feature/[название]
-
-# 2. Изменения
+# Коммит и пуш сразу в main, без PR!
 git add .
 git commit -m "feat: [описание]"
+git push origin main
 
-# 3. Push + PR
-git push -u origin feature/[название]
-gh pr create --title "feat: [описание]" --body "## Что сделано\n- ..."
-
-# 4. После merge — проверить на проде через Chrome
+# Railway автоматически деплоит из main за 3-5 мин
 ```
+
+**ВАЖНО:** НЕ создавай PR и ветки. Исправления сразу в main.
 
 ## Railway
 - **URL:** [TODO — добавить после деплоя]
