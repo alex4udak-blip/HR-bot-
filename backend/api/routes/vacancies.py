@@ -15,13 +15,96 @@ logger = logging.getLogger("hr-analyzer.vacancies")
 from ..database import get_db
 from ..models.database import (
     Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
-    Entity, EntityType, User, Organization, Department, STAGE_SYNC_MAP, STATUS_SYNC_MAP
+    Entity, EntityType, User, Organization, Department, STAGE_SYNC_MAP, STATUS_SYNC_MAP,
+    UserRole, OrgMember, OrgRole, DepartmentMember, DeptRole
 )
 from ..services.auth import get_current_user, get_user_org
 from ..services.features import can_access_feature
 from ..services.cache import scoring_cache
 
 router = APIRouter()
+
+
+# === Vacancy Access Control Helpers ===
+
+async def is_org_admin_or_owner(user: User, org: Organization, db: AsyncSession) -> bool:
+    """Check if user is admin or owner of organization."""
+    if user.role == UserRole.superadmin:
+        return True
+
+    result = await db.execute(
+        select(OrgMember).where(
+            OrgMember.org_id == org.id,
+            OrgMember.user_id == user.id,
+            OrgMember.role.in_([OrgRole.owner, OrgRole.admin])
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def get_user_department_ids(user_id: int, org_id: int, db: AsyncSession) -> List[int]:
+    """Get all department IDs user belongs to in the organization."""
+    result = await db.execute(
+        select(DepartmentMember.department_id)
+        .join(Department, Department.id == DepartmentMember.department_id)
+        .where(
+            Department.org_id == org_id,
+            DepartmentMember.user_id == user_id,
+            Department.is_active == True
+        )
+    )
+    return [row[0] for row in result.all()]
+
+
+async def is_dept_lead_or_admin(user_id: int, department_id: int, db: AsyncSession) -> bool:
+    """Check if user is lead or sub_admin of a specific department."""
+    result = await db.execute(
+        select(DepartmentMember).where(
+            DepartmentMember.department_id == department_id,
+            DepartmentMember.user_id == user_id,
+            DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db: AsyncSession) -> bool:
+    """
+    Check if user can access (view) a specific vacancy.
+
+    Access rules:
+    - Superadmin/Owner/Admin: can access all vacancies in org
+    - Lead/Sub_admin of department: can access all vacancies in their department
+    - Member: can only access vacancies they created or where they are hiring manager
+    """
+    # Org admin/owner can access all
+    if await is_org_admin_or_owner(user, org, db):
+        return True
+
+    # User is the creator or hiring manager
+    if vacancy.created_by == user.id or vacancy.hiring_manager_id == user.id:
+        return True
+
+    # If vacancy has a department, check if user is lead/sub_admin of that dept
+    if vacancy.department_id:
+        if await is_dept_lead_or_admin(user.id, vacancy.department_id, db):
+            return True
+
+    return False
+
+
+async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: AsyncSession) -> bool:
+    """
+    Check if user can edit a specific vacancy.
+
+    Edit rules:
+    - Superadmin/Owner/Admin: can edit all vacancies in org
+    - Lead/Sub_admin of department: can edit vacancies in their department
+    - Creator: can edit their own vacancies
+    - Hiring manager: can edit vacancies where they are hiring manager
+    """
+    # Same as access for now, but can be made stricter if needed
+    return await can_access_vacancy(vacancy, user, org, db)
 
 
 # === Feature Access Control ===
@@ -341,10 +424,46 @@ async def list_vacancies(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """List all vacancies with optional filters."""
+    """List vacancies filtered by user access rights.
+
+    Access rules:
+    - Superadmin/Owner/Admin: sees all vacancies in org
+    - Lead/Sub_admin: sees vacancies in their department + own vacancies
+    - Member: sees only own vacancies (created_by or hiring_manager)
+    """
     org = await get_user_org(current_user, db)
 
+    # Base query - filter by organization
     query = select(Vacancy).where(Vacancy.org_id == org.id if org else True)
+
+    # Apply access control based on user role
+    is_admin = await is_org_admin_or_owner(current_user, org, db)
+
+    if not is_admin:
+        # Get departments where user is lead or sub_admin
+        user_dept_ids = await get_user_department_ids(current_user.id, org.id, db)
+
+        # Get departments where user is lead/sub_admin (not just member)
+        lead_dept_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == current_user.id,
+                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+            )
+        )
+        lead_dept_ids = [row[0] for row in lead_dept_result.all()]
+
+        # User can see:
+        # 1. Vacancies they created
+        # 2. Vacancies where they are hiring manager
+        # 3. Vacancies in departments where they are lead/sub_admin
+        access_conditions = [
+            Vacancy.created_by == current_user.id,
+            Vacancy.hiring_manager_id == current_user.id
+        ]
+        if lead_dept_ids:
+            access_conditions.append(Vacancy.department_id.in_(lead_dept_ids))
+
+        query = query.where(or_(*access_conditions))
 
     if status:
         query = query.where(Vacancy.status == status)
@@ -520,7 +639,9 @@ async def get_vacancy(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """Get a single vacancy by ID."""
+    """Get a single vacancy by ID (with access control)."""
+    org = await get_user_org(current_user, db)
+
     result = await db.execute(
         select(Vacancy).where(Vacancy.id == vacancy_id)
     )
@@ -528,6 +649,10 @@ async def get_vacancy(
 
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Check access rights
+    if not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
     # Get department name
     dept_name = None
@@ -594,7 +719,9 @@ async def update_vacancy(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """Update a vacancy."""
+    """Update a vacancy (with access control)."""
+    org = await get_user_org(current_user, db)
+
     result = await db.execute(
         select(Vacancy).where(Vacancy.id == vacancy_id)
     )
@@ -602,6 +729,10 @@ async def update_vacancy(
 
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Check edit rights
+    if not await can_edit_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="You don't have permission to edit this vacancy")
 
     # Get update data (only fields that were explicitly set)
     update_data = data.model_dump(exclude_unset=True)
@@ -655,7 +786,9 @@ async def delete_vacancy(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """Delete a vacancy."""
+    """Delete a vacancy (with access control)."""
+    org = await get_user_org(current_user, db)
+
     result = await db.execute(
         select(Vacancy).where(Vacancy.id == vacancy_id)
     )
@@ -663,6 +796,10 @@ async def delete_vacancy(
 
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Check edit rights (delete requires same permissions as edit)
+    if not await can_edit_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="You don't have permission to delete this vacancy")
 
     await db.delete(vacancy)
     await db.commit()
@@ -679,13 +816,20 @@ async def list_applications(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """List all applications for a vacancy."""
+    """List all applications for a vacancy (with access control)."""
+    org = await get_user_org(current_user, db)
+
     # Verify vacancy exists
     vacancy_result = await db.execute(
         select(Vacancy).where(Vacancy.id == vacancy_id)
     )
-    if not vacancy_result.scalar():
+    vacancy = vacancy_result.scalar()
+    if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Check access rights
+    if not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
     query = (
         select(VacancyApplication)
@@ -738,7 +882,7 @@ async def create_application(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """Add a candidate to a vacancy pipeline."""
+    """Add a candidate to a vacancy pipeline (with access control)."""
     # Get user's organization
     org = await get_user_org(current_user, db)
     if not org:
@@ -751,6 +895,10 @@ async def create_application(
     vacancy = vacancy_result.scalar()
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Check access rights to this vacancy
+    if not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
     # Verify entity exists and belongs to same organization
     entity_result = await db.execute(
@@ -864,7 +1012,9 @@ async def update_application(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """Update an application (move stage, add notes, etc.)."""
+    """Update an application (move stage, add notes, etc.) - with access control."""
+    org = await get_user_org(current_user, db)
+
     result = await db.execute(
         select(VacancyApplication).where(VacancyApplication.id == application_id)
     )
@@ -872,6 +1022,14 @@ async def update_application(
 
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
+
+    # Get the vacancy to check access
+    vacancy_result = await db.execute(
+        select(Vacancy).where(Vacancy.id == application.vacancy_id)
+    )
+    vacancy = vacancy_result.scalar()
+    if vacancy and not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
     # Track stage change
     if data.stage and data.stage != application.stage:
@@ -957,8 +1115,10 @@ async def delete_application(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """Remove a candidate from a vacancy pipeline."""
+    """Remove a candidate from a vacancy pipeline (with access control)."""
     from ..models.database import EntityStatus
+
+    org = await get_user_org(current_user, db)
 
     result = await db.execute(
         select(VacancyApplication).where(VacancyApplication.id == application_id)
@@ -967,6 +1127,14 @@ async def delete_application(
 
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
+
+    # Get the vacancy to check access
+    vacancy_result = await db.execute(
+        select(Vacancy).where(Vacancy.id == application.vacancy_id)
+    )
+    vacancy = vacancy_result.scalar()
+    if vacancy and not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
     # Get the entity to reset its status
     entity_id = application.entity_id
@@ -997,7 +1165,9 @@ async def get_kanban_board(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """Get Kanban board data for a vacancy with pagination per column."""
+    """Get Kanban board data for a vacancy with pagination per column (with access control)."""
+    org = await get_user_org(current_user, db)
+
     # Verify vacancy exists
     vacancy_result = await db.execute(
         select(Vacancy).where(Vacancy.id == vacancy_id)
@@ -1005,6 +1175,10 @@ async def get_kanban_board(
     vacancy = vacancy_result.scalar()
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Check access rights
+    if not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
     # Define stage order and titles (using existing DB enum values with HR labels)
     # Mapping: applied=Новый, screening=Скрининг, phone_screen=Практика,
@@ -1113,10 +1287,12 @@ async def get_kanban_column(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """Get paginated candidates for a specific Kanban column.
+    """Get paginated candidates for a specific Kanban column (with access control).
 
     This endpoint is used for loading more candidates in a column (infinite scroll).
     """
+    org = await get_user_org(current_user, db)
+
     # Verify vacancy exists
     vacancy_result = await db.execute(
         select(Vacancy).where(Vacancy.id == vacancy_id)
@@ -1124,6 +1300,10 @@ async def get_kanban_column(
     vacancy = vacancy_result.scalar()
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Check access rights
+    if not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
     # Define stage titles (HR Pipeline stages - using existing DB enum values)
     stage_titles = {
@@ -1242,7 +1422,7 @@ async def bulk_move_applications(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """Move multiple applications to a new stage."""
+    """Move multiple applications to a new stage (with access control)."""
     if not data.application_ids:
         return []
 
@@ -1271,6 +1451,10 @@ async def bulk_move_applications(
     vacancy = vacancy_result.scalar()
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found in your organization")
+
+    # Check vacancy-level access rights
+    if not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
     # Verify all applications belong to the same vacancy
     for app in applications:
@@ -1444,7 +1628,7 @@ async def get_matching_candidates(
     current_user: User = Depends(check_vacancy_access)
 ):
     """
-    Get candidates that match a vacancy.
+    Get candidates that match a vacancy (with access control).
 
     This endpoint analyzes all candidates in the organization and returns
     those that match the vacancy requirements, sorted by match score.
@@ -1460,6 +1644,9 @@ async def get_matching_candidates(
     """
     from ..services.vacancy_recommender import vacancy_recommender
 
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+
     # Get the vacancy
     result = await db.execute(
         select(Vacancy).where(Vacancy.id == vacancy_id)
@@ -1470,9 +1657,12 @@ async def get_matching_candidates(
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
     # Verify org access
-    org = await get_user_org(current_user, db)
     if org and vacancy.org_id != org.id:
         raise HTTPException(status_code=403, detail="Access denied")
+
+    # Check vacancy-level access rights
+    if not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
     # Find matching candidates
     matches = await vacancy_recommender.find_matching_candidates(
@@ -1514,7 +1704,7 @@ async def notify_matching_candidates(
     current_user: User = Depends(check_vacancy_access)
 ):
     """
-    Find and prepare to notify candidates about a vacancy.
+    Find and prepare to notify candidates about a vacancy (with access control).
 
     This endpoint finds candidates that match the vacancy and returns them
     for notification. The actual notification sending (email, telegram, etc.)
@@ -1530,6 +1720,9 @@ async def notify_matching_candidates(
     """
     from ..services.vacancy_recommender import vacancy_recommender
 
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+
     # Get the vacancy
     result = await db.execute(
         select(Vacancy).where(Vacancy.id == vacancy_id)
@@ -1540,9 +1733,12 @@ async def notify_matching_candidates(
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
     # Verify org access
-    org = await get_user_org(current_user, db)
     if org and vacancy.org_id != org.id:
         raise HTTPException(status_code=403, detail="Access denied")
+
+    # Check vacancy-level access rights
+    if not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
     # Check vacancy status
     if vacancy.status != VacancyStatus.open:
@@ -1600,7 +1796,7 @@ async def invite_candidate_to_vacancy(
     current_user: User = Depends(check_vacancy_access)
 ):
     """
-    Invite a specific candidate to a vacancy (skip 'applied' stage).
+    Invite a specific candidate to a vacancy (skip 'applied' stage) - with access control.
 
     This is used when HR proactively invites a matching candidate
     to interview or screening for a vacancy.
@@ -1625,6 +1821,10 @@ async def invite_candidate_to_vacancy(
     vacancy = vacancy_result.scalar()
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Check vacancy-level access rights
+    if not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
     # Get and verify entity
     entity_result = await db.execute(
