@@ -1065,6 +1065,7 @@ export default function CandidatesPage() {
             type="resume"
             onClose={() => setShowParserModal(false)}
             onParsed={(data) => handleParsedResume(data as ParsedResume)}
+            onEntityCreated={() => { setShowParserModal(false); loadCandidates(); }}
           />
         )}
       </AnimatePresence>
