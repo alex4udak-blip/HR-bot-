@@ -982,8 +982,10 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               </div>
             </div>
           ) : viewMode === 'list' ? (
-            <div className="space-y-2">
-              {filteredCandidates.map(candidate => renderCandidateCard(candidate, true))}
+            <div className="overflow-x-auto">
+              <div className="space-y-2 min-w-[600px]">
+                {filteredCandidates.map(candidate => renderCandidateCard(candidate, true))}
+              </div>
             </div>
           ) : (
             <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
