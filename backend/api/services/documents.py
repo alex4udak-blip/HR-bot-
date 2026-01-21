@@ -286,25 +286,94 @@ class DocumentParser:
 
     # ========== Plain Text ==========
     async def _parse_text(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
-        # Detect encoding
-        detected = chardet.detect(file_bytes)
-        encoding = detected.get('encoding', 'utf-8') or 'utf-8'
+        """Parse text file with robust encoding detection.
 
-        try:
-            text = file_bytes.decode(encoding)
-        except UnicodeDecodeError as e:
-            logger.warning(f"Text decode failed with {encoding}: {e}, falling back to utf-8")
+        Tries encodings in order of likelihood for Russian/CIS text:
+        1. Use chardet detection if confidence is high (>0.7)
+        2. Try UTF-8 first (most common modern encoding)
+        3. Try Windows-1251 (common for Russian Windows files)
+        4. Try KOI8-R (legacy Russian encoding)
+        5. Fall back to chardet result with errors='replace'
+        """
+        detected = chardet.detect(file_bytes)
+        detected_encoding = detected.get('encoding', 'utf-8') or 'utf-8'
+        confidence = detected.get('confidence', 0)
+
+        # List of encodings to try in order
+        encodings_to_try = []
+
+        # If chardet is confident, try its suggestion first
+        if confidence > 0.7:
+            encodings_to_try.append(detected_encoding)
+
+        # Common encodings for Russian/CIS text
+        encodings_to_try.extend(['utf-8', 'cp1251', 'koi8-r', 'iso-8859-5'])
+
+        # If chardet was not confident, add its suggestion at the end
+        if confidence <= 0.7 and detected_encoding not in encodings_to_try:
+            encodings_to_try.append(detected_encoding)
+
+        # Remove duplicates while preserving order
+        seen = set()
+        encodings_to_try = [e for e in encodings_to_try if not (e in seen or seen.add(e))]
+
+        text = None
+        used_encoding = None
+
+        for encoding in encodings_to_try:
             try:
-                text = file_bytes.decode('utf-8', errors='ignore')
-            except UnicodeDecodeError as e2:
-                logger.warning(f"Text decode failed with utf-8: {e2}, falling back to cp1251")
-                text = file_bytes.decode('cp1251', errors='ignore')
+                text = file_bytes.decode(encoding)
+                used_encoding = encoding
+                # Check if text looks reasonable (no replacement characters in first 1000 chars)
+                sample = text[:1000]
+                if '\ufffd' not in sample and not self._has_garbled_text(sample):
+                    break
+                # Continue trying other encodings if this one produced garbage
+                text = None
+            except (UnicodeDecodeError, LookupError) as e:
+                logger.debug(f"Decode with {encoding} failed: {e}")
+                continue
+
+        # Final fallback - use detected encoding with replacement
+        if text is None:
+            text = file_bytes.decode(detected_encoding, errors='replace')
+            used_encoding = f"{detected_encoding} (with replacements)"
+            logger.warning(f"All encoding attempts failed for {filename}, using {detected_encoding} with replacements")
 
         return DocumentParseResult(
             content=text,
             status="parsed",
-            metadata={"encoding": encoding}
+            metadata={"encoding": used_encoding, "chardet_encoding": detected_encoding, "chardet_confidence": confidence}
         )
+
+    def _has_garbled_text(self, text: str) -> bool:
+        """Check if text appears to be garbled (wrong encoding).
+
+        Returns True if text has suspicious patterns like:
+        - High ratio of non-printable characters
+        - Many consecutive question marks or squares
+        - Unusual character sequences
+        """
+        if not text:
+            return False
+
+        # Count suspicious characters
+        suspicious = 0
+        total = len(text)
+
+        for char in text:
+            code = ord(char)
+            # Suspicious if:
+            # - Control chars (except newline, tab, carriage return)
+            # - Private use area
+            # - High number of combining characters in non-complex scripts
+            if (code < 32 and code not in (9, 10, 13)) or \
+               (0xE000 <= code <= 0xF8FF) or \
+               (0xFFF0 <= code <= 0xFFFF):
+                suspicious += 1
+
+        # If more than 5% suspicious characters, probably wrong encoding
+        return suspicious / total > 0.05 if total > 0 else False
 
     # ========== HTML ==========
     async def _parse_html(self, file_bytes: bytes, filename: str) -> DocumentParseResult:

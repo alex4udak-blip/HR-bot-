@@ -258,6 +258,14 @@ async def get_local_file(
         content_type = "audio/ogg"
     elif suffix == '.opus':
         content_type = "audio/opus"
+    elif suffix == '.txt':
+        content_type = "text/plain; charset=utf-8"
+    elif suffix == '.pdf':
+        content_type = "application/pdf"
+    elif suffix in ('.doc', '.docx'):
+        content_type = "application/msword"
+    elif suffix in ('.xls', '.xlsx'):
+        content_type = "application/vnd.ms-excel"
 
     file_size = file_path.stat().st_size
 
