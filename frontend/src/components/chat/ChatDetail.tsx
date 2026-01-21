@@ -221,6 +221,39 @@ const AuthAudio = ({ src, className }: {
   );
 };
 
+// Component to render text with clickable links
+const TextWithLinks = ({ text, className }: { text: string; className?: string }) => {
+  // URL regex pattern - matches http(s) URLs and www. URLs
+  const urlPattern = /(https?:\/\/[^\s<>\"\']+|www\.[^\s<>\"\']+)/gi;
+
+  const parts = text.split(urlPattern);
+
+  return (
+    <span className={className}>
+      {parts.map((part, index) => {
+        if (urlPattern.test(part)) {
+          // Reset regex lastIndex after test
+          urlPattern.lastIndex = 0;
+          const href = part.startsWith('www.') ? `https://${part}` : part;
+          return (
+            <a
+              key={index}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent-400 hover:text-accent-300 hover:underline break-all"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {part}
+            </a>
+          );
+        }
+        return <span key={index}>{part}</span>;
+      })}
+    </span>
+  );
+};
+
 // Chat type options
 const CHAT_TYPES: { id: ChatTypeId; name: string; icon: typeof UserCheck }[] = [
   { id: 'work', name: 'Рабочий чат', icon: MessageSquare },
@@ -845,7 +878,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                           </div>
                         )}
                         {message.content && !message.content.startsWith('[Photo') && !message.content.startsWith('[Фото') && (
-                          <p className="text-sm text-dark-300">{message.content}</p>
+                          <p className="text-sm text-dark-300"><TextWithLinks text={message.content} /></p>
                         )}
                       </div>
                     ) : message.content_type === 'video_note' ? (
@@ -864,7 +897,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                           </div>
                         )}
                         {message.content && !message.content.startsWith('[Video') && !message.content.startsWith('[Видео') && !message.content.includes('transcription failed') && (
-                          <p className="text-sm text-dark-300">{message.content}</p>
+                          <p className="text-sm text-dark-300"><TextWithLinks text={message.content} /></p>
                         )}
                       </div>
                     ) : message.content_type === 'sticker' ? (
@@ -895,7 +928,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                           </div>
                         )}
                         {message.content && !message.content.startsWith('[Голосов') && !message.content.startsWith('[Voice') && (
-                          <p className="text-sm text-dark-300">{message.content}</p>
+                          <p className="text-sm text-dark-300"><TextWithLinks text={message.content} /></p>
                         )}
                       </div>
                     ) : message.content_type === 'video' ? (
@@ -913,12 +946,12 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                           </div>
                         )}
                         {message.content && !message.content.startsWith('[Видео') && !message.content.startsWith('[Video') && (
-                          <p className="text-sm text-dark-300">{message.content}</p>
+                          <p className="text-sm text-dark-300"><TextWithLinks text={message.content} /></p>
                         )}
                       </div>
                     ) : (
                       <>
-                        <p className="text-sm text-dark-200 whitespace-pre-wrap break-words">{message.content}</p>
+                        <p className="text-sm text-dark-200 whitespace-pre-wrap break-words"><TextWithLinks text={message.content} /></p>
                         {message.content_type !== 'text' && (
                           <span className="inline-block mt-2 text-xs px-2 py-0.5 rounded-full bg-dark-700 text-dark-400">
                             {message.content_type}
