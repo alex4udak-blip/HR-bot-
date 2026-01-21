@@ -313,6 +313,19 @@ export interface SimilarCandidateResult {
   similar_salary: boolean;
   similar_location: boolean;
   match_reasons: string[];
+  // Detailed comparison data for both candidates
+  entity1_skills?: string[];
+  entity2_skills?: string[];
+  entity1_experience?: number | null;
+  entity2_experience?: number | null;
+  entity1_salary_min?: number | null;
+  entity1_salary_max?: number | null;
+  entity2_salary_min?: number | null;
+  entity2_salary_max?: number | null;
+  entity1_location?: string | null;
+  entity2_location?: string | null;
+  entity1_position?: string | null;
+  entity2_position?: string | null;
 }
 
 export interface DuplicateCandidateResult {

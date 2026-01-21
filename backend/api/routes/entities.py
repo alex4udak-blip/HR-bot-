@@ -3870,6 +3870,19 @@ class SimilarCandidateResponse(BaseModel):
     similar_salary: bool = False
     similar_location: bool = False
     match_reasons: List[str] = []
+    # Detailed comparison data for both candidates
+    entity1_skills: List[str] = []
+    entity2_skills: List[str] = []
+    entity1_experience: Optional[int] = None
+    entity2_experience: Optional[int] = None
+    entity1_salary_min: Optional[int] = None
+    entity1_salary_max: Optional[int] = None
+    entity2_salary_min: Optional[int] = None
+    entity2_salary_max: Optional[int] = None
+    entity1_location: Optional[str] = None
+    entity2_location: Optional[str] = None
+    entity1_position: Optional[str] = None
+    entity2_position: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -4164,7 +4177,20 @@ async def compare_candidates(
         similar_experience=comparison.similar_experience,
         similar_salary=comparison.similar_salary,
         similar_location=comparison.similar_location,
-        match_reasons=comparison.match_reasons
+        match_reasons=comparison.match_reasons,
+        # Detailed comparison data
+        entity1_skills=comparison.entity1_skills,
+        entity2_skills=comparison.entity2_skills,
+        entity1_experience=comparison.entity1_experience,
+        entity2_experience=comparison.entity2_experience,
+        entity1_salary_min=comparison.entity1_salary_min,
+        entity1_salary_max=comparison.entity1_salary_max,
+        entity2_salary_min=comparison.entity2_salary_min,
+        entity2_salary_max=comparison.entity2_salary_max,
+        entity1_location=comparison.entity1_location,
+        entity2_location=comparison.entity2_location,
+        entity1_position=comparison.entity1_position,
+        entity2_position=comparison.entity2_position
     )
 
 

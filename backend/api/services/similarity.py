@@ -87,6 +87,19 @@ class SimilarCandidate:
     similar_salary: bool = False
     similar_location: bool = False
     match_reasons: List[str] = field(default_factory=list)
+    # Detailed comparison data
+    entity1_skills: List[str] = field(default_factory=list)
+    entity2_skills: List[str] = field(default_factory=list)
+    entity1_experience: Optional[int] = None
+    entity2_experience: Optional[int] = None
+    entity1_salary_min: Optional[int] = None
+    entity1_salary_max: Optional[int] = None
+    entity2_salary_min: Optional[int] = None
+    entity2_salary_max: Optional[int] = None
+    entity1_location: Optional[str] = None
+    entity2_location: Optional[str] = None
+    entity1_position: Optional[str] = None
+    entity2_position: Optional[str] = None
 
 
 @dataclass
@@ -493,7 +506,20 @@ class SimilarityService:
             similar_experience=similar_experience,
             similar_salary=similar_salary,
             similar_location=similar_location,
-            match_reasons=match_reasons
+            match_reasons=match_reasons,
+            # Detailed comparison data
+            entity1_skills=skills1,
+            entity2_skills=skills2,
+            entity1_experience=exp1,
+            entity2_experience=exp2,
+            entity1_salary_min=entity1.expected_salary_min,
+            entity1_salary_max=entity1.expected_salary_max,
+            entity2_salary_min=entity2.expected_salary_min,
+            entity2_salary_max=entity2.expected_salary_max,
+            entity1_location=loc1,
+            entity2_location=loc2,
+            entity1_position=entity1.position,
+            entity2_position=entity2.position
         )
 
     async def detect_duplicates(

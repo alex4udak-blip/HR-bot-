@@ -658,8 +658,8 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
           </div>
         </div>
-        <div className="flex items-center gap-2 mb-2 ml-7 flex-wrap">
-          <span className={clsx('px-2 py-0.5 text-xs rounded-full whitespace-nowrap', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
+        <div className="flex items-center justify-between gap-2 mb-2 ml-7">
+          <span className={clsx('px-2 py-0.5 text-xs rounded-full whitespace-nowrap flex-shrink-0', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
             {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
           </span>
           {nextStage && (
@@ -670,7 +670,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                 handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nextStage]);
               }}
               className={clsx(
-                "opacity-0 group-hover:opacity-100 px-2 py-0.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all whitespace-nowrap",
+                "opacity-0 group-hover:opacity-100 px-2 py-0.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all whitespace-nowrap flex-shrink-0",
                 isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
               )}
             >
