@@ -1014,7 +1014,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
       <AnimatePresence>
         {showCreateModal && <ContactForm prefillData={prefillData || undefined} defaultType="candidate" onClose={() => { setShowCreateModal(false); setPrefillData(null); }} onSuccess={() => { setShowCreateModal(false); setPrefillData(null); fetchEntities(); toast.success('Кандидат создан'); }} />}
-        {showParserModal && <ParserModal type="resume" onClose={() => setShowParserModal(false)} onParsed={(data) => handleParsedResume(data as ParsedResume)} onEntityCreated={(response) => { setShowParserModal(false); fetchEntities(); }} />}
+        {showParserModal && <ParserModal type="resume" onClose={() => setShowParserModal(false)} onParsed={(data) => handleParsedResume(data as ParsedResume)} onEntityCreated={() => { setShowParserModal(false); fetchEntities(); }} />}
         {showAddToVacancyModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowAddToVacancyModal(false)}>
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-md bg-gray-900 rounded-xl border border-white/10 shadow-xl overflow-hidden">
