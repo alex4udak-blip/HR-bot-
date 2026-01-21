@@ -816,6 +816,18 @@ export default function VacanciesPage() {
                       )}
                     </div>
 
+                    {/* Owner & Department */}
+                    {(vacancy.created_by_name || vacancy.department_name) && (
+                      <div className="mt-3 flex items-center gap-3 text-xs text-white/40">
+                        {vacancy.created_by_name && (
+                          <span title="Владелец вакансии">👤 {vacancy.created_by_name}</span>
+                        )}
+                        {vacancy.department_name && (
+                          <span title="Департамент">📁 {vacancy.department_name}</span>
+                        )}
+                      </div>
+                    )}
+
                     {/* Stats */}
                     <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm">

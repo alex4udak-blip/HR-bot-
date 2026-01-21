@@ -427,6 +427,23 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   </span>
                 </div>
               )}
+              {/* Owner and department info */}
+              {(entity.owner_name || entity.department_name) && (
+                <div className="flex items-center gap-4 text-white/40 mt-2">
+                  {entity.owner_name && (
+                    <span className="flex items-center gap-1" title="Владелец">
+                      <User size={14} />
+                      <span>Владелец: {entity.owner_name}</span>
+                    </span>
+                  )}
+                  {entity.department_name && (
+                    <span className="flex items-center gap-1" title="Департамент">
+                      <Building2 size={14} />
+                      <span>{entity.department_name}</span>
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {entity.tags && entity.tags.length > 0 && (

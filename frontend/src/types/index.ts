@@ -574,6 +574,7 @@ export interface Vacancy {
   hiring_manager_id?: number;
   hiring_manager_name?: string;
   created_by?: number;
+  created_by_name?: string;
   published_at?: string;
   closes_at?: string;
   created_at: string;
