@@ -16,7 +16,8 @@ from ..database import get_db
 from ..models.database import (
     Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
     Entity, EntityType, User, Organization, Department, STAGE_SYNC_MAP, STATUS_SYNC_MAP,
-    UserRole, OrgMember, OrgRole, DepartmentMember, DeptRole
+    UserRole, OrgMember, OrgRole, DepartmentMember, DeptRole,
+    SharedAccess, ResourceType, AccessLevel
 )
 from ..services.auth import get_current_user, get_user_org
 from ..services.features import can_access_feature
@@ -68,6 +69,64 @@ async def is_dept_lead_or_admin(user_id: int, department_id: int, db: AsyncSessi
     return result.scalar_one_or_none() is not None
 
 
+async def has_shared_vacancy_access(vacancy_id: int, user_id: int, db: AsyncSession, required_level: AccessLevel = AccessLevel.view) -> bool:
+    """
+    Check if user has shared access to a vacancy.
+
+    Args:
+        vacancy_id: ID of the vacancy
+        user_id: ID of the user
+        db: Database session
+        required_level: Minimum access level required (view, edit, full)
+
+    Returns:
+        True if user has sufficient shared access, False otherwise
+    """
+    # Access level hierarchy: view < edit < full
+    access_levels = [AccessLevel.view, AccessLevel.edit, AccessLevel.full]
+    required_idx = access_levels.index(required_level)
+    allowed_levels = access_levels[required_idx:]
+
+    result = await db.execute(
+        select(SharedAccess).where(
+            SharedAccess.resource_type == ResourceType.vacancy,
+            SharedAccess.resource_id == vacancy_id,
+            SharedAccess.shared_with_id == user_id,
+            SharedAccess.access_level.in_(allowed_levels),
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.now(timezone.utc))
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def get_shared_vacancy_ids(user_id: int, db: AsyncSession, required_level: AccessLevel = AccessLevel.view) -> List[int]:
+    """
+    Get all vacancy IDs the user has shared access to.
+
+    Args:
+        user_id: ID of the user
+        db: Database session
+        required_level: Minimum access level required
+
+    Returns:
+        List of vacancy IDs
+    """
+    # Access level hierarchy: view < edit < full
+    access_levels = [AccessLevel.view, AccessLevel.edit, AccessLevel.full]
+    required_idx = access_levels.index(required_level)
+    allowed_levels = access_levels[required_idx:]
+
+    result = await db.execute(
+        select(SharedAccess.resource_id).where(
+            SharedAccess.resource_type == ResourceType.vacancy,
+            SharedAccess.shared_with_id == user_id,
+            SharedAccess.access_level.in_(allowed_levels),
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.now(timezone.utc))
+        )
+    )
+    return [row[0] for row in result.all()]
+
+
 async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db: AsyncSession) -> bool:
     """
     Check if user can access (view) a specific vacancy.
@@ -76,6 +135,7 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
     - Superadmin/Owner/Admin: can access all vacancies in org
     - Lead/Sub_admin of department: can access all vacancies in their department
     - Member: can only access vacancies they created or where they are hiring manager
+    - Member with SharedAccess: can access vacancies shared with them
     """
     # Org admin/owner can access all
     if await is_org_admin_or_owner(user, org, db):
@@ -90,6 +150,10 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
         if await is_dept_lead_or_admin(user.id, vacancy.department_id, db):
             return True
 
+    # Check if user has shared access to this vacancy
+    if await has_shared_vacancy_access(vacancy.id, user.id, db):
+        return True
+
     return False
 
 
@@ -102,9 +166,56 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
     - Lead/Sub_admin of department: can edit vacancies in their department
     - Creator: can edit their own vacancies
     - Hiring manager: can edit vacancies where they are hiring manager
+    - User with SharedAccess (edit or full level): can edit vacancies shared with them
     """
-    # Same as access for now, but can be made stricter if needed
-    return await can_access_vacancy(vacancy, user, org, db)
+    # Org admin/owner can edit all
+    if await is_org_admin_or_owner(user, org, db):
+        return True
+
+    # User is the creator or hiring manager
+    if vacancy.created_by == user.id or vacancy.hiring_manager_id == user.id:
+        return True
+
+    # If vacancy has a department, check if user is lead/sub_admin of that dept
+    if vacancy.department_id:
+        if await is_dept_lead_or_admin(user.id, vacancy.department_id, db):
+            return True
+
+    # Check if user has shared access with edit level
+    if await has_shared_vacancy_access(vacancy.id, user.id, db, AccessLevel.edit):
+        return True
+
+    return False
+
+
+async def can_share_vacancy(vacancy: Vacancy, user: User, org: Organization, db: AsyncSession) -> bool:
+    """
+    Check if user can share a specific vacancy with others.
+
+    Share rules:
+    - Superadmin/Owner/Admin: can share all vacancies in org
+    - Lead/Sub_admin of department: can share vacancies in their department
+    - Creator: can share their own vacancies
+    - User with SharedAccess (full level): can share vacancies shared with them
+    """
+    # Org admin/owner can share all
+    if await is_org_admin_or_owner(user, org, db):
+        return True
+
+    # User is the creator
+    if vacancy.created_by == user.id:
+        return True
+
+    # If vacancy has a department, check if user is lead/sub_admin of that dept
+    if vacancy.department_id:
+        if await is_dept_lead_or_admin(user.id, vacancy.department_id, db):
+            return True
+
+    # Check if user has shared access with full level
+    if await has_shared_vacancy_access(vacancy.id, user.id, db, AccessLevel.full):
+        return True
+
+    return False
 
 
 # === Feature Access Control ===
@@ -1911,3 +2022,329 @@ async def invite_candidate_to_vacancy(
         "applied_at": application.applied_at.isoformat() if application.applied_at else None,
         "message": f"Кандидат {entity.name} приглашён на вакансию {vacancy.title}"
     }
+
+
+# ============================================================================
+# VACANCY SHARING ENDPOINTS
+# ============================================================================
+
+class VacancyShareRequest(BaseModel):
+    """Request schema for sharing a vacancy."""
+    shared_with_id: int
+    access_level: AccessLevel = AccessLevel.view
+    note: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+
+class VacancyShareResponse(BaseModel):
+    """Response schema for vacancy share operations."""
+    id: int
+    vacancy_id: int
+    vacancy_title: str
+    shared_by_id: int
+    shared_by_name: str
+    shared_with_id: int
+    shared_with_name: str
+    access_level: AccessLevel
+    note: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.post("/{vacancy_id}/share")
+async def share_vacancy(
+    vacancy_id: int,
+    request: VacancyShareRequest,
+    current_user: User = Depends(check_vacancy_access),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Share a vacancy with another user.
+
+    Only users who can share the vacancy (admin, owner, creator, lead, or users with full access)
+    can share it with others.
+    """
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    # Get vacancy
+    result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id, Vacancy.org_id == org.id)
+    )
+    vacancy = result.scalar_one_or_none()
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Check if user can share
+    if not await can_share_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(
+            status_code=403,
+            detail="У вас нет прав для предоставления доступа к этой вакансии"
+        )
+
+    # Check if target user exists and is in the same org
+    target_result = await db.execute(
+        select(User).join(OrgMember).where(
+            User.id == request.shared_with_id,
+            OrgMember.org_id == org.id,
+            User.is_active == True
+        )
+    )
+    target_user = target_result.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(
+            status_code=404,
+            detail="Пользователь не найден или не является членом организации"
+        )
+
+    # Can't share with yourself
+    if target_user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Нельзя поделиться с самим собой")
+
+    # Check if share already exists
+    existing = await db.execute(
+        select(SharedAccess).where(
+            SharedAccess.resource_type == ResourceType.vacancy,
+            SharedAccess.resource_id == vacancy_id,
+            SharedAccess.shared_with_id == request.shared_with_id
+        )
+    )
+    existing_share = existing.scalar_one_or_none()
+
+    if existing_share:
+        # Update existing share
+        existing_share.access_level = request.access_level
+        existing_share.note = request.note
+        existing_share.expires_at = request.expires_at
+        existing_share.shared_by_id = current_user.id
+        await db.commit()
+        await db.refresh(existing_share)
+        share = existing_share
+    else:
+        # Create new share
+        share = SharedAccess(
+            resource_type=ResourceType.vacancy,
+            resource_id=vacancy_id,
+            vacancy_id=vacancy_id,
+            shared_by_id=current_user.id,
+            shared_with_id=request.shared_with_id,
+            access_level=request.access_level,
+            note=request.note,
+            expires_at=request.expires_at
+        )
+        db.add(share)
+        await db.commit()
+        await db.refresh(share)
+
+    logger.info(
+        f"User {current_user.id} shared vacancy {vacancy_id} with user {request.shared_with_id} "
+        f"(level: {request.access_level.value})"
+    )
+
+    return VacancyShareResponse(
+        id=share.id,
+        vacancy_id=vacancy_id,
+        vacancy_title=vacancy.title,
+        shared_by_id=current_user.id,
+        shared_by_name=current_user.name,
+        shared_with_id=target_user.id,
+        shared_with_name=target_user.name,
+        access_level=share.access_level,
+        note=share.note,
+        expires_at=share.expires_at,
+        created_at=share.created_at
+    )
+
+
+@router.get("/{vacancy_id}/shares")
+async def get_vacancy_shares(
+    vacancy_id: int,
+    current_user: User = Depends(check_vacancy_access),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all shares for a vacancy.
+
+    Only users who can share the vacancy can see its shares.
+    """
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    # Get vacancy
+    result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id, Vacancy.org_id == org.id)
+    )
+    vacancy = result.scalar_one_or_none()
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Check if user can share (which also means they can view shares)
+    if not await can_share_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(
+            status_code=403,
+            detail="У вас нет прав для просмотра доступа к этой вакансии"
+        )
+
+    # Get all shares
+    shares_result = await db.execute(
+        select(SharedAccess, User)
+        .join(User, User.id == SharedAccess.shared_with_id)
+        .where(
+            SharedAccess.resource_type == ResourceType.vacancy,
+            SharedAccess.resource_id == vacancy_id
+        )
+        .order_by(SharedAccess.created_at.desc())
+    )
+
+    shares = []
+    for share, user in shares_result.all():
+        # Get shared_by user name
+        shared_by_result = await db.execute(
+            select(User.name).where(User.id == share.shared_by_id)
+        )
+        shared_by_name = shared_by_result.scalar() or "Unknown"
+
+        shares.append({
+            "id": share.id,
+            "vacancy_id": vacancy_id,
+            "vacancy_title": vacancy.title,
+            "shared_by_id": share.shared_by_id,
+            "shared_by_name": shared_by_name,
+            "shared_with_id": user.id,
+            "shared_with_name": user.name,
+            "shared_with_email": user.email,
+            "access_level": share.access_level.value,
+            "note": share.note,
+            "expires_at": share.expires_at.isoformat() if share.expires_at else None,
+            "created_at": share.created_at.isoformat() if share.created_at else None
+        })
+
+    return {"shares": shares, "total": len(shares)}
+
+
+@router.delete("/{vacancy_id}/share/{share_id}")
+async def revoke_vacancy_share(
+    vacancy_id: int,
+    share_id: int,
+    current_user: User = Depends(check_vacancy_access),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Revoke a share for a vacancy.
+
+    Only users who can share the vacancy can revoke shares.
+    """
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    # Get vacancy
+    result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id, Vacancy.org_id == org.id)
+    )
+    vacancy = result.scalar_one_or_none()
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Check if user can share
+    if not await can_share_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(
+            status_code=403,
+            detail="У вас нет прав для отзыва доступа к этой вакансии"
+        )
+
+    # Get share
+    share_result = await db.execute(
+        select(SharedAccess).where(
+            SharedAccess.id == share_id,
+            SharedAccess.resource_type == ResourceType.vacancy,
+            SharedAccess.resource_id == vacancy_id
+        )
+    )
+    share = share_result.scalar_one_or_none()
+    if not share:
+        raise HTTPException(status_code=404, detail="Share not found")
+
+    # Delete share
+    await db.delete(share)
+    await db.commit()
+
+    logger.info(
+        f"User {current_user.id} revoked share {share_id} for vacancy {vacancy_id}"
+    )
+
+    return {"message": "Доступ отозван", "share_id": share_id}
+
+
+@router.get("/shared-with-me")
+async def get_vacancies_shared_with_me(
+    current_user: User = Depends(check_vacancy_access),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all vacancies that have been shared with the current user.
+    """
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    # Get shared vacancy IDs
+    shared_ids = await get_shared_vacancy_ids(current_user.id, db)
+
+    if not shared_ids:
+        return {"vacancies": [], "total": 0}
+
+    # Get vacancies with their share info
+    result = await db.execute(
+        select(Vacancy, SharedAccess)
+        .join(SharedAccess, and_(
+            SharedAccess.resource_type == ResourceType.vacancy,
+            SharedAccess.resource_id == Vacancy.id,
+            SharedAccess.shared_with_id == current_user.id
+        ))
+        .where(
+            Vacancy.id.in_(shared_ids),
+            Vacancy.org_id == org.id
+        )
+        .order_by(SharedAccess.created_at.desc())
+    )
+
+    vacancies = []
+    for vacancy, share in result.all():
+        # Get shared_by user name
+        shared_by_result = await db.execute(
+            select(User.name).where(User.id == share.shared_by_id)
+        )
+        shared_by_name = shared_by_result.scalar() or "Unknown"
+
+        # Get applications count
+        apps_count_result = await db.execute(
+            select(func.count(VacancyApplication.id))
+            .where(VacancyApplication.vacancy_id == vacancy.id)
+        )
+        apps_count = apps_count_result.scalar() or 0
+
+        vacancies.append({
+            "id": vacancy.id,
+            "title": vacancy.title,
+            "description": vacancy.description,
+            "status": vacancy.status.value,
+            "department_id": vacancy.department_id,
+            "applications_count": apps_count,
+            "share": {
+                "id": share.id,
+                "shared_by_id": share.shared_by_id,
+                "shared_by_name": shared_by_name,
+                "access_level": share.access_level.value,
+                "note": share.note,
+                "expires_at": share.expires_at.isoformat() if share.expires_at else None,
+                "created_at": share.created_at.isoformat() if share.created_at else None
+            }
+        })
+
+    return {"vacancies": vacancies, "total": len(vacancies)}

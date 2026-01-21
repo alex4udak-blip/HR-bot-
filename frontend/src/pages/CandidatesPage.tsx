@@ -20,7 +20,8 @@ import {
   ExternalLink,
   GripVertical,
   Eye,
-  Sparkles
+  Sparkles,
+  User
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -364,8 +365,18 @@ export default function CandidatesPage() {
               <h4 className={clsx('font-medium text-sm truncate', isSelected && 'text-cyan-300')}>
                 {vacancy.title}
               </h4>
-              {vacancy.department_name && (
-                <p className="text-xs text-white/40 truncate mt-0.5">{vacancy.department_name}</p>
+              {(vacancy.department_name || vacancy.created_by_name) && (
+                <div className="flex items-center gap-2 mt-0.5 text-xs text-white/40">
+                  {vacancy.department_name && (
+                    <span className="truncate">{vacancy.department_name}</span>
+                  )}
+                  {vacancy.created_by_name && (
+                    <span className="flex items-center gap-0.5 truncate">
+                      <User className="w-3 h-3" />
+                      {vacancy.created_by_name}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
             <div className="flex flex-col items-end gap-1 flex-shrink-0">

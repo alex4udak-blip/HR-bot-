@@ -24,7 +24,8 @@ import {
   LayoutGrid,
   List,
   Kanban,
-  GripVertical
+  GripVertical,
+  User
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -608,6 +609,12 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               </span>
             )}
           </div>
+          {candidate.owner_name && (
+            <div className="flex items-center gap-1 text-xs text-white/40 flex-shrink-0 min-w-[80px]">
+              <User className="w-3 h-3" />
+              <span className="truncate">{candidate.owner_name}</span>
+            </div>
+          )}
           <div className="flex items-center gap-1 text-xs text-white/40 flex-shrink-0">
             <Clock className="w-3 h-3" />
             {formatDate(candidate.created_at)}
@@ -717,9 +724,17 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           )}
         </div>
         <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-xs text-white/40 ml-7">
-          <div className="flex items-center gap-1">
-            <Clock className="w-3 h-3" />
-            {formatDate(candidate.created_at)}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              {formatDate(candidate.created_at)}
+            </div>
+            {candidate.owner_name && (
+              <div className="flex items-center gap-1">
+                <User className="w-3 h-3" />
+                <span className="truncate max-w-[80px]">{candidate.owner_name}</span>
+              </div>
+            )}
           </div>
           <button
             onClick={(e) => {
