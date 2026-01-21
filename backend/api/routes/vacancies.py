@@ -19,7 +19,7 @@ from ..models.database import (
     UserRole, OrgMember, OrgRole, DepartmentMember, DeptRole,
     SharedAccess, ResourceType, AccessLevel
 )
-from ..services.auth import get_current_user, get_user_org
+from ..services.auth import get_current_user, get_user_org, has_full_database_access as auth_has_full_database_access
 from ..services.features import can_access_feature
 from ..services.cache import scoring_cache
 
@@ -41,6 +41,14 @@ async def is_org_owner(user: User, org: Organization, db: AsyncSession) -> bool:
         )
     )
     return result.scalar_one_or_none() is not None
+
+
+async def has_full_database_access(user: User, org: Organization, db: AsyncSession) -> bool:
+    """
+    Check if user has full database access (can see all vacancies and candidates).
+    Wrapper around auth service function that accepts Organization object instead of org_id.
+    """
+    return await auth_has_full_database_access(user, org.id, db)
 
 
 async def get_user_department_ids(user_id: int, org_id: int, db: AsyncSession) -> List[int]:
@@ -133,12 +141,13 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
 
     Access rules:
     - Superadmin/Owner: can access all vacancies in org
+    - Member with has_full_access flag: can access all vacancies in org
     - Lead/Sub_admin of department: can access all vacancies in their department
     - Member: can only access vacancies they created or where they are hiring manager
     - Member with SharedAccess: can access vacancies shared with them
     """
-    # Org admin/owner can access all
-    if await is_org_owner(user, org, db):
+    # Full database access (superadmin, owner, or member with has_full_access)
+    if await has_full_database_access(user, org, db):
         return True
 
     # User is the creator or hiring manager
@@ -549,10 +558,10 @@ async def list_vacancies(
     query = select(Vacancy).where(Vacancy.org_id == org.id if org else True)
 
     # Apply access control based on user role
-    # Only org owner sees all vacancies, admin follows same rules as members
-    is_owner = await is_org_owner(current_user, org, db)
+    # Full access: superadmin, owner, or member with has_full_access flag
+    has_full_access = await has_full_database_access(current_user, org, db)
 
-    if not is_owner:
+    if not has_full_access:
         # Get departments where user is lead/sub_admin (not just member)
         lead_dept_result = await db.execute(
             select(DepartmentMember.department_id).where(

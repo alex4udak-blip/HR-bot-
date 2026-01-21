@@ -17,7 +17,7 @@ from ..models.database import (
     Department, DepartmentMember, DeptRole, Vacancy, Message,
     VacancyApplication, STATUS_SYNC_MAP
 )
-from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to
+from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to, has_full_database_access
 from ..services.red_flags import red_flags_service
 from ..services.cache import scoring_cache
 from ..models.sharing import ShareRequestWithRelated as ShareRequest
@@ -392,9 +392,9 @@ async def list_entities(
             )
         else:
             # All entities user can see: own + shared + department entities
-            # Org owner see all
-            user_role = await get_user_org_role(current_user, org.id, db)
-            if user_role == "owner":
+            # Full access (superadmin, owner, or member with has_full_access flag) sees all
+            has_full_access = await has_full_database_access(current_user, org.id, db)
+            if has_full_access:
                 query = select(Entity).where(Entity.org_id == org.id)
             else:
                 # Own entities + shared with me + department entities (for admins only)
@@ -513,10 +513,10 @@ async def list_entities(
             dept_names[dept.id] = dept.name
 
     # Batch query: Get chat/call counts WITH ACCESS CONTROL
-    # Superadmin and org owner see all counts, others see only accessible counts
-    user_role = await get_user_org_role(current_user, org.id, db) if org else None
+    # Full access users (superadmin, owner, or member with has_full_access) see all counts
+    user_has_full_access = await has_full_database_access(current_user, org.id, db) if org else False
 
-    if current_user.role == UserRole.superadmin or user_role == "owner":
+    if user_has_full_access:
         # Full access - count all chats/calls
         chats_counts_result = await db.execute(
             select(Chat.entity_id, func.count(Chat.id))
@@ -947,10 +947,10 @@ async def get_entity(
         raise HTTPException(404, "Entity not found")
 
     # Load related data WITH ACCESS CONTROL
-    user_role = await get_user_org_role(current_user, org.id, db)
+    # Full access users (superadmin, owner, or member with has_full_access) see all
+    user_has_full_access = await has_full_database_access(current_user, org.id, db)
 
-    # Superadmin and org owner see all chats/calls
-    if current_user.role == UserRole.superadmin or user_role == "owner":
+    if user_has_full_access:
         chats_result = await db.execute(
             select(Chat).where(Chat.entity_id == entity_id)
         )
@@ -1340,8 +1340,9 @@ async def update_entity(
     if current_user.role == UserRole.superadmin:
         can_edit = True
     else:
-        user_role = await get_user_org_role(current_user, org.id, db)
-        if user_role == "owner":
+        # Full access (owner or member with has_full_access) can edit all
+        user_has_full_access = await has_full_database_access(current_user, org.id, db)
+        if user_has_full_access:
             can_edit = True
         elif entity.created_by == current_user.id:
             can_edit = True  # Owner of record
@@ -1587,8 +1588,9 @@ async def delete_entity(
     if current_user.role == UserRole.superadmin:
         can_delete = True
     else:
-        user_role = await get_user_org_role(current_user, org.id, db)
-        if user_role == "owner":
+        # Full access (owner or member with has_full_access) can delete all
+        user_has_full_access = await has_full_database_access(current_user, org.id, db)
+        if user_has_full_access:
             can_delete = True
         elif entity.created_by == current_user.id:
             can_delete = True  # Owner of record
@@ -2104,8 +2106,9 @@ async def share_entity(
     if current_user.role == UserRole.superadmin:
         can_share = True
     else:
-        user_role = await get_user_org_role(current_user, org.id, db)
-        if user_role == "owner":
+        # Full access (owner or member with has_full_access) can share all
+        user_has_full_access = await has_full_database_access(current_user, org.id, db)
+        if user_has_full_access:
             can_share = True
         elif entity.created_by == current_user.id:
             can_share = True  # Owner of entity
