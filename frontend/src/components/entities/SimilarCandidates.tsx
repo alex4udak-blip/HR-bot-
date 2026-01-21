@@ -279,10 +279,10 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
                 <div className="flex items-center justify-between mb-6">
                   <div className="text-center flex-1">
                     <p className="text-sm text-white/60 mb-1">Текущий</p>
-                    <p className="font-medium text-white">{entityName}</p>
+                    <p className="font-medium text-white truncate">{entityName}</p>
                   </div>
                   <div className={clsx(
-                    'px-4 py-2 rounded-full mx-4',
+                    'px-4 py-2 rounded-full mx-4 flex-shrink-0',
                     getScoreBgColor(comparisonResult.similarity_score)
                   )}>
                     <span className={clsx('font-bold text-lg', getScoreColor(comparisonResult.similarity_score))}>
@@ -291,37 +291,46 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
                   </div>
                   <div className="text-center flex-1">
                     <p className="text-sm text-white/60 mb-1">Сравниваемый</p>
-                    <p className="font-medium text-white">{comparisonResult.entity_name}</p>
+                    <p className="font-medium text-white truncate">{comparisonResult.entity_name}</p>
                   </div>
                 </div>
 
-                {/* Match indicators */}
-                <div className="grid grid-cols-3 gap-3 mb-6">
+                {/* Match indicators - improved layout */}
+                <div className="grid grid-cols-3 gap-2 mb-6">
                   <div className={clsx(
-                    'p-3 rounded-lg text-center',
-                    comparisonResult.similar_experience ? 'bg-green-500/20' : 'bg-white/5'
+                    'p-3 rounded-lg text-center cursor-default',
+                    comparisonResult.similar_experience ? 'bg-green-500/20 ring-1 ring-green-500/30' : 'bg-white/5'
                   )}>
-                    <Briefcase size={20} className={comparisonResult.similar_experience ? 'text-green-400 mx-auto mb-1' : 'text-white/40 mx-auto mb-1'} />
-                    <p className={clsx('text-xs', comparisonResult.similar_experience ? 'text-green-400' : 'text-white/40')}>
+                    <Briefcase size={18} className={comparisonResult.similar_experience ? 'text-green-400 mx-auto mb-1' : 'text-white/30 mx-auto mb-1'} />
+                    <p className={clsx('text-xs font-medium', comparisonResult.similar_experience ? 'text-green-400' : 'text-white/30')}>
                       Опыт
                     </p>
-                  </div>
-                  <div className={clsx(
-                    'p-3 rounded-lg text-center',
-                    comparisonResult.similar_salary ? 'bg-green-500/20' : 'bg-white/5'
-                  )}>
-                    <DollarSign size={20} className={comparisonResult.similar_salary ? 'text-green-400 mx-auto mb-1' : 'text-white/40 mx-auto mb-1'} />
-                    <p className={clsx('text-xs', comparisonResult.similar_salary ? 'text-green-400' : 'text-white/40')}>
-                      Зарплата
+                    <p className={clsx('text-[10px] mt-0.5', comparisonResult.similar_experience ? 'text-green-400/70' : 'text-white/20')}>
+                      {comparisonResult.similar_experience ? 'Совпадает' : 'Не совпадает'}
                     </p>
                   </div>
                   <div className={clsx(
-                    'p-3 rounded-lg text-center',
-                    comparisonResult.similar_location ? 'bg-green-500/20' : 'bg-white/5'
+                    'p-3 rounded-lg text-center cursor-default',
+                    comparisonResult.similar_salary ? 'bg-green-500/20 ring-1 ring-green-500/30' : 'bg-white/5'
                   )}>
-                    <MapPin size={20} className={comparisonResult.similar_location ? 'text-green-400 mx-auto mb-1' : 'text-white/40 mx-auto mb-1'} />
-                    <p className={clsx('text-xs', comparisonResult.similar_location ? 'text-green-400' : 'text-white/40')}>
+                    <DollarSign size={18} className={comparisonResult.similar_salary ? 'text-green-400 mx-auto mb-1' : 'text-white/30 mx-auto mb-1'} />
+                    <p className={clsx('text-xs font-medium', comparisonResult.similar_salary ? 'text-green-400' : 'text-white/30')}>
+                      Зарплата
+                    </p>
+                    <p className={clsx('text-[10px] mt-0.5', comparisonResult.similar_salary ? 'text-green-400/70' : 'text-white/20')}>
+                      {comparisonResult.similar_salary ? 'Пересекается' : 'Не пересекается'}
+                    </p>
+                  </div>
+                  <div className={clsx(
+                    'p-3 rounded-lg text-center cursor-default',
+                    comparisonResult.similar_location ? 'bg-green-500/20 ring-1 ring-green-500/30' : 'bg-white/5'
+                  )}>
+                    <MapPin size={18} className={comparisonResult.similar_location ? 'text-green-400 mx-auto mb-1' : 'text-white/30 mx-auto mb-1'} />
+                    <p className={clsx('text-xs font-medium', comparisonResult.similar_location ? 'text-green-400' : 'text-white/30')}>
                       Локация
+                    </p>
+                    <p className={clsx('text-[10px] mt-0.5', comparisonResult.similar_location ? 'text-green-400/70' : 'text-white/20')}>
+                      {comparisonResult.similar_location ? 'Совпадает' : 'Не совпадает'}
                     </p>
                   </div>
                 </div>
@@ -329,7 +338,7 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
                 {/* Common skills */}
                 {comparisonResult.common_skills.length > 0 && (
                   <div className="mb-6">
-                    <p className="text-sm text-white/60 mb-2">Общие навыки</p>
+                    <p className="text-sm text-white/60 mb-2">Общие навыки ({comparisonResult.common_skills.length})</p>
                     <div className="flex flex-wrap gap-2">
                       {comparisonResult.common_skills.map((skill, i) => (
                         <span
@@ -355,6 +364,15 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* No matches message */}
+                {comparisonResult.match_reasons.length === 0 && comparisonResult.common_skills.length === 0 && (
+                  <div className="text-center py-4 text-white/40 text-sm">
+                    <AlertCircle size={24} className="mx-auto mb-2 opacity-50" />
+                    <p>Общих характеристик не найдено</p>
+                    <p className="text-xs mt-1">Кандидаты имеют разные навыки, опыт или локацию</p>
                   </div>
                 )}
               </div>

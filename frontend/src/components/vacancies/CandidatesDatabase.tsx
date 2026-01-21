@@ -555,7 +555,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-sm flex-shrink-0">
             {getAvatarInitials(candidate.name || 'UK')}
           </div>
-          <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-4 gap-2 items-center">
+          <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-5 gap-2 items-center">
             <div className="min-w-0">
               <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
               {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
@@ -568,10 +568,12 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center flex-shrink-0">
               <span className={clsx('px-2 py-1 text-xs rounded-full whitespace-nowrap', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
                 {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
               </span>
+            </div>
+            <div className="flex items-center flex-shrink-0 min-w-0">
               {nextStage && (
                 <button
                   disabled={isMovingCandidate(candidate.id)}

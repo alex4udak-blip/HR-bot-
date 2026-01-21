@@ -128,7 +128,7 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
       if (onEntityCreated) {
         const response = await createEntityFromResume(file);
         onEntityCreated(response);
-        toast.success(`Кандидат "${response.entity.name}" создан`);
+        toast.success(`Кандидат "${response.entity.name}" создан. Резюме прикреплено во вкладке "Файлы"`);
         onClose();
         return;
       }
