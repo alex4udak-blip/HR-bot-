@@ -33,6 +33,7 @@ import {
   getPermissionAuditLogs,
   getOrgMembers,
   updateMemberRole,
+  getMyOrgRole,
   type CustomRole,
   type OrgRole
 } from '@/services/api';
@@ -409,6 +410,17 @@ export default function RoleManagement() {
     base_role: 'member',
   });
 
+  // Get user's organization role
+  const { data: myOrgRole, isLoading: orgRoleLoading } = useQuery({
+    queryKey: ['my-org-role'],
+    queryFn: getMyOrgRole,
+  });
+
+  // Check if user has admin access (superadmin system role OR org owner/admin)
+  const hasAdminAccess = user?.role === 'superadmin' ||
+    myOrgRole?.role === 'owner' ||
+    myOrgRole?.role === 'admin';
+
   const { data: roles = [], isLoading } = useQuery({
     queryKey: ['custom-roles'],
     queryFn: getCustomRoles,
@@ -558,12 +570,22 @@ export default function RoleManagement() {
     }
   };
 
-  if (user?.role !== 'superadmin') {
+  // Loading state
+  if (orgRoleLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Check access - allow superadmin, org owner, or org admin
+  if (!hasAdminAccess) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <Shield className="w-12 h-12 mx-auto text-dark-500 mb-3" />
-          <p className="text-dark-400">Требуется доступ суперадминистратора</p>
+          <p className="text-dark-400">Требуется доступ администратора или владельца организации</p>
         </div>
       </div>
     );

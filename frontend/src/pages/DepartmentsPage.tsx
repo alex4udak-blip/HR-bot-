@@ -42,6 +42,9 @@ const DEPT_ROLE_CONFIG: Record<DeptRole, { label: string; icon: typeof Crown; co
   member: { label: 'Участник', icon: UserIcon, color: 'text-white/60 bg-white/10', description: 'Видит свои данные и расшаренные' },
 };
 
+// Mapping of department IDs to user's role in that department
+type DeptRoleMap = Map<number, DeptRole>;
+
 const COLORS = [
   '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'
 ];
@@ -52,6 +55,7 @@ export default function DepartmentsPage() {
   const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
   const [myRole, setMyRole] = useState<string | null>(null);
   const [myLeadDeptIds, setMyLeadDeptIds] = useState<number[]>([]);
+  const [myDeptRoles, setMyDeptRoles] = useState<DeptRoleMap>(new Map());
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createParentId, setCreateParentId] = useState<number | undefined>(undefined);
@@ -76,21 +80,26 @@ export default function DepartmentsPage() {
       setOrgMembers(members);
       setMyRole(roleData.role);
 
-      // Find departments where current user is a lead
+      // Find departments where current user is a lead/sub_admin and track all roles
       if (currentUser) {
         const leadDeptIds: number[] = [];
+        const deptRoles: DeptRoleMap = new Map();
         for (const dept of depts) {
           try {
             const deptMembers = await getDepartmentMembersAPI(dept.id);
             const myMembership = deptMembers.find(m => m.user_id === currentUser.id);
-            if (myMembership?.role === 'lead') {
-              leadDeptIds.push(dept.id);
+            if (myMembership) {
+              deptRoles.set(dept.id, myMembership.role);
+              if (myMembership.role === 'lead') {
+                leadDeptIds.push(dept.id);
+              }
             }
           } catch {
             // Ignore errors
           }
         }
         setMyLeadDeptIds(leadDeptIds);
+        setMyDeptRoles(deptRoles);
       }
     } catch (e) {
       console.error('Failed to load departments:', e);
@@ -409,8 +418,8 @@ export default function DepartmentsPage() {
           <DepartmentMembersModal
             department={selectedDept}
             orgMembers={orgMembers}
-            canManage={canManage || myLeadDeptIds.includes(selectedDept.id)}
-            canSetLeadRole={isOwner}
+            isOrgOwner={isOwner}
+            myDeptRole={myDeptRoles.get(selectedDept.id) || null}
             onClose={() => {
               setShowMembersModal(false);
               setSelectedDept(null);
@@ -677,18 +686,26 @@ function EditDepartmentModal({
 function DepartmentMembersModal({
   department,
   orgMembers,
-  canManage,
-  canSetLeadRole,
+  isOrgOwner,
+  myDeptRole,
   onClose,
   onUpdate
 }: {
   department: Department;
   orgMembers: OrgMember[];
-  canManage: boolean;
-  canSetLeadRole: boolean;
+  isOrgOwner: boolean;
+  myDeptRole: DeptRole | null;
   onClose: () => void;
   onUpdate: () => void;
 }) {
+  // Permission logic:
+  // - Org owner (superadmin): can do everything including set lead role
+  // - Dept lead: can add/remove sub_admin and member, change roles (except lead)
+  // - Dept sub_admin: can add/remove member only
+  // - Dept member: cannot manage members at all
+  const canManage = isOrgOwner || myDeptRole === 'lead' || myDeptRole === 'sub_admin';
+  const canSetLeadRole = isOrgOwner;
+  const canManageSubAdmins = isOrgOwner || myDeptRole === 'lead';
   const [members, setMembers] = useState<DepartmentMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddMember, setShowAddMember] = useState(false);
@@ -798,6 +815,7 @@ function DepartmentMembersModal({
           <AddMemberForm
             availableMembers={availableMembers}
             canSetLeadRole={canSetLeadRole}
+            canAddSubAdmin={canManageSubAdmins}
             onAdd={handleAddMember}
             onCancel={() => setShowAddMember(false)}
           />
@@ -837,6 +855,11 @@ function DepartmentMembersModal({
 
                     {canManage && (
                       <div className="flex items-center gap-2">
+                        {/* Role selector - who can change what:
+                            - Owner: can change any role
+                            - Lead: can change sub_admin <-> member (not lead)
+                            - Sub_admin: can only see member role (no changes to sub_admin/lead)
+                        */}
                         {canSetLeadRole ? (
                           <select
                             value={member.role}
@@ -847,23 +870,38 @@ function DepartmentMembersModal({
                             <option value="sub_admin">Саб-админ</option>
                             <option value="member">Участник</option>
                           </select>
-                        ) : (
+                        ) : canManageSubAdmins ? (
                           <select
                             value={member.role}
                             onChange={(e) => handleRoleChange(member.user_id, e.target.value as DeptRole)}
                             className="px-2 py-1 bg-white/5 border border-white/10 rounded text-white text-sm"
                             disabled={member.role === 'lead'}
                           >
+                            {member.role === 'lead' && <option value="lead">Руководитель</option>}
                             <option value="sub_admin">Саб-админ</option>
                             <option value="member">Участник</option>
                           </select>
+                        ) : (
+                          // Sub_admin: can only see role, not change it (except for members)
+                          <span className={clsx('text-xs px-2 py-1 rounded-lg', roleConfig.color)}>
+                            {roleConfig.label}
+                          </span>
                         )}
-                        <button
-                          onClick={() => handleRemoveMember(member)}
-                          className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        {/* Delete button - who can delete whom:
+                            - Owner: can delete anyone except last lead
+                            - Lead: can delete sub_admin and member
+                            - Sub_admin: can delete only member
+                        */}
+                        {(isOrgOwner ||
+                          (myDeptRole === 'lead' && member.role !== 'lead') ||
+                          (myDeptRole === 'sub_admin' && member.role === 'member')) && (
+                          <button
+                            onClick={() => handleRemoveMember(member)}
+                            className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     )}
 
@@ -887,11 +925,13 @@ function DepartmentMembersModal({
 function AddMemberForm({
   availableMembers,
   canSetLeadRole,
+  canAddSubAdmin,
   onAdd,
   onCancel
 }: {
   availableMembers: OrgMember[];
   canSetLeadRole: boolean;
+  canAddSubAdmin: boolean;
   onAdd: (userId: number, role: DeptRole) => void;
   onCancel: () => void;
 }) {
@@ -913,6 +953,11 @@ function AddMemberForm({
             </option>
           ))}
         </select>
+        {/* Role selector based on permissions:
+            - Owner: can add any role
+            - Lead: can add sub_admin and member
+            - Sub_admin: can only add member
+        */}
         {canSetLeadRole ? (
           <select
             value={role}
@@ -923,7 +968,7 @@ function AddMemberForm({
             <option value="sub_admin">Саб-админ</option>
             <option value="member">Участник</option>
           </select>
-        ) : (
+        ) : canAddSubAdmin ? (
           <select
             value={role}
             onChange={(e) => setRole(e.target.value as DeptRole)}
@@ -932,6 +977,11 @@ function AddMemberForm({
             <option value="sub_admin">Саб-админ</option>
             <option value="member">Участник</option>
           </select>
+        ) : (
+          // Sub_admin: can only add members
+          <span className="w-full sm:w-auto px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm flex-shrink-0">
+            Участник
+          </span>
         )}
       </div>
       <div className="flex gap-2">
@@ -942,7 +992,7 @@ function AddMemberForm({
           Отмена
         </button>
         <button
-          onClick={() => userId && onAdd(userId as number, role)}
+          onClick={() => userId && onAdd(userId as number, canAddSubAdmin ? role : 'member')}
           disabled={!userId}
           className="flex-1 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-600 text-white text-sm disabled:opacity-50"
         >
