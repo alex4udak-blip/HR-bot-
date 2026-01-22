@@ -41,6 +41,10 @@ import type { Criterion, CriteriaPreset } from '@/types';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import RoleManagement from '@/components/admin/RoleManagement';
+import { lazy, Suspense } from 'react';
+
+// Lazy load EmailTemplates component to keep settings page light
+const EmailTemplatesSection = lazy(() => import('./EmailTemplatesPage'));
 
 const categoryConfig = {
   basic: { icon: Target, color: 'text-blue-400 bg-blue-500/20', label: 'Basic' },
@@ -48,7 +52,7 @@ const categoryConfig = {
   green_flags: { icon: CheckCircle, color: 'text-green-400 bg-green-500/20', label: 'Green Flags' },
 };
 
-type SettingsTab = 'general' | 'presets' | 'roles' | 'features';
+type SettingsTab = 'general' | 'presets' | 'roles' | 'features' | 'email-templates';
 
 // Feature display configuration
 const featureConfig: Record<string, { icon: typeof Briefcase; label: string; description: string }> = {
@@ -416,6 +420,20 @@ export default function SettingsPage() {
               Управление доступом
             </button>
           )}
+          {(isSuperAdmin() || user?.org_role === 'owner') && (
+            <button
+              onClick={() => setActiveTab('email-templates')}
+              className={clsx(
+                'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
+                activeTab === 'email-templates'
+                  ? 'bg-accent-500/20 text-accent-400'
+                  : 'bg-white/5 text-white/60 hover:bg-white/10'
+              )}
+            >
+              <Mail className="w-4 h-4" />
+              Email шаблоны
+            </button>
+          )}
         </div>
 
         {/* Roles Tab - Fine-grained access control */}
@@ -562,6 +580,25 @@ export default function SettingsPage() {
                 })}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Email Templates Section */}
+        {activeTab === 'email-templates' && (isSuperAdmin() || user?.org_role === 'owner') && (
+          <div className="glass rounded-2xl p-6">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold">Email шаблоны</h2>
+              <p className="text-sm text-dark-400">
+                Настройте шаблоны писем для автоматической отправки кандидатам
+              </p>
+            </div>
+            <Suspense fallback={
+              <div className="flex items-center justify-center py-12">
+                <div className="w-8 h-8 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            }>
+              <EmailTemplatesSection embedded />
+            </Suspense>
           </div>
         )}
 

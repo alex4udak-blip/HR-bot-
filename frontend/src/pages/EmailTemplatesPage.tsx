@@ -60,7 +60,11 @@ const TEMPLATE_TYPE_ICONS: Record<string, string> = {
   custom: '✏️',
 };
 
-export default function EmailTemplatesPage() {
+interface EmailTemplatesPageProps {
+  embedded?: boolean;
+}
+
+export default function EmailTemplatesPage({ embedded = false }: EmailTemplatesPageProps) {
   useAuthStore();
 
   // State
@@ -193,14 +197,14 @@ export default function EmailTemplatesPage() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-dark-900">
+    <div className={embedded ? "flex flex-col" : "h-full flex flex-col bg-dark-900"}>
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-dark-700">
+      <div className={embedded ? "flex items-center justify-between mb-4" : "flex items-center justify-between p-4 border-b border-dark-700"}>
         <div className="flex items-center gap-3">
-          <Mail className="w-6 h-6 text-accent-500" />
-          <h1 className="text-xl font-semibold text-white">Email шаблоны</h1>
+          {!embedded && <Mail className="w-6 h-6 text-accent-500" />}
+          {!embedded && <h1 className="text-xl font-semibold text-white">Email шаблоны</h1>}
           <span className="px-2 py-1 bg-dark-700 rounded text-sm text-dark-400">
-            {filteredTemplates.length}
+            {filteredTemplates.length} шаблонов
           </span>
         </div>
 

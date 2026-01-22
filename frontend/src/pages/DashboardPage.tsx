@@ -5,7 +5,11 @@ import {
   Users,
   BarChart3,
   TrendingUp,
-  Activity
+  Activity,
+  Briefcase,
+  UserCheck,
+  Clock,
+  Target
 } from 'lucide-react';
 import {
   AreaChart,
@@ -17,6 +21,8 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import { getStats } from '@/services/api';
+import api from '@/services/api/client';
+import { useAuthStore } from '@/stores/authStore';
 
 const container = {
   hidden: { opacity: 0 },
@@ -31,11 +37,35 @@ const item = {
   show: { opacity: 1, y: 0 }
 };
 
+// HR Analytics types
+interface HRAnalytics {
+  vacancies_total: number;
+  vacancies_open: number;
+  candidates_total: number;
+  candidates_in_pipeline: number;
+  hires_this_month: number;
+  avg_time_to_hire_days: number | null;
+}
+
 export default function DashboardPage() {
+  const { hasFeature } = useAuthStore();
+  const hasCandidateDatabase = hasFeature('candidate_database');
+
   const { data: stats, isLoading } = useQuery({
     queryKey: ['stats'],
     queryFn: getStats,
-    staleTime: 30000, // Consider data stale after 30 seconds
+    staleTime: 30000,
+  });
+
+  // Load HR analytics only if user has access to candidate database
+  const { data: hrAnalytics } = useQuery({
+    queryKey: ['hr-analytics-overview'],
+    queryFn: async () => {
+      const { data } = await api.get<HRAnalytics>('/analytics/dashboard/overview');
+      return data;
+    },
+    staleTime: 60000,
+    enabled: hasCandidateDatabase,
   });
 
   if (isLoading || !stats) {
@@ -82,6 +112,52 @@ export default function DashboardPage() {
             </div>
           ))}
         </motion.div>
+
+        {/* HR Analytics Widget - only for users with candidate_database feature */}
+        {hasCandidateDatabase && hrAnalytics && (
+          <motion.div variants={item} className="glass rounded-2xl p-6">
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Target className="w-5 h-5 text-accent-500" />
+              HR Аналитика
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="glass-light rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Briefcase className="w-4 h-4 text-blue-400" />
+                  <span className="text-sm text-dark-400">Вакансии</span>
+                </div>
+                <p className="text-2xl font-bold">{hrAnalytics.vacancies_open}</p>
+                <p className="text-xs text-dark-500">открытых из {hrAnalytics.vacancies_total}</p>
+              </div>
+              <div className="glass-light rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <UserCheck className="w-4 h-4 text-green-400" />
+                  <span className="text-sm text-dark-400">Кандидаты</span>
+                </div>
+                <p className="text-2xl font-bold">{hrAnalytics.candidates_in_pipeline}</p>
+                <p className="text-xs text-dark-500">в работе из {hrAnalytics.candidates_total}</p>
+              </div>
+              <div className="glass-light rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <TrendingUp className="w-4 h-4 text-purple-400" />
+                  <span className="text-sm text-dark-400">Наймы</span>
+                </div>
+                <p className="text-2xl font-bold">{hrAnalytics.hires_this_month}</p>
+                <p className="text-xs text-dark-500">в этом месяце</p>
+              </div>
+              <div className="glass-light rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="w-4 h-4 text-orange-400" />
+                  <span className="text-sm text-dark-400">Время найма</span>
+                </div>
+                <p className="text-2xl font-bold">
+                  {hrAnalytics.avg_time_to_hire_days ? `${hrAnalytics.avg_time_to_hire_days}д` : '—'}
+                </p>
+                <p className="text-xs text-dark-500">в среднем</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         {/* Activity Chart */}
         <motion.div variants={item} className="glass rounded-2xl p-6">
