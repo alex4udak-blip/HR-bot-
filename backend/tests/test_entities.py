@@ -606,7 +606,7 @@ class TestCreateEntity:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["name"] == "New Contact"
         assert data["type"] == "candidate"
@@ -642,7 +642,7 @@ class TestCreateEntity:
                 headers=get_auth_headers(admin_token)
             )
 
-            assert response.status_code == 200
+            assert response.status_code == 201
             data = response.json()
             assert data["type"] == entity_type.value
 
@@ -662,7 +662,7 @@ class TestCreateEntity:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["tags"] == ["senior", "python", "remote"]
 
@@ -682,7 +682,7 @@ class TestCreateEntity:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["department_id"] == department.id
         assert data["department_name"] == "Test Department"
@@ -707,7 +707,7 @@ class TestCreateEntity:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["extra_data"]["linkedin"] == "https://linkedin.com/in/test"
         assert data["extra_data"]["years_experience"] == 5
@@ -735,7 +735,7 @@ class TestCreateEntity:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["name"] == "Full Contact"
         assert data["email"] == "full@test.com"
@@ -1496,7 +1496,7 @@ class TestTransferEntity:
         assert copy.is_transferred is True
         assert copy.transferred_to_id == second_user.id
         assert copy.created_by == admin_user.id  # Still owned by original owner
-        assert f"[Передан → " in copy.name  # Marked as transferred
+        assert "[Transferred ->" in copy.name  # Marked as transferred
 
     @pytest.mark.asyncio
     async def test_transfer_entity_with_department(
@@ -1919,7 +1919,7 @@ class TestEntityTypes:
                 headers=get_auth_headers(admin_token)
             )
 
-            assert response.status_code == 200
+            assert response.status_code == 201
             data = response.json()
             assert data["type"] == "candidate"
             assert data["status"] == status.value
@@ -1948,7 +1948,7 @@ class TestEntityTypes:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["type"] == "client"
         assert data["company"] == "Acme Corp"
@@ -1979,7 +1979,7 @@ class TestEntityTypes:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["type"] == "contractor"
         assert data["extra_data"]["hourly_rate"] == 150
@@ -2006,7 +2006,7 @@ class TestEntityTypes:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["type"] == "lead"
         assert data["status"] == "new"
@@ -2034,7 +2034,7 @@ class TestEntityTypes:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["type"] == "partner"
         assert data["extra_data"]["partnership_type"] == "reseller"
@@ -2059,7 +2059,7 @@ class TestEntityTypes:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["type"] == "custom"
         assert data["extra_data"]["custom_field_1"] == "value1"
@@ -2371,7 +2371,7 @@ class TestEntityTags:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert set(data["tags"]) == set(tags)
         assert len(data["tags"]) == 5
@@ -2392,7 +2392,7 @@ class TestEntityTags:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["tags"] == []
 
@@ -2411,7 +2411,7 @@ class TestEntityTags:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["tags"] == []
 
@@ -2971,7 +2971,7 @@ class TestEntityBulkOperations:
                 json=entity_data,
                 headers=get_auth_headers(admin_token)
             )
-            assert response.status_code == 200
+            assert response.status_code == 201
             created_ids.append(response.json()["id"])
 
         # Verify all created
@@ -3336,7 +3336,7 @@ class TestAdvancedTagFiltering:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         assert len(response.json()["tags"]) == 50
 
 
@@ -3603,7 +3603,7 @@ class TestCreateEntityEdgeCases:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["name"] == "Minimal Contact"
         assert data["type"] == "candidate"
@@ -3629,7 +3629,7 @@ class TestCreateEntityEdgeCases:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["telegram_user_id"] == 987654321
 
@@ -3649,7 +3649,7 @@ class TestCreateEntityEdgeCases:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["tags"] == []
 
@@ -3669,7 +3669,7 @@ class TestCreateEntityEdgeCases:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["extra_data"] == {}
 
@@ -3692,7 +3692,7 @@ class TestCreateEntityEdgeCases:
                 headers=get_auth_headers(admin_token)
             )
 
-            assert response.status_code == 200
+            assert response.status_code == 201
             data = response.json()
             assert data["status"] == status
 
@@ -3712,7 +3712,7 @@ class TestCreateEntityEdgeCases:
             headers=get_auth_headers(superadmin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["created_by"] == superadmin_user.id
 
@@ -3742,7 +3742,7 @@ class TestCreateEntityEdgeCases:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert "skills" in data["extra_data"]
         assert "experience" in data["extra_data"]
@@ -3764,7 +3764,7 @@ class TestCreateEntityEdgeCases:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["name"] == "José García 北京 🚀"
 
@@ -3786,7 +3786,7 @@ class TestCreateEntityEdgeCases:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["name"] == "O'Brien & Associates"
         assert data["company"] == "Test & Co."
@@ -4492,7 +4492,7 @@ class TestBulkOperationsAdvanced:
             json=valid_entity,
             headers=get_auth_headers(admin_token)
         )
-        assert response1.status_code == 200
+        assert response1.status_code == 201
 
         # Create invalid entity
         response2 = await client.post(

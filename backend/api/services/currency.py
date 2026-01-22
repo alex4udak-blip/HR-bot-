@@ -13,6 +13,10 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional
 from decimal import Decimal, ROUND_HALF_UP
 
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+from ..utils.http_client import get_http_client
+
 logger = logging.getLogger("hr-analyzer.currency")
 
 # Supported currencies in the system
@@ -110,6 +114,33 @@ class CurrencyRateCache:
 _cache = CurrencyRateCache()
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((httpx.TimeoutException, httpx.HTTPStatusError)),
+    reraise=True
+)
+async def _fetch_rates_request(url: str) -> Dict[str, float]:
+    """Execute the API request with retry logic."""
+    client = get_http_client()
+    response = await client.get(url, timeout=10.0)
+    response.raise_for_status()
+    data = response.json()
+
+    rates = data.get("rates", {})
+    if not rates:
+        raise ValueError("API returned empty rates")
+
+    # Filter to only supported currencies
+    filtered_rates = {
+        currency: float(rate)
+        for currency, rate in rates.items()
+        if currency in SUPPORTED_CURRENCIES
+    }
+
+    return filtered_rates
+
+
 async def fetch_rates_from_api(base: str = "USD") -> Optional[Dict[str, float]]:
     """
     Fetch exchange rates from external API.
@@ -122,31 +153,18 @@ async def fetch_rates_from_api(base: str = "USD") -> Optional[Dict[str, float]]:
     """
     try:
         url = EXCHANGE_RATE_API_URL.format(base=base)
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=10.0)
-            response.raise_for_status()
-            data = response.json()
-
-            rates = data.get("rates", {})
-            if not rates:
-                logger.warning("API returned empty rates")
-                return None
-
-            # Filter to only supported currencies
-            filtered_rates = {
-                currency: float(rate)
-                for currency, rate in rates.items()
-                if currency in SUPPORTED_CURRENCIES
-            }
-
-            logger.info(f"Fetched {len(filtered_rates)} exchange rates from API")
-            return filtered_rates
+        filtered_rates = await _fetch_rates_request(url)
+        logger.info(f"Fetched {len(filtered_rates)} exchange rates from API")
+        return filtered_rates
 
     except httpx.TimeoutException:
-        logger.warning("Exchange rate API request timed out")
+        logger.warning("Exchange rate API request timed out after 3 retries")
         return None
     except httpx.HTTPStatusError as e:
         logger.warning(f"Exchange rate API returned status {e.response.status_code}")
+        return None
+    except ValueError as e:
+        logger.warning(str(e))
         return None
     except Exception as e:
         logger.error(f"Error fetching exchange rates: {e}")

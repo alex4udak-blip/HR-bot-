@@ -14,6 +14,7 @@ import subprocess
 from datetime import datetime
 from typing import Optional
 
+import aiofiles
 from openai import AsyncOpenAI
 from anthropic import AsyncAnthropic, APIError, APIConnectionError
 from sqlalchemy import select
@@ -213,12 +214,17 @@ class CallProcessor:
 
     async def _transcribe_single_file(self, audio_path: str) -> str:
         """Transcribe a single audio file (must be under 25MB)."""
-        with open(audio_path, 'rb') as f:
-            response = await self.openai.audio.transcriptions.create(
-                model="whisper-1",
-                file=f,
-                language="ru"
-            )
+        async with aiofiles.open(audio_path, 'rb') as f:
+            file_content = await f.read()
+        # OpenAI API needs a file-like object with a name attribute
+        import io
+        file_obj = io.BytesIO(file_content)
+        file_obj.name = os.path.basename(audio_path)
+        response = await self.openai.audio.transcriptions.create(
+            model="whisper-1",
+            file=file_obj,
+            language="ru"
+        )
         return response.text
 
     async def _split_audio_chunks(self, audio_path: str, chunk_duration_sec: int = 600) -> list:

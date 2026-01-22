@@ -173,6 +173,8 @@ export default function EmptyState({
     <Wrapper
       className={clsx('text-center flex flex-col items-center', styles.container, className)}
       {...wrapperProps}
+      role="status"
+      aria-label={title}
     >
       {/* Illustration or Icon */}
       <ItemWrapper {...(animated ? { variants: iconVariants } : {})}>
@@ -188,7 +190,7 @@ export default function EmptyState({
               variantStyle.iconBg
             )}
           >
-            <Icon className={clsx(styles.icon, variantStyle.iconColor)} />
+            <Icon className={clsx(styles.icon, variantStyle.iconColor)} aria-hidden="true" />
           </div>
         )}
       </ItemWrapper>
@@ -248,7 +250,7 @@ export default function EmptyState({
                     buttonVariantStyles[actionItem.variant || 'primary']
                   )}
                 >
-                  {ActionIcon && <ActionIcon className="w-4 h-4" />}
+                  {ActionIcon && <ActionIcon className="w-4 h-4" aria-hidden="true" />}
                   {actionItem.label}
                 </button>
               );

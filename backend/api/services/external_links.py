@@ -16,6 +16,7 @@ import asyncio
 import subprocess
 import threading
 import aiohttp
+import aiofiles
 from datetime import datetime
 from typing import Optional, Tuple
 from urllib.parse import urlparse, unquote
@@ -2152,10 +2153,10 @@ class ExternalLinkProcessor:
                 # Create temp file
                 file_path = os.path.join(self.temp_dir, f"{filename}{ext}")
 
-                # Download
-                with open(file_path, 'wb') as f:
+                # Download with non-blocking I/O
+                async with aiofiles.open(file_path, 'wb') as f:
                     async for chunk in response.content.iter_chunked(8192):
-                        f.write(chunk)
+                        await f.write(chunk)
 
                 file_size = os.path.getsize(file_path)
                 logger.info(f"Downloaded file: {file_path} ({file_size} bytes)")

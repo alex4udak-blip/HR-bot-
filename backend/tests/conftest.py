@@ -7,6 +7,7 @@ os.environ["TESTING"] = "1"
 # Set required environment variables for testing
 os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only"
 os.environ["SUPERADMIN_PASSWORD"] = "test-superadmin-password"
+os.environ["SUPERADMIN_EMAIL"] = "test-superadmin@test.com"
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 
 import asyncio
@@ -87,15 +88,28 @@ async def db_session(async_engine) -> AsyncGenerator[AsyncSession, None]:
 @pytest_asyncio.fixture(scope="function")
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Create async test client with database override."""
+    from api.limiter import limiter
 
     async def override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
 
+    # Reset rate limiter storage before each test to avoid test interference
+    try:
+        limiter._storage.reset()
+    except Exception:
+        pass  # Ignore if reset fails
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+    # Reset rate limiter after test too
+    try:
+        limiter._storage.reset()
+    except Exception:
+        pass
 
     app.dependency_overrides.clear()
 

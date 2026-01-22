@@ -141,29 +141,34 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
           exit={{ scale: 0.9, opacity: 0 }}
           className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-lg max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col"
           onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="share-modal-title"
         >
           {/* Header */}
           <div className="flex items-center justify-between mb-6 flex-shrink-0">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-cyan-500/20 rounded-lg">
-                <Share2 className="text-cyan-400" size={20} />
+                <Share2 className="text-cyan-400" size={20} aria-hidden="true" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-white">Поделиться</h3>
+                <h3 id="share-modal-title" className="text-lg font-semibold text-white">Поделиться</h3>
                 <p className="text-sm text-white/60">{resourceName}</p>
               </div>
             </div>
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg hover:bg-white/10 text-white/60"
+              aria-label="Закрыть окно"
             >
-              <X size={20} />
+              <X size={20} aria-hidden="true" />
             </button>
           </div>
 
           {loadingUsers ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
+            <div className="flex items-center justify-center py-8" role="status" aria-live="polite">
+              <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" aria-hidden="true" />
+              <span className="sr-only">Загрузка...</span>
             </div>
           ) : (
             <>
@@ -181,6 +186,7 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
                         value={selectedUserId || ''}
                         onChange={(e) => setSelectedUserId(e.target.value ? Number(e.target.value) : null)}
                         className="w-full p-2 bg-white/5 border border-white/10 rounded-lg text-white mb-3"
+                        aria-label="Выберите пользователя для предоставления доступа"
                       >
                         <option value="">Выберите пользователя...</option>
                         {availableUsers.map((user) => {
@@ -201,26 +207,32 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
                       </select>
 
                       {/* Access level */}
-                      <div className="flex gap-2 mb-3">
-                        {ACCESS_LEVELS.map((level) => {
-                          const Icon = level.icon;
-                          return (
-                            <button
-                              key={level.id}
-                              onClick={() => setAccessLevel(level.id)}
-                              className={clsx(
-                                'flex-1 p-2 rounded-lg border transition-colors text-sm',
-                                accessLevel === level.id
-                                  ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
-                                  : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
-                              )}
-                            >
-                              <Icon size={16} className="mx-auto mb-1" />
-                              {level.label}
-                            </button>
-                          );
-                        })}
-                      </div>
+                      <fieldset className="mb-3">
+                        <legend className="sr-only">Уровень доступа</legend>
+                        <div className="flex gap-2" role="radiogroup" aria-label="Уровень доступа">
+                          {ACCESS_LEVELS.map((level) => {
+                            const Icon = level.icon;
+                            return (
+                              <button
+                                key={level.id}
+                                onClick={() => setAccessLevel(level.id)}
+                                className={clsx(
+                                  'flex-1 p-2 rounded-lg border transition-colors text-sm',
+                                  accessLevel === level.id
+                                    ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
+                                    : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+                                )}
+                                role="radio"
+                                aria-checked={accessLevel === level.id}
+                                aria-label={`${level.label}: ${level.description}`}
+                              >
+                                <Icon size={16} className="mx-auto mb-1" aria-hidden="true" />
+                                {level.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </fieldset>
 
                       {/* Note */}
                       <input
@@ -229,6 +241,7 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
                         value={note}
                         onChange={(e) => setNote(e.target.value)}
                         className="w-full p-2 bg-white/5 border border-white/10 rounded-lg text-white mb-3 placeholder-white/40"
+                        aria-label="Комментарий к доступу"
                       />
 
                       {/* Share button */}
@@ -236,13 +249,14 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
                         onClick={handleShare}
                         disabled={!selectedUserId || loading}
                         className="w-full py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        aria-busy={loading}
                       >
                         {loading ? (
-                          <Loader2 size={16} className="animate-spin" />
+                          <Loader2 size={16} className="animate-spin" aria-hidden="true" />
                         ) : (
-                          <Share2 size={16} />
+                          <Share2 size={16} aria-hidden="true" />
                         )}
-                        Поделиться
+                        {loading ? 'Предоставление доступа...' : 'Поделиться'}
                       </button>
                     </>
                   )}
@@ -282,9 +296,9 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
                             <button
                               onClick={() => handleRevoke(share.id)}
                               className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400"
-                              title="Отозвать доступ"
+                              aria-label={`Отозвать доступ у ${share.shared_with_name}`}
                             >
-                              <Trash2 size={16} />
+                              <Trash2 size={16} aria-hidden="true" />
                             </button>
                           )}
                         </div>

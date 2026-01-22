@@ -3,6 +3,9 @@ import tempfile
 import asyncio
 import subprocess
 import glob
+import io
+
+import aiofiles
 from openai import AsyncOpenAI
 from ..config import get_settings
 
@@ -74,10 +77,14 @@ class TranscriptionService:
     async def _transcribe_single_file(self, file_path: str) -> str:
         """Transcribe a single audio file (must be under 25MB)."""
         try:
-            with open(file_path, "rb") as f:
-                response = await self.client.audio.transcriptions.create(
-                    model="whisper-1", file=f, language="ru"
-                )
+            async with aiofiles.open(file_path, "rb") as f:
+                file_content = await f.read()
+            # OpenAI API needs a file-like object with a name attribute
+            file_obj = io.BytesIO(file_content)
+            file_obj.name = os.path.basename(file_path)
+            response = await self.client.audio.transcriptions.create(
+                model="whisper-1", file=file_obj, language="ru"
+            )
             return response.text
         except Exception as e:
             return f"[Ошибка транскрипции: {e}]"
@@ -196,8 +203,8 @@ class TranscriptionService:
                 return "[Видео без звука]"
 
             # Read audio and transcribe
-            with open(audio_path, "rb") as f:
-                audio_bytes = f.read()
+            async with aiofiles.open(audio_path, "rb") as f:
+                audio_bytes = await f.read()
             return await self.transcribe_audio(audio_bytes)
         except Exception as e:
             return f"[Ошибка транскрипции видео: {e}]"

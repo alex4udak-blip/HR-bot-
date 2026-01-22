@@ -181,8 +181,11 @@ class TestLoginEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        assert "access_token" in data
-        assert data["token_type"] == "bearer"
+        # Tokens are now set in httpOnly cookies, response contains user data
+        assert "id" in data
+        assert data["email"] == "admin@test.com"
+        # Check that access_token cookie is set
+        assert "access_token" in response.cookies
 
     @pytest.mark.asyncio
     async def test_login_wrong_password(self, client, admin_user):

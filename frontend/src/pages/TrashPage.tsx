@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getDeletedChats, restoreChat, permanentDeleteChat } from '@/services/api';
+import { formatDate } from '@/utils';
 import type { Chat } from '@/types';
 
 export default function TrashPage() {
@@ -48,16 +49,6 @@ export default function TrashPage() {
     },
   });
 
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return '';
-    return new Date(dateString).toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
 
   if (isLoading) {
     return (
@@ -118,7 +109,7 @@ export default function TrashPage() {
                       <span>{chat.messages_count} сообщений</span>
                       <span className="flex items-center gap-1">
                         <Clock className="w-3.5 h-3.5" />
-                        Удалён: {formatDate(chat.deleted_at)}
+                        Удалён: {formatDate(chat.deleted_at, 'long')}
                       </span>
                     </div>
                     {chat.days_until_permanent_delete !== undefined && (

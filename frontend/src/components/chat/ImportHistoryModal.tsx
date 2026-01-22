@@ -206,12 +206,15 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
             exit={{ scale: 0.9, opacity: 0 }}
             className="glass rounded-2xl p-6 max-w-lg w-full max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-history-modal-title"
           >
             {/* Header */}
             <div className="flex items-center justify-between mb-6 flex-shrink-0 gap-3">
               <div className="flex-1 min-w-0">
-                <h2 className="text-xl font-semibold flex items-center gap-2">
-                  <Upload className="w-5 h-5 text-accent-400" />
+                <h2 id="import-history-modal-title" className="text-xl font-semibold flex items-center gap-2">
+                  <Upload className="w-5 h-5 text-accent-400" aria-hidden="true" />
                   Загрузить историю
                 </h2>
                 <p className="text-sm text-dark-400 mt-1 truncate">{chatTitle}</p>
@@ -219,15 +222,16 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
               <button
                 onClick={handleClose}
                 className="p-2 rounded-lg hover:bg-white/5 transition-colors flex-shrink-0"
+                aria-label="Закрыть окно"
               >
-                <X className="w-5 h-5" />
+                <X className="w-5 h-5" aria-hidden="true" />
               </button>
             </div>
 
             {/* Instructions */}
             <div className="mb-4 glass-light rounded-xl overflow-hidden max-h-[200px] overflow-y-auto flex-shrink-0">
               {/* Platform tabs */}
-              <div className="flex border-b border-white/5 sticky top-0 bg-dark-800/95 backdrop-blur-sm">
+              <div className="flex border-b border-white/5 sticky top-0 bg-dark-800/95 backdrop-blur-sm" role="tablist" aria-label="Выбор платформы">
                 <button
                   onClick={() => setPlatform('mac')}
                   className={clsx(
@@ -236,8 +240,11 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                       ? 'bg-white/5 text-white'
                       : 'text-dark-400 hover:text-dark-200'
                   )}
+                  role="tab"
+                  aria-selected={platform === 'mac'}
+                  aria-controls="platform-mac-panel"
                 >
-                  <Apple className="w-4 h-4" />
+                  <Apple className="w-4 h-4" aria-hidden="true" />
                   macOS
                 </button>
                 <button
@@ -248,8 +255,11 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                       ? 'bg-white/5 text-white'
                       : 'text-dark-400 hover:text-dark-200'
                   )}
+                  role="tab"
+                  aria-selected={platform === 'windows'}
+                  aria-controls="platform-windows-panel"
                 >
-                  <Monitor className="w-4 h-4" />
+                  <Monitor className="w-4 h-4" aria-hidden="true" />
                   Windows
                 </button>
               </div>
@@ -315,12 +325,15 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                 ${isDragging ? 'border-accent-400 bg-accent-500/10' : 'border-dark-700 hover:border-dark-500'}
                 ${file ? 'border-green-500/50 bg-green-500/5' : ''}
               `}
+              role="button"
+              aria-label="Область для загрузки файла истории чата"
             >
               <input
                 type="file"
                 accept=".json,.zip,.html,.htm"
                 onChange={handleFileChange}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                aria-label="Выбрать файл для загрузки"
               />
 
               {file ? (
@@ -357,12 +370,14 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className={`mt-4 p-4 rounded-xl ${result.imported > 0 ? 'bg-green-500/10' : 'bg-yellow-500/10'}`}
+                role="status"
+                aria-live="polite"
               >
                 <div className="flex items-start gap-3">
                   {result.imported > 0 ? (
-                    <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                    <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" aria-hidden="true" />
                   ) : (
-                    <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+                    <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" aria-hidden="true" />
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="font-medium">
@@ -521,10 +536,13 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="mt-4 p-4 rounded-xl bg-accent-500/10 border border-accent-500/20"
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
               >
                 <div className="flex items-center gap-3 mb-3">
                   <div className="relative flex-shrink-0">
-                    <Loader2 className="w-6 h-6 text-accent-400 animate-spin" />
+                    <Loader2 className="w-6 h-6 text-accent-400 animate-spin" aria-hidden="true" />
                     <div className="absolute inset-0 w-6 h-6 rounded-full border-2 border-accent-400/20" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -597,15 +615,16 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                   onClick={handleImport}
                   disabled={!file || importMutation.isPending}
                   className="flex-1 px-4 py-2.5 rounded-xl bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                  aria-busy={importMutation.isPending}
                 >
                   {importMutation.isPending ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
                       Импорт...
                     </>
                   ) : (
                     <>
-                      <Upload className="w-4 h-4" />
+                      <Upload className="w-4 h-4" aria-hidden="true" />
                       Импортировать
                     </>
                   )}

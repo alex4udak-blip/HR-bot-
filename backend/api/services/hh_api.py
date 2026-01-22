@@ -12,6 +12,9 @@ import logging
 from typing import Optional, Dict, Any
 
 from pydantic import BaseModel
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+from ..utils.http_client import get_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +59,12 @@ def extract_vacancy_id(url: str) -> Optional[str]:
     return None
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((httpx.TimeoutException, httpx.HTTPStatusError)),
+    reraise=True
+)
 async def fetch_vacancy_from_api(vacancy_id: str) -> Dict[str, Any]:
     """Fetch vacancy data from hh.ru API.
 
@@ -69,14 +78,14 @@ async def fetch_vacancy_from_api(vacancy_id: str) -> Dict[str, Any]:
         httpx.HTTPStatusError: If the API returns an error status
     """
     url = f"{HH_API_BASE}/vacancies/{vacancy_id}"
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            url,
-            headers={"User-Agent": "HR-Bot/1.0"},
-            timeout=10.0
-        )
-        response.raise_for_status()
-        return response.json()
+    client = get_http_client()
+    response = await client.get(
+        url,
+        headers={"User-Agent": "HR-Bot/1.0"},
+        timeout=10.0
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def map_hh_experience(experience_id: str) -> str:

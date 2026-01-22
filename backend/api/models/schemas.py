@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, List, Any, Literal
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from .database import ChatType
+from .database import ChatType, UserRole, EntityType, EntityStatus, OrgRole, DeptRole
 
 
 # Auth
@@ -72,7 +72,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     name: str
-    role: str = "admin"
+    role: UserRole = UserRole.admin  # Use enum for proper validation
     telegram_id: Optional[int] = None
     telegram_username: Optional[str] = None
     department_id: Optional[int] = None
@@ -93,7 +93,7 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     name: Optional[str] = None
-    role: Optional[str] = None
+    role: Optional[UserRole] = None  # Use enum for proper validation
     telegram_id: Optional[int] = None
     telegram_username: Optional[str] = None
     is_active: Optional[bool] = None
@@ -112,7 +112,7 @@ class UserResponse(BaseModel):
     id: int
     email: str
     name: str
-    role: str
+    role: UserRole  # Use enum for consistency with database
     telegram_id: Optional[int]
     telegram_username: Optional[str]
     additional_emails: List[str] = []
@@ -154,7 +154,7 @@ class ChatResponse(BaseModel):
     telegram_chat_id: int
     title: str
     custom_name: Optional[str]
-    chat_type: str = "hr"
+    chat_type: ChatType = ChatType.hr  # Use enum for consistency
     custom_type_name: Optional[str] = None
     custom_type_description: Optional[str] = None
     owner_id: Optional[int]

@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 import httpx
+import aiofiles
 
 from ..database import get_db
 from ..models.database import User, UserRole, Chat, Message
@@ -26,7 +27,7 @@ async def get_messages(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
     page: int = Query(1, ge=1),
-    limit: int = Query(1000, le=2000),
+    limit: int = Query(100, le=500),  # Reduced from 1000/2000 for better performance
     content_type: str = Query(None),
 ):
     user = await db.merge(user)
@@ -285,10 +286,10 @@ async def get_local_file(
             end = min(end, file_size - 1)
             content_length = end - start + 1
 
-            # Read the requested range
-            with open(file_path, "rb") as f:
-                f.seek(start)
-                data = f.read(content_length)
+            # Read the requested range with non-blocking I/O
+            async with aiofiles.open(file_path, "rb") as f:
+                await f.seek(start)
+                data = await f.read(content_length)
 
             return Response(
                 content=data,

@@ -193,6 +193,9 @@ export default function CommandPalette() {
           transition={{ duration: 0.15 }}
           className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] bg-black/60 backdrop-blur-sm"
           onClick={handleBackdropClick}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Command palette search"
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: -20 }}
@@ -206,9 +209,9 @@ export default function CommandPalette() {
               <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10">
                 <div className="flex-shrink-0">
                   {isLoading ? (
-                    <Loader2 className="w-5 h-5 text-accent-400 animate-spin" />
+                    <Loader2 className="w-5 h-5 text-accent-400 animate-spin" aria-hidden="true" />
                   ) : (
-                    <Search className="w-5 h-5 text-white/40" />
+                    <Search className="w-5 h-5 text-white/40" aria-hidden="true" />
                   )}
                 </div>
 
@@ -221,17 +224,23 @@ export default function CommandPalette() {
                   className="flex-1 bg-transparent text-white placeholder:text-white/40 focus:outline-none text-base"
                   autoComplete="off"
                   spellCheck={false}
+                  role="combobox"
+                  aria-expanded={hasResults}
+                  aria-controls="command-palette-results"
+                  aria-activedescendant={hasResults && selectedIndex >= 0 ? `command-palette-item-${selectedIndex}` : undefined}
+                  aria-label="Поиск кандидатов, вакансий, страниц"
                 />
 
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-1 text-xs text-white/40 bg-white/5 border border-white/10 rounded-lg">
+                  <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-1 text-xs text-white/40 bg-white/5 border border-white/10 rounded-lg" aria-hidden="true">
                     Esc
                   </kbd>
                   <button
                     onClick={close}
                     className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                    aria-label="Закрыть поиск"
                   >
-                    <X className="w-4 h-4 text-white/60" />
+                    <X className="w-4 h-4 text-white/60" aria-hidden="true" />
                   </button>
                 </div>
               </div>
@@ -240,31 +249,38 @@ export default function CommandPalette() {
               <div
                 ref={listRef}
                 className="max-h-[400px] overflow-y-auto"
+                id="command-palette-results"
+                role="listbox"
+                aria-label="Результаты поиска"
               >
                 {/* Recent Searches */}
                 {showRecentSearches && (
                   <div className="p-2">
-                    <div className="px-3 py-2 flex items-center gap-2 text-xs text-white/40 uppercase tracking-wide">
-                      <Clock className="w-3.5 h-3.5" />
+                    <div className="px-3 py-2 flex items-center gap-2 text-xs text-white/40 uppercase tracking-wide" id="recent-searches-label">
+                      <Clock className="w-3.5 h-3.5" aria-hidden="true" />
                       Недавние поиски
                     </div>
-                    {recentSearches.slice(0, 5).map((search) => (
-                      <button
-                        key={search}
-                        onClick={() => setQuery(search)}
-                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-white/5 transition-colors"
-                      >
-                        <Clock className="w-4 h-4 text-white/30 flex-shrink-0" />
-                        <span className="text-sm text-white/70 truncate">{search}</span>
-                      </button>
-                    ))}
+                    <div role="group" aria-labelledby="recent-searches-label">
+                      {recentSearches.slice(0, 5).map((search) => (
+                        <button
+                          key={search}
+                          onClick={() => setQuery(search)}
+                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-white/5 transition-colors"
+                          role="option"
+                          aria-label={`Искать: ${search}`}
+                        >
+                          <Clock className="w-4 h-4 text-white/30 flex-shrink-0" aria-hidden="true" />
+                          <span className="text-sm text-white/70 truncate">{search}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
                 {/* No Results */}
                 {query && !hasResults && !isLoading && (
-                  <div className="px-4 py-8 text-center">
-                    <Search className="w-12 h-12 text-white/20 mx-auto mb-3" />
+                  <div className="px-4 py-8 text-center" role="status" aria-live="polite">
+                    <Search className="w-12 h-12 text-white/20 mx-auto mb-3" aria-hidden="true" />
                     <p className="text-white/60 text-sm">
                       Ничего не найдено по запросу "<span className="text-white/80">{query}</span>"
                     </p>
@@ -283,8 +299,8 @@ export default function CommandPalette() {
 
                   return (
                     <div key={category} className="p-2">
-                      <div className="px-3 py-2 flex items-center gap-2 text-xs text-white/40 uppercase tracking-wide">
-                        <CategoryIcon className="w-3.5 h-3.5" />
+                      <div className="px-3 py-2 flex items-center gap-2 text-xs text-white/40 uppercase tracking-wide" id={`category-${category}-label`}>
+                        <CategoryIcon className="w-3.5 h-3.5" aria-hidden="true" />
                         {categoryLabels[category]}
                         <span className="ml-auto text-white/30">{items.length}</span>
                       </div>
@@ -297,6 +313,7 @@ export default function CommandPalette() {
                         return (
                           <button
                             key={item.id}
+                            id={`command-palette-item-${flatIndex}`}
                             data-index={flatIndex}
                             onClick={() => item.action()}
                             onMouseEnter={() => setSelectedIndex(flatIndex)}
@@ -304,6 +321,8 @@ export default function CommandPalette() {
                               'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors group',
                               isSelected ? 'bg-accent-500/20 text-white' : 'hover:bg-white/5 text-white/80'
                             )}
+                            role="option"
+                            aria-selected={isSelected}
                           >
                             <div className={clsx(
                               'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
@@ -312,7 +331,7 @@ export default function CommandPalette() {
                               <ItemIcon className={clsx(
                                 'w-4 h-4',
                                 isSelected ? 'text-accent-400' : 'text-white/60'
-                              )} />
+                              )} aria-hidden="true" />
                             </div>
 
                             <div className="flex-1 min-w-0">
@@ -327,7 +346,7 @@ export default function CommandPalette() {
                             </div>
 
                             {item.shortcut && (
-                              <kbd className="hidden sm:inline-flex items-center px-2 py-1 text-xs text-white/40 bg-white/5 border border-white/10 rounded">
+                              <kbd className="hidden sm:inline-flex items-center px-2 py-1 text-xs text-white/40 bg-white/5 border border-white/10 rounded" aria-hidden="true">
                                 {item.shortcut}
                               </kbd>
                             )}
@@ -335,7 +354,7 @@ export default function CommandPalette() {
                             <ArrowRight className={clsx(
                               'w-4 h-4 flex-shrink-0 transition-opacity',
                               isSelected ? 'opacity-100 text-accent-400' : 'opacity-0'
-                            )} />
+                            )} aria-hidden="true" />
                           </button>
                         );
                       })}
@@ -346,7 +365,7 @@ export default function CommandPalette() {
                 {/* Hints */}
                 {!query && !showRecentSearches && (
                   <div className="px-4 py-6 text-center">
-                    <Command className="w-10 h-10 text-white/20 mx-auto mb-3" />
+                    <Command className="w-10 h-10 text-white/20 mx-auto mb-3" aria-hidden="true" />
                     <p className="text-white/50 text-sm mb-4">
                       Начните вводить для поиска
                     </p>

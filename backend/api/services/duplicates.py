@@ -347,6 +347,43 @@ class DuplicateDetectionService:
                     error="Primary entity not found"
                 )
 
+            # Check if primary entity is already merged
+            if primary.status == EntityStatus.merged:
+                merged_into = (primary.extra_data or {}).get('merged_into')
+                return MergeResult(
+                    success=False,
+                    primary_entity_id=primary_id,
+                    merged_entity_ids=duplicate_ids,
+                    error=f"Primary entity {primary_id} was already merged into {merged_into}"
+                )
+
+            # Check for circular merges - prevent merging entities that have primary as their merge target
+            for dupe_id in duplicate_ids:
+                result = await db.execute(
+                    select(Entity).where(Entity.id == dupe_id)
+                )
+                dupe = result.scalar_one_or_none()
+                if dupe:
+                    # Check if this dupe was previously merged INTO the primary
+                    if dupe.status == EntityStatus.merged:
+                        dupe_merged_into = (dupe.extra_data or {}).get('merged_into')
+                        if dupe_merged_into == primary_id:
+                            return MergeResult(
+                                success=False,
+                                primary_entity_id=primary_id,
+                                merged_entity_ids=duplicate_ids,
+                                error=f"Circular merge detected: entity {dupe_id} was already merged into {primary_id}"
+                            )
+                    # Check if primary was previously merged into this dupe
+                    primary_merged_into = (primary.extra_data or {}).get('merged_into')
+                    if primary_merged_into == dupe_id:
+                        return MergeResult(
+                            success=False,
+                            primary_entity_id=primary_id,
+                            merged_entity_ids=duplicate_ids,
+                            error=f"Circular merge detected: primary {primary_id} was merged into {dupe_id}"
+                        )
+
             chats_transferred = 0
             calls_transferred = 0
             files_transferred = 0
@@ -416,16 +453,68 @@ class DuplicateDetectionService:
                     extra['merged_by'] = user_id
                     dupe_entity.extra_data = extra
 
-            # Update primary entity's tags with combined tags
+            # Collect all contact identifiers from duplicates to merge into primary
             all_tags = set(primary.tags or [])
+            all_emails = set(primary.emails or [])
+            all_phones = set(primary.phones or [])
+            all_telegram = set(primary.telegram_usernames or [])
+
+            # Add primary's main email/phone if not already in lists
+            if primary.email:
+                all_emails.add(primary.email.lower().strip())
+            if primary.phone:
+                normalized = normalize_phone(primary.phone)
+                if normalized:
+                    all_phones.add(normalized)
+
             for dupe_id in duplicate_ids:
                 result = await db.execute(
                     select(Entity).where(Entity.id == dupe_id)
                 )
                 dupe = result.scalar_one_or_none()
-                if dupe and dupe.tags:
-                    all_tags.update(dupe.tags)
+                if dupe:
+                    # Tags
+                    if dupe.tags:
+                        all_tags.update(dupe.tags)
+
+                    # Emails - collect main email and additional emails
+                    if dupe.email:
+                        all_emails.add(dupe.email.lower().strip())
+                    if dupe.emails:
+                        for email in dupe.emails:
+                            if email:
+                                all_emails.add(email.lower().strip())
+
+                    # Phones - normalize and collect
+                    if dupe.phone:
+                        normalized = normalize_phone(dupe.phone)
+                        if normalized:
+                            all_phones.add(normalized)
+                    if dupe.phones:
+                        for phone in dupe.phones:
+                            normalized = normalize_phone(phone)
+                            if normalized:
+                                all_phones.add(normalized)
+
+                    # Telegram usernames - normalize (lowercase, no @)
+                    if dupe.telegram_usernames:
+                        for tg in dupe.telegram_usernames:
+                            if tg:
+                                normalized = tg.lower().strip().lstrip('@')
+                                if normalized:
+                                    all_telegram.add(normalized)
+
+            # Update primary with combined contact data
             primary.tags = list(all_tags)
+            primary.emails = list(all_emails)
+            primary.phones = list(all_phones)
+            primary.telegram_usernames = list(all_telegram)
+
+            logger.info(
+                f"Merged contacts into primary {primary_id}: "
+                f"emails={len(all_emails)}, phones={len(all_phones)}, "
+                f"telegram={len(all_telegram)}, tags={len(all_tags)}"
+            )
 
             await db.commit()
 

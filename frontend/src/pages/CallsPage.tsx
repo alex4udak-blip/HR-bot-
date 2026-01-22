@@ -19,6 +19,7 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useCallStore } from '@/stores/callStore';
 import { useAuthStore } from '@/stores/authStore';
+import { formatDate } from '@/utils';
 import type { CallStatus, CallRecording } from '@/types';
 import { CALL_STATUS_LABELS, CALL_STATUS_COLORS } from '@/types';
 import CallRecorderModal from '@/components/calls/CallRecorderModal';
@@ -151,14 +152,6 @@ export default function CallsPage() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('ru-RU', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
 
   const getStatusIcon = (status: CallStatus) => {
     switch (status) {
@@ -354,7 +347,7 @@ export default function CallsPage() {
                           <Clock size={12} />
                           {formatDuration(call.duration_seconds)}
                         </span>
-                        <span className="flex-shrink-0">{formatDate(call.created_at)}</span>
+                        <span className="flex-shrink-0">{formatDate(call.created_at, 'long')}</span>
                         {call.entity_name && call.title && (
                           <span className="text-cyan-400/60 truncate min-w-0">• {call.entity_name}</span>
                         )}
@@ -431,7 +424,7 @@ export default function CallsPage() {
                   {currentCall.title || currentCall.entity_name || 'Звонок ' + currentCall.source_type.toUpperCase()}
                 </h2>
                 <p className="text-sm text-white/60 truncate">
-                  {formatDate(currentCall.created_at)} • {formatDuration(currentCall.duration_seconds)}
+                  {formatDate(currentCall.created_at, 'long')} • {formatDuration(currentCall.duration_seconds)}
                   {currentCall.entity_name && currentCall.title && ` • ${currentCall.entity_name}`}
                 </p>
               </div>

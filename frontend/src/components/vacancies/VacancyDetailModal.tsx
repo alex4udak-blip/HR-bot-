@@ -24,7 +24,7 @@ import {
   VACANCY_STATUS_LABELS,
   VACANCY_STATUS_COLORS
 } from '@/types';
-import { formatSalary } from '@/utils';
+import { formatSalary, formatDate } from '@/utils';
 
 interface VacancyDetailModalProps {
   vacancy: Vacancy;
@@ -33,14 +33,6 @@ interface VacancyDetailModalProps {
 }
 
 export default function VacancyDetailModal({ vacancy, onClose, onEdit }: VacancyDetailModalProps) {
-  const formatDate = (date?: string) => {
-    if (!date) return 'Не указана';
-    return new Date(date).toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
-    });
-  };
 
   // Calculate stats
   const totalCandidates = vacancy.applications_count || 0;
@@ -193,7 +185,7 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit }: Vacancy
                 <Calendar className="w-4 h-4" />
                 <span className="text-xs">Создана</span>
               </div>
-              <p className="font-medium text-sm">{formatDate(vacancy.created_at)}</p>
+              <p className="font-medium text-sm">{formatDate(vacancy.created_at, 'medium') || 'Не указана'}</p>
             </div>
           </div>
 

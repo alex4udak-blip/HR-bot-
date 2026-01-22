@@ -169,9 +169,6 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
         expected_salary_currency: formData.expected_salary_currency || 'RUB'
       };
 
-      // Debug: log what we're sending
-      console.log('[ContactForm] Creating entity with data:', JSON.stringify(data, null, 2));
-
       let result: Entity;
       if (entity) {
         await updateEntity(entity.id, data);

@@ -65,9 +65,10 @@ export default function ConfirmDialog({
           className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           onClick={loading ? undefined : onCancel}
           onKeyDown={handleKeyDown}
-          role="dialog"
+          role="alertdialog"
           aria-modal="true"
           aria-labelledby="confirm-dialog-title"
+          aria-describedby="confirm-dialog-description"
         >
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
@@ -79,7 +80,7 @@ export default function ConfirmDialog({
             {/* Header */}
             <div className="flex items-start gap-4 p-5">
               <div className={clsx('p-2 rounded-lg', config.bgColor)}>
-                <Icon className={clsx('w-6 h-6', config.iconColor)} />
+                <Icon className={clsx('w-6 h-6', config.iconColor)} aria-hidden="true" />
               </div>
               <div className="flex-1 min-w-0">
                 <h3
@@ -88,7 +89,7 @@ export default function ConfirmDialog({
                 >
                   {title}
                 </h3>
-                <p className="mt-2 text-sm text-white/60">{message}</p>
+                <p id="confirm-dialog-description" className="mt-2 text-sm text-white/60">{message}</p>
               </div>
               <button
                 onClick={onCancel}

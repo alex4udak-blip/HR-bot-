@@ -229,9 +229,9 @@ export default function SmartSearchBar({
         {/* Search Icon / Loading */}
         <div className="pl-4">
           {isLoading ? (
-            <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+            <Loader2 className="w-5 h-5 text-blue-400 animate-spin" aria-hidden="true" />
           ) : (
-            <Search className="w-5 h-5 text-white/40" />
+            <Search className="w-5 h-5 text-white/40" aria-hidden="true" />
           )}
         </div>
 
@@ -254,12 +254,17 @@ export default function SmartSearchBar({
             'text-white placeholder:text-white/40',
             'focus:outline-none'
           )}
+          role="combobox"
+          aria-expanded={shouldShowDropdown}
+          aria-controls="smart-search-dropdown"
+          aria-autocomplete="list"
+          aria-label={placeholder}
         />
 
         {/* AI Badge */}
         {inputValue && (
-          <div className="flex items-center gap-1 px-2 py-1 bg-purple-500/20 rounded-lg mr-1">
-            <Sparkles className="w-3 h-3 text-purple-400" />
+          <div className="flex items-center gap-1 px-2 py-1 bg-purple-500/20 rounded-lg mr-1" aria-label="AI-powered search">
+            <Sparkles className="w-3 h-3 text-purple-400" aria-hidden="true" />
             <span className="text-xs text-purple-300">AI</span>
           </div>
         )}
@@ -269,8 +274,9 @@ export default function SmartSearchBar({
           <button
             onClick={handleClear}
             className="p-2 hover:bg-white/10 rounded-lg transition-colors mr-1"
+            aria-label="Очистить поиск"
           >
-            <X className="w-4 h-4 text-white/60" />
+            <X className="w-4 h-4 text-white/60" aria-hidden="true" />
           </button>
         )}
 
@@ -281,12 +287,15 @@ export default function SmartSearchBar({
             'p-2 hover:bg-white/10 rounded-lg transition-colors mr-2',
             showDropdown && 'bg-white/5'
           )}
+          aria-expanded={showDropdown}
+          aria-label={showDropdown ? 'Скрыть список' : 'Показать список'}
         >
           <ChevronDown
             className={clsx(
               'w-4 h-4 text-white/60 transition-transform',
               showDropdown && 'rotate-180'
             )}
+            aria-hidden="true"
           />
         </button>
       </div>
@@ -313,7 +322,7 @@ export default function SmartSearchBar({
 
       {/* Error Display */}
       {error && (
-        <div className="mt-2 text-sm text-red-400">
+        <div className="mt-2 text-sm text-red-400" role="alert" aria-live="assertive">
           {error}
         </div>
       )}
@@ -322,12 +331,15 @@ export default function SmartSearchBar({
       {shouldShowDropdown && (
         <div
           ref={dropdownRef}
+          id="smart-search-dropdown"
           className={clsx(
             'absolute z-50 w-full mt-2',
             'bg-[#1a1a2e] border border-white/10 rounded-xl',
             'shadow-xl shadow-black/20',
             'max-h-[400px] overflow-y-auto'
           )}
+          role="listbox"
+          aria-label="Результаты поиска"
         >
           {/* Results */}
           {inputValue && results.length > 0 && (
@@ -346,8 +358,10 @@ export default function SmartSearchBar({
                       ? 'bg-blue-500/20 text-white'
                       : 'hover:bg-white/5 text-white/80'
                   )}
+                  role="option"
+                  aria-selected={selectedIndex === index}
                 >
-                  <UserCheck className="w-5 h-5 text-blue-400 flex-shrink-0" />
+                  <UserCheck className="w-5 h-5 text-blue-400 flex-shrink-0" aria-hidden="true" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium truncate">{result.name}</span>
@@ -379,33 +393,37 @@ export default function SmartSearchBar({
           {!inputValue && history.length > 0 && (
             <div className="p-2">
               <div className="flex items-center justify-between px-3 py-2">
-                <span className="text-xs text-white/40 uppercase tracking-wide">
+                <span className="text-xs text-white/40 uppercase tracking-wide" id="search-history-label">
                   Recent searches
                 </span>
                 <button
                   onClick={clearHistory}
                   className="p-1 hover:bg-white/10 rounded transition-colors"
-                  title="Clear history"
+                  aria-label="Clear search history"
                 >
-                  <Trash2 className="w-3 h-3 text-white/40" />
+                  <Trash2 className="w-3 h-3 text-white/40" aria-hidden="true" />
                 </button>
               </div>
-              {history.map((item, index) => (
-                <button
-                  key={item}
-                  onClick={() => handleHistoryClick(item)}
-                  className={clsx(
-                    'w-full flex items-center gap-3 px-3 py-2 rounded-lg',
-                    'text-left transition-colors',
-                    selectedIndex === index
-                      ? 'bg-blue-500/20 text-white'
-                      : 'hover:bg-white/5 text-white/80'
-                  )}
-                >
-                  <Clock className="w-4 h-4 text-white/40 flex-shrink-0" />
-                  <span className="truncate">{item}</span>
-                </button>
-              ))}
+              <div role="group" aria-labelledby="search-history-label">
+                {history.map((item, index) => (
+                  <button
+                    key={item}
+                    onClick={() => handleHistoryClick(item)}
+                    className={clsx(
+                      'w-full flex items-center gap-3 px-3 py-2 rounded-lg',
+                      'text-left transition-colors',
+                      selectedIndex === index
+                        ? 'bg-blue-500/20 text-white'
+                        : 'hover:bg-white/5 text-white/80'
+                    )}
+                    role="option"
+                    aria-selected={selectedIndex === index}
+                  >
+                    <Clock className="w-4 h-4 text-white/40 flex-shrink-0" aria-hidden="true" />
+                    <span className="truncate">{item}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

@@ -1093,12 +1093,15 @@ async def create_application(
         logger.info(f"Using entity status {entity.status} -> stage {initial_stage} for new application")
 
     # Get max stage_order for this stage
+    # SECURITY: Use FOR UPDATE to prevent race condition when multiple users
+    # add candidates to the same stage simultaneously
     max_order_result = await db.execute(
         select(func.max(VacancyApplication.stage_order))
         .where(
             VacancyApplication.vacancy_id == vacancy_id,
             VacancyApplication.stage == initial_stage
         )
+        .with_for_update()
     )
     max_order = max_order_result.scalar() or 0
 
@@ -1182,12 +1185,16 @@ async def update_application(
         application.last_stage_change_at = datetime.utcnow()
 
         # Update stage_order for the new stage
+        # SECURITY: Use FOR UPDATE to prevent race condition when multiple
+        # users move candidates to the same stage simultaneously
+        # This locks the rows being read until transaction commits
         max_order_result = await db.execute(
             select(func.max(VacancyApplication.stage_order))
             .where(
                 VacancyApplication.vacancy_id == application.vacancy_id,
                 VacancyApplication.stage == data.stage
             )
+            .with_for_update()  # Prevents race condition
         )
         max_order = max_order_result.scalar() or 0
         application.stage_order = max_order + 1
@@ -1635,12 +1642,14 @@ async def bulk_move_applications(
             )
 
     # Get max stage_order for the new stage
+    # SECURITY: Use FOR UPDATE to prevent race condition in bulk move
     max_order_result = await db.execute(
         select(func.max(VacancyApplication.stage_order))
         .where(
             VacancyApplication.vacancy_id == vacancy_id,
             VacancyApplication.stage == data.stage
         )
+        .with_for_update()
     )
     max_order = max_order_result.scalar() or 0
 
@@ -1997,12 +2006,14 @@ async def invite_candidate_to_vacancy(
         )
 
     # Get max stage_order
+    # SECURITY: Use FOR UPDATE to prevent race condition
     max_order_result = await db.execute(
         select(func.max(VacancyApplication.stage_order))
         .where(
             VacancyApplication.vacancy_id == vacancy_id,
             VacancyApplication.stage == stage
         )
+        .with_for_update()
     )
     max_order = max_order_result.scalar() or 0
 

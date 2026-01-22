@@ -10,7 +10,10 @@ import httpx
 import logging
 from typing import Optional, Dict, Any, List
 
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
 from ..config import get_settings
+from ..utils.http_client import get_http_client
 
 logger = logging.getLogger("hr-analyzer.fireflies")
 
@@ -37,6 +40,24 @@ class FirefliesClient:
             "Authorization": f"Bearer {self.api_key}"
         }
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.HTTPStatusError)),
+        reraise=True
+    )
+    async def _execute_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Выполнить HTTP запрос с retry logic"""
+        client = get_http_client()
+        response = await client.post(
+            self.ENDPOINT,
+            json=payload,
+            headers=self.headers,
+            timeout=60.0
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def _execute(self, query: str, variables: Optional[Dict] = None) -> Dict[str, Any]:
         """Выполнить GraphQL запрос"""
         if not self.api_key:
@@ -47,16 +68,9 @@ class FirefliesClient:
             payload["variables"] = variables
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    self.ENDPOINT,
-                    json=payload,
-                    headers=self.headers
-                )
-                response.raise_for_status()
-                return response.json()
+            return await self._execute_request(payload)
         except httpx.TimeoutException:
-            logger.error("Fireflies API timeout")
+            logger.error("Fireflies API timeout after 3 retries")
             return {"errors": [{"message": "API request timeout"}]}
         except httpx.HTTPStatusError as e:
             logger.error(f"Fireflies API HTTP error: {e.response.status_code}")

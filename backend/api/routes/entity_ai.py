@@ -9,7 +9,7 @@ Provides:
 """
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -31,10 +31,19 @@ from ..services.auth import get_current_user, get_user_org, get_user_org_role
 from ..services.entity_ai import entity_ai_service
 from ..services.reports import generate_pdf_report, generate_docx_report
 from ..services.permissions import PermissionService
+from ..limiter import limiter
 
 logger = logging.getLogger("hr-analyzer.entity-ai-routes")
 
 router = APIRouter()
+
+
+def _get_rate_limit_key(request: Request) -> str:
+    """Get rate limit key based on authenticated user ID."""
+    user = getattr(request.state, '_rate_limit_user', None)
+    if user and hasattr(user, 'id'):
+        return f"user:{user.id}"
+    return request.client.host if request.client else "unknown"
 
 
 class EntityAIMessageRequest(BaseModel):
@@ -116,13 +125,16 @@ async def get_available_actions(
 
 
 @router.post("/entities/{entity_id}/ai/message")
+@limiter.limit("30/minute", key_func=_get_rate_limit_key)
 async def entity_ai_message(
     entity_id: int,
-    request: EntityAIMessageRequest,
+    body: EntityAIMessageRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
     """AI assistant message with streaming response"""
+    request.state._rate_limit_user = user
     user = await db.merge(user)
 
     # Get entity with all data
@@ -135,7 +147,7 @@ async def entity_ai_message(
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Validate request
-    if not request.message and not request.quick_action:
+    if not body.message and not body.quick_action:
         raise HTTPException(status_code=400, detail="message or quick_action required")
 
     # Get or create conversation
@@ -161,17 +173,17 @@ async def entity_ai_message(
     async def generate():
         full_response = ""
         try:
-            if request.quick_action:
+            if body.quick_action:
                 # Quick action
                 async for chunk in entity_ai_service.quick_action(
-                    request.quick_action, entity, chats, calls, files
+                    body.quick_action, entity, chats, calls, files
                 ):
                     full_response += chunk
                     yield f"data: {json.dumps({'content': chunk})}\n\n"
             else:
                 # Regular chat
                 async for chunk in entity_ai_service.chat_stream(
-                    request.message, entity, chats, calls, history, files
+                    body.message, entity, chats, calls, history, files
                 ):
                     full_response += chunk
                     yield f"data: {json.dumps({'content': chunk})}\n\n"
@@ -196,7 +208,7 @@ async def entity_ai_message(
                 new_messages = list(conv.messages or [])
 
                 # Add user message
-                user_content = f"[{request.quick_action}]" if request.quick_action else request.message
+                user_content = f"[{body.quick_action}]" if body.quick_action else body.message
                 new_messages.append({
                     "role": "user",
                     "content": user_content,
@@ -301,8 +313,10 @@ async def clear_entity_ai_history(
 
 
 @router.post("/entities/{entity_id}/ai/update-summary")
+@limiter.limit("5/minute", key_func=_get_rate_limit_key)
 async def update_entity_ai_summary(
     entity_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -311,6 +325,7 @@ async def update_entity_ai_summary(
     This creates/updates the ai_summary field based on all chats and calls.
     Useful for rebuilding context after significant interactions.
     """
+    request.state._rate_limit_user = user
     user = await db.merge(user)
 
     # Get entity with all data
@@ -400,7 +415,9 @@ async def get_entity_ai_memory(
 
 
 @router.post("/entities/ai/batch-update-summaries")
+@limiter.limit("2/minute", key_func=_get_rate_limit_key)
 async def batch_update_entity_summaries(
+    request: Request,
     limit: int = 10,
     only_empty: bool = True,
     db: AsyncSession = Depends(get_db),
@@ -416,6 +433,7 @@ async def batch_update_entity_summaries(
     - Initial setup: generate summaries for existing entities
     - Periodic refresh: update old summaries
     """
+    request.state._rate_limit_user = user
     user = await db.merge(user)
 
     # Check if user has admin-level access (org admin, dept lead, or superadmin)

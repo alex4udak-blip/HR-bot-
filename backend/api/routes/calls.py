@@ -91,7 +91,7 @@ async def list_calls(
     entity_id: Optional[int] = None,
     status: Optional[CallStatus] = None,
     limit: int = Query(50, le=100),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=10000),  # Limit offset to prevent abuse
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

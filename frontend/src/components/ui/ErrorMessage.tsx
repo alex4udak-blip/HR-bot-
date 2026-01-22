@@ -150,7 +150,7 @@ export default function ErrorMessage({
       role="alert"
     >
       <div className="p-4 bg-white/5 rounded-full mb-4">
-        <Icon className={clsx(styles.icon, config.iconColor)} />
+        <Icon className={clsx(styles.icon, config.iconColor)} aria-hidden="true" />
       </div>
       <h3 className={clsx('font-semibold text-white', styles.title)}>
         {config.title}
@@ -165,8 +165,9 @@ export default function ErrorMessage({
             'mt-4 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors',
             styles.button
           )}
+          aria-label="Попробовать снова"
         >
-          <RefreshCw className="w-4 h-4" />
+          <RefreshCw className="w-4 h-4" aria-hidden="true" />
           Try Again
         </button>
       )}

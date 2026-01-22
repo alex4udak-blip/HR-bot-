@@ -16,12 +16,17 @@ class Settings(BaseSettings):
         alias="SECRET_KEY"
     )
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 60 * 24 * 7
+    jwt_expire_minutes: int = 60 * 24 * 7  # Legacy fallback - actual auth uses ACCESS_TOKEN_EXPIRE_MINUTES (15 min)
 
-    # Telegram Bot Token
+    # Telegram Bot Token and Username
     telegram_bot_token: str = Field(
         default="",
         alias="TELEGRAM_BOT_TOKEN"
+    )
+    telegram_bot_username: str = Field(
+        default="",
+        alias="TELEGRAM_BOT_USERNAME",
+        description="Bot username for deep links (e.g., 'my_hr_bot' without @)"
     )
 
     # AI API Keys

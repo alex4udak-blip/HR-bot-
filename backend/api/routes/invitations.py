@@ -426,7 +426,8 @@ async def accept_invitation(
 
     # Generate Telegram bind URL (deep link)
     # Format: t.me/bot_username?start=bind_USERID
-    telegram_bind_url = f"https://t.me/enceladus_mst_bot?start=bind_{new_user.id}"
+    telegram_bot_username = settings.telegram_bot_username or "enceladus_mst_bot"
+    telegram_bind_url = f"https://t.me/{telegram_bot_username}?start=bind_{new_user.id}"
 
     return AcceptInvitationResponse(
         success=True,

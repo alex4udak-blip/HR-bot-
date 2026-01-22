@@ -22,7 +22,7 @@ import {
   EXPERIENCE_LEVELS,
   APPLICATION_STAGE_LABELS,
 } from '@/types';
-import { formatSalary } from '@/utils';
+import { formatSalary, formatDate } from '@/utils';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import AddCandidateModal from './AddCandidateModal';
 import { EmptyKanban } from '@/components/ui';
@@ -39,14 +39,6 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
     fetchKanbanBoard(vacancy.id);
   }, [vacancy.id, fetchKanbanBoard]);
 
-  const formatDate = (date?: string) => {
-    if (!date) return 'Не указана';
-    return new Date(date).toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
-    });
-  };
 
   // Calculate stats
   const totalCandidates = vacancy.applications_count;
@@ -151,7 +143,7 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
                 <Calendar className="w-5 h-5 text-white/40" />
                 <div>
                   <p className="text-sm text-white/60">Опубликована</p>
-                  <p>{formatDate(vacancy.published_at)}</p>
+                  <p>{formatDate(vacancy.published_at, 'medium') || 'Не указана'}</p>
                 </div>
               </div>
             </div>

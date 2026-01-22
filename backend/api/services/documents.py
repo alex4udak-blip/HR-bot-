@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 import logging
 
+import aiofiles
 import pdfplumber
 from docx import Document as DocxDocument
 from pptx import Presentation
@@ -31,6 +32,17 @@ MAX_PDF_PAGES = 50
 MAX_ARCHIVE_FILES = 10
 PARSE_TIMEOUT = 60
 
+# Async Anthropic client for non-blocking OCR calls
+_async_anthropic_client: anthropic.AsyncAnthropic | None = None
+
+
+def get_async_anthropic_client() -> anthropic.AsyncAnthropic:
+    """Get or create async Anthropic client (singleton pattern)."""
+    global _async_anthropic_client
+    if _async_anthropic_client is None:
+        _async_anthropic_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    return _async_anthropic_client
+
 
 class DocumentParseResult:
     def __init__(
@@ -48,7 +60,9 @@ class DocumentParseResult:
 
 class DocumentParser:
     def __init__(self):
-        self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        # Use async client to avoid blocking the event loop
+        # Client is lazily initialized via get_async_anthropic_client()
+        pass
 
     async def parse(self, file_bytes: bytes, filename: str, mime_type: Optional[str] = None) -> DocumentParseResult:
         """Main entry point for document parsing."""
@@ -231,8 +245,8 @@ class DocumentParser:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_input = os.path.join(temp_dir, f"input{ext}")
 
-            with open(temp_input, 'wb') as f:
-                f.write(file_bytes)
+            async with aiofiles.open(temp_input, 'wb') as f:
+                await f.write(file_bytes)
 
             # Convert using LibreOffice
             process = await asyncio.create_subprocess_exec(
@@ -248,8 +262,8 @@ class DocumentParser:
             output_path = os.path.join(temp_dir, output_name)
 
             if os.path.exists(output_path):
-                with open(output_path, 'rb') as f:
-                    docx_bytes = f.read()
+                async with aiofiles.open(output_path, 'rb') as f:
+                    docx_bytes = await f.read()
                 result = await self._parse_docx(docx_bytes, filename)
                 result.metadata["converted_from"] = ext
                 return result
@@ -434,8 +448,8 @@ class DocumentParser:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_input = os.path.join(temp_dir, f"input{ext}")
 
-            with open(temp_input, 'wb') as f:
-                f.write(file_bytes)
+            async with aiofiles.open(temp_input, 'wb') as f:
+                await f.write(file_bytes)
 
             process = await asyncio.create_subprocess_exec(
                 'libreoffice', '--headless', '--convert-to', 'xlsx',
@@ -449,8 +463,8 @@ class DocumentParser:
             output_path = os.path.join(temp_dir, output_name)
 
             if os.path.exists(output_path):
-                with open(output_path, 'rb') as f:
-                    xlsx_bytes = f.read()
+                async with aiofiles.open(output_path, 'rb') as f:
+                    xlsx_bytes = await f.read()
                 result = await self._parse_xlsx(xlsx_bytes, filename)
                 result.metadata["converted_from"] = ext
                 return result
@@ -513,8 +527,8 @@ class DocumentParser:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_input = os.path.join(temp_dir, f"input{ext}")
 
-            with open(temp_input, 'wb') as f:
-                f.write(file_bytes)
+            async with aiofiles.open(temp_input, 'wb') as f:
+                await f.write(file_bytes)
 
             process = await asyncio.create_subprocess_exec(
                 'libreoffice', '--headless', '--convert-to', 'pptx',
@@ -528,8 +542,8 @@ class DocumentParser:
             output_path = os.path.join(temp_dir, output_name)
 
             if os.path.exists(output_path):
-                with open(output_path, 'rb') as f:
-                    pptx_bytes = f.read()
+                async with aiofiles.open(output_path, 'rb') as f:
+                    pptx_bytes = await f.read()
                 result = await self._parse_pptx(pptx_bytes, filename)
                 result.metadata["converted_from"] = ext
                 return result
@@ -539,10 +553,7 @@ class DocumentParser:
 
     # ========== Images (OCR with Claude Vision) ==========
     async def _ocr_with_vision(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._ocr_with_vision_sync, file_bytes, filename)
-
-    def _ocr_with_vision_sync(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
+        """Perform OCR using Claude Vision API (async, non-blocking)."""
         import base64
 
         # Determine media type
@@ -563,7 +574,8 @@ class DocumentParser:
         image_data = base64.standard_b64encode(file_bytes).decode('utf-8')
 
         try:
-            response = self.client.messages.create(
+            client = get_async_anthropic_client()
+            response = await client.messages.create(
                 model=settings.claude_model,
                 max_tokens=4096,
                 messages=[{
@@ -600,71 +612,84 @@ class DocumentParser:
 
     # ========== HEIC (convert then OCR) ==========
     async def _convert_then_ocr(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
+        """Convert HEIC image to JPEG, then perform OCR."""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._convert_heic_sync, file_bytes, filename)
 
-    def _convert_heic_sync(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
+        # Convert HEIC to JPEG in thread pool (CPU-bound)
         try:
-            from PIL import Image
-            import pillow_heif
-
-            pillow_heif.register_heif_opener()
-            img = Image.open(io.BytesIO(file_bytes))
-
-            # Convert to JPEG
-            output = io.BytesIO()
-            img.convert('RGB').save(output, format='JPEG', quality=95)
-            jpeg_bytes = output.getvalue()
-
-            # Now OCR
-            return self._ocr_with_vision_sync(jpeg_bytes, filename.replace('.heic', '.jpg'))
+            jpeg_bytes = await loop.run_in_executor(None, self._convert_heic_to_jpeg, file_bytes)
         except Exception as e:
             return DocumentParseResult(
                 status="failed",
                 error=f"HEIC conversion failed: {e}"
             )
 
+        # Now OCR the converted JPEG (async API call)
+        return await self._ocr_with_vision(jpeg_bytes, filename.replace('.heic', '.jpg'))
+
+    def _convert_heic_to_jpeg(self, file_bytes: bytes) -> bytes:
+        """Synchronous HEIC to JPEG conversion (for thread pool execution)."""
+        import pillow_heif
+
+        pillow_heif.register_heif_opener()
+        img = Image.open(io.BytesIO(file_bytes))
+
+        # Convert to JPEG
+        output = io.BytesIO()
+        img.convert('RGB').save(output, format='JPEG', quality=95)
+        return output.getvalue()
+
     # ========== Archives ==========
     async def _extract_and_parse_archive(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._extract_zip_sync, file_bytes, filename)
-
-    def _extract_zip_sync(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
+        """Extract and parse ZIP archive contents asynchronously."""
         extracted_files = []
         all_content = []
 
         try:
+            # Extract file list synchronously (fast, in-memory)
             with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
                 file_list = zf.namelist()[:MAX_ARCHIVE_FILES]
 
+                # Read all files from archive first (sync, fast)
+                files_to_parse = []
                 for name in file_list:
                     if zf.getinfo(name).is_dir():
                         continue
-
                     try:
                         content = zf.read(name)
-                        # Recursively parse
-                        result = asyncio.run(self.parse(content, name))
-
-                        # Add to extracted_files regardless of content
-                        file_info = {
-                            "name": name,
-                            "status": result.status,
-                            "size": len(content)
-                        }
-                        if result.error:
-                            file_info["error"] = result.error
-                        extracted_files.append(file_info)
-
-                        # Only add to content if there's actual content
-                        if result.content:
-                            all_content.append(f"=== {name} ===\n{result.content}")
+                        files_to_parse.append((name, content))
                     except Exception as e:
                         extracted_files.append({
                             "name": name,
                             "status": "failed",
                             "error": str(e)
                         })
+
+            # Parse extracted files asynchronously
+            for name, content in files_to_parse:
+                try:
+                    # Recursively parse using await (not asyncio.run!)
+                    result = await self.parse(content, name)
+
+                    # Add to extracted_files regardless of content
+                    file_info = {
+                        "name": name,
+                        "status": result.status,
+                        "size": len(content)
+                    }
+                    if result.error:
+                        file_info["error"] = result.error
+                    extracted_files.append(file_info)
+
+                    # Only add to content if there's actual content
+                    if result.content:
+                        all_content.append(f"=== {name} ===\n{result.content}")
+                except Exception as e:
+                    extracted_files.append({
+                        "name": name,
+                        "status": "failed",
+                        "error": str(e)
+                    })
 
             return DocumentParseResult(
                 content="\n\n".join(all_content),
@@ -686,8 +711,8 @@ class DocumentParser:
             temp_rar = os.path.join(temp_dir, "archive.rar")
             extract_dir = os.path.join(temp_dir, "extracted")
 
-            with open(temp_rar, 'wb') as f:
-                f.write(file_bytes)
+            async with aiofiles.open(temp_rar, 'wb') as f:
+                await f.write(file_bytes)
 
             os.makedirs(extract_dir, exist_ok=True)
 
@@ -705,8 +730,8 @@ class DocumentParser:
                 for name in files[:MAX_ARCHIVE_FILES]:
                     filepath = os.path.join(root, name)
                     try:
-                        with open(filepath, 'rb') as f:
-                            content = f.read()
+                        async with aiofiles.open(filepath, 'rb') as f:
+                            content = await f.read()
                         result = await self.parse(content, name)
                         if result.content:
                             all_content.append(f"=== {name} ===\n{result.content}")
@@ -837,8 +862,8 @@ class DocumentParser:
             temp_msg = os.path.join(temp_dir, "message.msg")
 
             try:
-                with open(temp_msg, 'wb') as f:
-                    f.write(file_bytes)
+                async with aiofiles.open(temp_msg, 'wb') as f:
+                    await f.write(file_bytes)
 
                 import extract_msg
                 msg = extract_msg.Message(temp_msg)

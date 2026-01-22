@@ -8,6 +8,8 @@ Security features:
 - URL validation: Only allowed domains (hh.ru, linkedin.com, superjob.ru, habr career)
 - URL sanitization: Prevents prompt injection attacks
 - Magic bytes validation: Prevents file type spoofing
+- ZIP bomb protection: Validates compression ratios and total uncompressed size
+- Path traversal protection: Validates filenames in ZIP archives
 - Comprehensive logging of all parsing requests
 """
 import logging
@@ -36,6 +38,7 @@ from ..services.auth import get_current_user, get_user_org
 from ..database import get_db
 from ..models.database import User, Entity, EntityType, EntityStatus
 from ..limiter import limiter
+from ..utils.zip_security import validate_zip_file, sanitize_zip_filename, safe_extract_file
 
 logger = logging.getLogger(__name__)
 
@@ -706,12 +709,23 @@ async def bulk_import_resumes(
         # Read ZIP content
         zip_content = await file.read()
 
-        # Check size (max 100MB)
-        max_size = 100 * 1024 * 1024
-        if len(zip_content) > max_size:
+        # SECURITY: Validate ZIP file for bombs, path traversal, etc.
+        zip_validation = validate_zip_file(zip_content)
+        if not zip_validation.is_safe:
+            logger.warning(
+                f"Bulk import REJECTED | user_id={current_user.id} | "
+                f"filename={file.filename} | reason=zip_security | error={zip_validation.error}"
+            )
             raise HTTPException(
                 status_code=400,
-                detail=f"ZIP file too large: {len(zip_content) / 1024 / 1024:.1f}MB (max 100MB)"
+                detail=f"ZIP file validation failed: {zip_validation.error}"
+            )
+
+        # Log any suspicious files (but don't block)
+        if zip_validation.suspicious_files:
+            logger.warning(
+                f"Bulk import suspicious files | user_id={current_user.id} | "
+                f"files={zip_validation.suspicious_files}"
             )
 
         # Validate ZIP file magic bytes
@@ -733,7 +747,9 @@ async def bulk_import_resumes(
 
         logger.info(
             f"Bulk import started | user_id={current_user.id} | "
-            f"org_id={org.id} | zip_size={len(zip_content)} bytes"
+            f"org_id={org.id} | zip_size={len(zip_content)} bytes | "
+            f"uncompressed_size={zip_validation.total_uncompressed_size} bytes | "
+            f"file_count={zip_validation.file_count}"
         )
 
         results = []
@@ -744,17 +760,12 @@ async def bulk_import_resumes(
         try:
             with zipfile.ZipFile(io.BytesIO(zip_content), 'r') as zip_file:
                 # Get list of files (excluding directories and hidden files)
+                # Note: Path traversal already checked by validate_zip_file
                 file_list = [
                     f for f in zip_file.namelist()
-                    if not f.endswith('/') and not f.startswith('__MACOSX') and not f.startswith('.')
+                    if not f.endswith('/') and not f.startswith('__MACOSX')
+                    and not f.split('/')[-1].startswith('.')  # Hidden files by basename
                 ]
-
-                # Check file count limit
-                if len(file_list) > 50:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Too many files in ZIP: {len(file_list)} (max 50)"
-                    )
 
                 if len(file_list) == 0:
                     return BulkImportResponse(
@@ -767,12 +778,15 @@ async def bulk_import_resumes(
                     )
 
                 for filename in file_list:
-                    # Get file extension
-                    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+                    # SECURITY: Sanitize filename to prevent path traversal
+                    safe_filename = sanitize_zip_filename(filename)
+
+                    # Get file extension from sanitized name
+                    ext = safe_filename.rsplit('.', 1)[-1].lower() if '.' in safe_filename else ''
 
                     if ext not in allowed_extensions:
                         results.append(BulkImportResult(
-                            filename=filename,
+                            filename=safe_filename,
                             success=False,
                             error=f"Unsupported format: {ext}"
                         ))
@@ -780,45 +794,45 @@ async def bulk_import_resumes(
                         continue
 
                     try:
-                        # Extract and read file
-                        file_data = zip_file.read(filename)
+                        # SECURITY: Use safe extraction with size limits
+                        extract_success, file_data, extract_error = safe_extract_file(zip_file, filename)
+
+                        if not extract_success:
+                            results.append(BulkImportResult(
+                                filename=safe_filename,
+                                success=False,
+                                error=extract_error or "Extraction failed"
+                            ))
+                            failed += 1
+                            continue
 
                         if not file_data or len(file_data) == 0:
                             results.append(BulkImportResult(
-                                filename=filename,
+                                filename=safe_filename,
                                 success=False,
                                 error="Empty file"
                             ))
                             failed += 1
                             continue
 
-                        # Check individual file size (max 20MB)
-                        if len(file_data) > 20 * 1024 * 1024:
-                            results.append(BulkImportResult(
-                                filename=filename,
-                                success=False,
-                                error="File too large (max 20MB)"
-                            ))
-                            failed += 1
-                            continue
+                        # Note: File size check already done in safe_extract_file
 
                         # Validate magic bytes for each file in ZIP
-                        is_valid, magic_error = validate_file_magic(file_data, filename)
+                        is_valid, magic_error = validate_file_magic(file_data, safe_filename)
                         if not is_valid:
                             logger.warning(
                                 f"Bulk import: file rejected due to magic bytes | "
-                                f"filename={filename} | error={magic_error}"
+                                f"filename={safe_filename} | error={magic_error}"
                             )
                             results.append(BulkImportResult(
-                                filename=filename,
+                                filename=safe_filename,
                                 success=False,
                                 error=f"File validation failed: {magic_error}"
                             ))
                             failed += 1
                             continue
 
-                        # Parse resume
-                        safe_filename = re.sub(r'[<>:"/\\|?*]', '_', filename.split('/')[-1])
+                        # Parse resume (safe_filename already sanitized above)
                         resume = await parse_resume_from_pdf(file_data, safe_filename)
 
                         # Create candidate entity
@@ -837,7 +851,7 @@ async def bulk_import_resumes(
 
                         if existing:
                             results.append(BulkImportResult(
-                                filename=filename,
+                                filename=safe_filename,
                                 success=False,
                                 entity_id=existing.id,
                                 entity_name=existing.name,
@@ -895,7 +909,7 @@ async def bulk_import_resumes(
                         await db.flush()
 
                         results.append(BulkImportResult(
-                            filename=filename,
+                            filename=safe_filename,
                             success=True,
                             entity_id=entity.id,
                             entity_name=entity.name
@@ -909,7 +923,7 @@ async def bulk_import_resumes(
                     except Exception as e:
                         logger.error(f"Bulk import: failed to process {filename}: {e}")
                         results.append(BulkImportResult(
-                            filename=filename,
+                            filename=safe_filename,
                             success=False,
                             error=str(e)
                         ))

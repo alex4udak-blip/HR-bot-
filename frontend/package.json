@@ -30,6 +30,7 @@
     "@radix-ui/react-tabs": "^1.0.4",
     "@radix-ui/react-tooltip": "^1.0.7",
     "@tanstack/react-query": "^5.17.0",
+    "@tanstack/react-virtual": "^3.13.18",
     "axios": "^1.6.5",
     "clsx": "^2.1.0",
     "framer-motion": "^10.18.0",
@@ -45,7 +46,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
-    "terser": "^5.27.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",
     "@testing-library/user-event": "^14.6.1",

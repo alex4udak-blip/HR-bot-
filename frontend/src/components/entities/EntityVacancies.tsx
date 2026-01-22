@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Briefcase, Clock, ExternalLink } from 'lucide-react';
 import clsx from 'clsx';
 import { getEntityVacancies } from '@/services/api';
+import { formatDate } from '@/utils';
 import type { VacancyApplication } from '@/types';
 import { APPLICATION_STAGE_LABELS, APPLICATION_STAGE_COLORS } from '@/types';
 import { ListSkeleton, EmptyState, EmptyEntityVacancies } from '@/components/ui';
@@ -36,14 +37,6 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
     loadVacancies();
   }, [entityId]);
 
-  // Format date for display
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    });
-  };
 
   // Navigate to vacancy kanban board
   const handleNavigateToVacancy = (vacancyId: number) => {
@@ -113,7 +106,7 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
             <div className="text-right flex-shrink-0">
               <div className="flex items-center gap-1 text-xs text-white/40">
                 <Clock size={12} />
-                <span>{formatDate(app.applied_at)}</span>
+                <span>{formatDate(app.applied_at, 'medium')}</span>
               </div>
               {app.rating && (
                 <div className="mt-1 text-xs text-yellow-400">
@@ -133,7 +126,7 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
           {/* Next interview indicator */}
           {app.next_interview_at && (
             <div className="mt-2 text-xs text-cyan-400">
-              Следующее собеседование: {formatDate(app.next_interview_at)}
+              Следующее собеседование: {formatDate(app.next_interview_at, 'medium')}
             </div>
           )}
         </motion.div>

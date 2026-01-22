@@ -210,6 +210,9 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="parser-modal-title"
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
@@ -227,9 +230,9 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
           >
             <div className="flex items-center gap-3">
               <div className="p-2 bg-cyan-500/20 rounded-lg">
-                <Search className="w-5 h-5 text-cyan-400" />
+                <Search className="w-5 h-5 text-cyan-400" aria-hidden="true" />
               </div>
-              <h2 className="text-lg font-semibold">
+              <h2 id="parser-modal-title" className="text-lg font-semibold">
                 {isResume ? 'Парсинг резюме' : 'Парсинг вакансии'}
               </h2>
             </div>
@@ -237,13 +240,14 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
           <button
             onClick={onClose}
             className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+            aria-label="Закрыть окно"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
         {/* Tabs - only show file tab for resume */}
-        <div className="flex border-b border-white/10 flex-shrink-0">
+        <div className="flex border-b border-white/10 flex-shrink-0" role="tablist" aria-label="Способ загрузки">
           <button
             onClick={() => {
               setActiveTab('url');
@@ -256,8 +260,12 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
                 ? 'bg-white/5 text-white border-b-2 border-cyan-500'
                 : 'text-white/60 hover:text-white hover:bg-white/5'
             )}
+            role="tab"
+            aria-selected={activeTab === 'url'}
+            aria-controls="parser-url-panel"
+            id="parser-url-tab"
           >
-            <Link className="w-4 h-4" />
+            <Link className="w-4 h-4" aria-hidden="true" />
             По ссылке
           </button>
           {isResume && (
@@ -273,8 +281,12 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
                   ? 'bg-white/5 text-white border-b-2 border-cyan-500'
                   : 'text-white/60 hover:text-white hover:bg-white/5'
               )}
+              role="tab"
+              aria-selected={activeTab === 'file'}
+              aria-controls="parser-file-panel"
+              id="parser-file-tab"
             >
-              <FileText className="w-4 h-4" />
+              <FileText className="w-4 h-4" aria-hidden="true" />
               Загрузить файл
             </button>
           )}
@@ -287,12 +299,17 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
             <div className="space-y-4">
               {activeTab === 'url' ? (
                 // URL input
-                <div>
-                  <label className="block text-sm text-white/60 mb-2">
+                <div
+                  role="tabpanel"
+                  id="parser-url-panel"
+                  aria-labelledby="parser-url-tab"
+                >
+                  <label htmlFor="parser-url-input" className="block text-sm text-white/60 mb-2">
                     Ссылка на {isResume ? 'резюме' : 'вакансию'}
                   </label>
                   <div className="relative">
                     <input
+                      id="parser-url-input"
                       type="url"
                       value={url}
                       onChange={(e) => {
@@ -309,6 +326,8 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
                         error ? 'border-red-500/50' : 'border-white/10 focus:border-cyan-500'
                       )}
                       disabled={loading}
+                      aria-invalid={error ? 'true' : 'false'}
+                      aria-describedby={error ? 'parser-url-error' : undefined}
                     />
                     {detectedSource && (
                       <span className={clsx(
@@ -320,26 +339,40 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
                     )}
                   </div>
                   {error && (
-                    <p className="text-xs text-red-400 mt-2 flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" />
+                    <p id="parser-url-error" className="text-xs text-red-400 mt-2 flex items-center gap-1" role="alert">
+                      <AlertCircle className="w-3 h-3" aria-hidden="true" />
                       {error}
                     </p>
                   )}
                 </div>
               ) : (
                 // File upload
-                <div className="space-y-4">
+                <div
+                  className="space-y-4"
+                  role="tabpanel"
+                  id="parser-file-panel"
+                  aria-labelledby="parser-file-tab"
+                >
                   <div
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                     onClick={() => fileInputRef.current?.click()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        fileInputRef.current?.click();
+                      }
+                    }}
                     className={clsx(
                       'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors',
                       isDragging
                         ? 'border-cyan-500 bg-cyan-500/10'
                         : 'border-white/20 hover:border-white/40 hover:bg-white/5'
                     )}
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Область для загрузки файла. Перетащите файл или нажмите для выбора"
                   >
                     <input
                       ref={fileInputRef}
@@ -347,11 +380,12 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
                       accept=".pdf,.doc,.docx,.txt"
                       onChange={handleFileInputChange}
                       className="hidden"
+                      aria-label="Выбрать файл резюме"
                     />
                     <Upload className={clsx(
                       'w-10 h-10 mx-auto mb-4',
                       isDragging ? 'text-cyan-400' : 'text-white/40'
-                    )} />
+                    )} aria-hidden="true" />
                     <p className="text-white/60 mb-2">
                       {isDragging
                         ? 'Отпустите файл для загрузки'
@@ -362,8 +396,8 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
                       PDF, DOC, DOCX или TXT (максимум 10 МБ)
                     </p>
                     {error && (
-                      <p className="text-xs text-red-400 mt-4 flex items-center justify-center gap-1">
-                        <AlertCircle className="w-3 h-3" />
+                      <p className="text-xs text-red-400 mt-4 flex items-center justify-center gap-1" role="alert">
+                        <AlertCircle className="w-3 h-3" aria-hidden="true" />
                         {error}
                       </p>
                     )}
@@ -382,15 +416,16 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
                       ? 'bg-white/5 text-white/40 cursor-not-allowed'
                       : 'bg-cyan-600 hover:bg-cyan-500 text-white'
                   )}
+                  aria-busy={loading}
                 >
                   {loading ? (
                     <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
                       Загрузка...
                     </>
                   ) : (
                     <>
-                      <Search className="w-5 h-5" />
+                      <Search className="w-5 h-5" aria-hidden="true" />
                       Парсить
                     </>
                   )}
@@ -399,8 +434,8 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
 
               {/* Loading indicator for file */}
               {activeTab === 'file' && loading && (
-                <div className="flex items-center justify-center gap-2 py-4 text-cyan-400">
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                <div className="flex items-center justify-center gap-2 py-4 text-cyan-400" role="status" aria-live="polite">
+                  <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
                   <span>Обработка файла...</span>
                 </div>
               )}
@@ -428,7 +463,7 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
               onClick={handleCreate}
               className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition-colors"
             >
-              <Check className="w-4 h-4" />
+              <Check className="w-4 h-4" aria-hidden="true" />
               {isResume ? 'Создать контакт' : 'Создать вакансию'}
             </button>
           )}

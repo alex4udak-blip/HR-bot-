@@ -132,7 +132,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         permissionsLoading: false,
       });
     } catch (error) {
-      console.error('Failed to fetch permissions:', error);
+      // Don't log full error to avoid leaking sensitive data
+      console.error('Failed to fetch permissions');
       set({ permissionsLoading: false });
     }
   },
@@ -196,7 +197,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
         if (featuresChanged) {
           set({ features: featuresData.features });
-          console.log('Features updated via polling:', featuresData.features);
+          // Features updated silently in background
         }
       } catch (error) {
         // Silently fail - don't interrupt user experience for background polling
@@ -226,7 +227,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const sessions = await getSessions();
       set({ sessions, sessionsLoading: false });
     } catch (error) {
-      console.error('Failed to fetch sessions:', error);
+      console.error('Failed to fetch sessions');
       set({ sessionsLoading: false });
     }
   },
@@ -244,7 +245,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ sessions: [] });
       return { sessions_revoked: result.sessions_revoked };
     } catch (error) {
-      console.error('Failed to logout all devices:', error);
+      console.error('Failed to logout all devices');
       throw error;
     }
   },
@@ -261,7 +262,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Remove the session from local state
       set({ sessions: sessions.filter(s => s.id !== sessionId) });
     } catch (error) {
-      console.error('Failed to revoke session:', error);
+      console.error('Failed to revoke session');
       throw error;
     }
   },
@@ -304,7 +305,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user: impersonatedUser,
       });
     } catch (error) {
-      console.error('Impersonation failed:', error);
+      console.error('Impersonation failed');
       throw error;
     }
   },
@@ -338,7 +339,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         originalUser: null,
       });
     } catch (error) {
-      console.error('Exit impersonation failed:', error);
+      console.error('Exit impersonation failed');
       throw error;
     }
   },

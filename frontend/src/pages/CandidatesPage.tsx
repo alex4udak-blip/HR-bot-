@@ -36,6 +36,7 @@ import {
   VACANCY_STATUS_LABELS,
   VACANCY_STATUS_COLORS
 } from '@/types';
+import { formatDate } from '@/utils';
 import type { ParsedResume, ParsedVacancy } from '@/services/api';
 import ContactForm from '@/components/contacts/ContactForm';
 import ParserModal from '@/components/parser/ParserModal';
@@ -326,12 +327,6 @@ export default function CandidatesPage() {
     setShowCreateVacancyModal(true);
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'short'
-    });
-  };
 
   const getAvatarInitials = (name: string) => {
     return name
@@ -529,7 +524,7 @@ export default function CandidatesPage() {
         </div>
         <div className="flex items-center gap-1 text-xs text-white/40">
           <Clock className="w-3 h-3" />
-          {formatDate(app.applied_at)}
+          {formatDate(app.applied_at, 'short')}
         </div>
       </div>
 
@@ -959,7 +954,7 @@ export default function CandidatesPage() {
                               <ChevronRight className="w-4 h-4" />
                             </button>
                           </div>
-                          <span className="text-sm text-white/40">{formatDate(app.applied_at)}</span>
+                          <span className="text-sm text-white/40">{formatDate(app.applied_at, 'short')}</span>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();

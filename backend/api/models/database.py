@@ -287,6 +287,12 @@ class User(Base):
     org_memberships = relationship("OrgMember", foreign_keys="OrgMember.user_id", back_populates="user", cascade="all, delete-orphan")
     department_memberships = relationship("DepartmentMember", back_populates="user", cascade="all, delete-orphan")
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
+    # Additional back_populates relationships
+    owned_calls = relationship("CallRecording", back_populates="owner")
+    report_subscriptions = relationship("ReportSubscription", back_populates="user", cascade="all, delete-orphan")
+    entity_ai_conversations = relationship("EntityAIConversation", back_populates="user", cascade="all, delete-orphan")
+    entity_analyses = relationship("EntityAnalysis", back_populates="user")
+    uploaded_files = relationship("EntityFile", back_populates="uploader")
 
 
 class Chat(Base):
@@ -306,6 +312,13 @@ class Chat(Base):
     created_at = Column(DateTime, default=func.now())
     last_activity = Column(DateTime, default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime, nullable=True, index=True)  # Soft delete timestamp
+
+    __table_args__ = (
+        # Composite index for filtering non-deleted chats by org (common list query)
+        Index('ix_chat_org_deleted', 'org_id', 'deleted_at'),
+        # Composite index for filtering by owner and activity
+        Index('ix_chat_owner_activity', 'owner_id', 'last_activity'),
+    )
 
     organization = relationship("Organization", back_populates="chats")
     owner = relationship("User", back_populates="chats")
@@ -337,6 +350,13 @@ class Message(Base):
     parse_error = Column(Text, nullable=True)
     is_imported = Column(Boolean, default=False)  # True if imported from file (not from bot)
     timestamp = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        # Composite index for message filtering by chat and user (common query pattern)
+        Index('ix_message_chat_telegram_user', 'chat_id', 'telegram_user_id'),
+        # Composite index for sorting messages by timestamp (common list query)
+        Index('ix_message_chat_timestamp', 'chat_id', 'timestamp'),
+    )
 
     chat = relationship("Chat", back_populates="messages")
 
@@ -473,6 +493,13 @@ class Entity(Base):
     # Incremented on each update to detect concurrent modifications
     version = Column(Integer, default=1, nullable=False)
 
+    __table_args__ = (
+        # Composite indexes for common query patterns
+        Index('ix_entity_org_status', 'org_id', 'status'),  # Filter by org + status
+        Index('ix_entity_org_created_by', 'org_id', 'created_by'),  # Filter by org + creator
+        Index('ix_entity_org_type', 'org_id', 'type'),  # Filter by org + entity type
+    )
+
 
 class EntityTransfer(Base):
     __tablename__ = "entity_transfers"
@@ -539,7 +566,7 @@ class CallRecording(Base):
 
     organization = relationship("Organization", back_populates="calls")
     entity = relationship("Entity", back_populates="calls")
-    owner = relationship("User")
+    owner = relationship("User", back_populates="owned_calls")
 
 
 class ReportSubscription(Base):
@@ -554,7 +581,7 @@ class ReportSubscription(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=func.now())
 
-    user = relationship("User")
+    user = relationship("User", back_populates="report_subscriptions")
 
 
 class EntityAIConversation(Base):
@@ -569,7 +596,7 @@ class EntityAIConversation(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     entity = relationship("Entity", back_populates="ai_conversations")
-    user = relationship("User")
+    user = relationship("User", back_populates="entity_ai_conversations")
 
 
 class EntityAnalysis(Base):
@@ -585,7 +612,7 @@ class EntityAnalysis(Base):
     created_at = Column(DateTime, default=func.now())
 
     entity = relationship("Entity", back_populates="ai_analyses")
-    user = relationship("User")
+    user = relationship("User", back_populates="entity_analyses")
 
 
 class ResourceType(str, enum.Enum):
@@ -786,6 +813,13 @@ class Vacancy(Base):
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
+    __table_args__ = (
+        # Composite index for filtering vacancies by org and status (common list query)
+        Index('ix_vacancy_org_status', 'org_id', 'status'),
+        # Composite index for filtering by department
+        Index('ix_vacancy_dept_status', 'department_id', 'status'),
+    )
+
     # Relationships
     organization = relationship("Organization")
     department = relationship("Department")
@@ -824,6 +858,8 @@ class VacancyApplication(Base):
         UniqueConstraint('vacancy_id', 'entity_id', name='uq_vacancy_application'),
         # Index for kanban queries
         Index('ix_vacancy_application_stage', 'vacancy_id', 'stage'),
+        # Composite index for entity lookup across vacancies
+        Index('ix_vacancy_application_entity_vacancy', 'entity_id', 'vacancy_id'),
     )
 
     # Relationships
@@ -908,10 +944,15 @@ class EntityFile(Base):
     uploaded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=func.now())
 
+    __table_args__ = (
+        # Composite index for listing files by entity and type
+        Index('ix_entity_file_entity_type', 'entity_id', 'file_type'),
+    )
+
     # Relationships
     entity = relationship("Entity", back_populates="files")
     organization = relationship("Organization")
-    uploader = relationship("User")
+    uploader = relationship("User", back_populates="uploaded_files")
 
 
 class RefreshToken(Base):

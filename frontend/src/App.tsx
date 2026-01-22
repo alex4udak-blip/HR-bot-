@@ -1,23 +1,40 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { useAuthStore } from '@/stores/authStore';
 import { getCurrentUser } from '@/services/api';
-import LoginPage from '@/pages/LoginPage';
-import InvitePage from '@/pages/InvitePage';
-import DashboardPage from '@/pages/DashboardPage';
-import ChatsPage from '@/pages/ChatsPage';
-import ContactsPage from '@/pages/ContactsPage';
-import CandidatesPage from '@/pages/CandidatesPage';
-import CallsPage from '@/pages/CallsPage';
-import TrashPage from '@/pages/TrashPage';
-import UsersPage from '@/pages/UsersPage';
-import DepartmentsPage from '@/pages/DepartmentsPage';
-import SettingsPage from '@/pages/SettingsPage';
-import AdminSimulatorPage from '@/pages/AdminSimulatorPage';
-import VacanciesPage from '@/pages/VacanciesPage';
 import Layout from '@/components/Layout';
 import { WebSocketProvider } from '@/components/WebSocketProvider';
+
+// Code splitting: Lazy load pages for better initial bundle size
+// Login and Invite are loaded eagerly since they're entry points
+import LoginPage from '@/pages/LoginPage';
+import InvitePage from '@/pages/InvitePage';
+
+// Lazy loaded pages - only loaded when navigated to
+const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
+const ChatsPage = lazy(() => import('@/pages/ChatsPage'));
+const ContactsPage = lazy(() => import('@/pages/ContactsPage'));
+const CandidatesPage = lazy(() => import('@/pages/CandidatesPage'));
+const CallsPage = lazy(() => import('@/pages/CallsPage'));
+const TrashPage = lazy(() => import('@/pages/TrashPage'));
+const UsersPage = lazy(() => import('@/pages/UsersPage'));
+const DepartmentsPage = lazy(() => import('@/pages/DepartmentsPage'));
+const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
+const AdminSimulatorPage = lazy(() => import('@/pages/AdminSimulatorPage'));
+const VacanciesPage = lazy(() => import('@/pages/VacanciesPage'));
+
+// Loading fallback component for Suspense
+function PageLoader() {
+  return (
+    <div className="h-full flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+        <span className="text-sm text-dark-400">Загрузка...</span>
+      </div>
+    </div>
+  );
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuthStore();
@@ -90,23 +107,24 @@ export default function App() {
             </ProtectedRoute>
           }
         >
+          {/* Wrap lazy-loaded routes in Suspense for loading state */}
           <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="candidates" element={<CandidatesPage />} />
-          <Route path="chats" element={<ChatsPage />} />
-          <Route path="chats/:chatId" element={<ChatsPage />} />
-          <Route path="contacts" element={<ContactsPage />} />
-          <Route path="contacts/:entityId" element={<ContactsPage />} />
-          <Route path="calls" element={<CallsPage />} />
-          <Route path="calls/:callId" element={<CallsPage />} />
-          <Route path="vacancies" element={<VacanciesPage />} />
-          <Route path="vacancies/:vacancyId" element={<VacanciesPage />} />
-          <Route path="trash" element={<TrashPage />} />
-          <Route path="users" element={<UsersPage />} />
-          <Route path="departments" element={<DepartmentsPage />} />
-          <Route path="settings" element={<SettingsPage />} />
+          <Route path="dashboard" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
+          <Route path="candidates" element={<Suspense fallback={<PageLoader />}><CandidatesPage /></Suspense>} />
+          <Route path="chats" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
+          <Route path="chats/:chatId" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
+          <Route path="contacts" element={<Suspense fallback={<PageLoader />}><ContactsPage /></Suspense>} />
+          <Route path="contacts/:entityId" element={<Suspense fallback={<PageLoader />}><ContactsPage /></Suspense>} />
+          <Route path="calls" element={<Suspense fallback={<PageLoader />}><CallsPage /></Suspense>} />
+          <Route path="calls/:callId" element={<Suspense fallback={<PageLoader />}><CallsPage /></Suspense>} />
+          <Route path="vacancies" element={<Suspense fallback={<PageLoader />}><VacanciesPage /></Suspense>} />
+          <Route path="vacancies/:vacancyId" element={<Suspense fallback={<PageLoader />}><VacanciesPage /></Suspense>} />
+          <Route path="trash" element={<Suspense fallback={<PageLoader />}><TrashPage /></Suspense>} />
+          <Route path="users" element={<Suspense fallback={<PageLoader />}><UsersPage /></Suspense>} />
+          <Route path="departments" element={<Suspense fallback={<PageLoader />}><DepartmentsPage /></Suspense>} />
+          <Route path="settings" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
           <Route path="admin" element={<Navigate to="/admin/simulator" replace />} />
-          <Route path="admin/simulator" element={<AdminSimulatorPage />} />
+          <Route path="admin/simulator" element={<Suspense fallback={<PageLoader />}><AdminSimulatorPage /></Suspense>} />
           {/* Catch-all for unknown routes */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>

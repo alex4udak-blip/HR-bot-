@@ -89,11 +89,10 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
 
     setNotifying(true);
     try {
-      const result = await notifyMatchingCandidates(vacancyId, { minScore: minScore, limit: 50 });
-      // Show success (in production, you'd show a toast)
-      console.log(`Notified ${result.candidates_found} candidates`);
-    } catch (err) {
-      console.error('Failed to notify candidates:', err);
+      await notifyMatchingCandidates(vacancyId, { minScore: minScore, limit: 50 });
+      // Success - notification sent
+    } catch {
+      // Error handled silently - could add toast notification here
     } finally {
       setNotifying(false);
     }

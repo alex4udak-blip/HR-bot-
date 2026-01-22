@@ -15,6 +15,7 @@ import {
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { getEntityFiles, uploadEntityFile, deleteEntityFile, downloadEntityFile } from '@/services/api';
+import { formatDate } from '@/utils';
 import { EmptyFiles } from '@/components/ui';
 import type { EntityFile } from '@/services/api';
 
@@ -190,14 +191,6 @@ export default function EntityFiles({ entityId, canEdit = true }: EntityFilesPro
     }
   }, [canEdit]);
 
-  // Format date for display
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    });
-  };
 
   if (loading) {
     return (
@@ -379,7 +372,7 @@ export default function EntityFiles({ entityId, canEdit = true }: EntityFilesPro
                     </span>
                     <span>{formatFileSize(file.file_size)}</span>
                     <span>•</span>
-                    <span>{formatDate(file.created_at)}</span>
+                    <span>{formatDate(file.created_at, 'medium')}</span>
                   </div>
                   {file.description && (
                     <p className="text-xs text-white/50 mt-1 truncate">{file.description}</p>

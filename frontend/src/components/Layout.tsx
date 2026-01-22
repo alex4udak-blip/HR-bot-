@@ -148,14 +148,18 @@ export default function Layout() {
     <div className="h-screen w-full max-w-full flex flex-col lg:flex-row relative overflow-hidden">
       <BackgroundEffects />
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col w-64 h-screen glass border-r border-white/5">
+      <aside
+        className="hidden lg:flex flex-col w-64 h-screen glass border-r border-white/5"
+        role="navigation"
+        aria-label="Main navigation"
+      >
         <div className="p-6 border-b border-white/5">
           <h1 className="text-xl font-bold bg-gradient-to-r from-accent-400 to-accent-600 bg-clip-text text-transparent">
             Чат Аналитика
           </h1>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto" aria-label="Primary navigation">
           {navItems.map((item) => (
             <NavLink
               key={item.path}
@@ -197,30 +201,35 @@ export default function Layout() {
           <button
             onClick={handleHelpClick}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-dark-300 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all duration-200 mb-2"
+            aria-label={hasCompletedTour ? 'Пройти тур заново' : 'Открыть справку'}
           >
-            <HelpCircle className="w-5 h-5" />
+            <HelpCircle className="w-5 h-5" aria-hidden="true" />
             <span className="font-medium">{hasCompletedTour ? 'Пройти тур заново' : 'Помощь'}</span>
           </button>
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-dark-300 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
+            aria-label="Выйти из аккаунта"
           >
-            <LogOut className="w-5 h-5" />
+            <LogOut className="w-5 h-5" aria-hidden="true" />
             <span className="font-medium">Выход</span>
           </button>
         </div>
       </aside>
 
       {/* Mobile Header */}
-      <header className="lg:hidden glass border-b border-white/5 px-4 py-3 flex items-center justify-between">
+      <header className="lg:hidden glass border-b border-white/5 px-4 py-3 flex items-center justify-between" role="banner">
         <h1 className="text-lg font-bold bg-gradient-to-r from-accent-400 to-accent-600 bg-clip-text text-transparent">
           Чат Аналитика
         </h1>
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           className="p-2 rounded-lg hover:bg-white/5"
+          aria-expanded={mobileMenuOpen}
+          aria-controls="mobile-menu"
+          aria-label={mobileMenuOpen ? 'Закрыть меню' : 'Открыть меню'}
         >
-          {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          {mobileMenuOpen ? <X className="w-6 h-6" aria-hidden="true" /> : <Menu className="w-6 h-6" aria-hidden="true" />}
         </button>
       </header>
 
@@ -232,6 +241,9 @@ export default function Layout() {
           exit={{ opacity: 0 }}
           className="lg:hidden fixed inset-0 z-50 bg-dark-950/80"
           onClick={() => setMobileMenuOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Mobile navigation menu"
         >
           <motion.div
             initial={{ x: '100%' }}
@@ -240,8 +252,9 @@ export default function Layout() {
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
             className="absolute right-0 top-0 h-full w-64 glass flex flex-col"
             onClick={(e) => e.stopPropagation()}
+            id="mobile-menu"
           >
-            <div className="p-4 space-y-1 overflow-y-auto flex-1">
+            <nav className="p-4 space-y-1 overflow-y-auto flex-1" aria-label="Mobile navigation">
               {navItems.map((item) => (
                 <NavLink
                   key={item.path}
@@ -256,29 +269,34 @@ export default function Layout() {
                     )
                   }
                 >
-                  <item.icon className="w-5 h-5 flex-shrink-0" />
+                  <item.icon className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
                   <span className="font-medium truncate">{item.label}</span>
                 </NavLink>
               ))}
               <button
                 onClick={handleLogout}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-dark-300 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
+                aria-label="Выйти из аккаунта"
               >
-                <LogOut className="w-5 h-5" />
+                <LogOut className="w-5 h-5" aria-hidden="true" />
                 <span className="font-medium">Logout</span>
               </button>
-            </div>
+            </nav>
           </motion.div>
         </motion.div>
       )}
 
       {/* Main Content */}
-      <main className="flex-1 overflow-hidden flex flex-col">
+      <main className="flex-1 overflow-hidden flex flex-col" role="main" aria-label="Main content">
         {/* Impersonation Banner */}
         {isImpersonating() && user && (
-          <div className="bg-yellow-500/20 border-b border-yellow-500/30 px-4 py-3 flex items-center justify-between">
+          <div
+            className="bg-yellow-500/20 border-b border-yellow-500/30 px-4 py-3 flex items-center justify-between"
+            role="alert"
+            aria-live="polite"
+          >
             <div className="flex items-center gap-3">
-              <Shield className="w-5 h-5 text-yellow-400" />
+              <Shield className="w-5 h-5 text-yellow-400" aria-hidden="true" />
               <div>
                 <p className="text-sm font-semibold text-yellow-200">
                   Режим имперсонации
@@ -296,6 +314,7 @@ export default function Layout() {
             <button
               onClick={handleExitImpersonation}
               className="px-4 py-2 rounded-lg bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-200 hover:text-yellow-100 transition-colors text-sm font-medium border border-yellow-500/30"
+              aria-label="Выйти из режима имперсонации"
             >
               Выйти из имперсонации
             </button>
@@ -308,7 +327,7 @@ export default function Layout() {
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="lg:hidden glass border-t border-white/5 px-2 py-2 flex">
+      <nav className="lg:hidden glass border-t border-white/5 px-2 py-2 flex" aria-label="Bottom navigation">
         {navItems.slice(0, 4).map((item) => (
           <NavLink
             key={item.path}
@@ -322,8 +341,9 @@ export default function Layout() {
                   : 'text-dark-400 hover:text-dark-200'
               )
             }
+            aria-label={item.label}
           >
-            <item.icon className="w-5 h-5 flex-shrink-0" />
+            <item.icon className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
             <span className="text-xs truncate max-w-full">{item.label}</span>
           </NavLink>
         ))}

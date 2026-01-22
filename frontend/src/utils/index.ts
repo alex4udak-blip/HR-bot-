@@ -17,3 +17,11 @@ export {
   setLocalStorage,
   removeLocalStorage,
 } from './localStorage';
+
+export {
+  formatDate,
+  formatRelativeTime,
+  isToday,
+  isPast,
+} from './date';
+export type { DateFormatType } from './date';

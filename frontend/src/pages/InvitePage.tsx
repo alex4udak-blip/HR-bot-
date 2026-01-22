@@ -47,8 +47,8 @@ export default function InvitePage() {
       return;
     }
 
-    if (form.password.length < 6) {
-      toast.error('Пароль должен быть не менее 6 символов');
+    if (form.password.length < 8) {
+      toast.error('Пароль должен быть не менее 8 символов');
       return;
     }
 

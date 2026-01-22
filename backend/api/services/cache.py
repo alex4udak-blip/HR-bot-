@@ -5,6 +5,7 @@ Provides:
 - Hash-based caching to avoid re-analyzing unchanged data
 - Automatic cache invalidation on new messages
 - Memory-efficient context management
+- Redis-backed storage with in-memory fallback
 - Thread-safe operations using asyncio.Lock
 """
 
@@ -16,6 +17,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
 from ..config import settings
+from .redis_cache import redis_cache, get_redis, close_redis
 
 logger = logging.getLogger("hr-analyzer.cache")
 
@@ -147,29 +149,45 @@ class AnalysisCacheService:
         - No cache exists
         - Hash doesn't match (content changed)
         - Cache expired
+
+        Uses Redis if available, falls back to in-memory cache.
         """
-        async with cls._get_lock():
-            cache_entry = cls._cache.get(cache_key)
+        redis_key = f"analysis:{cache_key}"
 
-            if not cache_entry:
-                logger.debug(f"Cache miss: {cache_key} (no entry)")
-                return None
+        # Try Redis first
+        cache_entry = await redis_cache.get_json(redis_key)
 
-            # Check hash match
-            if cache_entry.get('hash') != content_hash:
-                logger.info(f"Cache invalidated: {cache_key} (hash mismatch)")
-                del cls._cache[cache_key]
-                return None
+        # Fall back to in-memory if Redis miss
+        if not cache_entry:
+            async with cls._get_lock():
+                cache_entry = cls._cache.get(cache_key)
 
-            # Check expiry
-            expires_at = cache_entry.get('expires_at')
-            if expires_at and datetime.utcnow() > expires_at:
-                logger.info(f"Cache expired: {cache_key}")
-                del cls._cache[cache_key]
-                return None
+        if not cache_entry:
+            logger.debug(f"Cache miss: {cache_key} (no entry)")
+            return None
 
-            logger.info(f"Cache hit: {cache_key}")
-            return cache_entry.get('result')
+        # Check hash match
+        if cache_entry.get('hash') != content_hash:
+            logger.info(f"Cache invalidated: {cache_key} (hash mismatch)")
+            # Clean up both caches
+            await redis_cache.delete(redis_key)
+            async with cls._get_lock():
+                cls._cache.pop(cache_key, None)
+            return None
+
+        # Check expiry (only for in-memory, Redis handles TTL)
+        expires_at = cache_entry.get('expires_at')
+        if expires_at and isinstance(expires_at, str):
+            expires_at = datetime.fromisoformat(expires_at)
+        if expires_at and datetime.utcnow() > expires_at:
+            logger.info(f"Cache expired: {cache_key}")
+            await redis_cache.delete(redis_key)
+            async with cls._get_lock():
+                cls._cache.pop(cache_key, None)
+            return None
+
+        logger.info(f"Cache hit: {cache_key}")
+        return cache_entry.get('result')
 
     @classmethod
     async def set_cached_analysis(
@@ -179,9 +197,24 @@ class AnalysisCacheService:
         result: str,
         ttl_seconds: int = None
     ):
-        """Store analysis result in cache with hash for validation."""
-        ttl = ttl_seconds or cls.DEFAULT_TTL_SECONDS
+        """Store analysis result in cache with hash for validation.
 
+        Stores in both Redis (if available) and in-memory cache.
+        """
+        ttl = ttl_seconds or cls.DEFAULT_TTL_SECONDS
+        redis_key = f"analysis:{cache_key}"
+
+        cache_data = {
+            'hash': content_hash,
+            'result': result,
+            'created_at': datetime.utcnow().isoformat(),
+            'expires_at': (datetime.utcnow() + timedelta(seconds=ttl)).isoformat()
+        }
+
+        # Store in Redis (primary)
+        await redis_cache.set_json(redis_key, cache_data, ttl)
+
+        # Also store in memory (backup/fast access)
         async with cls._get_lock():
             cls._cache[cache_key] = {
                 'hash': content_hash,
@@ -195,6 +228,10 @@ class AnalysisCacheService:
     @classmethod
     async def invalidate_chat_cache(cls, chat_id: int):
         """Invalidate all cache entries for a chat."""
+        # Invalidate in Redis
+        await redis_cache.delete_pattern(f"analysis:*chat:{chat_id}*")
+
+        # Invalidate in memory
         async with cls._get_lock():
             keys_to_delete = [k for k in cls._cache.keys() if f"chat:{chat_id}" in k]
             for key in keys_to_delete:
@@ -204,6 +241,10 @@ class AnalysisCacheService:
     @classmethod
     async def invalidate_entity_cache(cls, entity_id: int):
         """Invalidate all cache entries for an entity."""
+        # Invalidate in Redis
+        await redis_cache.delete_pattern(f"analysis:*entity:{entity_id}*")
+
+        # Invalidate in memory
         async with cls._get_lock():
             keys_to_delete = [k for k in cls._cache.keys() if f"entity:{entity_id}" in k]
             for key in keys_to_delete:
@@ -212,11 +253,15 @@ class AnalysisCacheService:
 
     @classmethod
     async def clear_all(cls):
-        """Clear entire cache."""
+        """Clear entire cache (both Redis and in-memory)."""
+        # Clear Redis analysis keys
+        await redis_cache.delete_pattern("analysis:*")
+
+        # Clear in-memory
         async with cls._get_lock():
             count = len(cls._cache)
             cls._cache.clear()
-        logger.info(f"Cleared {count} cache entries")
+        logger.info(f"Cleared {count} in-memory cache entries")
 
     @classmethod
     def clear_all_sync(cls):
@@ -363,25 +408,36 @@ class ScoringCacheService:
 
         Returns:
             Cached score dict or None if not found/expired
+
+        Uses Redis if available, falls back to in-memory cache.
         """
         cache_key = cls.make_score_key(entity_id, vacancy_id)
 
-        async with cls._get_lock():
-            cache_entry = cls._cache.get(cache_key)
+        # Try Redis first
+        cache_entry = await redis_cache.get_json(cache_key)
 
-            if not cache_entry:
-                logger.debug(f"Score cache miss: {cache_key} (no entry)")
-                return None
+        # Fall back to in-memory
+        if not cache_entry:
+            async with cls._get_lock():
+                cache_entry = cls._cache.get(cache_key)
 
-            # Check expiry
-            expires_at = cache_entry.get('expires_at')
-            if expires_at and datetime.utcnow() > expires_at:
-                logger.info(f"Score cache expired: {cache_key}")
-                del cls._cache[cache_key]
-                return None
+        if not cache_entry:
+            logger.debug(f"Score cache miss: {cache_key} (no entry)")
+            return None
 
-            logger.info(f"Score cache hit: {cache_key}")
-            return cache_entry.get('score')
+        # Check expiry (only for in-memory, Redis handles TTL)
+        expires_at = cache_entry.get('expires_at')
+        if expires_at and isinstance(expires_at, str):
+            expires_at = datetime.fromisoformat(expires_at)
+        if expires_at and datetime.utcnow() > expires_at:
+            logger.info(f"Score cache expired: {cache_key}")
+            await redis_cache.delete(cache_key)
+            async with cls._get_lock():
+                cls._cache.pop(cache_key, None)
+            return None
+
+        logger.info(f"Score cache hit: {cache_key}")
+        return cache_entry.get('score')
 
     @classmethod
     async def set_cached_score(
@@ -394,6 +450,8 @@ class ScoringCacheService:
         """
         Cache compatibility score with TTL.
 
+        Stores in both Redis (if available) and in-memory cache.
+
         Args:
             entity_id: Candidate entity ID
             vacancy_id: Vacancy ID
@@ -403,6 +461,18 @@ class ScoringCacheService:
         cache_key = cls.make_score_key(entity_id, vacancy_id)
         ttl = ttl_seconds or cls.DEFAULT_TTL_SECONDS
 
+        cache_data = {
+            'score': score,
+            'entity_id': entity_id,
+            'vacancy_id': vacancy_id,
+            'created_at': datetime.utcnow().isoformat(),
+            'expires_at': (datetime.utcnow() + timedelta(seconds=ttl)).isoformat()
+        }
+
+        # Store in Redis (primary)
+        await redis_cache.set_json(cache_key, cache_data, ttl)
+
+        # Also store in memory (backup)
         async with cls._get_lock():
             cls._cache[cache_key] = {
                 'score': score,
@@ -430,6 +500,11 @@ class ScoringCacheService:
         prefix = f"score:{entity_id}:"
         count = 0
 
+        # Invalidate in Redis
+        redis_count = await redis_cache.delete_pattern(f"{prefix}*")
+        count += redis_count
+
+        # Invalidate in memory
         async with cls._get_lock():
             keys_to_delete = [
                 k for k in cls._cache.keys()
@@ -460,6 +535,11 @@ class ScoringCacheService:
         suffix = f":{vacancy_id}"
         count = 0
 
+        # Invalidate in Redis
+        redis_count = await redis_cache.delete_pattern(f"score:*:{vacancy_id}")
+        count += redis_count
+
+        # Invalidate in memory
         async with cls._get_lock():
             keys_to_delete = [
                 k for k in cls._cache.keys()
@@ -488,6 +568,10 @@ class ScoringCacheService:
         """
         cache_key = cls.make_score_key(entity_id, vacancy_id)
 
+        # Invalidate in Redis
+        await redis_cache.delete(cache_key)
+
+        # Invalidate in memory
         async with cls._get_lock():
             if cache_key in cls._cache:
                 del cls._cache[cache_key]
@@ -497,12 +581,18 @@ class ScoringCacheService:
 
     @classmethod
     async def clear_all(cls) -> int:
-        """Clear entire scoring cache."""
+        """Clear entire scoring cache (both Redis and in-memory)."""
+        # Clear Redis scoring keys
+        redis_count = await redis_cache.delete_pattern("score:*")
+
+        # Clear in-memory
         async with cls._get_lock():
-            count = len(cls._cache)
+            memory_count = len(cls._cache)
             cls._cache.clear()
-        logger.info(f"Cleared {count} score cache entries")
-        return count
+
+        total = redis_count + memory_count
+        logger.info(f"Cleared {total} score cache entries (Redis: {redis_count}, memory: {memory_count})")
+        return total
 
     @classmethod
     def clear_all_sync(cls) -> int:

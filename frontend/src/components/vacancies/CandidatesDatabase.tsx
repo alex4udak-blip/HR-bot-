@@ -40,7 +40,7 @@ import {
   STAGE_TO_STATUS_MAP
 } from '@/types';
 import type { ParsedResume, BulkImportResponse } from '@/services/api';
-import { formatSalary } from '@/utils';
+import { formatSalary, formatDate } from '@/utils';
 import { bulkImportResumes, updateEntityStatus, generateAllProfiles } from '@/services/api';
 import ContactForm from '@/components/contacts/ContactForm';
 import ParserModal from '@/components/parser/ParserModal';
@@ -512,12 +512,6 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
       .toUpperCase();
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'short'
-    });
-  };
 
   // Quick status change handler for cards/list view (with double-click protection)
   const handleQuickStatusChange = async (candidate: Entity, newStatus: EntityStatus) => {
@@ -637,7 +631,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           {/* Date - fixed 70px */}
           <div className="w-[70px] min-w-[70px] flex-shrink-0 flex items-center gap-1 text-xs text-white/40 whitespace-nowrap">
             <Clock className="w-3 h-3" />
-            {formatDate(candidate.created_at)}
+            {formatDate(candidate.created_at, 'short')}
           </div>
         </motion.div>
       );
@@ -746,7 +740,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           {/* Date - fixed width */}
           <div className="flex items-center gap-1 whitespace-nowrap flex-shrink-0">
             <Clock className="w-3 h-3" />
-            {formatDate(candidate.created_at)}
+            {formatDate(candidate.created_at, 'short')}
           </div>
           {/* Owner - takes remaining space but truncates */}
           {candidate.owner_name && (
@@ -997,7 +991,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                           <div className="mt-1.5 ml-6 flex items-center justify-between text-xs text-white/40">
                             <div className="flex items-center gap-2">
                               <Clock className="w-3 h-3" />
-                              {formatDate(candidate.created_at)}
+                              {formatDate(candidate.created_at, 'short')}
                             </div>
                             {(() => {
                               const currentIndex = PIPELINE_STAGES.indexOf(stage as any);

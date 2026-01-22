@@ -27,7 +27,7 @@ import toast from 'react-hot-toast';
 import type { EntityWithRelations, Chat, CallRecording, VacancyApplication } from '@/types';
 import { EmptyChats, EmptyCalls } from '@/components/ui';
 import { STATUS_LABELS, STATUS_COLORS, CALL_STATUS_LABELS, CALL_STATUS_COLORS } from '@/types';
-import { formatSalary } from '@/utils';
+import { formatSalary, formatDate } from '@/utils';
 import EntityAI from './EntityAI';
 import CriteriaPanelEntity from './CriteriaPanelEntity';
 import AddToVacancyModal from '../entities/AddToVacancyModal';
@@ -247,15 +247,6 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return '—';
@@ -326,7 +317,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </div>
                 {entity.transferred_at && (
                   <p className="text-xs text-orange-300/70 mt-1 ml-6">
-                    {formatDate(entity.transferred_at)}
+                    {formatDate(entity.transferred_at, 'long')}
                   </p>
                 )}
                 <p className="text-xs text-orange-300/70 mt-1 ml-6">
@@ -544,7 +535,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-white font-medium truncate">{chat.title}</p>
-                        <p className="text-xs text-white/40 truncate">{formatDate(chat.created_at)}</p>
+                        <p className="text-xs text-white/40 truncate">{formatDate(chat.created_at, 'long')}</p>
                       </div>
                       <ChevronRight size={16} className="text-white/40 flex-shrink-0" />
                     </div>
@@ -588,7 +579,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                           {formatDuration(call.duration_seconds)}
                         </span>
                       </div>
-                      <p className="text-xs text-white/40">{formatDate(call.created_at)}</p>
+                      <p className="text-xs text-white/40">{formatDate(call.created_at, 'long')}</p>
                     </div>
                   ))}
                 </div>
@@ -640,7 +631,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                       {transfer.comment && (
                         <p className="text-xs text-white/40 mt-1">{transfer.comment}</p>
                       )}
-                      <p className="text-xs text-white/30 mt-1">{formatDate(transfer.created_at)}</p>
+                      <p className="text-xs text-white/30 mt-1">{formatDate(transfer.created_at, 'long')}</p>
                     </div>
                   ))}
                 </div>
@@ -670,7 +661,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                     <div className="min-w-0 flex-1">
                       <p className="text-white font-medium truncate">{chat.title}</p>
                       <p className="text-sm text-white/40 truncate">
-                        {chat.chat_type} • Создан {formatDate(chat.created_at)}
+                        {chat.chat_type} • Создан {formatDate(chat.created_at, 'long')}
                       </p>
                     </div>
                   </div>
@@ -703,7 +694,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                         <p className="text-white font-medium truncate">
                           Звонок {call.source_type.toUpperCase()}
                         </p>
-                        <p className="text-sm text-white/40 truncate">{formatDate(call.created_at)}</p>
+                        <p className="text-sm text-white/40 truncate">{formatDate(call.created_at, 'long')}</p>
                       </div>
                     </div>
                     <div className="text-right flex-shrink-0">
@@ -814,7 +805,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                         {transfer.comment && (
                           <p className="text-xs text-white/50 mt-1">{transfer.comment}</p>
                         )}
-                        <p className="text-xs text-white/30 mt-1">{formatDate(transfer.created_at)}</p>
+                        <p className="text-xs text-white/30 mt-1">{formatDate(transfer.created_at, 'long')}</p>
                       </div>
                     </div>
                   ))}
@@ -842,7 +833,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                         {analysis.result && (
                           <p className="text-xs text-white/50 mt-1 line-clamp-2">{analysis.result}</p>
                         )}
-                        <p className="text-xs text-white/30 mt-1">{formatDate(analysis.created_at)}</p>
+                        <p className="text-xs text-white/30 mt-1">{formatDate(analysis.created_at, 'long')}</p>
                       </div>
                     </div>
                   ))}
@@ -979,7 +970,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-white font-medium truncate">{chat.title}</p>
-                        <p className="text-xs text-white/40 truncate">{chat.chat_type} • {formatDate(chat.created_at)}</p>
+                        <p className="text-xs text-white/40 truncate">{chat.chat_type} • {formatDate(chat.created_at, 'long')}</p>
                       </div>
                       {asyncState.loadingLink ? (
                         <Loader2 size={16} className="text-cyan-400 animate-spin flex-shrink-0" />
@@ -1046,7 +1037,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                           Звонок {call.source_type?.toUpperCase() || 'N/A'}
                         </p>
                         <p className="text-xs text-white/40 truncate">
-                          {formatDuration(call.duration_seconds)} • {formatDate(call.created_at)}
+                          {formatDuration(call.duration_seconds)} • {formatDate(call.created_at, 'long')}
                         </p>
                         <span className={clsx('text-xs px-2 py-0.5 rounded-full mt-1 inline-block whitespace-nowrap', CALL_STATUS_COLORS[call.status])}>
                           {CALL_STATUS_LABELS[call.status]}

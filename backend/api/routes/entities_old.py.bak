@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Request
 from sqlalchemy import select, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List, Literal
@@ -7,6 +7,8 @@ from pydantic import BaseModel
 import re
 import logging
 import asyncio
+
+import aiofiles
 
 logger = logging.getLogger("hr-analyzer.entities")
 
@@ -23,6 +25,15 @@ from ..services.red_flags import red_flags_service
 from ..services.cache import scoring_cache
 from ..models.sharing import ShareRequestWithRelated as ShareRequest
 from .realtime import broadcast_entity_created, broadcast_entity_updated, broadcast_entity_deleted
+from ..limiter import limiter
+
+
+def _get_rate_limit_key(request: Request) -> str:
+    """Get rate limit key based on authenticated user ID."""
+    user = getattr(request.state, '_rate_limit_user', None)
+    if user and hasattr(user, 'id'):
+        return f"user:{user.id}"
+    return request.client.host if request.client else "unknown"
 
 # Ownership filter type
 OwnershipFilter = Literal["all", "mine", "shared"]
@@ -789,7 +800,7 @@ async def smart_search(
     query: str = Query(..., min_length=1, max_length=500, description="Natural language search query"),
     type: Optional[EntityType] = Query(None, description="Filter by entity type"),
     limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=10000),  # Limit offset to prevent abuse
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1571,6 +1582,35 @@ async def update_entity_status(
     if entity.is_transferred:
         raise HTTPException(400, "Cannot edit a transferred entity")
 
+    # SECURITY: Check edit permissions before allowing status update
+    # This fixes IDOR vulnerability where view-only users could change status
+    can_edit = False
+    if current_user.role == UserRole.superadmin:
+        can_edit = True
+    else:
+        # Full access users can edit
+        user_has_full_access = await has_full_database_access(current_user, org.id, db)
+        if user_has_full_access:
+            can_edit = True
+        elif entity.created_by == current_user.id:
+            can_edit = True  # Owner of record
+        else:
+            # Check if shared with edit/full access
+            shared_result = await db.execute(
+                select(SharedAccess).where(
+                    SharedAccess.resource_type == ResourceType.entity,
+                    SharedAccess.resource_id == entity_id,
+                    SharedAccess.shared_with_id == current_user.id,
+                    SharedAccess.access_level.in_([AccessLevel.edit, AccessLevel.full]),
+                    or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
+                )
+            )
+            if shared_result.scalar_one_or_none():
+                can_edit = True
+
+    if not can_edit:
+        raise HTTPException(403, "No edit permission for this entity")
+
     # Update status
     old_status = entity.status
     entity.status = data.status
@@ -1819,14 +1859,22 @@ async def transfer_entity(
     await db.flush()  # Get the ID of the copy
 
     # === STEP 2: Copy all chats to the frozen copy ===
+    # SECURITY: Use FOR UPDATE to prevent race condition where new chats
+    # are added while transfer is in progress
     chats_result = await db.execute(
-        select(Chat).where(Chat.entity_id == entity_id)
+        select(Chat)
+        .where(Chat.entity_id == entity_id)
+        .with_for_update()
     )
     chats = list(chats_result.scalars().all())
 
     # === STEP 3: Copy all calls to the frozen copy ===
+    # SECURITY: Use FOR UPDATE to prevent race condition where new calls
+    # are added while transfer is in progress
     calls_result = await db.execute(
-        select(CallRecording).where(CallRecording.entity_id == entity_id)
+        select(CallRecording)
+        .where(CallRecording.entity_id == entity_id)
+        .with_for_update()
     )
     calls = list(calls_result.scalars().all())
 
@@ -1897,9 +1945,14 @@ async def cancel_transfer(
     if not transfer:
         raise HTTPException(404, "Transfer not found")
 
-    # Check if user is the one who made the transfer or superadmin
-    if transfer.from_user_id != current_user.id and current_user.role != UserRole.superadmin:
-        raise HTTPException(403, "Only the person who transferred can cancel")
+    # Check if user is involved in the transfer or is superadmin
+    # Both sender (from_user) and recipient (to_user) can cancel within the time window
+    is_sender = transfer.from_user_id == current_user.id
+    is_recipient = transfer.to_user_id == current_user.id
+    is_superadmin = current_user.role == UserRole.superadmin
+
+    if not (is_sender or is_recipient or is_superadmin):
+        raise HTTPException(403, "Only the sender, recipient, or superadmin can cancel this transfer")
 
     # Check if already cancelled
     if transfer.cancelled_at:
@@ -1927,16 +1980,22 @@ async def cancel_transfer(
     entity.updated_at = datetime.utcnow()
 
     # === STEP 2: Revert all chats ownership ===
+    # SECURITY: Use FOR UPDATE to prevent race condition
     chats_result = await db.execute(
-        select(Chat).where(Chat.entity_id == transfer.entity_id)
+        select(Chat)
+        .where(Chat.entity_id == transfer.entity_id)
+        .with_for_update()
     )
     chats = list(chats_result.scalars().all())
     for chat in chats:
         chat.owner_id = transfer.from_user_id
 
     # === STEP 3: Revert all calls ownership ===
+    # SECURITY: Use FOR UPDATE to prevent race condition
     calls_result = await db.execute(
-        select(CallRecording).where(CallRecording.entity_id == transfer.entity_id)
+        select(CallRecording)
+        .where(CallRecording.entity_id == transfer.entity_id)
+        .with_for_update()
     )
     calls = list(calls_result.scalars().all())
     for call in calls:
@@ -3669,8 +3728,8 @@ async def create_entity_from_resume(
             file_path = entity_dir / unique_name
 
             # Сохраняем файл
-            with open(file_path, 'wb') as f:
-                f.write(content)
+            async with aiofiles.open(file_path, 'wb') as f:
+                await f.write(content)
 
             # Определяем MIME-тип
             content_type = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
@@ -4399,7 +4458,7 @@ async def compare_candidates_ai(
 async def get_entity_chats(
     entity_id: int,
     limit: int = Query(50, le=200),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=10000),  # Limit offset to prevent abuse
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -4489,7 +4548,7 @@ async def get_entity_chats(
 async def get_entity_calls(
     entity_id: int,
     limit: int = Query(50, le=200),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=10000),  # Limit offset to prevent abuse
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -4697,8 +4756,10 @@ class SimilarWithProfileResponse(BaseModel):
 
 
 @router.post("/{entity_id}/profile/generate", response_model=ProfileResponse)
+@limiter.limit("10/minute", key_func=_get_rate_limit_key)
 async def generate_entity_profile(
     entity_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -4719,6 +4780,7 @@ async def generate_entity_profile(
     from sqlalchemy.orm import selectinload
     from ..models.database import EntityFile
 
+    request.state._rate_limit_user = current_user
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org:
@@ -4915,7 +4977,9 @@ class BulkProfileResponse(BaseModel):
 
 
 @router.post("/profiles/generate-all", response_model=BulkProfileResponse)
+@limiter.limit("1/minute", key_func=_get_rate_limit_key)
 async def generate_all_profiles(
+    request: Request,
     force_regenerate: bool = Query(default=False, description="Regenerate even if profile exists"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -4934,6 +4998,7 @@ async def generate_all_profiles(
     from sqlalchemy.orm import selectinload
     from ..models.database import EntityFile
 
+    request.state._rate_limit_user = current_user
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org:

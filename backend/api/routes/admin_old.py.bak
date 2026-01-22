@@ -974,18 +974,22 @@ async def get_impersonation_logs(
     )
     logs = result.scalars().all()
 
-    # Get user info for all logs
+    # Batch fetch all users involved (fix N+1 query)
+    user_ids = set()
+    for log in logs:
+        user_ids.add(log.superadmin_id)
+        user_ids.add(log.impersonated_user_id)
+
+    users_result = await db.execute(
+        select(User).where(User.id.in_(user_ids))
+    )
+    users_map = {user.id: user for user in users_result.scalars().all()}
+
+    # Build responses using pre-fetched users
     log_responses = []
     for log in logs:
-        superadmin_result = await db.execute(
-            select(User).where(User.id == log.superadmin_id)
-        )
-        superadmin = superadmin_result.scalar_one_or_none()
-
-        impersonated_result = await db.execute(
-            select(User).where(User.id == log.impersonated_user_id)
-        )
-        impersonated = impersonated_result.scalar_one_or_none()
+        superadmin = users_map.get(log.superadmin_id)
+        impersonated = users_map.get(log.impersonated_user_id)
 
         log_responses.append(ImpersonationLogResponse(
             id=log.id,

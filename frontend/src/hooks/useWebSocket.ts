@@ -23,6 +23,26 @@ export interface WebSocketEvent {
   timestamp: string;
 }
 
+// Exponential backoff configuration
+const INITIAL_RECONNECT_DELAY = 1000;  // 1 second
+const MAX_RECONNECT_DELAY = 60000;     // 60 seconds
+const BACKOFF_MULTIPLIER = 2;
+const JITTER_FACTOR = 0.3;             // ±30% randomization
+
+/**
+ * Calculate reconnection delay with exponential backoff and jitter.
+ * This prevents thundering herd when many clients reconnect simultaneously.
+ */
+function calculateBackoffDelay(attempt: number): number {
+  const baseDelay = Math.min(
+    INITIAL_RECONNECT_DELAY * Math.pow(BACKOFF_MULTIPLIER, attempt),
+    MAX_RECONNECT_DELAY
+  );
+  // Add jitter: ±30% randomization
+  const jitter = baseDelay * JITTER_FACTOR * (Math.random() * 2 - 1);
+  return Math.round(baseDelay + jitter);
+}
+
 export function useWebSocket(options: UseWebSocketOptions = {}) {
   const {
     onCallProgress,
@@ -36,7 +56,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     onChatDeleted,
     onChatMessage,
     autoReconnect = true,
-    reconnectInterval = 3000,
+    reconnectInterval = 3000,  // Kept for backwards compatibility, but overridden by backoff
   } = options;
 
   const [status, setStatus] = useState<WebSocketStatus>('disconnected');
@@ -44,6 +64,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const isManualClose = useRef(false);
+  const reconnectAttemptRef = useRef(0);
+  const lastEventTimestampRef = useRef<string | null>(null);
 
   const { user } = useAuthStore();
 
@@ -63,12 +85,17 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     setError(null);
     isManualClose.current = false;
 
-    // Build WebSocket URL
+    // Build WebSocket URL with optional since_timestamp for state sync
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
     // Token is in httpOnly cookie, so we need to get it from a special endpoint
     // For now, we'll use the cookie-based auth - backend will read cookie from WebSocket handshake
-    const wsUrl = `${protocol}//${host}/ws`;
+    let wsUrl = `${protocol}//${host}/ws`;
+
+    // STATE SYNC: If reconnecting, request missed events since last received timestamp
+    if (lastEventTimestampRef.current) {
+      wsUrl += `?since=${encodeURIComponent(lastEventTimestampRef.current)}`;
+    }
 
     try {
       const ws = new WebSocket(wsUrl);
@@ -78,6 +105,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         logger.log('[WebSocket] Connected');
         setStatus('connected');
         setError(null);
+        // Reset reconnect attempt counter on successful connection
+        reconnectAttemptRef.current = 0;
       };
 
       ws.onclose = (event) => {
@@ -86,16 +115,24 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
         if (isManualClose.current) {
           setStatus('disconnected');
+          reconnectAttemptRef.current = 0;
           return;
         }
 
         // Auto-reconnect if enabled and not manually closed
         if (autoReconnect && user) {
           setStatus('reconnecting');
+
+          // Calculate delay with exponential backoff and jitter
+          const delay = calculateBackoffDelay(reconnectAttemptRef.current);
+          reconnectAttemptRef.current += 1;
+
+          logger.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${reconnectAttemptRef.current})`);
+
           reconnectTimeoutRef.current = setTimeout(() => {
             logger.log('[WebSocket] Attempting to reconnect...');
             connect();
-          }, reconnectInterval);
+          }, delay);
         } else {
           setStatus('disconnected');
         }
@@ -111,6 +148,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         try {
           const message = JSON.parse(event.data) as WebSocketMessage;
           logger.log('[WebSocket] Message:', message.type, message.payload);
+
+          // STATE SYNC: Track last event timestamp for reconnection
+          if ('timestamp' in message && message.timestamp) {
+            lastEventTimestampRef.current = message.timestamp as string;
+          }
 
           // Handle different event types using discriminated union
           // TypeScript narrows payload type automatically based on message.type
@@ -178,6 +220,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
   const disconnect = useCallback(() => {
     isManualClose.current = true;
+    reconnectAttemptRef.current = 0;  // Reset backoff on manual disconnect
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
     }

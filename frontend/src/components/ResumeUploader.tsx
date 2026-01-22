@@ -273,15 +273,16 @@ function FileItem({
                 'mt-3 flex items-center gap-2 px-4 py-2 rounded-lg transition-colors',
                 'bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed'
               )}
+              aria-busy={isCreatingEntity}
             >
               {isCreatingEntity ? (
                 <>
-                  <Loader2 size={16} className="animate-spin" />
+                  <Loader2 size={16} className="animate-spin" aria-hidden="true" />
                   Создание...
                 </>
               ) : (
                 <>
-                  <User size={16} />
+                  <User size={16} aria-hidden="true" />
                   Создать кандидата
                 </>
               )}
@@ -290,8 +291,8 @@ function FileItem({
 
           {/* Entity created indicator */}
           {file.entityId && (
-            <div className="mt-2 flex items-center gap-2 text-sm text-green-400">
-              <CheckCircle size={16} />
+            <div className="mt-2 flex items-center gap-2 text-sm text-green-400" role="status">
+              <CheckCircle size={16} aria-hidden="true" />
               Кандидат создан (ID: {file.entityId})
             </div>
           )}
@@ -301,9 +302,9 @@ function FileItem({
         <button
           onClick={onRemove}
           className="flex-shrink-0 p-2 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-white"
-          title="Удалить"
+          aria-label={`Удалить файл ${file.file.name}`}
         >
-          <X size={18} />
+          <X size={18} aria-hidden="true" />
         </button>
       </div>
     </motion.div>
@@ -475,6 +476,12 @@ export default function ResumeUploader({
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         onClick={handleDropZoneClick}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && !disabled) {
+            e.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
         className={clsx(
           'relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 cursor-pointer',
           isDragging
@@ -483,6 +490,10 @@ export default function ResumeUploader({
               ? 'border-white/10 bg-white/5 opacity-50 cursor-not-allowed'
               : 'border-white/20 hover:border-white/40 hover:bg-white/5'
         )}
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-label="Область для загрузки резюме. Перетащите файлы или нажмите для выбора"
+        aria-disabled={disabled}
       >
         {/* Hidden file input */}
         <input
@@ -493,6 +504,7 @@ export default function ResumeUploader({
           onChange={handleFileInputChange}
           className="hidden"
           disabled={disabled}
+          aria-label="Выбрать файлы резюме"
         />
 
         {/* Icon */}
@@ -505,7 +517,7 @@ export default function ResumeUploader({
           <Upload className={clsx(
             'w-8 h-8 transition-colors',
             isDragging ? 'text-blue-400' : 'text-white/40'
-          )} />
+          )} aria-hidden="true" />
         </div>
 
         {/* Text */}
@@ -551,10 +563,10 @@ export default function ResumeUploader({
 
       {/* Overall progress */}
       {isUploading && (
-        <div className="p-3 bg-white/5 rounded-lg">
+        <div className="p-3 bg-white/5 rounded-lg" role="status" aria-live="polite">
           <div className="flex items-center justify-between text-sm mb-2">
             <span className="text-white/60">Загрузка файлов...</span>
-            <span className="text-white/40">{overallProgress}%</span>
+            <span className="text-white/40" aria-label={`${overallProgress} процентов`}>{overallProgress}%</span>
           </div>
           <div className="h-2 bg-white/10 rounded-full overflow-hidden">
             <motion.div
@@ -593,8 +605,9 @@ export default function ResumeUploader({
               <button
                 onClick={clearFiles}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                aria-label="Очистить все файлы"
               >
-                <Trash2 size={14} />
+                <Trash2 size={14} aria-hidden="true" />
                 Очистить
               </button>
             </div>

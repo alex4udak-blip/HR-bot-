@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -18,8 +18,17 @@ from ..services.auth import get_current_user
 from ..services.ai import ai_service
 from ..services.reports import generate_pdf_report, generate_docx_report
 from ..services.permissions import PermissionService
+from ..limiter import limiter
 
 router = APIRouter()
+
+
+def _get_rate_limit_key(request: Request) -> str:
+    """Get rate limit key based on authenticated user ID."""
+    user = getattr(request.state, '_rate_limit_user', None)
+    if user and hasattr(user, 'id'):
+        return f"user:{user.id}"
+    return request.client.host if request.client else "unknown"
 
 
 async def get_chat_context(db: AsyncSession, chat_id: int):
@@ -46,12 +55,17 @@ async def get_chat_context(db: AsyncSession, chat_id: int):
 
 
 @router.post("/{chat_id}/ai/message")
+@limiter.limit("30/minute", key_func=_get_rate_limit_key)
 async def ai_message(
     chat_id: int,
-    request: AIMessageRequest,
+    body: AIMessageRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # Store user for rate limiter
+    request.state._rate_limit_user = user
+
     user = await db.merge(user)
     chat, messages, criteria = await get_chat_context(db, chat_id)
     if not chat:
@@ -61,7 +75,7 @@ async def ai_message(
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Validate that at least one of message or quick_action is provided
-    if not request.message and not request.quick_action:
+    if not body.message and not body.quick_action:
         raise HTTPException(status_code=400, detail="Требуется message или quick_action")
 
     # Get or create conversation
@@ -88,12 +102,12 @@ async def ai_message(
     custom_description = chat.custom_type_description
 
     # Handle quick actions
-    if request.quick_action:
+    if body.quick_action:
         async def generate():
             full_response = ""
             try:
                 async for chunk in ai_service.quick_action(
-                    request.quick_action, chat.title, messages, criteria,
+                    body.quick_action, chat.title, messages, criteria,
                     chat_type, custom_description, chat
                 ):
                     full_response += chunk
@@ -108,7 +122,7 @@ async def ai_message(
             new_messages = list(history)  # Create new list to ensure change detection
             new_messages.append({
                 "role": "user",
-                "content": f"[Быстрое действие: {request.quick_action}]",
+                "content": f"[Быстрое действие: {body.quick_action}]",
                 "timestamp": datetime.utcnow().isoformat()
             })
             new_messages.append({
@@ -129,7 +143,7 @@ async def ai_message(
         full_response = ""
         try:
             async for chunk in ai_service.chat_stream(
-                request.message, chat.title, messages, criteria, history,
+                body.message, chat.title, messages, criteria, history,
                 chat_type, custom_description, chat
             ):
                 full_response += chunk
@@ -144,7 +158,7 @@ async def ai_message(
         new_messages = list(history)  # Create new list to ensure change detection
         new_messages.append({
             "role": "user",
-            "content": request.message,
+            "content": body.message,
             "timestamp": datetime.utcnow().isoformat()
         })
         new_messages.append({
@@ -231,12 +245,15 @@ async def clear_ai_history(
 
 
 @router.post("/{chat_id}/analyze", response_model=AnalysisResponse)
+@limiter.limit("10/minute", key_func=_get_rate_limit_key)
 async def analyze_chat(
     chat_id: int,
-    request: AnalyzeRequest,
+    body: AnalyzeRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    request.state._rate_limit_user = user
     user = await db.merge(user)
     chat, messages, criteria = await get_chat_context(db, chat_id)
     if not chat:
@@ -247,7 +264,7 @@ async def analyze_chat(
 
     chat_type = chat.chat_type.value if chat.chat_type else "hr"
     result = await ai_service.generate_report(
-        chat.title, messages, criteria, request.report_type, request.include_quotes,
+        chat.title, messages, criteria, body.report_type, body.include_quotes,
         chat_type, chat.custom_type_description, chat.id, True, chat
     )
 
@@ -255,7 +272,7 @@ async def analyze_chat(
         chat_id=chat_id,
         user_id=user.id,
         result=result,
-        report_type=request.report_type,
+        report_type=body.report_type,
         criteria_used=criteria,
     )
     db.add(analysis)
