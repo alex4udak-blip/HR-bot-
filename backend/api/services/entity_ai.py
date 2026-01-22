@@ -152,7 +152,7 @@ class EntityAIService:
         """Parse entity file content asynchronously"""
         try:
             if not file.file_path or not os.path.exists(file.file_path):
-                logger.warning(f"File not found: {file.file_path}")
+                logger.debug(f"Skipping file (not on disk): {file.file_path} - will use other context for profile")
                 return None
 
             async with aiofiles.open(file.file_path, 'rb') as f:
