@@ -17,6 +17,8 @@ import {
   Briefcase,
   UserCheck,
   HelpCircle,
+  Mail,
+  BarChart3,
   type LucideIcon
 } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
@@ -40,6 +42,8 @@ const iconMap: Record<string, LucideIcon> = {
   Trash2,
   Briefcase,
   UserCheck,
+  Mail,
+  BarChart3,
 };
 
 // Localized labels
@@ -56,6 +60,8 @@ const labelMap: Record<string, string> = {
   'Settings': 'Настройки',
   'Admin Panel': 'Симулятор ролей',
   'Trash': 'Корзина',
+  'Email Templates': 'Email шаблоны',
+  'Analytics': 'Аналитика',
 };
 
 // Map paths to data-tour attributes
@@ -128,6 +134,8 @@ export default function Layout() {
     // Add menu items for superadmin and org owner
     if (user?.role === 'superadmin' || user?.org_role === 'owner') {
       items.push({ path: '/departments', icon: Building2, label: 'Департаменты' });
+      items.push({ path: '/email-templates', icon: Mail, label: 'Email шаблоны' });
+      items.push({ path: '/analytics', icon: BarChart3, label: 'Аналитика' });
       items.push({ path: '/settings', icon: Settings, label: 'Настройки' });
     }
 

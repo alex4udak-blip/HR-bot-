@@ -9,6 +9,8 @@ from .stats import router as stats_router
 from .admin import router as admin_router
 from .currency import router as currency_router
 from .scoring import router as scoring_router
+from . import email_templates
+from . import analytics
 
 api_router = APIRouter()
 

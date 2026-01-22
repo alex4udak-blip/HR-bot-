@@ -20,6 +20,7 @@ from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
 from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser, search, scoring, currency
+from api.routes import email_templates, analytics
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
@@ -246,6 +247,22 @@ try:
     logger.info("Currency router registered successfully at /api/currency")
 except Exception as e:
     logger.error(f"FAILED to register currency router: {e}")
+    raise
+
+logger.info("=== REGISTERING EMAIL TEMPLATES ROUTER ===")
+try:
+    app.include_router(email_templates.router, prefix="/api/email-templates", tags=["email-templates"])
+    logger.info("Email templates router registered successfully at /api/email-templates")
+except Exception as e:
+    logger.error(f"FAILED to register email templates router: {e}")
+    raise
+
+logger.info("=== REGISTERING ANALYTICS ROUTER ===")
+try:
+    app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
+    logger.info("Analytics router registered successfully at /api/analytics")
+except Exception as e:
+    logger.error(f"FAILED to register analytics router: {e}")
     raise
 
 
