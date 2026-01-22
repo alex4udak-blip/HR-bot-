@@ -658,6 +658,8 @@ DEFAULT_MENU_ITEMS = [
     MenuItemConfig(id="candidates", label="Candidates", path="/candidates", icon="UserCheck", required_feature="candidate_database"),
     MenuItemConfig(id="calls", label="Calls", path="/calls", icon="Phone", required_permission="can_view_calls"),
     MenuItemConfig(id="departments", label="Departments", path="/departments", required_permission="can_view_departments", icon="Building2"),
+    MenuItemConfig(id="email-templates", label="Email Templates", path="/email-templates", icon="Mail", required_permission="can_view_departments"),
+    MenuItemConfig(id="analytics", label="Analytics", path="/analytics", icon="BarChart3", required_permission="can_view_departments"),
     MenuItemConfig(id="users", label="Users", path="/users", icon="UserCog", required_permission="can_view_all_users"),
     MenuItemConfig(id="invite", label="Invite", path="/invite", icon="UserPlus", required_permission="can_invite_users"),
     MenuItemConfig(id="settings", label="Settings", path="/settings", icon="Settings"),
