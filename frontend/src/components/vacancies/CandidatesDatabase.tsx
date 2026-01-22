@@ -485,19 +485,24 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     try {
       const result = await generateAllProfiles(false);
       if (result.profiles_generated > 0) {
-        toast.success(`Сгенерировано ${result.profiles_generated} профилей из ${result.total_candidates} кандидатов`);
+        toast.success(`Сгенерировано ${result.profiles_generated} профилей из ${result.total_candidates}`);
         fetchEntities(); // Обновить список для отображения профилей
+      } else if (result.profiles_skipped > 0) {
+        toast.success(`Все ${result.profiles_skipped} профилей уже сгенерированы`);
       } else if (result.total_candidates === 0) {
-        toast.error('Нет кандидатов для генерации профилей');
-      } else {
-        toast.success('Все профили уже сгенерированы');
+        toast('Нет кандидатов для генерации профилей', { icon: 'ℹ️' });
       }
       if (result.errors && result.errors > 0) {
         toast.error(`Ошибки при генерации: ${result.errors} кандидатов`);
       }
-    } catch (err) {
+    } catch (err: any) {
       logger.error('Profile generation error:', err);
-      toast.error('Ошибка генерации профилей');
+      // Handle rate limit error specifically
+      if (err?.response?.status === 429) {
+        toast.error('Подождите минуту перед повторной генерацией');
+      } else {
+        toast.error('Ошибка генерации профилей');
+      }
     } finally {
       setProfileGenerating(false);
     }
