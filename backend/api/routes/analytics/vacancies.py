@@ -238,7 +238,7 @@ async def compare_vacancies(
         select(
             VacancyApplication.vacancy_id,
             func.count(VacancyApplication.id).label("applications"),
-            func.sum(case((VacancyApplication.stage == ApplicationStage.hired, 1), else_=0)).label("hires"),
+            func.sum(case((VacancyApplication.stage == 'hired', 1), else_=0)).label("hires"),
             func.avg(
                 case(
                     (VacancyApplication.compatibility_score.isnot(None),
@@ -248,7 +248,7 @@ async def compare_vacancies(
             ).label("avg_score"),
             func.avg(
                 case(
-                    (VacancyApplication.stage == ApplicationStage.hired,
+                    (VacancyApplication.stage == 'hired',
                      func.extract('epoch', VacancyApplication.last_stage_change_at - VacancyApplication.applied_at) / 86400),
                     else_=None
                 )
@@ -416,7 +416,7 @@ async def get_source_effectiveness(
         select(
             func.coalesce(VacancyApplication.source, 'unknown').label("source"),
             func.count(VacancyApplication.id).label("total"),
-            func.sum(case((VacancyApplication.stage == ApplicationStage.hired, 1), else_=0)).label("hired"),
+            func.sum(case((VacancyApplication.stage == 'hired', 1), else_=0)).label("hired"),
             func.avg(
                 case(
                     (VacancyApplication.compatibility_score.isnot(None),

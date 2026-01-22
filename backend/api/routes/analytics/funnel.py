@@ -117,7 +117,7 @@ async def get_funnel_overview(
         query = query.where(Vacancy.department_id == department_id)
 
     result = await db.execute(query)
-    stage_counts = {row.stage.value: row.count for row in result}
+    stage_counts = {(row.stage.value if hasattr(row.stage, 'value') else str(row.stage)): row.count for row in result}
 
     # Build funnel stages
     stages = []
@@ -194,7 +194,7 @@ async def get_stage_conversions(
         query = query.where(Vacancy.department_id == department_id)
 
     result = await db.execute(query)
-    stage_counts = {row.stage.value: row.count for row in result}
+    stage_counts = {(row.stage.value if hasattr(row.stage, 'value') else str(row.stage)): row.count for row in result}
 
     # Calculate conversions between consecutive stages
     conversions = []
@@ -237,12 +237,8 @@ async def get_pipeline_health(
     now = datetime.utcnow()
     stuck_threshold = now - timedelta(days=14)
 
-    # Active pipeline stages (not hired/rejected/withdrawn)
-    active_stages = [
-        ApplicationStage.applied, ApplicationStage.screening,
-        ApplicationStage.phone_screen, ApplicationStage.interview,
-        ApplicationStage.assessment, ApplicationStage.offer
-    ]
+    # Active pipeline stages (not hired/rejected/withdrawn) - use strings for DB comparison
+    active_stages = ['applied', 'screening', 'phone_screen', 'interview', 'assessment', 'offer']
 
     # Base query for active applications
     base_filter = [Vacancy.org_id == org.id]
@@ -283,7 +279,7 @@ async def get_pipeline_health(
         .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
         .where(
             *base_filter,
-            VacancyApplication.stage.in_([ApplicationStage.applied, ApplicationStage.screening]),
+            VacancyApplication.stage.in_(['applied', 'screening']),
             VacancyApplication.compatibility_score.isnot(None),
             func.cast(VacancyApplication.compatibility_score['overall_score'].astext, Float) >= 70
         )
@@ -326,8 +322,8 @@ async def get_pipeline_health(
             )
         )
         row = stage_result.first()
-        stages_health[stage.value] = {
-            "label": STAGE_LABELS.get(stage.value, stage.value),
+        stages_health[stage] = {
+            "label": STAGE_LABELS.get(stage, stage),
             "count": row.count or 0,
             "avg_days_in_stage": round(row.avg_days or 0, 1),
             "is_bottleneck": (row.avg_days or 0) > 7  # More than 7 days = potential bottleneck
@@ -365,8 +361,8 @@ async def get_weekly_report(
     this_week_result = await db.execute(
         select(
             func.count(VacancyApplication.id).label("total"),
-            func.sum(case((VacancyApplication.stage == ApplicationStage.hired, 1), else_=0)).label("hired"),
-            func.sum(case((VacancyApplication.stage == ApplicationStage.rejected, 1), else_=0)).label("rejected"),
+            func.sum(case((VacancyApplication.stage == 'hired', 1), else_=0)).label("hired"),
+            func.sum(case((VacancyApplication.stage == 'rejected', 1), else_=0)).label("rejected"),
         )
         .select_from(VacancyApplication)
         .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)

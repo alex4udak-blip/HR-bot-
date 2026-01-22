@@ -92,128 +92,126 @@ async def get_dashboard_overview(
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    now = datetime.utcnow()
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    quarter_start = now.replace(month=((now.month - 1) // 3) * 3 + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    try:
+        now = datetime.utcnow()
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        quarter_start = now.replace(month=((now.month - 1) // 3) * 3 + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    # Base filters
-    vacancy_filter = [Vacancy.org_id == org.id]
-    entity_filter = [Entity.org_id == org.id]
-    app_filter = []
+        # Base filters
+        vacancy_filter = [Vacancy.org_id == org.id]
+        entity_filter = [Entity.org_id == org.id]
 
-    if department_id:
-        vacancy_filter.append(Vacancy.department_id == department_id)
-        entity_filter.append(Entity.department_id == department_id)
+        if department_id:
+            vacancy_filter.append(Vacancy.department_id == department_id)
+            entity_filter.append(Entity.department_id == department_id)
 
-    # Vacancies stats
-    vacancies_result = await db.execute(
-        select(
-            func.count(Vacancy.id).label("total"),
-            func.sum(case((Vacancy.status == VacancyStatus.open, 1), else_=0)).label("open"),
-            func.sum(case((Vacancy.status == VacancyStatus.draft, 1), else_=0)).label("draft"),
-            func.sum(case(
-                (and_(Vacancy.status == VacancyStatus.closed, Vacancy.updated_at >= month_start), 1),
-                else_=0
-            )).label("closed_this_month"),
-        ).where(*vacancy_filter)
-    )
-    vac_row = vacancies_result.first()
-
-    # Candidates stats
-    candidates_result = await db.execute(
-        select(
-            func.count(Entity.id).label("total"),
-            func.sum(case((Entity.created_at >= month_start, 1), else_=0)).label("new_this_month"),
-            func.sum(case(
-                (Entity.status.in_([EntityStatus.new, EntityStatus.screening, EntityStatus.practice,
-                                    EntityStatus.tech_practice, EntityStatus.is_interview, EntityStatus.offer]), 1),
-                else_=0
-            )).label("in_pipeline"),
-        ).where(
-            *entity_filter,
-            Entity.type == "candidate"
+        # Vacancies stats
+        vacancies_result = await db.execute(
+            select(
+                func.count(Vacancy.id).label("total"),
+                func.sum(case((Vacancy.status == VacancyStatus.open, 1), else_=0)).label("open"),
+                func.sum(case((Vacancy.status == VacancyStatus.draft, 1), else_=0)).label("draft"),
+                func.sum(case(
+                    (and_(Vacancy.status == VacancyStatus.closed, Vacancy.updated_at >= month_start), 1),
+                    else_=0
+                )).label("closed_this_month"),
+            ).where(*vacancy_filter)
         )
-    )
-    cand_row = candidates_result.first()
+        vac_row = vacancies_result.first()
 
-    # Applications stats
-    app_base_query = (
-        select(VacancyApplication)
-        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
-        .where(Vacancy.org_id == org.id)
-    )
-    if department_id:
-        app_base_query = app_base_query.where(Vacancy.department_id == department_id)
-
-    apps_result = await db.execute(
-        select(
-            func.count(VacancyApplication.id).label("total"),
-            func.sum(case((VacancyApplication.applied_at >= month_start, 1), else_=0)).label("this_month"),
-        ).select_from(VacancyApplication)
-        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
-        .where(Vacancy.org_id == org.id)
-    )
-    apps_row = apps_result.first()
-
-    # Hires stats
-    hires_result = await db.execute(
-        select(
-            func.sum(case((VacancyApplication.last_stage_change_at >= month_start, 1), else_=0)).label("this_month"),
-            func.sum(case((VacancyApplication.last_stage_change_at >= quarter_start, 1), else_=0)).label("this_quarter"),
-        ).select_from(VacancyApplication)
-        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
-        .where(
-            Vacancy.org_id == org.id,
-            VacancyApplication.stage == ApplicationStage.hired
-        )
-    )
-    hires_row = hires_result.first()
-
-    # Rejections this month
-    rejections_result = await db.execute(
-        select(func.count(VacancyApplication.id))
-        .select_from(VacancyApplication)
-        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
-        .where(
-            Vacancy.org_id == org.id,
-            VacancyApplication.stage == ApplicationStage.rejected,
-            VacancyApplication.last_stage_change_at >= month_start
-        )
-    )
-    rejections_count = rejections_result.scalar() or 0
-
-    # Average time to hire (for hires this quarter)
-    # Calculate as days from applied_at to last_stage_change_at for hired applications
-    time_to_hire_result = await db.execute(
-        select(
-            func.avg(
-                func.extract('epoch', VacancyApplication.last_stage_change_at - VacancyApplication.applied_at) / 86400
+        # Candidates stats - use string values for status comparison
+        pipeline_statuses = ['new', 'screening', 'practice', 'tech_practice', 'is_interview', 'offer']
+        candidates_result = await db.execute(
+            select(
+                func.count(Entity.id).label("total"),
+                func.sum(case((Entity.created_at >= month_start, 1), else_=0)).label("new_this_month"),
+                func.sum(case(
+                    (Entity.status.in_(pipeline_statuses), 1),
+                    else_=0
+                )).label("in_pipeline"),
+            ).where(
+                *entity_filter,
+                Entity.type == "candidate"
             )
-        ).select_from(VacancyApplication)
-        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
-        .where(
-            Vacancy.org_id == org.id,
-            VacancyApplication.stage == ApplicationStage.hired,
-            VacancyApplication.last_stage_change_at >= quarter_start
         )
-    )
-    avg_time_to_hire = time_to_hire_result.scalar()
+        cand_row = candidates_result.first()
 
-    return DashboardOverview(
-        vacancies_total=vac_row.total or 0,
-        vacancies_open=vac_row.open or 0,
-        vacancies_draft=vac_row.draft or 0,
-        vacancies_closed_this_month=vac_row.closed_this_month or 0,
-        candidates_total=cand_row.total or 0,
-        candidates_new_this_month=cand_row.new_this_month or 0,
-        candidates_in_pipeline=cand_row.in_pipeline or 0,
-        applications_total=apps_row.total or 0,
-        applications_this_month=apps_row.this_month or 0,
-        hires_this_month=hires_row.this_month or 0,
-        hires_this_quarter=hires_row.this_quarter or 0,
-        avg_time_to_hire_days=round(avg_time_to_hire, 1) if avg_time_to_hire else None,
-        rejections_this_month=rejections_count,
-    )
+        # Applications stats
+        apps_result = await db.execute(
+            select(
+                func.count(VacancyApplication.id).label("total"),
+                func.sum(case((VacancyApplication.applied_at >= month_start, 1), else_=0)).label("this_month"),
+            ).select_from(VacancyApplication)
+            .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+            .where(Vacancy.org_id == org.id)
+        )
+        apps_row = apps_result.first()
+
+        # Hires stats - use string value for stage comparison
+        hires_result = await db.execute(
+            select(
+                func.sum(case((VacancyApplication.last_stage_change_at >= month_start, 1), else_=0)).label("this_month"),
+                func.sum(case((VacancyApplication.last_stage_change_at >= quarter_start, 1), else_=0)).label("this_quarter"),
+            ).select_from(VacancyApplication)
+            .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+            .where(
+                Vacancy.org_id == org.id,
+                VacancyApplication.stage == 'hired'
+            )
+        )
+        hires_row = hires_result.first()
+
+        # Rejections this month
+        rejections_result = await db.execute(
+            select(func.count(VacancyApplication.id))
+            .select_from(VacancyApplication)
+            .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+            .where(
+                Vacancy.org_id == org.id,
+                VacancyApplication.stage == 'rejected',
+                VacancyApplication.last_stage_change_at >= month_start
+            )
+        )
+        rejections_count = rejections_result.scalar() or 0
+
+        # Average time to hire (for hires this quarter)
+        avg_time_to_hire = None
+        try:
+            time_to_hire_result = await db.execute(
+                select(
+                    func.avg(
+                        func.extract('epoch', VacancyApplication.last_stage_change_at - VacancyApplication.applied_at) / 86400
+                    )
+                ).select_from(VacancyApplication)
+                .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+                .where(
+                    Vacancy.org_id == org.id,
+                    VacancyApplication.stage == 'hired',
+                    VacancyApplication.last_stage_change_at >= quarter_start
+                )
+            )
+            avg_time_to_hire = time_to_hire_result.scalar()
+        except Exception as e:
+            logger.warning(f"Failed to calculate avg time to hire: {e}")
+
+        return DashboardOverview(
+            vacancies_total=int(vac_row.total or 0),
+            vacancies_open=int(vac_row.open or 0),
+            vacancies_draft=int(vac_row.draft or 0),
+            vacancies_closed_this_month=int(vac_row.closed_this_month or 0),
+            candidates_total=int(cand_row.total or 0),
+            candidates_new_this_month=int(cand_row.new_this_month or 0),
+            candidates_in_pipeline=int(cand_row.in_pipeline or 0),
+            applications_total=int(apps_row.total or 0) if apps_row else 0,
+            applications_this_month=int(apps_row.this_month or 0) if apps_row else 0,
+            hires_this_month=int(hires_row.this_month or 0) if hires_row else 0,
+            hires_this_quarter=int(hires_row.this_quarter or 0) if hires_row else 0,
+            avg_time_to_hire_days=round(avg_time_to_hire, 1) if avg_time_to_hire else None,
+            rejections_this_month=int(rejections_count),
+        )
+    except Exception as e:
+        logger.error(f"Dashboard overview error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load analytics: {str(e)}")
 
 
 @router.get("/trends", response_model=DashboardTrends)
