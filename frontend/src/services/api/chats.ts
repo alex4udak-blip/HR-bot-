@@ -394,7 +394,7 @@ const generateImportId = () => {
 export const importTelegramHistory = async (
   chatId: number,
   file: File,
-  autoProcess: boolean = false,
+  autoProcess: boolean = true,
   importId?: string
 ): Promise<ImportResult> => {
   const formData = new FormData();

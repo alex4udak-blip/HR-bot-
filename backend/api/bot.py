@@ -194,12 +194,18 @@ async def process_external_links_in_message(text: str, org_id: int, owner_id: in
             # Detect link type
             link_type = external_link_processor.detect_link_type(url)
 
-            # Only process Google document types (save to chat, not as CallRecording)
+            # Process document types (save to chat as parsed content)
             # Fireflies links still create CallRecordings since they are actual call transcripts
             document_types = {
                 LinkType.GOOGLE_DOC,
                 LinkType.GOOGLE_SHEET,
                 LinkType.GOOGLE_FORM,
+            }
+
+            # Media types that need transcription
+            media_types = {
+                LinkType.DIRECT_MEDIA,
+                LinkType.GOOGLE_DRIVE,
             }
 
             if link_type in document_types:
@@ -213,6 +219,18 @@ async def process_external_links_in_message(text: str, org_id: int, owner_id: in
                     logger.info(f"✅ Started parsing {link_type} link")
                 except Exception as e:
                     logger.error(f"❌ Failed to parse {link_type} link: {e}")
+
+            elif link_type in media_types:
+                logger.info(f"🎵 Transcribing {link_type} media link in chat {chat_id}: {url[:50]}...")
+
+                try:
+                    # Transcribe media in background
+                    asyncio.create_task(
+                        _transcribe_media_link_to_chat_message(url, link_type, chat_id)
+                    )
+                    logger.info(f"✅ Started transcribing {link_type} media link")
+                except Exception as e:
+                    logger.error(f"❌ Failed to transcribe {link_type} media link: {e}")
 
     except Exception as e:
         logger.error(f"❌ Error processing external links: {e}")
@@ -319,6 +337,144 @@ async def _parse_link_to_chat_message(url: str, link_type: str, chat_id: int):
 
     except Exception as e:
         logger.error(f"❌ Error parsing link to chat message: {e}")
+
+
+async def _transcribe_media_link_to_chat_message(url: str, link_type: str, chat_id: int):
+    """
+    Download and transcribe audio/video from a media link, save as chat message.
+    Supports direct media URLs and Google Drive links.
+    """
+    from datetime import datetime
+    import aiohttp
+    import tempfile
+    import os
+
+    try:
+        content = None
+        title = None
+        parse_status = "pending"
+        parse_error = None
+        document_metadata = {}
+
+        # Download the media file
+        file_bytes = None
+        filename = "media_file"
+
+        if link_type == LinkType.GOOGLE_DRIVE:
+            # Extract file ID from Google Drive URL
+            match = external_link_processor.GDRIVE_PATTERN.search(url) or \
+                    external_link_processor.GDRIVE_OPEN_PATTERN.search(url)
+            if match:
+                file_id = match.group(1)
+                # Try direct download URL
+                download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(download_url, allow_redirects=True) as response:
+                        if response.status == 200:
+                            file_bytes = await response.read()
+                            # Try to get filename from content-disposition
+                            cd = response.headers.get('content-disposition', '')
+                            if 'filename=' in cd:
+                                filename = cd.split('filename=')[1].strip('"\'')
+                            else:
+                                filename = f"gdrive_{file_id}"
+                            document_metadata["gdrive_file_id"] = file_id
+                        else:
+                            parse_status = "failed"
+                            parse_error = f"Failed to download from Google Drive (status {response.status})"
+            else:
+                parse_status = "failed"
+                parse_error = "Invalid Google Drive URL"
+
+        elif link_type == LinkType.DIRECT_MEDIA:
+            # Direct download
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=120)) as response:
+                    if response.status == 200:
+                        file_bytes = await response.read()
+                        # Get filename from URL
+                        from urllib.parse import urlparse, unquote
+                        parsed = urlparse(url)
+                        filename = unquote(os.path.basename(parsed.path)) or "media_file"
+                    else:
+                        parse_status = "failed"
+                        parse_error = f"Failed to download media (status {response.status})"
+
+        # Transcribe if we have the file
+        if file_bytes:
+            # Determine if audio or video
+            ext = os.path.splitext(filename)[1].lower()
+            is_video = ext in {'.mp4', '.webm', '.avi', '.mov', '.mkv'}
+            is_audio = ext in {'.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.wma'}
+
+            if is_video or is_audio:
+                try:
+                    if is_video:
+                        content = await transcription_service.transcribe_video(file_bytes, filename)
+                    else:
+                        content = await transcription_service.transcribe_audio(file_bytes)
+
+                    if content:
+                        title = f"🎵 Транскрибация: {filename}"
+                        parse_status = "parsed"
+                        document_metadata["media_type"] = "video" if is_video else "audio"
+                        document_metadata["file_size"] = len(file_bytes)
+                    else:
+                        parse_status = "failed"
+                        parse_error = "Transcription returned empty result"
+                except Exception as e:
+                    parse_status = "failed"
+                    parse_error = f"Transcription error: {str(e)}"
+                    logger.error(f"Transcription error for {url}: {e}")
+            else:
+                parse_status = "failed"
+                parse_error = f"Unsupported media format: {ext}"
+
+        # Save as a message in the chat
+        if content:
+            async with async_session() as session:
+                msg_content = content
+                if title:
+                    msg_content = f"{title}\n\n{content}"
+
+                # Truncate if too long
+                display_content = msg_content
+                if len(msg_content) > 10000:
+                    display_content = msg_content[:10000] + f"\n\n... [Обрезано, полный текст: {len(msg_content)} символов]"
+                    document_metadata["full_content_length"] = len(msg_content)
+                    document_metadata["truncated"] = True
+
+                db_message = Message(
+                    chat_id=chat_id,
+                    telegram_message_id=None,
+                    telegram_user_id=0,
+                    username="system",
+                    first_name="🎵 Transcribed Media",
+                    last_name=None,
+                    content=display_content,
+                    content_type="transcribed_media",
+                    file_id=None,
+                    file_name=filename,
+                    document_metadata={
+                        **document_metadata,
+                        "source_url": url,
+                        "link_type": link_type,
+                        "full_content": msg_content if document_metadata.get("truncated") else None
+                    },
+                    parse_status=parse_status,
+                    parse_error=parse_error,
+                    timestamp=datetime.utcnow(),
+                )
+                session.add(db_message)
+                await session.commit()
+
+                logger.info(f"✅ Saved transcribed media as chat message: {len(content)} chars")
+        else:
+            logger.warning(f"⚠️ Could not transcribe media link: {parse_error}")
+
+    except Exception as e:
+        logger.error(f"❌ Error transcribing media link to chat message: {e}")
 
 
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
