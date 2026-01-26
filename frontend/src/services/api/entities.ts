@@ -875,3 +875,71 @@ export const generateAllProfiles = async (forceRegenerate = false): Promise<Bulk
   });
   return data;
 };
+
+// ============================================================
+// BACKGROUND PARSING JOBS
+// ============================================================
+
+export type ParseJobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export interface ParseJob {
+  id: number;
+  status: ParseJobStatus;
+  file_name: string;
+  progress: number;
+  progress_stage?: string;
+  entity_id?: number;
+  entity_name?: string;
+  error_message?: string;
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+export interface ParseJobsListResponse {
+  jobs: ParseJob[];
+  total: number;
+  pending_count: number;
+  processing_count: number;
+}
+
+/**
+ * Start a background parsing job for a resume file.
+ * Returns immediately with job_id. Use getParseJob to check status.
+ */
+export const startParseJob = async (file: File): Promise<{ job_id: number; message: string }> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await api.post('/parse-jobs/start', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+  return data;
+};
+
+/**
+ * Get list of parsing jobs for current user.
+ */
+export const getParseJobs = async (params?: {
+  status?: ParseJobStatus;
+  limit?: number;
+  offset?: number;
+}): Promise<ParseJobsListResponse> => {
+  const { data } = await deduplicatedGet<ParseJobsListResponse>('/parse-jobs', { params });
+  return data;
+};
+
+/**
+ * Get status of a specific parsing job.
+ */
+export const getParseJob = async (jobId: number): Promise<ParseJob> => {
+  const { data } = await deduplicatedGet<ParseJob>(`/parse-jobs/${jobId}`);
+  return data;
+};
+
+/**
+ * Cancel a pending parsing job.
+ */
+export const cancelParseJob = async (jobId: number): Promise<{ success: boolean; message: string }> => {
+  const { data } = await api.delete(`/parse-jobs/${jobId}`);
+  return data;
+};

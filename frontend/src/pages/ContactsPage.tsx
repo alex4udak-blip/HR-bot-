@@ -40,6 +40,7 @@ import ContactDetail from '@/components/contacts/ContactDetail';
 import EntityAI from '@/components/contacts/EntityAI';
 import ShareModal from '@/components/common/ShareModal';
 import ParserModal from '@/components/parser/ParserModal';
+import ParseJobsPanel from '@/components/parser/ParseJobsPanel';
 import { OnboardingTooltip } from '@/components/onboarding';
 import { FeatureGatedButton } from '@/components/auth/FeatureGate';
 import { useCanAccessFeature } from '@/hooks/useCanAccessFeature';
@@ -85,6 +86,7 @@ export default function ContactsPage() {
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [selectedEntityForTransfer, setSelectedEntityForTransfer] = useState<Entity | null>(null);
   const [prefillData, setPrefillData] = useState<Partial<Entity> | null>(null);
+  const [parseJobsRefresh, setParseJobsRefresh] = useState(0);
 
   const {
     canEditResource,
@@ -298,6 +300,18 @@ export default function ContactsPage() {
     setShowParserModal(false);
     setShowCreateModal(true);
     toast.success('Данные распознаны');
+  };
+
+  const handleParseJobStarted = () => {
+    // Trigger refresh of parse jobs panel
+    setParseJobsRefresh((prev) => prev + 1);
+    setShowParserModal(false);
+  };
+
+  const handleParseJobComplete = () => {
+    // Refresh entities list when a parse job completes
+    fetchTypeCounts();
+    setFilters({ ...{} }); // Force refresh entities
   };
 
   // Backend already filters entities by access control (ownership, department, sharing)
@@ -530,6 +544,16 @@ export default function ContactsPage() {
             })}
           </div>
         </div>
+
+        {/* Parse Jobs Panel - Shows active parsing jobs */}
+        {layoutMode !== 'ai-open' && canAccessFeature('candidate_database') && (
+          <div className="px-4 pt-4">
+            <ParseJobsPanel
+              refreshTrigger={parseJobsRefresh}
+              onJobComplete={handleParseJobComplete}
+            />
+          </div>
+        )}
 
         {/* Entity List */}
         <div className={clsx(
@@ -944,12 +968,7 @@ export default function ContactsPage() {
             type="resume"
             onClose={() => setShowParserModal(false)}
             onParsed={(data) => handleParsedResume(data as ParsedResume)}
-            onEntityCreated={(response) => {
-              // Entity created directly from file
-              setShowParserModal(false);
-              // Navigate to the new entity (this will fetch the entity)
-              navigate(`/contacts/${response.entity.id}`);
-            }}
+            onJobStarted={handleParseJobStarted}
           />
         )}
       </AnimatePresence>

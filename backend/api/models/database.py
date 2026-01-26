@@ -978,3 +978,53 @@ class RefreshToken(Base):
 
     # Relationships
     user = relationship("User", back_populates="refresh_tokens")
+
+
+class ParseJobStatus(str, enum.Enum):
+    """Status of a background parsing job"""
+    pending = "pending"        # Job created, waiting to be processed
+    processing = "processing"  # Currently being parsed
+    completed = "completed"    # Successfully parsed and entity created
+    failed = "failed"          # Parsing failed
+
+
+class ParseJob(Base):
+    """Background parsing job for resumes.
+
+    Allows users to start parsing without waiting for completion.
+    The job runs in the background and creates an entity when done.
+    """
+    __tablename__ = "parse_jobs"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(SQLEnum(ParseJobStatus), default=ParseJobStatus.pending, index=True)
+
+    # File info (stored temporarily for processing)
+    file_name = Column(String(255), nullable=False)
+    file_path = Column(String(512), nullable=False)  # Temporary file path
+    file_size = Column(Integer, nullable=True)
+
+    # Result
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True, index=True)
+    error_message = Column(Text, nullable=True)
+
+    # Progress tracking
+    progress = Column(Integer, default=0)  # 0-100 percentage
+    progress_stage = Column(String(100), nullable=True)  # "Extracting text", "Parsing with AI", etc.
+
+    # Timestamps
+    created_at = Column(DateTime, default=func.now())
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index('ix_parse_job_user_status', 'user_id', 'status'),
+        Index('ix_parse_job_org_created', 'org_id', 'created_at'),
+    )
+
+    # Relationships
+    organization = relationship("Organization")
+    user = relationship("User")
+    entity = relationship("Entity")

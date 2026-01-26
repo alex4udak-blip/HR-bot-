@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Search, Link, FileText, Upload, Loader2, Check, AlertCircle } from 'lucide-react';
+import { X, Search, Link, FileText, Upload, Loader2, Check, AlertCircle, Clock } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import type { ParsedResume, ParsedVacancy, CreateEntityFromResumeResponse } from '@/services/api';
@@ -8,7 +8,7 @@ import {
   parseResumeFromUrl,
   parseResumeFromFile,
   parseVacancyFromUrl,
-  createEntityFromResume
+  startParseJob
 } from '@/services/api';
 import ParsedDataPreview from './ParsedDataPreview';
 import { OnboardingTooltip } from '@/components/onboarding';
@@ -19,6 +19,8 @@ interface ParserModalProps {
   onParsed: (data: ParsedResume | ParsedVacancy) => void;
   /** Callback when entity is created directly from file (skips preview) */
   onEntityCreated?: (response: CreateEntityFromResumeResponse) => void;
+  /** Callback when background job is started */
+  onJobStarted?: (jobId: number, fileName: string) => void;
 }
 
 type TabType = 'url' | 'file';
@@ -63,7 +65,7 @@ const isValidUrl = (url: string): boolean => {
   }
 };
 
-export default function ParserModal({ type, onClose, onParsed, onEntityCreated }: ParserModalProps) {
+export default function ParserModal({ type, onClose, onParsed, onEntityCreated, onJobStarted }: ParserModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('url');
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -124,22 +126,28 @@ export default function ParserModal({ type, onClose, onParsed, onEntityCreated }
     setParsedData(null);
 
     try {
-      // Always create entity directly from file (no preview)
-      if (onEntityCreated) {
-        const response = await createEntityFromResume(file);
-        onEntityCreated(response);
-        toast.success(`Кандидат "${response.entity.name}" создан. Резюме прикреплено во вкладке "Файлы"`);
-        onClose();
-        return;
+      // Start background parsing job - returns immediately
+      const result = await startParseJob(file);
+
+      // Show success toast with file name
+      toast.success(
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4" />
+          <span>Парсинг "{file.name}" запущен</span>
+        </div>,
+        { duration: 4000 }
+      );
+
+      // Notify parent about job started
+      if (onJobStarted) {
+        onJobStarted(result.job_id, file.name);
       }
 
-      // Fallback: parse and show preview if no onEntityCreated callback
-      const data = await parseResumeFromFile(file);
-      setParsedData(data);
+      onClose();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Ошибка парсинга файла';
+      const message = err instanceof Error ? err.message : 'Ошибка запуска парсинга';
       setError(message);
-      toast.error('Ошибка распознавания файла');
+      toast.error('Не удалось запустить парсинг');
     } finally {
       setLoading(false);
     }
