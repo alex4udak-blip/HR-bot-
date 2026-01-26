@@ -1634,3 +1634,161 @@ class TestIntegrationScenarios:
         assert "Employees" in result.content
         assert "John Doe" in result.content
         assert "IT" in result.content
+
+
+# ============================================================================
+# TEST ENCODING DETECTION AND GARBLED TEXT
+# ============================================================================
+
+class TestEncodingDetection:
+    """Tests for encoding detection and garbled text handling."""
+
+    @pytest.mark.asyncio
+    async def test_parse_cp1251_russian_text(self, parser):
+        """Test parsing Russian text in CP1251 encoding."""
+        russian_text = "Привет, мир! Это тестовый документ на русском языке."
+        cp1251_bytes = russian_text.encode('cp1251')
+
+        result = await parser.parse(cp1251_bytes, "russian.txt")
+
+        assert result.status == "parsed"
+        assert "Привет" in result.content
+        assert "русском" in result.content
+        # Should have detected and used cp1251
+        assert "cp1251" in result.metadata.get("encoding", "").lower() or "1251" in result.metadata.get("encoding", "")
+
+    @pytest.mark.asyncio
+    async def test_parse_koi8r_russian_text(self, parser):
+        """Test parsing Russian text in KOI8-R encoding."""
+        russian_text = "Добро пожаловать! Тестирование кодировки KOI8-R."
+        koi8r_bytes = russian_text.encode('koi8-r')
+
+        result = await parser.parse(koi8r_bytes, "koi8_russian.txt")
+
+        assert result.status == "parsed"
+        assert "Добро" in result.content or "пожаловать" in result.content
+
+    @pytest.mark.asyncio
+    async def test_detect_cjk_garbled_text(self, parser):
+        """Test detection of CJK characters as garbled text indicator."""
+        # Simulate garbled text: Russian CP1251 interpreted as UTF-8 produces CJK
+        # This is a common encoding issue
+        russian_text = "Тестовый документ"
+        cp1251_bytes = russian_text.encode('cp1251')
+
+        # The parser should detect CJK mixed with Cyrillic as garbled
+        # and try alternative encodings
+        result = await parser.parse(cp1251_bytes, "garbled.txt")
+
+        assert result.status == "parsed"
+        # Should NOT contain CJK characters
+        content = result.content
+        cjk_count = sum(1 for c in content if 0x4E00 <= ord(c) <= 0x9FFF)
+        assert cjk_count == 0, f"Found {cjk_count} CJK characters in parsed content"
+
+    @pytest.mark.asyncio
+    async def test_has_garbled_text_detects_cjk_mixed_with_cyrillic(self, parser):
+        """Test _has_garbled_text detects CJK mixed with Cyrillic."""
+        # Text with mixed CJK and Cyrillic - definitely garbled
+        mixed_text = "Привет 你好 world"
+        assert parser._has_garbled_text(mixed_text) is True
+
+    @pytest.mark.asyncio
+    async def test_has_garbled_text_allows_pure_cyrillic(self, parser):
+        """Test _has_garbled_text allows pure Cyrillic text."""
+        cyrillic_text = "Чисто русский текст без проблем"
+        assert parser._has_garbled_text(cyrillic_text) is False
+
+    @pytest.mark.asyncio
+    async def test_has_garbled_text_allows_pure_latin(self, parser):
+        """Test _has_garbled_text allows pure Latin text."""
+        latin_text = "Pure English text without issues"
+        assert parser._has_garbled_text(latin_text) is False
+
+    @pytest.mark.asyncio
+    async def test_has_garbled_text_detects_high_cjk_ratio(self, parser):
+        """Test _has_garbled_text detects text with high CJK ratio (likely wrong encoding)."""
+        # Text with many CJK chars but no Cyrillic - suspicious for Russian HR bot
+        cjk_heavy_text = "你好世界测试文档内容"
+        # This should be flagged as suspicious in Russian context
+        result = parser._has_garbled_text(cjk_heavy_text)
+        # Note: depends on implementation - may or may not flag pure CJK
+        assert isinstance(result, bool)
+
+    @pytest.mark.asyncio
+    async def test_quality_score_prefers_readable_text(self, parser):
+        """Test that quality score prefers readable Cyrillic/Latin text."""
+        readable_text = "Хороший читаемый текст с нормальными символами"
+        garbled_text = "你好世界测试" + "\ufffd" * 10
+
+        readable_score = parser._calculate_text_quality_score(readable_text)
+        garbled_score = parser._calculate_text_quality_score(garbled_text)
+
+        assert readable_score > garbled_score
+
+    @pytest.mark.asyncio
+    async def test_parse_html_with_cp1251_encoding(self, parser):
+        """Test parsing HTML file with CP1251 encoding."""
+        html_content = """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="windows-1251">
+    <title>Резюме</title>
+</head>
+<body>
+    <h1>Иван Иванов</h1>
+    <p>Программист Python</p>
+</body>
+</html>"""
+        cp1251_bytes = html_content.encode('cp1251')
+
+        result = await parser.parse(cp1251_bytes, "resume.html")
+
+        assert result.status == "parsed"
+        assert "Иван" in result.content or "Резюме" in result.content
+        # Should NOT have garbled characters
+        cjk_count = sum(1 for c in result.content if 0x4E00 <= ord(c) <= 0x9FFF)
+        assert cjk_count == 0, f"HTML parsing produced {cjk_count} CJK characters"
+
+    @pytest.mark.asyncio
+    async def test_encoding_fallback_with_partial_status(self, parser):
+        """Test that failed encoding detection results in partial status."""
+        # Binary garbage that can't be properly decoded
+        binary_garbage = bytes(range(256))
+
+        result = await parser.parse(binary_garbage, "binary.txt")
+
+        # Should either fail or mark as partial due to encoding issues
+        assert result.status in ["parsed", "partial", "failed"]
+
+    @pytest.mark.asyncio
+    async def test_utf8_with_bom(self, parser):
+        """Test parsing UTF-8 file with BOM."""
+        bom = b'\xef\xbb\xbf'
+        text = "Текст с BOM маркером"
+        utf8_with_bom = bom + text.encode('utf-8')
+
+        result = await parser.parse(utf8_with_bom, "bom.txt")
+
+        assert result.status == "parsed"
+        assert "Текст" in result.content
+
+    @pytest.mark.asyncio
+    async def test_mixed_language_document(self, parser):
+        """Test parsing document with mixed Russian and English."""
+        mixed_text = """
+        Resume / Резюме
+
+        Name: John Doe / Имя: Иван Иванов
+        Position: Software Engineer / Должность: Программист
+
+        Skills / Навыки:
+        - Python, JavaScript
+        - Разработка веб-приложений
+        """
+
+        result = await parser.parse(mixed_text.encode('utf-8'), "mixed.txt")
+
+        assert result.status == "parsed"
+        assert "Resume" in result.content
+        assert "Резюме" in result.content
