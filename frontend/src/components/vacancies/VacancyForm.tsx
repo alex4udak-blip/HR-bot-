@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Save, Briefcase } from 'lucide-react';
+import { X, Save, Briefcase, Sparkles, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import type { Vacancy, VacancyStatus, User } from '@/types';
 import { VACANCY_STATUS_LABELS, EMPLOYMENT_TYPES, EXPERIENCE_LEVELS } from '@/types';
-import { getDepartments, getUsers } from '@/services/api';
+import { getDepartments, getUsers, splitVacancyDescription } from '@/services/api';
 import type { Department } from '@/services/api';
 import { CurrencySelect } from '@/components/ui';
 
@@ -19,6 +19,7 @@ interface VacancyFormProps {
 export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }: VacancyFormProps) {
   const { createVacancy, updateVacancy } = useVacancyStore();
   const [loading, setLoading] = useState(false);
+  const [splitting, setSplitting] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<User[]>([]);
 
@@ -100,6 +101,49 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
       setLoading(false);
     }
   };
+
+  /**
+   * Use AI to split description into requirements and responsibilities.
+   * Only works if description has content and requirements/responsibilities are empty.
+   */
+  const handleSplitDescription = async () => {
+    if (!formData.description.trim()) {
+      toast.error('Нет описания для разделения');
+      return;
+    }
+
+    if (formData.description.length < 50) {
+      toast.error('Описание слишком короткое (минимум 50 символов)');
+      return;
+    }
+
+    setSplitting(true);
+    try {
+      const result = await splitVacancyDescription(formData.description);
+
+      if (result.success) {
+        setFormData(prev => ({
+          ...prev,
+          description: result.short_description || prev.description,
+          requirements: result.requirements || prev.requirements,
+          responsibilities: result.responsibilities || prev.responsibilities,
+        }));
+        toast.success('Текст успешно разделён');
+      } else {
+        toast.error(result.error || 'Не удалось разделить текст');
+      }
+    } catch (error) {
+      toast.error('Ошибка при разделении текста');
+    } finally {
+      setSplitting(false);
+    }
+  };
+
+  // Show split button if description has content but requirements/responsibilities are empty
+  const canSplitDescription =
+    formData.description.trim().length >= 50 &&
+    !formData.requirements.trim() &&
+    !formData.responsibilities.trim();
 
   return (
     <motion.div
@@ -281,7 +325,25 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
 
             {/* Description */}
             <div>
-              <label className="block text-sm text-white/60 mb-1">Описание</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-sm text-white/60">Описание</label>
+                {canSplitDescription && (
+                  <button
+                    type="button"
+                    onClick={handleSplitDescription}
+                    disabled={splitting}
+                    className="flex items-center gap-1.5 px-2 py-1 text-xs bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded transition-colors disabled:opacity-50"
+                    title="Автоматически разделить описание на требования и обязанности"
+                  >
+                    {splitting ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3 h-3" />
+                    )}
+                    {splitting ? 'Разделяю...' : 'Авто-разделить'}
+                  </button>
+                )}
+              </div>
               <textarea
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -289,6 +351,11 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base"
                 placeholder="Краткое описание вакансии..."
               />
+              {canSplitDescription && (
+                <p className="text-xs text-white/40 mt-1">
+                  Нажмите "Авто-разделить" чтобы AI разделил описание на требования и обязанности
+                </p>
+              )}
             </div>
 
             {/* Requirements */}
