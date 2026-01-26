@@ -113,8 +113,12 @@ class UserResponse(BaseModel):
     email: str
     name: str
     role: UserRole  # Use enum for consistency with database
-    telegram_id: Optional[int]
-    telegram_username: Optional[str]
+    org_role: Optional[str] = None  # owner, admin, member
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
+    department_role: Optional[str] = None  # lead, sub_admin, member
+    telegram_id: Optional[int] = None
+    telegram_username: Optional[str] = None
     additional_emails: List[str] = []
     additional_telegram_usernames: List[str] = []
     is_active: bool
