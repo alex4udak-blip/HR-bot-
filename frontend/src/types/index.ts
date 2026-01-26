@@ -553,6 +553,11 @@ export const PIPELINE_STAGES: ApplicationStage[] = [
   'applied', 'screening', 'phone_screen', 'interview', 'assessment', 'offer', 'hired', 'rejected'
 ];
 
+// Entity pipeline stages for candidate database kanban (using EntityStatus values)
+export const ENTITY_PIPELINE_STAGES: EntityStatus[] = [
+  'new', 'screening', 'practice', 'tech_practice', 'is_interview', 'offer', 'hired', 'rejected'
+];
+
 export interface Vacancy {
   id: number;
   title: string;
