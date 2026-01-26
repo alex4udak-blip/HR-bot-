@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, Check, X, FileText, ExternalLink, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
@@ -25,8 +25,10 @@ export default function ParseJobsPanel({ refreshTrigger, onJobComplete }: ParseJ
   const [processingCount, setProcessingCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // Track completed jobs to avoid duplicate callbacks
-  const [completedJobIds, setCompletedJobIds] = useState<Set<number>>(new Set());
+  // Track completed jobs to avoid duplicate toasts (use ref to avoid re-renders)
+  const notifiedJobIds = useRef<Set<number>>(new Set());
+  // Track jobs that were processing when component mounted
+  const initialProcessingIds = useRef<Set<number> | null>(null);
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -35,10 +37,27 @@ export default function ParseJobsPanel({ refreshTrigger, onJobComplete }: ParseJ
       setPendingCount(response.pending_count);
       setProcessingCount(response.processing_count);
 
-      // Check for newly completed jobs
+      // On first fetch, remember which jobs are already processing/completed
+      // to avoid showing toast for jobs that were already done before we started watching
+      if (initialProcessingIds.current === null) {
+        initialProcessingIds.current = new Set(
+          response.jobs
+            .filter(j => j.status === 'processing' || j.status === 'pending')
+            .map(j => j.id)
+        );
+        // Also mark already-completed jobs as notified
+        response.jobs
+          .filter(j => j.status === 'completed')
+          .forEach(j => notifiedJobIds.current.add(j.id));
+      }
+
+      // Check for newly completed jobs (only those we were tracking as processing)
       response.jobs.forEach((job) => {
-        if (job.status === 'completed' && !completedJobIds.has(job.id)) {
-          setCompletedJobIds((prev) => new Set([...prev, job.id]));
+        const wasTracking = initialProcessingIds.current?.has(job.id);
+        const alreadyNotified = notifiedJobIds.current.has(job.id);
+
+        if (job.status === 'completed' && wasTracking && !alreadyNotified) {
+          notifiedJobIds.current.add(job.id);
           if (onJobComplete) {
             onJobComplete(job);
           }
@@ -48,7 +67,7 @@ export default function ParseJobsPanel({ refreshTrigger, onJobComplete }: ParseJ
               <Check className="w-4 h-4" />
               <span>"{job.entity_name || job.file_name}" создан</span>
             </div>,
-            { duration: 5000 }
+            { duration: 5000, id: `parse-job-${job.id}` }
           );
         }
       });
@@ -57,7 +76,7 @@ export default function ParseJobsPanel({ refreshTrigger, onJobComplete }: ParseJ
     } finally {
       setLoading(false);
     }
-  }, [completedJobIds, onJobComplete]);
+  }, [onJobComplete]);
 
   // Initial fetch
   useEffect(() => {
