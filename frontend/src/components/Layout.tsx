@@ -111,8 +111,9 @@ export default function Layout() {
       { path: '/contacts', icon: Users, label: 'Контакты' },
     ];
 
-    // Add "База кандидатов" only for HR department (feature-gated) - after "Контакты"
+    // Add candidate database features only for HR department (feature-gated) - after "Контакты"
     if (hasFeature('candidate_database')) {
+      items.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
       items.push({ path: '/candidates', icon: UserCheck, label: 'База кандидатов' });
     }
 
