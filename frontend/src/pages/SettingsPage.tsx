@@ -496,34 +496,61 @@ export default function SettingsPage() {
                       </div>
 
                       {/* Org-wide Toggle */}
-                      <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg mb-4">
-                        <div className="flex items-center gap-2">
-                          <Globe className="w-4 h-4 text-purple-400" />
-                          <span className="text-sm font-medium">Для всей организации</span>
-                        </div>
-                        <button
-                          onClick={() => handleOrgWideToggle(featureName, !isOrgWideEnabled)}
-                          disabled={featureMutation.isPending}
-                          className={clsx(
-                            'relative w-12 h-6 rounded-full transition-colors',
-                            isOrgWideEnabled ? 'bg-accent-500' : 'bg-white/10'
-                          )}
-                        >
-                          <span
+                      <div className="p-3 bg-white/5 rounded-lg mb-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Globe className="w-4 h-4 text-purple-400" />
+                            <span className="text-sm font-medium">Для всей организации</span>
+                          </div>
+                          <button
+                            onClick={() => handleOrgWideToggle(featureName, !isOrgWideEnabled)}
+                            disabled={featureMutation.isPending || deleteFeatureMutation.isPending}
                             className={clsx(
-                              'absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform',
-                              isOrgWideEnabled ? 'translate-x-6' : 'translate-x-0'
+                              'relative w-12 h-6 rounded-full transition-colors',
+                              isOrgWideEnabled ? 'bg-accent-500' : 'bg-white/10'
                             )}
-                          />
-                        </button>
+                          >
+                            <span
+                              className={clsx(
+                                'absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform',
+                                isOrgWideEnabled ? 'translate-x-6' : 'translate-x-0'
+                              )}
+                            />
+                          </button>
+                        </div>
+                        <p className="text-xs text-dark-500 mt-2">
+                          {isOrgWideEnabled
+                            ? '✓ Все сотрудники имеют доступ (кроме тех, у кого есть индивидуальные настройки отдела)'
+                            : 'Функция отключена для всех, кроме указанных отделов ниже'}
+                        </p>
                       </div>
 
                       {/* Department-specific Settings */}
                       <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <Building2 className="w-4 h-4 text-blue-400" />
-                          <span className="text-sm font-medium text-dark-300">Доступ для отделов</span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Building2 className="w-4 h-4 text-blue-400" />
+                            <span className="text-sm font-medium text-dark-300">Доступ для отделов</span>
+                          </div>
+                          {departmentSettings.length > 0 && (
+                            <span className="text-xs px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded">
+                              {departmentSettings.length} отдел{departmentSettings.length === 1 ? '' : departmentSettings.length < 5 ? 'а' : 'ов'}
+                            </span>
+                          )}
                         </div>
+
+                        {/* Info about department settings */}
+                        {!isOrgWideEnabled && departmentSettings.length === 0 && (
+                          <p className="text-xs text-yellow-400/80 bg-yellow-500/10 px-3 py-2 rounded-lg">
+                            ⚠️ Функция полностью отключена. Добавьте отделы ниже, чтобы дать им доступ.
+                          </p>
+                        )}
+
+                        {isOrgWideEnabled && departmentSettings.length > 0 && (
+                          <p className="text-xs text-blue-400/80 bg-blue-500/10 px-3 py-2 rounded-lg">
+                            ℹ️ Указанные отделы имеют собственные настройки, которые переопределяют общую настройку.
+                          </p>
+                        )}
 
                         {/* Existing department settings */}
                         {departmentSettings.length > 0 && (
@@ -531,13 +558,19 @@ export default function SettingsPage() {
                             {departmentSettings.map(setting => (
                               <span
                                 key={setting.id}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-500/20 text-blue-400 rounded-lg text-sm"
+                                className={clsx(
+                                  "inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm",
+                                  setting.enabled
+                                    ? "bg-green-500/20 text-green-400"
+                                    : "bg-red-500/20 text-red-400"
+                                )}
                               >
-                                {setting.department_name || `Dept #${setting.department_id}`}
+                                {setting.enabled ? '✓' : '✗'} {setting.department_name || `Dept #${setting.department_id}`}
                                 <button
                                   onClick={() => handleRemoveDepartmentSetting(featureName, setting.department_id!)}
                                   disabled={deleteFeatureMutation.isPending}
-                                  className="ml-1 hover:text-red-400 transition-colors"
+                                  className="ml-1 hover:text-white transition-colors"
+                                  title="Удалить настройку (будет использоваться общая настройка организации)"
                                 >
                                   <X className="w-3.5 h-3.5" />
                                 </button>
