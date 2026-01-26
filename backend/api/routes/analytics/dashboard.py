@@ -17,7 +17,8 @@ from pydantic import BaseModel
 from ...database import get_db
 from ...models.database import (
     User, UserRole, Vacancy, VacancyStatus, VacancyApplication,
-    ApplicationStage, Entity, EntityStatus, Department
+    ApplicationStage, Entity, EntityStatus, Department,
+    OrgMember, OrgRole, DepartmentMember, DeptRole
 )
 from ...services.auth import get_current_user, get_user_org
 from ...utils.logging import get_logger
@@ -25,6 +26,55 @@ from ...utils.logging import get_logger
 logger = get_logger("analytics-dashboard")
 
 router = APIRouter()
+
+
+# ==================== ROLE-BASED FILTERING HELPERS ====================
+
+async def get_user_analytics_scope(user: User, org_id: int, db: AsyncSession) -> dict:
+    """
+    Get user's analytics scope based on their role.
+
+    Returns dict with:
+    - scope: 'all' | 'department' | 'own'
+    - department_ids: Set[int] - department IDs user can access (for department scope)
+    - user_id: int - user ID (for own scope)
+    """
+    # Superadmin sees everything
+    if user.role == UserRole.superadmin:
+        return {"scope": "all", "department_ids": set(), "user_id": user.id}
+
+    # Check org role
+    org_member_result = await db.execute(
+        select(OrgMember.role).where(
+            OrgMember.org_id == org_id,
+            OrgMember.user_id == user.id
+        )
+    )
+    org_role = org_member_result.scalar_one_or_none()
+
+    # Owner sees everything in org
+    if org_role == OrgRole.owner:
+        return {"scope": "all", "department_ids": set(), "user_id": user.id}
+
+    # Check if user is lead or sub_admin in any department
+    dept_result = await db.execute(
+        select(DepartmentMember.department_id, DepartmentMember.role).where(
+            DepartmentMember.user_id == user.id
+        )
+    )
+    dept_memberships = dept_result.all()
+
+    admin_dept_ids = set()
+    for dept_id, role in dept_memberships:
+        if role in [DeptRole.lead, DeptRole.sub_admin]:
+            admin_dept_ids.add(dept_id)
+
+    # Lead/Sub_admin sees their department(s) data
+    if admin_dept_ids:
+        return {"scope": "department", "department_ids": admin_dept_ids, "user_id": user.id}
+
+    # Member sees only their own data
+    return {"scope": "own", "department_ids": set(), "user_id": user.id}
 
 
 # Schemas
@@ -87,7 +137,7 @@ async def get_dashboard_overview(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get dashboard overview statistics."""
+    """Get dashboard overview statistics based on user role."""
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -97,13 +147,30 @@ async def get_dashboard_overview(
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         quarter_start = now.replace(month=((now.month - 1) // 3) * 3 + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        # Base filters
+        # Get user's analytics scope based on role
+        scope = await get_user_analytics_scope(current_user, org.id, db)
+
+        # Base filters - always filter by org
         vacancy_filter = [Vacancy.org_id == org.id]
         entity_filter = [Entity.org_id == org.id]
 
+        # Apply role-based filtering
+        if scope["scope"] == "own":
+            # Member sees only their own data
+            vacancy_filter.append(Vacancy.created_by == current_user.id)
+            entity_filter.append(Entity.created_by == current_user.id)
+        elif scope["scope"] == "department":
+            # Lead/Sub_admin sees their department(s) data
+            if scope["department_ids"]:
+                vacancy_filter.append(Vacancy.department_id.in_(scope["department_ids"]))
+                entity_filter.append(Entity.department_id.in_(scope["department_ids"]))
+
+        # Override with explicit department_id if provided (for drill-down)
         if department_id:
-            vacancy_filter.append(Vacancy.department_id == department_id)
-            entity_filter.append(Entity.department_id == department_id)
+            # Only allow if user has access to this department
+            if scope["scope"] == "all" or department_id in scope["department_ids"]:
+                vacancy_filter = [Vacancy.org_id == org.id, Vacancy.department_id == department_id]
+                entity_filter = [Entity.org_id == org.id, Entity.department_id == department_id]
 
         # Vacancies stats
         vacancies_result = await db.execute(
@@ -136,45 +203,47 @@ async def get_dashboard_overview(
         )
         cand_row = candidates_result.first()
 
-        # Applications stats
-        apps_result = await db.execute(
+        # Applications stats - apply same role-based filters via vacancy
+        apps_query = (
             select(
                 func.count(VacancyApplication.id).label("total"),
                 func.sum(case((VacancyApplication.applied_at >= month_start, 1), else_=0)).label("this_month"),
             ).select_from(VacancyApplication)
             .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
-            .where(Vacancy.org_id == org.id)
+            .where(*vacancy_filter)
         )
+        apps_result = await db.execute(apps_query)
         apps_row = apps_result.first()
 
-        # Hires stats - use string value for stage comparison
-        hires_result = await db.execute(
+        # Hires stats - apply same role-based filters via vacancy
+        hires_query = (
             select(
                 func.sum(case((VacancyApplication.last_stage_change_at >= month_start, 1), else_=0)).label("this_month"),
                 func.sum(case((VacancyApplication.last_stage_change_at >= quarter_start, 1), else_=0)).label("this_quarter"),
             ).select_from(VacancyApplication)
             .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
             .where(
-                Vacancy.org_id == org.id,
+                *vacancy_filter,
                 VacancyApplication.stage == 'hired'
             )
         )
+        hires_result = await db.execute(hires_query)
         hires_row = hires_result.first()
 
-        # Rejections this month
+        # Rejections this month - apply same role-based filters via vacancy
         rejections_result = await db.execute(
             select(func.count(VacancyApplication.id))
             .select_from(VacancyApplication)
             .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
             .where(
-                Vacancy.org_id == org.id,
+                *vacancy_filter,
                 VacancyApplication.stage == 'rejected',
                 VacancyApplication.last_stage_change_at >= month_start
             )
         )
         rejections_count = rejections_result.scalar() or 0
 
-        # Average time to hire (for hires this quarter)
+        # Average time to hire (for hires this quarter) - apply same role-based filters
         avg_time_to_hire = None
         try:
             time_to_hire_result = await db.execute(
@@ -185,7 +254,7 @@ async def get_dashboard_overview(
                 ).select_from(VacancyApplication)
                 .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
                 .where(
-                    Vacancy.org_id == org.id,
+                    *vacancy_filter,
                     VacancyApplication.stage == 'hired',
                     VacancyApplication.last_stage_change_at >= quarter_start
                 )
@@ -221,13 +290,28 @@ async def get_dashboard_trends(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get trend data for dashboard charts."""
+    """Get trend data for dashboard charts based on user role."""
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
     now = datetime.utcnow()
     start_date = (now - timedelta(days=days)).date()
+
+    # Get user's analytics scope based on role
+    scope = await get_user_analytics_scope(current_user, org.id, db)
+
+    # Build role-based filters for vacancy
+    vacancy_filters = [Vacancy.org_id == org.id]
+    if scope["scope"] == "own":
+        vacancy_filters.append(Vacancy.created_by == current_user.id)
+    elif scope["scope"] == "department" and scope["department_ids"]:
+        vacancy_filters.append(Vacancy.department_id.in_(scope["department_ids"]))
+
+    # Override with explicit department_id if provided
+    if department_id:
+        if scope["scope"] == "all" or department_id in scope["department_ids"]:
+            vacancy_filters = [Vacancy.org_id == org.id, Vacancy.department_id == department_id]
 
     # Applications trend by date
     apps_query = (
@@ -238,14 +322,12 @@ async def get_dashboard_trends(
         .select_from(VacancyApplication)
         .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
         .where(
-            Vacancy.org_id == org.id,
+            *vacancy_filters,
             VacancyApplication.applied_at >= start_date
         )
         .group_by(func.date(VacancyApplication.applied_at))
         .order_by(func.date(VacancyApplication.applied_at))
     )
-    if department_id:
-        apps_query = apps_query.where(Vacancy.department_id == department_id)
 
     apps_result = await db.execute(apps_query)
     applications_trend = [
@@ -262,15 +344,13 @@ async def get_dashboard_trends(
         .select_from(VacancyApplication)
         .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
         .where(
-            Vacancy.org_id == org.id,
+            *vacancy_filters,
             VacancyApplication.stage == ApplicationStage.hired,
             VacancyApplication.last_stage_change_at >= start_date
         )
         .group_by(func.date(VacancyApplication.last_stage_change_at))
         .order_by(func.date(VacancyApplication.last_stage_change_at))
     )
-    if department_id:
-        hires_query = hires_query.where(Vacancy.department_id == department_id)
 
     hires_result = await db.execute(hires_query)
     hires_trend = [
@@ -285,15 +365,13 @@ async def get_dashboard_trends(
             func.count(Vacancy.id).label("count")
         )
         .where(
-            Vacancy.org_id == org.id,
+            *vacancy_filters,
             Vacancy.published_at >= start_date,
             Vacancy.published_at.isnot(None)
         )
         .group_by(func.date(Vacancy.published_at))
         .order_by(func.date(Vacancy.published_at))
     )
-    if department_id:
-        vacancies_query = vacancies_query.where(Vacancy.department_id == department_id)
 
     vacancies_result = await db.execute(vacancies_query)
     vacancies_trend = [
@@ -315,10 +393,20 @@ async def get_top_vacancies(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get top vacancies by application count."""
+    """Get top vacancies by application count based on user role."""
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
+
+    # Get user's analytics scope based on role
+    scope = await get_user_analytics_scope(current_user, org.id, db)
+
+    # Build role-based filters
+    vacancy_filters = [Vacancy.org_id == org.id]
+    if scope["scope"] == "own":
+        vacancy_filters.append(Vacancy.created_by == current_user.id)
+    elif scope["scope"] == "department" and scope["department_ids"]:
+        vacancy_filters.append(Vacancy.department_id.in_(scope["department_ids"]))
 
     # Subquery for application count
     app_counts = (
@@ -351,7 +439,7 @@ async def get_top_vacancies(
         )
         .outerjoin(app_counts, Vacancy.id == app_counts.c.vacancy_id)
         .outerjoin(Department, Vacancy.department_id == Department.id)
-        .where(Vacancy.org_id == org.id)
+        .where(*vacancy_filters)
     )
 
     if status:
@@ -385,13 +473,42 @@ async def get_departments_summary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get hiring summary by department."""
+    """Get hiring summary by department based on user role."""
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
+    # Get user's analytics scope based on role
+    scope = await get_user_analytics_scope(current_user, org.id, db)
+
     now = datetime.utcnow()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    # Build department filter based on scope
+    dept_filters = [Department.org_id == org.id]
+
+    # For member scope, get user's departments only
+    if scope["scope"] == "own":
+        # Get departments where user is a member
+        user_depts = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == current_user.id
+            )
+        )
+        user_dept_ids = {row[0] for row in user_depts}
+        if user_dept_ids:
+            dept_filters.append(Department.id.in_(user_dept_ids))
+        else:
+            # User not in any department - return empty
+            return []
+    elif scope["scope"] == "department" and scope["department_ids"]:
+        # Lead/sub_admin sees only their department(s)
+        dept_filters.append(Department.id.in_(scope["department_ids"]))
+
+    # Build vacancy filter for counting (also apply role-based filtering)
+    vacancy_filters = [Vacancy.org_id == org.id]
+    if scope["scope"] == "own":
+        vacancy_filters.append(Vacancy.created_by == current_user.id)
 
     # Get stats by department
     result = await db.execute(
@@ -410,10 +527,10 @@ async def get_departments_summary(
         .select_from(Department)
         .outerjoin(Vacancy, and_(
             Department.id == Vacancy.department_id,
-            Vacancy.org_id == org.id
+            *vacancy_filters
         ))
         .outerjoin(VacancyApplication, Vacancy.id == VacancyApplication.vacancy_id)
-        .where(Department.org_id == org.id)
+        .where(*dept_filters)
         .group_by(Department.id, Department.name)
         .order_by(Department.name)
     )
