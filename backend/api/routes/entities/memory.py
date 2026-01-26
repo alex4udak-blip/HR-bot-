@@ -810,6 +810,11 @@ async def get_similar_by_profile(
     if not entity:
         raise HTTPException(404, "Entity not found")
 
+    # Check user has access to this entity
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(403, "No access to this entity")
+
     # Get or generate target profile
     target_profile = (entity.extra_data or {}).get('ai_profile')
 

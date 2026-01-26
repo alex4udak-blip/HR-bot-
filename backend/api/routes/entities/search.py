@@ -719,6 +719,11 @@ async def get_similar_candidates(
     if not entity:
         raise HTTPException(404, "Entity not found")
 
+    # Check user has access to this entity
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(403, "No access to this entity")
+
     if entity.type != EntityType.candidate:
         raise HTTPException(400, "Similar search is only available for candidates")
 
@@ -769,6 +774,11 @@ async def get_duplicate_candidates(
 
     if not entity:
         raise HTTPException(404, "Entity not found")
+
+    # Check user has access to this entity
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(403, "No access to this entity")
 
     # Find duplicates
     duplicates = await similarity_service.detect_duplicates(
@@ -886,6 +896,11 @@ async def compare_candidates(
     if not entity1:
         raise HTTPException(404, "First entity not found")
 
+    # Check access to first entity
+    has_access1 = await check_entity_access(entity1, current_user, org.id, db, required_level=None)
+    if not has_access1:
+        raise HTTPException(403, "No access to first entity")
+
     # Get second entity
     result2 = await db.execute(
         select(Entity).where(Entity.id == other_entity_id, Entity.org_id == org.id)
@@ -894,6 +909,11 @@ async def compare_candidates(
 
     if not entity2:
         raise HTTPException(404, "Second entity not found")
+
+    # Check access to second entity
+    has_access2 = await check_entity_access(entity2, current_user, org.id, db, required_level=None)
+    if not has_access2:
+        raise HTTPException(403, "No access to second entity")
 
     # Compare
     comparison = similarity_service.calculate_similarity(entity1, entity2)
@@ -982,9 +1002,19 @@ async def compare_candidates_ai(
     if not entity1:
         raise HTTPException(404, "First candidate not found")
 
+    # Check access to first entity
+    has_access1 = await check_entity_access(entity1, current_user, org.id, db, required_level=None)
+    if not has_access1:
+        raise HTTPException(403, "No access to first entity")
+
     entity2, chats2, calls2, files2 = await load_entity_with_context(other_entity_id)
     if not entity2:
         raise HTTPException(404, "Second candidate not found")
+
+    # Check access to second entity
+    has_access2 = await check_entity_access(entity2, current_user, org.id, db, required_level=None)
+    if not has_access2:
+        raise HTTPException(403, "No access to second entity")
 
     async def generate():
         try:
@@ -1064,9 +1094,19 @@ async def compare_candidates_report(
     if not entity1:
         raise HTTPException(404, "First candidate not found")
 
+    # Check access to first entity
+    has_access1 = await check_entity_access(entity1, current_user, org.id, db, required_level=None)
+    if not has_access1:
+        raise HTTPException(403, "No access to first entity")
+
     entity2, chats2, calls2, files2 = await load_entity_with_context(other_entity_id)
     if not entity2:
         raise HTTPException(404, "Second candidate not found")
+
+    # Check access to second entity
+    has_access2 = await check_entity_access(entity2, current_user, org.id, db, required_level=None)
+    if not has_access2:
+        raise HTTPException(403, "No access to second entity")
 
     # Generate comparison content (non-streaming)
     comparison_text = ""
