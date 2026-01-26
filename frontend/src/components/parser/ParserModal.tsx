@@ -3,10 +3,9 @@ import { motion } from 'framer-motion';
 import { X, Search, Link, FileText, Upload, Loader2, Check, AlertCircle, Clock } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
-import type { ParsedResume, ParsedVacancy, CreateEntityFromResumeResponse } from '@/services/api';
+import type { ParsedResume, ParsedVacancy } from '@/services/api';
 import {
   parseResumeFromUrl,
-  parseResumeFromFile,
   parseVacancyFromUrl,
   startParseJob
 } from '@/services/api';
@@ -17,8 +16,6 @@ interface ParserModalProps {
   type: 'resume' | 'vacancy';
   onClose: () => void;
   onParsed: (data: ParsedResume | ParsedVacancy) => void;
-  /** Callback when entity is created directly from file (skips preview) */
-  onEntityCreated?: (response: CreateEntityFromResumeResponse) => void;
   /** Callback when background job is started */
   onJobStarted?: (jobId: number, fileName: string) => void;
 }
@@ -65,7 +62,7 @@ const isValidUrl = (url: string): boolean => {
   }
 };
 
-export default function ParserModal({ type, onClose, onParsed, onEntityCreated, onJobStarted }: ParserModalProps) {
+export default function ParserModal({ type, onClose, onParsed, onJobStarted }: ParserModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('url');
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);

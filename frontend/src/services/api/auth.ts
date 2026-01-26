@@ -519,7 +519,7 @@ export const getMyFeatures = async (): Promise<UserFeatures> => {
 // SHARING API
 // ============================================================
 
-export type ResourceType = 'chat' | 'entity' | 'call';
+export type ResourceType = 'chat' | 'entity' | 'call' | 'vacancy';
 export type AccessLevel = 'view' | 'edit' | 'full';
 
 export interface ShareRequest {
