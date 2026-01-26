@@ -6,6 +6,8 @@ import logging
 import os
 import uuid
 import asyncio
+import shutil
+from pathlib import Path
 from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, BackgroundTasks
@@ -24,6 +26,9 @@ from ..config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# Permanent storage for entity files (same as in files.py)
+ENTITY_FILES_DIR = Path(__file__).parent.parent.parent / "uploads" / "entity_files"
 
 router = APIRouter()
 
@@ -171,15 +176,38 @@ async def process_parse_job(job_id: int):
             db.add(entity)
             await db.flush()
 
-            # Attach file to entity
+            # Move file from temp to permanent storage
+            entity_files_dir = ENTITY_FILES_DIR / str(entity.id)
+            entity_files_dir.mkdir(parents=True, exist_ok=True)
+
+            # Generate unique filename
+            file_extension = Path(job.file_name.lower()).suffix or '.pdf'
+            unique_filename = f"{uuid.uuid4().hex}{file_extension}"
+            permanent_path = entity_files_dir / unique_filename
+
+            # Copy file to permanent location (keep original for now)
+            shutil.copy2(job.file_path, permanent_path)
+            logger.info(f"Copied resume file to permanent storage: {permanent_path}")
+
+            # Determine MIME type based on file extension
+            mime_types = {
+                '.pdf': 'application/pdf',
+                '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                '.doc': 'application/msword',
+                '.txt': 'text/plain',
+                '.rtf': 'application/rtf',
+            }
+            mime_type = mime_types.get(file_extension, 'application/octet-stream')
+
+            # Attach file to entity with permanent path
             entity_file = EntityFile(
                 entity_id=entity.id,
                 org_id=job.org_id,
                 file_type=EntityFileType.resume,
                 file_name=job.file_name,
-                file_path=job.file_path,
+                file_path=str(permanent_path),
                 file_size=job.file_size,
-                mime_type='application/pdf',
+                mime_type=mime_type,
                 uploaded_by=job.user_id,
             )
             db.add(entity_file)
@@ -193,6 +221,14 @@ async def process_parse_job(job_id: int):
 
             await db.commit()
             logger.info(f"ParseJob {job_id} completed, created entity {entity.id}")
+
+            # Clean up temp file after successful commit
+            try:
+                if os.path.exists(job.file_path):
+                    os.remove(job.file_path)
+                    logger.debug(f"Removed temp file: {job.file_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to remove temp file {job.file_path}: {cleanup_error}")
 
         except Exception as e:
             logger.error(f"ParseJob {job_id} failed: {e}")
