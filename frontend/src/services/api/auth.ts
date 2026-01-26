@@ -134,6 +134,10 @@ export interface OrgMember {
   created_at: string;
   custom_role_id?: number;
   custom_role_name?: string;
+  // Department info
+  department_id?: number;
+  department_name?: string;
+  department_role?: DeptRole;
 }
 
 export type DeptRole = 'lead' | 'sub_admin' | 'member';
