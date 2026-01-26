@@ -284,3 +284,85 @@ class TestParseLinkToChatMessage:
                 saved_message = mock_db_session.add.call_args[0][0]
                 assert saved_message.document_metadata.get("source_url") == test_url
                 assert saved_message.document_metadata.get("link_type") == LinkType.GOOGLE_DOC
+
+
+# ============================================================================
+# TEST: extract_urls_from_text (URL extraction with punctuation cleanup)
+# ============================================================================
+
+class TestExtractUrlsFromText:
+    """Tests for extract_urls_from_text function - handles mixed text+link messages."""
+
+    def test_url_only(self):
+        """Should extract URL when it's the only content."""
+        from api.bot import extract_urls_from_text
+        urls = extract_urls_from_text("https://docs.google.com/document/d/1ABC/edit")
+        assert urls == ["https://docs.google.com/document/d/1ABC/edit"]
+
+    def test_url_at_end_with_period(self):
+        """Should strip trailing period from URL."""
+        from api.bot import extract_urls_from_text
+        urls = extract_urls_from_text("Посмотри: https://docs.google.com/document/d/1ABC/edit.")
+        assert urls == ["https://docs.google.com/document/d/1ABC/edit"]
+
+    def test_url_at_end_with_comma(self):
+        """Should strip trailing comma from URL."""
+        from api.bot import extract_urls_from_text
+        urls = extract_urls_from_text("Ссылка https://docs.google.com/document/d/1ABC/edit, посмотри")
+        assert urls == ["https://docs.google.com/document/d/1ABC/edit"]
+
+    def test_url_in_parentheses(self):
+        """Should strip trailing parenthesis when URL is wrapped."""
+        from api.bot import extract_urls_from_text
+        urls = extract_urls_from_text("Тут (https://docs.google.com/document/d/1ABC/edit) документ")
+        assert urls == ["https://docs.google.com/document/d/1ABC/edit"]
+
+    def test_url_with_exclamation(self):
+        """Should strip trailing exclamation mark from URL."""
+        from api.bot import extract_urls_from_text
+        urls = extract_urls_from_text("Файл: https://example.com/file.mp3!")
+        assert urls == ["https://example.com/file.mp3"]
+
+    def test_wikipedia_url_with_parentheses(self):
+        """Should keep parentheses that are part of URL (Wikipedia style)."""
+        from api.bot import extract_urls_from_text
+        urls = extract_urls_from_text("https://en.wikipedia.org/wiki/URL_(computing)")
+        assert urls == ["https://en.wikipedia.org/wiki/URL_(computing)"]
+
+    def test_wikipedia_url_with_trailing_period(self):
+        """Should strip trailing period but keep internal parentheses."""
+        from api.bot import extract_urls_from_text
+        urls = extract_urls_from_text("Посмотри: https://en.wikipedia.org/wiki/URL_(computing).")
+        assert urls == ["https://en.wikipedia.org/wiki/URL_(computing)"]
+
+    def test_google_drive_link_in_message(self):
+        """Should correctly extract Google Drive links from mixed text."""
+        from api.bot import extract_urls_from_text
+        text = "Привет! Вот резюме https://drive.google.com/file/d/1BCD_test/view?usp=drive_link спасибо"
+        urls = extract_urls_from_text(text)
+        assert urls == ["https://drive.google.com/file/d/1BCD_test/view?usp=drive_link"]
+
+    def test_fireflies_link(self):
+        """Should correctly extract Fireflies links."""
+        from api.bot import extract_urls_from_text
+        urls = extract_urls_from_text("Вот запись: https://app.fireflies.ai/view/ABC123::def456")
+        assert urls == ["https://app.fireflies.ai/view/ABC123::def456"]
+
+    def test_multiple_urls(self):
+        """Should extract multiple URLs from text."""
+        from api.bot import extract_urls_from_text
+        text = "Первая https://example.com/1, вторая https://example.com/2."
+        urls = extract_urls_from_text(text)
+        assert urls == ["https://example.com/1", "https://example.com/2"]
+
+    def test_no_urls(self):
+        """Should return empty list when no URLs."""
+        from api.bot import extract_urls_from_text
+        urls = extract_urls_from_text("Привет, как дела?")
+        assert urls == []
+
+    def test_multiple_trailing_punctuation(self):
+        """Should strip multiple trailing punctuation marks."""
+        from api.bot import extract_urls_from_text
+        urls = extract_urls_from_text("Check this out: https://example.com/path?q=1).")
+        assert urls == ["https://example.com/path?q=1"]

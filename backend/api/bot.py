@@ -176,6 +176,30 @@ async def on_bot_removed(event: ChatMemberUpdated):
 URL_PATTERN = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+')
 
 
+def _clean_url(url: str) -> str:
+    """
+    Clean URL by removing trailing punctuation that's commonly attached
+    when URLs are written in text (e.g., "check this link: https://example.com.")
+    """
+    # Remove trailing punctuation that's unlikely to be part of URL
+    # Keep trailing / as it's often part of valid URLs
+    while url and url[-1] in '.,;:!?)]\'"':
+        # Special case: keep ) if there's a matching ( in the URL (e.g., Wikipedia links)
+        if url[-1] == ')' and '(' in url:
+            break
+        url = url[:-1]
+    return url
+
+
+def extract_urls_from_text(text: str) -> list[str]:
+    """
+    Extract URLs from text, cleaning up trailing punctuation.
+    Handles cases where text and link are in the same message.
+    """
+    urls = URL_PATTERN.findall(text)
+    return [_clean_url(url) for url in urls if _clean_url(url)]
+
+
 async def process_external_links_in_message(text: str, org_id: int, owner_id: int | None, chat_id: int):
     """
     Automatically detect and process external links in message text.
@@ -185,8 +209,8 @@ async def process_external_links_in_message(text: str, org_id: int, owner_id: in
     from datetime import datetime
 
     try:
-        # Extract all URLs from message
-        urls = URL_PATTERN.findall(text)
+        # Extract all URLs from message (with punctuation cleanup)
+        urls = extract_urls_from_text(text)
         if not urls:
             return
 
