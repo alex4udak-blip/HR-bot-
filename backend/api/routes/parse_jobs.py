@@ -33,6 +33,59 @@ ENTITY_FILES_DIR = Path(__file__).parent.parent.parent / "uploads" / "entity_fil
 router = APIRouter()
 
 
+async def generate_ai_profile_for_entity(entity_id: int, org_id: int):
+    """Generate AI profile for newly created entity from resume."""
+    from ..services.entity_profile import entity_profile_service
+    from ..models.database import Chat, CallRecording
+
+    async with AsyncSessionLocal() as db:
+        try:
+            # Load entity with files
+            result = await db.execute(
+                select(Entity).where(Entity.id == entity_id)
+            )
+            entity = result.scalar_one_or_none()
+            if not entity:
+                return
+
+            # Load files
+            files_result = await db.execute(
+                select(EntityFile).where(EntityFile.entity_id == entity_id)
+            )
+            files = list(files_result.scalars().all())
+
+            # Load chats (probably empty for new entity)
+            chats_result = await db.execute(
+                select(Chat).where(Chat.entity_id == entity_id)
+            )
+            chats = list(chats_result.scalars().all())
+
+            # Load calls (probably empty for new entity)
+            calls_result = await db.execute(
+                select(CallRecording).where(CallRecording.entity_id == entity_id)
+            )
+            calls = list(calls_result.scalars().all())
+
+            # Generate profile
+            profile = await entity_profile_service.generate_profile(
+                entity=entity,
+                chats=chats,
+                calls=calls,
+                files=files
+            )
+
+            # Store in entity.extra_data
+            if not entity.extra_data:
+                entity.extra_data = {}
+            entity.extra_data['ai_profile'] = profile
+
+            await db.commit()
+            logger.info(f"Generated AI profile for entity {entity_id}")
+
+        except Exception as e:
+            logger.error(f"Error generating AI profile for entity {entity_id}: {e}")
+
+
 # Pydantic models for responses
 class ParseJobResponse(BaseModel):
     id: int
@@ -221,6 +274,12 @@ async def process_parse_job(job_id: int):
 
             await db.commit()
             logger.info(f"ParseJob {job_id} completed, created entity {entity.id}")
+
+            # Generate AI profile in background (non-blocking)
+            try:
+                await generate_ai_profile_for_entity(entity.id, job.org_id)
+            except Exception as profile_error:
+                logger.warning(f"Failed to generate AI profile for entity {entity.id}: {profile_error}")
 
             # Clean up temp file after successful commit
             try:

@@ -1,11 +1,12 @@
 """
 CRUD operations for entities (create, read, update, delete).
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from datetime import datetime
+import asyncio
 
 from .common import (
     logger, get_db, Entity, EntityType, EntityStatus, EntityTransfer,
@@ -16,7 +17,8 @@ from .common import (
     broadcast_entity_created, broadcast_entity_updated, broadcast_entity_deleted,
     scoring_cache, OwnershipFilter,
     EntityCreate, EntityUpdate, StatusUpdate,
-    normalize_and_validate_identifiers, check_entity_access
+    normalize_and_validate_identifiers, check_entity_access,
+    regenerate_entity_profile_background
 )
 
 router = APIRouter()
@@ -734,6 +736,7 @@ async def get_entity(
 async def update_entity(
     entity_id: int,
     data: EntityUpdate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -891,6 +894,20 @@ async def update_entity(
     if any(field in update_data for field in scoring_relevant_fields):
         await scoring_cache.invalidate_entity_scores(entity.id)
         logger.info(f"Invalidated scoring cache for entity {entity.id} due to scoring-relevant field change")
+
+    # Regenerate AI profile in background if profile-relevant fields changed
+    profile_relevant_fields = {
+        'name', 'position', 'company', 'tags', 'extra_data',
+        'expected_salary_min', 'expected_salary_max', 'expected_salary_currency'
+    }
+    if any(field in update_data for field in profile_relevant_fields):
+        # Only regenerate if entity already has an AI profile
+        if entity.extra_data and entity.extra_data.get('ai_profile'):
+            background_tasks.add_task(
+                asyncio.create_task,
+                regenerate_entity_profile_background(entity.id, org.id)
+            )
+            logger.info(f"Scheduled AI profile regeneration for entity {entity.id}")
 
     # Broadcast entity.updated event
     await broadcast_entity_updated(org.id, response_data)
