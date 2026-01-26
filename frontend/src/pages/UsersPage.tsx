@@ -98,6 +98,7 @@ export default function UsersPage() {
 
 // Organization Members Component
 function OrganizationMembers({ currentUser }: { currentUser: any }) {
+  const { hasFeature } = useAuthStore();
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -107,6 +108,9 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
   const [loading, setLoading] = useState(true);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showInvitationsTab, setShowInvitationsTab] = useState(false);
+
+  // Check if current user's department has candidate_database feature
+  const canManageFullAccess = hasFeature('candidate_database');
 
   useEffect(() => {
     loadData();
@@ -344,7 +348,8 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
 
                     {/* Full Access Toggle - for non-owners only */}
                     {/* Can be toggled by: org admin/owner OR dept lead/sub_admin for their dept members */}
-                    {!isMe && member.role !== 'owner' && (canManageUsers || myManagedUserIds.includes(member.user_id)) && (
+                    {/* Only show if current user's department has candidate_database feature */}
+                    {!isMe && member.role !== 'owner' && canManageFullAccess && (canManageUsers || myManagedUserIds.includes(member.user_id)) && (
                       <button
                         onClick={() => handleToggleFullAccess(member)}
                         className={clsx(
@@ -361,11 +366,11 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
                     )}
 
                     {canManageUsers && !isMe && (
-                      // Owner can delete admins/members, admin can only delete members
+                      // Owner can delete admins/members, admin can only delete members from own department
                       // Superadmin can delete anyone
                       (currentUser?.role === 'superadmin' ||
                        (myRole === 'owner' && member.role !== 'owner') ||
-                       (myRole === 'admin' && member.role === 'member')
+                       (myRole === 'admin' && member.role === 'member' && member.department_id && myDepartmentIds.includes(member.department_id))
                       ) && (
                         <button
                           onClick={() => handleRemoveMember(member)}

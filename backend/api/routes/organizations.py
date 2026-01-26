@@ -64,6 +64,10 @@ class OrgMemberResponse(BaseModel):
     created_at: datetime
     custom_role_id: Optional[int] = None
     custom_role_name: Optional[str] = None
+    # Department info
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
+    department_role: Optional[str] = None  # lead, sub_admin, member
 
     class Config:
         from_attributes = True
@@ -197,34 +201,105 @@ async def update_organization(
 @router.get("/current/members", response_model=List[OrgMemberResponse])
 async def list_organization_members(
     org: Organization = Depends(get_current_org),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all members of current organization."""
+    """
+    List organization members based on user's role.
+
+    - Superadmin/Owner: sees all members
+    - Admin (department lead/sub_admin): sees own department members + other department leads
+    - Member: sees only own department members
+    """
+    current_user = await db.merge(current_user)
+
+    # Get current user's org role and department info
+    org_role = await get_user_org_role(current_user, org.id, db)
+
+    # Get current user's department membership
+    current_user_dept_result = await db.execute(
+        select(DepartmentMember).where(DepartmentMember.user_id == current_user.id)
+    )
+    current_user_dept = current_user_dept_result.scalar_one_or_none()
+    current_user_dept_id = current_user_dept.department_id if current_user_dept else None
+    current_user_dept_role = current_user_dept.role if current_user_dept else None
+
+    # Determine visibility scope
+    is_superadmin = current_user.role == UserRole.superadmin
+    is_owner = org_role == OrgRole.owner
+    is_admin = org_role == OrgRole.admin
+    is_dept_lead = current_user_dept_role in [DeptRole.lead, DeptRole.sub_admin] if current_user_dept_role else False
+
+    # Get all members first
     result = await db.execute(
         select(OrgMember)
         .options(selectinload(OrgMember.user))
         .where(OrgMember.org_id == org.id)
         .order_by(OrgMember.created_at)
     )
-    members = result.scalars().all()
+    all_members = result.scalars().all()
+
+    # Pre-fetch department memberships for all users
+    user_ids = [m.user_id for m in all_members]
+    dept_memberships_result = await db.execute(
+        select(DepartmentMember, Department)
+        .join(Department, Department.id == DepartmentMember.department_id)
+        .where(DepartmentMember.user_id.in_(user_ids))
+    )
+
+    # Build map: user_id -> (department_id, department_name, department_role)
+    user_dept_map = {}
+    for dept_member, dept in dept_memberships_result.all():
+        if dept_member.user_id not in user_dept_map:
+            user_dept_map[dept_member.user_id] = (dept.id, dept.name, dept_member.role)
+
+    # Filter members based on role
+    if is_superadmin or is_owner:
+        # Superadmin/Owner sees everyone
+        filtered_members = all_members
+    elif is_admin or is_dept_lead:
+        # Admin sees:
+        # 1. All department leads/sub_admins from any department
+        # 2. All members from their own department
+        filtered_members = []
+        for m in all_members:
+            user_dept_info = user_dept_map.get(m.user_id)
+            if user_dept_info:
+                member_dept_id, _, member_dept_role = user_dept_info
+                # Include if: department lead/sub_admin OR same department
+                if member_dept_role in [DeptRole.lead, DeptRole.sub_admin]:
+                    filtered_members.append(m)
+                elif current_user_dept_id and member_dept_id == current_user_dept_id:
+                    filtered_members.append(m)
+            else:
+                # User not in any department - only show to owner/superadmin
+                pass
+    else:
+        # Regular member sees only own department members
+        filtered_members = []
+        if current_user_dept_id:
+            for m in all_members:
+                user_dept_info = user_dept_map.get(m.user_id)
+                if user_dept_info and user_dept_info[0] == current_user_dept_id:
+                    filtered_members.append(m)
 
     # Pre-fetch invited_by names
-    invited_by_ids = [m.invited_by for m in members if m.invited_by]
+    invited_by_ids = [m.invited_by for m in filtered_members if m.invited_by]
     inviter_names = {}
     if invited_by_ids:
         inviters_result = await db.execute(select(User).where(User.id.in_(invited_by_ids)))
         for inviter in inviters_result.scalars().all():
             inviter_names[inviter.id] = inviter.name
 
-    # Pre-fetch custom role assignments for all members
-    user_ids = [m.user_id for m in members]
+    # Pre-fetch custom role assignments for filtered members
+    filtered_user_ids = [m.user_id for m in filtered_members]
     custom_roles_map = {}
-    if user_ids:
+    if filtered_user_ids:
         custom_roles_result = await db.execute(
             select(UserCustomRole, CustomRole)
             .join(CustomRole, CustomRole.id == UserCustomRole.role_id)
             .where(
-                UserCustomRole.user_id.in_(user_ids),
+                UserCustomRole.user_id.in_(filtered_user_ids),
                 CustomRole.is_active == True
             )
         )
@@ -245,9 +320,12 @@ async def list_organization_members(
             invited_by_name=inviter_names.get(m.invited_by) if m.invited_by else None,
             created_at=m.created_at,
             custom_role_id=custom_roles_map.get(m.user_id, {}).get("id"),
-            custom_role_name=custom_roles_map.get(m.user_id, {}).get("name")
+            custom_role_name=custom_roles_map.get(m.user_id, {}).get("name"),
+            department_id=user_dept_map.get(m.user_id, (None, None, None))[0],
+            department_name=user_dept_map.get(m.user_id, (None, None, None))[1],
+            department_role=user_dept_map.get(m.user_id, (None, None, None))[2].value if user_dept_map.get(m.user_id, (None, None, None))[2] else None
         )
-        for m in members
+        for m in filtered_members
     ]
 
 
@@ -425,7 +503,14 @@ async def remove_member(
     db: AsyncSession = Depends(get_db),
     auth: tuple = Depends(require_org_admin)
 ):
-    """Remove member from organization (and optionally delete user)."""
+    """
+    Remove member from organization.
+
+    Permission rules:
+    - Superadmin: can remove anyone
+    - Owner: can remove admins and members (not other owners)
+    - Admin: can only remove members from their own department
+    """
     current_user, org, current_role = auth
 
     # Can't remove self
@@ -450,14 +535,31 @@ async def remove_member(
     if current_user.role == UserRole.superadmin:
         pass  # No restrictions for superadmin
     # Owner can remove admins and members, but not other owners
-    # Use enum comparison since roles come from DB as OrgRole enum
-    elif current_role == "owner":
+    elif current_role == "owner" or current_role == OrgRole.owner:
         if membership.role == OrgRole.owner:
             raise HTTPException(status_code=403, detail="Cannot remove other owners")
-    # Admin can only remove members (not other admins or owners)
-    elif current_role == "admin":
+    # Admin can only remove members from their own department
+    elif current_role == "admin" or current_role == OrgRole.admin:
         if membership.role in (OrgRole.owner, OrgRole.admin):
             raise HTTPException(status_code=403, detail="Admins can only remove members")
+
+        # Check if admin and target user are in the same department
+        current_user_dept_result = await db.execute(
+            select(DepartmentMember.department_id).where(DepartmentMember.user_id == current_user.id)
+        )
+        current_user_dept_ids = {row[0] for row in current_user_dept_result}
+
+        target_user_dept_result = await db.execute(
+            select(DepartmentMember.department_id).where(DepartmentMember.user_id == user_id)
+        )
+        target_user_dept_ids = {row[0] for row in target_user_dept_result}
+
+        # Admin can only remove users from their own department(s)
+        if not current_user_dept_ids.intersection(target_user_dept_ids):
+            raise HTTPException(
+                status_code=403,
+                detail="You can only remove members from your own department"
+            )
     else:
         raise HTTPException(status_code=403, detail="No permission to remove members")
 
