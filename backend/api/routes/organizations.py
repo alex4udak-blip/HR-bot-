@@ -543,23 +543,48 @@ async def remove_member(
         if membership.role in (OrgRole.owner, OrgRole.admin):
             raise HTTPException(status_code=403, detail="Admins can only remove members")
 
-        # Check if admin and target user are in the same department
+        # Get current user's department membership with role
         current_user_dept_result = await db.execute(
-            select(DepartmentMember.department_id).where(DepartmentMember.user_id == current_user.id)
+            select(DepartmentMember.department_id, DepartmentMember.role)
+            .where(DepartmentMember.user_id == current_user.id)
         )
-        current_user_dept_ids = {row[0] for row in current_user_dept_result}
+        current_user_depts = {row[0]: row[1] for row in current_user_dept_result}
 
+        # Get target user's department membership with role
         target_user_dept_result = await db.execute(
-            select(DepartmentMember.department_id).where(DepartmentMember.user_id == user_id)
+            select(DepartmentMember.department_id, DepartmentMember.role)
+            .where(DepartmentMember.user_id == user_id)
         )
-        target_user_dept_ids = {row[0] for row in target_user_dept_result}
+        target_user_depts = {row[0]: row[1] for row in target_user_dept_result}
 
-        # Admin can only remove users from their own department(s)
-        if not current_user_dept_ids.intersection(target_user_dept_ids):
+        # Check if they share any department
+        shared_depts = set(current_user_depts.keys()).intersection(target_user_depts.keys())
+        if not shared_depts:
             raise HTTPException(
                 status_code=403,
                 detail="You can only remove members from your own department"
             )
+
+        # Check role hierarchy: sub_admin cannot remove lead
+        for dept_id in shared_depts:
+            current_dept_role = current_user_depts[dept_id]
+            target_dept_role = target_user_depts[dept_id]
+
+            # Sub_admin cannot remove lead or other sub_admins
+            if current_dept_role == DeptRole.sub_admin:
+                if target_dept_role in [DeptRole.lead, DeptRole.sub_admin]:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Sub-admins cannot remove department leads or other sub-admins"
+                    )
+
+            # Lead can remove sub_admins and members, but not other leads
+            if current_dept_role == DeptRole.lead:
+                if target_dept_role == DeptRole.lead:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Department leads cannot remove other leads"
+                    )
     else:
         raise HTTPException(status_code=403, detail="No permission to remove members")
 
