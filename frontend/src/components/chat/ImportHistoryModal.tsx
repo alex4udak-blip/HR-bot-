@@ -19,7 +19,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
   const [result, setResult] = useState<ImportResult | null>(null);
   const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
   const [platform, setPlatform] = useState<'mac' | 'windows'>('mac');
-  const [autoProcess, setAutoProcess] = useState(false);
+  const [autoProcess, setAutoProcess] = useState(true);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [importId, setImportId] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);

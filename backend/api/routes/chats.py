@@ -1128,7 +1128,7 @@ def parse_html_export(html_content: str) -> List[dict]:
 async def import_telegram_history(
     chat_id: int,
     file: UploadFile = File(...),
-    auto_process: bool = Query(False, description="Auto-transcribe voice/video and parse documents (slow)"),
+    auto_process: bool = Query(True, description="Auto-transcribe voice/video and parse documents"),
     import_id: str = Query(None, description="Optional import ID for progress tracking"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
