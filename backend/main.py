@@ -19,7 +19,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
-from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser, search, scoring, currency
+from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser, search, scoring, currency, parse_jobs
 from api.routes import email_templates, analytics
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
@@ -223,6 +223,14 @@ try:
     logger.info("Parser router registered successfully at /api/parser")
 except Exception as e:
     logger.error(f"FAILED to register parser router: {e}")
+    raise
+
+logger.info("=== REGISTERING PARSE JOBS ROUTER ===")
+try:
+    app.include_router(parse_jobs.router, prefix="/api/parse-jobs", tags=["parse-jobs"])
+    logger.info("Parse jobs router registered successfully at /api/parse-jobs")
+except Exception as e:
+    logger.error(f"FAILED to register parse jobs router: {e}")
     raise
 
 logger.info("=== REGISTERING SEARCH ROUTER ===")

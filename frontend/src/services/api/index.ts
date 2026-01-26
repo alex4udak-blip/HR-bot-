@@ -170,7 +170,12 @@ export {
   generateEntityProfile,
   getEntityProfile,
   getSimilarByProfile,
-  generateAllProfiles
+  generateAllProfiles,
+  // Background parsing jobs
+  startParseJob,
+  getParseJobs,
+  getParseJob,
+  cancelParseJob
 } from './entities';
 
 // Entity types
@@ -199,7 +204,10 @@ export type {
   AIProfile,
   ProfileResponse,
   SimilarByProfileResponse,
-  BulkProfileResponse
+  BulkProfileResponse,
+  ParseJobStatus,
+  ParseJob,
+  ParseJobsListResponse
 } from './entities';
 
 // Chats

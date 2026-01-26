@@ -1,6 +1,7 @@
 from .database import (
     Base, User, Chat, Message, CriteriaPreset,
-    ChatCriteria, AIConversation, AnalysisHistory
+    ChatCriteria, AIConversation, AnalysisHistory,
+    ParseJob, ParseJobStatus
 )
 from .schemas import *
 
