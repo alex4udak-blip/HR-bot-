@@ -365,13 +365,33 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
                       </button>
                     )}
 
-                    {canManageUsers && !isMe && (
-                      // Owner can delete admins/members, admin can only delete members from own department
-                      // Superadmin can delete anyone
-                      (currentUser?.role === 'superadmin' ||
-                       (myRole === 'owner' && member.role !== 'owner') ||
-                       (myRole === 'admin' && member.role === 'member' && member.department_id && myDepartmentIds.includes(member.department_id))
-                      ) && (
+                    {canManageUsers && !isMe && (() => {
+                      // Permission logic for delete button:
+                      // - Superadmin: can delete anyone
+                      // - Owner: can delete admins and members (not other owners)
+                      // - Lead: can delete sub_admins and members in own department (not other leads)
+                      // - Sub_admin: can delete only members in own department (not leads or other sub_admins)
+
+                      const isSuperadmin = currentUser?.role === 'superadmin';
+                      const isOwner = myRole === 'owner';
+                      const isAdmin = myRole === 'admin';
+                      const myDeptRole = currentUser?.department_role;
+                      const inSameDept = member.department_id && myDepartmentIds.includes(member.department_id);
+
+                      if (isSuperadmin) return true;
+                      if (isOwner && member.role !== 'owner') return true;
+                      if (isAdmin && inSameDept) {
+                        // Lead can delete sub_admin and member
+                        if (myDeptRole === 'lead') {
+                          return member.department_role !== 'lead';
+                        }
+                        // Sub_admin can only delete member
+                        if (myDeptRole === 'sub_admin') {
+                          return member.department_role === 'member';
+                        }
+                      }
+                      return false;
+                    })() && (
                         <button
                           onClick={() => handleRemoveMember(member)}
                           className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors"
@@ -380,7 +400,7 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
                           <Trash2 size={16} />
                         </button>
                       )
-                    )}
+                    }
                   </div>
                 </div>
 
