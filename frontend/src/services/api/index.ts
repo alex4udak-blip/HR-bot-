@@ -161,6 +161,7 @@ export {
   parseResumeFromFile,
   parseVacancyFromUrl,
   parseVacancyFromFile,
+  splitVacancyDescription,
   bulkImportResumes,
   createEntityFromResume,
   // Global search

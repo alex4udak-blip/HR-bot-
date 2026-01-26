@@ -33,6 +33,7 @@ from ..services.parser import (
     parse_vacancy_from_url,
     parse_vacancy_from_file,
     detect_source,
+    split_vacancy_description,
 )
 from ..services.auth import get_current_user, get_user_org
 from ..database import get_db
@@ -962,4 +963,74 @@ async def bulk_import_resumes(
             failed=0,
             results=[],
             error=f"Bulk import failed: {str(e)}"
+        )
+
+
+# ============================================================================
+# VACANCY DESCRIPTION SPLIT
+# ============================================================================
+
+class SplitDescriptionRequest(BaseModel):
+    """Request for splitting vacancy description into structured fields."""
+    description: str
+
+
+class SplitDescriptionResponse(BaseModel):
+    """Response with split vacancy fields."""
+    success: bool
+    requirements: Optional[str] = None
+    responsibilities: Optional[str] = None
+    short_description: Optional[str] = None
+    error: Optional[str] = None
+
+
+@router.post("/vacancy/split-description", response_model=SplitDescriptionResponse)
+@limiter.limit("10/minute", key_func=_get_rate_limit_key)
+async def split_description(
+    request: Request,
+    body: SplitDescriptionRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Split a vacancy description into requirements, responsibilities, and short description.
+
+    Uses AI to analyze the text and separate it into structured fields.
+    Useful when a vacancy has all info in description but needs structured display.
+
+    Rate-limited to 10 requests per minute per user.
+    """
+    request.state._rate_limit_user = current_user
+
+    if not body.description or len(body.description.strip()) < 50:
+        return SplitDescriptionResponse(
+            success=False,
+            error="Description too short (minimum 50 characters)"
+        )
+
+    try:
+        logger.info(
+            f"Vacancy split requested | user_id={current_user.id} | "
+            f"description_length={len(body.description)}"
+        )
+
+        result = await split_vacancy_description(body.description)
+
+        logger.info(
+            f"Vacancy split SUCCESS | user_id={current_user.id} | "
+            f"has_requirements={result.get('requirements') is not None} | "
+            f"has_responsibilities={result.get('responsibilities') is not None}"
+        )
+
+        return SplitDescriptionResponse(
+            success=True,
+            requirements=result.get("requirements"),
+            responsibilities=result.get("responsibilities"),
+            short_description=result.get("short_description")
+        )
+
+    except Exception as e:
+        logger.error(f"Vacancy split error | user_id={current_user.id} | error={e}")
+        return SplitDescriptionResponse(
+            success=False,
+            error=f"Failed to split description: {str(e)}"
         )

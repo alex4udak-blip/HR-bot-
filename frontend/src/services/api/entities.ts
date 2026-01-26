@@ -613,6 +613,29 @@ export const parseVacancyFromFile = async (file: File): Promise<ParsedVacancy> =
 };
 
 /**
+ * Response from splitting vacancy description
+ */
+export interface SplitDescriptionResponse {
+  success: boolean;
+  requirements: string | null;
+  responsibilities: string | null;
+  short_description: string | null;
+  error?: string;
+}
+
+/**
+ * Split a vacancy description into requirements, responsibilities, and short description.
+ * Uses AI to analyze and separate the text into structured fields.
+ */
+export const splitVacancyDescription = async (description: string): Promise<SplitDescriptionResponse> => {
+  const { data: response } = await api.post<SplitDescriptionResponse>('/parser/vacancy/split-description', { description });
+  if (!response.success) {
+    throw new Error(response.error || 'Error splitting description');
+  }
+  return response;
+};
+
+/**
  * Result for a single resume in bulk import
  */
 export interface BulkImportResult {
