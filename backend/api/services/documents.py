@@ -321,7 +321,9 @@ class DocumentParser:
             encodings_to_try.append(detected_encoding)
 
         # Common encodings for Russian/CIS text
-        encodings_to_try.extend(['utf-8', 'cp1251', 'koi8-r', 'iso-8859-5'])
+        # ALWAYS try cp1251 early - it's very common for Russian files
+        # and chardet often misdetects it as UTF-8
+        encodings_to_try.extend(['utf-8', 'cp1251', 'koi8-r', 'iso-8859-5', 'cp866', 'utf-16', 'utf-16-le', 'utf-16-be'])
 
         # If chardet was not confident, add its suggestion at the end
         if confidence <= 0.7 and detected_encoding not in encodings_to_try:
@@ -331,63 +333,150 @@ class DocumentParser:
         seen = set()
         encodings_to_try = [e for e in encodings_to_try if not (e in seen or seen.add(e))]
 
-        text = None
-        used_encoding = None
+        best_text = None
+        best_encoding = None
+        best_score = -1
 
         for encoding in encodings_to_try:
             try:
                 text = file_bytes.decode(encoding)
-                used_encoding = encoding
-                # Check if text looks reasonable (no replacement characters in first 1000 chars)
-                sample = text[:1000]
-                if '\ufffd' not in sample and not self._has_garbled_text(sample):
+                # Check the entire text for quality, not just sample
+                sample = text[:2000]
+
+                # Skip if has replacement characters
+                if '\ufffd' in sample:
+                    continue
+
+                # Skip if has garbled text (CJK mixed with Cyrillic, etc.)
+                if self._has_garbled_text(sample):
+                    continue
+
+                # Calculate quality score based on readable characters
+                score = self._calculate_text_quality_score(text)
+
+                if score > best_score:
+                    best_score = score
+                    best_text = text
+                    best_encoding = encoding
+
+                # If we have a high-quality result, use it
+                if score > 0.8:
                     break
-                # Continue trying other encodings if this one produced garbage
-                text = None
+
             except (UnicodeDecodeError, LookupError) as e:
                 logger.debug(f"Decode with {encoding} failed: {e}")
                 continue
 
+        # Use best result found
+        if best_text is not None:
+            return DocumentParseResult(
+                content=best_text,
+                status="parsed",
+                metadata={"encoding": best_encoding, "chardet_encoding": detected_encoding, "chardet_confidence": confidence, "quality_score": best_score}
+            )
+
         # Final fallback - use detected encoding with replacement
-        if text is None:
-            text = file_bytes.decode(detected_encoding, errors='replace')
-            used_encoding = f"{detected_encoding} (with replacements)"
-            logger.warning(f"All encoding attempts failed for {filename}, using {detected_encoding} with replacements")
+        text = file_bytes.decode(detected_encoding, errors='replace')
+        used_encoding = f"{detected_encoding} (with replacements)"
+        logger.warning(f"All encoding attempts failed for {filename}, using {detected_encoding} with replacements")
 
         return DocumentParseResult(
             content=text,
-            status="parsed",
-            metadata={"encoding": used_encoding, "chardet_encoding": detected_encoding, "chardet_confidence": confidence}
+            status="partial",  # Mark as partial since encoding wasn't clean
+            metadata={"encoding": used_encoding, "chardet_encoding": detected_encoding, "chardet_confidence": confidence, "quality_score": 0}
         )
+
+    def _calculate_text_quality_score(self, text: str) -> float:
+        """Calculate quality score for decoded text.
+
+        Higher score = more likely correct encoding.
+        Based on ratio of readable characters (Cyrillic, Latin, digits, punctuation).
+        """
+        if not text:
+            return 0.0
+
+        readable = 0
+        total = len(text)
+
+        for char in text:
+            code = ord(char)
+            # Readable characters: Cyrillic, Latin, digits, common punctuation, whitespace
+            if (0x0400 <= code <= 0x04FF) or \
+               (0x0041 <= code <= 0x007A) or \
+               (0x0030 <= code <= 0x0039) or \
+               char in ' \n\t\r.,;:!?-—–\'\"()[]{}«»„""\'\'@#$%^&*+=/<>\\|`~_' or \
+               code in (9, 10, 13, 32):  # Whitespace
+                readable += 1
+
+        return readable / total if total > 0 else 0.0
 
     def _has_garbled_text(self, text: str) -> bool:
         """Check if text appears to be garbled (wrong encoding).
 
         Returns True if text has suspicious patterns like:
         - High ratio of non-printable characters
+        - CJK characters mixed with Cyrillic/Latin (encoding mismatch)
         - Many consecutive question marks or squares
         - Unusual character sequences
         """
         if not text:
             return False
 
-        # Count suspicious characters
+        # Count character types
         suspicious = 0
+        cjk_count = 0
+        cyrillic_count = 0
+        latin_count = 0
         total = len(text)
 
         for char in text:
             code = ord(char)
+
+            # Count Cyrillic characters (Russian)
+            if 0x0400 <= code <= 0x04FF:
+                cyrillic_count += 1
+            # Count Latin characters
+            elif (0x0041 <= code <= 0x007A):  # A-Z, a-z
+                latin_count += 1
+            # Count CJK characters (Chinese/Japanese/Korean)
+            # These appear when CP1251/KOI8-R is wrongly decoded as UTF-8
+            elif (0x4E00 <= code <= 0x9FFF) or \
+                 (0x3400 <= code <= 0x4DBF) or \
+                 (0x20000 <= code <= 0x2A6DF) or \
+                 (0xF900 <= code <= 0xFAFF) or \
+                 (0x3000 <= code <= 0x303F) or \
+                 (0x30A0 <= code <= 0x30FF) or \
+                 (0x3040 <= code <= 0x309F):  # Hiragana/Katakana
+                cjk_count += 1
+
             # Suspicious if:
             # - Control chars (except newline, tab, carriage return)
             # - Private use area
-            # - High number of combining characters in non-complex scripts
+            # - Replacement characters
             if (code < 32 and code not in (9, 10, 13)) or \
                (0xE000 <= code <= 0xF8FF) or \
-               (0xFFF0 <= code <= 0xFFFF):
+               (0xFFF0 <= code <= 0xFFFF) or \
+               code == 0xFFFD:  # Replacement character
                 suspicious += 1
 
+        if total == 0:
+            return False
+
         # If more than 5% suspicious characters, probably wrong encoding
-        return suspicious / total > 0.05 if total > 0 else False
+        if suspicious / total > 0.05:
+            return True
+
+        # CJK characters mixed with Cyrillic = wrong encoding
+        # This happens when CP1251/KOI8-R Russian text is decoded as UTF-8
+        if cjk_count > 0 and cyrillic_count > 0:
+            return True
+
+        # If we have CJK characters but no Cyrillic, and text seems like it should be Russian
+        # (common in Russian HR bot context), it's likely garbled
+        if cjk_count > total * 0.1 and cyrillic_count == 0 and latin_count < total * 0.3:
+            return True
+
+        return False
 
     # ========== HTML ==========
     async def _parse_html(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
