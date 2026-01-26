@@ -1,4 +1,6 @@
 import { motion } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
 import {
   X,
   MapPin,
@@ -234,7 +236,9 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit }: Vacancy
           {vacancy.requirements && (
             <div className="p-4 bg-white/5 rounded-lg">
               <h3 className="text-sm font-medium text-white/60 mb-2">Требования</h3>
-              <p className="text-sm text-white/80 whitespace-pre-wrap">{vacancy.requirements}</p>
+              <div className="prose prose-invert prose-sm max-w-none text-white/80 prose-li:marker:text-white/60">
+                <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{vacancy.requirements}</ReactMarkdown>
+              </div>
             </div>
           )}
 
@@ -242,7 +246,9 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit }: Vacancy
           {vacancy.responsibilities && (
             <div className="p-4 bg-white/5 rounded-lg">
               <h3 className="text-sm font-medium text-white/60 mb-2">Обязанности</h3>
-              <p className="text-sm text-white/80 whitespace-pre-wrap">{vacancy.responsibilities}</p>
+              <div className="prose prose-invert prose-sm max-w-none text-white/80 prose-li:marker:text-white/60">
+                <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{vacancy.responsibilities}</ReactMarkdown>
+              </div>
             </div>
           )}
 
