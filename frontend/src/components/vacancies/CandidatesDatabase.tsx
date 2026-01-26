@@ -382,14 +382,15 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     if (selectedCandidates.size === 0) return;
 
     let success = 0;
-    let failed = 0;
+    const errors: string[] = [];
 
     for (const candidateId of selectedCandidates) {
       try {
         await addCandidateToVacancy(vacancyId, candidateId, 'database_bulk');
         success++;
-      } catch {
-        failed++;
+      } catch (error: any) {
+        const detail = error?.response?.data?.detail || 'Неизвестная ошибка';
+        errors.push(detail);
       }
     }
 
@@ -397,8 +398,14 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
       toast.success(`Добавлено ${success} кандидатов`);
       onRefreshVacancies();
     }
-    if (failed > 0) {
-      toast.error(`Не удалось добавить ${failed} кандидатов`);
+    if (errors.length > 0) {
+      // Show first unique error (most likely all errors are the same reason)
+      const uniqueErrors = [...new Set(errors)];
+      if (uniqueErrors.length === 1) {
+        toast.error(uniqueErrors[0]);
+      } else {
+        toast.error(`Не удалось добавить ${errors.length}: ${uniqueErrors[0]}`);
+      }
     }
 
     setSelectedCandidates(new Set());

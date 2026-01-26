@@ -143,10 +143,10 @@ async def create_application(
         existing_vacancy_result = await db.execute(
             select(Vacancy.title).where(Vacancy.id == existing_app.vacancy_id)
         )
-        existing_vacancy_title = existing_vacancy_result.scalar() or "druguju vakansiju"
+        existing_vacancy_title = existing_vacancy_result.scalar() or "другую вакансию"
         raise HTTPException(
             status_code=400,
-            detail=f"Kandidat uzhe dobavlen v vakansiju \"{existing_vacancy_title}\". Snachala udalite ego ottuda."
+            detail=f"Кандидат уже добавлен в вакансию \"{existing_vacancy_title}\". Сначала удалите его оттуда."
         )
 
     # Use candidate's current Entity.status as initial stage (converted via STATUS_SYNC_MAP)
