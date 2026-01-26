@@ -99,6 +99,8 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
       case 'chat': return 'чат';
       case 'entity': return 'контакт';
       case 'call': return 'звонок';
+      case 'vacancy': return 'вакансию';
+      default: return 'ресурс';
     }
   };
 

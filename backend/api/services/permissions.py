@@ -24,7 +24,7 @@ from ..models.database import (
     User, UserRole,
     Organization, OrgMember, OrgRole,
     Department, DepartmentMember, DeptRole,
-    Entity, Chat, CallRecording,
+    Entity, Chat, CallRecording, Vacancy,
     SharedAccess, ResourceType, AccessLevel
 )
 
@@ -372,7 +372,8 @@ class PermissionService:
         model_map = {
             "entity": Entity,
             "chat": Chat,
-            "call": CallRecording
+            "call": CallRecording,
+            "vacancy": Vacancy
         }
         model = model_map.get(resource_type)
         if not model:

@@ -10,7 +10,7 @@ from ..database import get_db
 from ..models.database import (
     User, UserRole, SharedAccess, ResourceType, AccessLevel,
     Chat, Entity, CallRecording, OrgMember,
-    Department, DepartmentMember
+    Department, DepartmentMember, Vacancy
 )
 from ..models.sharing import (
     GenericShareRequest as ShareRequest,
@@ -38,6 +38,9 @@ async def resource_exists(resource_type: ResourceType, resource_id: int, db: Asy
     elif resource_type == ResourceType.call:
         result = await db.execute(select(CallRecording).where(CallRecording.id == resource_id))
         return result.scalar_one_or_none() is not None
+    elif resource_type == ResourceType.vacancy:
+        result = await db.execute(select(Vacancy).where(Vacancy.id == resource_id))
+        return result.scalar_one_or_none() is not None
     return False
 
 
@@ -55,6 +58,10 @@ async def get_resource_name(resource_type: ResourceType, resource_id: int, db: A
         result = await db.execute(select(CallRecording).where(CallRecording.id == resource_id))
         resource = result.scalar_one_or_none()
         return resource.title or f"Звонок #{resource_id}" if resource else None
+    elif resource_type == ResourceType.vacancy:
+        result = await db.execute(select(Vacancy).where(Vacancy.id == resource_id))
+        resource = result.scalar_one_or_none()
+        return resource.title if resource else None
     return None
 
 
@@ -66,6 +73,7 @@ async def batch_get_resource_names(shares: List[SharedAccess], db: AsyncSession)
     chat_ids = []
     entity_ids = []
     call_ids = []
+    vacancy_ids = []
 
     for share in shares:
         if share.resource_type == ResourceType.chat:
@@ -74,6 +82,8 @@ async def batch_get_resource_names(shares: List[SharedAccess], db: AsyncSession)
             entity_ids.append(share.resource_id)
         elif share.resource_type == ResourceType.call:
             call_ids.append(share.resource_id)
+        elif share.resource_type == ResourceType.vacancy:
+            vacancy_ids.append(share.resource_id)
 
     # Batch load chats
     if chat_ids:
@@ -95,6 +105,13 @@ async def batch_get_resource_names(shares: List[SharedAccess], db: AsyncSession)
         for call in result.scalars().all():
             key = (ResourceType.call, call.id)
             resource_names[key] = call.title or f"Звонок #{call.id}"
+
+    # Batch load vacancies
+    if vacancy_ids:
+        result = await db.execute(select(Vacancy).where(Vacancy.id.in_(vacancy_ids)))
+        for vacancy in result.scalars().all():
+            key = (ResourceType.vacancy, vacancy.id)
+            resource_names[key] = vacancy.title
 
     return resource_names
 
@@ -178,6 +195,7 @@ async def share_resource(
             entity_id=data.resource_id if data.resource_type == ResourceType.entity else None,
             chat_id=data.resource_id if data.resource_type == ResourceType.chat else None,
             call_id=data.resource_id if data.resource_type == ResourceType.call else None,
+            vacancy_id=data.resource_id if data.resource_type == ResourceType.vacancy else None,
             shared_by_id=current_user.id,
             shared_with_id=data.shared_with_id,
             access_level=data.access_level,
