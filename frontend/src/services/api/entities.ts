@@ -584,7 +584,8 @@ export const parseResumeFromFile = async (file: File): Promise<ParsedResume> => 
   const formData = new FormData();
   formData.append('file', file);
   const { data: response } = await api.post<ParseResponse<ParsedResume>>('/parser/resume/file', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000 // 2 minutes for AI parsing
   });
   if (!response.success || !response.data) {
     throw new Error(response.error || 'Error parsing file');
@@ -604,7 +605,8 @@ export const parseVacancyFromFile = async (file: File): Promise<ParsedVacancy> =
   const formData = new FormData();
   formData.append('file', file);
   const { data: response } = await api.post<ParseResponse<ParsedVacancy>>('/parser/vacancy/file', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000 // 2 minutes for AI parsing
   });
   if (!response.success || !response.data) {
     throw new Error(response.error || 'Error parsing vacancy file');
@@ -668,7 +670,8 @@ export const bulkImportResumes = async (file: File): Promise<BulkImportResponse>
   const formData = new FormData();
   formData.append('file', file);
   const { data } = await api.post<BulkImportResponse>('/parser/resume/bulk-import', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 300000 // 5 minutes for bulk AI parsing
   });
   return data;
 };
