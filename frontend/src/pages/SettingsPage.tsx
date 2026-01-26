@@ -229,10 +229,21 @@ export default function SettingsPage() {
 
   // Handle org-wide toggle
   const handleOrgWideToggle = (featureName: string, enabled: boolean) => {
-    featureMutation.mutate({
-      featureName,
-      request: { department_ids: null, enabled }
-    });
+    const orgWideSetting = groupedFeatures[featureName]?.orgWide;
+
+    if (enabled) {
+      // Turn ON: create/update org-wide setting with enabled=true
+      featureMutation.mutate({
+        featureName,
+        request: { department_ids: null, enabled: true }
+      });
+    } else {
+      // Turn OFF: delete org-wide setting if it exists
+      if (orgWideSetting) {
+        deleteFeatureMutation.mutate({ featureName, departmentId: null });
+      }
+      // If no setting exists, feature is already disabled by default - do nothing
+    }
   };
 
   // Handle adding department-specific setting
