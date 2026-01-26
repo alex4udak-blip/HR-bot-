@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, Check, X, AlertCircle, FileText, ExternalLink, Trash2 } from 'lucide-react';
+import { Loader2, Check, X, FileText, ExternalLink, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
