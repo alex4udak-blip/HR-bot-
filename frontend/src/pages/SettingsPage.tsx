@@ -55,12 +55,8 @@ const categoryConfig = {
 type SettingsTab = 'general' | 'presets' | 'roles' | 'features' | 'email-templates';
 
 // Feature display configuration
+// Note: Feature names must match backend RESTRICTED_FEATURES in services/features.py
 const featureConfig: Record<string, { icon: typeof Briefcase; label: string; description: string }> = {
-  vacancies: {
-    icon: Briefcase,
-    label: 'Вакансии',
-    description: 'Доступ к управлению вакансиями и Kanban доске'
-  },
   ai_analysis: {
     icon: Brain,
     label: 'AI Анализ',
@@ -68,8 +64,8 @@ const featureConfig: Record<string, { icon: typeof Briefcase; label: string; des
   },
   candidate_database: {
     icon: Users,
-    label: 'База кандидатов',
-    description: 'Доступ к базе кандидатов в разделе Вакансии'
+    label: 'Вакансии и База кандидатов',
+    description: 'Доступ к вакансиям, Kanban доске и базе кандидатов'
   }
 };
 
