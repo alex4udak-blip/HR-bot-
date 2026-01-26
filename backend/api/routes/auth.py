@@ -5,7 +5,7 @@ from sqlalchemy import select
 from user_agents import parse as parse_user_agent
 
 from ..database import get_db
-from ..models.database import User, UserRole
+from ..models.database import User, UserRole, OrgMember, DepartmentMember, Department
 from ..models.schemas import (
     LoginRequest, TokenResponse, ChangePasswordRequest,
     LinkTelegramRequest, UserResponse, UserCreate,
@@ -193,10 +193,40 @@ async def login(
         path="/api/auth"  # Only sent to auth endpoints (reduces attack surface)
     )
 
+    # Get org membership and role
+    org_role = None
+    org_member_result = await db.execute(
+        select(OrgMember.role).where(OrgMember.user_id == authenticated_user.id)
+    )
+    org_member = org_member_result.scalar_one_or_none()
+    if org_member:
+        org_role = org_member.value
+
+    # Get department membership
+    department_id = None
+    department_name = None
+    department_role = None
+    dept_result = await db.execute(
+        select(DepartmentMember, Department)
+        .join(Department, Department.id == DepartmentMember.department_id)
+        .where(DepartmentMember.user_id == authenticated_user.id)
+    )
+    dept_row = dept_result.first()
+    if dept_row:
+        dept_member, dept = dept_row
+        department_id = dept.id
+        department_name = dept.name
+        department_role = dept_member.role.value if dept_member.role else None
+
     # Return user info only (no tokens in response body)
     return UserResponse(
         id=authenticated_user.id, email=authenticated_user.email, name=authenticated_user.name,
-        role=authenticated_user.role.value, telegram_id=authenticated_user.telegram_id,
+        role=authenticated_user.role.value,
+        org_role=org_role,
+        department_id=department_id,
+        department_name=department_name,
+        department_role=department_role,
+        telegram_id=authenticated_user.telegram_id,
         telegram_username=authenticated_user.telegram_username,
         is_active=authenticated_user.is_active, created_at=authenticated_user.created_at,
         chats_count=0,  # Skip lazy loading for login
@@ -394,10 +424,43 @@ async def get_active_sessions(
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(user: User = Depends(get_current_user)):
+async def get_me(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    # Get org membership and role
+    org_role = None
+    org_member_result = await db.execute(
+        select(OrgMember.role).where(OrgMember.user_id == user.id)
+    )
+    org_member = org_member_result.scalar_one_or_none()
+    if org_member:
+        org_role = org_member.value
+
+    # Get department membership
+    department_id = None
+    department_name = None
+    department_role = None
+    dept_result = await db.execute(
+        select(DepartmentMember, Department)
+        .join(Department, Department.id == DepartmentMember.department_id)
+        .where(DepartmentMember.user_id == user.id)
+    )
+    dept_row = dept_result.first()
+    if dept_row:
+        dept_member, dept = dept_row
+        department_id = dept.id
+        department_name = dept.name
+        department_role = dept_member.role.value if dept_member.role else None
+
     return UserResponse(
         id=user.id, email=user.email, name=user.name,
-        role=user.role.value, telegram_id=user.telegram_id,
+        role=user.role.value,
+        org_role=org_role,
+        department_id=department_id,
+        department_name=department_name,
+        department_role=department_role,
+        telegram_id=user.telegram_id,
         telegram_username=user.telegram_username,
         is_active=user.is_active, created_at=user.created_at,
         chats_count=0,  # Skip lazy loading
