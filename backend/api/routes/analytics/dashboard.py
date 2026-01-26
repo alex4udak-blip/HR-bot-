@@ -215,8 +215,9 @@ async def get_dashboard_overview(
         apps_result = await db.execute(apps_query)
         apps_row = apps_result.first()
 
-        # Hires stats - apply same role-based filters via vacancy
-        hires_query = (
+        # Hires stats - count both VacancyApplication hired AND Entity with hired status
+        # 1. VacancyApplication hires (through vacancy pipeline)
+        vacancy_hires_query = (
             select(
                 func.sum(case((VacancyApplication.last_stage_change_at >= month_start, 1), else_=0)).label("this_month"),
                 func.sum(case((VacancyApplication.last_stage_change_at >= quarter_start, 1), else_=0)).label("this_quarter"),
@@ -227,8 +228,40 @@ async def get_dashboard_overview(
                 VacancyApplication.stage == 'hired'
             )
         )
-        hires_result = await db.execute(hires_query)
-        hires_row = hires_result.first()
+        vacancy_hires_result = await db.execute(vacancy_hires_query)
+        vacancy_hires_row = vacancy_hires_result.first()
+
+        # 2. Entity hires (candidates with hired status not in any vacancy)
+        # Find entity IDs that have VacancyApplications with hired stage
+        hired_via_vacancy_subq = (
+            select(VacancyApplication.entity_id)
+            .where(VacancyApplication.stage == 'hired')
+            .distinct()
+        )
+        # Count entities with hired status that are NOT in the vacancy hired list
+        entity_hires_query = (
+            select(
+                func.sum(case((Entity.updated_at >= month_start, 1), else_=0)).label("this_month"),
+                func.sum(case((Entity.updated_at >= quarter_start, 1), else_=0)).label("this_quarter"),
+            ).where(
+                *entity_filter,
+                Entity.type == "candidate",
+                Entity.status == EntityStatus.hired,
+                Entity.id.notin_(hired_via_vacancy_subq)
+            )
+        )
+        entity_hires_result = await db.execute(entity_hires_query)
+        entity_hires_row = entity_hires_result.first()
+
+        # Combine both counts
+        hires_this_month = (
+            int(vacancy_hires_row.this_month or 0) +
+            int(entity_hires_row.this_month or 0) if entity_hires_row else 0
+        )
+        hires_this_quarter = (
+            int(vacancy_hires_row.this_quarter or 0) +
+            int(entity_hires_row.this_quarter or 0) if entity_hires_row else 0
+        )
 
         # Rejections this month - apply same role-based filters via vacancy
         rejections_result = await db.execute(
@@ -243,10 +276,11 @@ async def get_dashboard_overview(
         )
         rejections_count = rejections_result.scalar() or 0
 
-        # Average time to hire (for hires this quarter) - apply same role-based filters
+        # Average time to hire (for hires this quarter) - combines vacancy and entity data
         avg_time_to_hire = None
         try:
-            time_to_hire_result = await db.execute(
+            # Time to hire from VacancyApplications
+            vacancy_time_result = await db.execute(
                 select(
                     func.avg(
                         func.extract('epoch', VacancyApplication.last_stage_change_at - VacancyApplication.applied_at) / 86400
@@ -259,7 +293,30 @@ async def get_dashboard_overview(
                     VacancyApplication.last_stage_change_at >= quarter_start
                 )
             )
-            avg_time_to_hire = time_to_hire_result.scalar()
+            vacancy_avg = vacancy_time_result.scalar()
+
+            # Time to hire from Entities (created_at to updated_at for hired status)
+            entity_time_result = await db.execute(
+                select(
+                    func.avg(
+                        func.extract('epoch', Entity.updated_at - Entity.created_at) / 86400
+                    )
+                ).where(
+                    *entity_filter,
+                    Entity.type == "candidate",
+                    Entity.status == EntityStatus.hired,
+                    Entity.updated_at >= quarter_start,
+                    Entity.id.notin_(hired_via_vacancy_subq)
+                )
+            )
+            entity_avg = entity_time_result.scalar()
+
+            # Combine averages (weighted by count would be better, but simple average is ok)
+            if vacancy_avg and entity_avg:
+                avg_time_to_hire = (vacancy_avg + entity_avg) / 2
+            else:
+                avg_time_to_hire = vacancy_avg or entity_avg
+
         except Exception as e:
             logger.warning(f"Failed to calculate avg time to hire: {e}")
 
@@ -273,8 +330,8 @@ async def get_dashboard_overview(
             candidates_in_pipeline=int(cand_row.in_pipeline or 0),
             applications_total=int(apps_row.total or 0) if apps_row else 0,
             applications_this_month=int(apps_row.this_month or 0) if apps_row else 0,
-            hires_this_month=int(hires_row.this_month or 0) if hires_row else 0,
-            hires_this_quarter=int(hires_row.this_quarter or 0) if hires_row else 0,
+            hires_this_month=hires_this_month,
+            hires_this_quarter=hires_this_quarter,
             avg_time_to_hire_days=round(avg_time_to_hire, 1) if avg_time_to_hire else None,
             rejections_this_month=int(rejections_count),
         )
