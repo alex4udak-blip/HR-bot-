@@ -94,6 +94,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
   // Kanban auto-scroll refs
   const kanbanContainerRef = useRef<HTMLDivElement>(null);
+  const stageColumnRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const autoScrollIntervalRef = useRef<number | null>(null);
   const scrollDirectionRef = useRef<number>(0);
   const AUTO_SCROLL_THRESHOLD = 200;
@@ -219,17 +220,6 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     setDropTargetVacancy(null);
   };
 
-  const handleVacancyDragOver = (e: React.DragEvent, vacancyId: number) => {
-    e.preventDefault();
-    if (draggedCandidate) {
-      setDropTargetVacancy(vacancyId);
-    }
-  };
-
-  const handleVacancyDragLeave = () => {
-    setDropTargetVacancy(null);
-  };
-
   // Handlers - Kanban stage drag
   const handleKanbanDragStart = (candidate: Entity) => {
     setDraggedForKanban(candidate);
@@ -319,6 +309,23 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     };
     autoScrollIntervalRef.current = requestAnimationFrame(scroll);
   }, [stopAutoScroll]);
+
+  // Scroll to stage column in kanban view and highlight it
+  const scrollToStageColumn = useCallback((stage: EntityStatus) => {
+    if (viewMode !== 'kanban') return;
+
+    // stage is already the column key (same as ApplicationStage)
+    const column = stageColumnRefs.current[stage];
+
+    if (column && kanbanContainerRef.current) {
+      column.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      // Add highlight animation
+      column.classList.add('ring-2', 'ring-purple-500', 'ring-offset-2', 'ring-offset-gray-900');
+      setTimeout(() => {
+        column.classList.remove('ring-2', 'ring-purple-500', 'ring-offset-2', 'ring-offset-gray-900');
+      }, 1500);
+    }
+  }, [viewMode]);
 
   const handleKanbanBoardDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -553,18 +560,15 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
     if (isListView) {
       return (
-        <motion.div
+        <div
           key={candidate.id}
-          layout
-          initial={{ opacity: 0, y: 5 }}
-          animate={{ opacity: draggedCandidate?.id === candidate.id ? 0.5 : 1 }}
-          exit={{ opacity: 0, y: -5 }}
           draggable
           onDragStart={() => handleDragStart(candidate)}
           onDragEnd={handleDragEnd}
           onClick={() => handleCandidateClick(candidate)}
           className={clsx(
-            'flex items-center p-3 bg-white/5 hover:bg-white/10 border rounded-lg cursor-pointer transition-all group',
+            'flex items-center p-3 bg-white/5 hover:bg-white/10 border rounded-lg cursor-pointer transition-colors group',
+            draggedCandidate?.id === candidate.id && 'opacity-50',
             selectedCandidates.has(candidate.id) ? 'border-purple-500 bg-purple-500/10' : 'border-white/10'
           )}
         >
@@ -593,8 +597,8 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
             </span>
           </div>
-          {/* Next stage button - fixed 100px */}
-          <div className="w-[100px] min-w-[100px] flex-shrink-0 mr-3">
+          {/* Next stage button - fixed 110px */}
+          <div className="w-[110px] min-w-[110px] flex-shrink-0 mr-3">
             {nextStage && (
               <button
                 disabled={isMovingCandidate(candidate.id)}
@@ -602,8 +606,9 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                   e.stopPropagation();
                   handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nextStage]);
                 }}
+                title={`Перевести в: ${STATUS_LABELS[STAGE_TO_STATUS_MAP[nextStage]]}`}
                 className={clsx(
-                  "opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all whitespace-nowrap",
+                  "opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all max-w-full truncate",
                   isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
                 )}
               >
@@ -638,24 +643,21 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             <Clock className="w-3 h-3" />
             {formatDate(candidate.created_at, 'short')}
           </div>
-        </motion.div>
+        </div>
       );
     }
 
     return (
-      <motion.div
+      <div
         key={candidate.id}
-        layout
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
         draggable
         onDragStart={() => handleDragStart(candidate)}
         onDragEnd={handleDragEnd}
         onClick={() => handleCandidateClick(candidate)}
         className={clsx(
-          'p-3 bg-white/5 hover:bg-white/10 border rounded-xl cursor-pointer transition-all group overflow-hidden',
-          selectedCandidates.has(candidate.id) ? 'border-purple-500 bg-purple-500/10' : 'border-white/10'
+          'p-3 bg-white/5 hover:bg-white/10 border rounded-xl cursor-pointer transition-colors group overflow-hidden',
+          selectedCandidates.has(candidate.id) ? 'border-purple-500 bg-purple-500/10' : 'border-white/10',
+          draggedCandidate?.id === candidate.id && 'opacity-50'
         )}
       >
         <div className="flex items-start gap-2 mb-2">
@@ -687,8 +689,9 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                 e.stopPropagation();
                 handleQuickStatusChange(candidate, STAGE_TO_STATUS_MAP[nextStage]);
               }}
+              title={`Перевести в: ${STATUS_LABELS[STAGE_TO_STATUS_MAP[nextStage]]}`}
               className={clsx(
-                "opacity-0 group-hover:opacity-100 px-2 py-0.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all whitespace-nowrap flex-shrink-0",
+                "opacity-0 group-hover:opacity-100 px-2 py-0.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all truncate max-w-[100px]",
                 isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
               )}
             >
@@ -765,7 +768,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             <ExternalLink className="w-3 h-3" />
           </button>
         </div>
-      </motion.div>
+      </div>
     );
   };
 
@@ -843,7 +846,13 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           {PIPELINE_STAGES.map(stage => (
             <button
               key={stage}
-              onClick={() => setSelectedStage(stage)}
+              onClick={() => {
+                setSelectedStage(stage);
+                // Scroll to stage column in kanban view
+                if (viewMode === 'kanban') {
+                  setTimeout(() => scrollToStageColumn(stage), 100);
+                }
+              }}
               className={clsx(
                 'px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all active:scale-95',
                 selectedStage === stage ? `${STATUS_COLORS[stage]} shadow-lg` : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'
@@ -954,6 +963,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                 {PIPELINE_STAGES.map(stage => (
                   <div
                     key={stage}
+                    ref={(el) => { stageColumnRefs.current[stage] = el; }}
                     onDragOver={(e) => handleStageDragOver(e, stage)}
                     onDragLeave={handleStageDragLeave}
                     onDrop={(e) => handleStageDrop(e, stage)}
@@ -1030,24 +1040,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           )}
         </div>
 
-        <AnimatePresence>
-          {draggedCandidate && openVacancies.length > 0 && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="w-64 border-l border-white/10 bg-gray-900/80 p-3 overflow-y-auto">
-              <div className="flex items-center gap-2 mb-3 text-sm text-white/60">
-                <Sparkles className="w-4 h-4 text-purple-400" />
-                <span>Отпустите на вакансию</span>
-              </div>
-              <div className="space-y-2">
-                {openVacancies.map(vacancy => (
-                  <div key={vacancy.id} onDragOver={(e) => handleVacancyDragOver(e, vacancy.id)} onDragLeave={handleVacancyDragLeave} onDrop={handleDragEnd} className={clsx('p-3 rounded-lg border-2 border-dashed transition-all', dropTargetVacancy === vacancy.id ? 'border-purple-500 bg-purple-500/20 scale-105' : 'border-white/20 hover:border-white/30')}>
-                    <h4 className="font-medium text-sm truncate">{vacancy.title}</h4>
-                    <p className="text-xs text-white/40 mt-1">{vacancy.applications_count} кандидатов</p>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Vacancy drop panel removed - was taking too much space */}
       </div>
 
       <AnimatePresence>
