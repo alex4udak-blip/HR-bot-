@@ -151,6 +151,7 @@ export {
   mergeEntities,
   compareCandidates,
   compareCandidatesAI,
+  downloadComparisonReport,
   // Files
   getEntityFiles,
   uploadEntityFile,

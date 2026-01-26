@@ -1001,3 +1001,111 @@ async def compare_candidates_ai(
         generate(),
         media_type="text/plain; charset=utf-8"
     )
+
+
+@router.post("/{entity_id}/compare/{other_entity_id}/report")
+async def compare_candidates_report(
+    entity_id: int,
+    other_entity_id: int,
+    format: str = Query("pdf", description="Report format: pdf, docx, markdown"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate downloadable comparison report for two candidates.
+
+    Returns PDF, DOCX, or Markdown file with detailed comparison.
+    """
+    from ...services.comparison_ai import comparison_ai_service
+    from ...services.reports import generate_pdf_report, generate_docx_report
+    from ...models.database import EntityFile
+    from fastapi.responses import Response
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    if entity_id == other_entity_id:
+        raise HTTPException(400, "Cannot compare candidate with themselves")
+
+    if format not in ("pdf", "docx", "markdown"):
+        raise HTTPException(400, "Format must be pdf, docx, or markdown")
+
+    # Load both entities with related data
+    async def load_entity_with_context(eid: int):
+        result = await db.execute(
+            select(Entity).where(Entity.id == eid, Entity.org_id == org.id)
+        )
+        entity = result.scalar_one_or_none()
+        if not entity:
+            return None, [], [], []
+
+        chats_result = await db.execute(
+            select(Chat)
+            .options(selectinload(Chat.messages))
+            .where(Chat.entity_id == eid)
+        )
+        chats = list(chats_result.scalars().all())
+
+        calls_result = await db.execute(
+            select(CallRecording).where(CallRecording.entity_id == eid)
+        )
+        calls = list(calls_result.scalars().all())
+
+        files_result = await db.execute(
+            select(EntityFile).where(EntityFile.entity_id == eid)
+        )
+        files = list(files_result.scalars().all())
+
+        return entity, chats, calls, files
+
+    entity1, chats1, calls1, files1 = await load_entity_with_context(entity_id)
+    if not entity1:
+        raise HTTPException(404, "First candidate not found")
+
+    entity2, chats2, calls2, files2 = await load_entity_with_context(other_entity_id)
+    if not entity2:
+        raise HTTPException(404, "Second candidate not found")
+
+    # Generate comparison content (non-streaming)
+    comparison_text = ""
+    try:
+        async for chunk in comparison_ai_service.compare_stream(
+            entity1, chats1, calls1, files1,
+            entity2, chats2, calls2, files2
+        ):
+            comparison_text += chunk
+    except Exception as e:
+        logger.error(f"AI comparison error: {e}")
+        raise HTTPException(500, f"Failed to generate comparison: {str(e)}")
+
+    # Generate report file
+    title = f"Сравнение: {entity1.name} vs {entity2.name}"
+
+    if format == "pdf":
+        file_bytes = generate_pdf_report(title, comparison_text, title)
+        return Response(
+            content=file_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="comparison_{entity_id}_vs_{other_entity_id}.pdf"'
+            }
+        )
+    elif format == "docx":
+        file_bytes = generate_docx_report(title, comparison_text, title)
+        return Response(
+            content=file_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="comparison_{entity_id}_vs_{other_entity_id}.docx"'
+            }
+        )
+    else:
+        return Response(
+            content=comparison_text,
+            media_type="text/markdown; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="comparison_{entity_id}_vs_{other_entity_id}.md"'
+            }
+        )

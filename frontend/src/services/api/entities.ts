@@ -472,6 +472,37 @@ export const compareCandidatesAI = async (
   }
 };
 
+/**
+ * Download comparison report for two candidates as PDF, DOCX, or Markdown.
+ *
+ * @param entityId ID of first candidate
+ * @param otherEntityId ID of second candidate
+ * @param format Report format: 'pdf', 'docx', or 'markdown'
+ * @returns Blob with report file
+ */
+export const downloadComparisonReport = async (
+  entityId: number,
+  otherEntityId: number,
+  format: 'pdf' | 'docx' | 'markdown' = 'pdf'
+): Promise<Blob> => {
+  const response = await fetch(
+    `${api.defaults.baseURL}/entities/${entityId}/compare/${otherEntityId}/report?format=${format}`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Ошибка генерации отчёта' }));
+    throw new Error(error.detail || 'Ошибка генерации отчёта');
+  }
+
+  return response.blob();
+};
+
 // ============================================================
 // ENTITY FILES
 // ============================================================
