@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
@@ -16,7 +17,8 @@ import {
   CheckCircle,
   XCircle,
   TrendingUp,
-  ExternalLink
+  ExternalLink,
+  Share2
 } from 'lucide-react';
 import type { Vacancy } from '@/types';
 import {
@@ -27,14 +29,17 @@ import {
   VACANCY_STATUS_COLORS
 } from '@/types';
 import { formatSalary, formatDate } from '@/utils';
+import ShareModal from '@/components/common/ShareModal';
 
 interface VacancyDetailModalProps {
   vacancy: Vacancy;
   onClose: () => void;
   onEdit: () => void;
+  canShare?: boolean;
 }
 
-export default function VacancyDetailModal({ vacancy, onClose, onEdit }: VacancyDetailModalProps) {
+export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare = true }: VacancyDetailModalProps) {
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // Calculate stats
   const totalCandidates = vacancy.applications_count || 0;
@@ -79,6 +84,15 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit }: Vacancy
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {canShare && (
+              <button
+                onClick={() => setShowShareModal(true)}
+                className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+                title="Поделиться"
+              >
+                <Share2 className="w-5 h-5" />
+              </button>
+            )}
             <button
               onClick={onEdit}
               className="p-2 hover:bg-white/5 rounded-lg transition-colors"
@@ -291,6 +305,15 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit }: Vacancy
 
         {/* Footer */}
         <div className="p-4 border-t border-white/10 flex justify-end gap-2">
+          {canShare && (
+            <button
+              onClick={() => setShowShareModal(true)}
+              className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm transition-colors flex items-center gap-2"
+            >
+              <Share2 className="w-4 h-4" />
+              Поделиться
+            </button>
+          )}
           <button
             onClick={onClose}
             className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm transition-colors"
@@ -306,6 +329,15 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit }: Vacancy
           </button>
         </div>
       </motion.div>
+
+      {/* Share Modal */}
+      <ShareModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        resourceType="vacancy"
+        resourceId={vacancy.id}
+        resourceName={vacancy.title}
+      />
     </motion.div>
   );
 }
