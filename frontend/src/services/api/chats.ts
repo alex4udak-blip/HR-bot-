@@ -49,7 +49,7 @@ export const permanentDeleteChat = async (id: number): Promise<void> => {
 // MESSAGES API
 // ============================================================
 
-export const getMessages = async (chatId: number, page = 1, limit = 1000, contentType?: string): Promise<Message[]> => {
+export const getMessages = async (chatId: number, page = 1, limit = 500, contentType?: string): Promise<Message[]> => {
   const params: Record<string, string> = { page: String(page), limit: String(limit) };
   if (contentType) params.content_type = contentType;
   const { data } = await deduplicatedGet<Message[]>(`/chats/${chatId}/messages`, { params });
