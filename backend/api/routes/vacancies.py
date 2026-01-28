@@ -101,7 +101,7 @@ async def has_shared_vacancy_access(vacancy_id: int, user_id: int, db: AsyncSess
             SharedAccess.resource_id == vacancy_id,
             SharedAccess.shared_with_id == user_id,
             SharedAccess.access_level.in_(allowed_levels),
-            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.now(timezone.utc))
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
         )
     )
     return result.scalar_one_or_none() is not None
@@ -129,7 +129,7 @@ async def get_shared_vacancy_ids(user_id: int, db: AsyncSession, required_level:
             SharedAccess.resource_type == ResourceType.vacancy,
             SharedAccess.shared_with_id == user_id,
             SharedAccess.access_level.in_(allowed_levels),
-            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.now(timezone.utc))
+            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
         )
     )
     return [row[0] for row in result.all()]
