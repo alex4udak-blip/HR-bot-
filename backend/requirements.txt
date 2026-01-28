@@ -23,7 +23,7 @@ anthropic==0.76.0
 openai==2.15.0
 
 # Reports
-reportlab==4.4.7
+reportlab==4.4.9
 python-docx==1.2.0
 markdown==3.10
 
