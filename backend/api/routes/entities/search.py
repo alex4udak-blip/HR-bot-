@@ -727,12 +727,13 @@ async def get_similar_candidates(
     if entity.type != EntityType.candidate:
         raise HTTPException(400, "Similar search is only available for candidates")
 
-    # Find similar
+    # Find similar (filtered by user's access rights for security)
     similar = await similarity_service.find_similar(
         db=db,
         entity=entity,
         limit=limit,
-        org_id=org.id
+        org_id=org.id,
+        user=current_user
     )
 
     return [
@@ -780,11 +781,12 @@ async def get_duplicate_candidates(
     if not has_access:
         raise HTTPException(403, "No access to this entity")
 
-    # Find duplicates
+    # Find duplicates (filtered by user's access rights for security)
     duplicates = await similarity_service.detect_duplicates(
         db=db,
         entity=entity,
-        org_id=org.id
+        org_id=org.id,
+        user=current_user
     )
 
     return [

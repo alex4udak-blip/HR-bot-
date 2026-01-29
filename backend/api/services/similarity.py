@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import re
 import logging
 
-from ..models.database import Entity, EntityType, Organization
+from ..models.database import Entity, EntityType, Organization, User
 
 logger = logging.getLogger("hr-analyzer.similarity")
 
@@ -353,7 +353,8 @@ class SimilarityService:
         db: AsyncSession,
         entity: Entity,
         limit: int = 10,
-        org_id: Optional[int] = None
+        org_id: Optional[int] = None,
+        user: Optional[User] = None
     ) -> List[SimilarCandidate]:
         """
         Поиск похожих кандидатов.
@@ -363,6 +364,7 @@ class SimilarityService:
             entity: Исходный кандидат
             limit: Максимальное количество результатов
             org_id: ID организации (если None, ищем в той же организации)
+            user: Текущий пользователь (для фильтрации по правам доступа)
 
         Returns:
             Список похожих кандидатов с оценкой сходства
@@ -375,7 +377,14 @@ class SimilarityService:
         source_experience = extract_experience_years(entity.extra_data or {})
         source_location = extract_location(entity.extra_data or {})
 
-        # Загружаем всех кандидатов той же организации (кроме исходного)
+        # Get accessible entity IDs for security filtering
+        accessible_ids: Optional[Set[int]] = None
+        if user:
+            from .permissions import PermissionService
+            permissions = PermissionService(db)
+            accessible_ids = await permissions.get_accessible_ids(user, "entity", org_id)
+
+        # Загружаем кандидатов (фильтруем по доступу если есть user)
         query = select(Entity).where(
             and_(
                 Entity.org_id == org_id,
@@ -384,7 +393,13 @@ class SimilarityService:
             )
         )
         result = await db.execute(query)
-        candidates = result.scalars().all()
+        all_candidates = result.scalars().all()
+
+        # Filter by accessible IDs if user is provided
+        if accessible_ids is not None:
+            candidates = [c for c in all_candidates if c.id in accessible_ids]
+        else:
+            candidates = all_candidates
 
         similar_results: List[SimilarCandidate] = []
 
@@ -526,7 +541,8 @@ class SimilarityService:
         self,
         db: AsyncSession,
         entity: Entity,
-        org_id: Optional[int] = None
+        org_id: Optional[int] = None,
+        user: Optional[User] = None
     ) -> List[DuplicateCandidate]:
         """
         Детекция возможных дубликатов.
@@ -541,6 +557,7 @@ class SimilarityService:
             db: Сессия БД
             entity: Исходный кандидат
             org_id: ID организации
+            user: Текущий пользователь (для фильтрации по правам доступа)
 
         Returns:
             Список возможных дубликатов с вероятностью
@@ -550,6 +567,13 @@ class SimilarityService:
 
         duplicates: List[DuplicateCandidate] = []
         seen_ids: Set[int] = {entity.id}
+
+        # Get accessible entity IDs for security filtering
+        accessible_ids: Optional[Set[int]] = None
+        if user:
+            from .permissions import PermissionService
+            permissions = PermissionService(db)
+            accessible_ids = await permissions.get_accessible_ids(user, "entity", org_id)
 
         # Генерируем варианты имени с транслитерацией
         name_variants = generate_name_variants(entity.name)
@@ -576,7 +600,13 @@ class SimilarityService:
             )
         )
         result = await db.execute(query)
-        candidates = result.scalars().all()
+        all_candidates = result.scalars().all()
+
+        # Filter by accessible IDs if user is provided (SECURITY: prevent data leak)
+        if accessible_ids is not None:
+            candidates = [c for c in all_candidates if c.id in accessible_ids]
+        else:
+            candidates = all_candidates
 
         for candidate in candidates:
             if candidate.id in seen_ids:
