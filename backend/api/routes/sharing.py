@@ -606,6 +606,9 @@ async def get_resource_shares(
     return response
 
 
+import logging
+logger = logging.getLogger("hr-analyzer.sharing")
+
 @router.get("/users", response_model=List[UserSimple])
 async def get_sharable_users(
     db: AsyncSession = Depends(get_db),
@@ -615,6 +618,7 @@ async def get_sharable_users(
     current_user = await db.merge(current_user)
 
     org = await get_user_org(current_user, db)
+    logger.info(f"get_sharable_users: user={current_user.id}, role={current_user.role}, org={org.id if org else None}")
 
     # For superadmin without org membership, get the first organization
     if not org and current_user.role == UserRole.superadmin:
@@ -640,8 +644,10 @@ async def get_sharable_users(
     rows = result.all()
 
     if not rows:
+        logger.info(f"get_sharable_users: no rows found for org_id={org.id}")
         return []
 
+    logger.info(f"get_sharable_users: found {len(rows)} users")
     # Batch load departments for all users
     user_ids = [user.id for user, _ in rows]
     dept_memberships_result = await db.execute(
