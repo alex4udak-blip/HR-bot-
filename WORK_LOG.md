@@ -1,5 +1,30 @@
 # Work Log - HR-bot
 
+## 2026-01-29 — Фиксы миграций и критических багов
+
+**Что сделано:**
+- Исправлен критический баг: сервер 500 из-за pgvector import (PR #466)
+- Исправлена цепочка миграций (PR #467, #468):
+  - `add_composite_indexes.py` — исправлен down_revision
+  - `add_performance_indexes.py` — исправлен down_revision
+  - `add_custom_roles.py` — добавлена проверка IF NOT EXISTS
+- Добавлен fallback `alembic stamp head` в start.sh (PR #469)
+
+**PRs:**
+- https://github.com/alex4udak-blip/HR-bot-/pull/466
+- https://github.com/alex4udak-blip/HR-bot-/pull/467
+- https://github.com/alex4udak-blip/HR-bot-/pull/468
+- https://github.com/alex4udak-blip/HR-bot-/pull/469
+
+**Проверено на проде:** ✅ Работает! `alembic stamp head` успешно применён.
+
+**Результат:**
+- Миграции помечены как выполненные
+- Сервер запускается без ошибок
+- API возвращает 200 OK
+
+---
+
 ## 2026-01-29 — Embeddings система для быстрого поиска
 
 **Что сделано:**
