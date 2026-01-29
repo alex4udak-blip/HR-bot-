@@ -17,7 +17,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers
 revision = 'add_email_templates_analytics'
-down_revision = None  # Will be updated by Alembic
+down_revision = ('add_embeddings', 'add_compatibility_score')  # Merge two branches
 branch_labels = None
 depends_on = None
 
