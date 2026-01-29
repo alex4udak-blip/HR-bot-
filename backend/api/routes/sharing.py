@@ -9,7 +9,7 @@ from datetime import datetime
 from ..database import get_db
 from ..models.database import (
     User, UserRole, SharedAccess, ResourceType, AccessLevel,
-    Chat, Entity, CallRecording, OrgMember,
+    Chat, Entity, CallRecording, OrgMember, Organization,
     Department, DepartmentMember, Vacancy
 )
 from ..models.sharing import (
@@ -615,6 +615,14 @@ async def get_sharable_users(
     current_user = await db.merge(current_user)
 
     org = await get_user_org(current_user, db)
+
+    # For superadmin without org membership, get the first organization
+    if not org and current_user.role == UserRole.superadmin:
+        org_result = await db.execute(
+            select(Organization).order_by(Organization.id).limit(1)
+        )
+        org = org_result.scalar_one_or_none()
+
     if not org:
         return []
 
