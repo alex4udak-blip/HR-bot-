@@ -468,10 +468,6 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
           { id: 'history', label: 'История' }
         ]
         .filter((tab) => {
-          // Filter out tabs that require features the user doesn't have access to
-          if ('requiresFeature' in tab && tab.requiresFeature) {
-            return canAccessFeature(tab.requiresFeature);
-          }
           // Filter out tabs that are only for candidates
           if ('onlyForCandidates' in tab && tab.onlyForCandidates) {
             return entity.type === 'candidate';
