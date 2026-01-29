@@ -699,6 +699,9 @@ async def get_entity(
         "expected_salary_min": entity.expected_salary_min,
         "expected_salary_max": entity.expected_salary_max,
         "expected_salary_currency": entity.expected_salary_currency or 'RUB',
+        # Ownership info for frontend permissions
+        "owner_id": entity.created_by,
+        "is_mine": entity.created_by == current_user.id,
         "chats": [
             {
                 "id": c.id,
