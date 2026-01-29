@@ -19,7 +19,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic
 revision = "add_composite_indexes"
-down_revision = "sync_entity_status_from_applications"
+down_revision = "sync_entity_status_001"
 branch_labels = None
 depends_on = None
 
