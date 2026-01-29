@@ -5,8 +5,15 @@ from sqlalchemy import (
     ForeignKey, Index, Integer, String, Text, JSON, Time, func, text, UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
-from pgvector.sqlalchemy import Vector
 import enum
+
+# Optional pgvector support - graceful fallback if not installed
+try:
+    from pgvector.sqlalchemy import Vector
+    PGVECTOR_AVAILABLE = True
+except ImportError:
+    Vector = None
+    PGVECTOR_AVAILABLE = False
 
 
 class Base(DeclarativeBase):
@@ -491,7 +498,7 @@ class Entity(Base):
     key_events = Column(JSON, default=list)
 
     # Vector embedding for similarity search (OpenAI text-embedding-3-small: 1536 dimensions)
-    embedding = Column(Vector(1536), nullable=True)
+    # Note: embedding column is added via migration if pgvector is available
     embedding_updated_at = Column(DateTime, nullable=True)
 
     # Optimistic locking version field
@@ -819,7 +826,7 @@ class Vacancy(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     # Vector embedding for similarity search (OpenAI text-embedding-3-small: 1536 dimensions)
-    embedding = Column(Vector(1536), nullable=True)
+    # Note: embedding column is added via migration if pgvector is available
     embedding_updated_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
