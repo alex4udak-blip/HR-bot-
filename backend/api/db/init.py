@@ -158,6 +158,10 @@ async def init_database():
     for sql, description in SHARED_ACCESS_COLUMNS:
         await run_migration(engine, sql, description)
 
+    # Step 3.4: Add vacancy_id to shared_access EARLY (critical for vacancy sharing/deletion)
+    # This runs early because vacancies table already exists in production
+    await run_migration(engine, SHARED_ACCESS_VACANCY_ID[0], SHARED_ACCESS_VACANCY_ID[1])
+
     # Step 4: Create call_recordings table if not exists (preserves existing data)
     logger.info("=== SETTING UP call_recordings TABLE ===")
     await run_migration(engine, CREATE_CALL_RECORDINGS_SQL, "Create call_recordings table")
