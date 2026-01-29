@@ -10,7 +10,7 @@ Access Hierarchy:
 3. LEAD/SUB_ADMIN - sees all resources in their department + resources created by dept members
 4. MEMBER - sees only THEIR OWN resources + explicitly shared resources
 
-Resource Types: entity, chat, call
+Resource Types: entity, chat, call, vacancy
 Actions: read, write, delete, share
 """
 
@@ -539,7 +539,8 @@ class PermissionService:
         model_map = {
             "entity": Entity,
             "chat": Chat,
-            "call": CallRecording
+            "call": CallRecording,
+            "vacancy": Vacancy
         }
         model = model_map.get(resource_type)
         if not model:
@@ -580,7 +581,8 @@ class PermissionService:
         model_map = {
             "entity": (Entity, "created_by"),
             "chat": (Chat, "owner_id"),
-            "call": (CallRecording, "owner_id")
+            "call": (CallRecording, "owner_id"),
+            "vacancy": (Vacancy, "created_by")
         }
         model, owner_field = model_map.get(resource_type, (None, None))
         if not model:
@@ -668,6 +670,27 @@ class PermissionService:
                     select(model.id).where(
                         model.org_id == org_id,
                         getattr(model, owner_field).in_(dept_member_ids)
+                    )
+                )
+                accessible_ids.update(result.scalars().all())
+
+        elif resource_type == "vacancy":
+            # Vacancies directly in department
+            result = await self.db.execute(
+                select(Vacancy.id).where(
+                    Vacancy.org_id == org_id,
+                    Vacancy.department_id.in_(admin_dept_ids)
+                )
+            )
+            accessible_ids.update(result.scalars().all())
+
+            # Vacancies created by department members
+            dept_member_ids = await self._get_department_member_ids(admin_dept_ids)
+            if dept_member_ids:
+                result = await self.db.execute(
+                    select(Vacancy.id).where(
+                        Vacancy.org_id == org_id,
+                        Vacancy.created_by.in_(dept_member_ids)
                     )
                 )
                 accessible_ids.update(result.scalars().all())

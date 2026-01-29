@@ -460,7 +460,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
           { id: 'overview', label: 'Обзор' },
           { id: 'chats', label: `Чаты (${entity.chats?.length || 0})`, shortLabel: `Чаты` },
           { id: 'calls', label: `Звонки (${entity.calls?.length || 0})`, shortLabel: `Звонки` },
-          { id: 'vacancies', label: 'Вакансии', icon: Briefcase, requiresFeature: 'candidate_database' as const },
+          { id: 'vacancies', label: 'Вакансии', icon: Briefcase, onlyForCandidates: true },
           { id: 'files', label: 'Файлы', icon: FolderOpen },
           { id: 'criteria', label: 'Критерии', icon: Target },
           { id: 'reports', label: 'Отчёты', icon: Download },
