@@ -814,6 +814,18 @@ class VacancyRecommenderService:
         vacancy_result = await db.execute(vacancy_query)
         vacancies = vacancy_result.scalars().all()
 
+        # Try embeddings-based matching first (fast <100ms)
+        embedding_results = await self._get_recommendations_via_embeddings(
+            db, entity, limit * 2, org_id, applied_vacancy_ids
+        )
+
+        if embedding_results:
+            logger.info(f"Using embeddings for recommendations, found {len(embedding_results)} matches")
+            return embedding_results[:limit]
+
+        # Fallback to existing logic (AI or keyword-based)
+        logger.debug("Embeddings not available, using AI/keyword-based recommendations")
+
         recommendations = []
 
         for vacancy in vacancies:
@@ -941,6 +953,18 @@ class VacancyRecommenderService:
 
         candidate_result = await db.execute(candidate_query)
         candidates = candidate_result.scalars().all()
+
+        # Try embeddings-based matching first (fast <100ms)
+        embedding_matches = await self._find_matching_candidates_via_embeddings(
+            db, vacancy, limit * 2, applied_entity_ids
+        )
+
+        if embedding_matches:
+            logger.info(f"Using embeddings for candidate matching, found {len(embedding_matches)} matches")
+            return embedding_matches[:limit]
+
+        # Fallback to existing logic
+        logger.debug("Embeddings not available, using AI/keyword-based matching")
 
         matches = []
 
@@ -1118,6 +1142,162 @@ class VacancyRecommenderService:
         )
 
         return qualified_matches[:limit]
+
+    async def _get_recommendations_via_embeddings(
+        self,
+        db: AsyncSession,
+        entity: Entity,
+        limit: int,
+        org_id: Optional[int],
+        applied_vacancy_ids: set
+    ) -> List["VacancyRecommendation"]:
+        """
+        Fast vacancy recommendations using embeddings (pgvector).
+
+        Returns empty list if embeddings are not available.
+        """
+        try:
+            from .similarity_search import similarity_search
+
+            # Check if entity has embedding
+            if not hasattr(entity, 'embedding') or entity.embedding is None:
+                return []
+
+            effective_org_id = org_id or entity.org_id
+
+            # Find matching vacancies via embeddings
+            results = await similarity_search.find_matching_vacancies(
+                db=db,
+                entity_id=entity.id,
+                org_id=effective_org_id,
+                limit=limit,
+                min_score=0.2  # Lower threshold
+            )
+
+            if not results:
+                return []
+
+            # Filter out already applied vacancies
+            results = [r for r in results if r.id not in applied_vacancy_ids]
+
+            # Convert to VacancyRecommendation format
+            recommendations = []
+            for r in results:
+                match_reasons = []
+                if r.tags:
+                    match_reasons.append(f"Общие навыки: {', '.join(r.tags[:3])}")
+                if r.score >= 0.7:
+                    match_reasons.append("Высокое AI-сходство профиля с вакансией")
+                elif r.score >= 0.5:
+                    match_reasons.append("Среднее AI-сходство с требованиями")
+
+                recommendations.append(VacancyRecommendation(
+                    vacancy_id=r.id,
+                    vacancy_title=r.name,
+                    match_score=int(r.score * 100),
+                    match_reasons=match_reasons,
+                    missing_requirements=[],  # Not calculated in embeddings
+                    salary_compatible=True,  # Assume compatible for fast results
+                    salary_min=None,
+                    salary_max=None,
+                    salary_currency="RUB",
+                    location=None,
+                    employment_type=None,
+                    experience_level=r.position,
+                    department_name=None,
+                    applications_count=0,
+                    ai_analyzed=True,  # Embeddings are AI-based
+                    skills_score=int(r.score * 100),
+                    experience_score=int(r.score * 80),
+                    culture_fit_score=50,  # Neutral
+                    ai_summary=f"AI-сходство: {int(r.score * 100)}%",
+                ))
+
+            return recommendations
+
+        except ImportError:
+            logger.debug("similarity_search module not available")
+            return []
+        except Exception as e:
+            logger.warning(f"Embeddings recommendations failed: {e}")
+            return []
+
+    async def _find_matching_candidates_via_embeddings(
+        self,
+        db: AsyncSession,
+        vacancy: Vacancy,
+        limit: int,
+        applied_entity_ids: set
+    ) -> List["CandidateMatch"]:
+        """
+        Fast candidate matching using embeddings (pgvector).
+
+        Returns empty list if embeddings are not available.
+        """
+        try:
+            from .similarity_search import similarity_search
+
+            # Check if vacancy has embedding
+            if not hasattr(vacancy, 'embedding') or vacancy.embedding is None:
+                return []
+
+            # Find matching candidates via embeddings
+            results = await similarity_search.find_matching_candidates(
+                db=db,
+                vacancy_id=vacancy.id,
+                org_id=vacancy.org_id,
+                limit=limit,
+                min_score=0.2
+            )
+
+            if not results:
+                return []
+
+            # Filter out already applied
+            results = [r for r in results if r.id not in applied_entity_ids]
+
+            # Convert to CandidateMatch format
+            matches = []
+            for r in results:
+                match_reasons = []
+                missing_skills = []
+
+                if r.tags:
+                    match_reasons.append(f"Навыки: {', '.join(r.tags[:3])}")
+                if r.score >= 0.7:
+                    match_reasons.append("Высокое AI-сходство с требованиями")
+                elif r.score >= 0.5:
+                    match_reasons.append("Среднее AI-сходство")
+
+                matches.append(CandidateMatch(
+                    entity_id=r.id,
+                    entity_name=r.name,
+                    match_score=int(r.score * 100),
+                    match_reasons=match_reasons,
+                    missing_skills=missing_skills,
+                    salary_compatible=True,
+                    email=r.email,
+                    phone=r.phone,
+                    position=r.position,
+                    status=r.status,
+                    expected_salary_min=None,
+                    expected_salary_max=None,
+                    expected_salary_currency="RUB",
+                    ai_analyzed=True,
+                    skills_score=int(r.score * 100),
+                    experience_score=int(r.score * 80),
+                    culture_fit_score=50,
+                    ai_summary=f"AI-сходство: {int(r.score * 100)}%",
+                ))
+
+            return matches
+
+        except ImportError:
+            logger.debug("similarity_search module not available")
+            return []
+        except Exception as e:
+            logger.warning(f"Embeddings matching failed: {e}")
+            return []
 
 
 # Global service instance

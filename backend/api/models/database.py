@@ -5,6 +5,7 @@ from sqlalchemy import (
     ForeignKey, Index, Integer, String, Text, JSON, Time, func, text, UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
+from pgvector.sqlalchemy import Vector
 import enum
 
 
@@ -489,6 +490,10 @@ class Entity(Base):
     # Format: [{"date": "2024-01-15", "event": "hired", "details": "Hired to development team"}]
     key_events = Column(JSON, default=list)
 
+    # Vector embedding for similarity search (OpenAI text-embedding-3-small: 1536 dimensions)
+    embedding = Column(Vector(1536), nullable=True)
+    embedding_updated_at = Column(DateTime, nullable=True)
+
     # Optimistic locking version field
     # Incremented on each update to detect concurrent modifications
     version = Column(Integer, default=1, nullable=False)
@@ -812,6 +817,10 @@ class Vacancy(Base):
     closes_at = Column(DateTime, nullable=True)  # Application deadline
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Vector embedding for similarity search (OpenAI text-embedding-3-small: 1536 dimensions)
+    embedding = Column(Vector(1536), nullable=True)
+    embedding_updated_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
         # Composite index for filtering vacancies by org and status (common list query)

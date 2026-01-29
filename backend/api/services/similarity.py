@@ -359,6 +359,9 @@ class SimilarityService:
         """
         Поиск похожих кандидатов.
 
+        Использует embeddings если доступны (быстрый поиск <100ms),
+        иначе fallback на JSON-based сравнение.
+
         Args:
             db: Сессия БД
             entity: Исходный кандидат
@@ -371,6 +374,23 @@ class SimilarityService:
         """
         if org_id is None:
             org_id = entity.org_id
+
+        # Try embeddings-based search first (much faster)
+        embedding_results = await self._find_similar_via_embeddings(db, entity, limit * 2, org_id)
+
+        if embedding_results:
+            logger.debug(f"Using embeddings for similarity search, found {len(embedding_results)} candidates")
+            # Filter by user access if needed
+            if user:
+                from .permissions import PermissionService
+                permissions = PermissionService(db)
+                accessible_ids = await permissions.get_accessible_ids(user, "entity", org_id)
+                embedding_results = [r for r in embedding_results if r.entity_id in accessible_ids]
+
+            return embedding_results[:limit]
+
+        # Fallback to JSON-based search
+        logger.debug("Embeddings not available, using JSON-based similarity search")
 
         # Извлекаем данные исходного кандидата
         source_skills = extract_skills(entity.extra_data or {})
@@ -459,6 +479,71 @@ class SimilarityService:
         # Сортируем по убыванию сходства и возвращаем топ
         similar_results.sort(key=lambda x: x.similarity_score, reverse=True)
         return similar_results[:limit]
+
+    async def _find_similar_via_embeddings(
+        self,
+        db: AsyncSession,
+        entity: Entity,
+        limit: int,
+        org_id: int
+    ) -> List[SimilarCandidate]:
+        """
+        Fast similarity search using embeddings (pgvector).
+
+        Returns empty list if embeddings are not available.
+        """
+        try:
+            from .similarity_search import similarity_search
+
+            # Check if entity has embedding
+            if not hasattr(entity, 'embedding') or entity.embedding is None:
+                return []
+
+            # Find similar via embeddings
+            results = await similarity_search.find_similar_entities(
+                db=db,
+                entity_id=entity.id,
+                org_id=org_id,
+                limit=limit,
+                min_score=0.2  # Lower threshold to get more candidates
+            )
+
+            if not results:
+                return []
+
+            # Convert to SimilarCandidate format
+            similar_candidates = []
+            for r in results:
+                # Extract skills for match reasons
+                common_skills = r.tags[:5] if r.tags else []
+                match_reasons = []
+
+                if common_skills:
+                    match_reasons.append(f"Общие навыки: {', '.join(common_skills)}")
+                if r.score >= 0.7:
+                    match_reasons.append("Высокое AI-сходство профиля")
+                elif r.score >= 0.5:
+                    match_reasons.append("Среднее AI-сходство профиля")
+
+                similar_candidates.append(SimilarCandidate(
+                    entity_id=r.id,
+                    entity_name=r.name,
+                    similarity_score=int(r.score * 100),
+                    common_skills=common_skills,
+                    similar_experience=r.score >= 0.5,  # Approximate
+                    similar_salary=False,  # Not calculated in embeddings
+                    similar_location=False,  # Not calculated in embeddings
+                    match_reasons=match_reasons
+                ))
+
+            return similar_candidates
+
+        except ImportError:
+            logger.debug("similarity_search module not available")
+            return []
+        except Exception as e:
+            logger.warning(f"Embeddings search failed, falling back to JSON: {e}")
+            return []
 
     def calculate_similarity(
         self,

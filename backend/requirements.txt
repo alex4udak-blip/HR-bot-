@@ -9,6 +9,7 @@ asyncpg==0.31.0
 psycopg2-binary==2.9.11  # Required for migrations with enum changes (needs autocommit)
 sqlalchemy==2.0.45
 alembic==1.18.1
+pgvector==0.3.6  # PostgreSQL vector similarity search
 
 # Auth
 python-jose[cryptography]==3.5.0
