@@ -20,7 +20,9 @@ import {
   Target,
   Plus,
   FolderOpen,
-  AlertTriangle
+  AlertTriangle,
+  Brain,
+  RefreshCw
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -39,6 +41,7 @@ import SimilarCandidates from '../entities/SimilarCandidates';
 import DuplicateWarning from '../entities/DuplicateWarning';
 import InteractionTimeline from '../entities/InteractionTimeline';
 import * as api from '@/services/api';
+import type { AIProfile } from '@/services/api';
 import { useEntityStore } from '@/stores/entityStore';
 import { useAuthStore } from '@/stores/authStore';
 import { FeatureGatedButton } from '@/components/auth/FeatureGate';
@@ -138,6 +141,11 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
   const [vacanciesKey, setVacanciesKey] = useState(0); // Key to force reload vacancies
   const [entityApplications, setEntityApplications] = useState<VacancyApplication[]>([]);
 
+  // AI Profile state
+  const [aiProfile, setAiProfile] = useState<AIProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [generatingProfile, setGeneratingProfile] = useState(false);
+
   const { fetchEntity } = useEntityStore();
   const { canAccessFeature } = useCanAccessFeature();
   const { isAdmin, canEditResource, canAccessDepartment } = useAuthStore();
@@ -194,6 +202,53 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
       isMounted = false;
     };
   }, [entity.id, vacanciesKey]);
+
+  // Load AI profile for candidates
+  useEffect(() => {
+    if (entity.type !== 'candidate') return;
+
+    let isMounted = true;
+
+    const loadProfile = async () => {
+      setProfileLoading(true);
+      try {
+        const data = await api.getEntityProfile(entity.id);
+        if (isMounted && data?.profile) {
+          setAiProfile(data.profile);
+        }
+      } catch {
+        // Profile not found is expected for new candidates
+        if (isMounted) {
+          setAiProfile(null);
+        }
+      } finally {
+        if (isMounted) {
+          setProfileLoading(false);
+        }
+      }
+    };
+    loadProfile();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [entity.id, entity.type]);
+
+  // Handler for generating/updating AI profile
+  const handleGenerateProfile = async () => {
+    setGeneratingProfile(true);
+    try {
+      const data = await api.generateEntityProfile(entity.id);
+      if (data?.profile) {
+        setAiProfile(data.profile);
+        toast.success('AI профиль обновлён');
+      }
+    } catch {
+      toast.error('Не удалось создать профиль');
+    } finally {
+      setGeneratingProfile(false);
+    }
+  };
 
   const loadUnlinkedChats = async () => {
     dispatchAsync({ type: 'START_LOADING_DATA' });
@@ -502,6 +557,60 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
           <>
             {/* AI Assistant - only show if showAIInOverview is true */}
             {showAIInOverview && <EntityAI entity={entity} />}
+
+            {/* AI Profile Status - only for candidates */}
+            {entity.type === 'candidate' && (
+              <div className="glass rounded-xl p-4 border border-white/10 mt-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={clsx(
+                      "p-2 rounded-lg",
+                      profileLoading ? "bg-white/10" : aiProfile ? "bg-green-500/20" : "bg-yellow-500/20"
+                    )}>
+                      {profileLoading ? (
+                        <Loader2 size={18} className="text-white/50 animate-spin" />
+                      ) : (
+                        <Brain size={18} className={aiProfile ? "text-green-400" : "text-yellow-400"} />
+                      )}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-medium text-white">AI Профиль</h4>
+                      {profileLoading ? (
+                        <p className="text-xs text-white/50">Загрузка...</p>
+                      ) : aiProfile ? (
+                        <p className="text-xs text-white/50">
+                          Обновлён {formatDate(aiProfile.generated_at, 'short')}
+                          {aiProfile.context_sources && (
+                            <span className="ml-1">
+                              {' '}&bull; {aiProfile.context_sources.files_count} файлов, {aiProfile.context_sources.chats_count} чатов, {aiProfile.context_sources.calls_count} звонков
+                            </span>
+                          )}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-yellow-400/80">Профиль не создан</p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleGenerateProfile}
+                    disabled={generatingProfile || profileLoading}
+                    className={clsx(
+                      "flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors disabled:opacity-50",
+                      aiProfile
+                        ? "bg-white/10 text-white/80 hover:bg-white/20"
+                        : "bg-green-500/20 text-green-400 hover:bg-green-500/30"
+                    )}
+                  >
+                    {generatingProfile ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={14} />
+                    )}
+                    {aiProfile ? "Обновить" : "Создать"}
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className={clsx("grid grid-cols-1 2xl:grid-cols-2 gap-4 items-start", showAIInOverview && "mt-6")}>
             {/* Recent Chats */}
