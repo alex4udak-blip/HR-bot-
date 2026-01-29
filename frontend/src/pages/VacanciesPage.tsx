@@ -458,6 +458,19 @@ export default function VacanciesPage() {
             <VacancyDetail vacancy={currentVacancy} />
           )}
         </div>
+
+        {/* Delete confirmation dialog for detail view */}
+        <ConfirmDialog
+          open={confirmDialog.open}
+          title="Удалить вакансию"
+          message="Вы уверены, что хотите удалить эту вакансию? Это действие невозможно отменить."
+          confirmLabel="Удалить"
+          cancelLabel="Отмена"
+          variant="danger"
+          onConfirm={handleConfirmDelete}
+          onCancel={handleCancelConfirm}
+          loading={deleteLoading}
+        />
       </div>
     );
   }
