@@ -288,8 +288,15 @@ async def find_matching_vacancies_for_entity(
     """
     Find matching vacancies for a candidate.
 
-    Evaluates all open vacancies and returns best matches sorted by compatibility score.
+    Evaluates only vacancies accessible to the user and returns best matches
+    sorted by compatibility score.
+
+    SECURITY: Filters vacancies by user access rights - only shows vacancies
+    the user created or has access to via department/sharing.
     """
+    from ..services.permissions import PermissionService
+    from ..services.auth import get_user_org
+
     # Get entity
     entity = await get_entity_with_permission(db, entity_id, current_user)
 
@@ -299,9 +306,28 @@ async def find_matching_vacancies_for_entity(
             detail="Поиск вакансий доступен только для кандидатов"
         )
 
-    # Get open vacancies
+    # Get user's organization
+    org = await get_user_org(current_user, db)
+    org_id = org.id if org else None
+
+    # SECURITY: Get accessible vacancy IDs to prevent data leak
+    permissions = PermissionService(db)
+    accessible_vacancy_ids = await permissions.get_accessible_ids(current_user, "vacancy", org_id) if org_id else set()
+
+    # Get open vacancies filtered by access
+    if not accessible_vacancy_ids:
+        return MatchingVacanciesResponse(
+            entity_id=entity.id,
+            entity_name=entity.name,
+            matches=[],
+            total_evaluated=0
+        )
+
     result = await db.execute(
-        select(Vacancy).where(Vacancy.status == VacancyStatus.open)
+        select(Vacancy).where(
+            Vacancy.status == VacancyStatus.open,
+            Vacancy.id.in_(accessible_vacancy_ids)
+        )
     )
     vacancies = result.scalars().all()
 
