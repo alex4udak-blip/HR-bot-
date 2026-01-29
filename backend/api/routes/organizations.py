@@ -429,7 +429,7 @@ async def invite_member(
     )
 
 
-@router.put("/current/members/{user_id}")
+@router.patch("/current/members/{user_id}/role")
 async def update_member_role(
     user_id: int,
     data: UpdateMemberRoleRequest,
