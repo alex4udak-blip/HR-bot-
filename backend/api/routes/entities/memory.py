@@ -64,12 +64,12 @@ async def link_chat_to_entity(
     chat.entity_id = entity_id
     await db.commit()
 
-    # Regenerate AI profile in background with new chat context
-    if entity.extra_data and entity.extra_data.get('ai_profile'):
-        background_tasks.add_task(
-            asyncio.create_task,
-            regenerate_entity_profile_background(entity_id, org.id)
-        )
+    # Generate/regenerate AI profile in background with new chat context
+    # Always generate profile when new context is added (chat, call, file)
+    background_tasks.add_task(
+        asyncio.create_task,
+        regenerate_entity_profile_background(entity_id, org.id)
+    )
 
     return {"success": True}
 
@@ -158,12 +158,12 @@ async def link_call_to_entity(
     call.entity_id = entity_id
     await db.commit()
 
-    # Regenerate AI profile in background with new call context
-    if entity.extra_data and entity.extra_data.get('ai_profile'):
-        background_tasks.add_task(
-            asyncio.create_task,
-            regenerate_entity_profile_background(entity_id, org.id)
-        )
+    # Generate/regenerate AI profile in background with new call context
+    # Always generate profile when new context is added (chat, call, file)
+    background_tasks.add_task(
+        asyncio.create_task,
+        regenerate_entity_profile_background(entity_id, org.id)
+    )
 
     return {"success": True, "entity_id": entity_id, "call_id": call_id}
 

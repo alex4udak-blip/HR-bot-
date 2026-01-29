@@ -515,12 +515,12 @@ async def upload_entity_file(
         f"org_id={org.id} | path={file_path}"
     )
 
-    # Regenerate AI profile in background with new file context
-    if entity.extra_data and entity.extra_data.get('ai_profile'):
-        background_tasks.add_task(
-            asyncio.create_task,
-            regenerate_entity_profile_background(entity_id, org.id)
-        )
+    # Generate/regenerate AI profile in background with new file context
+    # Always generate profile when new context is added (chat, call, file)
+    background_tasks.add_task(
+        asyncio.create_task,
+        regenerate_entity_profile_background(entity_id, org.id)
+    )
 
     return EntityFileResponse(
         id=entity_file.id,

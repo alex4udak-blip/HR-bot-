@@ -526,8 +526,13 @@ async def get_recommended_vacancies(
 ):
     """
     Get vacancy recommendations for a candidate.
+
+    SECURITY: Results are filtered by user's accessible vacancies.
+    Users only see recommendations for vacancies they own, have shared access to,
+    or are in their department (if lead/admin).
     """
     from ...services.vacancy_recommender import vacancy_recommender
+    from ...services.permissions import PermissionService
 
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
@@ -546,13 +551,23 @@ async def get_recommended_vacancies(
     if entity.type != EntityType.candidate:
         raise HTTPException(400, "Recommendations are only available for candidates")
 
-    # Get recommendations
-    recommendations = await vacancy_recommender.get_recommendations(
+    # SECURITY: Get accessible vacancy IDs to filter recommendations
+    permissions = PermissionService(db)
+    accessible_vacancy_ids = await permissions.get_accessible_ids(current_user, "vacancy", org.id)
+
+    # Get recommendations (fetches all open vacancies in org)
+    all_recommendations = await vacancy_recommender.get_recommendations(
         db=db,
         entity=entity,
-        limit=limit,
+        limit=limit * 3,  # Get more to filter, then limit
         org_id=org.id
     )
+
+    # Filter by accessible vacancies
+    recommendations = [
+        rec for rec in all_recommendations
+        if rec.vacancy_id in accessible_vacancy_ids
+    ][:limit]
 
     return [
         VacancyRecommendationResponse(

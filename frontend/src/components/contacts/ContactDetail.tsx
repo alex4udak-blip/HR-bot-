@@ -584,8 +584,8 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               )}
             </div>
 
-            {/* Recommended Vacancies - only for candidates with candidate_database feature */}
-            {entity.type === 'candidate' && canAccessFeature('candidate_database') && (
+            {/* Recommended Vacancies - for all candidates (filtered by user's accessible vacancies on backend) */}
+            {entity.type === 'candidate' && (
               <div className="glass rounded-xl p-4 xl:col-span-2 h-fit border border-white/10">
                 <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
                   <Target size={18} className="text-purple-400" />
