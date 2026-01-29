@@ -16,9 +16,177 @@ from datetime import datetime
 from ..config import get_settings
 from ..models.database import Entity, Chat, CallRecording, EntityFile
 from .entity_ai import EntityAIService
+from .skills_normalizer import skills_normalizer
 
 logger = logging.getLogger("hr-analyzer.entity-profile")
 settings = get_settings()
+
+# =============================================================================
+# SCORING CONSTANTS
+# =============================================================================
+
+# Level compatibility matrix (25 points max)
+# Format: (level1, level2) -> score
+LEVEL_COMPATIBILITY = {
+    ("junior", "junior"): 25,
+    ("junior", "middle"): 15,  # Growth possible
+    ("junior", "senior"): 5,   # Too big gap
+    ("junior", "lead"): 0,
+    ("middle", "junior"): 15,
+    ("middle", "middle"): 25,
+    ("middle", "senior"): 15,  # Growth possible
+    ("middle", "lead"): 10,
+    ("senior", "junior"): 5,
+    ("senior", "middle"): 15,
+    ("senior", "senior"): 25,
+    ("senior", "lead"): 15,    # Growth possible
+    ("lead", "junior"): 0,
+    ("lead", "middle"): 10,
+    ("lead", "senior"): 15,
+    ("lead", "lead"): 25,
+}
+
+# Specialization similarity matrix (1.0 = same, 0.0 = completely different)
+SPECIALIZATION_SIMILARITY = {
+    # Backend
+    ("backend", "backend"): 1.0,
+    ("backend", "fullstack"): 0.7,
+    ("backend", "devops"): 0.5,
+    ("backend", "frontend"): 0.25,
+    ("backend", "mobile"): 0.3,
+    ("backend", "data"): 0.4,
+    ("backend", "ml"): 0.35,
+    ("backend", "qa"): 0.2,
+    # Frontend
+    ("frontend", "frontend"): 1.0,
+    ("frontend", "fullstack"): 0.7,
+    ("frontend", "backend"): 0.25,
+    ("frontend", "mobile"): 0.5,
+    ("frontend", "devops"): 0.15,
+    ("frontend", "data"): 0.15,
+    ("frontend", "ml"): 0.1,
+    ("frontend", "qa"): 0.3,
+    # Fullstack
+    ("fullstack", "fullstack"): 1.0,
+    ("fullstack", "backend"): 0.7,
+    ("fullstack", "frontend"): 0.7,
+    ("fullstack", "mobile"): 0.5,
+    ("fullstack", "devops"): 0.4,
+    ("fullstack", "data"): 0.3,
+    ("fullstack", "ml"): 0.25,
+    ("fullstack", "qa"): 0.3,
+    # DevOps
+    ("devops", "devops"): 1.0,
+    ("devops", "backend"): 0.5,
+    ("devops", "fullstack"): 0.4,
+    ("devops", "frontend"): 0.15,
+    ("devops", "mobile"): 0.15,
+    ("devops", "data"): 0.4,
+    ("devops", "ml"): 0.35,
+    ("devops", "qa"): 0.4,
+    # Mobile
+    ("mobile", "mobile"): 1.0,
+    ("mobile", "frontend"): 0.5,
+    ("mobile", "fullstack"): 0.5,
+    ("mobile", "backend"): 0.3,
+    ("mobile", "devops"): 0.15,
+    ("mobile", "data"): 0.15,
+    ("mobile", "ml"): 0.2,
+    ("mobile", "qa"): 0.3,
+    # Data
+    ("data", "data"): 1.0,
+    ("data", "ml"): 0.7,
+    ("data", "backend"): 0.4,
+    ("data", "devops"): 0.4,
+    ("data", "fullstack"): 0.3,
+    ("data", "frontend"): 0.15,
+    ("data", "mobile"): 0.15,
+    ("data", "qa"): 0.25,
+    # ML/AI
+    ("ml", "ml"): 1.0,
+    ("ml", "data"): 0.7,
+    ("ml", "backend"): 0.35,
+    ("ml", "devops"): 0.35,
+    ("ml", "fullstack"): 0.25,
+    ("ml", "frontend"): 0.1,
+    ("ml", "mobile"): 0.2,
+    ("ml", "qa"): 0.2,
+    # QA
+    ("qa", "qa"): 1.0,
+    ("qa", "devops"): 0.4,
+    ("qa", "frontend"): 0.3,
+    ("qa", "mobile"): 0.3,
+    ("qa", "backend"): 0.2,
+    ("qa", "fullstack"): 0.3,
+    ("qa", "data"): 0.25,
+    ("qa", "ml"): 0.2,
+}
+
+# Skills synonyms for normalization
+SKILLS_SYNONYMS = {
+    # Languages
+    "javascript": ["js", "ecmascript", "es6", "es2015", "es2020"],
+    "typescript": ["ts"],
+    "python": ["py", "python3", "питон"],
+    "golang": ["go", "golang"],
+    "csharp": ["c#", "c sharp", "си шарп"],
+    "cplusplus": ["c++", "cpp", "си плюс плюс"],
+    "kotlin": ["kt"],
+    "swift": ["свифт"],
+    # Frontend
+    "react": ["reactjs", "react.js", "реакт"],
+    "vue": ["vuejs", "vue.js", "vue3", "вью"],
+    "angular": ["angularjs", "angular.js", "ангуляр"],
+    "nextjs": ["next.js", "next", "некст"],
+    "nuxtjs": ["nuxt.js", "nuxt"],
+    # Backend
+    "nodejs": ["node.js", "node", "нода"],
+    "fastapi": ["fast api", "fast-api"],
+    "django": ["джанго"],
+    "flask": ["фласк"],
+    "spring": ["spring boot", "springboot"],
+    "express": ["expressjs", "express.js"],
+    # Databases
+    "postgresql": ["postgres", "psql", "pg", "постгрес"],
+    "mysql": ["mariadb", "мускул"],
+    "mongodb": ["mongo", "монго"],
+    "redis": ["редис"],
+    "elasticsearch": ["elastic", "es", "эластик"],
+    # DevOps
+    "kubernetes": ["k8s", "кубер", "кубернетес"],
+    "docker": ["докер", "контейнеры"],
+    "aws": ["amazon web services", "амазон"],
+    "gcp": ["google cloud", "google cloud platform"],
+    "azure": ["microsoft azure"],
+    "ci_cd": ["ci/cd", "cicd", "continuous integration", "jenkins", "gitlab ci", "github actions"],
+    # Other
+    "graphql": ["gql"],
+    "rest_api": ["rest", "restful", "rest api"],
+    "sql": ["structured query language"],
+    "nosql": ["no-sql", "non-relational"],
+    "agile": ["scrum", "kanban", "аджайл"],
+    "git": ["гит", "version control"],
+}
+
+# Build reverse lookup for fast normalization
+_SKILL_TO_CANONICAL = {}
+for canonical, synonyms in SKILLS_SYNONYMS.items():
+    _SKILL_TO_CANONICAL[canonical.lower()] = canonical
+    for syn in synonyms:
+        _SKILL_TO_CANONICAL[syn.lower()] = canonical
+
+# Work format compatibility
+WORK_FORMAT_COMPATIBILITY = {
+    ("remote", "remote"): 5,
+    ("remote", "hybrid"): 3,
+    ("remote", "office"): 0,
+    ("hybrid", "remote"): 3,
+    ("hybrid", "hybrid"): 5,
+    ("hybrid", "office"): 3,
+    ("office", "remote"): 0,
+    ("office", "hybrid"): 3,
+    ("office", "office"): 5,
+}
 
 # Profile generation prompt
 PROFILE_GENERATION_PROMPT = """На основе ВСЕХ предоставленных данных о кандидате создай структурированный профиль.
@@ -69,6 +237,95 @@ class EntityProfileService:
                 raise ValueError("ANTHROPIC_API_KEY не настроен")
             self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
         return self._client
+
+    def _normalize_skill(self, skill: str) -> str:
+        """Normalize skill to canonical form using synonyms dictionary."""
+        skill_lower = skill.lower().strip()
+        return _SKILL_TO_CANONICAL.get(skill_lower, skill_lower)
+
+    def _normalize_skills(self, skills: List[str]) -> set:
+        """Normalize a list of skills to canonical forms."""
+        return {self._normalize_skill(s) for s in skills if s}
+
+    def _normalize_specialization(self, spec: str) -> str:
+        """Normalize specialization to canonical form."""
+        if not spec:
+            return "unknown"
+
+        spec_lower = spec.lower().strip()
+
+        # Backend variations
+        if any(x in spec_lower for x in ["backend", "бэкенд", "бекенд", "серверн", "server-side"]):
+            return "backend"
+
+        # Frontend variations
+        if any(x in spec_lower for x in ["frontend", "фронтенд", "фронт", "ui developer", "верстальщик"]):
+            return "frontend"
+
+        # Fullstack
+        if any(x in spec_lower for x in ["fullstack", "full-stack", "full stack", "фулстек", "фуллстек"]):
+            return "fullstack"
+
+        # DevOps / SRE
+        if any(x in spec_lower for x in ["devops", "sre", "infrastructure", "инфраструктур", "platform engineer"]):
+            return "devops"
+
+        # Mobile
+        if any(x in spec_lower for x in ["mobile", "мобильн", "ios", "android", "flutter", "react native"]):
+            return "mobile"
+
+        # Data Engineering
+        if any(x in spec_lower for x in ["data engineer", "etl", "dwh", "дата инженер", "big data"]):
+            return "data"
+
+        # ML/AI
+        if any(x in spec_lower for x in ["ml", "machine learning", "ai", "data scien", "нейросет", "deep learning"]):
+            return "ml"
+
+        # QA
+        if any(x in spec_lower for x in ["qa", "test", "тест", "quality", "автотест", "sdet"]):
+            return "qa"
+
+        return "unknown"
+
+    def _normalize_work_format(self, fmt: str) -> str:
+        """Normalize work format to canonical form."""
+        if not fmt:
+            return "unknown"
+
+        fmt_lower = fmt.lower().strip()
+
+        if any(x in fmt_lower for x in ["remote", "удалён", "удален", "дистанц"]):
+            return "remote"
+        if any(x in fmt_lower for x in ["hybrid", "гибрид", "смешан"]):
+            return "hybrid"
+        if any(x in fmt_lower for x in ["office", "офис", "on-site", "onsite"]):
+            return "office"
+
+        return "unknown"
+
+    def _get_specialization_similarity(self, spec1: str, spec2: str) -> float:
+        """Get similarity score between two specializations."""
+        norm1 = self._normalize_specialization(spec1)
+        norm2 = self._normalize_specialization(spec2)
+
+        if norm1 == "unknown" or norm2 == "unknown":
+            return 0.5  # Unknown gets neutral score
+
+        # Check direct match
+        if norm1 == norm2:
+            return 1.0
+
+        # Check in similarity matrix (both directions)
+        score = SPECIALIZATION_SIMILARITY.get((norm1, norm2))
+        if score is not None:
+            return score
+
+        score = SPECIALIZATION_SIMILARITY.get((norm2, norm1))
+        if score is not None:
+            return score
+
+        return 0.1  # Default for unmatched pairs
 
     async def generate_profile(
         self,
@@ -133,6 +390,14 @@ class EntityProfileService:
                 response_text = "\n".join(json_lines)
 
             profile = json.loads(response_text)
+
+            # Normalize skills using LLM-backed normalizer
+            if profile.get("skills"):
+                try:
+                    profile["skills"] = await skills_normalizer.normalize(profile["skills"])
+                    logger.debug(f"Normalized {len(profile['skills'])} skills for entity {entity.id}")
+                except Exception as e:
+                    logger.warning(f"Skills normalization failed, using original: {e}")
 
             # Add metadata
             profile["generated_at"] = datetime.utcnow().isoformat()
@@ -340,6 +605,97 @@ class EntityProfileService:
         # Sort by score descending
         results.sort(key=lambda x: x["score"], reverse=True)
 
+        return results[:limit]
+
+    async def normalize_profile_skills(self, profile: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize skills in a profile using LLM-backed normalizer.
+
+        This can be called before calculate_similarity() for better matching.
+        Returns a copy of the profile with normalized skills.
+        """
+        if not profile or not profile.get("skills"):
+            return profile
+
+        normalized_profile = profile.copy()
+        try:
+            normalized_profile["skills"] = await skills_normalizer.normalize(profile["skills"])
+        except Exception as e:
+            logger.warning(f"Profile skills normalization failed: {e}")
+
+        return normalized_profile
+
+    async def calculate_similarity_async(
+        self,
+        profile1: Dict[str, Any],
+        profile2: Dict[str, Any],
+        normalize_skills: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Async version of calculate_similarity with optional skill normalization.
+
+        Args:
+            profile1: First profile
+            profile2: Second profile
+            normalize_skills: Whether to normalize skills before comparison (default True)
+
+        Returns:
+            Similarity result dict with score, matches, differences, summary
+        """
+        if normalize_skills:
+            profile1 = await self.normalize_profile_skills(profile1)
+            profile2 = await self.normalize_profile_skills(profile2)
+
+        return self.calculate_similarity(profile1, profile2)
+
+    async def find_similar_async(
+        self,
+        target_profile: Dict[str, Any],
+        candidates: List[tuple],
+        min_score: int = 30,
+        limit: int = 10,
+        normalize_skills: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        Async version of find_similar with skill normalization.
+
+        Args:
+            target_profile: Profile to match against
+            candidates: List of (entity, profile) tuples
+            min_score: Minimum similarity score (0-100)
+            limit: Max results to return
+            normalize_skills: Whether to normalize skills before comparison
+
+        Returns:
+            List of similar candidates
+        """
+        if normalize_skills:
+            target_profile = await self.normalize_profile_skills(target_profile)
+
+        results = []
+
+        for entity, profile in candidates:
+            if not profile:
+                continue
+
+            if normalize_skills:
+                profile = await self.normalize_profile_skills(profile)
+
+            similarity = self.calculate_similarity(target_profile, profile)
+
+            if similarity["score"] >= min_score:
+                results.append({
+                    "entity_id": entity.id,
+                    "entity_name": entity.name,
+                    "entity_position": entity.position,
+                    "entity_status": entity.status.value if hasattr(entity.status, 'value') else entity.status,
+                    "profile_summary": profile.get("summary", ""),
+                    "profile_level": profile.get("level", "unknown"),
+                    "profile_specialization": profile.get("specialization", ""),
+                    **similarity
+                })
+
+        results.sort(key=lambda x: x["score"], reverse=True)
         return results[:limit]
 
 
