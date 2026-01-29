@@ -846,7 +846,12 @@ async def get_similar_by_profile(
         entity.extra_data['ai_profile'] = target_profile
         await db.commit()
 
-    # Find all other candidates with profiles
+    # Find all other candidates with profiles (filtered by user's access rights)
+    # SECURITY: Get accessible entity IDs to prevent data leak
+    from ...services.permissions import PermissionService
+    permissions = PermissionService(db)
+    accessible_ids = await permissions.get_accessible_ids(current_user, "entity", org.id)
+
     candidates_result = await db.execute(
         select(Entity)
         .where(
@@ -857,9 +862,12 @@ async def get_similar_by_profile(
     )
     all_candidates = list(candidates_result.scalars().all())
 
+    # Filter to accessible candidates only (SECURITY: prevent data leak)
+    accessible_candidates = [c for c in all_candidates if c.id in accessible_ids]
+
     # Filter to those with profiles and build list
     candidates_with_profiles = []
-    for candidate in all_candidates:
+    for candidate in accessible_candidates:
         profile = (candidate.extra_data or {}).get('ai_profile')
         if profile:
             candidates_with_profiles.append((candidate, profile))
