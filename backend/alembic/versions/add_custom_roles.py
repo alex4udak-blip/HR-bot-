@@ -17,8 +17,20 @@ branch_labels = None
 depends_on = None
 
 
+def table_exists(table_name):
+    """Check if table exists in database."""
+    conn = op.get_bind()
+    result = conn.execute(sa.text(
+        "SELECT 1 FROM information_schema.tables WHERE table_name = :table"
+    ), {"table": table_name})
+    return result.fetchone() is not None
+
+
 def upgrade():
     """Create tables for custom roles and permissions system."""
+
+    if table_exists('custom_roles'):
+        return  # Already migrated
 
     # Create custom_roles table
     op.create_table(

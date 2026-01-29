@@ -23,7 +23,7 @@ from datetime import datetime
 
 # revision identifiers, used by Alembic.
 revision = 'sync_entity_status_001'
-down_revision = None  # This is a data-only migration
+down_revision = ('add_has_full_access', 'add_transfer_cancel_fields')  # Merge two branches
 branch_labels = None
 depends_on = None
 
