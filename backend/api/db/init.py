@@ -55,6 +55,7 @@ from api.db.migrations import (
     ROLE_CONVERSIONS,
     SHARED_ACCESS_COLUMNS,
     SHARED_ACCESS_CALL_ID,
+    SHARED_ACCESS_VACANCY_ID,
     ENTITY_FILES_ORG_ID,
 )
 
@@ -150,7 +151,10 @@ async def init_database():
     for sql, description in ROLE_CONVERSIONS:
         await run_migration(engine, sql, description)
 
-    # Step 3.2: Add foreign key columns to shared_access for proper cascade delete (critical for sandbox)
+    # Step 3.2: Add 'vacancy' to resourcetype enum (needed for vacancy sharing)
+    await add_enum_value(engine, "resourcetype", "vacancy", "Add vacancy to resourcetype enum")
+
+    # Step 3.3: Add foreign key columns to shared_access for proper cascade delete (critical for sandbox)
     for sql, description in SHARED_ACCESS_COLUMNS:
         await run_migration(engine, sql, description)
 
@@ -262,6 +266,9 @@ async def init_database():
     await run_migration(engine, CREATE_VACANCY_APPLICATIONS_SQL, "Create vacancy_applications table")
     for sql, description in VACANCY_APPLICATIONS_INDEXES:
         await run_migration(engine, sql, description)
+
+    # Add vacancy_id to shared_access (requires vacancies table to exist)
+    await run_migration(engine, SHARED_ACCESS_VACANCY_ID[0], SHARED_ACCESS_VACANCY_ID[1])
 
     logger.info("=== VACANCIES TABLES READY ===")
 
