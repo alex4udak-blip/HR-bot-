@@ -414,6 +414,12 @@ SHARED_ACCESS_COLUMNS = [
     ("ALTER TABLE shared_access ADD COLUMN IF NOT EXISTS chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE", "Add chat_id to shared_access"),
 ]
 
+# Vacancy_id column for shared_access (requires vacancies table to exist)
+SHARED_ACCESS_VACANCY_ID = (
+    "ALTER TABLE shared_access ADD COLUMN IF NOT EXISTS vacancy_id INTEGER REFERENCES vacancies(id) ON DELETE CASCADE",
+    "Add vacancy_id to shared_access"
+)
+
 # Call_id column for shared_access (requires call_recordings to exist)
 SHARED_ACCESS_CALL_ID = (
     "ALTER TABLE shared_access ADD COLUMN IF NOT EXISTS call_id INTEGER REFERENCES call_recordings(id) ON DELETE CASCADE",
