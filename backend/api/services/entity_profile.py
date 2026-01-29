@@ -438,6 +438,16 @@ class EntityProfileService:
         """
         Calculate similarity between two profiles.
 
+        Weights (100 points total):
+        - Skills match:           35 points (with synonym normalization)
+        - Level + trajectory:     25 points (junior/middle/senior compatibility)
+        - Specialization match:   20 points (with normalization)
+        - Salary range overlap:   10 points
+        - Work format + location: 10 points
+
+        NOTE: Years of experience is NOT scored separately - it's already
+        reflected in the level field to avoid double-counting.
+
         Returns:
             {
                 "score": 0-100,
@@ -447,114 +457,198 @@ class EntityProfileService:
             }
         """
         score = 0
-        max_score = 0
         matches = []
         differences = []
 
-        # 1. Skills match (weight: 30)
-        max_score += 30
-        skills1 = set(s.lower() for s in (profile1.get("skills") or []))
-        skills2 = set(s.lower() for s in (profile2.get("skills") or []))
+        # =================================================================
+        # 1. Skills match (35 points)
+        # =================================================================
+        raw_skills1 = profile1.get("skills") or []
+        raw_skills2 = profile2.get("skills") or []
+
+        # Normalize skills using synonyms
+        skills1 = self._normalize_skills(raw_skills1)
+        skills2 = self._normalize_skills(raw_skills2)
 
         if skills1 and skills2:
             common_skills = skills1 & skills2
             all_skills = skills1 | skills2
-            skill_ratio = len(common_skills) / len(all_skills) if all_skills else 0
-            skill_score = int(skill_ratio * 30)
+
+            # Jaccard similarity on normalized skills
+            jaccard = len(common_skills) / len(all_skills) if all_skills else 0
+
+            # Bonus for key skill matches (if main stack overlaps)
+            # Key skills are typically the first 3 skills listed
+            key_skills1 = self._normalize_skills(raw_skills1[:3])
+            key_skills2 = self._normalize_skills(raw_skills2[:3])
+            key_overlap = key_skills1 & key_skills2
+
+            # Base score from Jaccard (up to 25 points)
+            skill_score = int(jaccard * 25)
+
+            # Bonus for key skill matches (up to 10 points)
+            if key_skills1 and key_skills2:
+                key_ratio = len(key_overlap) / min(len(key_skills1), len(key_skills2))
+                skill_score += int(key_ratio * 10)
+
+            skill_score = min(skill_score, 35)  # Cap at 35
             score += skill_score
 
             if common_skills:
-                matches.append(f"Общие навыки: {', '.join(list(common_skills)[:5])}")
+                # Show original skill names for readability
+                common_original = [s for s in raw_skills1 if self._normalize_skill(s) in common_skills][:5]
+                if common_original:
+                    matches.append(f"Общие навыки: {', '.join(common_original)}")
 
             unique1 = skills1 - skills2
             unique2 = skills2 - skills1
-            if unique1 or unique2:
-                differences.append(f"Разные навыки: {', '.join(list(unique1 | unique2)[:3])}")
+            if len(unique1) > 3 or len(unique2) > 3:
+                differences.append(f"Много уникальных навыков у каждого")
+        elif not skills1 and not skills2:
+            # Both have no skills - neutral
+            score += 17  # Half points
+        else:
+            differences.append("У одного из профилей не указаны навыки")
 
-        # 2. Level match (weight: 20)
-        max_score += 20
-        level1 = profile1.get("level", "unknown")
-        level2 = profile2.get("level", "unknown")
+        # =================================================================
+        # 2. Level + trajectory (25 points)
+        # =================================================================
+        level1 = (profile1.get("level") or "unknown").lower()
+        level2 = (profile2.get("level") or "unknown").lower()
 
-        level_order = {"junior": 1, "middle": 2, "senior": 3, "lead": 4, "unknown": 0}
         if level1 != "unknown" and level2 != "unknown":
-            level_diff = abs(level_order.get(level1, 0) - level_order.get(level2, 0))
-            if level_diff == 0:
-                score += 20
-                matches.append(f"Одинаковый уровень: {level1}")
-            elif level_diff == 1:
-                score += 10
-                differences.append(f"Близкий уровень: {level1} vs {level2}")
-            else:
-                differences.append(f"Разный уровень: {level1} vs {level2}")
+            level_score = LEVEL_COMPATIBILITY.get((level1, level2), 0)
+            score += level_score
 
-        # 3. Specialization match (weight: 20)
-        max_score += 20
-        spec1 = (profile1.get("specialization") or "").lower()
-        spec2 = (profile2.get("specialization") or "").lower()
+            if level_score >= 25:
+                matches.append(f"Одинаковый уровень: {level1}")
+            elif level_score >= 15:
+                matches.append(f"Совместимые уровни: {level1} ↔ {level2}")
+            elif level_score > 0:
+                differences.append(f"Большой разрыв уровней: {level1} vs {level2}")
+            else:
+                differences.append(f"Несовместимые уровни: {level1} vs {level2}")
+        else:
+            # Unknown level - give neutral score
+            score += 12
+
+        # =================================================================
+        # 3. Specialization match (20 points)
+        # =================================================================
+        spec1 = profile1.get("specialization") or ""
+        spec2 = profile2.get("specialization") or ""
 
         if spec1 and spec2:
-            # Simple word overlap check
-            words1 = set(spec1.split())
-            words2 = set(spec2.split())
-            if words1 & words2 or spec1 in spec2 or spec2 in spec1:
-                score += 20
-                matches.append(f"Похожая специализация")
-            else:
-                differences.append(f"Разная специализация: {spec1} vs {spec2}")
+            spec_similarity = self._get_specialization_similarity(spec1, spec2)
+            spec_score = int(spec_similarity * 20)
+            score += spec_score
 
-        # 4. Salary range overlap (weight: 15)
-        max_score += 15
+            norm_spec1 = self._normalize_specialization(spec1)
+            norm_spec2 = self._normalize_specialization(spec2)
+
+            if spec_similarity >= 1.0:
+                matches.append(f"Одинаковая специализация: {norm_spec1}")
+            elif spec_similarity >= 0.7:
+                matches.append(f"Близкие специализации: {norm_spec1} ↔ {norm_spec2}")
+            elif spec_similarity >= 0.4:
+                differences.append(f"Частично пересекающиеся специализации")
+            else:
+                differences.append(f"Разные специализации: {norm_spec1} vs {norm_spec2}")
+        else:
+            score += 10  # Neutral if unknown
+
+        # =================================================================
+        # 4. Salary range overlap (10 points)
+        # =================================================================
         sal1_min = profile1.get("salary_min") or profile1.get("expected_salary_min")
         sal1_max = profile1.get("salary_max") or profile1.get("expected_salary_max")
         sal2_min = profile2.get("salary_min") or profile2.get("expected_salary_min")
         sal2_max = profile2.get("salary_max") or profile2.get("expected_salary_max")
 
         if sal1_min and sal2_min:
-            # Check if ranges overlap
+            # Normalize to same range if max not provided
             min1, max1 = sal1_min, sal1_max or sal1_min * 1.3
             min2, max2 = sal2_min, sal2_max or sal2_min * 1.3
 
+            # Calculate overlap
             overlap = min(max1, max2) - max(min1, min2)
+
             if overlap > 0:
-                score += 15
-                matches.append("Пересекающиеся зарплатные ожидания")
+                # Full overlap
+                score += 10
+                matches.append("Совпадающие зарплатные ожидания")
             else:
-                diff_percent = abs(min1 - min2) / max(min1, min2) * 100
-                if diff_percent < 30:
+                # Calculate percentage difference
+                diff_percent = abs(min1 - min2) / max(min1, min2) * 100 if max(min1, min2) > 0 else 100
+
+                if diff_percent < 20:
                     score += 7
-                    differences.append(f"Близкие зарплатные ожидания (разница ~{int(diff_percent)}%)")
+                    differences.append(f"Близкие зарплаты (разница ~{int(diff_percent)}%)")
+                elif diff_percent < 40:
+                    score += 3
+                    differences.append(f"Умеренная разница в зарплате (~{int(diff_percent)}%)")
                 else:
-                    differences.append(f"Разные зарплатные ожидания")
+                    differences.append(f"Большая разница в зарплате (~{int(diff_percent)}%)")
+        else:
+            score += 5  # Neutral if salary not specified
 
-        # 5. Experience match (weight: 15)
-        max_score += 15
-        exp1 = profile1.get("experience_years")
-        exp2 = profile2.get("experience_years")
+        # =================================================================
+        # 5. Work format + location (10 points)
+        # =================================================================
+        fmt1 = self._normalize_work_format(profile1.get("work_format") or "")
+        fmt2 = self._normalize_work_format(profile2.get("work_format") or "")
 
-        if exp1 is not None and exp2 is not None:
-            exp_diff = abs(exp1 - exp2)
-            if exp_diff <= 1:
-                score += 15
-                matches.append(f"Похожий опыт: ~{exp1} лет")
-            elif exp_diff <= 3:
-                score += 7
-                differences.append(f"Близкий опыт: {exp1} vs {exp2} лет")
+        loc1 = (profile1.get("location") or "").lower().strip()
+        loc2 = (profile2.get("location") or "").lower().strip()
+
+        # Work format (up to 5 points)
+        if fmt1 != "unknown" and fmt2 != "unknown":
+            format_score = WORK_FORMAT_COMPATIBILITY.get((fmt1, fmt2), 0)
+            score += format_score
+
+            if format_score >= 5:
+                matches.append(f"Одинаковый формат работы: {fmt1}")
+            elif format_score >= 3:
+                # Compatible but different - no message needed
+                pass
             else:
-                differences.append(f"Разный опыт: {exp1} vs {exp2} лет")
+                differences.append(f"Несовместимый формат: {fmt1} vs {fmt2}")
+        else:
+            score += 2  # Partial points if unknown
 
-        # Calculate final percentage
-        final_score = int((score / max_score) * 100) if max_score > 0 else 0
+        # Location (up to 5 points)
+        if loc1 and loc2:
+            # Simple check - same city/country
+            if loc1 == loc2:
+                score += 5
+                matches.append(f"Одинаковая локация: {loc1}")
+            elif loc1 in loc2 or loc2 in loc1:
+                # Partial match (e.g., "Moscow" in "Moscow, Russia")
+                score += 3
+            else:
+                # Different locations - but might not matter for remote
+                if fmt1 == "remote" or fmt2 == "remote":
+                    score += 2  # Less important for remote
+                else:
+                    differences.append(f"Разные локации: {loc1} vs {loc2}")
+        else:
+            score += 2  # Partial points if unknown
 
+        # =================================================================
         # Generate summary
-        if final_score >= 70:
-            summary = "Очень похожие кандидаты"
+        # =================================================================
+        final_score = min(score, 100)  # Cap at 100
+
+        if final_score >= 80:
+            summary = "Отличное совпадение профилей"
+        elif final_score >= 65:
+            summary = "Хорошее совпадение профилей"
         elif final_score >= 50:
-            summary = "Частично похожие кандидаты"
-        elif final_score >= 30:
+            summary = "Частичное совпадение"
+        elif final_score >= 35:
             summary = "Есть общие черты"
         else:
-            summary = "Разные профили"
+            summary = "Профили не совпадают"
 
         return {
             "score": final_score,
