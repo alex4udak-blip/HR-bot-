@@ -54,8 +54,14 @@ def upgrade():
     """Add pgvector extension and embedding columns."""
 
     # Enable pgvector extension
-    if not extension_exists('vector'):
-        op.execute('CREATE EXTENSION IF NOT EXISTS vector')
+    # Railway PostgreSQL supports pgvector out of the box
+    try:
+        if not extension_exists('vector'):
+            op.execute('CREATE EXTENSION IF NOT EXISTS vector')
+    except Exception as e:
+        print(f"Warning: Could not create pgvector extension: {e}")
+        print("Embeddings will not be available. Install pgvector to enable.")
+        return  # Skip rest of migration if pgvector not available
 
     # Add embedding columns to entities
     if not column_exists('entities', 'embedding'):
