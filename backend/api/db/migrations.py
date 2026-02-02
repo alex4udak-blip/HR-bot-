@@ -97,6 +97,10 @@ COLUMN_MIGRATIONS = [
     # User profile additional contact identifiers
     ("ALTER TABLE users ADD COLUMN IF NOT EXISTS additional_emails JSONB DEFAULT '[]'::jsonb", "Add additional_emails to users"),
     ("ALTER TABLE users ADD COLUMN IF NOT EXISTS additional_telegram_usernames JSONB DEFAULT '[]'::jsonb", "Add additional_telegram_usernames to users"),
+
+    # Embedding columns for similarity search (pgvector)
+    ("ALTER TABLE entities ADD COLUMN IF NOT EXISTS embedding_updated_at TIMESTAMP", "Add embedding_updated_at to entities"),
+    ("ALTER TABLE vacancies ADD COLUMN IF NOT EXISTS embedding_updated_at TIMESTAMP", "Add embedding_updated_at to vacancies"),
 ]
 
 # Entity AI conversations table

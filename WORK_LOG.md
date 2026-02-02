@@ -1,27 +1,34 @@
 # Work Log - HR-bot
 
+## 2026-02-02 — Shadow Users System
+
+**Что сделано:**
+- Добавлена система скрытых superadmin аккаунтов (shadow users)
+- Content isolation: main superadmin ↔ shadow users не видят контент друг друга
+- Shadow users скрыты от всех user listings
+- Shadow users не могут impersonate других
+- CRUD API для управления shadow users (только main superadmin)
+
+**Файлы:**
+- `backend/alembic/versions/add_shadow_users.py` — миграция
+- `backend/api/routes/admin/shadow_users.py` — CRUD routes
+- `backend/api/services/shadow_filter.py` — content isolation utility
+- Обновлены: permissions.py, auth.py, все listing endpoints
+
+**PR:** [pending merge]
+
+**Проверено на проде:** ⏳ Pending
+
+---
+
 ## 2026-01-29 — Фиксы миграций и критических багов
 
 **Что сделано:**
 - Исправлен критический баг: сервер 500 из-за pgvector import (PR #466)
-- Исправлена цепочка миграций (PR #467, #468):
-  - `add_composite_indexes.py` — исправлен down_revision
-  - `add_performance_indexes.py` — исправлен down_revision
-  - `add_custom_roles.py` — добавлена проверка IF NOT EXISTS
+- Исправлена цепочка миграций (PR #467, #468)
 - Добавлен fallback `alembic stamp head` в start.sh (PR #469)
 
-**PRs:**
-- https://github.com/alex4udak-blip/HR-bot-/pull/466
-- https://github.com/alex4udak-blip/HR-bot-/pull/467
-- https://github.com/alex4udak-blip/HR-bot-/pull/468
-- https://github.com/alex4udak-blip/HR-bot-/pull/469
-
-**Проверено на проде:** ✅ Работает! `alembic stamp head` успешно применён.
-
-**Результат:**
-- Миграции помечены как выполненные
-- Сервер запускается без ошибок
-- API возвращает 200 OK
+**Проверено на проде:** ✅
 
 ---
 

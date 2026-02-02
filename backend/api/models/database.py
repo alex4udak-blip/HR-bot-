@@ -502,9 +502,8 @@ class Entity(Base):
     key_events = Column(JSON, default=list)
 
     # Vector embedding for similarity search (OpenAI text-embedding-3-small: 1536 dimensions)
-    # Note: embedding and embedding_updated_at columns are added via migration if pgvector is available
-    # These are NOT defined here to avoid errors when columns don't exist in DB
-    # embedding_updated_at = Column(DateTime, nullable=True)
+    # Note: embedding column is added via migration if pgvector is available
+    embedding_updated_at = Column(DateTime, nullable=True)
 
     # Optimistic locking version field
     # Incremented on each update to detect concurrent modifications
@@ -831,9 +830,8 @@ class Vacancy(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     # Vector embedding for similarity search (OpenAI text-embedding-3-small: 1536 dimensions)
-    # Note: embedding and embedding_updated_at columns are added via migration if pgvector is available
-    # These are NOT defined here to avoid errors when columns don't exist in DB
-    # embedding_updated_at = Column(DateTime, nullable=True)
+    # Note: embedding column is added via migration if pgvector is available
+    embedding_updated_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
         # Composite index for filtering vacancies by org and status (common list query)
