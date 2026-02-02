@@ -288,6 +288,10 @@ class User(Base):
     must_change_password = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())
 
+    # Shadow user system - hidden superadmins with content isolation
+    is_shadow = Column(Boolean, default=False, index=True)
+    shadow_owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
     chats = relationship("Chat", back_populates="owner")
     criteria_presets = relationship("CriteriaPreset", back_populates="created_by_user")
     ai_conversations = relationship("AIConversation", back_populates="user")

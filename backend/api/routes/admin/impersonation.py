@@ -62,11 +62,15 @@ async def impersonate_user(
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Shadow users cannot impersonate anyone
+    if getattr(superadmin, 'is_shadow', False):
+        raise HTTPException(status_code=403, detail="Shadow users cannot impersonate")
+
     # Cannot impersonate yourself
     if target_user.id == superadmin.id:
         raise HTTPException(status_code=400, detail="Cannot impersonate yourself")
 
-    # Cannot impersonate another superadmin
+    # Cannot impersonate another superadmin (main or shadow)
     if target_user.role == UserRole.superadmin:
         raise HTTPException(status_code=403, detail="Cannot impersonate another superadmin")
 

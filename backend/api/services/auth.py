@@ -199,8 +199,22 @@ get_current_user_allow_inactive = get_current_user_dependency(allow_inactive=Tru
 
 
 async def get_superadmin(user: User = Depends(get_current_user)) -> User:
+    """Get current user and verify they are a superadmin (main or shadow)."""
     if user.role != UserRole.superadmin:
         raise HTTPException(status_code=403, detail="Superadmin access required")
+    return user
+
+
+async def get_main_superadmin(user: User = Depends(get_current_user)) -> User:
+    """Get current user and verify they are the MAIN superadmin (not shadow).
+
+    Use this dependency for operations that only the main superadmin should perform,
+    such as managing shadow users.
+    """
+    if user.role != UserRole.superadmin:
+        raise HTTPException(status_code=403, detail="Superadmin access required")
+    if getattr(user, 'is_shadow', False):
+        raise HTTPException(status_code=403, detail="This action is not allowed for shadow users")
     return user
 
 

@@ -20,6 +20,7 @@ from ..models.database import (
 from ..models.sharing import BaseShareRequest as ShareRequest
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to
 from ..services.permissions import PermissionService
+from ..services.shadow_filter import get_isolated_creator_ids
 from ..config import get_settings
 from datetime import datetime as dt
 
@@ -98,9 +99,13 @@ async def list_calls(
     """List call recordings (filtered by organization and role)"""
     current_user = await db.merge(current_user)
 
-    # SUPERADMIN sees everything across all organizations
+    # SUPERADMIN sees everything across all organizations (with shadow content isolation)
     if current_user.role == UserRole.superadmin:
         query = select(CallRecording)
+        # Apply shadow user content isolation
+        isolated_ids = await get_isolated_creator_ids(current_user, db)
+        if isolated_ids:
+            query = query.where(~CallRecording.owner_id.in_(isolated_ids))
     else:
         org = await get_user_org(current_user, db)
         if not org:

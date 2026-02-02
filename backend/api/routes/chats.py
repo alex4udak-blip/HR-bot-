@@ -42,6 +42,7 @@ from ..services.chat_types import (
 from ..services.transcription import transcription_service
 from ..services.documents import document_parser
 from ..services.google_docs import google_docs_service
+from ..services.shadow_filter import get_isolated_creator_ids
 from .realtime import broadcast_chat_updated, broadcast_chat_deleted
 
 router = APIRouter()
@@ -83,11 +84,15 @@ async def get_chats(
     # Merge detached user into current session
     user = await db.merge(user)
 
-    # SUPERADMIN sees everything across all organizations
+    # SUPERADMIN sees everything across all organizations (with shadow content isolation)
     if user.role == UserRole.superadmin:
         query = select(Chat).options(selectinload(Chat.owner), selectinload(Chat.entity)).where(
             Chat.deleted_at.is_(None)
         )
+        # Apply shadow user content isolation
+        isolated_ids = await get_isolated_creator_ids(user, db)
+        if isolated_ids:
+            query = query.where(~Chat.owner_id.in_(isolated_ids))
     else:
         # Get user's organization
         org = await get_user_org(user, db)
