@@ -14,6 +14,7 @@ from .user_management import router as user_management_router
 from .sandbox import router as sandbox_router
 from .custom_roles import router as custom_roles_router
 from .features import router as features_router
+from .shadow_users import router as shadow_users_router
 
 # Re-export common schemas and helper functions for backwards compatibility
 from .common import (
@@ -72,6 +73,7 @@ router.include_router(user_management_router)
 router.include_router(sandbox_router)
 router.include_router(custom_roles_router)
 router.include_router(features_router)
+router.include_router(shadow_users_router)
 
 # Export for backwards compatibility
 __all__ = [

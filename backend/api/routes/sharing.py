@@ -631,13 +631,15 @@ async def get_sharable_users(
         return []
 
     # Get all users in the same organization with their roles and departments
+    # Note: Shadow users are excluded from sharing list - they are completely hidden
     result = await db.execute(
         select(User, OrgMember)
         .join(OrgMember, OrgMember.user_id == User.id)
         .where(
             OrgMember.org_id == org.id,
             User.id != current_user.id,
-            User.is_active == True
+            User.is_active == True,
+            User.is_shadow == False  # Hide shadow users from sharing
         )
         .order_by(User.name)
     )

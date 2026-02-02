@@ -22,6 +22,7 @@ from ..models.database import (
 from ..services.auth import get_current_user, get_user_org, has_full_database_access as auth_has_full_database_access
 from ..services.features import can_access_feature
 from ..services.cache import scoring_cache
+from ..services.shadow_filter import get_isolated_creator_ids
 
 router = APIRouter()
 
@@ -556,6 +557,12 @@ async def list_vacancies(
 
     # Base query - filter by organization
     query = select(Vacancy).where(Vacancy.org_id == org.id if org else True)
+
+    # Apply shadow user content isolation for superadmins
+    if current_user.role == UserRole.superadmin:
+        isolated_ids = await get_isolated_creator_ids(current_user, db)
+        if isolated_ids:
+            query = query.where(~Vacancy.created_by.in_(isolated_ids))
 
     # Apply access control based on user role
     # Full access: superadmin, owner, or member with has_full_access flag

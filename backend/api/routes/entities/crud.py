@@ -20,6 +20,7 @@ from .common import (
     normalize_and_validate_identifiers, check_entity_access,
     regenerate_entity_profile_background
 )
+from ...services.shadow_filter import get_isolated_creator_ids
 
 router = APIRouter()
 
@@ -46,9 +47,13 @@ async def list_entities(
     # Initialize org for all code paths
     org = None
 
-    # SUPERADMIN sees everything across all organizations
+    # SUPERADMIN sees everything across all organizations (with shadow content isolation)
     if current_user.role == UserRole.superadmin:
         query = select(Entity)
+        # Apply shadow user content isolation
+        isolated_ids = await get_isolated_creator_ids(current_user, db)
+        if isolated_ids:
+            query = query.where(~Entity.created_by.in_(isolated_ids))
         # Apply filters
         if ownership == "mine":
             query = query.where(Entity.created_by == current_user.id)

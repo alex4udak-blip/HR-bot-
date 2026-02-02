@@ -5,10 +5,17 @@ This service consolidates all access control logic in one place,
 replacing scattered permission checks across routes.
 
 Access Hierarchy:
-1. SUPERADMIN - sees EVERYTHING without exceptions
-2. OWNER - sees everything in organization, BUT NOT private content created by SUPERADMIN
-3. LEAD/SUB_ADMIN - sees all resources in their department + resources created by dept members
-4. MEMBER - sees only THEIR OWN resources + explicitly shared resources
+1. SUPERADMIN (non-shadow) - sees EVERYTHING except shadow users' content
+2. SHADOW SUPERADMIN - sees all org data except main superadmin's and other shadow users' content
+3. OWNER - sees everything in organization, BUT NOT private content created by SUPERADMIN/SHADOW
+4. LEAD/SUB_ADMIN - sees all resources in their department + resources created by dept members
+5. MEMBER - sees only THEIR OWN resources + explicitly shared resources
+
+Shadow User Content Isolation:
+- Main superadmin cannot see content created by shadow users
+- Shadow users cannot see content created by main superadmin
+- Shadow users cannot see content created by other shadow users
+- All superadmins (main + shadow) can see content created by regular users
 
 Resource Types: entity, chat, call, vacancy
 Actions: read, write, delete, share
@@ -98,8 +105,11 @@ class PermissionService:
         """
         resource_type = self._get_resource_type(resource)
 
-        # 1. SUPERADMIN - has access to EVERYTHING
+        # 1. SUPERADMIN - has access to EVERYTHING except isolated content
         if self._is_superadmin(user):
+            # Check content isolation for shadow users
+            if await self._is_content_isolated_from_user(user, resource):
+                return False
             return True
 
         # 2. Get user's org context
@@ -237,11 +247,14 @@ class PermissionService:
         """
         accessible_ids: Set[int] = set()
 
-        # SUPERADMIN sees everything
+        # SUPERADMIN sees everything (with content isolation for shadow users)
         if self._is_superadmin(user):
-            return await self._get_all_resource_ids(resource_type, org_id)
+            return await self._get_all_resource_ids(
+                resource_type, org_id,
+                exclude_isolated_from_user=user
+            )
 
-        # OWNER sees everything in org (except SUPERADMIN private)
+        # OWNER sees everything in org (except SUPERADMIN/SHADOW private content)
         if await self._is_org_owner(user, org_id):
             return await self._get_all_resource_ids(resource_type, org_id, exclude_superadmin=True)
 
@@ -296,8 +309,84 @@ class PermissionService:
     # ==================== PRIVATE HELPERS ====================
 
     def _is_superadmin(self, user: User) -> bool:
-        """Check if user is SUPERADMIN."""
+        """Check if user is SUPERADMIN (main or shadow)."""
         return user.role == UserRole.superadmin
+
+    def _is_main_superadmin(self, user: User) -> bool:
+        """Check if user is the MAIN superadmin (not a shadow user)."""
+        return user.role == UserRole.superadmin and not getattr(user, 'is_shadow', False)
+
+    def _is_shadow_superadmin(self, user: User) -> bool:
+        """Check if user is a SHADOW superadmin."""
+        return user.role == UserRole.superadmin and getattr(user, 'is_shadow', False)
+
+    async def _is_content_isolated_from_user(self, user: User, resource: Any) -> bool:
+        """Check if resource content should be hidden from user due to shadow isolation.
+
+        Content isolation rules:
+        - Main superadmin cannot see content created by shadow users
+        - Shadow users cannot see content created by main superadmin
+        - Shadow users cannot see content created by other shadow users
+
+        Args:
+            user: Current user (superadmin)
+            resource: Resource to check
+
+        Returns:
+            True if content should be hidden (isolated)
+        """
+        # Get resource creator ID
+        creator_id = getattr(resource, 'created_by', None) or getattr(resource, 'owner_id', None)
+        if not creator_id:
+            return False  # No creator info, allow access
+
+        # Get creator's shadow status
+        creator_info = await self._get_user_shadow_info(creator_id)
+        if not creator_info:
+            return False  # Creator not found, allow access
+
+        creator_is_shadow = creator_info.get('is_shadow', False)
+        creator_is_superadmin = creator_info.get('is_superadmin', False)
+
+        # If creator is not a superadmin (main or shadow), content is visible to all superadmins
+        if not creator_is_superadmin:
+            return False
+
+        # Main superadmin viewing shadow user's content
+        if self._is_main_superadmin(user) and creator_is_shadow:
+            return True  # Isolated - main cannot see shadow's content
+
+        # Shadow user viewing main superadmin's content
+        if self._is_shadow_superadmin(user) and creator_is_superadmin and not creator_is_shadow:
+            return True  # Isolated - shadow cannot see main's content
+
+        # Shadow user viewing another shadow user's content
+        if self._is_shadow_superadmin(user) and creator_is_shadow and creator_id != user.id:
+            return True  # Isolated - shadow cannot see other shadow's content
+
+        return False
+
+    async def _get_user_shadow_info(self, user_id: int) -> Optional[dict]:
+        """Get user's shadow status info."""
+        cache_key = f"user_shadow_info_{user_id}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        result = await self.db.execute(
+            select(User.id, User.role, User.is_shadow).where(User.id == user_id)
+        )
+        row = result.first()
+        if not row:
+            self._cache[cache_key] = None
+            return None
+
+        info = {
+            'id': row[0],
+            'is_superadmin': row[1] == UserRole.superadmin,
+            'is_shadow': row[2] if row[2] is not None else False
+        }
+        self._cache[cache_key] = info
+        return info
 
     async def _is_org_owner(self, user: User, org_id: int) -> bool:
         """Check if user is OWNER of the organization."""
@@ -533,9 +622,17 @@ class PermissionService:
         self,
         resource_type: str,
         org_id: int,
-        exclude_superadmin: bool = False
+        exclude_superadmin: bool = False,
+        exclude_isolated_from_user: Optional[User] = None
     ) -> Set[int]:
-        """Get all resource IDs in organization."""
+        """Get all resource IDs in organization.
+
+        Args:
+            resource_type: Type of resource
+            org_id: Organization ID
+            exclude_superadmin: If True, exclude resources created by any superadmin
+            exclude_isolated_from_user: If provided, apply shadow content isolation rules
+        """
         model_map = {
             "entity": Entity,
             "chat": Chat,
@@ -547,19 +644,25 @@ class PermissionService:
             return set()
 
         query = select(model.id).where(model.org_id == org_id)
+        owner_field = 'created_by' if resource_type in ("entity", "vacancy") else 'owner_id'
 
         if exclude_superadmin:
-            # Exclude resources created by superadmin
-            owner_field = 'created_by' if resource_type == "entity" else 'owner_id'
+            # Exclude resources created by any superadmin (main or shadow)
             superadmin_ids = await self._get_superadmin_ids()
             if superadmin_ids:
                 query = query.where(~getattr(model, owner_field).in_(superadmin_ids))
+
+        elif exclude_isolated_from_user:
+            # Apply shadow content isolation rules
+            isolated_ids = await self._get_isolated_user_ids(exclude_isolated_from_user)
+            if isolated_ids:
+                query = query.where(~getattr(model, owner_field).in_(isolated_ids))
 
         result = await self.db.execute(query)
         return set(result.scalars().all())
 
     async def _get_superadmin_ids(self) -> Set[int]:
-        """Get all superadmin user IDs."""
+        """Get all superadmin user IDs (main and shadow)."""
         cache_key = "superadmin_ids"
         if cache_key in self._cache:
             return self._cache[cache_key]
@@ -570,6 +673,48 @@ class PermissionService:
         ids = set(result.scalars().all())
         self._cache[cache_key] = ids
         return ids
+
+    async def _get_isolated_user_ids(self, user: User) -> Set[int]:
+        """Get user IDs whose content should be hidden from the given user.
+
+        Shadow content isolation rules:
+        - Main superadmin: hide content from all shadow users
+        - Shadow user: hide content from main superadmin and other shadow users
+
+        Args:
+            user: Current user (superadmin)
+
+        Returns:
+            Set of user IDs whose content should be hidden
+        """
+        cache_key = f"isolated_ids_{user.id}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        isolated_ids: Set[int] = set()
+
+        if self._is_main_superadmin(user):
+            # Main superadmin: hide all shadow users' content
+            result = await self.db.execute(
+                select(User.id).where(
+                    User.role == UserRole.superadmin,
+                    User.is_shadow == True
+                )
+            )
+            isolated_ids = set(result.scalars().all())
+
+        elif self._is_shadow_superadmin(user):
+            # Shadow user: hide main superadmin's + other shadows' content
+            result = await self.db.execute(
+                select(User.id).where(
+                    User.role == UserRole.superadmin,
+                    User.id != user.id  # Exclude self
+                )
+            )
+            isolated_ids = set(result.scalars().all())
+
+        self._cache[cache_key] = isolated_ids
+        return isolated_ids
 
     async def _get_owned_resource_ids(
         self,

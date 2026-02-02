@@ -110,9 +110,14 @@ async def get_users(
 ):
     current_user = await db.merge(current_user)
 
-    # SUPERADMIN sees all users
+    # SUPERADMIN sees all users EXCEPT shadow users
+    # Shadow users are completely hidden from all user listings
     if current_user.role == UserRole.superadmin:
-        result = await db.execute(select(User).order_by(User.created_at.desc()))
+        result = await db.execute(
+            select(User)
+            .where(User.is_shadow == False)  # Hide shadow users
+            .order_by(User.created_at.desc())
+        )
         users = result.scalars().all()
     # ADMIN/SUB_ADMIN sees:
     # - All users in their department
