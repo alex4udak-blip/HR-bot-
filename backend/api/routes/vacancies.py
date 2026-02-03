@@ -44,11 +44,16 @@ async def is_org_owner(user: User, org: Organization, db: AsyncSession) -> bool:
     return result.scalar_one_or_none() is not None
 
 
-async def has_full_database_access(user: User, org: Organization, db: AsyncSession) -> bool:
+async def has_full_database_access(user: User, org: Optional[Organization], db: AsyncSession) -> bool:
     """
     Check if user has full database access (can see all vacancies and candidates).
     Wrapper around auth service function that accepts Organization object instead of org_id.
     """
+    # Superadmin always has full access, even without org
+    if user.role == UserRole.superadmin:
+        return True
+    if not org:
+        return False
     return await auth_has_full_database_access(user, org.id, db)
 
 
