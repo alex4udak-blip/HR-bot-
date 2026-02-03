@@ -244,7 +244,8 @@ async def check_vacancy_access(
     This dependency verifies that:
     1. User is authenticated
     2. User's organization/department has the vacancies feature enabled
-    3. Superadmin and Owner always have access (bypassed in can_access_feature)
+    3. Superadmin always has access (global access)
+    4. Owner always has access (bypassed in can_access_feature)
 
     Raises:
         HTTPException 403 if user cannot access vacancies feature
@@ -252,6 +253,10 @@ async def check_vacancy_access(
     Returns:
         The authenticated user if they have access
     """
+    # Superadmin has global access to all vacancies
+    if current_user.role == UserRole.superadmin:
+        return current_user
+
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(
