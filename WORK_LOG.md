@@ -15,9 +15,9 @@
 - `backend/api/services/shadow_filter.py` — content isolation utility
 - Обновлены: permissions.py, auth.py, все listing endpoints
 
-**PR:** [pending merge]
+**PR:** https://github.com/alex4udak-blip/HR-bot-/pull/470
 
-**Проверено на проде:** ⏳ Pending
+**Проверено на проде:** ✅ Routes видны в /docs
 
 ---
 
