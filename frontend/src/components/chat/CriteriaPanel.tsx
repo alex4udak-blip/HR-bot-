@@ -81,7 +81,12 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
 
   useEffect(() => {
     if (chatCriteria?.criteria) {
-      setCriteria(chatCriteria.criteria);
+      setCriteria(chatCriteria.criteria.map((c) => ({
+        name: c.name || '',
+        description: c.description || '',
+        weight: c.weight ?? 5,
+        category: (c.category || 'basic') as Criterion['category'],
+      })));
     }
   }, [chatCriteria]);
 
@@ -166,7 +171,12 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
     try {
       const defaults = await getDefaultCriteria(chatType);
       if (defaults.criteria.length > 0) {
-        setCriteria(defaults.criteria as Criterion[]);
+        setCriteria(defaults.criteria.map((c: Record<string, unknown>) => ({
+          name: (c.name as string) || '',
+          description: (c.description as string) || '',
+          weight: (c.weight as number) ?? 5,
+          category: ((c.category as string) || 'basic') as Criterion['category'],
+        })));
         setHasChanges(true);
         toast.success(defaults.is_custom ? 'Загружены пользовательские критерии' : 'Загружены стандартные критерии');
       } else {
@@ -205,7 +215,13 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
   const handleApplyPreset = (presetId: string) => {
     const preset = presets.find((p) => p.id === parseInt(presetId));
     if (preset) {
-      setCriteria([...criteria, ...preset.criteria]);
+      const normalizedCriteria = preset.criteria.map((c) => ({
+        name: c.name || '',
+        description: c.description || '',
+        weight: c.weight ?? 5,
+        category: (c.category || 'basic') as Criterion['category'],
+      }));
+      setCriteria([...criteria, ...normalizedCriteria]);
       setHasChanges(true);
       toast.success(`Применён шаблон: ${preset.name}`);
     }
