@@ -16,6 +16,7 @@ import {
   UserPlus,
   Briefcase,
   UserCheck,
+  GraduationCap,
   HelpCircle,
   type LucideIcon
 } from 'lucide-react';
@@ -40,6 +41,7 @@ const iconMap: Record<string, LucideIcon> = {
   Trash2,
   Briefcase,
   UserCheck,
+  GraduationCap,
 };
 
 // Localized labels
@@ -56,6 +58,7 @@ const labelMap: Record<string, string> = {
   'Settings': 'Настройки',
   'Admin Panel': 'Симулятор ролей',
   'Trash': 'Корзина',
+  'Interns': 'База практикантов',
 };
 
 // Map paths to data-tour attributes
@@ -115,6 +118,7 @@ export default function Layout() {
     if (hasFeature('candidate_database')) {
       items.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
       items.push({ path: '/candidates', icon: UserCheck, label: 'База кандидатов' });
+      items.push({ path: '/interns', icon: GraduationCap, label: 'База практикантов' });
     }
 
     // Add remaining items

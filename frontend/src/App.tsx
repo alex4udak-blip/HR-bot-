@@ -65,6 +65,9 @@ const AdminSimulatorPage = lazyWithRetry(() => import('@/pages/AdminSimulatorPag
 const VacanciesPage = lazyWithRetry(() => import('@/pages/VacanciesPage'));
 const EmailTemplatesPage = lazyWithRetry(() => import('@/pages/EmailTemplatesPage'));
 const AnalyticsPage = lazyWithRetry(() => import('@/pages/AnalyticsPage'));
+const InternsPage = lazyWithRetry(() => import('@/pages/InternsPage'));
+const InternAchievementsPage = lazyWithRetry(() => import('@/pages/InternAchievementsPage'));
+const InternInfoPage = lazyWithRetry(() => import('@/pages/InternInfoPage'));
 
 // Loading fallback component for Suspense
 function PageLoader() {
@@ -153,6 +156,9 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
           <Route path="candidates" element={<Suspense fallback={<PageLoader />}><CandidatesPage /></Suspense>} />
+          <Route path="interns" element={<Suspense fallback={<PageLoader />}><InternsPage /></Suspense>} />
+          <Route path="interns/:internId/achievements" element={<Suspense fallback={<PageLoader />}><InternAchievementsPage /></Suspense>} />
+          <Route path="interns/:internId/info" element={<Suspense fallback={<PageLoader />}><InternInfoPage /></Suspense>} />
           <Route path="chats" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
           <Route path="chats/:chatId" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
           <Route path="contacts" element={<Suspense fallback={<PageLoader />}><ContactsPage /></Suspense>} />
