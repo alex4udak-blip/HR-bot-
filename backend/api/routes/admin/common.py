@@ -657,6 +657,7 @@ DEFAULT_MENU_ITEMS = [
     MenuItemConfig(id="contacts", label="Contacts", path="/contacts", icon="Users", required_permission="can_view_contacts"),
     MenuItemConfig(id="candidates", label="Candidates", path="/candidates", icon="UserCheck", required_feature="candidate_database"),
     MenuItemConfig(id="vacancies", label="Vacancies", path="/vacancies", icon="Briefcase", required_feature="candidate_database"),
+    MenuItemConfig(id="interns", label="Interns", path="/interns", icon="GraduationCap"),
     MenuItemConfig(id="calls", label="Calls", path="/calls", icon="Phone", required_permission="can_view_calls"),
     MenuItemConfig(id="departments", label="Departments", path="/departments", required_permission="can_view_departments", icon="Building2"),
     MenuItemConfig(id="users", label="Users", path="/users", icon="UserCog", required_permission="can_view_all_users"),
