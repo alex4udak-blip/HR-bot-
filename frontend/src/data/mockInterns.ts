@@ -3,6 +3,22 @@
  * Used across InternsPage, InternAchievementsPage, InternInfoPage.
  */
 
+// === Intern status types ===
+
+export type InternStatus = 'not_admitted' | 'studying' | 'accepted';
+
+export const STATUS_LABELS: Record<InternStatus, string> = {
+  not_admitted: 'Недопущен',
+  studying: 'Обучается',
+  accepted: 'Принят',
+};
+
+export const STATUS_COLORS: Record<InternStatus, string> = {
+  not_admitted: 'bg-red-500/20 text-red-400',
+  studying: 'bg-blue-500/20 text-blue-400',
+  accepted: 'bg-emerald-500/20 text-emerald-400',
+};
+
 // === Base Intern type ===
 
 export interface Intern {
@@ -16,6 +32,8 @@ export interface Intern {
   tags: string[];
   mentor: string;
   telegramUsername?: string;
+  status: InternStatus;
+  registrationDate: string;
 }
 
 export const MOCK_INTERNS: Intern[] = [
@@ -30,6 +48,8 @@ export const MOCK_INTERNS: Intern[] = [
     tags: ['React', 'TypeScript'],
     mentor: 'Иван Сидоров',
     telegramUsername: '@a_petrov',
+    status: 'studying',
+    registrationDate: '2026-01-10',
   },
   {
     id: 2,
@@ -42,6 +62,8 @@ export const MOCK_INTERNS: Intern[] = [
     tags: ['Python', 'FastAPI'],
     mentor: 'Анна Козлова',
     telegramUsername: '@m_ivanova',
+    status: 'studying',
+    registrationDate: '2026-01-14',
   },
   {
     id: 3,
@@ -54,6 +76,8 @@ export const MOCK_INTERNS: Intern[] = [
     tags: ['SQL', 'Python', 'Tableau'],
     mentor: 'Олег Морозов',
     telegramUsername: '@d_smirnov',
+    status: 'studying',
+    registrationDate: '2026-01-25',
   },
   {
     id: 4,
@@ -66,6 +90,8 @@ export const MOCK_INTERNS: Intern[] = [
     tags: ['Figma', 'UI/UX'],
     mentor: 'Светлана Белова',
     telegramUsername: '@e_volkova',
+    status: 'accepted',
+    registrationDate: '2026-01-28',
   },
   {
     id: 5,
@@ -78,6 +104,8 @@ export const MOCK_INTERNS: Intern[] = [
     tags: ['Selenium', 'Python'],
     mentor: 'Павел Новиков',
     telegramUsername: '@n_kuznetsov',
+    status: 'not_admitted',
+    registrationDate: '2026-01-18',
   },
   {
     id: 6,
@@ -90,6 +118,8 @@ export const MOCK_INTERNS: Intern[] = [
     tags: ['Docker', 'CI/CD', 'Linux'],
     mentor: 'Дмитрий Орлов',
     telegramUsername: '@a_sokolova',
+    status: 'studying',
+    registrationDate: '2026-02-03',
   },
 ];
 
@@ -268,6 +298,8 @@ export interface InternTrail {
   name: string;
   status: 'active' | 'completed' | 'pending';
   progress: number;
+  startDate: string;
+  endDate: string;
 }
 
 export interface InternWork {
@@ -293,10 +325,10 @@ export const MOCK_INFO: Record<number, InternInfoData> = {
       { id: 104, title: 'Код-ревью', type: 'work', lastActivity: '2026-02-15' },
     ],
     trails: [
-      { id: 201, name: 'Frontend Developer Path', status: 'active', progress: 75 },
-      { id: 202, name: 'React Advanced', status: 'active', progress: 40 },
-      { id: 203, name: 'Soft Skills', status: 'completed', progress: 100 },
-      { id: 204, name: 'Git & DevOps Basics', status: 'completed', progress: 100 },
+      { id: 201, name: 'Frontend Developer Path', status: 'active', progress: 75, startDate: '2026-01-15', endDate: '2026-04-15' },
+      { id: 202, name: 'React Advanced', status: 'active', progress: 40, startDate: '2026-02-01', endDate: '2026-04-01' },
+      { id: 203, name: 'Soft Skills', status: 'completed', progress: 100, startDate: '2026-01-15', endDate: '2026-02-15' },
+      { id: 204, name: 'Git & DevOps Basics', status: 'completed', progress: 100, startDate: '2026-01-15', endDate: '2026-02-10' },
     ],
     works: [
       { id: 301, title: 'Лендинг страница', status: 'reviewed', submittedDate: '2026-02-10', grade: 92 },
@@ -313,9 +345,9 @@ export const MOCK_INFO: Record<number, InternInfoData> = {
       { id: 107, title: 'Python обсуждение', type: 'project', lastActivity: '2026-02-14' },
     ],
     trails: [
-      { id: 205, name: 'Backend Developer Path', status: 'active', progress: 60 },
-      { id: 206, name: 'Database Mastery', status: 'active', progress: 55 },
-      { id: 207, name: 'API Design', status: 'completed', progress: 100 },
+      { id: 205, name: 'Backend Developer Path', status: 'active', progress: 60, startDate: '2026-01-20', endDate: '2026-04-20' },
+      { id: 206, name: 'Database Mastery', status: 'active', progress: 55, startDate: '2026-02-01', endDate: '2026-03-31' },
+      { id: 207, name: 'API Design', status: 'completed', progress: 100, startDate: '2026-01-20', endDate: '2026-02-15' },
     ],
     works: [
       { id: 306, title: 'REST API сервис', status: 'reviewed', submittedDate: '2026-02-08', grade: 90 },
@@ -331,9 +363,9 @@ export const MOCK_INFO: Record<number, InternInfoData> = {
       { id: 110, title: 'Data Science Club', type: 'project', lastActivity: '2026-02-13' },
     ],
     trails: [
-      { id: 208, name: 'Data Analyst Path', status: 'active', progress: 50 },
-      { id: 209, name: 'SQL Mastery', status: 'completed', progress: 100 },
-      { id: 210, name: 'Visualization', status: 'active', progress: 70 },
+      { id: 208, name: 'Data Analyst Path', status: 'active', progress: 50, startDate: '2026-02-01', endDate: '2026-05-01' },
+      { id: 209, name: 'SQL Mastery', status: 'completed', progress: 100, startDate: '2026-02-01', endDate: '2026-02-15' },
+      { id: 210, name: 'Visualization', status: 'active', progress: 70, startDate: '2026-02-10', endDate: '2026-03-30' },
     ],
     works: [
       { id: 310, title: 'Дашборд продаж', status: 'reviewed', submittedDate: '2026-02-09', grade: 87 },
@@ -350,10 +382,10 @@ export const MOCK_INFO: Record<number, InternInfoData> = {
       { id: 115, title: 'Креативная команда', type: 'work', lastActivity: '2026-02-14' },
     ],
     trails: [
-      { id: 211, name: 'UI/UX Designer Path', status: 'active', progress: 85 },
-      { id: 212, name: 'Figma Mastery', status: 'completed', progress: 100 },
-      { id: 213, name: 'Motion Design', status: 'active', progress: 60 },
-      { id: 214, name: 'Design Systems', status: 'completed', progress: 100 },
+      { id: 211, name: 'UI/UX Designer Path', status: 'active', progress: 85, startDate: '2026-02-05', endDate: '2026-04-30' },
+      { id: 212, name: 'Figma Mastery', status: 'completed', progress: 100, startDate: '2026-02-05', endDate: '2026-02-20' },
+      { id: 213, name: 'Motion Design', status: 'active', progress: 60, startDate: '2026-02-10', endDate: '2026-03-31' },
+      { id: 214, name: 'Design Systems', status: 'completed', progress: 100, startDate: '2026-02-05', endDate: '2026-02-18' },
     ],
     works: [
       { id: 313, title: 'Редизайн лендинга', status: 'reviewed', submittedDate: '2026-02-11', grade: 96 },
@@ -369,9 +401,9 @@ export const MOCK_INFO: Record<number, InternInfoData> = {
       { id: 118, title: 'Баг-трекинг', type: 'project', lastActivity: '2026-02-13' },
     ],
     trails: [
-      { id: 215, name: 'QA Engineer Path', status: 'active', progress: 45 },
-      { id: 216, name: 'Automation Testing', status: 'active', progress: 30 },
-      { id: 217, name: 'Manual Testing', status: 'completed', progress: 100 },
+      { id: 215, name: 'QA Engineer Path', status: 'active', progress: 45, startDate: '2026-01-25', endDate: '2026-04-25' },
+      { id: 216, name: 'Automation Testing', status: 'active', progress: 30, startDate: '2026-02-01', endDate: '2026-04-01' },
+      { id: 217, name: 'Manual Testing', status: 'completed', progress: 100, startDate: '2026-01-25', endDate: '2026-02-10' },
     ],
     works: [
       { id: 317, title: 'Тест-план модуля авторизации', status: 'reviewed', submittedDate: '2026-02-05', grade: 82 },
@@ -387,10 +419,10 @@ export const MOCK_INFO: Record<number, InternInfoData> = {
       { id: 122, title: 'Мониторинг и алерты', type: 'work', lastActivity: '2026-02-14' },
     ],
     trails: [
-      { id: 218, name: 'DevOps Engineer Path', status: 'active', progress: 65 },
-      { id: 219, name: 'Docker & K8s', status: 'active', progress: 55 },
-      { id: 220, name: 'Linux Admin', status: 'completed', progress: 100 },
-      { id: 221, name: 'CI/CD Mastery', status: 'active', progress: 70 },
+      { id: 218, name: 'DevOps Engineer Path', status: 'active', progress: 65, startDate: '2026-02-10', endDate: '2026-05-10' },
+      { id: 219, name: 'Docker & K8s', status: 'active', progress: 55, startDate: '2026-02-10', endDate: '2026-04-10' },
+      { id: 220, name: 'Linux Admin', status: 'completed', progress: 100, startDate: '2026-02-10', endDate: '2026-02-17' },
+      { id: 221, name: 'CI/CD Mastery', status: 'active', progress: 70, startDate: '2026-02-10', endDate: '2026-04-15' },
     ],
     works: [
       { id: 320, title: 'CI/CD пайплайн', status: 'reviewed', submittedDate: '2026-02-12', grade: 90 },
@@ -400,3 +432,175 @@ export const MOCK_INFO: Record<number, InternInfoData> = {
     ],
   },
 };
+
+// === Trail details for Stages page ===
+
+export interface TrailModuleStudent {
+  internId: number;
+  progress: number;
+  score?: number;
+  completedDate?: string;
+}
+
+export interface TrailModule {
+  id: number;
+  name: string;
+  students: TrailModuleStudent[];
+}
+
+export interface TrailDetail {
+  id: number;
+  name: string;
+  startDate: string;
+  endDate: string;
+  modules: TrailModule[];
+}
+
+export const MOCK_TRAIL_DETAILS: TrailDetail[] = [
+  {
+    id: 201,
+    name: 'Frontend Developer Path',
+    startDate: '2026-01-15',
+    endDate: '2026-04-15',
+    modules: [
+      { id: 1, name: 'Введение в React', students: [{ internId: 1, progress: 100, score: 95, completedDate: '2026-01-20' }] },
+      { id: 2, name: 'TypeScript основы', students: [{ internId: 1, progress: 100, score: 88, completedDate: '2026-01-25' }] },
+      { id: 3, name: 'Работа с API', students: [{ internId: 1, progress: 100, score: 92, completedDate: '2026-01-30' }] },
+      { id: 4, name: 'State Management', students: [{ internId: 1, progress: 100, score: 78, completedDate: '2026-02-03' }] },
+      { id: 5, name: 'Тестирование компонентов', students: [{ internId: 1, progress: 100, score: 85, completedDate: '2026-02-06' }] },
+      { id: 6, name: 'CSS и Tailwind', students: [{ internId: 1, progress: 100, score: 90, completedDate: '2026-02-08' }] },
+      { id: 9, name: 'Оптимизация производительности', students: [{ internId: 1, progress: 65 }] },
+      { id: 11, name: 'Архитектурные паттерны', students: [{ internId: 1, progress: 20 }] },
+    ],
+  },
+  {
+    id: 205,
+    name: 'Backend Developer Path',
+    startDate: '2026-01-20',
+    endDate: '2026-04-20',
+    modules: [
+      { id: 12, name: 'Python основы', students: [{ internId: 2, progress: 100, score: 92, completedDate: '2026-01-22' }] },
+      { id: 13, name: 'FastAPI фреймворк', students: [{ internId: 2, progress: 100, score: 88, completedDate: '2026-01-28' }] },
+      { id: 14, name: 'Базы данных (PostgreSQL)', students: [{ internId: 2, progress: 100, score: 85, completedDate: '2026-02-02' }] },
+      { id: 15, name: 'REST API дизайн', students: [{ internId: 2, progress: 100, score: 90, completedDate: '2026-02-05' }] },
+      { id: 16, name: 'Аутентификация и авторизация', students: [{ internId: 2, progress: 100, score: 76, completedDate: '2026-02-09' }] },
+      { id: 17, name: 'Docker основы', students: [{ internId: 2, progress: 100, score: 82, completedDate: '2026-02-13' }] },
+      { id: 18, name: 'Async Python', students: [{ internId: 2, progress: 70 }] },
+      { id: 19, name: 'SQLAlchemy 2.0', students: [{ internId: 2, progress: 55 }] },
+      { id: 20, name: 'Тестирование (pytest)', students: [{ internId: 2, progress: 30 }] },
+      { id: 21, name: 'Микросервисная архитектура', students: [{ internId: 2, progress: 15 }] },
+    ],
+  },
+  {
+    id: 208,
+    name: 'Data Analyst Path',
+    startDate: '2026-02-01',
+    endDate: '2026-05-01',
+    modules: [
+      { id: 22, name: 'SQL основы', students: [{ internId: 3, progress: 100, score: 94, completedDate: '2026-02-03' }] },
+      { id: 23, name: 'Python для анализа', students: [{ internId: 3, progress: 100, score: 87, completedDate: '2026-02-06' }] },
+      { id: 24, name: 'Визуализация данных', students: [{ internId: 3, progress: 100, score: 80, completedDate: '2026-02-09' }] },
+      { id: 25, name: 'Статистика', students: [{ internId: 3, progress: 100, score: 75, completedDate: '2026-02-12' }] },
+      { id: 26, name: 'Tableau основы', students: [{ internId: 3, progress: 100, score: 91, completedDate: '2026-02-15' }] },
+      { id: 27, name: 'Machine Learning основы', students: [{ internId: 3, progress: 45 }] },
+      { id: 28, name: 'A/B тестирование', students: [{ internId: 3, progress: 20 }] },
+    ],
+  },
+  {
+    id: 211,
+    name: 'UI/UX Designer Path',
+    startDate: '2026-02-05',
+    endDate: '2026-04-30',
+    modules: [
+      { id: 29, name: 'Основы UI/UX', students: [{ internId: 4, progress: 100, score: 96, completedDate: '2026-02-06' }] },
+      { id: 30, name: 'Figma мастерство', students: [{ internId: 4, progress: 100, score: 93, completedDate: '2026-02-08' }] },
+      { id: 31, name: 'Дизайн-система', students: [{ internId: 4, progress: 100, score: 91, completedDate: '2026-02-10' }] },
+      { id: 32, name: 'Прототипирование', students: [{ internId: 4, progress: 100, score: 88, completedDate: '2026-02-11' }] },
+      { id: 33, name: 'Юзабилити тестирование', students: [{ internId: 4, progress: 100, score: 94, completedDate: '2026-02-13' }] },
+      { id: 34, name: 'Анимация и Motion', students: [{ internId: 4, progress: 100, score: 97, completedDate: '2026-02-15' }] },
+      { id: 35, name: 'Типографика', students: [{ internId: 4, progress: 100, score: 78, completedDate: '2026-02-17' }] },
+      { id: 36, name: 'Дизайн для мобильных', students: [{ internId: 4, progress: 60 }] },
+      { id: 37, name: 'Accessibility (a11y)', students: [{ internId: 4, progress: 35 }] },
+    ],
+  },
+  {
+    id: 215,
+    name: 'QA Engineer Path',
+    startDate: '2026-01-25',
+    endDate: '2026-04-25',
+    modules: [
+      { id: 38, name: 'Основы тестирования', students: [{ internId: 5, progress: 100, score: 82, completedDate: '2026-01-28' }] },
+      { id: 39, name: 'Selenium WebDriver', students: [{ internId: 5, progress: 100, score: 79, completedDate: '2026-02-03' }] },
+      { id: 40, name: 'API тестирование', students: [{ internId: 5, progress: 100, score: 91, completedDate: '2026-02-08' }] },
+      { id: 41, name: 'Тест-дизайн', students: [{ internId: 5, progress: 100, score: 74, completedDate: '2026-02-12' }] },
+      { id: 42, name: 'Нагрузочное тестирование', students: [{ internId: 5, progress: 50 }] },
+      { id: 43, name: 'CI/CD для QA', students: [{ internId: 5, progress: 25 }] },
+      { id: 44, name: 'Мобильное тестирование', students: [{ internId: 5, progress: 10 }] },
+    ],
+  },
+  {
+    id: 218,
+    name: 'DevOps Engineer Path',
+    startDate: '2026-02-10',
+    endDate: '2026-05-10',
+    modules: [
+      { id: 45, name: 'Linux администрирование', students: [{ internId: 6, progress: 100, score: 93, completedDate: '2026-02-11' }] },
+      { id: 46, name: 'Docker и контейнеризация', students: [{ internId: 6, progress: 100, score: 90, completedDate: '2026-02-12' }] },
+      { id: 47, name: 'CI/CD пайплайны', students: [{ internId: 6, progress: 100, score: 86, completedDate: '2026-02-13' }] },
+      { id: 48, name: 'Мониторинг (Prometheus)', students: [{ internId: 6, progress: 100, score: 88, completedDate: '2026-02-15' }] },
+      { id: 49, name: 'Сети и безопасность', students: [{ internId: 6, progress: 100, score: 75, completedDate: '2026-02-16' }] },
+      { id: 50, name: 'Terraform основы', students: [{ internId: 6, progress: 100, score: 91, completedDate: '2026-02-17' }] },
+      { id: 51, name: 'Kubernetes', students: [{ internId: 6, progress: 55 }] },
+      { id: 52, name: 'AWS/GCP Cloud', students: [{ internId: 6, progress: 30 }] },
+      { id: 53, name: 'GitOps практики', students: [{ internId: 6, progress: 15 }] },
+    ],
+  },
+  {
+    id: 203,
+    name: 'Soft Skills',
+    startDate: '2026-01-15',
+    endDate: '2026-02-28',
+    modules: [
+      { id: 54, name: 'Коммуникация в команде', students: [
+        { internId: 1, progress: 100, score: 92, completedDate: '2026-01-25' },
+        { internId: 4, progress: 80 },
+        { internId: 3, progress: 60 },
+      ]},
+      { id: 55, name: 'Презентации и выступления', students: [
+        { internId: 1, progress: 100, score: 88, completedDate: '2026-02-01' },
+        { internId: 4, progress: 70 },
+        { internId: 3, progress: 40 },
+      ]},
+      { id: 56, name: 'Тайм-менеджмент', students: [
+        { internId: 1, progress: 100, score: 85, completedDate: '2026-02-10' },
+        { internId: 4, progress: 90, score: 91, completedDate: '2026-02-14' },
+        { internId: 3, progress: 30 },
+      ]},
+    ],
+  },
+  {
+    id: 204,
+    name: 'Git & DevOps Basics',
+    startDate: '2026-01-15',
+    endDate: '2026-03-15',
+    modules: [
+      { id: 57, name: 'Git Workflow', students: [
+        { internId: 1, progress: 100, score: 96, completedDate: '2026-02-10' },
+        { internId: 2, progress: 85 },
+        { internId: 3, progress: 50 },
+        { internId: 6, progress: 100, score: 94, completedDate: '2026-02-12' },
+      ]},
+      { id: 58, name: 'Code Review практика', students: [
+        { internId: 1, progress: 100, score: 87, completedDate: '2026-02-14' },
+        { internId: 2, progress: 70 },
+        { internId: 3, progress: 35 },
+        { internId: 6, progress: 90 },
+      ]},
+      { id: 59, name: 'CI/CD интеграция', students: [
+        { internId: 1, progress: 40 },
+        { internId: 2, progress: 25 },
+        { internId: 6, progress: 100, score: 89, completedDate: '2026-02-16' },
+      ]},
+    ],
+  },
+];
