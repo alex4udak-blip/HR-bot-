@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { formatDate } from '@/utils';
+import { MOCK_INTERNS } from '@/data/mockInterns';
+import type { Intern } from '@/data/mockInterns';
 
 // Tabs for interns section
 type InternTab = 'interns' | 'analytics' | 'stages' | 'chats' | 'csv';
@@ -28,88 +30,6 @@ const INTERN_TABS: { key: InternTab; label: string; icon: typeof GraduationCap }
   { key: 'stages', label: 'Этапы прохождения', icon: GitBranch },
   { key: 'chats', label: 'Чаты', icon: MessageSquare },
   { key: 'csv', label: 'Выгрузка в CSV', icon: Download },
-];
-
-// Mock intern data for UI demonstration
-interface Intern {
-  id: number;
-  name: string;
-  position: string;
-  email: string;
-  phone: string;
-  department: string;
-  startDate: string;
-  tags: string[];
-  mentor: string;
-}
-
-const MOCK_INTERNS: Intern[] = [
-  {
-    id: 1,
-    name: 'Тест Алексей Петров',
-    position: 'Frontend-разработчик',
-    email: 'a.petrov@example.com',
-    phone: '+7 (999) 123-45-67',
-    department: 'Разработка',
-    startDate: '2026-01-15',
-    tags: ['React', 'TypeScript'],
-    mentor: 'Иван Сидоров',
-  },
-  {
-    id: 2,
-    name: 'Тест Мария Иванова',
-    position: 'Backend-разработчик',
-    email: 'm.ivanova@example.com',
-    phone: '+7 (999) 234-56-78',
-    department: 'Разработка',
-    startDate: '2026-01-20',
-    tags: ['Python', 'FastAPI'],
-    mentor: 'Анна Козлова',
-  },
-  {
-    id: 3,
-    name: 'Тест Дмитрий Смирнов',
-    position: 'Data Analyst',
-    email: 'd.smirnov@example.com',
-    phone: '+7 (999) 345-67-89',
-    department: 'Аналитика',
-    startDate: '2026-02-01',
-    tags: ['SQL', 'Python', 'Tableau'],
-    mentor: 'Олег Морозов',
-  },
-  {
-    id: 4,
-    name: 'Тест Елена Волкова',
-    position: 'UI/UX Дизайнер',
-    email: 'e.volkova@example.com',
-    phone: '+7 (999) 456-78-90',
-    department: 'Дизайн',
-    startDate: '2026-02-05',
-    tags: ['Figma', 'UI/UX'],
-    mentor: 'Светлана Белова',
-  },
-  {
-    id: 5,
-    name: 'Тест Николай Кузнецов',
-    position: 'QA Engineer',
-    email: 'n.kuznetsov@example.com',
-    phone: '+7 (999) 567-89-01',
-    department: 'Тестирование',
-    startDate: '2026-01-25',
-    tags: ['Selenium', 'Python'],
-    mentor: 'Павел Новиков',
-  },
-  {
-    id: 6,
-    name: 'Тест Анна Соколова',
-    position: 'DevOps Engineer',
-    email: 'a.sokolova@example.com',
-    phone: '+7 (999) 678-90-12',
-    department: 'Инфраструктура',
-    startDate: '2026-02-10',
-    tags: ['Docker', 'CI/CD', 'Linux'],
-    mentor: 'Дмитрий Орлов',
-  },
 ];
 
 function getAvatarInitials(name: string) {
