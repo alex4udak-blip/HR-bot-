@@ -18,8 +18,10 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { formatDate } from '@/utils';
-import { MOCK_INTERNS } from '@/data/mockInterns';
+import { MOCK_INTERNS, STATUS_LABELS, STATUS_COLORS } from '@/data/mockInterns';
 import type { Intern } from '@/data/mockInterns';
+import InternsAnalyticsTab from '@/components/interns/InternsAnalyticsTab';
+import InternsStagesTab from '@/components/interns/InternsStagesTab';
 
 // Tabs for interns section
 type InternTab = 'interns' | 'analytics' | 'stages' | 'chats' | 'csv';
@@ -114,6 +116,9 @@ export default function InternsPage() {
       <div className="flex items-center gap-2 mb-2 ml-12">
         <span className="px-2 py-0.5 text-xs rounded-full whitespace-nowrap bg-emerald-500/20 text-emerald-400">
           {intern.department}
+        </span>
+        <span className={clsx('px-2 py-0.5 text-xs rounded-full whitespace-nowrap', STATUS_COLORS[intern.status])}>
+          {STATUS_LABELS[intern.status]}
         </span>
       </div>
 
@@ -310,11 +315,11 @@ export default function InternsPage() {
         </div>
       ) : activeTab === 'analytics' ? (
         <div className="flex-1 overflow-auto p-4">
-          <TabStub title="Аналитика" icon={BarChart3} />
+          <InternsAnalyticsTab />
         </div>
       ) : activeTab === 'stages' ? (
         <div className="flex-1 overflow-auto p-4">
-          <TabStub title="Этапы прохождения" icon={GitBranch} />
+          <InternsStagesTab />
         </div>
       ) : activeTab === 'chats' ? (
         <div className="flex-1 overflow-auto p-4">
