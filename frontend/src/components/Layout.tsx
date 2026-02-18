@@ -118,8 +118,10 @@ export default function Layout() {
     if (hasFeature('candidate_database')) {
       items.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
       items.push({ path: '/candidates', icon: UserCheck, label: 'База кандидатов' });
-      items.push({ path: '/interns', icon: GraduationCap, label: 'База практикантов' });
     }
+
+    // Interns page is available to all roles (no feature gating)
+    items.push({ path: '/interns', icon: GraduationCap, label: 'База практикантов' });
 
     // Add remaining items
     items.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
