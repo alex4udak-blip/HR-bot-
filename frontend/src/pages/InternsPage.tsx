@@ -48,7 +48,7 @@ interface Intern {
 const MOCK_INTERNS: Intern[] = [
   {
     id: 1,
-    name: 'Алексей Петров',
+    name: 'Тест Алексей Петров',
     position: 'Frontend-разработчик',
     email: 'a.petrov@example.com',
     phone: '+7 (999) 123-45-67',
@@ -59,7 +59,7 @@ const MOCK_INTERNS: Intern[] = [
   },
   {
     id: 2,
-    name: 'Мария Иванова',
+    name: 'Тест Мария Иванова',
     position: 'Backend-разработчик',
     email: 'm.ivanova@example.com',
     phone: '+7 (999) 234-56-78',
@@ -70,7 +70,7 @@ const MOCK_INTERNS: Intern[] = [
   },
   {
     id: 3,
-    name: 'Дмитрий Смирнов',
+    name: 'Тест Дмитрий Смирнов',
     position: 'Data Analyst',
     email: 'd.smirnov@example.com',
     phone: '+7 (999) 345-67-89',
@@ -81,7 +81,7 @@ const MOCK_INTERNS: Intern[] = [
   },
   {
     id: 4,
-    name: 'Елена Волкова',
+    name: 'Тест Елена Волкова',
     position: 'UI/UX Дизайнер',
     email: 'e.volkova@example.com',
     phone: '+7 (999) 456-78-90',
@@ -92,7 +92,7 @@ const MOCK_INTERNS: Intern[] = [
   },
   {
     id: 5,
-    name: 'Николай Кузнецов',
+    name: 'Тест Николай Кузнецов',
     position: 'QA Engineer',
     email: 'n.kuznetsov@example.com',
     phone: '+7 (999) 567-89-01',
@@ -103,7 +103,7 @@ const MOCK_INTERNS: Intern[] = [
   },
   {
     id: 6,
-    name: 'Анна Соколова',
+    name: 'Тест Анна Соколова',
     position: 'DevOps Engineer',
     email: 'a.sokolova@example.com',
     phone: '+7 (999) 678-90-12',
