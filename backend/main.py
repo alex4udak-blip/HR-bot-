@@ -83,6 +83,26 @@ async def check_playwright_status():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Diagnostic: check Prometheus env vars at startup
+    import os
+    raw_prometheus_url = os.environ.get("PROMETHEUS_BASE_URL")
+    raw_comm_key = os.environ.get("COMMUNICATION_API_KEY")
+    logger.info(
+        "=== PROMETHEUS ENV DIAGNOSTIC === "
+        "os.environ PROMETHEUS_BASE_URL present=%s len=%s repr=%r | "
+        "os.environ COMMUNICATION_API_KEY present=%s len=%s | "
+        "settings.prometheus_base_url len=%s repr=%r | "
+        "settings.communication_api_key present=%s",
+        raw_prometheus_url is not None,
+        len(raw_prometheus_url) if raw_prometheus_url else 0,
+        raw_prometheus_url[:40] if raw_prometheus_url else None,
+        raw_comm_key is not None,
+        len(raw_comm_key) if raw_comm_key else 0,
+        len(settings.prometheus_base_url),
+        settings.prometheus_base_url[:40] if settings.prometheus_base_url else None,
+        bool(settings.communication_api_key),
+    )
+
     # Startup - initialize database (wait for it to complete)
     try:
         await asyncio.wait_for(init_database(), timeout=120)
