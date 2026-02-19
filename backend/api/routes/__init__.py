@@ -11,6 +11,7 @@ from .currency import router as currency_router
 from .scoring import router as scoring_router
 from . import email_templates
 from . import analytics
+from . import interns
 
 api_router = APIRouter()
 

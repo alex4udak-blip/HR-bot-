@@ -65,6 +65,16 @@ class Settings(BaseSettings):
         alias="SUPERADMIN_PASSWORD"
     )
 
+    # Prometheus integration (server-only, for interns data)
+    prometheus_base_url: str = Field(
+        default="",
+        alias="PROMETHEUS_BASE_URL"
+    )
+    communication_api_key: str = Field(
+        default="",
+        alias="COMMUNICATION_API_KEY"
+    )
+
     # Call recordings settings
     upload_dir: str = Field(
         default="/app/uploads/calls",

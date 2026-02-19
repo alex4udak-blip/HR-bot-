@@ -345,3 +345,15 @@ export type {
   ApplicationCreate,
   ApplicationUpdate
 } from './vacancies';
+
+// Interns (Prometheus proxy)
+export {
+  getPrometheusInterns,
+} from './interns';
+
+// Intern types
+export type {
+  PrometheusIntern,
+  PrometheusTrailSummary,
+  PrometheusInternsResponse,
+} from './interns';
