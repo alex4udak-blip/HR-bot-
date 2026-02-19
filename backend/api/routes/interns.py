@@ -27,10 +27,15 @@ async def get_interns():
     api_key = settings.communication_api_key
 
     if not base_url or not api_key:
-        logger.warning("Prometheus integration not configured (missing PROMETHEUS_BASE_URL or COMMUNICATION_API_KEY)")
+        missing = []
+        if not base_url:
+            missing.append("PROMETHEUS_BASE_URL")
+        if not api_key:
+            missing.append("COMMUNICATION_API_KEY")
+        logger.warning("Prometheus integration not configured — missing env vars: %s", ", ".join(missing))
         raise HTTPException(
             status_code=503,
-            detail="Prometheus integration is not configured",
+            detail=f"Prometheus integration is not configured (missing: {', '.join(missing)})",
         )
 
     url = f"{base_url.rstrip('/')}/api/external/interns"
