@@ -23,8 +23,19 @@ async def get_interns():
     Returns the JSON payload from Prometheus as-is.
     The COMMUNICATION_API_KEY is never exposed to the client.
     """
+    import os
     base_url = settings.prometheus_base_url
     api_key = settings.communication_api_key
+
+    # Diagnostic: log raw env vs settings value on every request
+    raw_env = os.environ.get("PROMETHEUS_BASE_URL")
+    logger.info(
+        "Prometheus check: raw_env present=%s raw_env_repr=%r settings_value_repr=%r api_key_present=%s",
+        raw_env is not None,
+        raw_env[:40] if raw_env else raw_env,
+        base_url[:40] if base_url else base_url,
+        bool(api_key),
+    )
 
     if not base_url or not api_key:
         missing = []
