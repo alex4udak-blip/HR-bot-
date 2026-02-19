@@ -97,14 +97,14 @@ export default function InternsPage() {
       intern.name.toLowerCase().includes(query) ||
       (intern.email && intern.email.toLowerCase().includes(query)) ||
       (intern.telegramUsername && intern.telegramUsername.toLowerCase().includes(query)) ||
-      intern.trails.some(t => t.trailName.toLowerCase().includes(query))
+      intern.trails.some(t => t.trailName?.toLowerCase().includes(query))
     );
   }, [searchQuery, interns]);
 
   // Render a single intern card (Prometheus data shape)
   const renderInternCard = (intern: PrometheusIntern) => {
-    const totalTrailModules = intern.trails.reduce((s, t) => s + t.totalModules, 0);
-    const completedTrailModules = intern.trails.reduce((s, t) => s + t.completedModules, 0);
+    const totalTrailModules = intern.trails.reduce((s, t) => s + (t.totalModules || 0), 0);
+    const completedTrailModules = intern.trails.reduce((s, t) => s + (t.completedModules || 0), 0);
 
     return (
       <motion.div
@@ -155,13 +155,13 @@ export default function InternsPage() {
               <BookOpen className="w-3 h-3 flex-shrink-0" />
               <span>Треки ({completedTrailModules}/{totalTrailModules} модулей)</span>
             </div>
-            {intern.trails.slice(0, 3).map(trail => (
-              <div key={trail.trailId} className="flex items-center gap-2">
+            {intern.trails.slice(0, 3).map((trail, idx) => (
+              <div key={trail.trailId || idx} className="flex items-center gap-2">
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-white/60 truncate">{trail.trailName}</p>
+                  <p className="text-xs text-white/60 truncate">{trail.trailName || 'Без названия'}</p>
                 </div>
                 <span className="text-xs text-white/40 whitespace-nowrap">
-                  {trail.completedModules}/{trail.totalModules}
+                  {trail.completedModules ?? 0}/{trail.totalModules ?? 0}
                 </span>
               </div>
             ))}
