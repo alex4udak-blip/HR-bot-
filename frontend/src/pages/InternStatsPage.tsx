@@ -265,11 +265,17 @@ function TrailProgressCard({
           style={{ width: `${trail.completionPercent}%` }}
         />
       </div>
-      <div className="flex items-center gap-3 mt-1.5 text-[10px] text-white/30">
+      <div className="flex items-center gap-3 mt-1.5 text-[10px] text-white/30 flex-wrap">
         <span className="flex items-center gap-1">
           <Calendar className="w-3 h-3" />
           Начало: {formatDate(trail.enrolledAt, 'short')}
         </span>
+        {trail.completedAt && (
+          <span className="flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+            Завершён: {formatDate(trail.completedAt, 'short')}
+          </span>
+        )}
       </div>
 
       {/* Submission badges */}
@@ -310,53 +316,71 @@ function TrailProgressCard({
                 .map((mod) => (
                   <div
                     key={mod.id}
-                    className="flex items-center gap-2 p-1.5 rounded-md bg-white/[0.03]"
+                    className="p-1.5 rounded-md bg-white/[0.03] space-y-1"
                   >
-                    {mod.status === 'COMPLETED' ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-                    ) : mod.status === 'IN_PROGRESS' ? (
-                      <Clock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                    ) : (
-                      <div className="w-3.5 h-3.5 rounded-full border border-white/20 flex-shrink-0" />
-                    )}
-                    <span className="text-xs text-white/60 truncate flex-1">{mod.title}</span>
-                    <span
-                      className={clsx(
-                        'text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0',
-                        MODULE_TYPE_COLORS[mod.type] || 'bg-white/10 text-white/50',
-                      )}
-                    >
-                      {MODULE_TYPE_LABELS[mod.type] || mod.type}
-                    </span>
-                    <span
-                      className={clsx('text-[10px] font-medium flex-shrink-0', {
-                        'text-emerald-400': mod.status === 'COMPLETED',
-                        'text-blue-400': mod.status === 'IN_PROGRESS',
-                        'text-white/30': mod.status === 'NOT_STARTED',
-                      })}
-                    >
-                      {mod.status === 'COMPLETED' ? 'Завершён' : mod.status === 'IN_PROGRESS' ? 'В процессе' : 'Не начат'}
-                    </span>
-                    {mod.submissionId && (() => {
-                      const url = getSubmissionUrl(mod.submissionId);
-                      return url ? (
-                        <a
-                          href={url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors flex-shrink-0"
-                          title="Открыть работу"
-                        >
-                          <FileCheck className="w-3 h-3" />
-                          <ExternalLink className="w-2.5 h-2.5" />
-                        </a>
+                    <div className="flex items-center gap-2">
+                      {mod.status === 'COMPLETED' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                      ) : mod.status === 'IN_PROGRESS' ? (
+                        <Clock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
                       ) : (
-                        <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-400 flex-shrink-0" title="Работа сдана">
-                          <FileCheck className="w-3 h-3 inline" />
-                        </span>
-                      );
-                    })()}
+                        <div className="w-3.5 h-3.5 rounded-full border border-white/20 flex-shrink-0" />
+                      )}
+                      <span className="text-xs text-white/60 truncate flex-1">{mod.title}</span>
+                      <span
+                        className={clsx(
+                          'text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0',
+                          MODULE_TYPE_COLORS[mod.type] || 'bg-white/10 text-white/50',
+                        )}
+                      >
+                        {MODULE_TYPE_LABELS[mod.type] || mod.type}
+                      </span>
+                      <span
+                        className={clsx('text-[10px] font-medium flex-shrink-0', {
+                          'text-emerald-400': mod.status === 'COMPLETED',
+                          'text-blue-400': mod.status === 'IN_PROGRESS',
+                          'text-white/30': mod.status === 'NOT_STARTED',
+                        })}
+                      >
+                        {mod.status === 'COMPLETED' ? 'Завершён' : mod.status === 'IN_PROGRESS' ? 'В процессе' : 'Не начат'}
+                      </span>
+                      {mod.submissionId && (() => {
+                        const url = getSubmissionUrl(mod.submissionId);
+                        return url ? (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors flex-shrink-0"
+                            title="Открыть работу"
+                          >
+                            <FileCheck className="w-3 h-3" />
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        ) : (
+                          <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-400 flex-shrink-0" title="Работа сдана">
+                            <FileCheck className="w-3 h-3 inline" />
+                          </span>
+                        );
+                      })()}
+                    </div>
+                    {(mod.startedAt || mod.completedAt) && (
+                      <div className="flex items-center gap-3 ml-[22px] text-[10px] text-white/30">
+                        {mod.startedAt && (
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5" />
+                            Начало: {formatDate(mod.startedAt, 'short')}
+                          </span>
+                        )}
+                        {mod.completedAt && (
+                          <span className="flex items-center gap-1">
+                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />
+                            Завершён: {formatDate(mod.completedAt, 'short')}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
             </div>
@@ -460,6 +484,9 @@ export default function InternStatsPage() {
       moduleType: string;
       moduleStatus: string;
       submissionId: string;
+      startedAt?: string | null;
+      completedAt?: string | null;
+      updatedAt?: string | null;
     }> = [];
 
     studentTrailModules.forEach((trailData, trailId) => {
@@ -472,6 +499,9 @@ export default function InternStatsPage() {
             moduleType: mod.type,
             moduleStatus: mod.status,
             submissionId: mod.submissionId,
+            startedAt: mod.startedAt,
+            completedAt: mod.completedAt,
+            updatedAt: mod.updatedAt,
           });
         }
       });
@@ -555,7 +585,7 @@ export default function InternStatsPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-4 space-y-6">
+      <div className="flex-1 overflow-auto p-4 pb-7 space-y-6">
         {/* Personal data */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <h3 className="text-sm font-medium text-white/50 mb-3">Личные данные</h3>
@@ -766,48 +796,73 @@ export default function InternStatsPage() {
                         <div className="mt-2 space-y-1.5">
                           {allSubmissions.map((sub) => {
                             const url = getSubmissionUrl(sub.submissionId);
+                            const hasTimings = sub.startedAt || sub.completedAt || sub.updatedAt;
                             return (
                               <div
                                 key={sub.submissionId}
                                 className={clsx(
-                                  'flex items-center gap-2 p-2 rounded-md bg-white/[0.03]',
+                                  'p-2 rounded-md bg-white/[0.03] space-y-1',
                                   url && 'hover:bg-white/[0.06] transition-colors',
                                 )}
                               >
-                                {sub.moduleStatus === 'COMPLETED' ? (
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-                                ) : sub.moduleStatus === 'IN_PROGRESS' ? (
-                                  <Clock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                                ) : (
-                                  <div className="w-3.5 h-3.5 rounded-full border border-white/20 flex-shrink-0" />
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <span className="text-xs text-white/70 truncate block">{sub.moduleTitle}</span>
-                                  <span className="text-[10px] text-white/30 truncate block">{sub.trailTitle}</span>
-                                </div>
-                                <span
-                                  className={clsx(
-                                    'text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0',
-                                    MODULE_TYPE_COLORS[sub.moduleType] || 'bg-white/10 text-white/50',
+                                <div className="flex items-center gap-2">
+                                  {sub.moduleStatus === 'COMPLETED' ? (
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                                  ) : sub.moduleStatus === 'IN_PROGRESS' ? (
+                                    <Clock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                                  ) : (
+                                    <div className="w-3.5 h-3.5 rounded-full border border-white/20 flex-shrink-0" />
                                   )}
-                                >
-                                  {MODULE_TYPE_LABELS[sub.moduleType] || sub.moduleType}
-                                </span>
-                                {url ? (
-                                  <a
-                                    href={url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors flex-shrink-0"
-                                    title="Открыть работу"
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-xs text-white/70 truncate block">{sub.moduleTitle}</span>
+                                    <span className="text-[10px] text-white/30 truncate block">{sub.trailTitle}</span>
+                                  </div>
+                                  <span
+                                    className={clsx(
+                                      'text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0',
+                                      MODULE_TYPE_COLORS[sub.moduleType] || 'bg-white/10 text-white/50',
+                                    )}
                                   >
-                                    <ExternalLink className="w-3 h-3" />
-                                    <span>Открыть</span>
-                                  </a>
-                                ) : (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 flex-shrink-0" title="Работа сдана">
-                                    <FileCheck className="w-3 h-3 inline" />
+                                    {MODULE_TYPE_LABELS[sub.moduleType] || sub.moduleType}
                                   </span>
+                                  {url ? (
+                                    <a
+                                      href={url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors flex-shrink-0"
+                                      title="Открыть работу"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                      <span>Открыть</span>
+                                    </a>
+                                  ) : (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 flex-shrink-0" title="Работа сдана">
+                                      <FileCheck className="w-3 h-3 inline" />
+                                    </span>
+                                  )}
+                                </div>
+                                {hasTimings && (
+                                  <div className="flex items-center gap-3 ml-[22px] text-[10px] text-white/30">
+                                    {sub.startedAt && (
+                                      <span className="flex items-center gap-1">
+                                        <Clock className="w-2.5 h-2.5" />
+                                        Начало: {formatDate(sub.startedAt, 'short')}
+                                      </span>
+                                    )}
+                                    {sub.completedAt && (
+                                      <span className="flex items-center gap-1">
+                                        <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />
+                                        Завершено: {formatDate(sub.completedAt, 'short')}
+                                      </span>
+                                    )}
+                                    {sub.updatedAt && (
+                                      <span className="flex items-center gap-1">
+                                        <Calendar className="w-2.5 h-2.5" />
+                                        Изменено: {formatDate(sub.updatedAt, 'short')}
+                                      </span>
+                                    )}
+                                  </div>
                                 )}
                               </div>
                             );

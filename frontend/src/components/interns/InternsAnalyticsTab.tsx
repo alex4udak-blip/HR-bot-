@@ -194,7 +194,7 @@ export default function InternsAnalyticsTab() {
   const { summary, scoreDistribution, filters } = analytics;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-3">
       {/* Filter Bar */}
       <div className="flex items-center gap-3 flex-wrap">
         {/* Trail filter */}

@@ -186,6 +186,9 @@ export interface StudentModuleStatus {
   type: 'THEORY' | 'PRACTICE' | 'PROJECT';
   status: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED';
   submissionId: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface StudentByTrail {
@@ -308,6 +311,7 @@ export interface StudentTrailProgress {
   trailTitle: string;
   trailSlug: string;
   enrolledAt: string;
+  completedAt?: string | null;
   totalModules: number;
   completedModules: number;
   completionPercent: number;

@@ -244,7 +244,7 @@ export default function InternsPage() {
         )}
 
         {/* Action button — pinned to the bottom */}
-        <div className="mt-auto pt-3 border-t border-white/10">
+        <div className="mt-auto pt-4 border-t border-white/10">
           <button
             onClick={(e) => { e.stopPropagation(); navigate(`/interns/${intern.id}/stats`); }}
             className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-medium transition-colors"
