@@ -255,7 +255,7 @@ export default function InternsStagesTab() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-3">
       {/* Trail & Period selectors */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
         <select
