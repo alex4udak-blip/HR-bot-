@@ -7,7 +7,6 @@ import {
   ArrowLeft,
   ChevronDown,
   BookOpen,
-  Flame,
   Star,
   CheckCircle2,
   TrendingUp,
@@ -524,7 +523,7 @@ export default function InternAchievementsPage() {
         </div>
 
         {/* Quick stats cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
             <div className="flex items-center gap-2 text-white/50 mb-1">
               <Zap className="w-4 h-4 text-amber-400" />
@@ -534,19 +533,12 @@ export default function InternAchievementsPage() {
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
             <div className="flex items-center gap-2 text-white/50 mb-1">
-              <Flame className="w-4 h-4 text-orange-400" />
-              <span className="text-xs">Серия дней</span>
-            </div>
-            <p className="text-xl font-bold">{student.currentStreak} дн.</p>
-          </motion.div>
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
-            <div className="flex items-center gap-2 text-white/50 mb-1">
               <Star className="w-4 h-4 text-purple-400" />
               <span className="text-xs">Позиция в рейтинге</span>
             </div>
             <p className="text-xl font-bold">#{student.leaderboardRank}</p>
           </motion.div>
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
             <div className="flex items-center gap-2 text-white/50 mb-1">
               <TrendingUp className="w-4 h-4 text-emerald-400" />
               <span className="text-xs">Модулей пройдено</span>
@@ -671,7 +663,7 @@ export default function InternAchievementsPage() {
 
           {/* Activity summary */}
           <CollapsibleSection title="Активность" icon={CheckCircle2}>
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="p-3 bg-white/5 rounded-lg">
                 <p className="text-xs text-white/40 mb-1">Дата регистрации</p>
                 <p className="text-sm font-medium">{formatDate(student.registeredAt, 'medium')}</p>
@@ -689,10 +681,6 @@ export default function InternAchievementsPage() {
                 })}>
                   {student.daysSinceActive} дн.
                 </p>
-              </div>
-              <div className="p-3 bg-white/5 rounded-lg">
-                <p className="text-xs text-white/40 mb-1">Текущая серия</p>
-                <p className="text-sm font-medium">{student.currentStreak} дней подряд</p>
               </div>
             </div>
           </CollapsibleSection>

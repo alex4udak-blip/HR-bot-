@@ -12,7 +12,6 @@ import {
   GitBranch,
   MessageSquare,
   Download,
-  Flame,
   Zap,
   BookOpen,
   AlertTriangle,
@@ -93,20 +92,25 @@ export default function InternsPage() {
     retry: 1,
   });
 
-  // Extract unique trails for filter dropdown
-  const availableTrails = useMemo(() => {
-    const trailMap = new Map<string, string>();
+  // Build a global trailId -> trailName lookup from all interns
+  const trailNameMap = useMemo(() => {
+    const map = new Map<string, string>();
     interns.forEach(intern => {
       intern.trails.forEach(t => {
-        if (t.trailId && t.trailName && t.trailName.trim()) {
-          trailMap.set(t.trailId, t.trailName);
+        if (t.trailId && t.trailName && t.trailName.trim() && !map.has(t.trailId)) {
+          map.set(t.trailId, t.trailName);
         }
       });
     });
-    return Array.from(trailMap.entries())
+    return map;
+  }, [interns]);
+
+  // Extract unique trails for filter dropdown
+  const availableTrails = useMemo(() => {
+    return Array.from(trailNameMap.entries())
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [interns]);
+  }, [trailNameMap]);
 
   // Extract list of interns for person dropdown
   const availablePersons = useMemo(() => {
@@ -178,18 +182,12 @@ export default function InternsPage() {
           </div>
         </div>
 
-        {/* XP + Streak badges */}
+        {/* XP badge */}
         <div className="flex items-center gap-2 mb-2 ml-12">
           <span className="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full whitespace-nowrap bg-amber-500/20 text-amber-400">
             <Zap className="w-3 h-3" />
             {intern.totalXP} XP
           </span>
-          {intern.currentStreak > 0 && (
-            <span className="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full whitespace-nowrap bg-orange-500/20 text-orange-400">
-              <Flame className="w-3 h-3" />
-              {intern.currentStreak} дн.
-            </span>
-          )}
         </div>
 
         {/* Last active */}
@@ -228,9 +226,9 @@ export default function InternsPage() {
               <div className="flex items-center gap-1.5 mt-1">
                 <GitBranch className="w-3 h-3 text-blue-400 flex-shrink-0" />
                 <span className="text-xs text-white/50 truncate">
-                  {activeTrail.trailName && activeTrail.trailName.trim()
-                    ? activeTrail.trailName
-                    : `Трейл #${intern.trails.indexOf(activeTrail) + 1}`}
+                  {activeTrail.trailName?.trim()
+                    || trailNameMap.get(activeTrail.trailId)
+                    || `Трейл #${intern.trails.indexOf(activeTrail) + 1}`}
                 </span>
                 <span className="text-xs text-white/30 whitespace-nowrap">
                   {activeTrail.completedModules ?? 0}/{activeTrail.totalModules ?? 0}
@@ -384,7 +382,7 @@ export default function InternsPage() {
                       setSelectedTrailFilter(e.target.value);
                       if (e.target.value !== 'all') setSelectedPersonFilter('all');
                     }}
-                    className="appearance-none pl-3 pr-8 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer min-w-[140px]"
+                    className="appearance-none pl-3 pr-8 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer min-w-[140px] [&>option]:bg-dark-900 [&>option]:text-white"
                   >
                     <option value="all">Все трейлы</option>
                     {availableTrails.map(trail => (
@@ -409,7 +407,7 @@ export default function InternsPage() {
                     onChange={e => {
                       setSelectedPersonFilter(e.target.value);
                     }}
-                    className="appearance-none pl-3 pr-8 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer min-w-[140px]"
+                    className="appearance-none pl-3 pr-8 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer min-w-[140px] [&>option]:bg-dark-900 [&>option]:text-white"
                   >
                     <option value="all">Все практиканты</option>
                     {availablePersons.map(person => (
