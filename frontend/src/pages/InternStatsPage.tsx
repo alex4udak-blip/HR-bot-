@@ -25,6 +25,7 @@ import {
   FileCheck,
   TrendingUp,
   Clock,
+  ExternalLink,
 } from 'lucide-react';
 import {
   PieChart,
@@ -78,6 +79,13 @@ const ROLE_LABELS: Record<string, string> = {
   CO_ADMIN: 'Со-админ',
   ADMIN: 'Администратор',
 };
+
+const PROMETHEUS_URL = (import.meta.env.VITE_PROMETHEUS_URL || '').replace(/\/$/, '');
+
+function getSubmissionUrl(submissionId: string): string | null {
+  if (!PROMETHEUS_URL) return null;
+  return `${PROMETHEUS_URL}/admin/submissions/${submissionId}`;
+}
 
 // ── Shared helper components ──
 
@@ -329,11 +337,26 @@ function TrailProgressCard({
                     >
                       {mod.status === 'COMPLETED' ? 'Завершён' : mod.status === 'IN_PROGRESS' ? 'В процессе' : 'Не начат'}
                     </span>
-                    {mod.submissionId && (
-                      <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-400 flex-shrink-0">
-                        <FileCheck className="w-3 h-3 inline" />
-                      </span>
-                    )}
+                    {mod.submissionId && (() => {
+                      const url = getSubmissionUrl(mod.submissionId);
+                      return url ? (
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors flex-shrink-0"
+                          title="Открыть работу"
+                        >
+                          <FileCheck className="w-3 h-3" />
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      ) : (
+                        <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-400 flex-shrink-0" title="Работа сдана">
+                          <FileCheck className="w-3 h-3 inline" />
+                        </span>
+                      );
+                    })()}
                   </div>
                 ))}
             </div>
@@ -427,6 +450,37 @@ export default function InternStatsPage() {
     const totalModules = data.trailProgress.reduce((sum, t) => sum + t.totalModules, 0);
     return { completed: totalCompleted, total: totalModules, percent: totalModules > 0 ? Math.round((totalCompleted / totalModules) * 100) : 0 };
   }, [data]);
+
+  // Collect all modules with submissions across all trails
+  const allSubmissions = useMemo(() => {
+    if (!data || !studentTrailModules.size) return [];
+    const items: Array<{
+      trailTitle: string;
+      moduleTitle: string;
+      moduleType: string;
+      moduleStatus: string;
+      submissionId: string;
+    }> = [];
+
+    studentTrailModules.forEach((trailData, trailId) => {
+      const trail = data.trailProgress.find(t => t.trailId === trailId);
+      trailData.modules.forEach(mod => {
+        if (mod.submissionId) {
+          items.push({
+            trailTitle: trail?.trailTitle || '',
+            moduleTitle: mod.title,
+            moduleType: mod.type,
+            moduleStatus: mod.status,
+            submissionId: mod.submissionId,
+          });
+        }
+      });
+    });
+
+    return items;
+  }, [data, studentTrailModules]);
+
+  const [showSubmissions, setShowSubmissions] = useState(false);
 
   // Loading state
   if (isLoading) {
@@ -683,6 +737,87 @@ export default function InternStatsPage() {
                   )}
                 </div>
               </div>
+
+              {/* Expandable list of individual submissions */}
+              {allSubmissions.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-white/5">
+                  <button
+                    onClick={() => setShowSubmissions(!showSubmissions)}
+                    className="flex items-center gap-2 text-xs text-white/50 hover:text-white/80 transition-colors"
+                  >
+                    <FileCheck className="w-3.5 h-3.5" />
+                    <span>Показать работы ({allSubmissions.length})</span>
+                    <ChevronDown
+                      className={clsx(
+                        'w-3.5 h-3.5 transition-transform',
+                        showSubmissions ? 'rotate-180' : '',
+                      )}
+                    />
+                  </button>
+                  <AnimatePresence>
+                    {showSubmissions && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="mt-2 space-y-1.5">
+                          {allSubmissions.map((sub) => {
+                            const url = getSubmissionUrl(sub.submissionId);
+                            return (
+                              <div
+                                key={sub.submissionId}
+                                className={clsx(
+                                  'flex items-center gap-2 p-2 rounded-md bg-white/[0.03]',
+                                  url && 'hover:bg-white/[0.06] transition-colors',
+                                )}
+                              >
+                                {sub.moduleStatus === 'COMPLETED' ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                                ) : sub.moduleStatus === 'IN_PROGRESS' ? (
+                                  <Clock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                                ) : (
+                                  <div className="w-3.5 h-3.5 rounded-full border border-white/20 flex-shrink-0" />
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-xs text-white/70 truncate block">{sub.moduleTitle}</span>
+                                  <span className="text-[10px] text-white/30 truncate block">{sub.trailTitle}</span>
+                                </div>
+                                <span
+                                  className={clsx(
+                                    'text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0',
+                                    MODULE_TYPE_COLORS[sub.moduleType] || 'bg-white/10 text-white/50',
+                                  )}
+                                >
+                                  {MODULE_TYPE_LABELS[sub.moduleType] || sub.moduleType}
+                                </span>
+                                {url ? (
+                                  <a
+                                    href={url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors flex-shrink-0"
+                                    title="Открыть работу"
+                                  >
+                                    <ExternalLink className="w-3 h-3" />
+                                    <span>Открыть</span>
+                                  </a>
+                                ) : (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 flex-shrink-0" title="Работа сдана">
+                                    <FileCheck className="w-3 h-3 inline" />
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
