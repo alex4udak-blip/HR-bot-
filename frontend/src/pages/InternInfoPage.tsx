@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Info,
   ArrowLeft,
@@ -13,6 +13,7 @@ import {
   ClipboardCheck,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   CheckCircle2,
   Zap,
   Star,
@@ -24,10 +25,11 @@ import {
   BookOpen,
   FileCheck,
   TrendingUp,
+  Clock,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { getStudentAchievements, getPrometheusInterns } from '@/services/api';
-import type { StudentTrailProgress, Certificate } from '@/services/api';
+import { getStudentAchievements, getPrometheusInterns, getPrometheusAnalytics } from '@/services/api';
+import type { StudentTrailProgress, Certificate, StudentModuleStatus } from '@/services/api';
 import { formatDate } from '@/utils';
 
 function getAvatarInitials(name: string) {
@@ -45,6 +47,24 @@ const ROLE_LABELS: Record<string, string> = {
   HR: 'HR',
   CO_ADMIN: 'Со-админ',
   ADMIN: 'Администратор',
+};
+
+const MODULE_TYPE_LABELS: Record<string, string> = {
+  THEORY: 'Теория',
+  PRACTICE: 'Практика',
+  PROJECT: 'Проект',
+};
+
+const MODULE_TYPE_COLORS: Record<string, string> = {
+  THEORY: 'bg-blue-500/20 text-blue-400',
+  PRACTICE: 'bg-amber-500/20 text-amber-400',
+  PROJECT: 'bg-purple-500/20 text-purple-400',
+};
+
+const MODULE_STATUS_LABELS: Record<string, string> = {
+  COMPLETED: 'Завершён',
+  IN_PROGRESS: 'В процессе',
+  NOT_STARTED: 'Не начат',
 };
 
 // Paginated scrollable list component
@@ -136,22 +156,48 @@ function MetaCard({
   );
 }
 
-function TrailItem({ trail }: { trail: StudentTrailProgress }) {
+function TrailItem({
+  trail,
+  modules,
+  submissionInfo,
+}: {
+  trail: StudentTrailProgress;
+  modules?: StudentModuleStatus[];
+  submissionInfo?: { approved: number; pending: number; revision: number; total: number };
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const hasModules = modules && modules.length > 0;
+
   return (
     <div className="p-2.5 bg-white/5 rounded-lg">
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-sm font-medium truncate">{trail.trailTitle}</span>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {trail.completionPercent === 100 ? (
-            <span className="px-2 py-0.5 text-xs rounded-full bg-emerald-500/20 text-emerald-400 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3" />
-              Завершён
-            </span>
-          ) : (
-            <span className="text-xs text-white/50">{trail.completionPercent}%</span>
-          )}
+      <button
+        onClick={() => hasModules && setIsExpanded(!isExpanded)}
+        className={clsx('w-full text-left', hasModules && 'cursor-pointer')}
+      >
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-sm font-medium truncate">{trail.trailTitle}</span>
+            {hasModules && (
+              <ChevronDown
+                className={clsx(
+                  'w-3.5 h-3.5 text-white/30 transition-transform flex-shrink-0',
+                  isExpanded ? 'rotate-180' : '',
+                )}
+              />
+            )}
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {trail.completionPercent === 100 ? (
+              <span className="px-2 py-0.5 text-xs rounded-full bg-emerald-500/20 text-emerald-400 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" />
+                Завершён
+              </span>
+            ) : (
+              <span className="text-xs text-white/50">{trail.completionPercent}%</span>
+            )}
+          </div>
         </div>
-      </div>
+      </button>
       {trail.completionPercent < 100 ? (
         <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
           <div
@@ -170,6 +216,83 @@ function TrailItem({ trail }: { trail: StudentTrailProgress }) {
         <span>{trail.completedModules}/{trail.totalModules} модулей</span>
         <span>Начало: {formatDate(trail.enrolledAt, 'short')}</span>
       </div>
+
+      {/* Submission info for this trail */}
+      {submissionInfo && submissionInfo.total > 0 && (
+        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+          {submissionInfo.approved > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+              Одобрено: {submissionInfo.approved}
+            </span>
+          )}
+          {submissionInfo.pending > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
+              На проверке: {submissionInfo.pending}
+            </span>
+          )}
+          {submissionInfo.revision > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-400">
+              На доработке: {submissionInfo.revision}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Expandable module list */}
+      <AnimatePresence>
+        {isExpanded && hasModules && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-2 pt-2 border-t border-white/5 space-y-1.5">
+              <p className="text-[10px] text-white/40 font-medium uppercase tracking-wider">Модули:</p>
+              {modules
+                .sort((a, b) => a.order - b.order)
+                .map((mod) => (
+                  <div
+                    key={mod.id}
+                    className="flex items-center gap-2 p-1.5 rounded-md bg-white/[0.03]"
+                  >
+                    {mod.status === 'COMPLETED' ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                    ) : mod.status === 'IN_PROGRESS' ? (
+                      <Clock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                    ) : (
+                      <div className="w-3.5 h-3.5 rounded-full border border-white/20 flex-shrink-0" />
+                    )}
+                    <span className="text-xs text-white/60 truncate flex-1">{mod.title}</span>
+                    <span
+                      className={clsx(
+                        'text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0',
+                        MODULE_TYPE_COLORS[mod.type] || 'bg-white/10 text-white/50',
+                      )}
+                    >
+                      {MODULE_TYPE_LABELS[mod.type] || mod.type}
+                    </span>
+                    <span
+                      className={clsx('text-[10px] font-medium flex-shrink-0', {
+                        'text-emerald-400': mod.status === 'COMPLETED',
+                        'text-blue-400': mod.status === 'IN_PROGRESS',
+                        'text-white/30': mod.status === 'NOT_STARTED',
+                      })}
+                    >
+                      {MODULE_STATUS_LABELS[mod.status] || mod.status}
+                    </span>
+                    {mod.submissionId && (
+                      <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-400 flex-shrink-0">
+                        <FileCheck className="w-3 h-3 inline" />
+                      </span>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -229,6 +352,30 @@ export default function InternInfoPage() {
     retry: 0,
   });
   const internFromList = interns?.find(i => i.id === internId);
+
+  // Fetch analytics to get module-level data per student
+  const { data: analyticsData } = useQuery({
+    queryKey: ['prometheus-analytics', 'all', '90'],
+    queryFn: () => getPrometheusAnalytics('all', '90'),
+    staleTime: 120000,
+    retry: 0,
+  });
+
+  // Build a map: trailId -> { modules, submissions } for this student from analytics
+  const studentTrailModules = useMemo(() => {
+    if (!analyticsData?.studentsByTrail || !internId) return new Map();
+    const map = new Map<string, { modules: StudentModuleStatus[]; submissions: { approved: number; pending: number; revision: number; total: number } }>();
+    analyticsData.studentsByTrail.forEach(trailItem => {
+      const student = trailItem.students.find(s => s.id === internId);
+      if (student) {
+        map.set(trailItem.trailId, {
+          modules: student.modules,
+          submissions: student.submissions,
+        });
+      }
+    });
+    return map;
+  }, [analyticsData, internId]);
 
   if (isLoading) {
     return (
@@ -410,9 +557,17 @@ export default function InternInfoPage() {
               icon={GitBranch}
               items={trailProgress}
               emptyText="Нет трейлов"
-              renderItem={(trail: StudentTrailProgress) => (
-                <TrailItem key={trail.trailId} trail={trail} />
-              )}
+              renderItem={(trail: StudentTrailProgress) => {
+                const trailData = studentTrailModules.get(trail.trailId);
+                return (
+                  <TrailItem
+                    key={trail.trailId}
+                    trail={trail}
+                    modules={trailData?.modules}
+                    submissionInfo={trailData?.submissions}
+                  />
+                );
+              }}
             />
 
             <PaginatedList

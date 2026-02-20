@@ -18,6 +18,8 @@ import {
   AlertTriangle,
   RefreshCw,
   Loader2,
+  ChevronDown,
+  Users,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { formatRelativeTime } from '@/utils';
@@ -74,6 +76,8 @@ export default function InternsPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<InternTab>('interns');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTrailFilter, setSelectedTrailFilter] = useState('all');
+  const [selectedPersonFilter, setSelectedPersonFilter] = useState('all');
 
   // Fetch interns from Prometheus via backend proxy
   const {
@@ -89,22 +93,70 @@ export default function InternsPage() {
     retry: 1,
   });
 
-  // Filter interns by search query
+  // Extract unique trails for filter dropdown
+  const availableTrails = useMemo(() => {
+    const trailMap = new Map<string, string>();
+    interns.forEach(intern => {
+      intern.trails.forEach(t => {
+        if (t.trailId && t.trailName && t.trailName.trim()) {
+          trailMap.set(t.trailId, t.trailName);
+        }
+      });
+    });
+    return Array.from(trailMap.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [interns]);
+
+  // Extract list of interns for person dropdown
+  const availablePersons = useMemo(() => {
+    return interns
+      .map(i => ({ id: i.id, name: i.name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [interns]);
+
+  // Filter interns by search query, trail, and person
   const filteredInterns = useMemo(() => {
-    if (!searchQuery) return interns;
-    const query = searchQuery.toLowerCase();
-    return interns.filter(intern =>
-      intern.name.toLowerCase().includes(query) ||
-      (intern.email && intern.email.toLowerCase().includes(query)) ||
-      (intern.telegramUsername && intern.telegramUsername.toLowerCase().includes(query)) ||
-      intern.trails.some(t => t.trailName?.toLowerCase().includes(query))
-    );
-  }, [searchQuery, interns]);
+    let result = interns;
+
+    // Filter by selected person
+    if (selectedPersonFilter !== 'all') {
+      result = result.filter(intern => intern.id === selectedPersonFilter);
+    }
+
+    // Filter by selected trail
+    if (selectedTrailFilter !== 'all') {
+      result = result.filter(intern =>
+        intern.trails.some(t => t.trailId === selectedTrailFilter)
+      );
+    }
+
+    // Filter by search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(intern =>
+        intern.name.toLowerCase().includes(query) ||
+        (intern.email && intern.email.toLowerCase().includes(query)) ||
+        (intern.telegramUsername && intern.telegramUsername.toLowerCase().includes(query)) ||
+        intern.trails.some(t => t.trailName?.toLowerCase().includes(query))
+      );
+    }
+
+    return result;
+  }, [searchQuery, selectedTrailFilter, selectedPersonFilter, interns]);
 
   // Render a single intern card (Prometheus data shape)
   const renderInternCard = (intern: PrometheusIntern) => {
     const totalTrailModules = intern.trails.reduce((s, t) => s + (t.totalModules || 0), 0);
     const completedTrailModules = intern.trails.reduce((s, t) => s + (t.completedModules || 0), 0);
+    const completionPercent = totalTrailModules > 0 ? Math.round((completedTrailModules / totalTrailModules) * 100) : 0;
+
+    // Find the "current" trail — the one with most progress but not fully completed, or the first one
+    const namedTrails = intern.trails.filter(t => t.trailName && t.trailName.trim());
+    const activeTrail = namedTrails.find(t => t.completedModules > 0 && t.completedModules < t.totalModules)
+      || namedTrails.find(t => t.completedModules > 0)
+      || namedTrails[0]
+      || intern.trails[0];
 
     return (
       <motion.div
@@ -148,26 +200,60 @@ export default function InternsPage() {
           </div>
         </div>
 
-        {/* Trails summary */}
+        {/* Module progress summary */}
         {intern.trails.length > 0 && (
-          <div className="mt-1 ml-12 space-y-1">
-            <div className="flex items-center gap-1.5 text-xs text-white/50 mb-1">
-              <BookOpen className="w-3 h-3 flex-shrink-0" />
-              <span>Треки ({completedTrailModules}/{totalTrailModules} модулей)</span>
+          <div className="mt-1 ml-12 space-y-1.5">
+            {/* Overall modules progress */}
+            <div className="flex items-center gap-2">
+              <BookOpen className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+              <span className="text-xs text-white/70 font-medium">
+                Модулей: {completedTrailModules}/{totalTrailModules}
+              </span>
+              <span className="text-xs text-white/40">({completionPercent}%)</span>
             </div>
-            {intern.trails.slice(0, 3).map((trail, idx) => (
-              <div key={trail.trailId || idx} className="flex items-center gap-2">
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-white/60 truncate">{trail.trailName || 'Без названия'}</p>
-                </div>
-                <span className="text-xs text-white/40 whitespace-nowrap">
-                  {trail.completedModules ?? 0}/{trail.totalModules ?? 0}
+            {/* Overall progress bar */}
+            <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className={clsx('h-full rounded-full transition-all', {
+                  'bg-emerald-400': completionPercent >= 80,
+                  'bg-amber-400': completionPercent >= 50 && completionPercent < 80,
+                  'bg-blue-400': completionPercent < 50,
+                })}
+                style={{ width: `${completionPercent}%` }}
+              />
+            </div>
+
+            {/* Current trail */}
+            {activeTrail && (
+              <div className="flex items-center gap-1.5 mt-1">
+                <GitBranch className="w-3 h-3 text-blue-400 flex-shrink-0" />
+                <span className="text-xs text-white/50 truncate">
+                  {activeTrail.trailName && activeTrail.trailName.trim()
+                    ? activeTrail.trailName
+                    : `Трейл #${intern.trails.indexOf(activeTrail) + 1}`}
+                </span>
+                <span className="text-xs text-white/30 whitespace-nowrap">
+                  {activeTrail.completedModules ?? 0}/{activeTrail.totalModules ?? 0}
                 </span>
               </div>
-            ))}
-            {intern.trails.length > 3 && (
-              <p className="text-xs text-white/30">+{intern.trails.length - 3} ещё</p>
             )}
+
+            {/* Additional trails count */}
+            {intern.trails.length > 1 && (
+              <p className="text-[10px] text-white/30">
+                +{intern.trails.length - 1} {intern.trails.length - 1 === 1 ? 'трейл' : intern.trails.length - 1 < 5 ? 'трейла' : 'трейлов'}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* No trails */}
+        {intern.trails.length === 0 && (
+          <div className="mt-1 ml-12">
+            <p className="text-xs text-white/30 flex items-center gap-1.5">
+              <BookOpen className="w-3 h-3" />
+              Нет назначенных трейлов
+            </p>
           </div>
         )}
 
@@ -271,7 +357,9 @@ export default function InternsPage() {
               </button>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            {/* Filters row */}
+            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+              {/* Search input */}
               <div className="relative flex-1 group">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 group-focus-within:text-emerald-400 transition-colors" />
                 <input
@@ -281,6 +369,57 @@ export default function InternsPage() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 text-sm transition-all"
                 />
+              </div>
+
+              {/* Trail dropdown filter */}
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-white/40 whitespace-nowrap">
+                  <GitBranch className="w-3 h-3 inline mr-1" />
+                  Трейл:
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedTrailFilter}
+                    onChange={e => {
+                      setSelectedTrailFilter(e.target.value);
+                      if (e.target.value !== 'all') setSelectedPersonFilter('all');
+                    }}
+                    className="appearance-none pl-3 pr-8 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer min-w-[140px]"
+                  >
+                    <option value="all">Все трейлы</option>
+                    {availableTrails.map(trail => (
+                      <option key={trail.id} value={trail.id}>
+                        {trail.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Person dropdown filter */}
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-white/40 whitespace-nowrap">
+                  <Users className="w-3 h-3 inline mr-1" />
+                  Практикант:
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedPersonFilter}
+                    onChange={e => {
+                      setSelectedPersonFilter(e.target.value);
+                    }}
+                    className="appearance-none pl-3 pr-8 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer min-w-[140px]"
+                  >
+                    <option value="all">Все практиканты</option>
+                    {availablePersons.map(person => (
+                      <option key={person.id} value={person.id}>
+                        {person.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
+                </div>
               </div>
             </div>
           </div>
@@ -292,11 +431,13 @@ export default function InternsPage() {
                 <div className="text-center text-white/40">
                   <GraduationCap className="w-16 h-16 mx-auto mb-4 opacity-50" />
                   <h3 className="text-lg font-medium mb-2">
-                    {searchQuery ? 'Ничего не найдено' : 'Нет практикантов'}
+                    {searchQuery || selectedTrailFilter !== 'all' || selectedPersonFilter !== 'all'
+                      ? 'Ничего не найдено'
+                      : 'Нет практикантов'}
                   </h3>
                   <p className="text-sm">
-                    {searchQuery
-                      ? 'Попробуйте изменить параметры поиска'
+                    {searchQuery || selectedTrailFilter !== 'all' || selectedPersonFilter !== 'all'
+                      ? 'Попробуйте изменить параметры поиска или фильтров'
                       : 'Практиканты появятся здесь после добавления'}
                   </p>
                 </div>

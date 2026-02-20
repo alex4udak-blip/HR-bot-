@@ -368,7 +368,7 @@ export default function InternsStagesTab() {
             animate={{ opacity: 1, height: 'auto' }}
             className="p-4 bg-white/5 rounded-xl border border-white/10 space-y-4 overflow-hidden"
           >
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {/* Trail name search */}
               <div>
                 <label className="text-xs text-white/50 mb-1.5 block">Поиск по названию трейла</label>
@@ -381,6 +381,30 @@ export default function InternsStagesTab() {
                     onChange={e => setSearchQuery(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
                   />
+                </div>
+              </div>
+
+              {/* Trail dropdown selector */}
+              <div>
+                <label className="text-xs text-white/50 mb-1.5 block">Выбрать трейл из списка</label>
+                <div className="relative">
+                  <select
+                    value=""
+                    onChange={e => {
+                      if (e.target.value) {
+                        setSearchQuery(e.target.value);
+                      }
+                    }}
+                    className="w-full appearance-none pl-3 pr-8 py-2 bg-white/5 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer"
+                  >
+                    <option value="">Выберите трейл...</option>
+                    {dropoffTrails.map(t => (
+                      <option key={t.trailId} value={t.trailTitle}>
+                        {t.trailTitle}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
                 </div>
               </div>
 

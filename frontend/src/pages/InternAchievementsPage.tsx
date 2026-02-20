@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   FileCheck,
   GitBranch,
+  Clock,
 } from 'lucide-react';
 import {
   PieChart,
@@ -29,7 +30,8 @@ import {
   Tooltip,
 } from 'recharts';
 import clsx from 'clsx';
-import { getStudentAchievements } from '@/services/api';
+import { getStudentAchievements, getPrometheusAnalytics } from '@/services/api';
+import type { StudentModuleStatus } from '@/services/api';
 import { formatDate } from '@/utils';
 
 const SUBMISSION_COLORS = ['#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
@@ -49,6 +51,18 @@ const RARITY_LABELS: Record<string, string> = {
   rare: 'Редкое',
   epic: 'Эпическое',
   legendary: 'Легендарное',
+};
+
+const MODULE_TYPE_LABELS: Record<string, string> = {
+  THEORY: 'Теория',
+  PRACTICE: 'Практика',
+  PROJECT: 'Проект',
+};
+
+const MODULE_TYPE_COLORS: Record<string, string> = {
+  THEORY: 'bg-blue-500/20 text-blue-400',
+  PRACTICE: 'bg-amber-500/20 text-amber-400',
+  PROJECT: 'bg-purple-500/20 text-purple-400',
 };
 
 function getAvatarInitials(name: string) {
@@ -136,6 +150,142 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: Array<{
   );
 }
 
+function TrailProgressCard({
+  trail,
+  modules,
+  submissions,
+}: {
+  trail: { trailId: string; trailTitle: string; completedModules: number; totalModules: number; completionPercent: number; enrolledAt: string };
+  modules?: StudentModuleStatus[];
+  submissions?: { approved: number; pending: number; revision: number; total: number };
+}) {
+  const [showModules, setShowModules] = useState(false);
+  const hasModules = modules && modules.length > 0;
+
+  return (
+    <div className="p-3 bg-white/5 rounded-lg">
+      <button
+        onClick={() => hasModules && setShowModules(!showModules)}
+        className={clsx('w-full text-left', hasModules && 'cursor-pointer')}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <GitBranch className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <span className="text-sm font-medium truncate">{trail.trailTitle}</span>
+            {hasModules && (
+              <ChevronDown
+                className={clsx(
+                  'w-3.5 h-3.5 text-white/30 transition-transform flex-shrink-0',
+                  showModules ? 'rotate-180' : '',
+                )}
+              />
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className="text-xs text-white/40">
+              {trail.completedModules}/{trail.totalModules}
+            </span>
+            <span className="text-xs text-white/50">{trail.completionPercent}%</span>
+          </div>
+        </div>
+      </button>
+      <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+        <div
+          className={clsx('h-full rounded-full transition-all', {
+            'bg-emerald-400': trail.completionPercent >= 80,
+            'bg-amber-400': trail.completionPercent >= 50 && trail.completionPercent < 80,
+            'bg-blue-400': trail.completionPercent < 50,
+          })}
+          style={{ width: `${trail.completionPercent}%` }}
+        />
+      </div>
+      <div className="flex items-center gap-3 mt-1.5 text-[10px] text-white/30">
+        <span className="flex items-center gap-1">
+          <Calendar className="w-3 h-3" />
+          Начало: {formatDate(trail.enrolledAt, 'short')}
+        </span>
+      </div>
+
+      {/* Submission badges */}
+      {submissions && submissions.total > 0 && (
+        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+          {submissions.approved > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+              Одобрено: {submissions.approved}
+            </span>
+          )}
+          {submissions.pending > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
+              На проверке: {submissions.pending}
+            </span>
+          )}
+          {submissions.revision > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-400">
+              На доработке: {submissions.revision}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Expandable module list */}
+      <AnimatePresence>
+        {showModules && hasModules && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-2 pt-2 border-t border-white/5 space-y-1.5">
+              <p className="text-[10px] text-white/40 font-medium uppercase tracking-wider">Модули:</p>
+              {modules
+                .sort((a, b) => a.order - b.order)
+                .map((mod) => (
+                  <div
+                    key={mod.id}
+                    className="flex items-center gap-2 p-1.5 rounded-md bg-white/[0.03]"
+                  >
+                    {mod.status === 'COMPLETED' ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                    ) : mod.status === 'IN_PROGRESS' ? (
+                      <Clock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                    ) : (
+                      <div className="w-3.5 h-3.5 rounded-full border border-white/20 flex-shrink-0" />
+                    )}
+                    <span className="text-xs text-white/60 truncate flex-1">{mod.title}</span>
+                    <span
+                      className={clsx(
+                        'text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0',
+                        MODULE_TYPE_COLORS[mod.type] || 'bg-white/10 text-white/50',
+                      )}
+                    >
+                      {MODULE_TYPE_LABELS[mod.type] || mod.type}
+                    </span>
+                    <span
+                      className={clsx('text-[10px] font-medium flex-shrink-0', {
+                        'text-emerald-400': mod.status === 'COMPLETED',
+                        'text-blue-400': mod.status === 'IN_PROGRESS',
+                        'text-white/30': mod.status === 'NOT_STARTED',
+                      })}
+                    >
+                      {mod.status === 'COMPLETED' ? 'Завершён' : mod.status === 'IN_PROGRESS' ? 'В процессе' : 'Не начат'}
+                    </span>
+                    {mod.submissionId && (
+                      <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-400 flex-shrink-0">
+                        <FileCheck className="w-3 h-3 inline" />
+                      </span>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export default function InternAchievementsPage() {
   const { internId } = useParams<{ internId: string }>();
   const navigate = useNavigate();
@@ -153,6 +303,30 @@ export default function InternAchievementsPage() {
     staleTime: 60000,
     retry: 1,
   });
+
+  // Fetch analytics to get module-level data per student
+  const { data: analyticsData } = useQuery({
+    queryKey: ['prometheus-analytics', 'all', '90'],
+    queryFn: () => getPrometheusAnalytics('all', '90'),
+    staleTime: 120000,
+    retry: 0,
+  });
+
+  // Build a map: trailId -> { modules, submissions } for this student from analytics
+  const studentTrailModules = useMemo(() => {
+    if (!analyticsData?.studentsByTrail || !internId) return new Map<string, { modules: StudentModuleStatus[]; submissions: { approved: number; pending: number; revision: number; total: number } }>();
+    const map = new Map<string, { modules: StudentModuleStatus[]; submissions: { approved: number; pending: number; revision: number; total: number } }>();
+    analyticsData.studentsByTrail.forEach(trailItem => {
+      const student = trailItem.students.find(s => s.id === internId);
+      if (student) {
+        map.set(trailItem.trailId, {
+          modules: student.modules,
+          submissions: student.submissions,
+        });
+      }
+    });
+    return map;
+  }, [analyticsData, internId]);
 
   // Submission stats chart data
   const submissionChartData = useMemo(() => {
@@ -429,36 +603,20 @@ export default function InternAchievementsPage() {
               defaultOpen
             >
               <div className="mt-3 space-y-2">
-                {trailProgress.map(trail => (
-                  <div key={trail.trailId} className="p-3 bg-white/5 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <GitBranch className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                        <span className="text-sm font-medium truncate">{trail.trailTitle}</span>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className="text-xs text-white/40">
-                          {trail.completedModules}/{trail.totalModules}
-                        </span>
-                        <span className="text-xs text-white/50">{trail.completionPercent}%</span>
-                      </div>
-                    </div>
-                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                      <div
-                        className={clsx('h-full rounded-full transition-all', {
-                          'bg-emerald-400': trail.completionPercent >= 80,
-                          'bg-amber-400': trail.completionPercent >= 50 && trail.completionPercent < 80,
-                          'bg-blue-400': trail.completionPercent < 50,
-                        })}
-                        style={{ width: `${trail.completionPercent}%` }}
-                      />
-                    </div>
-                    <p className="text-[10px] text-white/30 mt-1.5 flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      Начало: {formatDate(trail.enrolledAt, 'short')}
-                    </p>
-                  </div>
-                ))}
+                {trailProgress.map(trail => {
+                  const trailData = studentTrailModules.get(trail.trailId);
+                  const modules = trailData?.modules;
+                  const submissions = trailData?.submissions;
+
+                  return (
+                    <TrailProgressCard
+                      key={trail.trailId}
+                      trail={trail}
+                      modules={modules}
+                      submissions={submissions}
+                    />
+                  );
+                })}
               </div>
             </CollapsibleSection>
           )}
