@@ -10,7 +10,6 @@ import {
   Clock,
   BarChart3,
   GitBranch,
-  MessageSquare,
   Download,
   Zap,
   BookOpen,
@@ -18,7 +17,6 @@ import {
   RefreshCw,
   Loader2,
   ChevronDown,
-  Users,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { formatRelativeTime } from '@/utils';
@@ -28,13 +26,12 @@ import InternsAnalyticsTab from '@/components/interns/InternsAnalyticsTab';
 import InternsStagesTab from '@/components/interns/InternsStagesTab';
 
 // Tabs for interns section
-type InternTab = 'interns' | 'analytics' | 'stages' | 'chats' | 'csv';
+type InternTab = 'interns' | 'analytics' | 'stages' | 'csv';
 
 const INTERN_TABS: { key: InternTab; label: string; icon: typeof GraduationCap }[] = [
   { key: 'interns', label: 'Практиканты', icon: GraduationCap },
   { key: 'analytics', label: 'Аналитика', icon: BarChart3 },
   { key: 'stages', label: 'Этапы прохождения', icon: GitBranch },
-  { key: 'chats', label: 'Чаты', icon: MessageSquare },
   { key: 'csv', label: 'Выгрузка в CSV', icon: Download },
 ];
 
@@ -76,7 +73,6 @@ export default function InternsPage() {
   const [activeTab, setActiveTab] = useState<InternTab>('interns');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTrailFilter, setSelectedTrailFilter] = useState('all');
-  const [selectedPersonFilter, setSelectedPersonFilter] = useState('all');
 
   // Fetch interns from Prometheus via backend proxy
   const {
@@ -112,21 +108,9 @@ export default function InternsPage() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [trailNameMap]);
 
-  // Extract list of interns for person dropdown
-  const availablePersons = useMemo(() => {
-    return interns
-      .map(i => ({ id: i.id, name: i.name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [interns]);
-
-  // Filter interns by search query, trail, and person
+  // Filter interns by search query and trail
   const filteredInterns = useMemo(() => {
     let result = interns;
-
-    // Filter by selected person
-    if (selectedPersonFilter !== 'all') {
-      result = result.filter(intern => intern.id === selectedPersonFilter);
-    }
 
     // Filter by selected trail
     if (selectedTrailFilter !== 'all') {
@@ -147,7 +131,7 @@ export default function InternsPage() {
     }
 
     return result;
-  }, [searchQuery, selectedTrailFilter, selectedPersonFilter, interns]);
+  }, [searchQuery, selectedTrailFilter, interns]);
 
   // Render a single intern card (Prometheus data shape)
   const renderInternCard = (intern: PrometheusIntern) => {
@@ -383,10 +367,7 @@ export default function InternsPage() {
                 <div className="relative">
                   <select
                     value={selectedTrailFilter}
-                    onChange={e => {
-                      setSelectedTrailFilter(e.target.value);
-                      if (e.target.value !== 'all') setSelectedPersonFilter('all');
-                    }}
+                    onChange={e => setSelectedTrailFilter(e.target.value)}
                     className="appearance-none pl-3 pr-8 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer min-w-[140px] [&>option]:bg-dark-900 [&>option]:text-white"
                   >
                     <option value="all">Все трейлы</option>
@@ -400,30 +381,6 @@ export default function InternsPage() {
                 </div>
               </div>
 
-              {/* Person dropdown filter */}
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-white/40 whitespace-nowrap">
-                  <Users className="w-3 h-3 inline mr-1" />
-                  Практикант:
-                </label>
-                <div className="relative">
-                  <select
-                    value={selectedPersonFilter}
-                    onChange={e => {
-                      setSelectedPersonFilter(e.target.value);
-                    }}
-                    className="appearance-none pl-3 pr-8 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer min-w-[140px] [&>option]:bg-dark-900 [&>option]:text-white"
-                  >
-                    <option value="all">Все практиканты</option>
-                    {availablePersons.map(person => (
-                      <option key={person.id} value={person.id}>
-                        {person.name}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
-                </div>
-              </div>
             </div>
           </div>
 
@@ -434,12 +391,12 @@ export default function InternsPage() {
                 <div className="text-center text-white/40">
                   <GraduationCap className="w-16 h-16 mx-auto mb-4 opacity-50" />
                   <h3 className="text-lg font-medium mb-2">
-                    {searchQuery || selectedTrailFilter !== 'all' || selectedPersonFilter !== 'all'
+                    {searchQuery || selectedTrailFilter !== 'all'
                       ? 'Ничего не найдено'
                       : 'Нет практикантов'}
                   </h3>
                   <p className="text-sm">
-                    {searchQuery || selectedTrailFilter !== 'all' || selectedPersonFilter !== 'all'
+                    {searchQuery || selectedTrailFilter !== 'all'
                       ? 'Попробуйте изменить параметры поиска или фильтров'
                       : 'Практиканты появятся здесь после добавления'}
                   </p>
@@ -459,10 +416,6 @@ export default function InternsPage() {
       ) : activeTab === 'stages' ? (
         <div className="flex-1 overflow-auto p-4">
           <InternsStagesTab />
-        </div>
-      ) : activeTab === 'chats' ? (
-        <div className="flex-1 overflow-auto p-4">
-          <TabStub title="Чаты" icon={MessageSquare} />
         </div>
       ) : (
         <div className="flex-1 overflow-auto p-4">

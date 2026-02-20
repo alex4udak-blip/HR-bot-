@@ -7,8 +7,7 @@ import {
   TrendingUp,
   Star,
   Activity,
-  Trophy,
-  Zap,
+  Clock,
   Award,
   ClipboardCheck,
   ChevronDown,
@@ -143,6 +142,20 @@ export default function InternsAnalyticsTab() {
     }));
   }, [analytics]);
 
+  // Average completion time per trail (from dropoff analysis)
+  const trailAvgTimeMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!analytics) return map;
+    analytics.dropoffAnalysis.forEach(trail => {
+      const modulesWithTime = trail.modules.filter(m => m.avgTimeDays > 0);
+      if (modulesWithTime.length > 0) {
+        const avg = modulesWithTime.reduce((sum, m) => sum + m.avgTimeDays, 0) / modulesWithTime.length;
+        map.set(trail.trailId, Math.round(avg * 10) / 10);
+      }
+    });
+    return map;
+  }, [analytics]);
+
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center py-20">
@@ -178,7 +191,7 @@ export default function InternsAnalyticsTab() {
 
   if (!analytics) return null;
 
-  const { summary, scoreDistribution, filters, topStudents } = analytics;
+  const { summary, scoreDistribution, filters } = analytics;
 
   return (
     <div className="space-y-6">
@@ -396,127 +409,62 @@ export default function InternsAnalyticsTab() {
                 <tr className="border-b border-white/5">
                   <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Трейл</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Записано</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Модулей</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Заверш. модулей</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Работ отправлено</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Одобрено</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">% завершения</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-white/40">% одобрения</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Ср. время прохождения</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Сертификатов</th>
                 </tr>
               </thead>
               <tbody>
-                {analytics.trailProgress.map(trail => (
-                  <tr key={trail.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                    <td className="px-4 py-3 font-medium truncate max-w-[200px]">{trail.title}</td>
-                    <td className="px-4 py-3 text-white/60">{trail.enrollments}</td>
-                    <td className="px-4 py-3 text-white/60">{trail.totalModules}</td>
-                    <td className="px-4 py-3 text-white/60">{trail.completedModules}</td>
-                    <td className="px-4 py-3 text-white/60">{trail.submissionsCount}</td>
-                    <td className="px-4 py-3 text-white/60">{trail.approvedSubmissions}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                          <div
-                            className={clsx('h-full rounded-full', {
-                              'bg-emerald-400': trail.completionRate >= 60,
-                              'bg-amber-400': trail.completionRate >= 30 && trail.completionRate < 60,
-                              'bg-red-400': trail.completionRate < 30,
-                            })}
-                            style={{ width: `${trail.completionRate}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-white/50">{trail.completionRate}%</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={clsx('text-xs font-medium', {
-                        'text-emerald-400': trail.approvalRate >= 70,
-                        'text-amber-400': trail.approvalRate >= 40 && trail.approvalRate < 70,
-                        'text-red-400': trail.approvalRate < 40,
-                      })}>
-                        {trail.approvalRate}%
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {trail.certificates > 0 ? (
-                        <span className="flex items-center gap-1 text-amber-400">
-                          <Award className="w-3.5 h-3.5" />
-                          {trail.certificates}
+                {analytics.trailProgress.map(trail => {
+                  const avgTime = trailAvgTimeMap.get(trail.id);
+                  return (
+                    <tr key={trail.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                      <td className="px-4 py-3 font-medium truncate max-w-[200px]">{trail.title}</td>
+                      <td className="px-4 py-3 text-white/60">{trail.enrollments}</td>
+                      <td className="px-4 py-3 text-white/60">{trail.completedModules}</td>
+                      <td className="px-4 py-3 text-white/60">{trail.submissionsCount}</td>
+                      <td className="px-4 py-3 text-white/60">{trail.approvedSubmissions}</td>
+                      <td className="px-4 py-3">
+                        <span className={clsx('text-xs font-medium', {
+                          'text-emerald-400': trail.approvalRate >= 70,
+                          'text-amber-400': trail.approvalRate >= 40 && trail.approvalRate < 70,
+                          'text-red-400': trail.approvalRate < 40,
+                        })}>
+                          {trail.approvalRate}%
                         </span>
-                      ) : (
-                        <span className="text-white/30">0</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-4 py-3">
+                        {avgTime != null ? (
+                          <span className="flex items-center gap-1 text-white/60">
+                            <Clock className="w-3.5 h-3.5 text-blue-400" />
+                            {avgTime} дн.
+                          </span>
+                        ) : (
+                          <span className="text-white/30">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {trail.certificates > 0 ? (
+                          <span className="flex items-center gap-1 text-amber-400">
+                            <Award className="w-3.5 h-3.5" />
+                            {trail.certificates}
+                          </span>
+                        ) : (
+                          <span className="text-white/30">0</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </motion.div>
       )}
 
-      {/* Top Students Table */}
-      {topStudents.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.55 }} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-          <div className="p-4 border-b border-white/10">
-            <h3 className="text-sm font-medium flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-amber-400" />
-              Топ студентов
-              <span className="px-1.5 py-0.5 text-xs rounded-full bg-white/10 text-white/50">{topStudents.length}</span>
-            </h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/5">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">#</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Имя</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">XP</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Модулей</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Одобренных работ</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Сертификатов</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topStudents.map((student, index) => (
-                  <tr key={student.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                    <td className="px-4 py-3">
-                      <span className={clsx('w-6 h-6 inline-flex items-center justify-center rounded-full text-xs font-bold', {
-                        'bg-amber-500/20 text-amber-400': index === 0,
-                        'bg-gray-500/20 text-gray-400': index === 1,
-                        'bg-orange-500/20 text-orange-400': index === 2,
-                        'bg-white/5 text-white/40': index > 2,
-                      })}>
-                        {index + 1}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 font-medium">{student.name}</td>
-                    <td className="px-4 py-3">
-                      <span className="flex items-center gap-1 text-amber-400">
-                        <Zap className="w-3.5 h-3.5" />
-                        {student.totalXP}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-white/60">{student.modulesCompleted}</td>
-                    <td className="px-4 py-3 text-white/60">{student.approvedWorks}</td>
-                    <td className="px-4 py-3">
-                      {student.certificates > 0 ? (
-                        <span className="flex items-center gap-1 text-amber-400">
-                          <Award className="w-3.5 h-3.5" />
-                          {student.certificates}
-                        </span>
-                      ) : (
-                        <span className="text-white/30">0</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </motion.div>
-      )}
     </div>
   );
 }
