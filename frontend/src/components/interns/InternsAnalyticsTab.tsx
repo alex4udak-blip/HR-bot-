@@ -32,7 +32,6 @@ import {
 } from 'recharts';
 import clsx from 'clsx';
 import { getPrometheusAnalytics } from '@/services/api';
-import type { PrometheusAnalyticsResponse } from '@/services/api';
 
 // Chart colors
 const SCORE_COLORS = ['#8b5cf6', '#3b82f6', '#f59e0b', '#ef4444'];
@@ -309,7 +308,7 @@ export default function InternsAnalyticsTab() {
                   <Tooltip
                     contentStyle={{ backgroundColor: '#2d2d3a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
                     labelStyle={{ color: 'rgba(255,255,255,0.7)' }}
-                    formatter={(value: number, _name: string, props: { payload: { percent: number } }) => [`${value} (${props.payload.percent}%)`, 'Студентов']}
+                    formatter={(value: number, _name: string, props: { payload?: { percent: number } }) => [`${value} (${props.payload?.percent ?? 0}%)`, 'Студентов']}
                   />
                   <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={14} fill={FUNNEL_COLOR} />
                 </BarChart>
