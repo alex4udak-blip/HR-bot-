@@ -5,10 +5,8 @@ import { motion } from 'framer-motion';
 import {
   Search,
   GraduationCap,
-  Trophy,
-  Info,
-  Clock,
   BarChart3,
+  Clock,
   GitBranch,
   Download,
   Zap,
@@ -165,7 +163,8 @@ export default function InternsPage() {
         key={intern.id}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors group overflow-hidden flex flex-col"
+        onClick={() => navigate(`/interns/${intern.id}/stats`)}
+        className="p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors group overflow-hidden flex flex-col cursor-pointer"
       >
         {/* Name + avatar */}
         <div className="flex items-start gap-2 mb-2">
@@ -244,21 +243,14 @@ export default function InternsPage() {
           </div>
         )}
 
-        {/* Action buttons — pinned to the bottom */}
-        <div className="mt-auto pt-3 border-t border-white/10 flex items-center gap-2">
+        {/* Action button — pinned to the bottom */}
+        <div className="mt-auto pt-3 border-t border-white/10">
           <button
-            onClick={() => navigate(`/interns/${intern.id}/achievements`)}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 rounded-lg text-xs font-medium transition-colors"
+            onClick={(e) => { e.stopPropagation(); navigate(`/interns/${intern.id}/stats`); }}
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-medium transition-colors"
           >
-            <Trophy className="w-3.5 h-3.5" />
-            Успехи
-          </button>
-          <button
-            onClick={() => navigate(`/interns/${intern.id}/info`)}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-medium transition-colors"
-          >
-            <Info className="w-3.5 h-3.5" />
-            Информация
+            <BarChart3 className="w-3.5 h-3.5" />
+            Статистика
           </button>
         </div>
       </motion.div>

@@ -3,22 +3,27 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Trophy,
   ArrowLeft,
-  ChevronDown,
-  BookOpen,
-  Star,
-  CheckCircle2,
-  TrendingUp,
+  BarChart3,
+  Mail,
+  AtSign,
+  User,
   Calendar,
+  GitBranch,
+  ClipboardCheck,
+  ChevronDown,
+  CheckCircle2,
   Zap,
-  Medal,
+  Star,
   Award,
+  Medal,
+  Trophy,
   Loader2,
   RefreshCw,
   AlertTriangle,
+  BookOpen,
   FileCheck,
-  GitBranch,
+  TrendingUp,
   Clock,
 } from 'lucide-react';
 import {
@@ -29,9 +34,11 @@ import {
   Tooltip,
 } from 'recharts';
 import clsx from 'clsx';
-import { getStudentAchievements, getPrometheusAnalytics } from '@/services/api';
-import type { StudentModuleStatus } from '@/services/api';
+import { getStudentAchievements, getPrometheusInterns, getPrometheusAnalytics } from '@/services/api';
+import type { StudentTrailProgress, Certificate, StudentModuleStatus } from '@/services/api';
 import { formatDate } from '@/utils';
+
+// ── Constants ──
 
 const SUBMISSION_COLORS = ['#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
 const ACHIEVEMENT_COLORS = ['#10b981', '#1f2937'];
@@ -64,6 +71,16 @@ const MODULE_TYPE_COLORS: Record<string, string> = {
   PROJECT: 'bg-purple-500/20 text-purple-400',
 };
 
+const ROLE_LABELS: Record<string, string> = {
+  STUDENT: 'Студент',
+  TEACHER: 'Преподаватель',
+  HR: 'HR',
+  CO_ADMIN: 'Со-админ',
+  ADMIN: 'Администратор',
+};
+
+// ── Shared helper components ──
+
 function getAvatarInitials(name: string) {
   return name
     .split(' ')
@@ -71,6 +88,28 @@ function getAvatarInitials(name: string) {
     .map(n => n[0])
     .join('')
     .toUpperCase();
+}
+
+function MetaCard({
+  icon: Icon,
+  label,
+  value,
+  valueColor,
+}: {
+  icon: typeof Mail;
+  label: string;
+  value: string;
+  valueColor?: string;
+}) {
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+      <div className="flex items-center gap-2 text-white/40 mb-1">
+        <Icon className="w-3.5 h-3.5" />
+        <span className="text-xs">{label}</span>
+      </div>
+      <p className={clsx('text-sm font-medium truncate', valueColor)} title={value}>{value}</p>
+    </div>
+  );
 }
 
 function CollapsibleSection({
@@ -149,12 +188,32 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: Array<{
   );
 }
 
+function SubmissionBadge({
+  label,
+  count,
+  color,
+  icon: Icon,
+}: {
+  label: string;
+  count: number;
+  color: string;
+  icon: typeof CheckCircle2;
+}) {
+  return (
+    <div className={clsx('flex items-center gap-2 px-3 py-2 rounded-lg', color)}>
+      <Icon className="w-4 h-4" />
+      <span className="text-sm font-medium">{count}</span>
+      <span className="text-xs opacity-80">{label}</span>
+    </div>
+  );
+}
+
 function TrailProgressCard({
   trail,
   modules,
   submissions,
 }: {
-  trail: { trailId: string; trailTitle: string; completedModules: number; totalModules: number; completionPercent: number; enrolledAt: string };
+  trail: StudentTrailProgress;
   modules?: StudentModuleStatus[];
   submissions?: { approved: number; pending: number; revision: number; total: number };
 }) {
@@ -285,10 +344,13 @@ function TrailProgressCard({
   );
 }
 
-export default function InternAchievementsPage() {
+// ── Main page component ──
+
+export default function InternStatsPage() {
   const { internId } = useParams<{ internId: string }>();
   const navigate = useNavigate();
 
+  // Student achievements data (main data source)
   const {
     data,
     isLoading,
@@ -302,6 +364,15 @@ export default function InternAchievementsPage() {
     staleTime: 60000,
     retry: 1,
   });
+
+  // Pull telegram username from cached interns list
+  const { data: interns } = useQuery({
+    queryKey: ['prometheus-interns'],
+    queryFn: getPrometheusInterns,
+    staleTime: 300000,
+    retry: 0,
+  });
+  const internFromList = interns?.find(i => i.id === internId);
 
   // Fetch analytics to get module-level data per student
   const { data: analyticsData } = useQuery({
@@ -327,7 +398,7 @@ export default function InternAchievementsPage() {
     return map;
   }, [analyticsData, internId]);
 
-  // Submission stats chart data
+  // Chart data: submission stats
   const submissionChartData = useMemo(() => {
     if (!data) return [];
     const { submissionStats: ss } = data;
@@ -339,7 +410,7 @@ export default function InternAchievementsPage() {
     ].filter(d => d.value > 0);
   }, [data]);
 
-  // Achievements progress chart data
+  // Chart data: achievements progress
   const achievementChartData = useMemo(() => {
     if (!data) return [];
     const { achievements: a } = data;
@@ -349,7 +420,7 @@ export default function InternAchievementsPage() {
     ];
   }, [data]);
 
-  // Trail completion aggregated
+  // Chart data: trail completion aggregated
   const trailCompletion = useMemo(() => {
     if (!data || data.trailProgress.length === 0) return null;
     const totalCompleted = data.trailProgress.reduce((sum, t) => sum + t.completedModules, 0);
@@ -357,6 +428,7 @@ export default function InternAchievementsPage() {
     return { completed: totalCompleted, total: totalModules, percent: totalModules > 0 ? Math.round((totalCompleted / totalModules) * 100) : 0 };
   }, [data]);
 
+  // Loading state
   if (isLoading) {
     return (
       <div className="h-full flex flex-col">
@@ -369,13 +441,14 @@ export default function InternAchievementsPage() {
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center text-white/40">
             <Loader2 className="w-12 h-12 mx-auto mb-4 animate-spin opacity-50" />
-            <h3 className="text-lg font-medium mb-2">Загрузка достижений...</h3>
+            <h3 className="text-lg font-medium mb-2">Загрузка статистики...</h3>
           </div>
         </div>
       </div>
     );
   }
 
+  // Error state
   if (isError || !data) {
     return (
       <div className="h-full flex flex-col">
@@ -413,13 +486,13 @@ export default function InternAchievementsPage() {
             <ArrowLeft className="w-5 h-5 text-white/60" />
           </button>
           <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-400 font-medium text-sm flex-shrink-0">
+            <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 font-medium text-sm flex-shrink-0">
               {getAvatarInitials(student.name)}
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <Trophy className="w-5 h-5 text-amber-400 flex-shrink-0" />
-                <h1 className="text-lg font-bold truncate">Успехи</h1>
+                <BarChart3 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                <h1 className="text-lg font-bold truncate">Статистика</h1>
               </div>
               <p className="text-sm text-white/50 truncate">{student.name}</p>
             </div>
@@ -429,6 +502,30 @@ export default function InternAchievementsPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-4 space-y-6">
+        {/* Personal data */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+          <h3 className="text-sm font-medium text-white/50 mb-3">Личные данные</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <MetaCard icon={User} label="ФИО" value={student.name} />
+            <MetaCard icon={Mail} label="Email" value={student.email || '—'} />
+            <MetaCard icon={AtSign} label="Telegram" value={internFromList?.telegramUsername || '—'} />
+            <MetaCard icon={User} label="Роль" value={ROLE_LABELS[student.role] || student.role} />
+            <MetaCard icon={Calendar} label="Регистрация" value={formatDate(student.registeredAt, 'medium')} />
+            <MetaCard icon={Calendar} label="Последняя активность" value={formatDate(student.lastActiveAt, 'medium')} />
+            <MetaCard
+              icon={AlertTriangle}
+              label="Дней без активности"
+              value={`${student.daysSinceActive} дн.`}
+              valueColor={
+                student.daysSinceActive <= 3 ? 'text-emerald-400' :
+                student.daysSinceActive <= 7 ? 'text-amber-400' :
+                'text-red-400'
+              }
+            />
+            <MetaCard icon={Star} label="Позиция в рейтинге" value={`#${student.leaderboardRank}`} />
+          </div>
+        </motion.div>
+
         {/* Charts Row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Submission Stats Chart */}
@@ -522,34 +619,77 @@ export default function InternAchievementsPage() {
           </motion.div>
         </div>
 
-        {/* Quick stats cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
-            <div className="flex items-center gap-2 text-white/50 mb-1">
-              <Zap className="w-4 h-4 text-amber-400" />
-              <span className="text-xs">Опыт (XP)</span>
+        {/* Stats cards */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+          <h3 className="text-sm font-medium text-white/50 mb-3">Показатели</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+              <div className="flex items-center gap-2 text-white/50 mb-1">
+                <Zap className="w-4 h-4 text-amber-400" />
+                <span className="text-xs">Опыт (XP)</span>
+              </div>
+              <p className="text-xl font-bold">{student.totalXP}</p>
             </div>
-            <p className="text-xl font-bold">{student.totalXP}</p>
-          </motion.div>
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
-            <div className="flex items-center gap-2 text-white/50 mb-1">
-              <Star className="w-4 h-4 text-purple-400" />
-              <span className="text-xs">Позиция в рейтинге</span>
+            <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+              <div className="flex items-center gap-2 text-white/50 mb-1">
+                <BookOpen className="w-4 h-4 text-blue-400" />
+                <span className="text-xs">Модулей пройдено</span>
+              </div>
+              <p className="text-xl font-bold">{student.modulesCompleted}</p>
             </div>
-            <p className="text-xl font-bold">#{student.leaderboardRank}</p>
-          </motion.div>
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
-            <div className="flex items-center gap-2 text-white/50 mb-1">
-              <TrendingUp className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs">Модулей пройдено</span>
+            <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+              <div className="flex items-center gap-2 text-white/50 mb-1">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs">Работ одобрено</span>
+              </div>
+              <p className="text-xl font-bold">{submissionStats.approved}</p>
             </div>
-            <p className="text-xl font-bold">{student.modulesCompleted}</p>
+            <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+              <div className="flex items-center gap-2 text-white/50 mb-1">
+                <TrendingUp className="w-4 h-4 text-purple-400" />
+                <span className="text-xs">Всего работ</span>
+              </div>
+              <p className="text-xl font-bold">{submissionStats.total}</p>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Submission status breakdown */}
+        {submissionStats.total > 0 && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+            <h3 className="text-sm font-medium text-white/50 mb-3">Статус работ</h3>
+            <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+              <div className="flex items-center gap-3 flex-wrap">
+                <SubmissionBadge label="Одобрено" count={submissionStats.approved} color="bg-emerald-500/20 text-emerald-400" icon={CheckCircle2} />
+                <SubmissionBadge label="На проверке" count={submissionStats.pending} color="bg-amber-500/20 text-amber-400" icon={FileCheck} />
+                <SubmissionBadge label="На доработке" count={submissionStats.revision} color="bg-purple-500/20 text-purple-400" icon={ClipboardCheck} />
+                {submissionStats.failed > 0 && (
+                  <SubmissionBadge label="Отклонено" count={submissionStats.failed} color="bg-red-500/20 text-red-400" icon={AlertTriangle} />
+                )}
+              </div>
+              <div className="mt-3">
+                <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden flex">
+                  {submissionStats.approved > 0 && (
+                    <div className="h-full bg-emerald-400" style={{ width: `${(submissionStats.approved / submissionStats.total) * 100}%` }} />
+                  )}
+                  {submissionStats.pending > 0 && (
+                    <div className="h-full bg-amber-400" style={{ width: `${(submissionStats.pending / submissionStats.total) * 100}%` }} />
+                  )}
+                  {submissionStats.revision > 0 && (
+                    <div className="h-full bg-purple-400" style={{ width: `${(submissionStats.revision / submissionStats.total) * 100}%` }} />
+                  )}
+                  {submissionStats.failed > 0 && (
+                    <div className="h-full bg-red-400" style={{ width: `${(submissionStats.failed / submissionStats.total) * 100}%` }} />
+                  )}
+                </div>
+              </div>
+            </div>
           </motion.div>
-        </div>
+        )}
 
         {/* Collapsible sections */}
         <div className="space-y-3">
-          {/* Achievements earned */}
+          {/* Earned achievements */}
           {achievements.earned.length > 0 && (
             <CollapsibleSection
               title="Полученные достижения"
@@ -597,15 +737,12 @@ export default function InternAchievementsPage() {
               <div className="mt-3 space-y-2">
                 {trailProgress.map(trail => {
                   const trailData = studentTrailModules.get(trail.trailId);
-                  const modules = trailData?.modules;
-                  const submissions = trailData?.submissions;
-
                   return (
                     <TrailProgressCard
                       key={trail.trailId}
                       trail={trail}
-                      modules={modules}
-                      submissions={submissions}
+                      modules={trailData?.modules}
+                      submissions={trailData?.submissions}
                     />
                   );
                 })}
@@ -660,30 +797,6 @@ export default function InternAchievementsPage() {
               </div>
             </CollapsibleSection>
           )}
-
-          {/* Activity summary */}
-          <CollapsibleSection title="Активность" icon={CheckCircle2}>
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="p-3 bg-white/5 rounded-lg">
-                <p className="text-xs text-white/40 mb-1">Дата регистрации</p>
-                <p className="text-sm font-medium">{formatDate(student.registeredAt, 'medium')}</p>
-              </div>
-              <div className="p-3 bg-white/5 rounded-lg">
-                <p className="text-xs text-white/40 mb-1">Последняя активность</p>
-                <p className="text-sm font-medium">{formatDate(student.lastActiveAt, 'medium')}</p>
-              </div>
-              <div className="p-3 bg-white/5 rounded-lg">
-                <p className="text-xs text-white/40 mb-1">Дней без активности</p>
-                <p className={clsx('text-sm font-medium', {
-                  'text-emerald-400': student.daysSinceActive <= 3,
-                  'text-amber-400': student.daysSinceActive > 3 && student.daysSinceActive <= 7,
-                  'text-red-400': student.daysSinceActive > 7,
-                })}>
-                  {student.daysSinceActive} дн.
-                </p>
-              </div>
-            </div>
-          </CollapsibleSection>
         </div>
       </div>
     </div>
