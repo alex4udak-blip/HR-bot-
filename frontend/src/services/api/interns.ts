@@ -33,12 +33,36 @@ export interface PrometheusInternsResponse {
 }
 
 /**
+ * Normalize raw trail object from Prometheus API.
+ *
+ * Prometheus uses inconsistent field names across endpoints:
+ *   - student-achievements → trailTitle
+ *   - analytics            → title / trailTitle
+ *   - interns list          → trailTitle (not trailName)
+ *
+ * This normalizer maps whatever Prometheus returns to our
+ * PrometheusTrailSummary shape so the UI always gets the right data.
+ */
+function normalizeTrail(raw: Record<string, unknown>): PrometheusTrailSummary {
+  return {
+    trailId: (raw.trailId ?? raw.id ?? '') as string,
+    trailName: ((raw.trailName as string) || (raw.trailTitle as string) || (raw.title as string) || ''),
+    completedModules: ((raw.completedModules as number) ?? (raw.modulesCompleted as number) ?? 0),
+    totalModules: ((raw.totalModules as number) ?? 0),
+    earnedXP: ((raw.earnedXP as number) ?? (raw.xp as number) ?? 0),
+  };
+}
+
+/**
  * Fetch interns data from backend proxy (which fetches from Prometheus).
  * The API key stays server-side — the frontend never touches it.
  */
 export const getPrometheusInterns = async (): Promise<PrometheusIntern[]> => {
   const { data } = await deduplicatedGet<PrometheusInternsResponse>('/interns');
-  return data.interns;
+  return (data.interns ?? []).map(intern => ({
+    ...intern,
+    trails: (intern.trails ?? []).map(t => normalizeTrail(t as unknown as Record<string, unknown>)),
+  }));
 };
 
 // ============================================================
