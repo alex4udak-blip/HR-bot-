@@ -35,7 +35,7 @@ import {
 } from 'recharts';
 import clsx from 'clsx';
 import { getStudentAchievements, getPrometheusInterns, getPrometheusAnalytics } from '@/services/api';
-import type { StudentTrailProgress, Certificate, StudentModuleStatus } from '@/services/api';
+import type { StudentTrailProgress, StudentModuleStatus } from '@/services/api';
 import { formatDate } from '@/utils';
 
 // ── Constants ──
