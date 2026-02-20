@@ -1,18 +1,25 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Trophy,
   ArrowLeft,
   ChevronDown,
   BookOpen,
-  Loader,
-  Clock,
   Flame,
   Star,
   CheckCircle2,
   TrendingUp,
   Calendar,
+  Zap,
+  Medal,
+  Award,
+  Loader2,
+  RefreshCw,
+  AlertTriangle,
+  FileCheck,
+  GitBranch,
 } from 'lucide-react';
 import {
   PieChart,
@@ -21,13 +28,28 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from 'recharts';
-import { MOCK_INTERNS, MOCK_ACHIEVEMENTS } from '@/data/mockInterns';
+import clsx from 'clsx';
+import { getStudentAchievements } from '@/services/api';
 import { formatDate } from '@/utils';
 
-// Donut chart colors
-const COMPLETION_COLORS = ['#10b981', '#f59e0b', '#6b7280'];
-const GRADE_COLORS = ['#8b5cf6', '#3b82f6', '#f59e0b', '#ef4444'];
-const ENGAGEMENT_COLORS = ['#10b981', '#1f2937'];
+const SUBMISSION_COLORS = ['#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
+const ACHIEVEMENT_COLORS = ['#10b981', '#1f2937'];
+
+const RARITY_STYLES: Record<string, string> = {
+  common: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  uncommon: 'bg-green-500/20 text-green-400 border-green-500/30',
+  rare: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  epic: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  legendary: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+};
+
+const RARITY_LABELS: Record<string, string> = {
+  common: 'Обычное',
+  uncommon: 'Необычное',
+  rare: 'Редкое',
+  epic: 'Эпическое',
+  legendary: 'Легендарное',
+};
 
 function getAvatarInitials(name: string) {
   return name
@@ -38,7 +60,6 @@ function getAvatarInitials(name: string) {
     .toUpperCase();
 }
 
-// Collapsible section component
 function CollapsibleSection({
   title,
   icon: Icon,
@@ -92,7 +113,6 @@ function CollapsibleSection({
   );
 }
 
-// Custom donut chart center label
 function DonutCenterLabel({ value, label }: { value: string; label: string }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -102,7 +122,6 @@ function DonutCenterLabel({ value, label }: { value: string; label: string }) {
   );
 }
 
-// Custom tooltip for charts
 function ChartTooltip({ active, payload }: { active?: boolean; payload?: Array<{ name: string; value: number; payload: { fill: string } }> }) {
   if (!active || !payload?.length) return null;
   const item = payload[0];
@@ -121,83 +140,115 @@ export default function InternAchievementsPage() {
   const { internId } = useParams<{ internId: string }>();
   const navigate = useNavigate();
 
-  const intern = useMemo(
-    () => MOCK_INTERNS.find(i => i.id === Number(internId)),
-    [internId]
-  );
-  const achievements = useMemo(
-    () => MOCK_ACHIEVEMENTS[Number(internId)],
-    [internId]
-  );
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ['student-achievements', internId],
+    queryFn: () => getStudentAchievements(internId!),
+    enabled: !!internId,
+    staleTime: 60000,
+    retry: 1,
+  });
 
-  if (!intern || !achievements) {
+  // Submission stats chart data
+  const submissionChartData = useMemo(() => {
+    if (!data) return [];
+    const { submissionStats: ss } = data;
+    return [
+      { name: 'Одобрено', value: ss.approved, fill: SUBMISSION_COLORS[0] },
+      { name: 'На проверке', value: ss.pending, fill: SUBMISSION_COLORS[1] },
+      { name: 'На доработке', value: ss.revision, fill: SUBMISSION_COLORS[2] },
+      { name: 'Отклонено', value: ss.failed, fill: SUBMISSION_COLORS[3] },
+    ].filter(d => d.value > 0);
+  }, [data]);
+
+  // Achievements progress chart data
+  const achievementChartData = useMemo(() => {
+    if (!data) return [];
+    const { achievements: a } = data;
+    return [
+      { name: 'Получено', value: a.stats.earned, fill: ACHIEVEMENT_COLORS[0] },
+      { name: 'Осталось', value: a.stats.total - a.stats.earned, fill: ACHIEVEMENT_COLORS[1] },
+    ];
+  }, [data]);
+
+  // Trail completion aggregated
+  const trailCompletion = useMemo(() => {
+    if (!data || data.trailProgress.length === 0) return null;
+    const totalCompleted = data.trailProgress.reduce((sum, t) => sum + t.completedModules, 0);
+    const totalModules = data.trailProgress.reduce((sum, t) => sum + t.totalModules, 0);
+    return { completed: totalCompleted, total: totalModules, percent: totalModules > 0 ? Math.round((totalCompleted / totalModules) * 100) : 0 };
+  }, [data]);
+
+  if (isLoading) {
     return (
       <div className="h-full flex flex-col">
         <div className="p-4 border-b border-white/10">
-          <button
-            onClick={() => navigate('/interns')}
-            className="flex items-center gap-2 text-white/60 hover:text-white transition-colors"
-          >
+          <button onClick={() => navigate('/interns')} className="flex items-center gap-2 text-white/60 hover:text-white transition-colors">
             <ArrowLeft className="w-5 h-5" />
             <span className="text-sm">Назад к списку</span>
           </button>
         </div>
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center text-white/40">
-            <Trophy className="w-16 h-16 mx-auto mb-4 opacity-50 text-amber-400/50" />
-            <h3 className="text-lg font-medium mb-2">Практикант не найден</h3>
-            <p className="text-sm">Проверьте корректность ссылки</p>
+            <Loader2 className="w-12 h-12 mx-auto mb-4 animate-spin opacity-50" />
+            <h3 className="text-lg font-medium mb-2">Загрузка достижений...</h3>
           </div>
         </div>
       </div>
     );
   }
 
-  const { completionStats, gradeStats, engagementLevel } = achievements;
-  const totalModules = completionStats.completed + completionStats.inProgress + completionStats.notStarted;
+  if (isError || !data) {
+    return (
+      <div className="h-full flex flex-col">
+        <div className="p-4 border-b border-white/10">
+          <button onClick={() => navigate('/interns')} className="flex items-center gap-2 text-white/60 hover:text-white transition-colors">
+            <ArrowLeft className="w-5 h-5" />
+            <span className="text-sm">Назад к списку</span>
+          </button>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center text-white/40">
+            <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-red-400/60" />
+            <h3 className="text-lg font-medium mb-2 text-red-400/80">
+              {(error as Error)?.message?.includes('404') ? 'Студент не найден' : 'Ошибка загрузки'}
+            </h3>
+            <p className="text-sm mb-4">{(error as Error)?.message || 'Не удалось загрузить данные'}</p>
+            <button onClick={() => refetch()} className="flex items-center gap-2 mx-auto px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors">
+              <RefreshCw className="w-4 h-4" />
+              Попробовать снова
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  // Chart data
-  const completionData = [
-    { name: 'Завершено', value: completionStats.completed, fill: COMPLETION_COLORS[0] },
-    { name: 'В процессе', value: completionStats.inProgress, fill: COMPLETION_COLORS[1] },
-    { name: 'Не начато', value: completionStats.notStarted, fill: COMPLETION_COLORS[2] },
-  ];
-
-  const gradeData = [
-    { name: 'Отлично', value: gradeStats.excellent, fill: GRADE_COLORS[0] },
-    { name: 'Хорошо', value: gradeStats.good, fill: GRADE_COLORS[1] },
-    { name: 'Удовл.', value: gradeStats.satisfactory, fill: GRADE_COLORS[2] },
-    { name: 'Нужно улучшить', value: gradeStats.needsImprovement, fill: GRADE_COLORS[3] },
-  ].filter(d => d.value > 0);
-
-  const engagementData = [
-    { name: 'Вовлечённость', value: engagementLevel, fill: ENGAGEMENT_COLORS[0] },
-    { name: 'Остаток', value: 100 - engagementLevel, fill: ENGAGEMENT_COLORS[1] },
-  ];
-
-  const completionPercent = Math.round((completionStats.completed / totalModules) * 100);
+  const { student, achievements, submissionStats, trailProgress, certificates } = data;
 
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="p-4 border-b border-white/10">
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/interns')}
-            className="p-2 hover:bg-white/5 rounded-lg transition-colors"
-          >
+          <button onClick={() => navigate('/interns')} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
             <ArrowLeft className="w-5 h-5 text-white/60" />
           </button>
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-400 font-medium text-sm flex-shrink-0">
-              {getAvatarInitials(intern.name)}
+              {getAvatarInitials(student.name)}
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <Trophy className="w-5 h-5 text-amber-400 flex-shrink-0" />
                 <h1 className="text-lg font-bold truncate">Успехи</h1>
               </div>
-              <p className="text-sm text-white/50 truncate">{intern.name} — {intern.position}</p>
+              <p className="text-sm text-white/50 truncate">{student.name}</p>
             </div>
           </div>
         </div>
@@ -207,268 +258,283 @@ export default function InternAchievementsPage() {
       <div className="flex-1 overflow-auto p-4 space-y-6">
         {/* Charts Row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Completion Stats Chart */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="bg-white/5 border border-white/10 rounded-xl p-4"
-          >
-            <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Статистика прохождения</h3>
+          {/* Submission Stats Chart */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
+            <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Статистика работ</h3>
+            {submissionChartData.length > 0 ? (
+              <>
+                <div className="relative h-[180px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={submissionChartData} cx="50%" cy="50%" innerRadius={55} outerRadius={75} paddingAngle={3} dataKey="value" stroke="none">
+                        {submissionChartData.map((entry, index) => (
+                          <Cell key={index} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<ChartTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <DonutCenterLabel value={String(submissionStats.total)} label="всего" />
+                </div>
+                <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1">
+                  {submissionChartData.map((item, index) => (
+                    <div key={index} className="flex items-center gap-1.5 text-xs text-white/60">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.fill }} />
+                      <span>{item.name}: {item.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="h-[180px] flex items-center justify-center text-white/30 text-sm">Нет работ</div>
+            )}
+          </motion.div>
+
+          {/* Achievements Progress Chart */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
+            <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Прогресс достижений</h3>
             <div className="relative h-[180px]">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={completionData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={75}
-                    paddingAngle={3}
-                    dataKey="value"
-                    stroke="none"
-                  >
-                    {completionData.map((entry, index) => (
+                  <Pie data={achievementChartData} cx="50%" cy="50%" innerRadius={55} outerRadius={75} paddingAngle={0} dataKey="value" stroke="none" startAngle={90} endAngle={-270}>
+                    {achievementChartData.map((entry, index) => (
                       <Cell key={index} fill={entry.fill} />
                     ))}
                   </Pie>
                   <Tooltip content={<ChartTooltip />} />
                 </PieChart>
               </ResponsiveContainer>
-              <DonutCenterLabel value={`${completionPercent}%`} label="пройдено" />
+              <DonutCenterLabel value={`${achievements.stats.percentage}%`} label="достижений" />
             </div>
-            {/* Legend */}
-            <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1">
-              {completionData.map((item, index) => (
-                <div key={index} className="flex items-center gap-1.5 text-xs text-white/60">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.fill }} />
-                  <span>{item.name}: {item.value}</span>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-
-          {/* Grades Stats Chart */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="bg-white/5 border border-white/10 rounded-xl p-4"
-          >
-            <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Статистика оценок</h3>
-            <div className="relative h-[180px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={gradeData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={75}
-                    paddingAngle={3}
-                    dataKey="value"
-                    stroke="none"
-                  >
-                    {gradeData.map((entry, index) => (
-                      <Cell key={index} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<ChartTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-              <DonutCenterLabel value={`${achievements.averageScore.toFixed(1)}`} label="средний балл" />
-            </div>
-            {/* Legend */}
-            <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1">
-              {gradeData.map((item, index) => (
-                <div key={index} className="flex items-center gap-1.5 text-xs text-white/60">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.fill }} />
-                  <span>{item.name}: {item.value}</span>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-
-          {/* Engagement Level Chart */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="bg-white/5 border border-white/10 rounded-xl p-4"
-          >
-            <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Общий уровень вовлечённости</h3>
-            <div className="relative h-[180px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={engagementData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={75}
-                    paddingAngle={0}
-                    dataKey="value"
-                    stroke="none"
-                    startAngle={90}
-                    endAngle={-270}
-                  >
-                    {engagementData.map((entry, index) => (
-                      <Cell key={index} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <DonutCenterLabel value={`${engagementLevel}%`} label="вовлечённость" />
-            </div>
-            {/* Engagement indicators */}
             <div className="mt-3 flex justify-center gap-4">
               <div className="flex items-center gap-1.5 text-xs text-white/60">
-                <Flame className="w-3.5 h-3.5 text-amber-400" />
-                <span>Серия: {achievements.streak} дн.</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-white/60">
-                <Calendar className="w-3.5 h-3.5 text-blue-400" />
-                <span>Посл. визит: {formatDate(achievements.lastVisit, 'short')}</span>
+                <Medal className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{achievements.stats.earned} из {achievements.stats.total}</span>
               </div>
             </div>
+          </motion.div>
+
+          {/* Trail Completion Chart */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
+            <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Прохождение трейлов</h3>
+            {trailCompletion ? (
+              <>
+                <div className="relative h-[180px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: 'Завершено', value: trailCompletion.completed, fill: '#10b981' },
+                          { name: 'Осталось', value: trailCompletion.total - trailCompletion.completed, fill: '#1f2937' },
+                        ]}
+                        cx="50%" cy="50%" innerRadius={55} outerRadius={75} paddingAngle={0} dataKey="value" stroke="none" startAngle={90} endAngle={-270}
+                      >
+                        <Cell fill="#10b981" />
+                        <Cell fill="#1f2937" />
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <DonutCenterLabel value={`${trailCompletion.percent}%`} label="модулей" />
+                </div>
+                <div className="mt-3 flex justify-center gap-4">
+                  <div className="flex items-center gap-1.5 text-xs text-white/60">
+                    <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{trailCompletion.completed} из {trailCompletion.total} модулей</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="h-[180px] flex items-center justify-center text-white/30 text-sm">Нет трейлов</div>
+            )}
           </motion.div>
         </div>
 
         {/* Quick stats cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.35 }}
-            className="bg-white/5 border border-white/10 rounded-xl p-3"
-          >
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
             <div className="flex items-center gap-2 text-white/50 mb-1">
-              <Star className="w-4 h-4 text-amber-400" />
-              <span className="text-xs">Средний балл</span>
+              <Zap className="w-4 h-4 text-amber-400" />
+              <span className="text-xs">Опыт (XP)</span>
             </div>
-            <p className="text-xl font-bold">{achievements.averageScore.toFixed(1)}</p>
+            <p className="text-xl font-bold">{student.totalXP}</p>
           </motion.div>
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="bg-white/5 border border-white/10 rounded-xl p-3"
-          >
-            <div className="flex items-center gap-2 text-white/50 mb-1">
-              <Clock className="w-4 h-4 text-blue-400" />
-              <span className="text-xs">Время обучения</span>
-            </div>
-            <p className="text-xl font-bold">{achievements.totalTimeSpent}</p>
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.45 }}
-            className="bg-white/5 border border-white/10 rounded-xl p-3"
-          >
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
             <div className="flex items-center gap-2 text-white/50 mb-1">
               <Flame className="w-4 h-4 text-orange-400" />
               <span className="text-xs">Серия дней</span>
             </div>
-            <p className="text-xl font-bold">{achievements.streak} дн.</p>
+            <p className="text-xl font-bold">{student.currentStreak} дн.</p>
           </motion.div>
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-            className="bg-white/5 border border-white/10 rounded-xl p-3"
-          >
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
+            <div className="flex items-center gap-2 text-white/50 mb-1">
+              <Star className="w-4 h-4 text-purple-400" />
+              <span className="text-xs">Позиция в рейтинге</span>
+            </div>
+            <p className="text-xl font-bold">#{student.leaderboardRank}</p>
+          </motion.div>
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
             <div className="flex items-center gap-2 text-white/50 mb-1">
               <TrendingUp className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs">Прогресс</span>
+              <span className="text-xs">Модулей пройдено</span>
             </div>
-            <p className="text-xl font-bold">{completionStats.completed}/{totalModules}</p>
+            <p className="text-xl font-bold">{student.modulesCompleted}</p>
           </motion.div>
         </div>
 
         {/* Collapsible sections */}
         <div className="space-y-3">
-          {/* Completed modules */}
-          <CollapsibleSection
-            title="Какие модули пройдены"
-            icon={CheckCircle2}
-            badge={achievements.completedModules.length}
-            defaultOpen
-          >
-            <div className="mt-3 space-y-2">
-              {achievements.completedModules.map(mod => (
-                <div
-                  key={mod.id}
-                  className="flex items-center justify-between p-2.5 bg-white/5 rounded-lg"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                    <span className="text-sm truncate">{mod.name}</span>
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <span className="text-xs text-white/40">{formatDate(mod.completedDate, 'short')}</span>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                      mod.score >= 90 ? 'bg-emerald-500/20 text-emerald-400' :
-                      mod.score >= 75 ? 'bg-blue-500/20 text-blue-400' :
-                      mod.score >= 60 ? 'bg-amber-500/20 text-amber-400' :
-                      'bg-red-500/20 text-red-400'
-                    }`}>
-                      {mod.score}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CollapsibleSection>
-
-          {/* In-progress modules */}
-          <CollapsibleSection
-            title="Модули в процессе"
-            icon={Loader}
-            badge={achievements.inProgressModules.length}
-          >
-            <div className="mt-3 space-y-2">
-              {achievements.inProgressModules.map(mod => (
-                <div
-                  key={mod.id}
-                  className="p-2.5 bg-white/5 rounded-lg"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <BookOpen className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                      <span className="text-sm truncate">{mod.name}</span>
+          {/* Achievements earned */}
+          {achievements.earned.length > 0 && (
+            <CollapsibleSection
+              title="Полученные достижения"
+              icon={Medal}
+              badge={achievements.earned.length}
+              defaultOpen
+            >
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {achievements.earned.map(ach => (
+                  <div key={ach.id} className={clsx('p-3 rounded-lg border', RARITY_STYLES[ach.rarity] || RARITY_STYLES.common)}>
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
+                        <Trophy className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium truncate">{ach.name}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 flex-shrink-0">
+                            {RARITY_LABELS[ach.rarity] || ach.rarity}
+                          </span>
+                        </div>
+                        <p className="text-xs text-white/50 mt-0.5">{ach.description}</p>
+                        {ach.earnedAt && (
+                          <p className="text-[10px] text-white/30 mt-1 flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {formatDate(ach.earnedAt, 'short')}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <span className="text-xs text-white/50 flex-shrink-0">{mod.progress}%</span>
                   </div>
-                  <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                ))}
+              </div>
+            </CollapsibleSection>
+          )}
+
+          {/* Trail Progress */}
+          {trailProgress.length > 0 && (
+            <CollapsibleSection
+              title="Прогресс по трейлам"
+              icon={GitBranch}
+              badge={trailProgress.length}
+              defaultOpen
+            >
+              <div className="mt-3 space-y-2">
+                {trailProgress.map(trail => (
+                  <div key={trail.trailId} className="p-3 bg-white/5 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <GitBranch className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                        <span className="text-sm font-medium truncate">{trail.trailTitle}</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-xs text-white/40">
+                          {trail.completedModules}/{trail.totalModules}
+                        </span>
+                        <span className="text-xs text-white/50">{trail.completionPercent}%</span>
+                      </div>
+                    </div>
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className={clsx('h-full rounded-full transition-all', {
+                          'bg-emerald-400': trail.completionPercent >= 80,
+                          'bg-amber-400': trail.completionPercent >= 50 && trail.completionPercent < 80,
+                          'bg-blue-400': trail.completionPercent < 50,
+                        })}
+                        style={{ width: `${trail.completionPercent}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-white/30 mt-1.5 flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      Начало: {formatDate(trail.enrolledAt, 'short')}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </CollapsibleSection>
+          )}
+
+          {/* Certificates */}
+          {certificates.length > 0 && (
+            <CollapsibleSection
+              title="Сертификаты"
+              icon={Award}
+              badge={certificates.length}
+            >
+              <div className="mt-3 space-y-2">
+                {certificates.map(cert => (
+                  <div key={cert.id} className="p-3 bg-white/5 rounded-lg flex items-center gap-3">
                     <div
-                      className="h-full bg-amber-400 rounded-full transition-all"
-                      style={{ width: `${mod.progress}%` }}
-                    />
+                      className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: cert.trail.color ? `${cert.trail.color}20` : 'rgba(255,255,255,0.1)' }}
+                    >
+                      <Award className="w-5 h-5" style={{ color: cert.trail.color || '#f59e0b' }} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium truncate">{cert.trail.title}</span>
+                        <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-full', {
+                          'bg-emerald-500/20 text-emerald-400': cert.level === 'Senior',
+                          'bg-blue-500/20 text-blue-400': cert.level === 'Middle',
+                          'bg-gray-500/20 text-gray-400': cert.level === 'Junior',
+                        })}>
+                          {cert.level}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-[10px] text-white/40">
+                        <span className="flex items-center gap-1">
+                          <FileCheck className="w-3 h-3" />
+                          Код: {cert.code}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {formatDate(cert.issuedAt, 'short')}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Zap className="w-3 h-3" />
+                          {cert.totalXP} XP
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </CollapsibleSection>
+                ))}
+              </div>
+            </CollapsibleSection>
+          )}
 
           {/* Activity summary */}
-          <CollapsibleSection title="Активность и время" icon={Clock}>
+          <CollapsibleSection title="Активность" icon={CheckCircle2}>
             <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="p-3 bg-white/5 rounded-lg">
-                <p className="text-xs text-white/40 mb-1">Общее время обучения</p>
-                <p className="text-sm font-medium">{achievements.totalTimeSpent}</p>
+                <p className="text-xs text-white/40 mb-1">Дата регистрации</p>
+                <p className="text-sm font-medium">{formatDate(student.registeredAt, 'medium')}</p>
               </div>
               <div className="p-3 bg-white/5 rounded-lg">
-                <p className="text-xs text-white/40 mb-1">Последний визит</p>
-                <p className="text-sm font-medium">{formatDate(achievements.lastVisit, 'medium')}</p>
+                <p className="text-xs text-white/40 mb-1">Последняя активность</p>
+                <p className="text-sm font-medium">{formatDate(student.lastActiveAt, 'medium')}</p>
+              </div>
+              <div className="p-3 bg-white/5 rounded-lg">
+                <p className="text-xs text-white/40 mb-1">Дней без активности</p>
+                <p className={clsx('text-sm font-medium', {
+                  'text-emerald-400': student.daysSinceActive <= 3,
+                  'text-amber-400': student.daysSinceActive > 3 && student.daysSinceActive <= 7,
+                  'text-red-400': student.daysSinceActive > 7,
+                })}>
+                  {student.daysSinceActive} дн.
+                </p>
               </div>
               <div className="p-3 bg-white/5 rounded-lg">
                 <p className="text-xs text-white/40 mb-1">Текущая серия</p>
-                <p className="text-sm font-medium">{achievements.streak} дней подряд</p>
-              </div>
-              <div className="p-3 bg-white/5 rounded-lg">
-                <p className="text-xs text-white/40 mb-1">Уровень вовлечённости</p>
-                <p className="text-sm font-medium">{engagementLevel}%</p>
+                <p className="text-sm font-medium">{student.currentStreak} дней подряд</p>
               </div>
             </div>
           </CollapsibleSection>

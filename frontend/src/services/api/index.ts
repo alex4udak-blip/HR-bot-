@@ -349,6 +349,8 @@ export type {
 // Interns (Prometheus proxy)
 export {
   getPrometheusInterns,
+  getPrometheusAnalytics,
+  getStudentAchievements,
 } from './interns';
 
 // Intern types
@@ -356,4 +358,28 @@ export type {
   PrometheusIntern,
   PrometheusTrailSummary,
   PrometheusInternsResponse,
+  PrometheusAnalyticsResponse,
+  ChurnRisk,
+  ChurnRiskStudent,
+  FunnelStage,
+  TrendPoint,
+  ModuleDifficulty,
+  AnalyticsSummary,
+  TrailProgressItem,
+  AnalyticsTopStudent,
+  ScoreDistribution,
+  DropoffModule,
+  DropoffTrail,
+  StudentModuleStatus,
+  StudentByTrail,
+  StudentsByTrailItem,
+  AnalyticsTrailFilter,
+  AnalyticsFilters,
+  StudentAchievementsResponse,
+  StudentInfo,
+  Achievement,
+  AchievementsData,
+  SubmissionStats,
+  StudentTrailProgress,
+  Certificate,
 } from './interns';
