@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   GitBranch,
@@ -6,24 +7,49 @@ import {
   Users,
   BookOpen,
   CheckCircle2,
+  AlertTriangle,
   Filter,
   X,
-  AtSign,
-  Calendar,
+  Loader2,
+  RefreshCw,
+  TrendingDown,
+  Search,
 } from 'lucide-react';
 import clsx from 'clsx';
-import {
-  MOCK_INTERNS,
-  MOCK_TRAIL_DETAILS,
-  MOCK_INFO,
-  STATUS_LABELS,
-  STATUS_COLORS,
-} from '@/data/mockInterns';
-import type { InternStatus, TrailDetail, TrailModule } from '@/data/mockInterns';
-import { formatDate } from '@/utils';
+import { getPrometheusAnalytics } from '@/services/api';
+import type {
+  DropoffTrail,
+  DropoffModule,
+  StudentsByTrailItem,
+  StudentByTrail,
+} from '@/services/api';
 
-type SortField = 'name' | 'startDate' | 'endDate' | 'students' | 'completion';
+type SortField = 'name' | 'students' | 'completion' | 'modules';
 type SortDir = 'asc' | 'desc';
+
+const MODULE_TYPE_LABELS: Record<string, string> = {
+  THEORY: 'Теория',
+  PRACTICE: 'Практика',
+  PROJECT: 'Проект',
+};
+
+const MODULE_TYPE_COLORS: Record<string, string> = {
+  THEORY: 'bg-blue-500/20 text-blue-400',
+  PRACTICE: 'bg-amber-500/20 text-amber-400',
+  PROJECT: 'bg-purple-500/20 text-purple-400',
+};
+
+const TRAIL_STATUS_LABELS: Record<string, string> = {
+  LEARNING: 'Обучается',
+  GRADUATED: 'Выпускник',
+  DROPPED: 'Отчислен',
+};
+
+const TRAIL_STATUS_COLORS: Record<string, string> = {
+  LEARNING: 'bg-blue-500/20 text-blue-400',
+  GRADUATED: 'bg-emerald-500/20 text-emerald-400',
+  DROPPED: 'bg-red-500/20 text-red-400',
+};
 
 function getAvatarInitials(name: string) {
   return name
@@ -34,149 +60,88 @@ function getAvatarInitials(name: string) {
     .toUpperCase();
 }
 
-function getSubmittedWorksCount(internId: number): number {
-  const info = MOCK_INFO[internId];
-  if (!info) return 0;
-  return info.works.filter(w => w.status === 'submitted' || w.status === 'reviewed' || w.status === 'returned').length;
-}
-
-function getTrailStudentIds(trail: TrailDetail): number[] {
-  const ids = new Set<number>();
-  trail.modules.forEach(m => m.students.forEach(s => ids.add(s.internId)));
-  return Array.from(ids);
-}
-
-function getTrailCompletion(trail: TrailDetail): number {
-  let totalProgress = 0;
-  let totalEntries = 0;
-  trail.modules.forEach(m => {
-    m.students.forEach(s => {
-      totalProgress += s.progress;
-      totalEntries++;
-    });
-  });
-  return totalEntries > 0 ? Math.round(totalProgress / totalEntries) : 0;
-}
-
-function getModuleCompletion(mod: TrailModule): number {
-  if (mod.students.length === 0) return 0;
-  const total = mod.students.reduce((sum, s) => sum + s.progress, 0);
-  return Math.round(total / mod.students.length);
+function getTrailCompletion(trail: DropoffTrail): number {
+  if (trail.modules.length === 0) return 0;
+  const avg = trail.modules.reduce((s, m) => s + m.completionRate, 0) / trail.modules.length;
+  return Math.round(avg);
 }
 
 export default function InternsStagesTab() {
-  // Filter state
+  // Period & trail filters
+  const [period, setPeriod] = useState('30');
+  const [selectedTrail, setSelectedTrail] = useState('all');
+
+  // Search & filter state
   const [showFilters, setShowFilters] = useState(false);
-  const [telegramSearch, setTelegramSearch] = useState('');
-  const [selectedStatuses, setSelectedStatuses] = useState<InternStatus[]>([]);
-  const [minWorks, setMinWorks] = useState('');
-  const [maxWorks, setMaxWorks] = useState('');
-  const [trailStartFrom, setTrailStartFrom] = useState('');
-  const [trailStartTo, setTrailStartTo] = useState('');
-  const [trailEndFrom, setTrailEndFrom] = useState('');
-  const [trailEndTo, setTrailEndTo] = useState('');
-  const [regFrom, setRegFrom] = useState('');
-  const [regTo, setRegTo] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [onlyBottlenecks, setOnlyBottlenecks] = useState(false);
 
   // Sort state
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
-  // Expanded trails
-  const [expandedTrails, setExpandedTrails] = useState<Set<number>>(new Set());
+  // Expanded trails & modules
+  const [expandedTrails, setExpandedTrails] = useState<Set<string>>(new Set());
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
 
+  // Fetch analytics
+  const {
+    data: analytics,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ['prometheus-analytics-stages', selectedTrail, period],
+    queryFn: () => getPrometheusAnalytics(selectedTrail, period),
+    staleTime: 60000,
+    retry: 1,
+  });
+
+  const dropoffTrails = analytics?.dropoffAnalysis ?? [];
+  const studentsByTrail = analytics?.studentsByTrail ?? [];
+  const trailFilters = analytics?.filters?.trails ?? [];
+
+  // Build a map from trailId -> StudentsByTrailItem for student lookup
+  const studentsByTrailMap = useMemo(() => {
+    const map = new Map<string, StudentsByTrailItem>();
+    studentsByTrail.forEach(item => map.set(item.trailId, item));
+    return map;
+  }, [studentsByTrail]);
+
+  // Active filters count
   const activeFiltersCount = useMemo(() => {
     let count = 0;
-    if (telegramSearch) count++;
-    if (selectedStatuses.length > 0) count++;
-    if (minWorks || maxWorks) count++;
-    if (trailStartFrom || trailStartTo) count++;
-    if (trailEndFrom || trailEndTo) count++;
-    if (regFrom || regTo) count++;
+    if (searchQuery) count++;
+    if (onlyBottlenecks) count++;
     return count;
-  }, [telegramSearch, selectedStatuses, minWorks, maxWorks, trailStartFrom, trailStartTo, trailEndFrom, trailEndTo, regFrom, regTo]);
-
-  // Filter intern IDs
-  const filteredInternIds = useMemo(() => {
-    let interns = MOCK_INTERNS;
-
-    if (telegramSearch) {
-      const q = telegramSearch.toLowerCase();
-      interns = interns.filter(i => i.telegramUsername?.toLowerCase().includes(q));
-    }
-
-    if (selectedStatuses.length > 0) {
-      interns = interns.filter(i => selectedStatuses.includes(i.status));
-    }
-
-    if (minWorks) {
-      const min = parseInt(minWorks, 10);
-      if (!isNaN(min)) {
-        interns = interns.filter(i => getSubmittedWorksCount(i.id) >= min);
-      }
-    }
-
-    if (maxWorks) {
-      const max = parseInt(maxWorks, 10);
-      if (!isNaN(max)) {
-        interns = interns.filter(i => getSubmittedWorksCount(i.id) <= max);
-      }
-    }
-
-    if (regFrom) {
-      interns = interns.filter(i => i.registrationDate >= regFrom);
-    }
-    if (regTo) {
-      interns = interns.filter(i => i.registrationDate <= regTo);
-    }
-
-    return new Set(interns.map(i => i.id));
-  }, [telegramSearch, selectedStatuses, minWorks, maxWorks, regFrom, regTo]);
+  }, [searchQuery, onlyBottlenecks]);
 
   // Filter and sort trails
   const filteredTrails = useMemo(() => {
-    let trails = MOCK_TRAIL_DETAILS;
+    let trails = dropoffTrails;
 
-    // Filter by trail dates
-    if (trailStartFrom) {
-      trails = trails.filter(t => t.startDate >= trailStartFrom);
-    }
-    if (trailStartTo) {
-      trails = trails.filter(t => t.startDate <= trailStartTo);
-    }
-    if (trailEndFrom) {
-      trails = trails.filter(t => t.endDate >= trailEndFrom);
-    }
-    if (trailEndTo) {
-      trails = trails.filter(t => t.endDate <= trailEndTo);
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      trails = trails.filter(t => t.trailTitle.toLowerCase().includes(q));
     }
 
-    // Filter trails that have at least one matching student
-    trails = trails.filter(trail => {
-      const studentIds = getTrailStudentIds(trail);
-      return studentIds.some(id => filteredInternIds.has(id));
-    });
+    if (onlyBottlenecks) {
+      trails = trails.filter(t => t.modules.some(m => m.isBottleneck));
+    }
 
-    // Sort
     trails = [...trails].sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
         case 'name':
-          cmp = a.name.localeCompare(b.name);
+          cmp = a.trailTitle.localeCompare(b.trailTitle);
           break;
-        case 'startDate':
-          cmp = a.startDate.localeCompare(b.startDate);
+        case 'students':
+          cmp = a.totalEnrolled - b.totalEnrolled;
           break;
-        case 'endDate':
-          cmp = a.endDate.localeCompare(b.endDate);
+        case 'modules':
+          cmp = a.modules.length - b.modules.length;
           break;
-        case 'students': {
-          const aStudents = getTrailStudentIds(a).filter(id => filteredInternIds.has(id)).length;
-          const bStudents = getTrailStudentIds(b).filter(id => filteredInternIds.has(id)).length;
-          cmp = aStudents - bStudents;
-          break;
-        }
         case 'completion':
           cmp = getTrailCompletion(a) - getTrailCompletion(b);
           break;
@@ -185,9 +150,25 @@ export default function InternsStagesTab() {
     });
 
     return trails;
-  }, [filteredInternIds, trailStartFrom, trailStartTo, trailEndFrom, trailEndTo, sortField, sortDir]);
+  }, [dropoffTrails, searchQuery, onlyBottlenecks, sortField, sortDir]);
 
-  const toggleTrail = (trailId: number) => {
+  // Aggregate stats
+  const totalStudents = useMemo(() => {
+    return filteredTrails.reduce((sum, t) => sum + t.totalEnrolled, 0);
+  }, [filteredTrails]);
+
+  const totalModules = useMemo(() => {
+    return filteredTrails.reduce((sum, t) => sum + t.modules.length, 0);
+  }, [filteredTrails]);
+
+  const bottleneckCount = useMemo(() => {
+    return filteredTrails.reduce(
+      (sum, t) => sum + t.modules.filter(m => m.isBottleneck).length,
+      0,
+    );
+  }, [filteredTrails]);
+
+  const toggleTrail = (trailId: string) => {
     setExpandedTrails(prev => {
       const next = new Set(prev);
       if (next.has(trailId)) next.delete(trailId);
@@ -207,7 +188,7 @@ export default function InternsStagesTab() {
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortField(field);
       setSortDir('asc');
@@ -215,40 +196,108 @@ export default function InternsStagesTab() {
   };
 
   const clearFilters = () => {
-    setTelegramSearch('');
-    setSelectedStatuses([]);
-    setMinWorks('');
-    setMaxWorks('');
-    setTrailStartFrom('');
-    setTrailStartTo('');
-    setTrailEndFrom('');
-    setTrailEndTo('');
-    setRegFrom('');
-    setRegTo('');
+    setSearchQuery('');
+    setOnlyBottlenecks(false);
   };
 
-  const toggleStatus = (status: InternStatus) => {
-    setSelectedStatuses(prev =>
-      prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
+  // Find students in a given trail+module
+  const getModuleStudents = (trailId: string, moduleId: string): StudentByTrail[] => {
+    const trailData = studentsByTrailMap.get(trailId);
+    if (!trailData) return [];
+    return trailData.students.filter(student =>
+      student.modules.some(m => m.id === moduleId && m.status !== 'NOT_STARTED'),
     );
   };
 
-  // Aggregate stats
-  const totalStudents = useMemo(() => {
-    const ids = new Set<number>();
-    filteredTrails.forEach(t => getTrailStudentIds(t).forEach(id => {
-      if (filteredInternIds.has(id)) ids.add(id);
-    }));
-    return ids.size;
-  }, [filteredTrails, filteredInternIds]);
+  // Get a student's status for a specific module
+  const getStudentModuleStatus = (student: StudentByTrail, moduleId: string) => {
+    return student.modules.find(m => m.id === moduleId);
+  };
 
-  const totalModules = useMemo(() => {
-    return filteredTrails.reduce((sum, t) => sum + t.modules.length, 0);
-  }, [filteredTrails]);
+  // Period buttons
+  const PERIODS = [
+    { value: '7', label: '7д' },
+    { value: '14', label: '14д' },
+    { value: '30', label: '30д' },
+    { value: '60', label: '60д' },
+    { value: '90', label: '90д' },
+  ];
+
+  // Loading
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <div className="text-center text-white/40">
+          <Loader2 className="w-10 h-10 mx-auto mb-3 animate-spin opacity-60" />
+          <p className="text-sm">Загрузка данных...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error
+  if (isError) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <div className="text-center text-white/40">
+          <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-red-400/60" />
+          <p className="text-sm mb-3">{(error as Error)?.message || 'Ошибка загрузки'}</p>
+          <button
+            onClick={() => refetch()}
+            className="flex items-center gap-2 mx-auto px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Повторить
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Filter Bar */}
+      {/* Trail & Period selectors */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+        <select
+          value={selectedTrail}
+          onChange={e => setSelectedTrail(e.target.value)}
+          className="px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-emerald-500/50"
+        >
+          <option value="all">Все трейлы</option>
+          {trailFilters.map(t => (
+            <option key={t.id} value={t.id}>
+              {t.title}
+            </option>
+          ))}
+        </select>
+
+        <div className="flex items-center gap-1">
+          {PERIODS.map(p => (
+            <button
+              key={p.value}
+              onClick={() => setPeriod(p.value)}
+              className={clsx(
+                'px-3 py-1.5 text-xs rounded-lg border transition-colors',
+                period === p.value
+                  ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                  : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10',
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={() => refetch()}
+          className="flex items-center gap-1.5 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs transition-colors ml-auto"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Обновить
+        </button>
+      </div>
+
+      {/* Filter & sort bar */}
       <div className="space-y-3">
         <div className="flex items-center gap-3 flex-wrap">
           <button
@@ -257,7 +306,7 @@ export default function InternsStagesTab() {
               'flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium transition-all active:scale-95',
               activeFiltersCount > 0
                 ? 'bg-emerald-600/20 border-emerald-500/50 text-emerald-300'
-                : 'bg-white/5 border-white/10 hover:bg-white/10'
+                : 'bg-white/5 border-white/10 hover:bg-white/10',
             )}
           >
             <Filter className="w-4 h-4" />
@@ -281,12 +330,14 @@ export default function InternsStagesTab() {
           {/* Sort buttons */}
           <div className="flex items-center gap-1 ml-auto">
             <span className="text-xs text-white/40 mr-1">Сортировка:</span>
-            {([
-              { field: 'name' as SortField, label: 'Название' },
-              { field: 'startDate' as SortField, label: 'Начало' },
-              { field: 'students' as SortField, label: 'Студенты' },
-              { field: 'completion' as SortField, label: 'Прогресс' },
-            ]).map(item => (
+            {(
+              [
+                { field: 'name' as SortField, label: 'Название' },
+                { field: 'students' as SortField, label: 'Студенты' },
+                { field: 'modules' as SortField, label: 'Модули' },
+                { field: 'completion' as SortField, label: 'Прогресс' },
+              ] as const
+            ).map(item => (
               <button
                 key={item.field}
                 onClick={() => handleSort(item.field)}
@@ -294,12 +345,17 @@ export default function InternsStagesTab() {
                   'px-2 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1',
                   sortField === item.field
                     ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                    : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
+                    : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10',
                 )}
               >
                 {item.label}
                 {sortField === item.field && (
-                  <ChevronDown className={clsx('w-3 h-3 transition-transform', sortDir === 'asc' ? 'rotate-180' : '')} />
+                  <ChevronDown
+                    className={clsx(
+                      'w-3 h-3 transition-transform',
+                      sortDir === 'asc' ? 'rotate-180' : '',
+                    )}
+                  />
                 )}
               </button>
             ))}
@@ -312,134 +368,37 @@ export default function InternsStagesTab() {
             animate={{ opacity: 1, height: 'auto' }}
             className="p-4 bg-white/5 rounded-xl border border-white/10 space-y-4 overflow-hidden"
           >
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* Telegram search */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Trail name search */}
               <div>
-                <label className="text-xs text-white/50 mb-1.5 block">Telegram-никнейм</label>
+                <label className="text-xs text-white/50 mb-1.5 block">Поиск по названию трейла</label>
                 <div className="relative">
-                  <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
                   <input
                     type="text"
-                    placeholder="@username"
-                    value={telegramSearch}
-                    onChange={e => setTelegramSearch(e.target.value)}
+                    placeholder="Название трейла..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
                   />
                 </div>
               </div>
 
-              {/* Status filter */}
+              {/* Bottleneck filter */}
               <div>
-                <label className="text-xs text-white/50 mb-1.5 block">Статус кандидата</label>
-                <div className="flex flex-wrap gap-2">
-                  {(Object.keys(STATUS_LABELS) as InternStatus[]).map(status => (
-                    <button
-                      key={status}
-                      onClick={() => toggleStatus(status)}
-                      className={clsx(
-                        'px-2.5 py-1.5 text-xs rounded-lg border transition-colors',
-                        selectedStatuses.includes(status)
-                          ? STATUS_COLORS[status] + ' border-current'
-                          : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
-                      )}
-                    >
-                      {STATUS_LABELS[status]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Submitted works range */}
-              <div>
-                <label className="text-xs text-white/50 mb-1.5 block">Сданные работы (кол-во)</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    placeholder="от"
-                    min="0"
-                    value={minWorks}
-                    onChange={e => setMinWorks(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                  <span className="text-white/30 text-xs">—</span>
-                  <input
-                    type="number"
-                    placeholder="до"
-                    min="0"
-                    value={maxWorks}
-                    onChange={e => setMaxWorks(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* Trail start date range */}
-              <div>
-                <label className="text-xs text-white/50 mb-1.5 block flex items-center gap-1">
-                  <Calendar className="w-3 h-3" />
-                  Дата начала трейла
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={trailStartFrom}
-                    onChange={e => setTrailStartFrom(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                  <span className="text-white/30 text-xs">—</span>
-                  <input
-                    type="date"
-                    value={trailStartTo}
-                    onChange={e => setTrailStartTo(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* Trail end date range */}
-              <div>
-                <label className="text-xs text-white/50 mb-1.5 block flex items-center gap-1">
-                  <Calendar className="w-3 h-3" />
-                  Дата окончания трейла
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={trailEndFrom}
-                    onChange={e => setTrailEndFrom(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                  <span className="text-white/30 text-xs">—</span>
-                  <input
-                    type="date"
-                    value={trailEndTo}
-                    onChange={e => setTrailEndTo(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* Registration date range */}
-              <div>
-                <label className="text-xs text-white/50 mb-1.5 block flex items-center gap-1">
-                  <Calendar className="w-3 h-3" />
-                  Дата регистрации
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={regFrom}
-                    onChange={e => setRegFrom(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                  <span className="text-white/30 text-xs">—</span>
-                  <input
-                    type="date"
-                    value={regTo}
-                    onChange={e => setRegTo(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                </div>
+                <label className="text-xs text-white/50 mb-1.5 block">Фильтр</label>
+                <button
+                  onClick={() => setOnlyBottlenecks(!onlyBottlenecks)}
+                  className={clsx(
+                    'flex items-center gap-2 px-3 py-2 text-sm rounded-lg border transition-colors',
+                    onlyBottlenecks
+                      ? 'bg-red-500/20 border-red-500/30 text-red-400'
+                      : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10',
+                  )}
+                >
+                  <TrendingDown className="w-4 h-4" />
+                  Только с узкими местами
+                </button>
               </div>
             </div>
           </motion.div>
@@ -447,27 +406,54 @@ export default function InternsStagesTab() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-3">
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="bg-white/5 border border-white/10 rounded-xl p-3"
+        >
           <div className="flex items-center gap-2 text-white/50 mb-1">
             <GitBranch className="w-4 h-4 text-emerald-400" />
             <span className="text-xs">Трейлов</span>
           </div>
           <p className="text-xl font-bold">{filteredTrails.length}</p>
         </motion.div>
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="bg-white/5 border border-white/10 rounded-xl p-3"
+        >
           <div className="flex items-center gap-2 text-white/50 mb-1">
             <Users className="w-4 h-4 text-blue-400" />
             <span className="text-xs">Студентов</span>
           </div>
           <p className="text-xl font-bold">{totalStudents}</p>
         </motion.div>
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="bg-white/5 border border-white/10 rounded-xl p-3"
+        >
           <div className="flex items-center gap-2 text-white/50 mb-1">
             <BookOpen className="w-4 h-4 text-amber-400" />
             <span className="text-xs">Модулей</span>
           </div>
           <p className="text-xl font-bold">{totalModules}</p>
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="bg-white/5 border border-white/10 rounded-xl p-3"
+        >
+          <div className="flex items-center gap-2 text-white/50 mb-1">
+            <TrendingDown className="w-4 h-4 text-red-400" />
+            <span className="text-xs">Узких мест</span>
+          </div>
+          <p className="text-xl font-bold">{bottleneckCount}</p>
         </motion.div>
       </div>
 
@@ -476,21 +462,23 @@ export default function InternsStagesTab() {
         <div className="py-16 text-center text-white/40">
           <GitBranch className="w-16 h-16 mx-auto mb-4 opacity-50" />
           <h3 className="text-lg font-medium mb-2">Нет трейлов</h3>
-          <p className="text-sm">Попробуйте изменить параметры фильтров</p>
+          <p className="text-sm">
+            {dropoffTrails.length === 0
+              ? 'Данные о прохождении отсутствуют'
+              : 'Попробуйте изменить параметры фильтров'}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
           {filteredTrails.map((trail, trailIndex) => {
-            const isExpanded = expandedTrails.has(trail.id);
-            const studentIds = getTrailStudentIds(trail).filter(id => filteredInternIds.has(id));
+            const isExpanded = expandedTrails.has(trail.trailId);
             const completion = getTrailCompletion(trail);
-            const completedModules = trail.modules.filter(m =>
-              m.students.every(s => s.progress === 100) && m.students.length > 0
-            ).length;
+            const completedModules = trail.modules.filter(m => m.completionRate === 100).length;
+            const hasBottlenecks = trail.modules.some(m => m.isBottleneck);
 
             return (
               <motion.div
-                key={trail.id}
+                key={trail.trailId}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: trailIndex * 0.05 }}
@@ -498,21 +486,24 @@ export default function InternsStagesTab() {
               >
                 {/* Trail Header */}
                 <button
-                  onClick={() => toggleTrail(trail.id)}
+                  onClick={() => toggleTrail(trail.trailId)}
                   className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors text-left"
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <GitBranch className="w-5 h-5 text-emerald-400 flex-shrink-0" />
                     <div className="min-w-0 flex-1">
-                      <h4 className="font-medium text-sm truncate">{trail.name}</h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-medium text-sm truncate">{trail.trailTitle}</h4>
+                        {hasBottlenecks && (
+                          <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-red-500/20 text-red-400 flex-shrink-0">
+                            Узкие места
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-3 mt-1 text-xs text-white/40">
                         <span className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          {formatDate(trail.startDate, 'short')} — {formatDate(trail.endDate, 'short')}
-                        </span>
-                        <span className="flex items-center gap-1">
                           <Users className="w-3 h-3" />
-                          {studentIds.length} студ.
+                          {trail.totalEnrolled} студ.
                         </span>
                         <span className="flex items-center gap-1">
                           <BookOpen className="w-3 h-3" />
@@ -523,7 +514,6 @@ export default function InternsStagesTab() {
                   </div>
 
                   <div className="flex items-center gap-4 flex-shrink-0">
-                    {/* Completion */}
                     <div className="hidden sm:flex items-center gap-2">
                       <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
                         <div
@@ -542,11 +532,16 @@ export default function InternsStagesTab() {
                         {completedModules}/{trail.modules.length}
                       </span>
                     </div>
-                    <ChevronDown className={clsx('w-4 h-4 text-white/40 transition-transform', isExpanded ? 'rotate-180' : '')} />
+                    <ChevronDown
+                      className={clsx(
+                        'w-4 h-4 text-white/40 transition-transform',
+                        isExpanded ? 'rotate-180' : '',
+                      )}
+                    />
                   </div>
                 </button>
 
-                {/* Trail Content */}
+                {/* Trail Content - Modules */}
                 <AnimatePresence>
                   {isExpanded && (
                     <motion.div
@@ -557,118 +552,222 @@ export default function InternsStagesTab() {
                       className="overflow-hidden"
                     >
                       <div className="px-4 pb-4 border-t border-white/5 space-y-2 pt-3">
-                        {trail.modules.map(mod => {
-                          const moduleKey = `${trail.id}-${mod.id}`;
-                          const isModExpanded = expandedModules.has(moduleKey);
-                          const modCompletion = getModuleCompletion(mod);
-                          const modStudents = mod.students.filter(s => filteredInternIds.has(s.internId));
-                          const allCompleted = modStudents.length > 0 && modStudents.every(s => s.progress === 100);
+                        {trail.modules
+                          .sort((a, b) => a.order - b.order)
+                          .map((mod: DropoffModule) => {
+                            const moduleKey = `${trail.trailId}-${mod.id}`;
+                            const isModExpanded = expandedModules.has(moduleKey);
+                            const modStudents = getModuleStudents(trail.trailId, mod.id);
 
-                          if (modStudents.length === 0) return null;
-
-                          return (
-                            <div key={mod.id} className="bg-white/5 rounded-lg overflow-hidden">
-                              <button
-                                onClick={() => toggleModule(moduleKey)}
-                                className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-colors text-left"
-                              >
-                                <div className="flex items-center gap-2 min-w-0 flex-1">
-                                  {allCompleted ? (
-                                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                                  ) : (
-                                    <BookOpen className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                                  )}
-                                  <span className="text-sm truncate">{mod.name}</span>
-                                  <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-white/10 text-white/50 flex-shrink-0">
-                                    {modStudents.length} студ.
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-3 flex-shrink-0">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                      <div
-                                        className={clsx('h-full rounded-full', {
-                                          'bg-emerald-400': modCompletion === 100,
-                                          'bg-amber-400': modCompletion >= 50 && modCompletion < 100,
-                                          'bg-blue-400': modCompletion < 50,
-                                        })}
-                                        style={{ width: `${modCompletion}%` }}
-                                      />
-                                    </div>
-                                    <span className="text-xs text-white/40 w-8 text-right">{modCompletion}%</span>
+                            return (
+                              <div key={mod.id} className="bg-white/5 rounded-lg overflow-hidden">
+                                <button
+                                  onClick={() => toggleModule(moduleKey)}
+                                  className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-colors text-left"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    {mod.completionRate === 100 ? (
+                                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                                    ) : mod.isBottleneck ? (
+                                      <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                                    ) : (
+                                      <BookOpen className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                                    )}
+                                    <span className="text-sm truncate">{mod.title}</span>
+                                    <span
+                                      className={clsx(
+                                        'px-1.5 py-0.5 text-[10px] rounded-full flex-shrink-0',
+                                        MODULE_TYPE_COLORS[mod.type] || 'bg-white/10 text-white/50',
+                                      )}
+                                    >
+                                      {MODULE_TYPE_LABELS[mod.type] || mod.type}
+                                    </span>
+                                    {mod.isBottleneck && (
+                                      <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-red-500/20 text-red-400 flex-shrink-0">
+                                        Узкое место
+                                      </span>
+                                    )}
+                                    <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-white/10 text-white/50 flex-shrink-0">
+                                      {modStudents.length} студ.
+                                    </span>
                                   </div>
-                                  <ChevronDown className={clsx('w-3.5 h-3.5 text-white/30 transition-transform', isModExpanded ? 'rotate-180' : '')} />
-                                </div>
-                              </button>
-
-                              <AnimatePresence>
-                                {isModExpanded && (
-                                  <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: 'auto', opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    transition={{ duration: 0.15 }}
-                                    className="overflow-hidden"
-                                  >
-                                    <div className="px-3 pb-3 space-y-1.5">
-                                      {modStudents.map(student => {
-                                        const intern = MOCK_INTERNS.find(i => i.id === student.internId);
-                                        if (!intern) return null;
-
-                                        return (
-                                          <div
-                                            key={student.internId}
-                                            className="flex items-center gap-3 p-2 bg-white/5 rounded-lg"
-                                          >
-                                            <div className="w-7 h-7 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-medium flex-shrink-0">
-                                              {getAvatarInitials(intern.name)}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                              <div className="flex items-center gap-2">
-                                                <span className="text-xs font-medium truncate">{intern.name}</span>
-                                                <span className={clsx('px-1.5 py-0.5 text-[10px] rounded-full flex-shrink-0', STATUS_COLORS[intern.status])}>
-                                                  {STATUS_LABELS[intern.status]}
-                                                </span>
-                                              </div>
-                                              <div className="flex items-center gap-2 mt-1">
-                                                <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
-                                                  <div
-                                                    className={clsx('h-full rounded-full', {
-                                                      'bg-emerald-400': student.progress === 100,
-                                                      'bg-amber-400': student.progress >= 50 && student.progress < 100,
-                                                      'bg-blue-400': student.progress < 50,
-                                                    })}
-                                                    style={{ width: `${student.progress}%` }}
-                                                  />
-                                                </div>
-                                                <span className="text-[10px] text-white/40 w-8 text-right flex-shrink-0">{student.progress}%</span>
-                                              </div>
-                                            </div>
-                                            {student.score !== undefined && (
-                                              <span className={clsx('text-xs font-medium px-1.5 py-0.5 rounded flex-shrink-0', {
-                                                'bg-emerald-500/20 text-emerald-400': student.score >= 90,
-                                                'bg-blue-500/20 text-blue-400': student.score >= 75 && student.score < 90,
-                                                'bg-amber-500/20 text-amber-400': student.score >= 60 && student.score < 75,
-                                                'bg-red-500/20 text-red-400': student.score < 60,
-                                              })}>
-                                                {student.score}
-                                              </span>
-                                            )}
-                                            {student.completedDate && (
-                                              <span className="text-[10px] text-white/30 flex-shrink-0">
-                                                {formatDate(student.completedDate, 'short')}
-                                              </span>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
+                                  <div className="flex items-center gap-3 flex-shrink-0">
+                                    {/* Drop rate indicator */}
+                                    {mod.dropRate > 0 && (
+                                      <span
+                                        className={clsx('text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0', {
+                                          'bg-red-500/20 text-red-400': mod.dropRate >= 30,
+                                          'bg-amber-500/20 text-amber-400':
+                                            mod.dropRate >= 15 && mod.dropRate < 30,
+                                          'bg-white/10 text-white/40': mod.dropRate < 15,
+                                        })}
+                                      >
+                                        Отсев {Math.round(mod.dropRate)}%
+                                      </span>
+                                    )}
+                                    {/* Completion bar */}
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                        <div
+                                          className={clsx('h-full rounded-full', {
+                                            'bg-emerald-400': mod.completionRate >= 80,
+                                            'bg-amber-400':
+                                              mod.completionRate >= 50 && mod.completionRate < 80,
+                                            'bg-blue-400': mod.completionRate < 50,
+                                          })}
+                                          style={{ width: `${mod.completionRate}%` }}
+                                        />
+                                      </div>
+                                      <span className="text-xs text-white/40 w-8 text-right">
+                                        {Math.round(mod.completionRate)}%
+                                      </span>
                                     </div>
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                            </div>
-                          );
-                        })}
+                                    <ChevronDown
+                                      className={clsx(
+                                        'w-3.5 h-3.5 text-white/30 transition-transform',
+                                        isModExpanded ? 'rotate-180' : '',
+                                      )}
+                                    />
+                                  </div>
+                                </button>
+
+                                {/* Module details + students */}
+                                <AnimatePresence>
+                                  {isModExpanded && (
+                                    <motion.div
+                                      initial={{ height: 0, opacity: 0 }}
+                                      animate={{ height: 'auto', opacity: 1 }}
+                                      exit={{ height: 0, opacity: 0 }}
+                                      transition={{ duration: 0.15 }}
+                                      className="overflow-hidden"
+                                    >
+                                      {/* Module stats row */}
+                                      <div className="px-3 pb-2 flex flex-wrap gap-3 text-xs text-white/50">
+                                        <span>
+                                          Записано: <strong className="text-white/70">{mod.totalEnrolled}</strong>
+                                        </span>
+                                        <span>
+                                          Начали: <strong className="text-white/70">{mod.startedCount}</strong>
+                                        </span>
+                                        <span>
+                                          В процессе: <strong className="text-white/70">{mod.inProgressCount}</strong>
+                                        </span>
+                                        <span>
+                                          Завершили: <strong className="text-emerald-400">{mod.completedCount}</strong>
+                                        </span>
+                                        {mod.avgTimeDays > 0 && (
+                                          <span>
+                                            Среднее время: <strong className="text-white/70">{mod.avgTimeDays} дн.</strong>
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Students list */}
+                                      <div className="px-3 pb-3 space-y-1.5">
+                                        {modStudents.length === 0 ? (
+                                          <p className="text-xs text-white/30 py-2 text-center">
+                                            Нет студентов, начавших этот модуль
+                                          </p>
+                                        ) : (
+                                          modStudents.map((student: StudentByTrail) => {
+                                            const moduleStatus = getStudentModuleStatus(student, mod.id);
+
+                                            return (
+                                              <div
+                                                key={student.id}
+                                                className="flex items-center gap-3 p-2 bg-white/5 rounded-lg"
+                                              >
+                                                <div className="w-7 h-7 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-medium flex-shrink-0">
+                                                  {getAvatarInitials(student.name)}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                  <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-medium truncate">
+                                                      {student.name}
+                                                    </span>
+                                                    <span
+                                                      className={clsx(
+                                                        'px-1.5 py-0.5 text-[10px] rounded-full flex-shrink-0',
+                                                        TRAIL_STATUS_COLORS[student.trailStatus] ||
+                                                          'bg-white/10 text-white/50',
+                                                      )}
+                                                    >
+                                                      {TRAIL_STATUS_LABELS[student.trailStatus] ||
+                                                        student.trailStatus}
+                                                    </span>
+                                                  </div>
+                                                  <div className="flex items-center gap-2 mt-1">
+                                                    <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                                                      <div
+                                                        className={clsx('h-full rounded-full', {
+                                                          'bg-emerald-400': student.completionPercent >= 80,
+                                                          'bg-amber-400':
+                                                            student.completionPercent >= 50 &&
+                                                            student.completionPercent < 80,
+                                                          'bg-blue-400': student.completionPercent < 50,
+                                                        })}
+                                                        style={{
+                                                          width: `${student.completionPercent}%`,
+                                                        }}
+                                                      />
+                                                    </div>
+                                                    <span className="text-[10px] text-white/40 w-8 text-right flex-shrink-0">
+                                                      {student.completionPercent}%
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                                {/* Module-specific status */}
+                                                {moduleStatus && (
+                                                  <span
+                                                    className={clsx(
+                                                      'text-[10px] font-medium px-1.5 py-0.5 rounded flex-shrink-0',
+                                                      {
+                                                        'bg-emerald-500/20 text-emerald-400':
+                                                          moduleStatus.status === 'COMPLETED',
+                                                        'bg-blue-500/20 text-blue-400':
+                                                          moduleStatus.status === 'IN_PROGRESS',
+                                                        'bg-white/10 text-white/40':
+                                                          moduleStatus.status === 'NOT_STARTED',
+                                                      },
+                                                    )}
+                                                  >
+                                                    {moduleStatus.status === 'COMPLETED'
+                                                      ? 'Завершён'
+                                                      : moduleStatus.status === 'IN_PROGRESS'
+                                                        ? 'В процессе'
+                                                        : 'Не начат'}
+                                                  </span>
+                                                )}
+                                                {/* Avg score */}
+                                                {student.avgScore !== null && (
+                                                  <span
+                                                    className={clsx(
+                                                      'text-xs font-medium px-1.5 py-0.5 rounded flex-shrink-0',
+                                                      {
+                                                        'bg-emerald-500/20 text-emerald-400':
+                                                          student.avgScore >= 90,
+                                                        'bg-blue-500/20 text-blue-400':
+                                                          student.avgScore >= 75 && student.avgScore < 90,
+                                                        'bg-amber-500/20 text-amber-400':
+                                                          student.avgScore >= 60 && student.avgScore < 75,
+                                                        'bg-red-500/20 text-red-400': student.avgScore < 60,
+                                                      },
+                                                    )}
+                                                  >
+                                                    {Math.round(student.avgScore)}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            );
+                                          })
+                                        )}
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            );
+                          })}
                       </div>
                     </motion.div>
                   )}

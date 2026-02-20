@@ -1,18 +1,20 @@
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
   Users,
-  GraduationCap,
+  AlertTriangle,
   TrendingUp,
   Star,
   Activity,
+  Trophy,
+  Zap,
+  Award,
   ClipboardCheck,
-  ArrowUpDown,
   ChevronDown,
-  AtSign,
-  Filter,
-  X,
-  Calendar,
+  Loader2,
+  RefreshCw,
+  BarChart3,
 } from 'lucide-react';
 import {
   PieChart,
@@ -25,35 +27,26 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
+  AreaChart,
+  Area,
 } from 'recharts';
 import clsx from 'clsx';
-import {
-  MOCK_INTERNS,
-  MOCK_ACHIEVEMENTS,
-  MOCK_INFO,
-  STATUS_LABELS,
-  STATUS_COLORS,
-} from '@/data/mockInterns';
-import type { InternStatus, InternInfoData } from '@/data/mockInterns';
-import { formatDate } from '@/utils';
+import { getPrometheusAnalytics } from '@/services/api';
+import type { PrometheusAnalyticsResponse } from '@/services/api';
 
 // Chart colors
-const STATUS_CHART_COLORS: Record<InternStatus, string> = {
-  studying: '#3b82f6',
-  accepted: '#10b981',
-  not_admitted: '#ef4444',
-};
+const SCORE_COLORS = ['#8b5cf6', '#3b82f6', '#f59e0b', '#ef4444'];
+const CHURN_COLORS = ['#ef4444', '#f59e0b', '#10b981'];
+const FUNNEL_COLOR = '#6366f1';
+const TREND_COLORS = { activeUsers: '#10b981', totalActions: '#3b82f6' };
 
-const COMPLETION_COLORS = ['#10b981', '#f59e0b', '#6b7280'];
-const GRADE_COLORS = ['#8b5cf6', '#3b82f6', '#f59e0b', '#ef4444'];
-
-type SortField = 'name' | 'score' | 'engagement' | 'completed' | 'submittedWorks' | 'registrationDate';
-type SortDir = 'asc' | 'desc';
-
-function getSubmittedWorksCount(info: InternInfoData | undefined): number {
-  if (!info) return 0;
-  return info.works.filter(w => w.status === 'submitted' || w.status === 'reviewed' || w.status === 'returned').length;
-}
+const PERIOD_OPTIONS = [
+  { value: '7', label: '7 дней' },
+  { value: '14', label: '14 дней' },
+  { value: '30', label: '30 дней' },
+  { value: '60', label: '60 дней' },
+  { value: '90', label: '90 дней' },
+];
 
 function ChartTooltip({ active, payload }: { active?: boolean; payload?: Array<{ name: string; value: number; payload: { fill: string } }> }) {
   if (!active || !payload?.length) return null;
@@ -79,695 +72,497 @@ function DonutCenterLabel({ value, label }: { value: string; label: string }) {
 }
 
 export default function InternsAnalyticsTab() {
-  // Filter state
-  const [showFilters, setShowFilters] = useState(false);
-  const [telegramSearch, setTelegramSearch] = useState('');
-  const [selectedStatuses, setSelectedStatuses] = useState<InternStatus[]>([]);
-  const [minWorks, setMinWorks] = useState('');
-  const [maxWorks, setMaxWorks] = useState('');
-  const [trailStartFrom, setTrailStartFrom] = useState('');
-  const [trailStartTo, setTrailStartTo] = useState('');
-  const [trailEndFrom, setTrailEndFrom] = useState('');
-  const [trailEndTo, setTrailEndTo] = useState('');
-  const [regFrom, setRegFrom] = useState('');
-  const [regTo, setRegTo] = useState('');
+  const [selectedTrail, setSelectedTrail] = useState('all');
+  const [selectedPeriod, setSelectedPeriod] = useState('30');
 
-  // Sort state
-  const [sortField, setSortField] = useState<SortField>('name');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const {
+    data: analytics,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ['prometheus-analytics', selectedTrail, selectedPeriod],
+    queryFn: () => getPrometheusAnalytics(selectedTrail, selectedPeriod),
+    staleTime: 60000,
+    retry: 1,
+  });
 
-  const activeFiltersCount = useMemo(() => {
-    let count = 0;
-    if (telegramSearch) count++;
-    if (selectedStatuses.length > 0) count++;
-    if (minWorks || maxWorks) count++;
-    if (trailStartFrom || trailStartTo) count++;
-    if (trailEndFrom || trailEndTo) count++;
-    if (regFrom || regTo) count++;
-    return count;
-  }, [telegramSearch, selectedStatuses, minWorks, maxWorks, trailStartFrom, trailStartTo, trailEndFrom, trailEndTo, regFrom, regTo]);
+  // Score distribution chart data
+  const scoreChartData = useMemo(() => {
+    if (!analytics) return [];
+    const { scoreDistribution: sd } = analytics;
+    return [
+      { name: 'Отлично (9-10)', value: sd.excellent, fill: SCORE_COLORS[0] },
+      { name: 'Хорошо (7-8)', value: sd.good, fill: SCORE_COLORS[1] },
+      { name: 'Удовл. (5-6)', value: sd.average, fill: SCORE_COLORS[2] },
+      { name: 'Слабо (0-4)', value: sd.poor, fill: SCORE_COLORS[3] },
+    ].filter(d => d.value > 0);
+  }, [analytics]);
 
-  // Filtered interns
-  const filteredInterns = useMemo(() => {
-    let result = MOCK_INTERNS;
+  // Churn risk chart data
+  const churnChartData = useMemo(() => {
+    if (!analytics) return [];
+    const { churnRisk } = analytics;
+    return [
+      { name: 'Высокий (14+ дн.)', value: churnRisk.highCount, fill: CHURN_COLORS[0] },
+      { name: 'Средний (7-14 дн.)', value: churnRisk.mediumCount, fill: CHURN_COLORS[1] },
+      { name: 'Низкий (<7 дн.)', value: churnRisk.lowCount, fill: CHURN_COLORS[2] },
+    ].filter(d => d.value > 0);
+  }, [analytics]);
 
-    if (telegramSearch) {
-      const q = telegramSearch.toLowerCase();
-      result = result.filter(i => i.telegramUsername?.toLowerCase().includes(q));
-    }
+  // Funnel chart data
+  const funnelChartData = useMemo(() => {
+    if (!analytics) return [];
+    return analytics.funnel.map(stage => ({
+      name: stage.stage,
+      count: stage.count,
+      percent: stage.percent,
+      fill: FUNNEL_COLOR,
+    }));
+  }, [analytics]);
 
-    if (selectedStatuses.length > 0) {
-      result = result.filter(i => selectedStatuses.includes(i.status));
-    }
+  // Trail completion bar data
+  const trailBarData = useMemo(() => {
+    if (!analytics) return [];
+    return analytics.trailProgress.map(t => ({
+      name: t.title.length > 20 ? t.title.slice(0, 20) + '…' : t.title,
+      fullName: t.title,
+      completionRate: t.completionRate,
+      approvalRate: t.approvalRate,
+      enrollments: t.enrollments,
+    }));
+  }, [analytics]);
 
-    if (minWorks) {
-      const min = parseInt(minWorks, 10);
-      if (!isNaN(min)) {
-        result = result.filter(i => getSubmittedWorksCount(MOCK_INFO[i.id]) >= min);
-      }
-    }
+  // Trends chart data
+  const trendsChartData = useMemo(() => {
+    if (!analytics) return [];
+    return analytics.trends.map(t => ({
+      date: t.date.slice(5), // "02-01"
+      activeUsers: t.activeUsers,
+      totalActions: t.totalActions,
+    }));
+  }, [analytics]);
 
-    if (maxWorks) {
-      const max = parseInt(maxWorks, 10);
-      if (!isNaN(max)) {
-        result = result.filter(i => getSubmittedWorksCount(MOCK_INFO[i.id]) <= max);
-      }
-    }
-
-    if (regFrom) {
-      result = result.filter(i => i.registrationDate >= regFrom);
-    }
-    if (regTo) {
-      result = result.filter(i => i.registrationDate <= regTo);
-    }
-
-    if (trailStartFrom || trailStartTo || trailEndFrom || trailEndTo) {
-      result = result.filter(i => {
-        const info = MOCK_INFO[i.id];
-        if (!info) return false;
-        return info.trails.some(t => {
-          if (trailStartFrom && t.startDate < trailStartFrom) return false;
-          if (trailStartTo && t.startDate > trailStartTo) return false;
-          if (trailEndFrom && t.endDate < trailEndFrom) return false;
-          if (trailEndTo && t.endDate > trailEndTo) return false;
-          return true;
-        });
-      });
-    }
-
-    return result;
-  }, [telegramSearch, selectedStatuses, minWorks, maxWorks, trailStartFrom, trailStartTo, trailEndFrom, trailEndTo, regFrom, regTo]);
-
-  // Sorted interns for table
-  const sortedInterns = useMemo(() => {
-    const sorted = [...filteredInterns];
-    sorted.sort((a, b) => {
-      let cmp = 0;
-      switch (sortField) {
-        case 'name':
-          cmp = a.name.localeCompare(b.name);
-          break;
-        case 'score':
-          cmp = (MOCK_ACHIEVEMENTS[a.id]?.averageScore ?? 0) - (MOCK_ACHIEVEMENTS[b.id]?.averageScore ?? 0);
-          break;
-        case 'engagement':
-          cmp = (MOCK_ACHIEVEMENTS[a.id]?.engagementLevel ?? 0) - (MOCK_ACHIEVEMENTS[b.id]?.engagementLevel ?? 0);
-          break;
-        case 'completed':
-          cmp = (MOCK_ACHIEVEMENTS[a.id]?.completionStats.completed ?? 0) - (MOCK_ACHIEVEMENTS[b.id]?.completionStats.completed ?? 0);
-          break;
-        case 'submittedWorks':
-          cmp = getSubmittedWorksCount(MOCK_INFO[a.id]) - getSubmittedWorksCount(MOCK_INFO[b.id]);
-          break;
-        case 'registrationDate':
-          cmp = a.registrationDate.localeCompare(b.registrationDate);
-          break;
-      }
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-    return sorted;
-  }, [filteredInterns, sortField, sortDir]);
-
-  // Aggregate stats
-  const stats = useMemo(() => {
-    const total = filteredInterns.length;
-    const byStatus: Record<InternStatus, number> = { studying: 0, accepted: 0, not_admitted: 0 };
-    let totalScore = 0;
-    let totalEngagement = 0;
-    let totalCompleted = 0;
-    let totalInProgress = 0;
-    let totalNotStarted = 0;
-    let totalExcellent = 0;
-    let totalGood = 0;
-    let totalSatisfactory = 0;
-    let totalNeedsImprovement = 0;
-    let internsWithAchievements = 0;
-
-    filteredInterns.forEach(intern => {
-      byStatus[intern.status]++;
-      const ach = MOCK_ACHIEVEMENTS[intern.id];
-      if (ach) {
-        internsWithAchievements++;
-        totalScore += ach.averageScore;
-        totalEngagement += ach.engagementLevel;
-        totalCompleted += ach.completionStats.completed;
-        totalInProgress += ach.completionStats.inProgress;
-        totalNotStarted += ach.completionStats.notStarted;
-        totalExcellent += ach.gradeStats.excellent;
-        totalGood += ach.gradeStats.good;
-        totalSatisfactory += ach.gradeStats.satisfactory;
-        totalNeedsImprovement += ach.gradeStats.needsImprovement;
-      }
-    });
-
-    const avgScore = internsWithAchievements > 0 ? totalScore / internsWithAchievements : 0;
-    const avgEngagement = internsWithAchievements > 0 ? totalEngagement / internsWithAchievements : 0;
-
-    return {
-      total,
-      byStatus,
-      avgScore,
-      avgEngagement,
-      completion: { completed: totalCompleted, inProgress: totalInProgress, notStarted: totalNotStarted },
-      grades: { excellent: totalExcellent, good: totalGood, satisfactory: totalSatisfactory, needsImprovement: totalNeedsImprovement },
-    };
-  }, [filteredInterns]);
-
-  // Chart data
-  const statusChartData = useMemo(() =>
-    (Object.keys(stats.byStatus) as InternStatus[])
-      .filter(key => stats.byStatus[key] > 0)
-      .map(key => ({
-        name: STATUS_LABELS[key],
-        value: stats.byStatus[key],
-        fill: STATUS_CHART_COLORS[key],
-      })),
-    [stats.byStatus]
-  );
-
-  const completionChartData = useMemo(() => [
-    { name: 'Завершено', value: stats.completion.completed, fill: COMPLETION_COLORS[0] },
-    { name: 'В процессе', value: stats.completion.inProgress, fill: COMPLETION_COLORS[1] },
-    { name: 'Не начато', value: stats.completion.notStarted, fill: COMPLETION_COLORS[2] },
-  ].filter(d => d.value > 0), [stats.completion]);
-
-  const gradeChartData = useMemo(() => [
-    { name: 'Отлично', value: stats.grades.excellent, fill: GRADE_COLORS[0] },
-    { name: 'Хорошо', value: stats.grades.good, fill: GRADE_COLORS[1] },
-    { name: 'Удовл.', value: stats.grades.satisfactory, fill: GRADE_COLORS[2] },
-    { name: 'Нужно улучшить', value: stats.grades.needsImprovement, fill: GRADE_COLORS[3] },
-  ].filter(d => d.value > 0), [stats.grades]);
-
-  const engagementBarData = useMemo(() =>
-    filteredInterns.map(i => ({
-      name: i.name.split(' ').slice(1, 3).join(' '),
-      value: MOCK_ACHIEVEMENTS[i.id]?.engagementLevel ?? 0,
-      fill: (MOCK_ACHIEVEMENTS[i.id]?.engagementLevel ?? 0) >= 80 ? '#10b981' :
-            (MOCK_ACHIEVEMENTS[i.id]?.engagementLevel ?? 0) >= 60 ? '#f59e0b' : '#ef4444',
-    })),
-    [filteredInterns]
-  );
-
-  const totalModules = stats.completion.completed + stats.completion.inProgress + stats.completion.notStarted;
-  const completionPercent = totalModules > 0 ? Math.round((stats.completion.completed / totalModules) * 100) : 0;
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDir('asc');
-    }
-  };
-
-  const clearFilters = () => {
-    setTelegramSearch('');
-    setSelectedStatuses([]);
-    setMinWorks('');
-    setMaxWorks('');
-    setTrailStartFrom('');
-    setTrailStartTo('');
-    setTrailEndFrom('');
-    setTrailEndTo('');
-    setRegFrom('');
-    setRegTo('');
-  };
-
-  const toggleStatus = (status: InternStatus) => {
-    setSelectedStatuses(prev =>
-      prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
+  if (isLoading) {
+    return (
+      <div className="h-full flex items-center justify-center py-20">
+        <div className="text-center text-white/40">
+          <Loader2 className="w-12 h-12 mx-auto mb-4 animate-spin opacity-50" />
+          <h3 className="text-lg font-medium mb-2">Загрузка аналитики...</h3>
+          <p className="text-sm">Получаем данные из Prometheus</p>
+        </div>
+      </div>
     );
-  };
+  }
+
+  if (isError) {
+    return (
+      <div className="h-full flex items-center justify-center py-20">
+        <div className="text-center text-white/40">
+          <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-red-400/60" />
+          <h3 className="text-lg font-medium mb-2 text-red-400/80">Ошибка загрузки</h3>
+          <p className="text-sm mb-4 max-w-md mx-auto">
+            {(error as Error)?.message || 'Не удалось загрузить аналитику'}
+          </p>
+          <button
+            onClick={() => refetch()}
+            className="flex items-center gap-2 mx-auto px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Попробовать снова
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!analytics) return null;
+
+  const { summary, scoreDistribution, filters, topStudents } = analytics;
 
   return (
     <div className="space-y-6">
       {/* Filter Bar */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={clsx(
-              'flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium transition-all active:scale-95',
-              activeFiltersCount > 0
-                ? 'bg-emerald-600/20 border-emerald-500/50 text-emerald-300'
-                : 'bg-white/5 border-white/10 hover:bg-white/10'
-            )}
-          >
-            <Filter className="w-4 h-4" />
-            <span>Фильтры</span>
-            {activeFiltersCount > 0 && (
-              <span className="px-1.5 py-0.5 bg-emerald-600 text-white text-[10px] rounded-full">
-                {activeFiltersCount}
-              </span>
-            )}
-          </button>
-          {activeFiltersCount > 0 && (
-            <button
-              onClick={clearFilters}
-              className="flex items-center gap-1.5 px-3 py-2.5 text-sm text-white/50 hover:text-white/80 transition-colors"
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* Trail filter */}
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-white/40">Трейл:</label>
+          <div className="relative">
+            <select
+              value={selectedTrail}
+              onChange={e => setSelectedTrail(e.target.value)}
+              className="appearance-none pl-3 pr-8 py-2 bg-white/5 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer"
             >
-              <X className="w-3.5 h-3.5" />
-              Сбросить
-            </button>
-          )}
+              <option value="all">Все трейлы</option>
+              {filters.trails.map(trail => (
+                <option key={trail.id} value={trail.id}>
+                  {trail.title}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
+          </div>
         </div>
 
-        {showFilters && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className="p-4 bg-white/5 rounded-xl border border-white/10 space-y-4 overflow-hidden"
-          >
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* Telegram search */}
-              <div>
-                <label className="text-xs text-white/50 mb-1.5 block">Telegram-никнейм</label>
-                <div className="relative">
-                  <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                  <input
-                    type="text"
-                    placeholder="@username"
-                    value={telegramSearch}
-                    onChange={e => setTelegramSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                </div>
-              </div>
+        {/* Period filter */}
+        <div className="flex items-center gap-1">
+          <label className="text-xs text-white/40 mr-1">Период:</label>
+          {PERIOD_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setSelectedPeriod(opt.value)}
+              className={clsx(
+                'px-2.5 py-1.5 text-xs rounded-lg border transition-colors',
+                selectedPeriod === opt.value
+                  ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                  : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
 
-              {/* Status filter */}
-              <div>
-                <label className="text-xs text-white/50 mb-1.5 block">Статус кандидата</label>
-                <div className="flex flex-wrap gap-2">
-                  {(Object.keys(STATUS_LABELS) as InternStatus[]).map(status => (
-                    <button
-                      key={status}
-                      onClick={() => toggleStatus(status)}
-                      className={clsx(
-                        'px-2.5 py-1.5 text-xs rounded-lg border transition-colors',
-                        selectedStatuses.includes(status)
-                          ? STATUS_COLORS[status] + ' border-current'
-                          : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
-                      )}
-                    >
-                      {STATUS_LABELS[status]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Submitted works range */}
-              <div>
-                <label className="text-xs text-white/50 mb-1.5 block">Сданные работы (кол-во)</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    placeholder="от"
-                    min="0"
-                    value={minWorks}
-                    onChange={e => setMinWorks(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                  <span className="text-white/30 text-xs">—</span>
-                  <input
-                    type="number"
-                    placeholder="до"
-                    min="0"
-                    value={maxWorks}
-                    onChange={e => setMaxWorks(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* Trail start date range */}
-              <div>
-                <label className="text-xs text-white/50 mb-1.5 block flex items-center gap-1">
-                  <Calendar className="w-3 h-3" />
-                  Дата начала трейла
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={trailStartFrom}
-                    onChange={e => setTrailStartFrom(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                  <span className="text-white/30 text-xs">—</span>
-                  <input
-                    type="date"
-                    value={trailStartTo}
-                    onChange={e => setTrailStartTo(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* Trail end date range */}
-              <div>
-                <label className="text-xs text-white/50 mb-1.5 block flex items-center gap-1">
-                  <Calendar className="w-3 h-3" />
-                  Дата окончания трейла
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={trailEndFrom}
-                    onChange={e => setTrailEndFrom(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                  <span className="text-white/30 text-xs">—</span>
-                  <input
-                    type="date"
-                    value={trailEndTo}
-                    onChange={e => setTrailEndTo(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* Registration date range */}
-              <div>
-                <label className="text-xs text-white/50 mb-1.5 block flex items-center gap-1">
-                  <Calendar className="w-3 h-3" />
-                  Дата регистрации
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={regFrom}
-                    onChange={e => setRegFrom(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                  <span className="text-white/30 text-xs">—</span>
-                  <input
-                    type="date"
-                    value={regTo}
-                    onChange={e => setRegTo(e.target.value)}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
-                  />
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
+        <button
+          onClick={() => refetch()}
+          disabled={isLoading}
+          className="ml-auto flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={clsx('w-3.5 h-3.5', isLoading && 'animate-spin')} />
+          Обновить
+        </button>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
-          <div className="flex items-center gap-2 text-white/50 mb-1">
-            <Users className="w-4 h-4 text-emerald-400" />
-            <span className="text-xs">Всего</span>
-          </div>
-          <p className="text-xl font-bold">{stats.total}</p>
-        </motion.div>
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
-          <div className="flex items-center gap-2 text-white/50 mb-1">
-            <GraduationCap className="w-4 h-4 text-blue-400" />
-            <span className="text-xs">Обучается</span>
-          </div>
-          <p className="text-xl font-bold text-blue-400">{stats.byStatus.studying}</p>
-        </motion.div>
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
-          <div className="flex items-center gap-2 text-white/50 mb-1">
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
-            <span className="text-xs">Принят</span>
-          </div>
-          <p className="text-xl font-bold text-emerald-400">{stats.byStatus.accepted}</p>
-        </motion.div>
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
-          <div className="flex items-center gap-2 text-white/50 mb-1">
-            <X className="w-4 h-4 text-red-400" />
-            <span className="text-xs">Недопущен</span>
-          </div>
-          <p className="text-xl font-bold text-red-400">{stats.byStatus.not_admitted}</p>
-        </motion.div>
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
-          <div className="flex items-center gap-2 text-white/50 mb-1">
-            <Star className="w-4 h-4 text-amber-400" />
-            <span className="text-xs">Средний балл</span>
-          </div>
-          <p className="text-xl font-bold">{stats.avgScore.toFixed(1)}</p>
-        </motion.div>
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-white/5 border border-white/10 rounded-xl p-3">
-          <div className="flex items-center gap-2 text-white/50 mb-1">
-            <Activity className="w-4 h-4 text-purple-400" />
-            <span className="text-xs">Вовлечённость</span>
-          </div>
-          <p className="text-xl font-bold">{Math.round(stats.avgEngagement)}%</p>
-        </motion.div>
+        <KPICard icon={Users} iconColor="text-emerald-400" label="Всего студентов" value={String(summary.totalStudents)} delay={0.05} />
+        <KPICard icon={AlertTriangle} iconColor="text-red-400" label="В зоне риска" value={String(summary.atRiskStudents)} delay={0.1} />
+        <KPICard icon={TrendingUp} iconColor="text-blue-400" label="Конверсия" value={`${summary.conversionRate}%`} delay={0.15} />
+        <KPICard icon={Activity} iconColor="text-purple-400" label="Активных в день" value={String(summary.avgDailyActiveUsers)} delay={0.2} />
+        <KPICard icon={Star} iconColor="text-amber-400" label="Средний балл" value={scoreDistribution.avgScore?.toFixed(1) ?? '—'} delay={0.25} />
+        <KPICard icon={ClipboardCheck} iconColor="text-cyan-400" label="Всего оценок" value={String(scoreDistribution.total)} delay={0.3} />
       </div>
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Status Distribution */}
+        {/* Score Distribution */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-white/70 mb-3 text-center">По статусам</h3>
-          {statusChartData.length > 0 ? (
+          <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Распределение оценок</h3>
+          {scoreChartData.length > 0 ? (
             <>
               <div className="relative h-[160px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={statusChartData} cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={3} dataKey="value" stroke="none">
-                      {statusChartData.map((entry, index) => (
+                    <Pie data={scoreChartData} cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={3} dataKey="value" stroke="none">
+                      {scoreChartData.map((entry, index) => (
                         <Cell key={index} fill={entry.fill} />
                       ))}
                     </Pie>
                     <Tooltip content={<ChartTooltip />} />
                   </PieChart>
                 </ResponsiveContainer>
-                <DonutCenterLabel value={String(stats.total)} label="всего" />
+                <DonutCenterLabel value={scoreDistribution.avgScore?.toFixed(1) ?? '—'} label="ср. балл" />
               </div>
-              <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
-                {statusChartData.map((item, i) => (
-                  <div key={i} className="flex items-center gap-1.5 text-xs text-white/60">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.fill }} />
-                    <span>{item.name}: {item.value}</span>
-                  </div>
-                ))}
-              </div>
+              <ChartLegend items={scoreChartData} />
             </>
           ) : (
-            <div className="h-[160px] flex items-center justify-center text-white/30 text-sm">Нет данных</div>
+            <EmptyChart />
           )}
         </motion.div>
 
-        {/* Grade Distribution */}
+        {/* Churn Risk */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Статистика оценок</h3>
-          {gradeChartData.length > 0 ? (
+          <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Риск оттока</h3>
+          {churnChartData.length > 0 ? (
             <>
               <div className="relative h-[160px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={gradeChartData} cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={3} dataKey="value" stroke="none">
-                      {gradeChartData.map((entry, index) => (
+                    <Pie data={churnChartData} cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={3} dataKey="value" stroke="none">
+                      {churnChartData.map((entry, index) => (
                         <Cell key={index} fill={entry.fill} />
                       ))}
                     </Pie>
                     <Tooltip content={<ChartTooltip />} />
                   </PieChart>
                 </ResponsiveContainer>
-                <DonutCenterLabel value={stats.avgScore.toFixed(1)} label="ср. балл" />
+                <DonutCenterLabel value={String(summary.totalStudents)} label="всего" />
               </div>
-              <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
-                {gradeChartData.map((item, i) => (
-                  <div key={i} className="flex items-center gap-1.5 text-xs text-white/60">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.fill }} />
-                    <span>{item.name}: {item.value}</span>
-                  </div>
-                ))}
-              </div>
+              <ChartLegend items={churnChartData} />
             </>
           ) : (
-            <div className="h-[160px] flex items-center justify-center text-white/30 text-sm">Нет данных</div>
+            <EmptyChart />
           )}
         </motion.div>
 
-        {/* Completion Progress */}
+        {/* Conversion Funnel */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Прогресс модулей</h3>
-          {completionChartData.length > 0 ? (
-            <>
-              <div className="relative h-[160px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={completionChartData} cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={3} dataKey="value" stroke="none">
-                      {completionChartData.map((entry, index) => (
-                        <Cell key={index} fill={entry.fill} />
-                      ))}
-                    </Pie>
-                    <Tooltip content={<ChartTooltip />} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <DonutCenterLabel value={`${completionPercent}%`} label="пройдено" />
-              </div>
-              <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
-                {completionChartData.map((item, i) => (
-                  <div key={i} className="flex items-center gap-1.5 text-xs text-white/60">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.fill }} />
-                    <span>{item.name}: {item.value}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="h-[160px] flex items-center justify-center text-white/30 text-sm">Нет данных</div>
-          )}
-        </motion.div>
-
-        {/* Engagement Bar */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Вовлечённость</h3>
-          {engagementBarData.length > 0 ? (
+          <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Воронка конверсии</h3>
+          {funnelChartData.length > 0 ? (
             <div className="h-[190px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={engagementBarData} layout="vertical" margin={{ left: 0, right: 10, top: 5, bottom: 5 }}>
+                <BarChart data={funnelChartData} layout="vertical" margin={{ left: 0, right: 10, top: 5, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis type="number" domain={[0, 100]} tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis type="category" dataKey="name" width={80} tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <XAxis type="number" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="name" width={90} tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 9 }} axisLine={false} tickLine={false} />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#2d2d3a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
                     labelStyle={{ color: 'rgba(255,255,255,0.7)' }}
-                    formatter={(value: number) => [`${value}%`, 'Вовлечённость']}
+                    formatter={(value: number, _name: string, props: { payload: { percent: number } }) => [`${value} (${props.payload.percent}%)`, 'Студентов']}
                   />
-                  <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={16}>
-                    {engagementBarData.map((entry, index) => (
-                      <Cell key={index} fill={entry.fill} />
+                  <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={14} fill={FUNNEL_COLOR} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <EmptyChart />
+          )}
+        </motion.div>
+
+        {/* Trail Completion */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
+          <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Прогресс по трейлам</h3>
+          {trailBarData.length > 0 ? (
+            <div className="h-[190px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={trailBarData} layout="vertical" margin={{ left: 0, right: 10, top: 5, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                  <XAxis type="number" domain={[0, 100]} tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="name" width={90} tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 9 }} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#2d2d3a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
+                    labelStyle={{ color: 'rgba(255,255,255,0.7)' }}
+                    formatter={(value: number) => [`${value}%`, 'Завершение']}
+                  />
+                  <Bar dataKey="completionRate" radius={[0, 4, 4, 0]} barSize={14}>
+                    {trailBarData.map((entry, index) => (
+                      <Cell key={index} fill={entry.completionRate >= 60 ? '#10b981' : entry.completionRate >= 30 ? '#f59e0b' : '#ef4444'} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="h-[190px] flex items-center justify-center text-white/30 text-sm">Нет данных</div>
+            <EmptyChart />
           )}
         </motion.div>
       </div>
 
-      {/* Summary Table */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-white/10">
-          <h3 className="text-sm font-medium flex items-center gap-2">
-            <ClipboardCheck className="w-4 h-4 text-emerald-400" />
-            Сводная таблица
-            <span className="px-1.5 py-0.5 text-xs rounded-full bg-white/10 text-white/50">{sortedInterns.length}</span>
-          </h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-white/5">
-                <SortableHeader label="Имя" field="name" current={sortField} dir={sortDir} onClick={handleSort} />
-                <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Telegram</th>
-                <SortableHeader label="Статус" field="name" current={sortField} dir={sortDir} onClick={() => {}} noSort />
-                <SortableHeader label="Балл" field="score" current={sortField} dir={sortDir} onClick={handleSort} />
-                <SortableHeader label="Вовлечённость" field="engagement" current={sortField} dir={sortDir} onClick={handleSort} />
-                <SortableHeader label="Модули" field="completed" current={sortField} dir={sortDir} onClick={handleSort} />
-                <SortableHeader label="Работ сдано" field="submittedWorks" current={sortField} dir={sortDir} onClick={handleSort} />
-                <SortableHeader label="Регистрация" field="registrationDate" current={sortField} dir={sortDir} onClick={handleSort} />
-              </tr>
-            </thead>
-            <tbody>
-              {sortedInterns.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-white/30">
-                    Нет данных по выбранным фильтрам
-                  </td>
-                </tr>
-              ) : (
-                sortedInterns.map(intern => {
-                  const ach = MOCK_ACHIEVEMENTS[intern.id];
-                  const info = MOCK_INFO[intern.id];
-                  const submitted = getSubmittedWorksCount(info);
-                  const totalMods = ach ? ach.completionStats.completed + ach.completionStats.inProgress + ach.completionStats.notStarted : 0;
+      {/* Trends Chart */}
+      {trendsChartData.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
+          <h3 className="text-sm font-medium text-white/70 mb-3">Активность за период</h3>
+          <div className="h-[200px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={trendsChartData} margin={{ left: 0, right: 10, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#2d2d3a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
+                  labelStyle={{ color: 'rgba(255,255,255,0.7)' }}
+                />
+                <Area type="monotone" dataKey="activeUsers" name="Активные" stroke={TREND_COLORS.activeUsers} fill={TREND_COLORS.activeUsers} fillOpacity={0.15} strokeWidth={2} />
+                <Area type="monotone" dataKey="totalActions" name="Действия" stroke={TREND_COLORS.totalActions} fill={TREND_COLORS.totalActions} fillOpacity={0.1} strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-2 flex justify-center gap-4">
+            <div className="flex items-center gap-1.5 text-xs text-white/60">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: TREND_COLORS.activeUsers }} />
+              <span>Активные пользователи</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-white/60">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: TREND_COLORS.totalActions }} />
+              <span>Действия</span>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
-                  return (
-                    <tr key={intern.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                      <td className="px-4 py-3 font-medium truncate max-w-[180px]">{intern.name}</td>
-                      <td className="px-4 py-3 text-white/60">{intern.telegramUsername || '—'}</td>
-                      <td className="px-4 py-3">
-                        <span className={clsx('px-2 py-0.5 text-xs rounded-full', STATUS_COLORS[intern.status])}>
-                          {STATUS_LABELS[intern.status]}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={clsx('font-medium', {
-                          'text-emerald-400': (ach?.averageScore ?? 0) >= 90,
-                          'text-blue-400': (ach?.averageScore ?? 0) >= 75 && (ach?.averageScore ?? 0) < 90,
-                          'text-amber-400': (ach?.averageScore ?? 0) >= 60 && (ach?.averageScore ?? 0) < 75,
-                          'text-red-400': (ach?.averageScore ?? 0) < 60 && (ach?.averageScore ?? 0) > 0,
-                        })}>
-                          {ach?.averageScore.toFixed(1) ?? '—'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                            <div
-                              className={clsx('h-full rounded-full', {
-                                'bg-emerald-400': (ach?.engagementLevel ?? 0) >= 80,
-                                'bg-amber-400': (ach?.engagementLevel ?? 0) >= 60 && (ach?.engagementLevel ?? 0) < 80,
-                                'bg-red-400': (ach?.engagementLevel ?? 0) < 60,
-                              })}
-                              style={{ width: `${ach?.engagementLevel ?? 0}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-white/50">{ach?.engagementLevel ?? 0}%</span>
+      {/* Trail Progress Details */}
+      {analytics.trailProgress.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+          <div className="p-4 border-b border-white/10">
+            <h3 className="text-sm font-medium flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-emerald-400" />
+              Детали по трейлам
+              <span className="px-1.5 py-0.5 text-xs rounded-full bg-white/10 text-white/50">{analytics.trailProgress.length}</span>
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/5">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Трейл</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Записано</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Модулей</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Заверш. модулей</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Работ отправлено</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Одобрено</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">% завершения</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">% одобрения</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Сертификатов</th>
+                </tr>
+              </thead>
+              <tbody>
+                {analytics.trailProgress.map(trail => (
+                  <tr key={trail.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                    <td className="px-4 py-3 font-medium truncate max-w-[200px]">{trail.title}</td>
+                    <td className="px-4 py-3 text-white/60">{trail.enrollments}</td>
+                    <td className="px-4 py-3 text-white/60">{trail.totalModules}</td>
+                    <td className="px-4 py-3 text-white/60">{trail.completedModules}</td>
+                    <td className="px-4 py-3 text-white/60">{trail.submissionsCount}</td>
+                    <td className="px-4 py-3 text-white/60">{trail.approvedSubmissions}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className={clsx('h-full rounded-full', {
+                              'bg-emerald-400': trail.completionRate >= 60,
+                              'bg-amber-400': trail.completionRate >= 30 && trail.completionRate < 60,
+                              'bg-red-400': trail.completionRate < 30,
+                            })}
+                            style={{ width: `${trail.completionRate}%` }}
+                          />
                         </div>
-                      </td>
-                      <td className="px-4 py-3 text-white/60">
-                        {ach ? `${ach.completionStats.completed}/${totalMods}` : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-white/60">{submitted}</td>
-                      <td className="px-4 py-3 text-white/50 text-xs">{formatDate(intern.registrationDate, 'short')}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
+                        <span className="text-xs text-white/50">{trail.completionRate}%</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={clsx('text-xs font-medium', {
+                        'text-emerald-400': trail.approvalRate >= 70,
+                        'text-amber-400': trail.approvalRate >= 40 && trail.approvalRate < 70,
+                        'text-red-400': trail.approvalRate < 40,
+                      })}>
+                        {trail.approvalRate}%
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {trail.certificates > 0 ? (
+                        <span className="flex items-center gap-1 text-amber-400">
+                          <Award className="w-3.5 h-3.5" />
+                          {trail.certificates}
+                        </span>
+                      ) : (
+                        <span className="text-white/30">0</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Top Students Table */}
+      {topStudents.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.55 }} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+          <div className="p-4 border-b border-white/10">
+            <h3 className="text-sm font-medium flex items-center gap-2">
+              <Trophy className="w-4 h-4 text-amber-400" />
+              Топ студентов
+              <span className="px-1.5 py-0.5 text-xs rounded-full bg-white/10 text-white/50">{topStudents.length}</span>
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/5">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">#</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Имя</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">XP</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Модулей</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Одобренных работ</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Сертификатов</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topStudents.map((student, index) => (
+                  <tr key={student.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                    <td className="px-4 py-3">
+                      <span className={clsx('w-6 h-6 inline-flex items-center justify-center rounded-full text-xs font-bold', {
+                        'bg-amber-500/20 text-amber-400': index === 0,
+                        'bg-gray-500/20 text-gray-400': index === 1,
+                        'bg-orange-500/20 text-orange-400': index === 2,
+                        'bg-white/5 text-white/40': index > 2,
+                      })}>
+                        {index + 1}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-medium">{student.name}</td>
+                    <td className="px-4 py-3">
+                      <span className="flex items-center gap-1 text-amber-400">
+                        <Zap className="w-3.5 h-3.5" />
+                        {student.totalXP}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-white/60">{student.modulesCompleted}</td>
+                    <td className="px-4 py-3 text-white/60">{student.approvedWorks}</td>
+                    <td className="px-4 py-3">
+                      {student.certificates > 0 ? (
+                        <span className="flex items-center gap-1 text-amber-400">
+                          <Award className="w-3.5 h-3.5" />
+                          {student.certificates}
+                        </span>
+                      ) : (
+                        <span className="text-white/30">0</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 }
 
-function SortableHeader({
+// Helper components
+
+function KPICard({
+  icon: Icon,
+  iconColor,
   label,
-  field,
-  current,
-  dir,
-  onClick,
-  noSort,
+  value,
+  delay,
 }: {
+  icon: typeof Users;
+  iconColor: string;
   label: string;
-  field: SortField;
-  current: SortField;
-  dir: SortDir;
-  onClick: (field: SortField) => void;
-  noSort?: boolean;
+  value: string;
+  delay: number;
 }) {
-  const isActive = current === field && !noSort;
   return (
-    <th className="px-4 py-3 text-left text-xs font-medium text-white/40">
-      {noSort ? (
-        <span>{label}</span>
-      ) : (
-        <button
-          onClick={() => onClick(field)}
-          className={clsx(
-            'flex items-center gap-1 transition-colors',
-            isActive ? 'text-white/80' : 'hover:text-white/60'
-          )}
-        >
-          {label}
-          <ArrowUpDown className={clsx('w-3 h-3', isActive ? 'text-emerald-400' : 'text-white/20')} />
-          {isActive && (
-            <ChevronDown className={clsx('w-3 h-3 text-emerald-400 transition-transform', dir === 'asc' ? 'rotate-180' : '')} />
-          )}
-        </button>
-      )}
-    </th>
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay }} className="bg-white/5 border border-white/10 rounded-xl p-3">
+      <div className="flex items-center gap-2 text-white/50 mb-1">
+        <Icon className={clsx('w-4 h-4', iconColor)} />
+        <span className="text-xs">{label}</span>
+      </div>
+      <p className="text-xl font-bold">{value}</p>
+    </motion.div>
+  );
+}
+
+function ChartLegend({ items }: { items: Array<{ name: string; value: number; fill: string }> }) {
+  return (
+    <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
+      {items.map((item, i) => (
+        <div key={i} className="flex items-center gap-1.5 text-xs text-white/60">
+          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.fill }} />
+          <span>{item.name}: {item.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyChart() {
+  return (
+    <div className="h-[160px] flex items-center justify-center text-white/30 text-sm">Нет данных</div>
   );
 }
