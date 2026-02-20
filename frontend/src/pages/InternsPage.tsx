@@ -151,16 +151,30 @@ export default function InternsPage() {
 
   // Render a single intern card (Prometheus data shape)
   const renderInternCard = (intern: PrometheusIntern) => {
-    const totalTrailModules = intern.trails.reduce((s, t) => s + (t.totalModules || 0), 0);
-    const completedTrailModules = intern.trails.reduce((s, t) => s + (t.completedModules || 0), 0);
-    const completionPercent = totalTrailModules > 0 ? Math.round((completedTrailModules / totalTrailModules) * 100) : 0;
-
-    // Find the "current" trail — the one with most progress but not fully completed, or the first one
+    // Determine which trail to display based on the filter
     const namedTrails = intern.trails.filter(t => t.trailName && t.trailName.trim());
-    const activeTrail = namedTrails.find(t => t.completedModules > 0 && t.completedModules < t.totalModules)
-      || namedTrails.find(t => t.completedModules > 0)
-      || namedTrails[0]
-      || intern.trails[0];
+
+    // If a specific trail is selected in the filter, show that trail's data
+    // Otherwise, auto-detect the "current" trail
+    const displayTrail = selectedTrailFilter !== 'all'
+      ? intern.trails.find(t => t.trailId === selectedTrailFilter) || null
+      : (namedTrails.find(t => t.completedModules > 0 && t.completedModules < t.totalModules)
+        || namedTrails.find(t => t.completedModules > 0)
+        || namedTrails[0]
+        || intern.trails[0]
+        || null);
+
+    // Module counts and progress based on the display trail
+    const completedModules = displayTrail ? (displayTrail.completedModules || 0) : 0;
+    const totalModules = displayTrail ? (displayTrail.totalModules || 0) : 0;
+    const completionPercent = totalModules > 0 ? Math.round((completedModules / totalModules) * 100) : 0;
+
+    // Resolve trail name
+    const trailDisplayName = displayTrail
+      ? (displayTrail.trailName?.trim()
+        || trailNameMap.get(displayTrail.trailId)
+        || 'Без названия')
+      : null;
 
     return (
       <motion.div
@@ -199,17 +213,26 @@ export default function InternsPage() {
         </div>
 
         {/* Module progress summary */}
-        {intern.trails.length > 0 && (
+        {displayTrail ? (
           <div className="mt-1 ml-12 space-y-1.5">
-            {/* Overall modules progress */}
+            {/* Trail name */}
+            <div className="flex items-center gap-1.5">
+              <GitBranch className="w-3 h-3 text-blue-400 flex-shrink-0" />
+              <span className="text-xs text-white/50 truncate">
+                {trailDisplayName}
+              </span>
+            </div>
+
+            {/* Modules progress for the trail */}
             <div className="flex items-center gap-2">
               <BookOpen className="w-3 h-3 text-emerald-400 flex-shrink-0" />
               <span className="text-xs text-white/70 font-medium">
-                Модулей: {completedTrailModules}/{totalTrailModules}
+                Модулей: {completedModules}/{totalModules}
               </span>
               <span className="text-xs text-white/40">({completionPercent}%)</span>
             </div>
-            {/* Overall progress bar */}
+
+            {/* Progress bar for the trail */}
             <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
               <div
                 className={clsx('h-full rounded-full transition-all', {
@@ -221,32 +244,14 @@ export default function InternsPage() {
               />
             </div>
 
-            {/* Current trail */}
-            {activeTrail && (
-              <div className="flex items-center gap-1.5 mt-1">
-                <GitBranch className="w-3 h-3 text-blue-400 flex-shrink-0" />
-                <span className="text-xs text-white/50 truncate">
-                  {activeTrail.trailName?.trim()
-                    || trailNameMap.get(activeTrail.trailId)
-                    || `Трейл #${intern.trails.indexOf(activeTrail) + 1}`}
-                </span>
-                <span className="text-xs text-white/30 whitespace-nowrap">
-                  {activeTrail.completedModules ?? 0}/{activeTrail.totalModules ?? 0}
-                </span>
-              </div>
-            )}
-
-            {/* Additional trails count */}
-            {intern.trails.length > 1 && (
+            {/* Additional trails count (only when showing auto-detected trail, not filtered) */}
+            {selectedTrailFilter === 'all' && intern.trails.length > 1 && (
               <p className="text-[10px] text-white/30">
                 +{intern.trails.length - 1} {intern.trails.length - 1 === 1 ? 'трейл' : intern.trails.length - 1 < 5 ? 'трейла' : 'трейлов'}
               </p>
             )}
           </div>
-        )}
-
-        {/* No trails */}
-        {intern.trails.length === 0 && (
+        ) : (
           <div className="mt-1 ml-12">
             <p className="text-xs text-white/30 flex items-center gap-1.5">
               <BookOpen className="w-3 h-3" />
@@ -255,8 +260,8 @@ export default function InternsPage() {
           </div>
         )}
 
-        {/* Action buttons */}
-        <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-2">
+        {/* Action buttons — pinned to the bottom */}
+        <div className="mt-auto pt-3 border-t border-white/10 flex items-center gap-2">
           <button
             onClick={() => navigate(`/interns/${intern.id}/achievements`)}
             className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 rounded-lg text-xs font-medium transition-colors"
