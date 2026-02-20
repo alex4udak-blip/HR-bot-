@@ -261,7 +261,7 @@ export default function InternsStagesTab() {
         <select
           value={selectedTrail}
           onChange={e => setSelectedTrail(e.target.value)}
-          className="px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-emerald-500/50"
+          className="px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-emerald-500/50 [&>option]:bg-dark-900 [&>option]:text-white"
         >
           <option value="all">Все трейлы</option>
           {trailFilters.map(t => (
@@ -395,7 +395,7 @@ export default function InternsStagesTab() {
                         setSearchQuery(e.target.value);
                       }
                     }}
-                    className="w-full appearance-none pl-3 pr-8 py-2 bg-white/5 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer"
+                    className="w-full appearance-none pl-3 pr-8 py-2 bg-white/5 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer [&>option]:bg-dark-900 [&>option]:text-white"
                   >
                     <option value="">Выберите трейл...</option>
                     {dropoffTrails.map(t => (

@@ -17,7 +17,6 @@ import {
   CheckCircle2,
   Zap,
   Star,
-  Flame,
   Award,
   Loader2,
   RefreshCw,
@@ -476,20 +475,13 @@ export default function InternInfoPage() {
         {/* Stats cards row */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
           <h3 className="text-sm font-medium text-white/50 mb-3">Статистика</h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-white/5 border border-white/10 rounded-xl p-3">
               <div className="flex items-center gap-2 text-white/50 mb-1">
                 <Zap className="w-4 h-4 text-amber-400" />
                 <span className="text-xs">XP</span>
               </div>
               <p className="text-xl font-bold">{student.totalXP}</p>
-            </div>
-            <div className="bg-white/5 border border-white/10 rounded-xl p-3">
-              <div className="flex items-center gap-2 text-white/50 mb-1">
-                <Flame className="w-4 h-4 text-orange-400" />
-                <span className="text-xs">Серия</span>
-              </div>
-              <p className="text-xl font-bold">{student.currentStreak} дн.</p>
             </div>
             <div className="bg-white/5 border border-white/10 rounded-xl p-3">
               <div className="flex items-center gap-2 text-white/50 mb-1">
