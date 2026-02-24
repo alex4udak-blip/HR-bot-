@@ -41,7 +41,6 @@ import RedFlagsPanel from '../entities/RedFlagsPanel';
 import SimilarCandidates from '../entities/SimilarCandidates';
 import DuplicateWarning from '../entities/DuplicateWarning';
 import InteractionTimeline from '../entities/InteractionTimeline';
-import PrometheusTab from './PrometheusTab';
 import PrometheusDetailedReview from './PrometheusDetailedReview';
 import * as api from '@/services/api';
 import type { AIProfile } from '@/services/api';
