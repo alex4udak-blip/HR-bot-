@@ -42,6 +42,7 @@ import SimilarCandidates from '../entities/SimilarCandidates';
 import DuplicateWarning from '../entities/DuplicateWarning';
 import InteractionTimeline from '../entities/InteractionTimeline';
 import PrometheusTab from './PrometheusTab';
+import PrometheusDetailedReview from './PrometheusDetailedReview';
 import * as api from '@/services/api';
 import type { AIProfile } from '@/services/api';
 import { useEntityStore } from '@/stores/entityStore';
@@ -1015,7 +1016,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
         )}
 
         {activeTab === 'prometheus' && (
-          <PrometheusTab entityId={entity.id} />
+          <PrometheusDetailedReview entityId={entity.id} />
         )}
 
         {activeTab === 'red-flags' && entity.type === 'candidate' && (

@@ -352,6 +352,7 @@ export {
   getPrometheusAnalytics,
   getStudentAchievements,
   getContactPrometheusReview,
+  getContactDetailedReview,
   exportInternToContact,
   getInternLinkedContacts,
 } from './interns';
@@ -389,6 +390,13 @@ export type {
   ContactPrometheusReview,
   ContactPrometheusIntern,
   ContactPrometheusResponse,
+  CompetencyScore,
+  ProfessionalProfile,
+  CompetencyAnalysis,
+  TrailInsight,
+  TeamFitRecommendation,
+  DetailedPrometheusReview,
+  DetailedReviewResponse,
   ExportInternResponse,
   LinkedContactsResponse,
 } from './interns';
