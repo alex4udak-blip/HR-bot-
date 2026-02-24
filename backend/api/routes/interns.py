@@ -455,6 +455,147 @@ async def get_intern_for_contact(
 
 
 # ============================================================
+# DETAILED AI REVIEW FOR CONTACT
+# ============================================================
+
+
+@router.get("/contact/{entity_id}/detailed-review")
+async def get_detailed_review_for_contact(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Generate a comprehensive AI-powered review of a contact's Prometheus data.
+
+    1. Matches contact to Prometheus intern by email (same as /contact/{entity_id}).
+    2. Fetches student achievements for richer data.
+    3. Generates AI review with Claude (professional profile, competency analysis,
+       trail insights, team fit recommendation).
+
+    Response shape:
+    {
+        status: "ok" | "not_found" | "not_linked" | "error",
+        intern?: { ...basic intern data },
+        review?: { ...deterministic review },
+        detailedReview?: { professionalProfile, competencyAnalysis, trailInsights,
+                           teamFitRecommendation, overallVerdict },
+        achievements?: { student, achievements, submissionStats, trailProgress, certificates },
+        message?: string
+    }
+    """
+    from api.services.prometheus_review import prometheus_review_service
+
+    # 1. Load entity
+    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    entity = result.scalar_one_or_none()
+
+    if not entity:
+        return JSONResponse(
+            content={"status": "not_found", "message": "Контакт не найден"},
+            headers={"Cache-Control": "no-store"},
+        )
+
+    # 2. Collect emails
+    emails: List[str] = []
+    if entity.email:
+        emails.append(entity.email.strip().lower())
+    if hasattr(entity, "emails") and entity.emails:
+        for e in entity.emails:
+            normalized = e.strip().lower()
+            if normalized and normalized not in emails:
+                emails.append(normalized)
+
+    if not emails:
+        return JSONResponse(
+            content={
+                "status": "not_linked",
+                "message": "У контакта не указан email. Невозможно найти данные в Prometheus.",
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    # 3. Fetch interns
+    try:
+        data = await _proxy_prometheus("/api/external/interns")
+    except HTTPException as exc:
+        return JSONResponse(
+            content={
+                "status": "error",
+                "message": f"Ошибка получения данных из Prometheus: {exc.detail}",
+            },
+            status_code=200,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    interns_list: List[dict] = data.get("interns") or []
+
+    # 4. Match by email
+    matched_intern = None
+    for intern in interns_list:
+        intern_email = (intern.get("email") or "").strip().lower()
+        if intern_email and intern_email in emails:
+            matched_intern = intern
+            break
+
+    if not matched_intern:
+        return JSONResponse(
+            content={
+                "status": "not_linked",
+                "message": "Кандидат не найден в Prometheus. Проверьте email или связку.",
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    # 5. Generate deterministic review (base data)
+    review = _generate_review(matched_intern)
+
+    # 6. Fetch student achievements (optional — may not exist)
+    achievements_data = None
+    intern_id = matched_intern.get("id")
+    if intern_id:
+        try:
+            achievements_data = await _proxy_prometheus(
+                f"/api/external/student-achievements/{intern_id}"
+            )
+        except HTTPException:
+            logger.info(
+                "Could not fetch achievements for intern %s — continuing without",
+                intern_id,
+            )
+
+    # 7. Generate AI detailed review
+    detailed_review = await prometheus_review_service.generate_detailed_review(
+        intern=matched_intern,
+        review_data=review,
+        achievements=achievements_data,
+    )
+
+    # 8. Build response
+    intern_dto = {
+        "id": matched_intern.get("id"),
+        "name": matched_intern.get("name"),
+        "email": matched_intern.get("email"),
+        "telegramUsername": matched_intern.get("telegramUsername"),
+        "totalXP": matched_intern.get("totalXP", 0),
+        "lastActiveAt": matched_intern.get("lastActiveAt"),
+        "daysSinceActive": matched_intern.get("daysSinceActive"),
+        "createdAt": matched_intern.get("createdAt"),
+    }
+
+    return JSONResponse(
+        content={
+            "status": "ok",
+            "intern": intern_dto,
+            "review": review,
+            "detailedReview": detailed_review,
+            "achievements": achievements_data,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+# ============================================================
 # EXPORT INTERN TO CONTACT (ENTITY)
 # ============================================================
 

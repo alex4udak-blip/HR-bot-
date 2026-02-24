@@ -430,6 +430,80 @@ export const getContactPrometheusReview = async (
 };
 
 // ============================================================
+// DETAILED AI REVIEW FOR CONTACT
+// ============================================================
+
+/** Competency score block */
+export interface CompetencyScore {
+  score: number;
+  label: string;
+  detail: string;
+}
+
+/** Professional profile section of the detailed review */
+export interface ProfessionalProfile {
+  title: string;
+  summary: string;
+  keyStrengths: string[];
+  growthAreas: string[];
+}
+
+/** Competency analysis section */
+export interface CompetencyAnalysis {
+  technicalReadiness: CompetencyScore;
+  learningAbility: CompetencyScore;
+  consistency: CompetencyScore;
+  engagement: CompetencyScore;
+}
+
+/** Trail insight from AI analysis */
+export interface TrailInsight {
+  trailName: string;
+  verdict: string;
+  relevantSkills: string[];
+}
+
+/** Team fit recommendation */
+export interface TeamFitRecommendation {
+  readinessLevel: 'not_ready' | 'developing' | 'ready' | 'highly_ready';
+  recommendedRoles: string[];
+  integrationAdvice: string;
+  watchPoints: string[];
+}
+
+/** Full AI-generated detailed review */
+export interface DetailedPrometheusReview {
+  professionalProfile: ProfessionalProfile;
+  competencyAnalysis: CompetencyAnalysis;
+  trailInsights: TrailInsight[];
+  teamFitRecommendation: TeamFitRecommendation;
+  overallVerdict: string;
+}
+
+/** Response from GET /api/interns/contact/{entity_id}/detailed-review */
+export interface DetailedReviewResponse {
+  status: 'ok' | 'not_found' | 'not_linked' | 'error';
+  intern?: ContactPrometheusIntern;
+  review?: ContactPrometheusReview;
+  detailedReview?: DetailedPrometheusReview;
+  achievements?: StudentAchievementsResponse;
+  message?: string;
+}
+
+/**
+ * Fetch detailed AI-powered Prometheus review for a contact.
+ * Combines intern data + student achievements + Claude AI analysis.
+ */
+export const getContactDetailedReview = async (
+  entityId: number,
+): Promise<DetailedReviewResponse> => {
+  const { data } = await deduplicatedGet<DetailedReviewResponse>(
+    `/interns/contact/${entityId}/detailed-review`,
+  );
+  return data;
+};
+
+// ============================================================
 // EXPORT INTERN TO CONTACT
 // ============================================================
 

@@ -16,8 +16,6 @@ import {
   Zap,
   Star,
   Award,
-  Medal,
-  Trophy,
   Loader2,
   RefreshCw,
   AlertTriangle,
@@ -44,24 +42,6 @@ import { formatDate } from '@/utils';
 // ── Constants ──
 
 const SUBMISSION_COLORS = ['#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
-const ACHIEVEMENT_COLORS = ['#10b981', '#1f2937'];
-
-const RARITY_STYLES: Record<string, string> = {
-  common: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
-  uncommon: 'bg-green-500/20 text-green-400 border-green-500/30',
-  rare: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  epic: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  legendary: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-};
-
-const RARITY_LABELS: Record<string, string> = {
-  common: 'Обычное',
-  uncommon: 'Необычное',
-  rare: 'Редкое',
-  epic: 'Эпическое',
-  legendary: 'Легендарное',
-};
-
 const MODULE_TYPE_LABELS: Record<string, string> = {
   THEORY: 'Теория',
   PRACTICE: 'Практика',
@@ -459,16 +439,6 @@ export default function InternStatsPage() {
     ].filter(d => d.value > 0);
   }, [data]);
 
-  // Chart data: achievements progress
-  const achievementChartData = useMemo(() => {
-    if (!data) return [];
-    const { achievements: a } = data;
-    return [
-      { name: 'Получено', value: a.stats.earned, fill: ACHIEVEMENT_COLORS[0] },
-      { name: 'Осталось', value: a.stats.total - a.stats.earned, fill: ACHIEVEMENT_COLORS[1] },
-    ];
-  }, [data]);
-
   // Chart data: trail completion aggregated
   const trailCompletion = useMemo(() => {
     if (!data || data.trailProgress.length === 0) return null;
@@ -598,7 +568,7 @@ export default function InternStatsPage() {
     );
   }
 
-  const { student, achievements, submissionStats, trailProgress, certificates } = data;
+  const { student, submissionStats, trailProgress, certificates } = data;
 
   return (
     <div className="h-full flex flex-col">
@@ -694,7 +664,7 @@ export default function InternStatsPage() {
         </motion.div>
 
         {/* Charts Row */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Submission Stats Chart */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
             <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Статистика работ</h3>
@@ -727,32 +697,8 @@ export default function InternStatsPage() {
             )}
           </motion.div>
 
-          {/* Achievements Progress Chart */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
-            <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Прогресс достижений</h3>
-            <div className="relative h-[180px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={achievementChartData} cx="50%" cy="50%" innerRadius={55} outerRadius={75} paddingAngle={0} dataKey="value" stroke="none" startAngle={90} endAngle={-270}>
-                    {achievementChartData.map((entry, index) => (
-                      <Cell key={index} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<ChartTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-              <DonutCenterLabel value={`${achievements.stats.percentage}%`} label="достижений" />
-            </div>
-            <div className="mt-3 flex justify-center gap-4">
-              <div className="flex items-center gap-1.5 text-xs text-white/60">
-                <Medal className="w-3.5 h-3.5 text-emerald-400" />
-                <span>{achievements.stats.earned} из {achievements.stats.total}</span>
-              </div>
-            </div>
-          </motion.div>
-
           {/* Trail Completion Chart */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
             <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Прохождение трейлов</h3>
             {trailCompletion ? (
               <>
@@ -962,43 +908,6 @@ export default function InternStatsPage() {
 
         {/* Collapsible sections */}
         <div className="space-y-3">
-          {/* Earned achievements */}
-          {achievements.earned.length > 0 && (
-            <CollapsibleSection
-              title="Полученные достижения"
-              icon={Medal}
-              badge={achievements.earned.length}
-              defaultOpen
-            >
-              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {achievements.earned.map(ach => (
-                  <div key={ach.id} className={clsx('p-3 rounded-lg border', RARITY_STYLES[ach.rarity] || RARITY_STYLES.common)}>
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
-                        <Trophy className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">{ach.name}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 flex-shrink-0">
-                            {RARITY_LABELS[ach.rarity] || ach.rarity}
-                          </span>
-                        </div>
-                        <p className="text-xs text-white/50 mt-0.5">{ach.description}</p>
-                        {ach.earnedAt && (
-                          <p className="text-[10px] text-white/30 mt-1 flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            {formatDate(ach.earnedAt, 'short')}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CollapsibleSection>
-          )}
-
           {/* Trail Progress */}
           {trailProgress.length > 0 && (
             <CollapsibleSection
