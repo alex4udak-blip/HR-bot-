@@ -27,7 +27,6 @@ import {
   Clock,
   ExternalLink,
   Flame,
-  Upload,
   UserPlus,
 } from 'lucide-react';
 import {
