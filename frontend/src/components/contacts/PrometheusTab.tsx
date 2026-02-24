@@ -9,7 +9,6 @@ import {
   CheckCircle2,
   GitBranch,
   RefreshCw,
-  Loader2,
   ChevronDown,
   BookOpen,
   Activity,
