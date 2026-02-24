@@ -1048,3 +1048,21 @@ class ParseJob(Base):
     organization = relationship("Organization")
     user = relationship("User")
     entity = relationship("Entity")
+
+
+class PrometheusReviewCache(Base):
+    """Cached AI-generated Prometheus detailed reviews for contacts.
+
+    Stores the full response (intern data, deterministic review, AI detailed review,
+    achievements) so that repeated visits to the Prometheus tab do not re-generate
+    the review.  Regeneration is triggered manually via force=true.
+    """
+    __tablename__ = "prometheus_review_cache"
+
+    id = Column(Integer, primary_key=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    review_data = Column(JSON, nullable=False)  # Full DetailedReviewResponse payload
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    entity = relationship("Entity")

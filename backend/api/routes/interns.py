@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.config import settings
 from api.utils.http_client import get_http_client
 from api.database import get_db
-from api.models.database import Entity, EntityType, EntityStatus, User, Organization
+from api.models.database import Entity, EntityType, EntityStatus, User, Organization, PrometheusReviewCache
 from api.services.auth import get_current_user, get_user_org
 
 logger = logging.getLogger("hr-analyzer.interns")
@@ -462,16 +462,22 @@ async def get_intern_for_contact(
 @router.get("/contact/{entity_id}/detailed-review")
 async def get_detailed_review_for_contact(
     entity_id: int,
+    force: bool = Query(default=False, description="Force regeneration, ignoring cache"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     Generate a comprehensive AI-powered review of a contact's Prometheus data.
 
-    1. Matches contact to Prometheus intern by email (same as /contact/{entity_id}).
-    2. Fetches student achievements for richer data.
-    3. Generates AI review with Claude (professional profile, competency analysis,
-       trail insights, team fit recommendation).
+    Results are cached in the database (prometheus_review_cache table).
+    Subsequent requests return the cached result instantly.
+    Pass ?force=true to regenerate the review.
+
+    1. Checks DB cache first (unless force=true).
+    2. Matches contact to Prometheus intern by email.
+    3. Fetches student achievements for richer data.
+    4. Generates AI review with Claude.
+    5. Saves result to DB cache.
 
     Response shape:
     {
@@ -481,10 +487,27 @@ async def get_detailed_review_for_contact(
         detailedReview?: { professionalProfile, competencyAnalysis, trailInsights,
                            teamFitRecommendation, overallVerdict },
         achievements?: { student, achievements, submissionStats, trailProgress, certificates },
+        cached?: bool,
         message?: string
     }
     """
     from api.services.prometheus_review import prometheus_review_service
+
+    # 0. Check DB cache (unless force regeneration)
+    if not force:
+        cache_result = await db.execute(
+            select(PrometheusReviewCache).where(
+                PrometheusReviewCache.entity_id == entity_id
+            )
+        )
+        cached = cache_result.scalar_one_or_none()
+        if cached and cached.review_data:
+            payload = dict(cached.review_data)
+            payload["cached"] = True
+            return JSONResponse(
+                content=payload,
+                headers={"Cache-Control": "no-store"},
+            )
 
     # 1. Load entity
     result = await db.execute(select(Entity).where(Entity.id == entity_id))
@@ -571,7 +594,7 @@ async def get_detailed_review_for_contact(
         achievements=achievements_data,
     )
 
-    # 8. Build response
+    # 8. Build response payload
     intern_dto = {
         "id": matched_intern.get("id"),
         "name": matched_intern.get("name"),
@@ -583,14 +606,39 @@ async def get_detailed_review_for_contact(
         "createdAt": matched_intern.get("createdAt"),
     }
 
+    payload = {
+        "status": "ok",
+        "intern": intern_dto,
+        "review": review,
+        "detailedReview": detailed_review,
+        "achievements": achievements_data,
+    }
+
+    # 9. Save to DB cache (upsert)
+    try:
+        cache_result = await db.execute(
+            select(PrometheusReviewCache).where(
+                PrometheusReviewCache.entity_id == entity_id
+            )
+        )
+        existing_cache = cache_result.scalar_one_or_none()
+
+        if existing_cache:
+            existing_cache.review_data = payload
+        else:
+            db.add(PrometheusReviewCache(
+                entity_id=entity_id,
+                review_data=payload,
+            ))
+        await db.commit()
+    except Exception as exc:
+        logger.warning("Failed to save prometheus review cache for entity %d: %s", entity_id, exc)
+        # Non-critical — still return the review even if caching fails
+        await db.rollback()
+
+    payload["cached"] = False
     return JSONResponse(
-        content={
-            "status": "ok",
-            "intern": intern_dto,
-            "review": review,
-            "detailedReview": detailed_review,
-            "achievements": achievements_data,
-        },
+        content=payload,
         headers={"Cache-Control": "no-store"},
     )
 

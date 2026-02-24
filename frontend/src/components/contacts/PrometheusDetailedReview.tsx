@@ -29,18 +29,20 @@ import type {
   Certificate,
 } from '@/services/api';
 
-// Module-level cache — keeps review data between tab switches
-const reviewCache = new Map<number, DetailedReviewResponse>();
+// In-flight prefetch tracker — avoids duplicate concurrent requests
+const prefetchInFlight = new Set<number>();
 
-/** Prefetch review in background (called from ContactDetail on mount) */
+/** Prefetch review in background (called from ContactDetail on mount).
+ *  The backend caches in DB, so this just warms the server-side cache. */
 export function prefetchPrometheusReview(entityId: number): void {
-  if (reviewCache.has(entityId)) return;
+  if (prefetchInFlight.has(entityId)) return;
+  prefetchInFlight.add(entityId);
   getContactDetailedReview(entityId)
-    .then((result) => {
-      reviewCache.set(entityId, result);
-    })
     .catch(() => {
       // silently fail on prefetch
+    })
+    .finally(() => {
+      prefetchInFlight.delete(entityId);
     });
 }
 
@@ -344,13 +346,6 @@ export default function PrometheusDetailedReview({
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchData = async (forceRefresh = false) => {
-    // Use cache if available and not forcing refresh
-    if (!forceRefresh && reviewCache.has(entityId)) {
-      setData(reviewCache.get(entityId)!);
-      setLoading(false);
-      return;
-    }
-
     if (forceRefresh) {
       setRefreshing(true);
     } else {
@@ -358,8 +353,7 @@ export default function PrometheusDetailedReview({
     }
     setError(null);
     try {
-      const result = await getContactDetailedReview(entityId);
-      reviewCache.set(entityId, result);
+      const result = await getContactDetailedReview(entityId, forceRefresh);
       setData(result);
     } catch {
       if (!forceRefresh) {
