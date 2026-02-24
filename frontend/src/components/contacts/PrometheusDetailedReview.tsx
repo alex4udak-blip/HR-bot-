@@ -29,6 +29,23 @@ import type {
   Certificate,
 } from '@/services/api';
 
+// In-flight prefetch tracker — avoids duplicate concurrent requests
+const prefetchInFlight = new Set<number>();
+
+/** Prefetch review in background (called from ContactDetail on mount).
+ *  The backend caches in DB, so this just warms the server-side cache. */
+export function prefetchPrometheusReview(entityId: number): void {
+  if (prefetchInFlight.has(entityId)) return;
+  prefetchInFlight.add(entityId);
+  getContactDetailedReview(entityId)
+    .catch(() => {
+      // silently fail on prefetch
+    })
+    .finally(() => {
+      prefetchInFlight.delete(entityId);
+    });
+}
+
 interface PrometheusDetailedReviewProps {
   entityId: number;
 }
@@ -326,17 +343,25 @@ export default function PrometheusDetailedReview({
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DetailedReviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (forceRefresh = false) => {
+    if (forceRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
     try {
-      const result = await getContactDetailedReview(entityId);
+      const result = await getContactDetailedReview(entityId, forceRefresh);
       setData(result);
     } catch {
-      setError('Не удалось загрузить данные из Prometheus');
+      if (!forceRefresh) {
+        setError('Не удалось загрузить данные из Prometheus');
+      }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -362,7 +387,7 @@ export default function PrometheusDetailedReview({
           <AlertTriangle className="w-12 h-12 mx-auto mb-3 text-red-400/50" />
           <p className="text-sm text-white/40">{error}</p>
           <button
-            onClick={fetchData}
+            onClick={() => fetchData()}
             className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors text-white/70"
           >
             <RefreshCw className="w-4 h-4" />
@@ -392,7 +417,7 @@ export default function PrometheusDetailedReview({
             Проверьте email контакта или связку с Prometheus.
           </p>
           <button
-            onClick={fetchData}
+            onClick={() => fetchData()}
             className="mt-3 flex items-center gap-2 mx-auto px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs transition-colors text-white/60"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -426,6 +451,62 @@ export default function PrometheusDetailedReview({
 
   return (
     <div className="space-y-4">
+      {/* ── Team Fit Recommendation (AI) — shown first for HR ── */}
+      {detailed?.teamFitRecommendation && (
+        <div className="glass rounded-xl border border-white/10 p-4 sm:p-6">
+          <h4 className="text-sm font-medium text-white/50 mb-3 flex items-center gap-2">
+            <Users className="w-4 h-4 text-blue-400" />
+            Рекомендация по интеграции в команду
+          </h4>
+          <div className="bg-white/5 rounded-xl p-4 border border-white/5 space-y-3">
+            <div className="flex items-center gap-3">
+              <ReadinessBadge level={detailed.teamFitRecommendation.readinessLevel} />
+            </div>
+
+            {detailed.teamFitRecommendation.recommendedRoles.length > 0 && (
+              <div>
+                <span className="text-[10px] text-white/40 uppercase tracking-wide">
+                  Рекомендуемые роли
+                </span>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {detailed.teamFitRecommendation.recommendedRoles.map((role) => (
+                    <span
+                      key={role}
+                      className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/20"
+                    >
+                      {role}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <p className="text-sm text-white/55 leading-relaxed">
+              {detailed.teamFitRecommendation.integrationAdvice}
+            </p>
+
+            {detailed.teamFitRecommendation.watchPoints.length > 0 && (
+              <div>
+                <span className="text-[10px] text-amber-400 uppercase tracking-wide font-medium">
+                  На что обратить внимание
+                </span>
+                <ul className="mt-1 space-y-1">
+                  {detailed.teamFitRecommendation.watchPoints.map((wp, i) => (
+                    <li
+                      key={i}
+                      className="text-xs text-white/45 flex items-start gap-1.5"
+                    >
+                      <AlertTriangle className="w-3 h-3 text-amber-400 flex-shrink-0 mt-0.5" />
+                      <span>{wp}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main glass card */}
       <div className="glass rounded-xl border border-white/10 p-4 sm:p-6">
         {/* Header */}
@@ -458,13 +539,6 @@ export default function PrometheusDetailedReview({
                 Риск отсева
               </span>
             )}
-            <button
-              onClick={fetchData}
-              className="p-1.5 hover:bg-white/5 rounded-lg transition-colors text-white/40 hover:text-white/70"
-              title="Обновить данные"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-            </button>
           </div>
         </div>
 
@@ -652,62 +726,6 @@ export default function PrometheusDetailedReview({
         </div>
       )}
 
-      {/* ── Team Fit Recommendation (AI) ── */}
-      {detailed?.teamFitRecommendation && (
-        <div className="glass rounded-xl border border-white/10 p-4 sm:p-6">
-          <h4 className="text-sm font-medium text-white/50 mb-3 flex items-center gap-2">
-            <Users className="w-4 h-4 text-blue-400" />
-            Рекомендация по интеграции в команду
-          </h4>
-          <div className="bg-white/5 rounded-xl p-4 border border-white/5 space-y-3">
-            <div className="flex items-center gap-3">
-              <ReadinessBadge level={detailed.teamFitRecommendation.readinessLevel} />
-            </div>
-
-            {detailed.teamFitRecommendation.recommendedRoles.length > 0 && (
-              <div>
-                <span className="text-[10px] text-white/40 uppercase tracking-wide">
-                  Рекомендуемые роли
-                </span>
-                <div className="flex flex-wrap gap-1.5 mt-1">
-                  {detailed.teamFitRecommendation.recommendedRoles.map((role) => (
-                    <span
-                      key={role}
-                      className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/20"
-                    >
-                      {role}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <p className="text-sm text-white/55 leading-relaxed">
-              {detailed.teamFitRecommendation.integrationAdvice}
-            </p>
-
-            {detailed.teamFitRecommendation.watchPoints.length > 0 && (
-              <div>
-                <span className="text-[10px] text-amber-400 uppercase tracking-wide font-medium">
-                  На что обратить внимание
-                </span>
-                <ul className="mt-1 space-y-1">
-                  {detailed.teamFitRecommendation.watchPoints.map((wp, i) => (
-                    <li
-                      key={i}
-                      className="text-xs text-white/45 flex items-start gap-1.5"
-                    >
-                      <AlertTriangle className="w-3 h-3 text-amber-400 flex-shrink-0 mt-0.5" />
-                      <span>{wp}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ── Overall Verdict (AI) ── */}
       {detailed?.overallVerdict && (
         <div className="glass rounded-xl border border-white/10 p-4 sm:p-6">
@@ -736,6 +754,14 @@ export default function PrometheusDetailedReview({
             <Brain className="w-3 h-3" />
             AI-ревью
           </span>
+          <button
+            onClick={() => fetchData(true)}
+            disabled={refreshing}
+            className="flex items-center gap-1 text-white/40 hover:text-white/70 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={clsx('w-3 h-3', refreshing && 'animate-spin')} />
+            Перегенерировать
+          </button>
         </div>
       )}
     </div>

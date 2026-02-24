@@ -493,12 +493,16 @@ export interface DetailedReviewResponse {
 /**
  * Fetch detailed AI-powered Prometheus review for a contact.
  * Combines intern data + student achievements + Claude AI analysis.
+ *
+ * Results are cached in the database. Pass force=true to regenerate.
  */
 export const getContactDetailedReview = async (
   entityId: number,
+  force: boolean = false,
 ): Promise<DetailedReviewResponse> => {
   const { data } = await deduplicatedGet<DetailedReviewResponse>(
     `/interns/contact/${entityId}/detailed-review`,
+    { params: force ? { force: 'true' } : undefined },
   );
   return data;
 };
