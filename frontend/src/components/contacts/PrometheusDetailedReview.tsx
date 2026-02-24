@@ -387,7 +387,7 @@ export default function PrometheusDetailedReview({
           <AlertTriangle className="w-12 h-12 mx-auto mb-3 text-red-400/50" />
           <p className="text-sm text-white/40">{error}</p>
           <button
-            onClick={fetchData}
+            onClick={() => fetchData()}
             className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors text-white/70"
           >
             <RefreshCw className="w-4 h-4" />
@@ -417,7 +417,7 @@ export default function PrometheusDetailedReview({
             Проверьте email контакта или связку с Prometheus.
           </p>
           <button
-            onClick={fetchData}
+            onClick={() => fetchData()}
             className="mt-3 flex items-center gap-2 mx-auto px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs transition-colors text-white/60"
           >
             <RefreshCw className="w-3.5 h-3.5" />
