@@ -4,7 +4,6 @@ import {
   Flame,
   Zap,
   AlertTriangle,
-  CheckCircle2,
   GitBranch,
   RefreshCw,
   ChevronDown,
