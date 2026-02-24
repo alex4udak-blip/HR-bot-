@@ -379,7 +379,6 @@ export interface ContactPrometheusReview {
   summary: string;
   metrics: {
     totalXP: number;
-    currentStreak: number;
     daysSinceActive: number | null;
     lastActiveAt: string | null;
     totalModules: number;
@@ -403,7 +402,6 @@ export interface ContactPrometheusIntern {
   email: string | null;
   telegramUsername: string | null;
   totalXP: number;
-  currentStreak: number;
   lastActiveAt: string | null;
   daysSinceActive: number | null;
   createdAt: string | null;

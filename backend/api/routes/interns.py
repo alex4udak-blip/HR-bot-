@@ -197,7 +197,6 @@ def _generate_review(intern: dict) -> dict:
     """
     trails: List[dict] = intern.get("trails") or []
     total_xp: int = intern.get("totalXP") or 0
-    current_streak: int = intern.get("currentStreak") or 0
     days_since_active = intern.get("daysSinceActive")
     last_active_at: Optional[str] = intern.get("lastActiveAt")
 
@@ -271,21 +270,17 @@ def _generate_review(intern: dict) -> dict:
     if total_xp > 0:
         bullets.append(f"Набрано {total_xp} XP за всё время.")
 
-    # Bullet 3: streak
-    if current_streak >= 3:
-        bullets.append(f"Текущий стрик активности: {current_streak} дн. подряд.")
-
-    # Bullet 4: top trails
+    # Bullet 3: top trails
     if top_trails:
         names = ", ".join(t["trailName"] for t in top_trails[:3])
         bullets.append(f"Сильные трейлы (>70%): {names}.")
 
-    # Bullet 5: weak trails
+    # Bullet 4: weak trails
     if weak_trails:
         names = ", ".join(t["trailName"] for t in weak_trails[:3])
         bullets.append(f"Слабые трейлы (<30%): {names}.")
 
-    # Bullet 6: activity warning
+    # Bullet 5: activity warning
     if risk:
         bullets.append(f"Внимание: {risk_reason}")
     elif not is_active and days_since_active is not None:
@@ -321,8 +316,8 @@ def _generate_review(intern: dict) -> dict:
         parts.append(
             f"Обратите внимание на риск отсева: {risk_reason}."
         )
-    elif is_active and current_streak >= 3:
-        parts.append("Кандидат демонстрирует стабильную активность.")
+    elif is_active:
+        parts.append("Кандидат активен на платформе.")
 
     summary_text = " ".join(parts)
 
@@ -332,7 +327,6 @@ def _generate_review(intern: dict) -> dict:
         "summary": summary_text,
         "metrics": {
             "totalXP": total_xp,
-            "currentStreak": current_streak,
             "daysSinceActive": days_since_active,
             "lastActiveAt": last_active_at,
             "totalModules": total_modules,
@@ -445,7 +439,6 @@ async def get_intern_for_contact(
         "email": matched_intern.get("email"),
         "telegramUsername": matched_intern.get("telegramUsername"),
         "totalXP": matched_intern.get("totalXP", 0),
-        "currentStreak": matched_intern.get("currentStreak", 0),
         "lastActiveAt": matched_intern.get("lastActiveAt"),
         "daysSinceActive": matched_intern.get("daysSinceActive"),
         "createdAt": matched_intern.get("createdAt"),

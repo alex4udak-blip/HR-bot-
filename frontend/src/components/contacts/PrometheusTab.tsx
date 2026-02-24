@@ -3,8 +3,6 @@ import { motion } from 'framer-motion';
 import {
   Flame,
   Zap,
-  TrendingUp,
-  Clock,
   AlertTriangle,
   CheckCircle2,
   GitBranch,
@@ -196,7 +194,7 @@ export default function PrometheusTab({ entityId }: PrometheusTabProps) {
           </div>
           <div>
             <h3 className="text-base font-semibold text-white">Prometheus</h3>
-            <p className="text-xs text-white/50">Статистика прохождения курсов на платформе</p>
+            <p className="text-xs text-white/50">Итоговое ревью обучения на платформе</p>
           </div>
         </div>
         <div className="text-center py-8">
@@ -224,7 +222,7 @@ export default function PrometheusTab({ entityId }: PrometheusTabProps) {
           </div>
           <div>
             <h3 className="text-base font-semibold text-white">Prometheus</h3>
-            <p className="text-xs text-white/50">Статистика прохождения курсов на платформе</p>
+            <p className="text-xs text-white/50">Итоговое ревью обучения на платформе</p>
           </div>
         </div>
         <div className="text-center py-8">
@@ -263,7 +261,7 @@ export default function PrometheusTab({ entityId }: PrometheusTabProps) {
           </div>
           <div>
             <h3 className="text-base font-semibold text-white">Prometheus</h3>
-            <p className="text-xs text-white/50">Статистика прохождения курсов на платформе</p>
+            <p className="text-xs text-white/50">Итоговое ревью обучения на платформе</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -294,7 +292,7 @@ export default function PrometheusTab({ entityId }: PrometheusTabProps) {
 
       <div className="space-y-4">
         {/* Overview metrics */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div className="bg-white/5 rounded-lg p-3 border border-white/5">
             <div className="flex items-center gap-1.5 text-white/40 mb-1">
               <Zap className="w-3.5 h-3.5 text-amber-400" />
@@ -304,10 +302,10 @@ export default function PrometheusTab({ entityId }: PrometheusTabProps) {
           </div>
           <div className="bg-white/5 rounded-lg p-3 border border-white/5">
             <div className="flex items-center gap-1.5 text-white/40 mb-1">
-              <TrendingUp className="w-3.5 h-3.5 text-purple-400" />
-              <span className="text-xs">Стрик</span>
+              <GitBranch className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-xs">Трейлов</span>
             </div>
-            <p className="text-lg font-semibold text-white">{m.currentStreak} дн.</p>
+            <p className="text-lg font-semibold text-white">{m.trailCount}</p>
           </div>
           <div className="bg-white/5 rounded-lg p-3 border border-white/5">
             <div className="flex items-center gap-1.5 text-white/40 mb-1">
@@ -316,24 +314,6 @@ export default function PrometheusTab({ entityId }: PrometheusTabProps) {
             </div>
             <p className="text-lg font-semibold text-white">
               {m.completedModules}/{m.totalModules}
-            </p>
-          </div>
-          <div className="bg-white/5 rounded-lg p-3 border border-white/5">
-            <div className="flex items-center gap-1.5 text-white/40 mb-1">
-              <Clock className={clsx('w-3.5 h-3.5', {
-                'text-emerald-400': m.daysSinceActive !== null && m.daysSinceActive <= 3,
-                'text-amber-400': m.daysSinceActive !== null && m.daysSinceActive > 3 && m.daysSinceActive <= 7,
-                'text-red-400': m.daysSinceActive !== null && m.daysSinceActive > 7,
-              })} />
-              <span className="text-xs">Неактивен</span>
-            </div>
-            <p className={clsx('text-lg font-semibold', {
-              'text-emerald-400': m.daysSinceActive !== null && m.daysSinceActive <= 3,
-              'text-amber-400': m.daysSinceActive !== null && m.daysSinceActive > 3 && m.daysSinceActive <= 7,
-              'text-red-400': m.daysSinceActive !== null && m.daysSinceActive > 7,
-              'text-white': m.daysSinceActive === null,
-            })}>
-              {m.daysSinceActive !== null ? `${m.daysSinceActive} дн.` : '—'}
             </p>
           </div>
         </div>
