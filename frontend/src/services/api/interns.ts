@@ -1,4 +1,4 @@
-import { deduplicatedGet } from './client';
+import { deduplicatedGet, debouncedMutation } from './client';
 
 // ============================================================
 // INTERNS API (Prometheus proxy)
@@ -427,6 +427,48 @@ export const getContactPrometheusReview = async (
 ): Promise<ContactPrometheusResponse> => {
   const { data } = await deduplicatedGet<ContactPrometheusResponse>(
     `/interns/contact/${entityId}`,
+  );
+  return data;
+};
+
+// ============================================================
+// EXPORT INTERN TO CONTACT
+// ============================================================
+
+/** Response from POST /api/interns/export-to-contact/{internId} */
+export interface ExportInternResponse {
+  ok: boolean;
+  contact_id?: number;
+  created?: boolean;
+  error?: string;
+}
+
+/**
+ * Export a Prometheus intern to HR Contacts (Entity).
+ * Idempotent: won't create duplicates if the contact already exists.
+ */
+export const exportInternToContact = async (
+  internId: string,
+): Promise<ExportInternResponse> => {
+  const { data } = await debouncedMutation<ExportInternResponse>(
+    'post',
+    `/interns/export-to-contact/${internId}`,
+  );
+  return data;
+};
+
+/** Response from GET /api/interns/linked-contacts */
+export interface LinkedContactsResponse {
+  links: Record<string, number>; // prometheus_intern_id -> entity_id
+}
+
+/**
+ * Get mapping of prometheus intern IDs to entity (contact) IDs.
+ * Used to show which interns are already exported.
+ */
+export const getInternLinkedContacts = async (): Promise<LinkedContactsResponse> => {
+  const { data } = await deduplicatedGet<LinkedContactsResponse>(
+    '/interns/linked-contacts',
   );
   return data;
 };

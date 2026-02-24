@@ -9,14 +9,15 @@ from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from pydantic import BaseModel
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.config import settings
 from api.utils.http_client import get_http_client
 from api.database import get_db
-from api.models.database import Entity, User
-from api.services.auth import get_current_user
+from api.models.database import Entity, EntityType, EntityStatus, User, Organization
+from api.services.auth import get_current_user, get_user_org
 
 logger = logging.getLogger("hr-analyzer.interns")
 
@@ -456,5 +457,194 @@ async def get_intern_for_contact(
             "intern": intern_dto,
             "review": review,
         },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+# ============================================================
+# EXPORT INTERN TO CONTACT (ENTITY)
+# ============================================================
+
+
+class ExportInternRequest(BaseModel):
+    """Optional overrides for the export."""
+    intern_id: Optional[str] = None  # Prometheus intern id (used if endpoint is called without path param)
+
+
+async def _export_intern_to_contact(
+    intern: dict,
+    db: AsyncSession,
+    current_user: User,
+    org: Organization,
+) -> dict:
+    """
+    Core idempotent export: find or create an Entity (contact) from a Prometheus intern.
+
+    Deduplication key: email (case-insensitive).
+    If entity already exists — update only prometheus-linking fields (extra_data.prometheus_intern_id),
+    do NOT overwrite manually-enriched fields.
+
+    Returns: {"contact_id": int, "created": bool}
+    """
+    intern_email = (intern.get("email") or "").strip().lower()
+    intern_name = intern.get("name") or "Без имени"
+    intern_telegram = intern.get("telegramUsername") or ""
+    prometheus_id = intern.get("id") or ""
+
+    # --- Try to find existing entity by email (case-insensitive) ---
+    existing_entity = None
+
+    if intern_email:
+        # Check primary email field
+        result = await db.execute(
+            select(Entity).where(
+                Entity.org_id == org.id,
+                func.lower(Entity.email) == intern_email,
+            )
+        )
+        existing_entity = result.scalar_one_or_none()
+
+    # Also check by prometheus_intern_id in extra_data if not found by email
+    if not existing_entity and prometheus_id:
+        result = await db.execute(
+            select(Entity).where(
+                Entity.org_id == org.id,
+                Entity.extra_data["prometheus_intern_id"].as_string() == prometheus_id,
+            )
+        )
+        existing_entity = result.scalar_one_or_none()
+
+    if existing_entity:
+        # Update prometheus linking metadata only
+        extra = dict(existing_entity.extra_data or {})
+        extra["prometheus_intern_id"] = prometheus_id
+        extra["prometheus_exported"] = True
+        existing_entity.extra_data = extra
+        await db.commit()
+        await db.refresh(existing_entity)
+        return {"contact_id": existing_entity.id, "created": False}
+
+    # --- Create new entity ---
+    new_entity = Entity(
+        org_id=org.id,
+        type=EntityType.candidate,
+        name=intern_name,
+        status=EntityStatus.new,
+        email=intern_email or None,
+        emails=[intern_email] if intern_email else [],
+        telegram_usernames=[intern_telegram.lstrip("@").lower()] if intern_telegram else [],
+        phones=[],
+        tags=["prometheus", "практикант"],
+        extra_data={
+            "prometheus_intern_id": prometheus_id,
+            "prometheus_exported": True,
+            "source": "prometheus_export",
+        },
+        created_by=current_user.id,
+    )
+    db.add(new_entity)
+    await db.commit()
+    await db.refresh(new_entity)
+
+    return {"contact_id": new_entity.id, "created": True}
+
+
+@router.post("/export-to-contact/{intern_id}")
+async def export_intern_to_contact(
+    intern_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Export a Prometheus intern to HR Contacts (Entity).
+
+    1. Fetches interns from Prometheus.
+    2. Finds the intern by ID.
+    3. Upserts an Entity (contact) — idempotent by email / prometheus_intern_id.
+    4. Returns {ok, contact_id, created}.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Fetch interns from Prometheus
+    try:
+        data = await _proxy_prometheus("/api/external/interns")
+    except HTTPException as exc:
+        return JSONResponse(
+            content={"ok": False, "error": f"Prometheus error: {exc.detail}"},
+            status_code=502,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    interns_list: List[dict] = data.get("interns") or []
+
+    # Find the intern by ID
+    matched_intern = None
+    for intern in interns_list:
+        if intern.get("id") == intern_id:
+            matched_intern = intern
+            break
+
+    if not matched_intern:
+        return JSONResponse(
+            content={"ok": False, "error": "Intern not found in Prometheus"},
+            status_code=404,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    # Export
+    try:
+        result = await _export_intern_to_contact(matched_intern, db, current_user, org)
+    except Exception as exc:
+        logger.error("Export intern %s to contact failed: %s", intern_id, exc)
+        return JSONResponse(
+            content={"ok": False, "error": "Failed to export intern to contact"},
+            status_code=500,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    return JSONResponse(
+        content={
+            "ok": True,
+            "contact_id": result["contact_id"],
+            "created": result["created"],
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/linked-contacts")
+async def get_intern_linked_contacts(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return a mapping of prometheus_intern_id -> entity_id for all
+    entities that were exported from Prometheus.
+    This lets the frontend know which interns already have contacts.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    result = await db.execute(
+        select(Entity.id, Entity.extra_data).where(
+            Entity.org_id == org.id,
+            Entity.extra_data["prometheus_exported"].as_string() == "true",
+        )
+    )
+    rows = result.all()
+
+    mapping = {}
+    for entity_id, extra_data in rows:
+        prom_id = (extra_data or {}).get("prometheus_intern_id")
+        if prom_id:
+            mapping[prom_id] = entity_id
+
+    return JSONResponse(
+        content={"links": mapping},
         headers={"Cache-Control": "no-store"},
     )

@@ -8,7 +8,7 @@
 export type InternStatus = 'not_admitted' | 'studying' | 'accepted';
 
 export const STATUS_LABELS: Record<InternStatus, string> = {
-  not_admitted: 'Недопущен',
+  not_admitted: 'Отклонен',
   studying: 'Обучается',
   accepted: 'Принят',
 };
