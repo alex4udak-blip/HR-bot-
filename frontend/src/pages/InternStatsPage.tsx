@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -27,6 +27,7 @@ import {
   Clock,
   ExternalLink,
   Flame,
+  UserPlus,
 } from 'lucide-react';
 import {
   PieChart,
@@ -36,7 +37,7 @@ import {
   Tooltip,
 } from 'recharts';
 import clsx from 'clsx';
-import { getStudentAchievements, getPrometheusInterns, getPrometheusAnalytics, getEntities } from '@/services/api';
+import { getStudentAchievements, getPrometheusInterns, getPrometheusAnalytics, getEntities, exportInternToContact } from '@/services/api';
 import type { StudentTrailProgress, StudentModuleStatus } from '@/services/api';
 import { formatDate } from '@/utils';
 
@@ -528,6 +529,28 @@ export default function InternStatsPage() {
     return () => { cancelled = true; };
   }, [data?.student?.email]);
 
+  // Export to contacts state
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const handleExportToContact = useCallback(async () => {
+    if (!internId || exportLoading) return;
+    setExportLoading(true);
+    setExportError(null);
+    try {
+      const result = await exportInternToContact(internId);
+      if (result.ok && result.contact_id) {
+        setLinkedContactId(result.contact_id);
+      } else {
+        setExportError(result.error || 'Не удалось экспортировать');
+      }
+    } catch {
+      setExportError('Ошибка сети при экспорте');
+    } finally {
+      setExportLoading(false);
+    }
+  }, [internId, exportLoading]);
+
   // Loading state
   if (isLoading) {
     return (
@@ -597,7 +620,7 @@ export default function InternStatsPage() {
               <p className="text-sm text-white/50 truncate">{student.name}</p>
             </div>
           </div>
-          {linkedContactId && (
+          {linkedContactId ? (
             <button
               onClick={() => navigate(`/contacts/${linkedContactId}`)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 rounded-lg text-xs font-medium transition-colors flex-shrink-0"
@@ -607,9 +630,42 @@ export default function InternStatsPage() {
               <span className="hidden sm:inline">Prometheus в контакте</span>
               <span className="sm:hidden">Контакт</span>
             </button>
+          ) : (
+            <button
+              onClick={handleExportToContact}
+              disabled={exportLoading}
+              className={clsx(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex-shrink-0 border',
+                exportLoading
+                  ? 'bg-white/5 text-white/30 border-white/10 cursor-wait'
+                  : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border-emerald-500/30'
+              )}
+              title="Экспортировать кандидата в контакты"
+            >
+              {exportLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <UserPlus className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden sm:inline">
+                {exportLoading ? 'Экспорт...' : 'В контакты'}
+              </span>
+              <span className="sm:hidden">
+                {exportLoading ? '...' : 'Контакт'}
+              </span>
+            </button>
           )}
         </div>
       </div>
+
+      {/* Export error banner */}
+      {exportError && (
+        <div className="mx-4 mt-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-2 text-xs text-red-400">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+          <span>{exportError}</span>
+          <button onClick={() => setExportError(null)} className="ml-auto text-white/40 hover:text-white/70">&times;</button>
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-4 pb-7 space-y-6">

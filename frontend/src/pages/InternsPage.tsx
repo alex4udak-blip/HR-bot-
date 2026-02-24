@@ -15,10 +15,11 @@ import {
   RefreshCw,
   Loader2,
   ChevronDown,
+  UserCheck,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { formatRelativeTime } from '@/utils';
-import { getPrometheusInterns } from '@/services/api';
+import { getPrometheusInterns, getInternLinkedContacts } from '@/services/api';
 import type { PrometheusIntern } from '@/services/api';
 import InternsAnalyticsTab from '@/components/interns/InternsAnalyticsTab';
 import InternsStagesTab from '@/components/interns/InternsStagesTab';
@@ -86,6 +87,15 @@ export default function InternsPage() {
     retry: 1,
   });
 
+  // Fetch linked contacts (which interns are already exported)
+  const { data: linkedContactsData } = useQuery({
+    queryKey: ['intern-linked-contacts'],
+    queryFn: getInternLinkedContacts,
+    staleTime: 60000,
+    retry: 0,
+  });
+  const linkedContacts = linkedContactsData?.links ?? {};
+
   // Build a global trailId -> trailName lookup from all interns
   const trailNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -133,6 +143,7 @@ export default function InternsPage() {
 
   // Render a single intern card (Prometheus data shape)
   const renderInternCard = (intern: PrometheusIntern) => {
+    const contactId = linkedContacts[intern.id];
     // Determine which trail to display based on the filter
     const namedTrails = intern.trails.filter(t => t.trailName && t.trailName.trim());
 
@@ -179,12 +190,22 @@ export default function InternsPage() {
           </div>
         </div>
 
-        {/* XP badge */}
-        <div className="flex items-center gap-2 mb-2 ml-12">
+        {/* XP badge + contact badge */}
+        <div className="flex items-center gap-2 mb-2 ml-12 flex-wrap">
           <span className="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full whitespace-nowrap bg-amber-500/20 text-amber-400">
             <Zap className="w-3 h-3" />
             {intern.totalXP} XP
           </span>
+          {contactId && (
+            <span
+              onClick={(e) => { e.stopPropagation(); navigate(`/contacts/${contactId}`); }}
+              className="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full whitespace-nowrap bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 cursor-pointer transition-colors"
+              title="Открыть контакт"
+            >
+              <UserCheck className="w-3 h-3" />
+              В контактах
+            </span>
+          )}
         </div>
 
         {/* Last active */}
