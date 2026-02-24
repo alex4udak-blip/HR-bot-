@@ -147,25 +147,10 @@ class PrometheusReviewService:
                 lines.append("## Информация о студенте")
                 lines.append(f"- Роль: {student_info.get('role', '—')}")
                 lines.append(f"- XP (подробно): {student_info.get('totalXP', 0)}")
-                lines.append(f"- Серия активности: {student_info.get('currentStreak', 0)} дн.")
                 rank = student_info.get("leaderboardRank")
                 if rank:
                     lines.append(f"- Позиция в лидерборде: #{rank}")
                 lines.append(f"- Модулей завершено: {student_info.get('modulesCompleted', 0)}")
-                lines.append("")
-
-            # Achievements
-            ach_data = achievements.get("achievements", {})
-            ach_stats = ach_data.get("stats", {})
-            if ach_stats.get("total", 0) > 0:
-                lines.append("## Достижения")
-                lines.append(f"- Получено: {ach_stats.get('earned', 0)} из {ach_stats.get('total', 0)} ({ach_stats.get('percentage', 0)}%)")
-                earned_list = ach_data.get("earned", [])
-                if earned_list:
-                    lines.append("- Полученные:")
-                    for a in earned_list[:15]:
-                        rarity = a.get("rarity", "common")
-                        lines.append(f"  * {a.get('name', '?')} ({rarity}) — {a.get('description', '')}")
                 lines.append("")
 
             # Submission stats

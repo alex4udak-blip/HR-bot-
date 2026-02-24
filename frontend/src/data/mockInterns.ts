@@ -147,7 +147,6 @@ export interface InternAchievementsData {
   averageScore: number;
   totalTimeSpent: string;
   lastVisit: string;
-  streak: number;
 }
 
 export const MOCK_ACHIEVEMENTS: Record<number, InternAchievementsData> = {
@@ -173,7 +172,6 @@ export const MOCK_ACHIEVEMENTS: Record<number, InternAchievementsData> = {
     averageScore: 88.9,
     totalTimeSpent: '124ч 30м',
     lastVisit: '2026-02-18',
-    streak: 12,
   },
   2: {
     completionStats: { completed: 6, inProgress: 4, notStarted: 3 },
@@ -196,7 +194,6 @@ export const MOCK_ACHIEVEMENTS: Record<number, InternAchievementsData> = {
     averageScore: 85.5,
     totalTimeSpent: '98ч 15м',
     lastVisit: '2026-02-17',
-    streak: 8,
   },
   3: {
     completionStats: { completed: 5, inProgress: 2, notStarted: 4 },
@@ -216,7 +213,6 @@ export const MOCK_ACHIEVEMENTS: Record<number, InternAchievementsData> = {
     averageScore: 85.4,
     totalTimeSpent: '76ч 40м',
     lastVisit: '2026-02-16',
-    streak: 5,
   },
   4: {
     completionStats: { completed: 7, inProgress: 2, notStarted: 1 },
@@ -238,7 +234,6 @@ export const MOCK_ACHIEVEMENTS: Record<number, InternAchievementsData> = {
     averageScore: 91.0,
     totalTimeSpent: '110ч 20м',
     lastVisit: '2026-02-18',
-    streak: 15,
   },
   5: {
     completionStats: { completed: 4, inProgress: 3, notStarted: 3 },
@@ -258,7 +253,6 @@ export const MOCK_ACHIEVEMENTS: Record<number, InternAchievementsData> = {
     averageScore: 81.5,
     totalTimeSpent: '64ч 10м',
     lastVisit: '2026-02-15',
-    streak: 3,
   },
   6: {
     completionStats: { completed: 6, inProgress: 3, notStarted: 2 },
@@ -280,7 +274,6 @@ export const MOCK_ACHIEVEMENTS: Record<number, InternAchievementsData> = {
     averageScore: 87.2,
     totalTimeSpent: '89ч 50м',
     lastVisit: '2026-02-18',
-    streak: 9,
   },
 };
 

@@ -10,7 +10,6 @@ import {
   ChevronDown,
   BookOpen,
   Activity,
-  Award,
   Target,
   Users,
   TrendingUp,
@@ -28,7 +27,6 @@ import type {
   ContactPrometheusReview,
   ContactReviewTrail,
   CompetencyScore,
-  Achievement,
   Certificate,
 } from '@/services/api';
 
@@ -250,32 +248,6 @@ function TrailDetailCard({
   );
 }
 
-// ── Achievement Badge ──
-
-function AchievementBadge({ achievement }: { achievement: Achievement }) {
-  const rarityColors: Record<string, string> = {
-    legendary: 'border-amber-400/50 bg-amber-500/10 text-amber-300',
-    epic: 'border-purple-400/50 bg-purple-500/10 text-purple-300',
-    rare: 'border-blue-400/50 bg-blue-500/10 text-blue-300',
-    uncommon: 'border-emerald-400/50 bg-emerald-500/10 text-emerald-300',
-    common: 'border-white/10 bg-white/5 text-white/50',
-  };
-  const style = rarityColors[achievement.rarity] || rarityColors.common;
-
-  return (
-    <div
-      className={clsx(
-        'inline-flex items-center gap-1.5 px-2 py-1 rounded-full border text-[10px]',
-        style,
-      )}
-      title={achievement.description}
-    >
-      <span>{achievement.icon || '🏆'}</span>
-      <span className="truncate max-w-[120px]">{achievement.name}</span>
-    </div>
-  );
-}
-
 // ── Certificate Card ──
 
 function CertificateCard({ cert }: { cert: Certificate }) {
@@ -440,7 +412,6 @@ export default function PrometheusDetailedReview({
   const m = review.metrics;
   const flags = review.flags;
 
-  const earnedAchievements = achievements?.achievements?.earned || [];
   const certificates = achievements?.certificates || [];
 
   // Map trail insights by name for quick lookup
@@ -667,38 +638,18 @@ export default function PrometheusDetailedReview({
         </div>
       )}
 
-      {/* ── Achievements & Certificates ── */}
-      {(earnedAchievements.length > 0 || certificates.length > 0) && (
+      {/* ── Certificates ── */}
+      {certificates.length > 0 && (
         <div className="glass rounded-xl border border-white/10 p-4 sm:p-6">
-          {/* Achievements */}
-          {earnedAchievements.length > 0 && (
-            <div className="mb-4">
-              <h4 className="text-sm font-medium text-white/50 mb-3 flex items-center gap-2">
-                <Award className="w-4 h-4 text-amber-400" />
-                Достижения ({earnedAchievements.length})
-              </h4>
-              <div className="flex flex-wrap gap-2">
-                {earnedAchievements.map((ach) => (
-                  <AchievementBadge key={ach.id} achievement={ach} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Certificates */}
-          {certificates.length > 0 && (
-            <div>
-              <h4 className="text-sm font-medium text-white/50 mb-3 flex items-center gap-2">
-                <Medal className="w-4 h-4 text-amber-400" />
-                Сертификаты ({certificates.length})
-              </h4>
-              <div className="space-y-2">
-                {certificates.map((cert) => (
-                  <CertificateCard key={cert.id} cert={cert} />
-                ))}
-              </div>
-            </div>
-          )}
+          <h4 className="text-sm font-medium text-white/50 mb-3 flex items-center gap-2">
+            <Medal className="w-4 h-4 text-amber-400" />
+            Сертификаты ({certificates.length})
+          </h4>
+          <div className="space-y-2">
+            {certificates.map((cert) => (
+              <CertificateCard key={cert.id} cert={cert} />
+            ))}
+          </div>
         </div>
       )}
 
