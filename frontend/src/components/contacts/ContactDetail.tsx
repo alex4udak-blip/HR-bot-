@@ -41,6 +41,7 @@ import RedFlagsPanel from '../entities/RedFlagsPanel';
 import SimilarCandidates from '../entities/SimilarCandidates';
 import DuplicateWarning from '../entities/DuplicateWarning';
 import InteractionTimeline from '../entities/InteractionTimeline';
+import PrometheusTab from './PrometheusTab';
 import * as api from '@/services/api';
 import type { AIProfile } from '@/services/api';
 import { useEntityStore } from '@/stores/entityStore';
@@ -1014,44 +1015,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
         )}
 
         {activeTab === 'prometheus' && (
-          <div className="glass rounded-xl border border-white/10 p-4 sm:p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 rounded-lg bg-orange-500/20">
-                <Flame size={18} className="text-orange-400" />
-              </div>
-              <div>
-                <h3 className="text-base font-semibold text-white">Prometheus</h3>
-                <p className="text-xs text-white/50">Статистика прохождения курсов на платформе</p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="bg-white/5 rounded-lg p-3 border border-white/5">
-                  <p className="text-xs text-white/40 mb-1">Курсы пройдены</p>
-                  <p className="text-lg font-semibold text-white">—</p>
-                </div>
-                <div className="bg-white/5 rounded-lg p-3 border border-white/5">
-                  <p className="text-xs text-white/40 mb-1">Средний балл</p>
-                  <p className="text-lg font-semibold text-white">—</p>
-                </div>
-                <div className="bg-white/5 rounded-lg p-3 border border-white/5">
-                  <p className="text-xs text-white/40 mb-1">Сертификаты</p>
-                  <p className="text-lg font-semibold text-white">—</p>
-                </div>
-              </div>
-
-              <div className="text-center py-8">
-                <Flame className="w-12 h-12 mx-auto mb-3 text-orange-400/30" />
-                <p className="text-sm text-white/40">
-                  Данные с платформы Prometheus ещё не загружены
-                </p>
-                <p className="text-xs text-white/30 mt-1">
-                  Здесь будет отображаться резюме кандидата по результатам курсов
-                </p>
-              </div>
-            </div>
-          </div>
+          <PrometheusTab entityId={entity.id} />
         )}
 
         {activeTab === 'red-flags' && entity.type === 'candidate' && (

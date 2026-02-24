@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -26,6 +26,7 @@ import {
   TrendingUp,
   Clock,
   ExternalLink,
+  Flame,
 } from 'lucide-react';
 import {
   PieChart,
@@ -35,7 +36,7 @@ import {
   Tooltip,
 } from 'recharts';
 import clsx from 'clsx';
-import { getStudentAchievements, getPrometheusInterns, getPrometheusAnalytics } from '@/services/api';
+import { getStudentAchievements, getPrometheusInterns, getPrometheusAnalytics, getEntities } from '@/services/api';
 import type { StudentTrailProgress, StudentModuleStatus } from '@/services/api';
 import { formatDate } from '@/utils';
 
@@ -512,6 +513,21 @@ export default function InternStatsPage() {
 
   const [showSubmissions, setShowSubmissions] = useState(false);
 
+  // Try to find a matching contact (entity) by email for "Open in contact" link
+  const [linkedContactId, setLinkedContactId] = useState<number | null>(null);
+  useEffect(() => {
+    if (!data?.student?.email) return;
+    let cancelled = false;
+    getEntities({ search: data.student.email, limit: 1 })
+      .then((entities) => {
+        if (!cancelled && entities.length > 0) {
+          setLinkedContactId(entities[0].id);
+        }
+      })
+      .catch(() => { /* ignore — link just won't show */ });
+    return () => { cancelled = true; };
+  }, [data?.student?.email]);
+
   // Loading state
   if (isLoading) {
     return (
@@ -581,6 +597,17 @@ export default function InternStatsPage() {
               <p className="text-sm text-white/50 truncate">{student.name}</p>
             </div>
           </div>
+          {linkedContactId && (
+            <button
+              onClick={() => navigate(`/contacts/${linkedContactId}`)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 rounded-lg text-xs font-medium transition-colors flex-shrink-0"
+              title="Открыть Prometheus в карточке контакта"
+            >
+              <Flame className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Prometheus в контакте</span>
+              <span className="sm:hidden">Контакт</span>
+            </button>
+          )}
         </div>
       </div>
 

@@ -351,6 +351,7 @@ export {
   getPrometheusInterns,
   getPrometheusAnalytics,
   getStudentAchievements,
+  getContactPrometheusReview,
 } from './interns';
 
 // Intern types
@@ -382,4 +383,8 @@ export type {
   SubmissionStats,
   StudentTrailProgress,
   Certificate,
+  ContactReviewTrail,
+  ContactPrometheusReview,
+  ContactPrometheusIntern,
+  ContactPrometheusResponse,
 } from './interns';

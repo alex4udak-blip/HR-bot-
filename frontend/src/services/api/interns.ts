@@ -350,3 +350,83 @@ export const getStudentAchievements = async (
   );
   return data;
 };
+
+// ============================================================
+// CONTACT ↔ PROMETHEUS REVIEW API
+// ============================================================
+
+/** Trail view returned in the contact review */
+export interface ContactReviewTrail {
+  trailId: string;
+  trailName: string;
+  completedModules: number;
+  totalModules: number;
+  completionPercent: number;
+  earnedXP: number;
+  avgScore: number | null;
+  submissions: {
+    approved: number;
+    pending: number;
+    revision: number;
+    total: number;
+  } | null;
+}
+
+/** Review generated server-side from Prometheus data */
+export interface ContactPrometheusReview {
+  headline: string;
+  bullets: string[];
+  summary: string;
+  metrics: {
+    totalXP: number;
+    currentStreak: number;
+    daysSinceActive: number | null;
+    lastActiveAt: string | null;
+    totalModules: number;
+    completedModules: number;
+    overallCompletionPercent: number;
+    trailCount: number;
+  };
+  trails: ContactReviewTrail[];
+  flags: {
+    active: boolean;
+    risk: boolean;
+    riskReason: string | null;
+    topTrails: string[];
+  };
+}
+
+/** Intern DTO returned in contact review response */
+export interface ContactPrometheusIntern {
+  id: string;
+  name: string;
+  email: string | null;
+  telegramUsername: string | null;
+  totalXP: number;
+  currentStreak: number;
+  lastActiveAt: string | null;
+  daysSinceActive: number | null;
+  createdAt: string | null;
+}
+
+/** Response from GET /api/interns/contact/{entity_id} */
+export interface ContactPrometheusResponse {
+  status: 'ok' | 'not_found' | 'not_linked' | 'error';
+  intern?: ContactPrometheusIntern;
+  review?: ContactPrometheusReview;
+  message?: string;
+}
+
+/**
+ * Fetch Prometheus review for a contact (entity).
+ * The backend matches contact email to a Prometheus intern,
+ * then generates a deterministic HR review.
+ */
+export const getContactPrometheusReview = async (
+  entityId: number,
+): Promise<ContactPrometheusResponse> => {
+  const { data } = await deduplicatedGet<ContactPrometheusResponse>(
+    `/interns/contact/${entityId}`,
+  );
+  return data;
+};
