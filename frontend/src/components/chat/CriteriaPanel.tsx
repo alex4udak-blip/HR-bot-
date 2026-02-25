@@ -97,8 +97,17 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
       setHasChanges(false);
       toast.success('Критерии сохранены');
     },
-    onError: () => {
-      toast.error('Ошибка сохранения');
+    onError: (error: unknown) => {
+      const axiosErr = error as { response?: { status?: number; data?: { detail?: string } }; message?: string };
+      const status = axiosErr?.response?.status;
+      const detail = axiosErr?.response?.data?.detail;
+      if (status === 401) {
+        toast.error('Сессия истекла. Перезайдите в систему');
+      } else if (status === 403) {
+        toast.error(detail || 'Нет прав для сохранения критериев');
+      } else {
+        toast.error(detail || 'Ошибка сохранения');
+      }
     },
   });
 
