@@ -228,9 +228,12 @@ export default function InternsPage() {
           cmp = aModules - bModules;
           break;
         }
-        case 'date':
-          cmp = (a.createdAt || '').localeCompare(b.createdAt || '');
+        case 'date': {
+          const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          cmp = (isNaN(aTime) ? 0 : aTime) - (isNaN(bTime) ? 0 : bTime);
           break;
+        }
         case 'status': {
           const aStatus = a.email ? statusMap[a.email.toLowerCase()]?.hrStatus : undefined;
           const bStatus = b.email ? statusMap[b.email.toLowerCase()]?.hrStatus : undefined;

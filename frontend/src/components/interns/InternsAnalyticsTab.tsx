@@ -404,7 +404,7 @@ export default function InternsAnalyticsTab() {
               <span className="px-1.5 py-0.5 text-xs rounded-full bg-white/10 text-white/50">{analytics.trailProgress.length}</span>
             </h3>
           </div>
-          <div className="overflow-x-clip">
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/5">
@@ -521,7 +521,7 @@ function ColumnHeaderWithTooltip({ label, tooltip }: { label: string; tooltip: s
       <span className="group/tip relative inline-flex items-center gap-1 cursor-help">
         <span>{label}</span>
         <Info className="w-3 h-3 text-white/20 group-hover/tip:text-white/50 transition-colors flex-shrink-0" />
-        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-xs text-white/80 font-normal whitespace-normal w-56 text-left opacity-0 invisible group-hover/tip:opacity-100 group-hover/tip:visible transition-all duration-200 z-50 shadow-xl pointer-events-none leading-relaxed">
+        <span className="absolute bottom-full left-0 mb-2 px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-xs text-white/80 font-normal whitespace-normal w-56 text-left opacity-0 invisible group-hover/tip:opacity-100 group-hover/tip:visible transition-all duration-200 z-50 shadow-xl pointer-events-none leading-relaxed">
           {tooltip}
         </span>
       </span>

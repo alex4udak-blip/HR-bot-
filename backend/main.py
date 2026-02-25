@@ -63,6 +63,23 @@ async def cleanup_deleted_chats_task():
         await asyncio.sleep(86400)
 
 
+async def prometheus_auto_export_task():
+    """Periodically auto-export 'Принят' interns to contacts (every 5 min)."""
+    from api.routes.interns import run_prometheus_auto_export
+
+    # Wait for database and services to initialize
+    await asyncio.sleep(120)
+
+    while True:
+        try:
+            await run_prometheus_auto_export()
+        except Exception as e:
+            logger.error(f"Prometheus auto-export task error: {e}")
+
+        # Run every 5 minutes
+        await asyncio.sleep(300)
+
+
 async def check_playwright_status():
     """Check Playwright status at startup and log the result."""
     import os
@@ -148,6 +165,9 @@ async def lifespan(app: FastAPI):
     # Start cleanup task for old deleted chats
     cleanup_task = asyncio.create_task(cleanup_deleted_chats_task())
 
+    # Start Prometheus auto-export task (every 5 min)
+    auto_export_task = asyncio.create_task(prometheus_auto_export_task())
+
     # Log all registered routes for debugging
     logger.info("=== REGISTERED API ROUTES ===")
     vacancy_routes = []
@@ -167,6 +187,8 @@ async def lifespan(app: FastAPI):
         bot_task.cancel()
     if cleanup_task:
         cleanup_task.cancel()
+    if auto_export_task:
+        auto_export_task.cancel()
 
     # Close Redis connection
     try:
