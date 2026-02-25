@@ -1047,7 +1047,7 @@ async def sync_prometheus_statuses(
             # No entity found — if status is "Принят", auto-create contact
             if hr_status == "Принят":
                 intern_obj = prom_item.get("intern") or {}
-                intern_name = intern_obj.get("name") or item_email
+                intern_name = intern_obj.get("name") or prom_item.get("name") or "Без имени"
                 intern_telegram = intern_obj.get("telegramUsername") or ""
                 prometheus_id = intern_obj.get("id") or ""
 
