@@ -114,19 +114,6 @@ export default function InternsPage() {
   });
   const linkedContacts = linkedContactsData?.links ?? {};
 
-  // Collect emails from currently visible (filtered) interns for Prometheus status sync
-  const visibleEmails = useMemo(() => {
-    return filteredInterns
-      .map(i => i.email)
-      .filter((e): e is string => !!e && e.trim().length > 0);
-  }, [filteredInterns]);
-
-  // 30-second Prometheus status polling
-  const { statusMap, syncError: _syncError, isSyncing } = usePrometheusBulkSync(
-    visibleEmails,
-    activeTab === 'interns' && !isLoading && !isError,
-  );
-
   // Build a global trailId -> trailName lookup from all interns
   const trailNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -171,6 +158,19 @@ export default function InternsPage() {
 
     return result;
   }, [searchQuery, selectedTrailFilter, interns]);
+
+  // Collect emails from currently visible (filtered) interns for Prometheus status sync
+  const visibleEmails = useMemo(() => {
+    return filteredInterns
+      .map(i => i.email)
+      .filter((e): e is string => !!e && e.trim().length > 0);
+  }, [filteredInterns]);
+
+  // 30-second Prometheus status polling
+  const { statusMap, syncError: _syncError, isSyncing } = usePrometheusBulkSync(
+    visibleEmails,
+    activeTab === 'interns' && !isLoading && !isError,
+  );
 
   // Render a single intern card (Prometheus data shape)
   const renderInternCard = (intern: PrometheusIntern) => {
