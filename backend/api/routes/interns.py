@@ -679,6 +679,15 @@ async def _export_intern_to_contact(
     Returns: {"contact_id": int, "created": bool}
     """
     intern_email = (intern.get("email") or "").strip().lower()
+
+    # Remove from exclusion list if previously excluded (manual export overrides)
+    if intern_email:
+        org_settings = dict(org.settings or {})
+        exclusions = org_settings.get("prometheus_export_exclusions", [])
+        if intern_email in exclusions:
+            exclusions = [e for e in exclusions if e != intern_email]
+            org_settings["prometheus_export_exclusions"] = exclusions
+            org.settings = org_settings
     intern_name = intern.get("name") or "Без имени"
     intern_telegram = intern.get("telegramUsername") or ""
     prometheus_id = intern.get("id") or ""
@@ -917,6 +926,12 @@ async def sync_prometheus_statuses(
             headers={"Cache-Control": "no-store"},
         )
 
+    # 1b. Load exclusion list (emails removed from contacts — status overridden to "Обучается")
+    org_settings = dict(org.settings or {})
+    export_exclusions = set(
+        s.lower() for s in org_settings.get("prometheus_export_exclusions", [])
+    )
+
     # 2. Fetch statuses from Prometheus
     try:
         prom_results = await fetch_statuses_bulk(request_emails)
@@ -967,6 +982,11 @@ async def sync_prometheus_statuses(
 
         hr_status = map_prometheus_status(status_code)
         hr_status = normalize_hr_status(hr_status)
+
+        # Override status for excluded emails (removed from contacts → "Обучается")
+        is_excluded = item_email in export_exclusions
+        if is_excluded:
+            hr_status = "Обучается"
 
         # Find matching entity in HR DB
         entity_result = await db.execute(
@@ -1183,6 +1203,14 @@ async def sync_prometheus_status_single(
     hr_status = map_prometheus_status(status_code)
     hr_status = normalize_hr_status(hr_status)
 
+    # Override status for excluded emails (removed from contacts → "Обучается")
+    org_settings = dict(org.settings or {})
+    export_exclusions = set(
+        s.lower() for s in org_settings.get("prometheus_export_exclusions", [])
+    )
+    if resolved_email in export_exclusions:
+        hr_status = "Обучается"
+
     result = {
         "ok": True,
         "syncedAt": synced_at,
@@ -1249,3 +1277,186 @@ async def sync_prometheus_status_single(
         content=result,
         headers={"Cache-Control": "no-store"},
     )
+
+
+# ============================================================
+# BACKGROUND AUTO-EXPORT TASK
+# ============================================================
+
+async def run_prometheus_auto_export():
+    """
+    Background task: fetch all Prometheus interns, check for 'Принят' status,
+    and auto-create contacts for interns that don't have one yet.
+
+    Called periodically from main.py (every 5 minutes).
+    This ensures auto-export works even if nobody visits the /interns page.
+    """
+    from api.database import AsyncSessionLocal
+    from api.models.database import Organization, UserRole
+
+    base_url = settings.prometheus_base_url
+    api_key = settings.communication_api_key
+
+    if not base_url or not api_key:
+        return
+
+    async with AsyncSessionLocal() as db:
+        # 1. Fetch all interns from Prometheus
+        client = get_http_client()
+        url = f"{base_url.rstrip('/')}/api/external/interns"
+        try:
+            response = await client.get(
+                url,
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+        except Exception as exc:
+            logger.error("Background auto-export: failed to fetch interns: %s", exc)
+            return
+
+        if response.status_code != 200:
+            logger.warning("Background auto-export: Prometheus returned %d", response.status_code)
+            return
+
+        data = response.json()
+        interns_list = data.get("interns", [])
+
+        # Collect all emails
+        emails = []
+        for intern in interns_list:
+            email = (intern.get("email") or "").strip().lower()
+            if email:
+                emails.append(email)
+
+        if not emails:
+            return
+
+        # 2. Fetch statuses from Prometheus
+        try:
+            prom_results = await fetch_statuses_bulk(emails)
+        except (PrometheusNotConfiguredError, PrometheusAPIError) as exc:
+            logger.error("Background auto-export: status fetch failed: %s", exc)
+            return
+
+        # 3. For each org, process results and auto-export
+        orgs_result = await db.execute(
+            select(Organization).where(Organization.is_active == True)
+        )
+        orgs = orgs_result.scalars().all()
+
+        synced_at = datetime.now(timezone.utc).isoformat()
+
+        for org in orgs:
+            try:
+                # Load exclusion list
+                org_settings = dict(org.settings or {})
+                exclusions = set(
+                    s.lower() for s in org_settings.get("prometheus_export_exclusions", [])
+                )
+
+                # Get first superadmin/admin for created_by
+                admin_result = await db.execute(
+                    select(User).where(
+                        User.org_id == org.id,
+                        User.role.in_([UserRole.superadmin, UserRole.admin]),
+                    ).limit(1)
+                )
+                admin = admin_result.scalar_one_or_none()
+                if not admin:
+                    continue
+
+                for prom_item in prom_results:
+                    item_email = (prom_item.get("email") or "").strip().lower()
+                    if not item_email:
+                        intern_obj = prom_item.get("intern") or {}
+                        item_email = (intern_obj.get("email") or "").strip().lower()
+
+                    if not item_email or not prom_item.get("found"):
+                        continue
+
+                    # Skip excluded emails
+                    if item_email in exclusions:
+                        continue
+
+                    status_obj = prom_item.get("status") or {}
+                    status_code = status_obj.get("code", "")
+                    hr_status = map_prometheus_status(status_code)
+                    hr_status = normalize_hr_status(hr_status)
+
+                    if hr_status != "Принят":
+                        continue
+
+                    # Check if entity already exists
+                    entity_result = await db.execute(
+                        select(Entity).where(
+                            Entity.org_id == org.id,
+                            func.lower(Entity.email) == item_email,
+                        )
+                    )
+                    entity = entity_result.scalar_one_or_none()
+
+                    if entity:
+                        # Entity exists — ensure prometheus_exported flag is set
+                        extra = dict(entity.extra_data or {})
+                        if not extra.get("prometheus_exported"):
+                            extra["prometheus_exported"] = True
+                            entity.extra_data = extra
+                            await db.commit()
+                        continue
+
+                    # Auto-create new entity
+                    intern_obj = prom_item.get("intern") or {}
+                    status_label = status_obj.get("label", "")
+                    status_updated_at = prom_item.get("statusUpdatedAt", "")
+                    intern_name = intern_obj.get("name") or "Без имени"
+                    intern_telegram = intern_obj.get("telegramUsername") or ""
+                    prometheus_id = intern_obj.get("id") or ""
+
+                    new_entity = Entity(
+                        org_id=org.id,
+                        type=EntityType.candidate,
+                        name=intern_name,
+                        status=EntityStatus.hired,
+                        email=item_email,
+                        emails=[item_email],
+                        telegram_usernames=(
+                            [intern_telegram.lstrip("@").lower()] if intern_telegram else []
+                        ),
+                        phones=[],
+                        tags=["prometheus", "практикант"],
+                        extra_data={
+                            "prometheus_intern_id": prometheus_id,
+                            "prometheus_exported": True,
+                            "prometheus_status": hr_status,
+                            "prometheus_status_code": status_code,
+                            "prometheus_status_label": status_label,
+                            "prometheus_status_updated_at": status_updated_at,
+                            "prometheus_last_sync": synced_at,
+                            "source": "prometheus_auto_export",
+                        },
+                        created_by=admin.id,
+                    )
+                    db.add(new_entity)
+                    await db.commit()
+                    await db.refresh(new_entity)
+
+                    logger.info(
+                        "Background auto-export: created contact for %s in org %d",
+                        item_email, org.id,
+                    )
+
+                    # Broadcast new contact via WebSocket
+                    await broadcast_entity_created(org.id, {
+                        "id": new_entity.id,
+                        "type": new_entity.type,
+                        "name": new_entity.name,
+                        "status": new_entity.status,
+                        "email": new_entity.email,
+                        "owner_id": new_entity.created_by,
+                        "extra_data": new_entity.extra_data,
+                    }, db)
+
+            except Exception as exc:
+                logger.error(
+                    "Background auto-export: failed for org %d: %s", org.id, exc,
+                )
+                await db.rollback()

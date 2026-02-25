@@ -1078,6 +1078,19 @@ async def delete_entity(
     if not can_delete:
         raise HTTPException(403, "No delete permission for this entity")
 
+    # If deleting a prometheus-exported entity, add email to exclusion list
+    # so that auto-sync won't re-create this contact and status shows "Обучается"
+    extra = dict(entity.extra_data or {})
+    if extra.get("prometheus_exported") or extra.get("prometheus_intern_id"):
+        entity_email = (entity.email or "").strip().lower()
+        if entity_email and org:
+            org_settings = dict(org.settings or {})
+            exclusions = org_settings.get("prometheus_export_exclusions", [])
+            if entity_email not in exclusions:
+                exclusions.append(entity_email)
+                org_settings["prometheus_export_exclusions"] = exclusions
+                org.settings = org_settings
+
     # Store entity_id and org_id before deletion
     deleted_entity_id = entity.id
     deleted_org_id = entity.org_id
