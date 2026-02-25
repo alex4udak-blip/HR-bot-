@@ -38,7 +38,7 @@ beautifulsoup4==4.13.3
 lxml==6.0.2
 striprtf==0.0.29
 extract-msg==0.55.0
-py7zr==1.1.0
+py7zr==1.1.2
 Pillow==12.1.0
 pillow-heif==1.1.1
 chardet==5.2.0
