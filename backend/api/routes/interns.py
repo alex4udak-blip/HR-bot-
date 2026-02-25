@@ -27,6 +27,7 @@ from api.services.prometheus_status import (
     PrometheusNotConfiguredError,
     PrometheusAPIError,
 )
+from api.routes.realtime import broadcast_entity_updated, broadcast_entity_created
 
 logger = logging.getLogger("hr-analyzer.interns")
 
@@ -1021,6 +1022,14 @@ async def sync_prometheus_statuses(
                 try:
                     await db.commit()
                     await db.refresh(entity)
+                    # Broadcast status change via WebSocket
+                    await broadcast_entity_updated(org.id, {
+                        "id": entity.id,
+                        "type": entity.type,
+                        "name": entity.name,
+                        "status": entity.status,
+                        "extra_data": entity.extra_data,
+                    }, db)
                 except Exception as exc:
                     logger.error("Failed to update entity %d status: %s", entity.id, exc)
                     await db.rollback()
@@ -1079,6 +1088,16 @@ async def sync_prometheus_statuses(
                     await db.refresh(new_entity)
                     result_item["contactId"] = new_entity.id
                     result_item["changed"] = True
+                    # Broadcast new contact via WebSocket
+                    await broadcast_entity_created(org.id, {
+                        "id": new_entity.id,
+                        "type": new_entity.type,
+                        "name": new_entity.name,
+                        "status": new_entity.status,
+                        "email": new_entity.email,
+                        "owner_id": new_entity.created_by,
+                        "extra_data": new_entity.extra_data,
+                    }, db)
                 except Exception as exc:
                     logger.error("Failed to auto-create entity for %s: %s", item_email, exc)
                     await db.rollback()
@@ -1214,6 +1233,14 @@ async def sync_prometheus_status_single(
                 try:
                     await db.commit()
                     await db.refresh(entity)
+                    # Broadcast status change via WebSocket
+                    await broadcast_entity_updated(org.id, {
+                        "id": entity.id,
+                        "type": entity.type,
+                        "name": entity.name,
+                        "status": entity.status,
+                        "extra_data": entity.extra_data,
+                    }, db)
                 except Exception as exc:
                     logger.error("Failed to update entity %d: %s", entity.id, exc)
                     await db.rollback()

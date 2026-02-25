@@ -9,8 +9,6 @@ import type {
   SyncStatusResult,
 } from '@/services/api';
 
-const POLL_INTERVAL_MS = 30_000;
-
 export interface UsePrometheusSyncReturn {
   /** Map of email → latest sync result */
   statusMap: Record<string, SyncStatusResult>;
@@ -25,7 +23,9 @@ export interface UsePrometheusSyncReturn {
 }
 
 /**
- * Hook: bulk-sync Prometheus statuses for a list of emails every 30s.
+ * Hook: bulk-sync Prometheus statuses for a list of emails on mount.
+ * No periodic polling — real-time updates arrive via WebSocket entity.updated.
+ * Use syncNow() for manual refresh.
  *
  * Usage (InternsPage):
  *   const { statusMap } = usePrometheusBulkSync(visibleEmails);
@@ -39,7 +39,6 @@ export function usePrometheusBulkSync(
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
 
   const doSync = useCallback(async () => {
@@ -76,23 +75,15 @@ export function usePrometheusBulkSync(
     }
   }, [emails, enabled]);
 
-  // Initial sync + interval
+  // Initial sync on mount (no polling — updates arrive via WebSocket entity.updated)
   useEffect(() => {
     mountedRef.current = true;
     if (!enabled || emails.length === 0) return;
 
-    // Immediate sync
     doSync();
-
-    // Poll every 30s
-    intervalRef.current = setInterval(doSync, POLL_INTERVAL_MS);
 
     return () => {
       mountedRef.current = false;
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
     };
   }, [doSync, enabled, emails.length]);
 
@@ -110,7 +101,9 @@ export interface UsePrometheusSingleSyncReturn {
 }
 
 /**
- * Hook: sync a single intern's status from Prometheus every 30s.
+ * Hook: sync a single intern's status from Prometheus on mount.
+ * No periodic polling — real-time updates arrive via WebSocket entity.updated.
+ * Use syncNow() for manual refresh.
  *
  * Usage (InternStatsPage):
  *   const { status } = usePrometheusSingleSync({ email: 'user@example.com' });
@@ -123,7 +116,6 @@ export function usePrometheusSingleSync(
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
 
   const hasParams = !!(params.email || params.internId);
@@ -151,19 +143,15 @@ export function usePrometheusSingleSync(
     }
   }, [params.email, params.internId, enabled, hasParams]);
 
+  // Initial sync on mount (no polling — updates arrive via WebSocket entity.updated)
   useEffect(() => {
     mountedRef.current = true;
     if (!enabled || !hasParams) return;
 
     doSync();
-    intervalRef.current = setInterval(doSync, POLL_INTERVAL_MS);
 
     return () => {
       mountedRef.current = false;
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
     };
   }, [doSync, enabled, hasParams]);
 
