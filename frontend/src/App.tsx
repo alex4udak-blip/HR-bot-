@@ -67,6 +67,7 @@ const EmailTemplatesPage = lazyWithRetry(() => import('@/pages/EmailTemplatesPag
 const AnalyticsPage = lazyWithRetry(() => import('@/pages/AnalyticsPage'));
 const InternsPage = lazyWithRetry(() => import('@/pages/InternsPage'));
 const InternStatsPage = lazyWithRetry(() => import('@/pages/InternStatsPage'));
+const ExportsPage = lazyWithRetry(() => import('@/pages/ExportsPage'));
 
 // Loading fallback component for Suspense
 function PageLoader() {
@@ -167,6 +168,7 @@ export default function App() {
           <Route path="vacancies/:vacancyId" element={<Suspense fallback={<PageLoader />}><VacanciesPage /></Suspense>} />
           <Route path="email-templates" element={<Suspense fallback={<PageLoader />}><EmailTemplatesPage /></Suspense>} />
           <Route path="analytics" element={<Suspense fallback={<PageLoader />}><AnalyticsPage /></Suspense>} />
+          <Route path="exports" element={<Suspense fallback={<PageLoader />}><ExportsPage /></Suspense>} />
           <Route path="trash" element={<Suspense fallback={<PageLoader />}><TrashPage /></Suspense>} />
           <Route path="users" element={<Suspense fallback={<PageLoader />}><UsersPage /></Suspense>} />
           <Route path="departments" element={<Suspense fallback={<PageLoader />}><DepartmentsPage /></Suspense>} />

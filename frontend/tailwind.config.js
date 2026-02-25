@@ -8,17 +8,17 @@ export default {
     extend: {
       colors: {
         dark: {
-          50: '#f7f7f8',
-          100: '#ebebef',
-          200: '#d1d1db',
-          300: '#a9a9bc',
-          400: '#7c7c95',
-          500: '#5f5f77',
-          600: '#4c4c62',
-          700: '#3d3d50',
-          800: '#2d2d3a',
-          900: '#1a1a24',
-          950: '#0f0f15',
+          50: 'var(--tw-dark-50)',
+          100: 'var(--tw-dark-100)',
+          200: 'var(--tw-dark-200)',
+          300: 'var(--tw-dark-300)',
+          400: 'var(--tw-dark-400)',
+          500: 'var(--tw-dark-500)',
+          600: 'var(--tw-dark-600)',
+          700: 'var(--tw-dark-700)',
+          800: 'var(--tw-dark-800)',
+          900: 'var(--tw-dark-900)',
+          950: 'var(--tw-dark-950)',
         },
         accent: {
           50: '#f0f9ff',
