@@ -5,6 +5,7 @@ The frontend calls GET /api/interns/*, and these routes fetch
 from Prometheus with Authorization header (secret stays server-side).
 """
 import logging
+from datetime import datetime, timezone
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,6 +19,14 @@ from api.utils.http_client import get_http_client
 from api.database import get_db
 from api.models.database import Entity, EntityType, EntityStatus, User, Organization, PrometheusReviewCache
 from api.services.auth import get_current_user, get_user_org
+from api.services.prometheus_status import (
+    fetch_statuses_bulk,
+    fetch_status_single,
+    map_prometheus_status,
+    normalize_hr_status,
+    PrometheusNotConfiguredError,
+    PrometheusAPIError,
+)
 
 logger = logging.getLogger("hr-analyzer.interns")
 
@@ -828,5 +837,388 @@ async def get_intern_linked_contacts(
 
     return JSONResponse(
         content={"links": mapping},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+# ============================================================
+# PROMETHEUS STATUS SYNC
+# ============================================================
+
+# HR canonical status → EntityStatus enum value
+_HR_STATUS_TO_ENTITY = {
+    "Принят": EntityStatus.hired,
+    "Отклонен": EntityStatus.rejected,
+    # "Обучается" has no direct EntityStatus mapping — keep current status
+}
+
+
+class SyncStatusesRequest(BaseModel):
+    """Body for POST /api/interns/sync-prometheus-statuses."""
+    emails: Optional[List[str]] = None
+
+
+@router.post("/sync-prometheus-statuses")
+async def sync_prometheus_statuses(
+    body: Optional[SyncStatusesRequest] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Sync intern statuses from Prometheus → HR.
+
+    1. Collects emails from request body or from all prometheus-exported entities.
+    2. Calls Prometheus bulk status endpoint.
+    3. For each found intern:
+       - Maps status code to HR canonical status.
+       - Updates entity extra_data.prometheus_status* fields.
+       - If status changed to "Принят" → auto-exports to contacts.
+    4. Returns sync results as plain JSON.
+
+    Response: {
+        ok: bool,
+        syncedAt: ISO string,
+        results: [...],
+        errors: [...]
+    }
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    synced_at = datetime.now(timezone.utc).isoformat()
+    results = []
+    errors = []
+
+    # 1. Determine which emails to sync
+    request_emails = (body.emails if body else None) or []
+    request_emails = [e.strip().lower() for e in request_emails if e and e.strip()]
+
+    if not request_emails:
+        # Fetch all prometheus-exported entities' emails
+        stmt = select(Entity).where(
+            Entity.org_id == org.id,
+            Entity.extra_data["prometheus_exported"].as_string() == "true",
+        )
+        result = await db.execute(stmt)
+        entities = result.scalars().all()
+
+        for ent in entities:
+            if ent.email and ent.email.strip():
+                email_norm = ent.email.strip().lower()
+                if email_norm not in request_emails:
+                    request_emails.append(email_norm)
+
+    if not request_emails:
+        return JSONResponse(
+            content={"ok": True, "syncedAt": synced_at, "results": [], "errors": []},
+            headers={"Cache-Control": "no-store"},
+        )
+
+    # 2. Fetch statuses from Prometheus
+    try:
+        prom_results = await fetch_statuses_bulk(request_emails)
+    except PrometheusNotConfiguredError as exc:
+        return JSONResponse(
+            content={
+                "ok": False,
+                "syncedAt": synced_at,
+                "results": [],
+                "errors": [{"type": "not_configured", "message": str(exc)}],
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+    except PrometheusAPIError as exc:
+        return JSONResponse(
+            content={
+                "ok": False,
+                "syncedAt": synced_at,
+                "results": [],
+                "errors": [{"type": "api_error", "statusCode": exc.status_code, "message": exc.detail}],
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    # 3. Process each result
+    for prom_item in prom_results:
+        item_email = (prom_item.get("email") or "").strip().lower()
+        # Try to extract email from nested intern object if not at top level
+        if not item_email:
+            intern_obj = prom_item.get("intern") or {}
+            item_email = (intern_obj.get("email") or "").strip().lower()
+
+        found = prom_item.get("found", False)
+
+        if not found or not item_email:
+            results.append({
+                "email": item_email or prom_item.get("email", ""),
+                "found": False,
+                "error": prom_item.get("error"),
+            })
+            continue
+
+        # Extract status info
+        status_obj = prom_item.get("status") or {}
+        status_code = status_obj.get("code", "")
+        status_label = status_obj.get("label", "")
+        status_updated_at = prom_item.get("statusUpdatedAt", "")
+
+        hr_status = map_prometheus_status(status_code)
+        hr_status = normalize_hr_status(hr_status)
+
+        # Find matching entity in HR DB
+        entity_result = await db.execute(
+            select(Entity).where(
+                Entity.org_id == org.id,
+                func.lower(Entity.email) == item_email,
+            )
+        )
+        entity = entity_result.scalar_one_or_none()
+
+        result_item = {
+            "email": item_email,
+            "found": True,
+            "statusCode": status_code,
+            "statusLabel": status_label,
+            "statusUpdatedAt": status_updated_at,
+            "hrStatus": hr_status,
+            "changed": False,
+            "contactId": None,
+        }
+
+        if entity:
+            result_item["contactId"] = entity.id
+
+            # Read current prometheus status from extra_data
+            extra = dict(entity.extra_data or {})
+            current_prom_status = extra.get("prometheus_status")
+            current_prom_updated = extra.get("prometheus_status_updated_at", "")
+
+            # Determine if status changed
+            status_changed = current_prom_status != hr_status
+
+            # Also check if statusUpdatedAt is newer (if we have both)
+            update_needed = status_changed
+            if not status_changed and status_updated_at and current_prom_updated:
+                update_needed = status_updated_at > current_prom_updated
+
+            if update_needed:
+                # Update extra_data with prometheus status info
+                extra["prometheus_status"] = hr_status
+                extra["prometheus_status_code"] = status_code
+                extra["prometheus_status_label"] = status_label
+                extra["prometheus_status_updated_at"] = status_updated_at
+                extra["prometheus_last_sync"] = synced_at
+                entity.extra_data = extra
+                result_item["changed"] = True
+
+                # Update Entity.status if we have a mapping
+                target_entity_status = _HR_STATUS_TO_ENTITY.get(hr_status)
+                if target_entity_status and entity.status != target_entity_status:
+                    entity.status = target_entity_status
+
+                try:
+                    await db.commit()
+                    await db.refresh(entity)
+                except Exception as exc:
+                    logger.error("Failed to update entity %d status: %s", entity.id, exc)
+                    await db.rollback()
+                    errors.append({
+                        "email": item_email,
+                        "type": "db_update_failed",
+                        "message": str(exc),
+                    })
+                    continue
+
+            # Auto-export to contacts if status == "Принят"
+            if hr_status == "Принят":
+                # Entity already exists — ensure prometheus_exported flag is set
+                if not extra.get("prometheus_exported"):
+                    extra["prometheus_exported"] = True
+                    entity.extra_data = extra
+                    try:
+                        await db.commit()
+                    except Exception:
+                        await db.rollback()
+                result_item["contactId"] = entity.id
+
+        else:
+            # No entity found — if status is "Принят", auto-create contact
+            if hr_status == "Принят":
+                intern_obj = prom_item.get("intern") or {}
+                intern_name = intern_obj.get("name") or item_email
+                intern_telegram = intern_obj.get("telegramUsername") or ""
+                prometheus_id = intern_obj.get("id") or ""
+
+                try:
+                    new_entity = Entity(
+                        org_id=org.id,
+                        type=EntityType.candidate,
+                        name=intern_name,
+                        status=EntityStatus.hired,
+                        email=item_email,
+                        emails=[item_email],
+                        telegram_usernames=[intern_telegram.lstrip("@").lower()] if intern_telegram else [],
+                        phones=[],
+                        tags=["prometheus", "практикант"],
+                        extra_data={
+                            "prometheus_intern_id": prometheus_id,
+                            "prometheus_exported": True,
+                            "prometheus_status": hr_status,
+                            "prometheus_status_code": status_code,
+                            "prometheus_status_label": status_label,
+                            "prometheus_status_updated_at": status_updated_at,
+                            "prometheus_last_sync": synced_at,
+                            "source": "prometheus_auto_export",
+                        },
+                        created_by=current_user.id,
+                    )
+                    db.add(new_entity)
+                    await db.commit()
+                    await db.refresh(new_entity)
+                    result_item["contactId"] = new_entity.id
+                    result_item["changed"] = True
+                except Exception as exc:
+                    logger.error("Failed to auto-create entity for %s: %s", item_email, exc)
+                    await db.rollback()
+                    errors.append({
+                        "email": item_email,
+                        "type": "auto_export_failed",
+                        "message": str(exc),
+                    })
+
+        results.append(result_item)
+
+    return JSONResponse(
+        content={
+            "ok": len(errors) == 0,
+            "syncedAt": synced_at,
+            "results": results,
+            "errors": errors,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/sync-prometheus-status-single")
+async def sync_prometheus_status_single(
+    email: Optional[str] = Query(default=None),
+    intern_id: Optional[str] = Query(default=None, alias="internId"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Sync a single intern's status from Prometheus.
+
+    Used by the /interns/{id}/stats page for per-candidate polling.
+    Returns the same shape as bulk results but for one entry.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    if not email and not intern_id:
+        return JSONResponse(
+            content={"ok": False, "error": "email or internId required"},
+            status_code=400,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    synced_at = datetime.now(timezone.utc).isoformat()
+
+    try:
+        prom_result = await fetch_status_single(email=email, intern_id=intern_id)
+    except PrometheusNotConfiguredError as exc:
+        return JSONResponse(
+            content={"ok": False, "syncedAt": synced_at, "error": str(exc)},
+            headers={"Cache-Control": "no-store"},
+        )
+    except PrometheusAPIError as exc:
+        return JSONResponse(
+            content={"ok": False, "syncedAt": synced_at, "error": exc.detail},
+            headers={"Cache-Control": "no-store"},
+        )
+
+    found = prom_result.get("found", False)
+    if not found:
+        return JSONResponse(
+            content={
+                "ok": True,
+                "syncedAt": synced_at,
+                "found": False,
+                "email": email,
+                "internId": intern_id,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    intern_obj = prom_result.get("intern") or {}
+    status_obj = prom_result.get("status") or {}
+    status_code = status_obj.get("code", "")
+    status_label = status_obj.get("label", "")
+    status_updated_at = prom_result.get("statusUpdatedAt", "")
+    resolved_email = (intern_obj.get("email") or email or "").strip().lower()
+
+    hr_status = map_prometheus_status(status_code)
+    hr_status = normalize_hr_status(hr_status)
+
+    result = {
+        "ok": True,
+        "syncedAt": synced_at,
+        "found": True,
+        "email": resolved_email,
+        "internId": intern_obj.get("id") or intern_id,
+        "name": intern_obj.get("name"),
+        "statusCode": status_code,
+        "statusLabel": status_label,
+        "statusUpdatedAt": status_updated_at,
+        "hrStatus": hr_status,
+        "changed": False,
+        "contactId": None,
+    }
+
+    # Update entity if exists
+    if resolved_email:
+        entity_result = await db.execute(
+            select(Entity).where(
+                Entity.org_id == org.id,
+                func.lower(Entity.email) == resolved_email,
+            )
+        )
+        entity = entity_result.scalar_one_or_none()
+
+        if entity:
+            result["contactId"] = entity.id
+            extra = dict(entity.extra_data or {})
+            current_prom_status = extra.get("prometheus_status")
+
+            if current_prom_status != hr_status:
+                extra["prometheus_status"] = hr_status
+                extra["prometheus_status_code"] = status_code
+                extra["prometheus_status_label"] = status_label
+                extra["prometheus_status_updated_at"] = status_updated_at
+                extra["prometheus_last_sync"] = synced_at
+                entity.extra_data = extra
+                result["changed"] = True
+
+                target_entity_status = _HR_STATUS_TO_ENTITY.get(hr_status)
+                if target_entity_status and entity.status != target_entity_status:
+                    entity.status = target_entity_status
+
+                if hr_status == "Принят" and not extra.get("prometheus_exported"):
+                    extra["prometheus_exported"] = True
+                    entity.extra_data = extra
+
+                try:
+                    await db.commit()
+                    await db.refresh(entity)
+                except Exception as exc:
+                    logger.error("Failed to update entity %d: %s", entity.id, exc)
+                    await db.rollback()
+
+    return JSONResponse(
+        content=result,
         headers={"Cache-Control": "no-store"},
     )

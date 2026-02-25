@@ -28,6 +28,24 @@ import type {
   CompetencyScore,
   Certificate,
 } from '@/services/api';
+import { usePrometheusSingleSync } from '@/hooks';
+
+// ── HR Status badge ──
+
+const HR_STATUS_STYLES: Record<string, { bg: string; text: string; border: string }> = {
+  'Обучается': { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
+  'Принят': { bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+  'Отклонен': { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30' },
+};
+
+function DetailedReviewStatusBadge({ status }: { status: string }) {
+  const style = HR_STATUS_STYLES[status] || { bg: 'bg-white/10', text: 'text-white/60', border: 'border-white/10' };
+  return (
+    <span className={clsx('px-2 py-0.5 text-[10px] rounded-full border whitespace-nowrap', style.bg, style.text, style.border)}>
+      {status}
+    </span>
+  );
+}
 
 // In-flight prefetch tracker — avoids duplicate concurrent requests
 const prefetchInFlight = new Set<number>();
@@ -345,6 +363,14 @@ export default function PrometheusDetailedReview({
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // 30-second status sync (uses email from loaded intern data)
+  const resolvedEmail = data?.intern?.email || undefined;
+  const { status: syncStatus } = usePrometheusSingleSync(
+    { email: resolvedEmail },
+    !!resolvedEmail && !loading,
+  );
+  const currentHrStatus = syncStatus?.hrStatus;
+
   const fetchData = async (forceRefresh = false) => {
     if (forceRefresh) {
       setRefreshing(true);
@@ -525,6 +551,8 @@ export default function PrometheusDetailedReview({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* HR status badge from sync */}
+            {currentHrStatus && <DetailedReviewStatusBadge status={currentHrStatus} />}
             {flags.active ? (
               <span className="px-2 py-0.5 text-[10px] rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                 Активен

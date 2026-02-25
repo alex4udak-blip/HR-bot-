@@ -548,3 +548,82 @@ export const getInternLinkedContacts = async (): Promise<LinkedContactsResponse>
   );
   return data;
 };
+
+// ============================================================
+// PROMETHEUS STATUS SYNC
+// ============================================================
+
+/** Single result from the sync endpoint */
+export interface SyncStatusResult {
+  email: string;
+  found: boolean;
+  statusCode?: string;
+  statusLabel?: string;
+  statusUpdatedAt?: string;
+  hrStatus?: string;
+  changed?: boolean;
+  contactId?: number | null;
+  error?: string;
+}
+
+/** Response from POST /api/interns/sync-prometheus-statuses */
+export interface SyncStatusesResponse {
+  ok: boolean;
+  syncedAt: string;
+  results: SyncStatusResult[];
+  errors?: Array<{
+    type: string;
+    message: string;
+    email?: string;
+    statusCode?: number;
+  }>;
+}
+
+/** Response from POST /api/interns/sync-prometheus-status-single */
+export interface SyncSingleStatusResponse {
+  ok: boolean;
+  syncedAt: string;
+  found: boolean;
+  email?: string;
+  internId?: string;
+  name?: string;
+  statusCode?: string;
+  statusLabel?: string;
+  statusUpdatedAt?: string;
+  hrStatus?: string;
+  changed?: boolean;
+  contactId?: number | null;
+  error?: string;
+}
+
+/**
+ * Sync Prometheus statuses for a list of interns (bulk).
+ * Calls POST /api/interns/sync-prometheus-statuses
+ */
+export const syncPrometheusStatuses = async (
+  emails?: string[],
+): Promise<SyncStatusesResponse> => {
+  const { data } = await debouncedMutation<SyncStatusesResponse>(
+    'post',
+    '/interns/sync-prometheus-statuses',
+    emails && emails.length > 0 ? { emails } : undefined,
+  );
+  return data;
+};
+
+/**
+ * Sync a single intern's status from Prometheus.
+ * Calls POST /api/interns/sync-prometheus-status-single?email=...&internId=...
+ */
+export const syncPrometheusStatusSingle = async (
+  params: { email?: string; internId?: string },
+): Promise<SyncSingleStatusResponse> => {
+  const queryParams = new URLSearchParams();
+  if (params.email) queryParams.set('email', params.email);
+  if (params.internId) queryParams.set('internId', params.internId);
+  const { data } = await debouncedMutation<SyncSingleStatusResponse>(
+    'post',
+    `/interns/sync-prometheus-status-single?${queryParams.toString()}`,
+  );
+  return data;
+};

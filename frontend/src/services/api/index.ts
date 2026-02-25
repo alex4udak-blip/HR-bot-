@@ -355,6 +355,8 @@ export {
   getContactDetailedReview,
   exportInternToContact,
   getInternLinkedContacts,
+  syncPrometheusStatuses,
+  syncPrometheusStatusSingle,
 } from './interns';
 
 // Intern types
@@ -399,4 +401,7 @@ export type {
   DetailedReviewResponse,
   ExportInternResponse,
   LinkedContactsResponse,
+  SyncStatusResult,
+  SyncStatusesResponse,
+  SyncSingleStatusResponse,
 } from './interns';
