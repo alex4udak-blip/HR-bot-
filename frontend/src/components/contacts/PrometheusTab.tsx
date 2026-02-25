@@ -96,7 +96,7 @@ function TrailCard({ trail }: { trail: ContactReviewTrail }) {
     'bg-blue-400';
 
   return (
-    <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+    <div className="bg-white/5 rounded-lg p-3 border border-white/5 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full text-left"

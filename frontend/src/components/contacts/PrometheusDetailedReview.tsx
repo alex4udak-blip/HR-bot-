@@ -185,7 +185,7 @@ function TrailDetailCard({
         : 'bg-blue-400';
 
   return (
-    <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+    <div className="bg-white/5 rounded-lg p-3 border border-white/5 overflow-hidden">
       <button onClick={() => setExpanded(!expanded)} className="w-full text-left">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -217,7 +217,7 @@ function TrailDetailCard({
 
       {/* AI insight (always visible if available) */}
       {insight && (
-        <p className="text-xs text-white/50 mt-2 italic">{insight.verdict}</p>
+        <p className="text-xs text-white/50 mt-2 italic break-words">{insight.verdict}</p>
       )}
 
       {/* Expanded details */}
@@ -476,7 +476,7 @@ export default function PrometheusDetailedReview({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-w-0">
       {/* ── Team Fit Recommendation (AI) — shown first for HR ── */}
       {detailed?.teamFitRecommendation && (
         <div className="glass rounded-xl border border-white/10 p-4 sm:p-6">
@@ -722,7 +722,7 @@ export default function PrometheusDetailedReview({
 
       {/* ── Trail Progress ── */}
       {review.trails.length > 0 && (
-        <div className="glass rounded-xl border border-white/10 p-4 sm:p-6">
+        <div className="glass rounded-xl border border-white/10 p-4 sm:p-6 overflow-hidden">
           <h4 className="text-sm font-medium text-white/50 mb-3 flex items-center gap-2">
             <GitBranch className="w-4 h-4 text-emerald-400" />
             Прогресс по трейлам ({review.trails.length})
@@ -741,7 +741,7 @@ export default function PrometheusDetailedReview({
 
       {/* ── Certificates ── */}
       {certificates.length > 0 && (
-        <div className="glass rounded-xl border border-white/10 p-4 sm:p-6">
+        <div className="glass rounded-xl border border-white/10 p-4 sm:p-6 overflow-hidden">
           <h4 className="text-sm font-medium text-white/50 mb-3 flex items-center gap-2">
             <Medal className="w-4 h-4 text-amber-400" />
             Сертификаты ({certificates.length})
