@@ -396,7 +396,7 @@ export default function InternsAnalyticsTab() {
 
       {/* Trail Progress Details */}
       {analytics.trailProgress.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="bg-white/5 border border-white/10 rounded-xl">
           <div className="p-4 border-b border-white/10">
             <h3 className="text-sm font-medium flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-emerald-400" />
@@ -404,14 +404,14 @@ export default function InternsAnalyticsTab() {
               <span className="px-1.5 py-0.5 text-xs rounded-full bg-white/10 text-white/50">{analytics.trailProgress.length}</span>
             </h3>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-clip">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/5">
                   <ColumnHeaderWithTooltip label="Трейл" tooltip="Название учебного трейла (образовательной программы) в Prometheus." />
                   <ColumnHeaderWithTooltip label="Записано" tooltip="Количество студентов, зачисленных на данный трейл. Учитываются все, кто начал обучение." />
                   <ColumnHeaderWithTooltip label="Заверш. модулей" tooltip="Общее количество завершённых модулей по трейлу среди всех студентов." />
-                  <ColumnHeaderWithTooltip label="Работ отправлено" tooltip="Суммарное количество работ (submissions), отправленных студентами на проверку по трейлу." noWrap />
+                  <ColumnHeaderWithTooltip label="Работ отправлено" tooltip="Суммарное количество работ (submissions), отправленных студентами на проверку по трейлу." />
                   <ColumnHeaderWithTooltip label="Одобрено" tooltip="Количество работ, получивших статус «одобрено» после проверки ментором." />
                   <ColumnHeaderWithTooltip label="% одобрения" tooltip="Процент одобренных работ от общего числа отправленных. Рассчитывается как (одобрено / отправлено) × 100%." />
                   <ColumnHeaderWithTooltip label="Ср. время прохождения" tooltip="Среднее время прохождения модулей трейла в днях. Рассчитывается на основе данных dropoff-анализа по модулям с ненулевым временем." />
@@ -515,9 +515,9 @@ function EmptyChart() {
   );
 }
 
-function ColumnHeaderWithTooltip({ label, tooltip, noWrap }: { label: string; tooltip: string; noWrap?: boolean }) {
+function ColumnHeaderWithTooltip({ label, tooltip }: { label: string; tooltip: string }) {
   return (
-    <th className={clsx('px-4 py-3 text-left text-xs font-medium text-white/40', noWrap && 'whitespace-nowrap')}>
+    <th className="px-4 py-3 text-left text-xs font-medium text-white/40">
       <span className="group/tip relative inline-flex items-center gap-1 cursor-help">
         <span>{label}</span>
         <Info className="w-3 h-3 text-white/20 group-hover/tip:text-white/50 transition-colors flex-shrink-0" />
