@@ -46,27 +46,40 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
 // Cache for blob URLs to avoid re-fetching
+// Stores blob URL on success, or FAILED_SENTINEL on error to prevent retry spam
 const blobUrlCache = new Map<string, string>();
+const FAILED_SENTINEL = '__FAILED__';
 
 // Helper function to cleanup all blob URLs from cache
 const cleanupBlobUrls = () => {
-  blobUrlCache.forEach((url) => URL.revokeObjectURL(url));
+  blobUrlCache.forEach((url) => {
+    if (url !== FAILED_SENTINEL) URL.revokeObjectURL(url);
+  });
   blobUrlCache.clear();
 };
 
 // Helper to fetch file with auth header and return blob URL
 const fetchWithAuth = async (url: string): Promise<string> => {
   // Check cache first
-  if (blobUrlCache.has(url)) {
-    return blobUrlCache.get(url)!;
+  const cached = blobUrlCache.get(url);
+  if (cached === FAILED_SENTINEL) {
+    throw new Error('Previously failed');
+  }
+  if (cached) {
+    return cached;
   }
 
   const token = localStorage.getItem('token');
   const response = await fetch(url, {
-    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    credentials: 'include',
   });
 
   if (!response.ok) {
+    // Cache the failure to prevent retry spam (404/403 won't resolve on retry)
+    if (response.status === 404 || response.status === 403) {
+      blobUrlCache.set(url, FAILED_SENTINEL);
+    }
     throw new Error(`HTTP ${response.status}`);
   }
 

@@ -12,6 +12,7 @@ from ..models.schemas import (
     ChatTypeDefaultCriteriaUpdate, EntityTypeDefaultCriteriaUpdate
 )
 from ..services.auth import get_current_user
+from ..services.permissions import PermissionService
 from ..services.chat_types import (
     get_default_criteria as get_hardcoded_defaults,
     get_universal_presets,
@@ -367,12 +368,13 @@ async def get_chat_criteria(
     user: User = Depends(get_current_user),
 ):
     user = await db.merge(user)
-    # Check access
+    # Check access using PermissionService (consistent with messages routes)
     result = await db.execute(select(Chat).where(Chat.id == chat_id))
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if user.role != UserRole.superadmin and chat.owner_id != user.id:
+    permission_service = PermissionService(db)
+    if not await permission_service.can_access_resource(user, chat):
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = await db.execute(select(ChatCriteria).where(ChatCriteria.chat_id == chat_id))
@@ -435,12 +437,13 @@ async def update_chat_criteria(
     user: User = Depends(get_current_user),
 ):
     user = await db.merge(user)
-    # Check access
+    # Check access using PermissionService (consistent with messages routes)
     result = await db.execute(select(Chat).where(Chat.id == chat_id))
     chat = result.scalar_one_or_none()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    if user.role != UserRole.superadmin and chat.owner_id != user.id:
+    permission_service = PermissionService(db)
+    if not await permission_service.can_access_resource(user, chat, "write"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = await db.execute(select(ChatCriteria).where(ChatCriteria.chat_id == chat_id))
