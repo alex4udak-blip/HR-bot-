@@ -61,3 +61,9 @@ export type {
   ActionItem,
   PageItem,
 } from './useCommandPalette';
+
+export { usePrometheusBulkSync, usePrometheusSingleSync } from './usePrometheusSync';
+export type {
+  UsePrometheusSyncReturn,
+  UsePrometheusSingleSyncReturn,
+} from './usePrometheusSync';

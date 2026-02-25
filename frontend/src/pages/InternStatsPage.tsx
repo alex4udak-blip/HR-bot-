@@ -37,7 +37,25 @@ import {
 import clsx from 'clsx';
 import { getStudentAchievements, getPrometheusInterns, getPrometheusAnalytics, getEntities, exportInternToContact } from '@/services/api';
 import type { StudentTrailProgress, StudentModuleStatus } from '@/services/api';
+import { usePrometheusSingleSync } from '@/hooks';
 import { formatDate } from '@/utils';
+
+// ── Status badge helper ──
+
+const HR_STATUS_STYLES: Record<string, { bg: string; text: string; border: string }> = {
+  'Обучается': { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
+  'Принят': { bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+  'Отклонен': { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30' },
+};
+
+function InternStatusBadge({ status }: { status: string }) {
+  const style = HR_STATUS_STYLES[status] || { bg: 'bg-white/10', text: 'text-white/60', border: 'border-white/10' };
+  return (
+    <span className={clsx('px-2 py-0.5 text-xs rounded-full border whitespace-nowrap', style.bg, style.text, style.border)}>
+      {status}
+    </span>
+  );
+}
 
 // ── Constants ──
 
@@ -394,6 +412,14 @@ export default function InternStatsPage() {
     retry: 1,
   });
 
+  // 30-second Prometheus status sync for this single intern
+  const studentEmail = data?.student?.email;
+  const { status: promSyncStatus } = usePrometheusSingleSync(
+    { email: studentEmail, internId: internId },
+    !!internId && !isLoading,
+  );
+  const currentHrStatus = promSyncStatus?.hrStatus;
+
   // Pull telegram username from cached interns list
   const { data: interns } = useQuery({
     queryKey: ['prometheus-interns'],
@@ -499,6 +525,13 @@ export default function InternStatsPage() {
     return () => { cancelled = true; };
   }, [data?.student?.email]);
 
+  // Update linkedContactId from sync results (auto-export on "Принят")
+  useEffect(() => {
+    if (promSyncStatus?.contactId && !linkedContactId) {
+      setLinkedContactId(promSyncStatus.contactId);
+    }
+  }, [promSyncStatus?.contactId, linkedContactId]);
+
   // Export to contacts state
   const [exportLoading, setExportLoading] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -586,6 +619,7 @@ export default function InternStatsPage() {
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
                 <h1 className="text-lg font-bold truncate">Статистика</h1>
+                {currentHrStatus && <InternStatusBadge status={currentHrStatus} />}
               </div>
               <p className="text-sm text-white/50 truncate">{student.name}</p>
             </div>

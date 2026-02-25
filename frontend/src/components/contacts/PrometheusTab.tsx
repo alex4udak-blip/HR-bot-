@@ -14,9 +14,29 @@ import {
 import clsx from 'clsx';
 import { getContactPrometheusReview } from '@/services/api';
 import type { ContactPrometheusResponse, ContactPrometheusReview, ContactReviewTrail } from '@/services/api';
+import { usePrometheusSingleSync } from '@/hooks';
 
 interface PrometheusTabProps {
   entityId: number;
+  /** Contact email — used for Prometheus status sync polling */
+  email?: string;
+}
+
+// ── HR Status badge ──
+
+const HR_STATUS_STYLES: Record<string, { bg: string; text: string; border: string }> = {
+  'Обучается': { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
+  'Принят': { bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+  'Отклонен': { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30' },
+};
+
+function PrometheusStatusBadge({ status }: { status: string }) {
+  const style = HR_STATUS_STYLES[status] || { bg: 'bg-white/10', text: 'text-white/60', border: 'border-white/10' };
+  return (
+    <span className={clsx('px-2 py-0.5 text-[10px] rounded-full border whitespace-nowrap', style.bg, style.text, style.border)}>
+      {status}
+    </span>
+  );
 }
 
 // ── Skeleton shown during loading ──
@@ -153,10 +173,20 @@ function TrailCard({ trail }: { trail: ContactReviewTrail }) {
 
 // ── Main component ──
 
-export default function PrometheusTab({ entityId }: PrometheusTabProps) {
+export default function PrometheusTab({ entityId, email }: PrometheusTabProps) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<ContactPrometheusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Resolve email from props or from loaded data (intern's email)
+  const resolvedEmail = email || data?.intern?.email || undefined;
+
+  // 30-second status sync polling (only when tab is active & email is known)
+  const { status: syncStatus } = usePrometheusSingleSync(
+    { email: resolvedEmail },
+    !!resolvedEmail,
+  );
+  const currentHrStatus = syncStatus?.hrStatus;
 
   const fetchData = async () => {
     setLoading(true);
@@ -265,7 +295,9 @@ export default function PrometheusTab({ entityId }: PrometheusTabProps) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* Status badges */}
+          {/* HR status badge from sync */}
+          {currentHrStatus && <PrometheusStatusBadge status={currentHrStatus} />}
+          {/* Activity badges */}
           {flags.active ? (
             <span className="px-2 py-0.5 text-[10px] rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
               Активен

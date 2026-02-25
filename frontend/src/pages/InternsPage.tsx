@@ -21,8 +21,26 @@ import clsx from 'clsx';
 import { formatRelativeTime } from '@/utils';
 import { getPrometheusInterns, getInternLinkedContacts } from '@/services/api';
 import type { PrometheusIntern } from '@/services/api';
+import { usePrometheusBulkSync } from '@/hooks';
 import InternsAnalyticsTab from '@/components/interns/InternsAnalyticsTab';
 import InternsStagesTab from '@/components/interns/InternsStagesTab';
+
+// ── Status badge helper ──
+
+const HR_STATUS_STYLES: Record<string, { bg: string; text: string; border: string }> = {
+  'Обучается': { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
+  'Принят': { bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+  'Отклонен': { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30' },
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const style = HR_STATUS_STYLES[status] || { bg: 'bg-white/10', text: 'text-white/60', border: 'border-white/10' };
+  return (
+    <span className={clsx('px-2 py-0.5 text-[10px] rounded-full border whitespace-nowrap', style.bg, style.text, style.border)}>
+      {status}
+    </span>
+  );
+}
 
 // Tabs for interns section
 type InternTab = 'interns' | 'analytics' | 'stages' | 'csv';
@@ -141,9 +159,26 @@ export default function InternsPage() {
     return result;
   }, [searchQuery, selectedTrailFilter, interns]);
 
+  // Collect emails from currently visible (filtered) interns for Prometheus status sync
+  const visibleEmails = useMemo(() => {
+    return filteredInterns
+      .map(i => i.email)
+      .filter((e): e is string => !!e && e.trim().length > 0);
+  }, [filteredInterns]);
+
+  // 30-second Prometheus status polling
+  const { statusMap, syncError: _syncError, isSyncing } = usePrometheusBulkSync(
+    visibleEmails,
+    activeTab === 'interns' && !isLoading && !isError,
+  );
+
   // Render a single intern card (Prometheus data shape)
   const renderInternCard = (intern: PrometheusIntern) => {
     const contactId = linkedContacts[intern.id];
+    const syncResult = intern.email ? statusMap[intern.email.toLowerCase()] : undefined;
+    const hrStatus = syncResult?.hrStatus;
+    // Prefer contactId from sync if available (auto-export may have created it)
+    const resolvedContactId = syncResult?.contactId || contactId;
     // Determine which trail to display based on the filter
     const namedTrails = intern.trails.filter(t => t.trailName && t.trailName.trim());
 
@@ -190,15 +225,16 @@ export default function InternsPage() {
           </div>
         </div>
 
-        {/* XP badge + contact badge */}
+        {/* XP badge + status badge + contact badge */}
         <div className="flex items-center gap-2 mb-2 ml-12 flex-wrap">
           <span className="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full whitespace-nowrap bg-amber-500/20 text-amber-400">
             <Zap className="w-3 h-3" />
             {intern.totalXP} XP
           </span>
-          {contactId && (
+          {hrStatus && <StatusBadge status={hrStatus} />}
+          {resolvedContactId && (
             <span
-              onClick={(e) => { e.stopPropagation(); navigate(`/contacts/${contactId}`); }}
+              onClick={(e) => { e.stopPropagation(); navigate(`/contacts/${resolvedContactId}`); }}
               className="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full whitespace-nowrap bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 cursor-pointer transition-colors"
               title="Открыть контакт"
             >
@@ -347,14 +383,22 @@ export default function InternsPage() {
                   </span>
                 )}
               </h2>
-              <button
-                onClick={() => refetch()}
-                disabled={isLoading}
-                className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-              >
-                <RefreshCw className={clsx('w-3.5 h-3.5', isLoading && 'animate-spin')} />
-                Обновить
-              </button>
+              <div className="flex items-center gap-2">
+                {isSyncing && (
+                  <span className="text-[10px] text-white/30 flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Синхронизация
+                  </span>
+                )}
+                <button
+                  onClick={() => refetch()}
+                  disabled={isLoading}
+                  className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={clsx('w-3.5 h-3.5', isLoading && 'animate-spin')} />
+                  Обновить
+                </button>
+              </div>
             </div>
 
             {/* Filters row */}
