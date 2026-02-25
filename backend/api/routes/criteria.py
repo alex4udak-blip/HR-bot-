@@ -133,6 +133,50 @@ async def create_preset(
     )
 
 
+@router.put("/presets/{preset_id}", response_model=CriteriaPresetResponse)
+async def update_preset(
+    preset_id: int,
+    data: CriteriaPresetCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    user = await db.merge(user)
+    result = await db.execute(select(CriteriaPreset).where(CriteriaPreset.id == preset_id))
+    preset = result.scalar_one_or_none()
+
+    if not preset:
+        raise HTTPException(status_code=404, detail="Preset not found")
+
+    # Only owner or superadmin can update
+    if preset.created_by != user.id and user.role != UserRole.superadmin:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    preset.name = data.name
+    preset.description = data.description
+    preset.criteria = [c.model_dump() for c in data.criteria]
+    preset.category = data.category
+
+    # Only superadmin can toggle global flag
+    if user.role == UserRole.superadmin:
+        preset.is_global = data.is_global
+
+    await db.commit()
+    await db.refresh(preset)
+
+    return CriteriaPresetResponse(
+        id=preset.id,
+        name=preset.name,
+        description=preset.description,
+        criteria=preset.criteria,
+        category=preset.category,
+        is_global=preset.is_global,
+        chat_type=preset.chat_type,
+        is_default=preset.is_default,
+        created_by=preset.created_by,
+        created_at=preset.created_at,
+    )
+
+
 @router.delete("/presets/{preset_id}", status_code=204)
 async def delete_preset(
     preset_id: int,

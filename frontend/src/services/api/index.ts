@@ -227,6 +227,7 @@ export {
   // Criteria
   getCriteriaPresets,
   createCriteriaPreset,
+  updateCriteriaPreset,
   deleteCriteriaPreset,
   getChatCriteria,
   updateChatCriteria,
