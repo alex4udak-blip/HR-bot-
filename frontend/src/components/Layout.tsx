@@ -18,12 +18,14 @@ import {
   UserCheck,
   GraduationCap,
   HelpCircle,
+  FileSpreadsheet,
   type LucideIcon
 } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useOnboardingTour } from '@/hooks/useOnboardingTour';
 import BackgroundEffects from './BackgroundEffects';
+import ThemeToggle from './ThemeToggle';
 import { OnboardingTour } from './onboarding';
 import clsx from 'clsx';
 
@@ -42,6 +44,7 @@ const iconMap: Record<string, LucideIcon> = {
   Briefcase,
   UserCheck,
   GraduationCap,
+  FileSpreadsheet,
 };
 
 // Localized labels
@@ -59,6 +62,7 @@ const labelMap: Record<string, string> = {
   'Admin Panel': 'Симулятор ролей',
   'Trash': 'Корзина',
   'Interns': 'База практикантов',
+  'Exports': 'Экспорт CSV',
 };
 
 // Map paths to data-tour attributes
@@ -134,6 +138,7 @@ export default function Layout() {
 
     // Add menu items for superadmin and org owner
     if (user?.role === 'superadmin' || user?.org_role === 'owner') {
+      items.push({ path: '/exports', icon: FileSpreadsheet, label: 'Экспорт CSV' });
       items.push({ path: '/departments', icon: Building2, label: 'Департаменты' });
       items.push({ path: '/settings', icon: Settings, label: 'Настройки' });
     }
@@ -205,6 +210,7 @@ export default function Layout() {
               )}
             </div>
           </div>
+          <ThemeToggle />
           <button
             onClick={handleHelpClick}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-dark-300 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all duration-200 mb-2"
@@ -280,6 +286,7 @@ export default function Layout() {
                   <span className="font-medium truncate">{item.label}</span>
                 </NavLink>
               ))}
+              <ThemeToggle />
               <button
                 onClick={handleLogout}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-dark-300 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"

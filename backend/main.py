@@ -20,7 +20,7 @@ from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
 from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser, search, scoring, currency, parse_jobs, interns
-from api.routes import email_templates, analytics
+from api.routes import email_templates, analytics, exports
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
@@ -291,6 +291,14 @@ try:
     logger.info("Analytics router registered successfully at /api/analytics")
 except Exception as e:
     logger.error(f"FAILED to register analytics router: {e}")
+    raise
+
+logger.info("=== REGISTERING EXPORTS ROUTER ===")
+try:
+    app.include_router(exports.router, prefix="/api/exports", tags=["exports"])
+    logger.info("Exports router registered successfully at /api/exports")
+except Exception as e:
+    logger.error(f"FAILED to register exports router: {e}")
     raise
 
 logger.info("=== REGISTERING INTERNS ROUTER ===")
