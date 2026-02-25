@@ -14,6 +14,7 @@ import {
   Loader2,
   RefreshCw,
   BarChart3,
+  Info,
 } from 'lucide-react';
 import {
   PieChart,
@@ -407,14 +408,14 @@ export default function InternsAnalyticsTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/5">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Трейл</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Записано</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Заверш. модулей</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Работ отправлено</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Одобрено</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">% одобрения</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Ср. время прохождения</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-white/40">Сертификатов</th>
+                  <ColumnHeaderWithTooltip label="Трейл" tooltip="Название учебного трейла (образовательной программы) в Prometheus." />
+                  <ColumnHeaderWithTooltip label="Записано" tooltip="Количество студентов, зачисленных на данный трейл. Учитываются все, кто начал обучение." />
+                  <ColumnHeaderWithTooltip label="Заверш. модулей" tooltip="Общее количество завершённых модулей по трейлу среди всех студентов." />
+                  <ColumnHeaderWithTooltip label="Работ отправлено" tooltip="Суммарное количество работ (submissions), отправленных студентами на проверку по трейлу." noWrap />
+                  <ColumnHeaderWithTooltip label="Одобрено" tooltip="Количество работ, получивших статус «одобрено» после проверки ментором." />
+                  <ColumnHeaderWithTooltip label="% одобрения" tooltip="Процент одобренных работ от общего числа отправленных. Рассчитывается как (одобрено / отправлено) × 100%." />
+                  <ColumnHeaderWithTooltip label="Ср. время прохождения" tooltip="Среднее время прохождения модулей трейла в днях. Рассчитывается на основе данных dropoff-анализа по модулям с ненулевым временем." />
+                  <ColumnHeaderWithTooltip label="Сертификатов" tooltip="Количество выданных сертификатов об успешном завершении трейла." />
                 </tr>
               </thead>
               <tbody>
@@ -511,5 +512,19 @@ function ChartLegend({ items }: { items: Array<{ name: string; value: number; fi
 function EmptyChart() {
   return (
     <div className="h-[160px] flex items-center justify-center text-white/30 text-sm">Нет данных</div>
+  );
+}
+
+function ColumnHeaderWithTooltip({ label, tooltip, noWrap }: { label: string; tooltip: string; noWrap?: boolean }) {
+  return (
+    <th className={clsx('px-4 py-3 text-left text-xs font-medium text-white/40', noWrap && 'whitespace-nowrap')}>
+      <span className="group/tip relative inline-flex items-center gap-1 cursor-help">
+        <span>{label}</span>
+        <Info className="w-3 h-3 text-white/20 group-hover/tip:text-white/50 transition-colors flex-shrink-0" />
+        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-xs text-white/80 font-normal whitespace-normal w-56 text-left opacity-0 invisible group-hover/tip:opacity-100 group-hover/tip:visible transition-all duration-200 z-50 shadow-xl pointer-events-none leading-relaxed">
+          {tooltip}
+        </span>
+      </span>
+    </th>
   );
 }

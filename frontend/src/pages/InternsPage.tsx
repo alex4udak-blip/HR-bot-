@@ -15,7 +15,10 @@ import {
   RefreshCw,
   Loader2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   UserCheck,
+  ArrowUpDown,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { formatRelativeTime } from '@/utils';
@@ -51,6 +54,26 @@ const INTERN_TABS: { key: InternTab; label: string; icon: typeof GraduationCap }
   { key: 'stages', label: 'Этапы прохождения', icon: GitBranch },
   { key: 'csv', label: 'Выгрузка в CSV', icon: Download },
 ];
+
+// Sort types for interns list
+type InternSortField = 'name' | 'modules' | 'date' | 'status';
+type SortDir = 'asc' | 'desc';
+
+const SORT_OPTIONS: { field: InternSortField; label: string }[] = [
+  { field: 'name', label: 'Имя' },
+  { field: 'modules', label: 'Модули' },
+  { field: 'date', label: 'Дата зачисления' },
+  { field: 'status', label: 'Статус' },
+];
+
+const PAGE_SIZE_OPTIONS = [10, 15, 20, 50, 100] as const;
+
+// Status priority for sorting (Принят first, Обучается second, Отклонен third, unknown last)
+const STATUS_PRIORITY: Record<string, number> = {
+  'Принят': 0,
+  'Обучается': 1,
+  'Отклонен': 2,
+};
 
 function getAvatarInitials(name: string) {
   return name
@@ -90,6 +113,14 @@ export default function InternsPage() {
   const [activeTab, setActiveTab] = useState<InternTab>('interns');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTrailFilter, setSelectedTrailFilter] = useState('all');
+
+  // Sorting state
+  const [sortField, setSortField] = useState<InternSortField>('name');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  // Pagination state
+  const [pageSize, setPageSize] = useState<number>(20);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Fetch interns from Prometheus via backend proxy
   const {
@@ -171,6 +202,58 @@ export default function InternsPage() {
     visibleEmails,
     activeTab === 'interns' && !isLoading && !isError,
   );
+
+  // Sort handler (toggle direction or change field)
+  const handleSort = (field: InternSortField) => {
+    if (sortField === field) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+    setCurrentPage(1);
+  };
+
+  // Sort filtered interns
+  const sortedInterns = useMemo(() => {
+    return [...filteredInterns].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'name':
+          cmp = a.name.localeCompare(b.name, 'ru');
+          break;
+        case 'modules': {
+          const aModules = a.trails.reduce((sum, t) => sum + t.completedModules, 0);
+          const bModules = b.trails.reduce((sum, t) => sum + t.completedModules, 0);
+          cmp = aModules - bModules;
+          break;
+        }
+        case 'date':
+          cmp = (a.createdAt || '').localeCompare(b.createdAt || '');
+          break;
+        case 'status': {
+          const aStatus = a.email ? statusMap[a.email.toLowerCase()]?.hrStatus : undefined;
+          const bStatus = b.email ? statusMap[b.email.toLowerCase()]?.hrStatus : undefined;
+          const aPriority = aStatus ? (STATUS_PRIORITY[aStatus] ?? 3) : 3;
+          const bPriority = bStatus ? (STATUS_PRIORITY[bStatus] ?? 3) : 3;
+          cmp = aPriority - bPriority;
+          break;
+        }
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [filteredInterns, sortField, sortDir, statusMap]);
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(sortedInterns.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedInterns = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return sortedInterns.slice(start, start + pageSize);
+  }, [sortedInterns, safePage, pageSize]);
+
+  // Reset page when filters or search change
+  const resetPage = () => setCurrentPage(1);
 
   // Render a single intern card (Prometheus data shape)
   const renderInternCard = (intern: PrometheusIntern) => {
@@ -410,7 +493,7 @@ export default function InternsPage() {
                   type="text"
                   placeholder="Поиск по имени, email, трекам..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => { setSearchQuery(e.target.value); resetPage(); }}
                   className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 text-sm transition-all"
                 />
               </div>
@@ -424,7 +507,7 @@ export default function InternsPage() {
                 <div className="relative">
                   <select
                     value={selectedTrailFilter}
-                    onChange={e => setSelectedTrailFilter(e.target.value)}
+                    onChange={e => { setSelectedTrailFilter(e.target.value); resetPage(); }}
                     className="appearance-none pl-3 pr-8 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer min-w-[140px] [&>option]:bg-dark-900 [&>option]:text-white"
                   >
                     <option value="all">Все трейлы</option>
@@ -439,11 +522,58 @@ export default function InternsPage() {
               </div>
 
             </div>
+
+            {/* Sort & page size row */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              {/* Sort buttons */}
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-xs text-white/40 mr-1 flex items-center gap-1">
+                  <ArrowUpDown className="w-3 h-3" />
+                  Сортировка:
+                </span>
+                {SORT_OPTIONS.map(opt => (
+                  <button
+                    key={opt.field}
+                    onClick={() => handleSort(opt.field)}
+                    className={clsx(
+                      'px-2 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1',
+                      sortField === opt.field
+                        ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                        : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
+                    )}
+                  >
+                    {opt.label}
+                    {sortField === opt.field && (
+                      <ChevronDown className={clsx('w-3 h-3 transition-transform', sortDir === 'asc' ? 'rotate-180' : '')} />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* Page size selector */}
+              <div className="flex items-center gap-1.5 sm:ml-auto">
+                <span className="text-xs text-white/40">Показывать:</span>
+                {PAGE_SIZE_OPTIONS.map(size => (
+                  <button
+                    key={size}
+                    onClick={() => { setPageSize(size); setCurrentPage(1); }}
+                    className={clsx(
+                      'px-2 py-1 text-xs rounded-lg border transition-colors',
+                      pageSize === size
+                        ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                        : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
+                    )}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Cards Grid / Loading / Error */}
           <div className="flex-1 overflow-auto p-4">
-            {isLoading ? renderLoading() : isError ? renderError() : filteredInterns.length === 0 ? (
+            {isLoading ? renderLoading() : isError ? renderError() : sortedInterns.length === 0 ? (
               <div className="h-full flex items-center justify-center">
                 <div className="text-center text-white/40">
                   <GraduationCap className="w-16 h-16 mx-auto mb-4 opacity-50" />
@@ -460,8 +590,60 @@ export default function InternsPage() {
                 </div>
               </div>
             ) : (
-              <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {filteredInterns.map(intern => renderInternCard(intern))}
+              <div className="space-y-4">
+                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {paginatedInterns.map(intern => renderInternCard(intern))}
+                </div>
+
+                {/* Pagination controls */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between pt-2 pb-1">
+                    <span className="text-xs text-white/40">
+                      {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, sortedInterns.length)} из {sortedInterns.length}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={safePage <= 1}
+                        className="p-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1)
+                        .filter(page => page === 1 || page === totalPages || Math.abs(page - safePage) <= 1)
+                        .reduce<(number | 'ellipsis')[]>((acc, page, idx, arr) => {
+                          if (idx > 0 && page - (arr[idx - 1] as number) > 1) acc.push('ellipsis');
+                          acc.push(page);
+                          return acc;
+                        }, [])
+                        .map((item, idx) =>
+                          item === 'ellipsis' ? (
+                            <span key={`e-${idx}`} className="px-1 text-xs text-white/30">...</span>
+                          ) : (
+                            <button
+                              key={item}
+                              onClick={() => setCurrentPage(item)}
+                              className={clsx(
+                                'min-w-[28px] h-7 px-1.5 text-xs rounded-lg border transition-colors',
+                                safePage === item
+                                  ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                                  : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
+                              )}
+                            >
+                              {item}
+                            </button>
+                          )
+                        )}
+                      <button
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={safePage >= totalPages}
+                        className="p-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
