@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useReducer } from 'react';
+import { useState, useRef, useEffect, useReducer, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { X, Upload, Video, Link as LinkIcon, User } from 'lucide-react';
 import clsx from 'clsx';
@@ -100,6 +100,35 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
   );
 
   const selectedEntity = entitySearch.entities.find((e) => e.id === entitySearch.selectedEntityId);
+
+  // Close dropdown on click outside or Escape
+  const dropdownContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleClickOutside = useCallback((e: PointerEvent) => {
+    if (
+      dropdownContainerRef.current &&
+      !dropdownContainerRef.current.contains(e.target as Node)
+    ) {
+      dispatchEntitySearch({ type: 'HIDE_DROPDOWN' });
+    }
+  }, []);
+
+  const handleEscapeKey = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      dispatchEntitySearch({ type: 'HIDE_DROPDOWN' });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (entitySearch.showDropdown) {
+      document.addEventListener('pointerdown', handleClickOutside);
+      document.addEventListener('keydown', handleEscapeKey);
+      return () => {
+        document.removeEventListener('pointerdown', handleClickOutside);
+        document.removeEventListener('keydown', handleEscapeKey);
+      };
+    }
+  }, [entitySearch.showDropdown, handleClickOutside, handleEscapeKey]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -285,7 +314,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
           )}
 
           {/* Link to Entity */}
-          <div className="relative">
+          <div className="relative" ref={dropdownContainerRef}>
             <label className="block text-sm font-medium text-white/60 mb-2">
               Связать с контактом (опционально)
             </label>

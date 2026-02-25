@@ -27,6 +27,7 @@ import {
 import {
   getCriteriaPresets,
   createCriteriaPreset,
+  updateCriteriaPreset,
   deleteCriteriaPreset,
   updateUserProfile,
   getFeatureSettings,
@@ -109,10 +110,41 @@ export default function SettingsPage() {
     criteria: [] as Criterion[],
   });
 
+  // Editing preset state
+  const [editingPresetId, setEditingPresetId] = useState<number | null>(null);
+
+  const resetPresetForm = () => {
+    setEditingPresetId(null);
+    setNewPreset({
+      name: '',
+      description: '',
+      category: 'general',
+      is_global: false,
+      criteria: [],
+    });
+  };
+
+  const startEditPreset = (preset: CriteriaPreset) => {
+    setEditingPresetId(preset.id);
+    setNewPreset({
+      name: preset.name,
+      description: preset.description || '',
+      category: preset.category || 'general',
+      is_global: preset.is_global,
+      criteria: preset.criteria.map(c => ({
+        name: c.name || '',
+        description: c.description || '',
+        weight: c.weight ?? 5,
+        category: (c.category || 'basic') as Criterion['category'],
+      })),
+    });
+    setIsDialogOpen(true);
+  };
+
   const { data: presets = [], isLoading } = useQuery({
     queryKey: ['criteria-presets'],
     queryFn: getCriteriaPresets,
-    staleTime: 60000, // Consider data stale after 60 seconds
+    staleTime: 60000,
   });
 
   const createMutation = useMutation({
@@ -120,17 +152,24 @@ export default function SettingsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['criteria-presets'] });
       setIsDialogOpen(false);
-      setNewPreset({
-        name: '',
-        description: '',
-        category: 'general',
-        is_global: false,
-        criteria: [],
-      });
+      resetPresetForm();
       toast.success('Preset created');
     },
     onError: () => {
       toast.error('Failed to create preset');
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: () => updateCriteriaPreset(editingPresetId!, newPreset),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['criteria-presets'] });
+      setIsDialogOpen(false);
+      resetPresetForm();
+      toast.success('Preset updated');
+    },
+    onError: () => {
+      toast.error('Failed to update preset');
     },
   });
 
@@ -652,7 +691,7 @@ export default function SettingsPage() {
                 Create reusable evaluation criteria templates
               </p>
             </div>
-            <Dialog.Root open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <Dialog.Root open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetPresetForm(); }}>
               <Dialog.Trigger asChild>
                 <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent-500 text-white hover:bg-accent-600 transition-colors">
                   <Plus className="w-5 h-5" />
@@ -663,12 +702,16 @@ export default function SettingsPage() {
                 <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
                 <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl max-w-[calc(100%-2rem)] max-h-[90vh] glass rounded-2xl p-6 shadow-xl overflow-hidden flex flex-col">
                   <Dialog.Title className="text-xl font-semibold mb-4 flex-shrink-0">
-                    Create Criteria Preset
+                    {editingPresetId ? 'Edit Criteria Preset' : 'Create Criteria Preset'}
                   </Dialog.Title>
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
-                      createMutation.mutate();
+                      if (editingPresetId) {
+                        updateMutation.mutate();
+                      } else {
+                        createMutation.mutate();
+                      }
                     }}
                     className="space-y-4 overflow-y-auto flex-1"
                   >
@@ -797,11 +840,13 @@ export default function SettingsPage() {
                       </Dialog.Close>
                       <button
                         type="submit"
-                        disabled={createMutation.isPending || newPreset.criteria.length === 0}
+                        disabled={(editingPresetId ? updateMutation.isPending : createMutation.isPending) || newPreset.criteria.length === 0}
                         className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50 transition-colors"
                       >
                         <Save className="w-4 h-4" />
-                        {createMutation.isPending ? 'Creating...' : 'Create'}
+                        {editingPresetId
+                          ? (updateMutation.isPending ? 'Saving...' : 'Save')
+                          : (createMutation.isPending ? 'Creating...' : 'Create')}
                       </button>
                     </div>
                   </form>
@@ -877,16 +922,26 @@ export default function SettingsPage() {
                           </div>
                         </div>
                         {(preset.created_by === user?.id || user?.role === 'superadmin') && (
-                          <button
-                            onClick={() => {
-                              if (confirm('Delete this preset?')) {
-                                deleteMutation.mutate(preset.id);
-                              }
-                            }}
-                            className="p-2 rounded-lg text-dark-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => startEditPreset(preset)}
+                              className="p-2 rounded-lg text-dark-400 hover:text-accent-400 hover:bg-accent-500/10 transition-colors"
+                              title="Edit preset"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm('Delete this preset?')) {
+                                  deleteMutation.mutate(preset.id);
+                                }
+                              }}
+                              className="p-2 rounded-lg text-dark-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                              title="Delete preset"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         )}
                       </motion.div>
                     ))}

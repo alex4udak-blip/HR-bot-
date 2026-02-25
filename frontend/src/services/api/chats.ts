@@ -80,6 +80,11 @@ export const createCriteriaPreset = async (preset: Omit<CriteriaPreset, 'id' | '
   return data;
 };
 
+export const updateCriteriaPreset = async (id: number, preset: Omit<CriteriaPreset, 'id' | 'created_at' | 'created_by'>): Promise<CriteriaPreset> => {
+  const { data } = await debouncedMutation<CriteriaPreset>('put', `/criteria/presets/${id}`, preset);
+  return data;
+};
+
 export const deleteCriteriaPreset = async (id: number): Promise<void> => {
   await debouncedMutation<void>('delete', `/criteria/presets/${id}`);
 };
