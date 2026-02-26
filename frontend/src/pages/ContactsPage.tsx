@@ -362,7 +362,7 @@ export default function ContactsPage() {
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         className={clsx(
-          'border-r border-white/5 flex flex-col bg-black/20 transition-all duration-200 overflow-hidden',
+          'border-r border-white/5 flex flex-col glass transition-all duration-200 overflow-hidden',
           layoutMode === 'ai-open'
             ? 'hidden xl:flex xl:w-full min-w-0' // Hidden on <xl, grid controls width on xl+
             : layoutMode === 'detail'
@@ -601,7 +601,7 @@ export default function ContactsPage() {
                       ? 'bg-white/3 border border-white/5 opacity-60'
                       : isSelected
                         ? 'bg-cyan-500/20 border border-cyan-500/30'
-                        : 'bg-white/5 border border-white/5 hover:bg-white/10'
+                        : 'glass-light hover:bg-white/10'
                   )}
                 >
                   <div className={clsx('flex items-center', isVeryCompact ? 'gap-2' : 'gap-3')}>

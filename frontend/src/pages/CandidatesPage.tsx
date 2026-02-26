@@ -345,10 +345,10 @@ export default function CandidatesPage() {
       <div
         key={vacancy.id}
         className={clsx(
-          'w-full text-left p-3 rounded-lg border transition-all duration-200 group overflow-hidden',
+          'w-full text-left p-3 rounded-lg transition-all duration-200 group overflow-hidden',
           isSelected
-            ? 'bg-cyan-500/20 border-cyan-500/50'
-            : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'
+            ? 'bg-cyan-500/20 border border-cyan-500/50'
+            : 'glass-light hover:bg-white/10'
         )}
       >
         <button
@@ -438,11 +438,11 @@ export default function CandidatesPage() {
         scale: draggedApp?.id === app.id ? 0.98 : 1
       }}
       className={clsx(
-        'p-3 bg-gray-800 rounded-lg border cursor-grab active:cursor-grabbing',
+        'p-3 glass-light rounded-lg cursor-grab active:cursor-grabbing',
         'hover:border-white/30 transition-all duration-200 group',
         draggedApp?.id === app.id
-          ? 'border-cyan-500/50 shadow-lg'
-          : 'border-white/10'
+          ? 'border border-cyan-500/50 shadow-lg'
+          : ''
       )}
     >
       {/* Card Header */}
@@ -553,7 +553,7 @@ export default function CandidatesPage() {
             ? 'border-cyan-500 bg-cyan-500/10 shadow-lg shadow-cyan-500/20'
             : isHighlighted
               ? 'border-yellow-500 bg-yellow-500/10 shadow-lg shadow-yellow-500/20 ring-2 ring-yellow-500/50'
-              : 'border-white/10 bg-white/5'
+              : 'border-white/10 glass-light'
         )}
         onDragOver={(e) => handleColumnDragOver(e, stage)}
         onDragLeave={handleColumnDragLeave}
@@ -601,7 +601,7 @@ export default function CandidatesPage() {
     <div className="h-full w-full max-w-full flex overflow-hidden">
       {/* Vacancy Sidebar */}
       <div className={clsx(
-        'flex flex-col border-r border-white/10 bg-gray-900/50 transition-all duration-300',
+        'flex flex-col border-r border-white/10 glass transition-all duration-300',
         sidebarCollapsed ? 'w-16' : 'w-72'
       )}>
         {/* Sidebar Header */}
@@ -653,10 +653,10 @@ export default function CandidatesPage() {
               <button
                 onClick={() => setSelectedVacancyId(null)}
                 className={clsx(
-                  'w-full text-left p-3 rounded-lg border transition-all duration-200',
+                  'w-full text-left p-3 rounded-lg transition-all duration-200',
                   selectedVacancyId === null
-                    ? 'bg-purple-500/20 border-purple-500/50'
-                    : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'
+                    ? 'bg-purple-500/20 border border-purple-500/50'
+                    : 'glass-light hover:bg-white/10'
                 )}
               >
                 <div className="flex items-center gap-2">
@@ -903,7 +903,7 @@ export default function CandidatesPage() {
                     <div
                       key={app.id}
                       onClick={() => handleApplicationClick(app)}
-                      className="p-4 bg-white/5 rounded-xl border border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
+                      className="p-4 glass-light rounded-xl cursor-pointer hover:bg-white/10 transition-colors"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
