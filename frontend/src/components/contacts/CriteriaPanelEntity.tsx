@@ -418,7 +418,7 @@ export default function CriteriaPanelEntity({ entityId, entityType }: CriteriaPa
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md mx-4"
+              className="glass rounded-xl p-6 w-full max-w-md mx-4"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">

@@ -85,7 +85,7 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-gray-900 border border-white/10 rounded-xl w-full max-w-lg overflow-hidden"
+        className="glass rounded-xl w-full max-w-lg overflow-hidden"
       >
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <div>

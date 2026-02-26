@@ -86,7 +86,7 @@ export default function AddCandidateModal({ vacancyId, onClose }: AddCandidateMo
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-gray-900 border border-white/10 rounded-xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col"
+        className="glass rounded-xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col"
       >
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <div className="flex items-center gap-3">

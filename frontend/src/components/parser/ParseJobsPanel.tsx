@@ -120,7 +120,7 @@ export default function ParseJobsPanel({ refreshTrigger, onJobComplete }: ParseJ
     <motion.div
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-gray-900/50 backdrop-blur-sm border border-white/10 rounded-xl p-3 mb-4"
+      className="glass-light backdrop-blur-sm rounded-xl p-3 mb-4"
     >
       <div className="flex items-center gap-2 mb-3">
         <FileText className="w-4 h-4 text-cyan-400" />

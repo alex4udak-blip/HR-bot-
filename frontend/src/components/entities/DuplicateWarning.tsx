@@ -240,7 +240,7 @@ export default function DuplicateWarning({
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg bg-gray-900 rounded-2xl border border-white/10 overflow-hidden"
+              className="w-full max-w-lg glass rounded-2xl overflow-hidden"
             >
               {/* Header */}
               <div className="p-6 border-b border-white/10">
