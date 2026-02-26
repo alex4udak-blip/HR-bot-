@@ -494,6 +494,17 @@ select option {
   border: 1px solid var(--border-primary);
 }
 
+.glass-button {
+  background: var(--glass-light-bg);
+  border: 1px solid var(--border-primary);
+  transition: all 0.2s ease;
+}
+
+.glass-button:hover {
+  background: var(--glass-card-hover-bg);
+  border-color: var(--border-primary);
+}
+
 .glass-card {
   background: var(--glass-card-bg);
   border: 1px solid var(--border-primary);

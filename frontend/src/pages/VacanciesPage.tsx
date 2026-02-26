@@ -404,7 +404,7 @@ export default function VacanciesPage() {
         <div className="flex items-center gap-4 p-4 border-b border-white/10">
           <button
             onClick={handleBack}
-            className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+            className="p-2 glass-button rounded-lg"
             title="К списку вакансий"
           >
             <ChevronLeft className="w-5 h-5" />
@@ -428,7 +428,7 @@ export default function VacanciesPage() {
               data-tour="kanban-toggle"
               className={clsx(
                 'p-2 rounded-lg transition-colors',
-                viewMode === 'kanban' ? 'bg-blue-500/20 text-blue-300' : 'hover:bg-white/5'
+                viewMode === 'kanban' ? 'bg-blue-500/20 text-blue-300' : 'glass-button'
               )}
               title={viewMode === 'kanban' ? 'Показать детали' : 'Показать Kanban'}
             >
@@ -436,7 +436,7 @@ export default function VacanciesPage() {
             </button>
             <button
               onClick={() => setEditingVacancy(currentVacancy)}
-              className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+              className="p-2 glass-button rounded-lg"
               title="Редактировать"
             >
               <Edit className="w-5 h-5" />
@@ -495,14 +495,14 @@ export default function VacanciesPage() {
 
             {/* Main Tabs - Show "База" tab only if user has candidate_database feature */}
             {hasCandidateDatabase && (
-              <div className="flex items-center bg-white/5 rounded-lg p-1">
+              <div className="flex items-center glass-light rounded-lg p-1">
                 <button
                   onClick={() => handleMainTabChange('vacancies')}
                   className={clsx(
                     'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
                     mainTab === 'vacancies'
                       ? 'bg-blue-600 text-white'
-                      : 'text-white/60 hover:text-white hover:bg-white/5'
+                      : 'text-white/60 hover:text-white'
                   )}
                 >
                   <Briefcase className="w-4 h-4" />
@@ -514,7 +514,7 @@ export default function VacanciesPage() {
                     'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
                     mainTab === 'database'
                       ? 'bg-purple-600 text-white'
-                      : 'text-white/60 hover:text-white hover:bg-white/5'
+                      : 'text-white/60 hover:text-white'
                   )}
                 >
                   <Database className="w-4 h-4" />
@@ -538,7 +538,7 @@ export default function VacanciesPage() {
               <>
                 <button
                   onClick={() => setShowParserModal(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 glass-button rounded-lg"
                 >
                   <Upload className="w-4 h-4" />
                   Импорт
@@ -571,12 +571,12 @@ export default function VacanciesPage() {
               placeholder="Поиск по названию..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-sm"
+              className="w-full pl-10 pr-4 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm"
             />
           </div>
 
           {/* Status filter */}
-          <div className="flex items-center gap-1 p-1 bg-white/5 rounded-lg">
+          <div className="flex items-center gap-1 p-1 glass-light rounded-lg">
             {STATUS_FILTERS.map((status) => (
               <button
                 key={status.id}
@@ -585,7 +585,7 @@ export default function VacanciesPage() {
                   'px-3 py-1.5 text-sm rounded-md transition-colors',
                   statusFilter === status.id
                     ? 'bg-blue-600 text-white'
-                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                    : 'text-white/60 hover:text-white'
                 )}
               >
                 {status.name}
@@ -597,7 +597,7 @@ export default function VacanciesPage() {
           <select
             value={departmentFilter}
             onChange={(e) => setDepartmentFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-            className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-blue-500"
+            className="px-3 py-2 glass-light rounded-lg text-sm focus:outline-none focus:border-blue-500"
           >
             <option value="all">Все отделы</option>
             {departments.map((dept) => (
@@ -615,7 +615,7 @@ export default function VacanciesPage() {
                 'flex items-center gap-2 px-3 py-2 border rounded-lg text-sm transition-colors',
                 activeFilterCount > 0
                   ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
-                  : 'bg-white/5 border-white/10 hover:bg-white/10'
+                  : 'glass-button'
               )}
             >
               <Filter className="w-4 h-4" />
@@ -635,7 +635,7 @@ export default function VacanciesPage() {
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="absolute right-0 top-full mt-2 w-80 bg-gray-900 border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden"
+                  className="absolute right-0 top-full mt-2 w-80 glass rounded-xl shadow-xl z-50 overflow-hidden"
                 >
                   {/* Header */}
                   <div className="flex items-center justify-between p-3 border-b border-white/10">
@@ -664,10 +664,10 @@ export default function VacanciesPage() {
                             key={status}
                             onClick={() => handleToggleStatusFilter(status)}
                             className={clsx(
-                              'flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border transition-colors',
+                              'flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg transition-colors',
                               quickFilters.statuses.includes(status)
-                                ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
-                                : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70'
+                                ? 'bg-blue-600/20 border border-blue-500/50 text-blue-300'
+                                : 'glass-button text-white/70'
                             )}
                           >
                             {quickFilters.statuses.includes(status) && <Check className="w-3 h-3" />}
@@ -689,10 +689,10 @@ export default function VacanciesPage() {
                             key={range.id}
                             onClick={() => handleSalaryRangeChange(range.id)}
                             className={clsx(
-                              'px-2.5 py-1.5 text-xs rounded-lg border transition-colors',
+                              'px-2.5 py-1.5 text-xs rounded-lg transition-colors',
                               quickFilters.salaryRange === range.id
-                                ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
-                                : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70'
+                                ? 'bg-blue-600/20 border border-blue-500/50 text-blue-300'
+                                : 'glass-button text-white/70'
                             )}
                           >
                             {range.label}
@@ -713,10 +713,10 @@ export default function VacanciesPage() {
                             key={range.id}
                             onClick={() => handleDateRangeChange(range.id)}
                             className={clsx(
-                              'px-2.5 py-1.5 text-xs rounded-lg border transition-colors',
+                              'px-2.5 py-1.5 text-xs rounded-lg transition-colors',
                               quickFilters.dateRange === range.id
-                                ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
-                                : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70'
+                                ? 'bg-blue-600/20 border border-blue-500/50 text-blue-300'
+                                : 'glass-button text-white/70'
                             )}
                           >
                             {range.label}
@@ -727,7 +727,7 @@ export default function VacanciesPage() {
                   </div>
 
                   {/* Results count */}
-                  <div className="p-3 border-t border-white/10 bg-white/5">
+                  <div className="p-3 border-t border-white/10 glass-light">
                     <span className="text-xs text-white/50">
                       Показано {filteredVacancies.length} из {vacancies.length} вакансий
                     </span>
@@ -790,7 +790,7 @@ export default function VacanciesPage() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
                     onClick={() => handleVacancyClick(vacancy)}
-                    className="p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl cursor-pointer transition-colors group"
+                    className="p-4 glass-card rounded-xl cursor-pointer group"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1 min-w-0">
@@ -850,7 +850,7 @@ export default function VacanciesPage() {
                       {Object.keys(vacancy.stage_counts).length > 0 && (
                         <div className="flex items-center gap-1">
                           {Object.entries(vacancy.stage_counts).slice(0, 3).map(([stage, count]) => (
-                            <span key={stage} className="text-xs px-1.5 py-0.5 bg-white/5 rounded">
+                            <span key={stage} className="text-xs px-1.5 py-0.5 glass-light rounded">
                               {count}
                             </span>
                           ))}
@@ -862,7 +862,7 @@ export default function VacanciesPage() {
                     {vacancy.tags.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-1">
                         {vacancy.tags.slice(0, 4).map((tag) => (
-                          <span key={tag} className="text-xs px-2 py-0.5 bg-white/5 rounded-full">
+                          <span key={tag} className="text-xs px-2 py-0.5 glass-light rounded-full">
                             {tag}
                           </span>
                         ))}

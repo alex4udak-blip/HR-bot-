@@ -391,7 +391,7 @@ export default function ContactsPage() {
                 feature="candidate_database"
                 onClick={() => setShowParserModal(true)}
                 className={clsx(
-                  'rounded-lg bg-white/5 text-white/60 hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+                  'rounded-lg glass-button text-white/60 disabled:opacity-50 disabled:cursor-not-allowed',
                   layoutMode === 'ai-open' ? 'p-1.5' : 'p-2'
                 )}
                 title="Импорт резюме"
@@ -424,7 +424,7 @@ export default function ContactsPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={clsx(
-                'w-full bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50',
+                'w-full glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50',
                 layoutMode === 'ai-open' ? 'pl-8 pr-3 py-1.5 text-sm' : 'pl-10 pr-4 py-2'
               )}
             />
@@ -432,7 +432,7 @@ export default function ContactsPage() {
 
           {/* Ownership Filters */}
           <div className={clsx(
-            'flex gap-1 mb-3 p-1 bg-white/5 rounded-lg',
+            'flex gap-1 mb-3 p-1 glass-light rounded-lg',
             layoutMode === 'ai-open' && 'overflow-x-auto'
           )}>
             {OWNERSHIP_FILTERS.map((filter) => {
@@ -446,7 +446,7 @@ export default function ContactsPage() {
                     layoutMode === 'ai-open' ? 'gap-1 px-2 py-1.5 text-xs' : 'gap-1.5 px-3 py-2 text-sm',
                     ownershipFilter === filter.id
                       ? 'bg-cyan-500 text-white shadow-lg'
-                      : 'text-white/60 hover:text-white hover:bg-white/5'
+                      : 'text-white/60 hover:text-white'
                   )}
                   title={filter.description}
                 >
@@ -464,7 +464,7 @@ export default function ContactsPage() {
                 value={departmentFilter}
                 onChange={(e) => setDepartmentFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
                 className={clsx(
-                  'w-full bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-cyan-500/50',
+                  'w-full glass-light rounded-lg text-white focus:outline-none focus:border-cyan-500/50',
                   layoutMode === 'ai-open' ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm'
                 )}
               >
@@ -491,7 +491,7 @@ export default function ContactsPage() {
                   onChange={(e) => setVacancyFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
                   disabled={vacancyFilterLoading}
                   className={clsx(
-                    'w-full bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-cyan-500/50 appearance-none cursor-pointer disabled:opacity-50',
+                    'w-full glass-light rounded-lg text-white focus:outline-none focus:border-cyan-500/50 appearance-none cursor-pointer disabled:opacity-50',
                     layoutMode === 'ai-open' ? 'pl-7 pr-3 py-1.5 text-xs' : 'pl-10 pr-4 py-2 text-sm'
                   )}
                 >
@@ -533,7 +533,7 @@ export default function ContactsPage() {
                     layoutMode === 'ai-open' ? 'gap-1 px-2 py-1 text-xs' : 'gap-1.5 px-3 py-1.5 text-sm',
                     typeFilter === filter.id
                       ? 'bg-cyan-500/20 text-cyan-400'
-                      : 'bg-white/5 text-white/60 hover:bg-white/10'
+                      : 'glass-button text-white/60'
                   )}
                 >
                   <Icon size={layoutMode === 'ai-open' ? 12 : 14} />
@@ -601,7 +601,7 @@ export default function ContactsPage() {
                       ? 'bg-white/3 border border-white/5 opacity-60'
                       : isSelected
                         ? 'bg-cyan-500/20 border border-cyan-500/30'
-                        : 'glass-light hover:bg-white/10'
+                        : 'glass-card'
                   )}
                 >
                   <div className={clsx('flex items-center', isVeryCompact ? 'gap-2' : 'gap-3')}>
@@ -714,7 +714,7 @@ export default function ContactsPage() {
                               e.stopPropagation();
                               handleTransfer(entity);
                             }}
-                            className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
+                            className="p-1.5 rounded-lg glass-button text-white/60"
                             title="Передать"
                           >
                             <ArrowRightLeft size={14} />
@@ -726,7 +726,7 @@ export default function ContactsPage() {
                               e.stopPropagation();
                               handleEdit(entity);
                             }}
-                            className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60"
+                            className="p-1.5 rounded-lg glass-button text-white/60"
                             title="Редактировать"
                           >
                             <Edit size={14} />
@@ -775,7 +775,7 @@ export default function ContactsPage() {
             <div className="p-3 xl:p-4 border-b border-white/5 flex items-center gap-2 sm:gap-3 overflow-hidden">
               <button
                 onClick={handleBack}
-                className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex-shrink-0"
+                className="p-2 rounded-lg glass-button flex-shrink-0"
               >
                 <ChevronLeft size={20} className="text-white/60" />
               </button>
@@ -818,7 +818,7 @@ export default function ContactsPage() {
                     'p-2 rounded-lg flex items-center gap-1.5 transition-colors',
                     showAIPanel
                       ? 'bg-cyan-500/20 text-cyan-400'
-                      : 'bg-white/5 hover:bg-white/10 text-white/60'
+                      : 'glass-button text-white/60'
                   )}
                   title="AI Ассистент"
                 >
@@ -828,7 +828,7 @@ export default function ContactsPage() {
                 {canShare(currentEntity as Entity) && (
                   <button
                     onClick={() => setShowShareModal(true)}
-                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-1.5"
+                    className="p-2 rounded-lg glass-button text-white/60 flex items-center gap-1.5"
                     title="Поделиться"
                   >
                     <Share2 size={16} />
@@ -838,7 +838,7 @@ export default function ContactsPage() {
                 {canTransfer(currentEntity as Entity) && (
                   <button
                     onClick={() => handleTransfer(currentEntity as Entity)}
-                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-1.5"
+                    className="p-2 rounded-lg glass-button text-white/60 flex items-center gap-1.5"
                     title="Передать"
                   >
                     <ArrowRightLeft size={16} />
@@ -848,7 +848,7 @@ export default function ContactsPage() {
                 {canEdit(currentEntity as Entity) && (
                   <button
                     onClick={() => handleEdit(currentEntity as Entity)}
-                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 flex items-center gap-1.5"
+                    className="p-2 rounded-lg glass-button text-white/60 flex items-center gap-1.5"
                     title="Редактировать"
                   >
                     <Edit size={16} />
@@ -885,7 +885,7 @@ export default function ContactsPage() {
               </h3>
               <button
                 onClick={() => setShowAIPanel(false)}
-                className="p-1.5 rounded-lg hover:bg-white/10 text-white/60 flex-shrink-0"
+                className="p-1.5 rounded-lg glass-button text-white/60 flex-shrink-0"
               >
                 <X size={18} />
               </button>
@@ -914,7 +914,7 @@ export default function ContactsPage() {
               </h3>
               <button
                 onClick={() => setShowAIPanel(false)}
-                className="p-2 rounded-lg hover:bg-white/5"
+                className="p-2 rounded-lg glass-button"
               >
                 <X size={20} />
               </button>
