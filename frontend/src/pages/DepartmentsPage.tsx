@@ -187,8 +187,8 @@ export default function DepartmentsPage() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           className={clsx(
-            'p-4 rounded-xl border transition-colors cursor-pointer hover:border-cyan-500/30',
-            dept.is_active ? 'bg-white/5 border-white/10' : 'bg-white/[0.02] border-white/5 opacity-60'
+            'p-4 rounded-xl transition-colors cursor-pointer hover:border-cyan-500/30',
+            dept.is_active ? 'glass-light' : 'glass-light opacity-60'
           )}
           style={{ marginLeft: level * 24 }}
           onClick={() => {
@@ -287,7 +287,7 @@ export default function DepartmentsPage() {
                   setSelectedDept(dept);
                   setShowEditModal(true);
                 }}
-                className="flex-1 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-sm flex items-center justify-center gap-1"
+                className="flex-1 py-1.5 rounded-lg glass-button text-white/60 hover:text-white text-sm flex items-center justify-center gap-1"
               >
                 <Edit3 size={14} />
                 Изменить
@@ -359,7 +359,7 @@ export default function DepartmentsPage() {
 
         {/* Departments List (Hierarchical) */}
         {departments.length === 0 ? (
-          <div className="text-center py-12 bg-white/5 rounded-xl">
+          <div className="text-center py-12 glass-light rounded-xl">
             <FolderOpen className="w-16 h-16 mx-auto text-white/20 mb-4" />
             <h2 className="text-xl font-semibold mb-2 text-white/60">Нет департаментов</h2>
             <p className="text-white/40 mb-4">Создайте первый департамент для организации работы</p>
@@ -480,7 +480,7 @@ function CreateDepartmentModal({
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md"
+        className="glass rounded-xl p-6 w-full max-w-md"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-6">
@@ -494,7 +494,7 @@ function CreateDepartmentModal({
         </div>
 
         {parentName && (
-          <div className="mb-4 p-3 rounded-lg bg-white/5 border border-white/10">
+          <div className="mb-4 p-3 rounded-lg glass-light">
             <p className="text-sm text-white/40">
               Родительский департамент: <span className="text-white">{parentName}</span>
             </p>
@@ -603,7 +603,7 @@ function EditDepartmentModal({
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md"
+        className="glass rounded-xl p-6 w-full max-w-md"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-6">
@@ -778,7 +778,7 @@ function DepartmentMembersModal({
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-lg max-h-[80vh] flex flex-col"
+        className="glass rounded-xl p-6 w-full max-w-lg max-h-[80vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-6 flex-shrink-0">
@@ -803,7 +803,7 @@ function DepartmentMembersModal({
         {canManage && !showAddMember && availableMembers.length > 0 && (
           <button
             onClick={() => setShowAddMember(true)}
-            className="w-full py-2 mb-4 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white flex items-center justify-center gap-2 flex-shrink-0"
+            className="w-full py-2 mb-4 glass-button rounded-lg text-white/60 hover:text-white flex items-center justify-center gap-2 flex-shrink-0"
           >
             <Plus size={18} />
             Добавить участника
@@ -841,7 +841,7 @@ function DepartmentMembersModal({
                 return (
                   <div
                     key={member.id}
-                    className="p-3 rounded-lg bg-white/5 flex items-center justify-between"
+                    className="p-3 rounded-lg glass-light flex items-center justify-between"
                   >
                     <div className="flex items-center gap-3">
                       <div className={clsx('p-1.5 rounded-lg', roleConfig.color)}>
@@ -939,7 +939,7 @@ function AddMemberForm({
   const [role, setRole] = useState<DeptRole>('member');
 
   return (
-    <div className="p-3 mb-4 rounded-lg bg-white/5 border border-white/10 flex-shrink-0">
+    <div className="p-3 mb-4 rounded-lg glass-light flex-shrink-0">
       <div className="flex flex-col sm:flex-row gap-2 mb-2">
         <select
           value={userId}
@@ -987,7 +987,7 @@ function AddMemberForm({
       <div className="flex gap-2">
         <button
           onClick={onCancel}
-          className="flex-1 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 text-sm"
+          className="flex-1 py-1.5 rounded-lg glass-button text-white/60 text-sm"
         >
           Отмена
         </button>

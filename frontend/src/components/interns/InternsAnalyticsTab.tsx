@@ -180,7 +180,7 @@ export default function InternsAnalyticsTab() {
           </p>
           <button
             onClick={() => refetch()}
-            className="flex items-center gap-2 mx-auto px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+            className="flex items-center gap-2 mx-auto px-4 py-2 glass-button rounded-lg text-sm transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
             Попробовать снова
@@ -229,7 +229,7 @@ export default function InternsAnalyticsTab() {
                 'px-2.5 py-1.5 text-xs rounded-lg border transition-colors',
                 selectedPeriod === opt.value
                   ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                  : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
+                  : 'glass-light text-white/50 hover:border-emerald-500/20'
               )}
             >
               {opt.label}
@@ -240,7 +240,7 @@ export default function InternsAnalyticsTab() {
         <button
           onClick={() => refetch()}
           disabled={isLoading}
-          className="ml-auto flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+          className="ml-auto flex items-center gap-2 px-3 py-2 glass-button rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
         >
           <RefreshCw className={clsx('w-3.5 h-3.5', isLoading && 'animate-spin')} />
           Обновить
@@ -260,7 +260,7 @@ export default function InternsAnalyticsTab() {
       {/* Charts Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Score Distribution */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-light rounded-xl p-4">
           <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Распределение оценок</h3>
           {scoreChartData.length > 0 ? (
             <>
@@ -285,7 +285,7 @@ export default function InternsAnalyticsTab() {
         </motion.div>
 
         {/* Churn Risk */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-light rounded-xl p-4">
           <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Риск оттока</h3>
           {churnChartData.length > 0 ? (
             <>
@@ -310,7 +310,7 @@ export default function InternsAnalyticsTab() {
         </motion.div>
 
         {/* Conversion Funnel */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="glass-light rounded-xl p-4">
           <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Воронка конверсии</h3>
           {funnelChartData.length > 0 ? (
             <div className="h-[190px]">
@@ -334,7 +334,7 @@ export default function InternsAnalyticsTab() {
         </motion.div>
 
         {/* Trail Completion */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="glass-light rounded-xl p-4">
           <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Прогресс по трейлам</h3>
           {trailBarData.length > 0 ? (
             <div className="h-[190px]">
@@ -364,7 +364,7 @@ export default function InternsAnalyticsTab() {
 
       {/* Trends Chart */}
       {trendsChartData.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }} className="glass-light rounded-xl p-4">
           <h3 className="text-sm font-medium text-white/70 mb-3">Активность за период</h3>
           <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -396,7 +396,7 @@ export default function InternsAnalyticsTab() {
 
       {/* Trail Progress Details */}
       {analytics.trailProgress.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="bg-white/5 border border-white/10 rounded-xl">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="glass-light rounded-xl">
           <div className="p-4 border-b border-white/10">
             <h3 className="text-sm font-medium flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-emerald-400" />
@@ -486,7 +486,7 @@ function KPICard({
   delay: number;
 }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay }} className="bg-white/5 border border-white/10 rounded-xl p-3">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay }} className="glass-light rounded-xl p-3">
       <div className="flex items-center gap-2 text-white/50 mb-1">
         <Icon className={clsx('w-4 h-4', iconColor)} />
         <span className="text-xs">{label}</span>

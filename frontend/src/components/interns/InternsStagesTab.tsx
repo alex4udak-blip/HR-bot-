@@ -244,7 +244,7 @@ export default function InternsStagesTab() {
           <p className="text-sm mb-3">{(error as Error)?.message || 'Ошибка загрузки'}</p>
           <button
             onClick={() => refetch()}
-            className="flex items-center gap-2 mx-auto px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+            className="flex items-center gap-2 mx-auto px-4 py-2 glass-button rounded-lg text-sm transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
             Повторить
@@ -280,7 +280,7 @@ export default function InternsStagesTab() {
                 'px-3 py-1.5 text-xs rounded-lg border transition-colors',
                 period === p.value
                   ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                  : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10',
+                  : 'glass-light text-white/50 hover:border-emerald-500/20',
               )}
             >
               {p.label}
@@ -290,7 +290,7 @@ export default function InternsStagesTab() {
 
         <button
           onClick={() => refetch()}
-          className="flex items-center gap-1.5 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs transition-colors ml-auto"
+          className="flex items-center gap-1.5 px-3 py-2 glass-button rounded-xl text-xs transition-colors ml-auto"
         >
           <RefreshCw className="w-3.5 h-3.5" />
           Обновить
@@ -306,7 +306,7 @@ export default function InternsStagesTab() {
               'flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium transition-all active:scale-95',
               activeFiltersCount > 0
                 ? 'bg-emerald-600/20 border-emerald-500/50 text-emerald-300'
-                : 'bg-white/5 border-white/10 hover:bg-white/10',
+                : 'glass-light hover:border-emerald-500/20',
             )}
           >
             <Filter className="w-4 h-4" />
@@ -345,7 +345,7 @@ export default function InternsStagesTab() {
                   'px-2 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1',
                   sortField === item.field
                     ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                    : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10',
+                    : 'glass-light text-white/50 hover:border-emerald-500/20',
                 )}
               >
                 {item.label}
@@ -366,7 +366,7 @@ export default function InternsStagesTab() {
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
-            className="p-4 bg-white/5 rounded-xl border border-white/10 space-y-4 overflow-hidden"
+            className="p-4 glass-light rounded-xl space-y-4 overflow-hidden"
           >
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {/* Trail name search */}
@@ -417,7 +417,7 @@ export default function InternsStagesTab() {
                     'flex items-center gap-2 px-3 py-2 text-sm rounded-lg border transition-colors',
                     onlyBottlenecks
                       ? 'bg-red-500/20 border-red-500/30 text-red-400'
-                      : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10',
+                      : 'glass-light text-white/60 hover:border-red-500/20',
                   )}
                 >
                   <TrendingDown className="w-4 h-4" />
@@ -435,7 +435,7 @@ export default function InternsStagesTab() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.05 }}
-          className="bg-white/5 border border-white/10 rounded-xl p-3"
+          className="glass-light rounded-xl p-3"
         >
           <div className="flex items-center gap-2 text-white/50 mb-1">
             <GitBranch className="w-4 h-4 text-emerald-400" />
@@ -447,7 +447,7 @@ export default function InternsStagesTab() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="bg-white/5 border border-white/10 rounded-xl p-3"
+          className="glass-light rounded-xl p-3"
         >
           <div className="flex items-center gap-2 text-white/50 mb-1">
             <Users className="w-4 h-4 text-blue-400" />
@@ -459,7 +459,7 @@ export default function InternsStagesTab() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}
-          className="bg-white/5 border border-white/10 rounded-xl p-3"
+          className="glass-light rounded-xl p-3"
         >
           <div className="flex items-center gap-2 text-white/50 mb-1">
             <BookOpen className="w-4 h-4 text-amber-400" />
@@ -471,7 +471,7 @@ export default function InternsStagesTab() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="bg-white/5 border border-white/10 rounded-xl p-3"
+          className="glass-light rounded-xl p-3"
         >
           <div className="flex items-center gap-2 text-white/50 mb-1">
             <TrendingDown className="w-4 h-4 text-red-400" />
@@ -506,7 +506,7 @@ export default function InternsStagesTab() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: trailIndex * 0.05 }}
-                className="bg-white/5 border border-white/10 rounded-xl overflow-hidden"
+                className="glass-light rounded-xl overflow-hidden"
               >
                 {/* Trail Header */}
                 <button
@@ -584,7 +584,7 @@ export default function InternsStagesTab() {
                             const modStudents = getModuleStudents(trail.trailId, mod.id);
 
                             return (
-                              <div key={mod.id} className="bg-white/5 rounded-lg overflow-hidden">
+                              <div key={mod.id} className="glass-light rounded-lg overflow-hidden">
                                 <button
                                   onClick={() => toggleModule(moduleKey)}
                                   className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-colors text-left"
@@ -699,7 +699,7 @@ export default function InternsStagesTab() {
                                             return (
                                               <div
                                                 key={student.id}
-                                                className="flex items-center gap-3 p-2 bg-white/5 rounded-lg"
+                                                className="flex items-center gap-3 p-2 glass-light rounded-lg"
                                               >
                                                 <div className="w-7 h-7 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-medium flex-shrink-0">
                                                   {getAvatarInitials(student.name)}

@@ -159,7 +159,7 @@ export default function InternsCsvTab() {
                 setActivePanel(card.id);
                 setDownloadError(null);
               }}
-              className="bg-white/5 hover:bg-white/10 border border-white/10 hover:border-emerald-500/30 rounded-xl p-5 text-left group transition-all"
+              className="glass-light hover:border-emerald-500/30 rounded-xl p-5 text-left group transition-all"
             >
               <div className="w-11 h-11 rounded-xl bg-emerald-500/20 flex items-center justify-center mb-4 group-hover:bg-emerald-500/30 transition-colors">
                 <card.icon className="w-5 h-5 text-emerald-400" />
@@ -175,7 +175,7 @@ export default function InternsCsvTab() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white/5 border border-white/10 rounded-xl p-6 space-y-6"
+            className="glass-light rounded-xl p-6 space-y-6"
           >
             {/* Back button */}
             <button
@@ -207,7 +207,7 @@ export default function InternsCsvTab() {
                 {activeCard.columns.map((col) => (
                   <div
                     key={col.name}
-                    className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg border border-white/5"
+                    className="flex items-center gap-2 px-3 py-2 glass-light rounded-lg"
                   >
                     <code className="text-xs text-emerald-400 font-mono">{col.name}</code>
                     <span className="text-xs text-white/30">&mdash;</span>
@@ -233,7 +233,7 @@ export default function InternsCsvTab() {
                 href={activeCard.endpoint}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm text-white/40 hover:text-white/70 bg-white/5 hover:bg-white/10 border border-white/10 transition-all"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm text-white/40 hover:text-white/70 glass-button transition-all"
               >
                 <ExternalLink className="w-4 h-4" />
                 Открыть в новой вкладке
