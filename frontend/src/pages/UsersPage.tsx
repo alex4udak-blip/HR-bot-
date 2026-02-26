@@ -213,7 +213,7 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
     >
       {/* Organization Info */}
       {organization && (
-        <div className="bg-white/5 rounded-xl p-4">
+        <div className="glass-light rounded-xl p-4">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -266,7 +266,7 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
 
       {/* My Role */}
       {myRole && (
-        <div className="bg-white/5 rounded-xl p-4">
+        <div className="glass-light rounded-xl p-4">
           <p className="text-sm text-white/40 mb-1">Ваша роль в организации</p>
           <div className="flex items-center gap-2">
             {(() => {
@@ -301,7 +301,7 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
                 animate={{ opacity: 1, y: 0 }}
                 className={clsx(
                   'p-4 rounded-xl border transition-colors',
-                  isMe ? 'bg-cyan-500/10 border-cyan-500/20' : 'bg-white/5 border-white/5'
+                  isMe ? 'bg-cyan-500/10 border-cyan-500/20' : 'glass-light'
                 )}
               >
                 <div className="flex items-center justify-between">
@@ -491,7 +491,7 @@ function InvitationCard({ invitation, onRevoke }: { invitation: Invitation; onRe
       animate={{ opacity: 1, y: 0 }}
       className={clsx(
         'p-4 rounded-xl border',
-        isExpired ? 'bg-red-500/5 border-red-500/20' : 'bg-white/5 border-white/5'
+        isExpired ? 'bg-red-500/5 border-red-500/20' : 'glass-light'
       )}
     >
       <div className="flex items-start justify-between gap-4">
@@ -1095,7 +1095,7 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
       </div>
 
       {/* Users List */}
-      <div className="bg-white/5 rounded-xl overflow-hidden">
+      <div className="glass-light rounded-xl overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />

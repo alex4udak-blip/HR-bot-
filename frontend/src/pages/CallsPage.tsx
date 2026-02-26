@@ -173,7 +173,7 @@ export default function CallsPage() {
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         className={clsx(
-          'flex-shrink-0 border-r border-white/5 flex flex-col bg-black/20',
+          'flex-shrink-0 border-r border-white/5 flex flex-col glass',
           currentCall ? 'w-80' : 'w-full max-w-2xl'
         )}
       >
@@ -317,7 +317,7 @@ export default function CallsPage() {
                     'p-4 rounded-xl cursor-pointer transition-all group',
                     isSelected
                       ? 'bg-cyan-500/20 border border-cyan-500/30'
-                      : 'bg-white/5 border border-white/5 hover:bg-white/10'
+                      : 'glass-light hover:bg-white/10'
                   )}
                 >
                   <div className="flex items-start gap-3 overflow-hidden">
