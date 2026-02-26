@@ -297,6 +297,9 @@ export default function InternsPage() {
             {intern.email && (
               <p className="text-xs text-white/50 truncate">{intern.email}</p>
             )}
+            {intern.telegramUsername && (
+              <p className="text-xs text-white/50 truncate">{intern.telegramUsername}</p>
+            )}
           </div>
         </div>
 

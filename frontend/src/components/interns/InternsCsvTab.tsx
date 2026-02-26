@@ -40,19 +40,19 @@ const EXPORT_CARDS: ExportCard[] = [
     description:
       'Список практикантов: имя, email, Telegram, XP, серия дней, последняя активность, трейлы и прогресс по модулям.',
     columns: [
-      { name: 'id', desc: 'Идентификатор практиканта' },
-      { name: 'name', desc: 'ФИО' },
-      { name: 'email', desc: 'Email' },
-      { name: 'telegram', desc: 'Telegram username' },
-      { name: 'total_xp', desc: 'Общий XP' },
-      { name: 'current_streak', desc: 'Текущая серия (дней)' },
-      { name: 'last_active_at', desc: 'Последняя активность' },
-      { name: 'days_since_active', desc: 'Дней с последней активности' },
-      { name: 'trails_count', desc: 'Количество трейлов' },
-      { name: 'trail_names', desc: 'Названия трейлов' },
-      { name: 'completed_modules', desc: 'Завершённых модулей (всего)' },
-      { name: 'total_modules', desc: 'Всего модулей (всего)' },
-      { name: 'created_at', desc: 'Дата регистрации' },
+      { name: 'ID', desc: 'Идентификатор практиканта' },
+      { name: 'ФИО', desc: 'Имя практиканта' },
+      { name: 'Email', desc: 'Электронная почта' },
+      { name: 'Telegram', desc: 'Telegram username' },
+      { name: 'Общий XP', desc: 'Общее количество XP' },
+      { name: 'Текущая серия (дней)', desc: 'Текущая серия активности' },
+      { name: 'Последняя активность', desc: 'Дата последней активности' },
+      { name: 'Дней с последней активности', desc: 'Количество дней неактивности' },
+      { name: 'Количество трейлов', desc: 'Сколько трейлов назначено' },
+      { name: 'Названия трейлов', desc: 'Перечень трейлов' },
+      { name: 'Завершённых модулей', desc: 'Модулей завершено (всего)' },
+      { name: 'Всего модулей', desc: 'Общее количество модулей' },
+      { name: 'Дата регистрации', desc: 'Когда зарегистрирован' },
     ],
   },
   {
@@ -60,11 +60,11 @@ const EXPORT_CARDS: ExportCard[] = [
     icon: BarChart3,
     title: 'Аналитика CSV',
     description:
-      'Ключевые метрики практикантов: общее количество, риск оттока, конверсия, активность, распределение оценок, топ-студенты.',
+      'Ключевые метрики практикантов: общее количество, риск оттока, конверсия, активность, распределение оценок.',
     columns: [
-      { name: 'metric', desc: 'Код метрики' },
-      { name: 'value', desc: 'Значение' },
-      { name: 'description', desc: 'Описание метрики' },
+      { name: 'Метрика', desc: 'Код метрики' },
+      { name: 'Значение', desc: 'Значение метрики' },
+      { name: 'Описание', desc: 'Описание метрики' },
     ],
   },
   {
@@ -74,16 +74,16 @@ const EXPORT_CARDS: ExportCard[] = [
     description:
       'Прогресс по трейлам: записано, сертификатов, модулей, завершено, работ, одобрено, процент завершения и одобрения.',
     columns: [
-      { name: 'trail_id', desc: 'ID трейла' },
-      { name: 'title', desc: 'Название трейла' },
-      { name: 'enrollments', desc: 'Записано студентов' },
-      { name: 'certificates', desc: 'Выдано сертификатов' },
-      { name: 'total_modules', desc: 'Всего модулей' },
-      { name: 'completed_modules', desc: 'Завершено модулей' },
-      { name: 'submissions_count', desc: 'Работ отправлено' },
-      { name: 'approved_submissions', desc: 'Работ одобрено' },
-      { name: 'completion_rate', desc: 'Процент завершения (%)' },
-      { name: 'approval_rate', desc: 'Процент одобрения (%)' },
+      { name: 'ID трейла', desc: 'Идентификатор трейла' },
+      { name: 'Название', desc: 'Название трейла' },
+      { name: 'Записано студентов', desc: 'Количество записанных' },
+      { name: 'Сертификатов', desc: 'Выдано сертификатов' },
+      { name: 'Всего модулей', desc: 'Общее количество модулей' },
+      { name: 'Завершено модулей', desc: 'Завершено модулей' },
+      { name: 'Работ отправлено', desc: 'Количество отправленных работ' },
+      { name: 'Работ одобрено', desc: 'Количество одобренных работ' },
+      { name: 'Завершение (%)', desc: 'Процент завершения' },
+      { name: 'Одобрение (%)', desc: 'Процент одобрения' },
     ],
   },
 ];
@@ -122,9 +122,9 @@ function downloadCsv(content: string, filename: string) {
 /** Build CSV for interns list */
 function buildInternsCsv(interns: PrometheusIntern[]): string {
   const headers = [
-    'id', 'name', 'email', 'telegram', 'total_xp', 'current_streak',
-    'last_active_at', 'days_since_active', 'trails_count', 'trail_names',
-    'completed_modules', 'total_modules', 'created_at',
+    'ID', 'ФИО', 'Email', 'Telegram', 'Общий XP', 'Текущая серия (дней)',
+    'Последняя активность', 'Дней с последней активности', 'Количество трейлов', 'Названия трейлов',
+    'Завершённых модулей', 'Всего модулей', 'Дата регистрации',
   ];
   const rows = interns.map(intern => {
     const trailNames = intern.trails.map(t => t.trailName).filter(Boolean).join('; ');
@@ -151,7 +151,7 @@ function buildInternsCsv(interns: PrometheusIntern[]): string {
 
 /** Build CSV for analytics metrics */
 function buildAnalyticsCsv(analytics: PrometheusAnalyticsResponse): string {
-  const headers = ['metric', 'value', 'description'];
+  const headers = ['Метрика', 'Значение', 'Описание'];
   const rows: unknown[][] = [];
 
   // Summary metrics
@@ -181,24 +181,15 @@ function buildAnalyticsCsv(analytics: PrometheusAnalyticsResponse): string {
     rows.push([`funnel_${stage.stage}`, stage.count, `Воронка: ${stage.stage} (${stage.percent}%)`]);
   });
 
-  // Top students
-  analytics.topStudents.forEach((student, idx) => {
-    rows.push([
-      `top_student_${idx + 1}`,
-      `${student.name} (XP: ${student.totalXP}, модулей: ${student.modulesCompleted})`,
-      `Топ-студент #${idx + 1}`,
-    ]);
-  });
-
   return toCsvString(headers, rows);
 }
 
 /** Build CSV for trail progress */
 function buildTrailsCsv(trailProgress: TrailProgressItem[]): string {
   const headers = [
-    'trail_id', 'title', 'enrollments', 'certificates', 'total_modules',
-    'completed_modules', 'submissions_count', 'approved_submissions',
-    'completion_rate', 'approval_rate',
+    'ID трейла', 'Название', 'Записано студентов', 'Сертификатов', 'Всего модулей',
+    'Завершено модулей', 'Работ отправлено', 'Работ одобрено',
+    'Завершение (%)', 'Одобрение (%)',
   ];
   const rows = trailProgress.map(trail => [
     trail.id,
