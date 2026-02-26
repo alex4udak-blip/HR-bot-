@@ -127,7 +127,7 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
             exit={{ opacity: 0, y: -10 }}
             transition={{ delay: index * 0.05 }}
             className={clsx(
-              'bg-white/5 rounded-xl border transition-all duration-200',
+              'glass-light rounded-xl border transition-all duration-200',
               expandedId === rec.vacancy_id
                 ? 'border-purple-500/50 bg-white/8'
                 : 'border-white/10 hover:border-white/20'
@@ -259,17 +259,17 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
                     {/* Additional info */}
                     <div className="flex flex-wrap gap-2 text-xs">
                       {rec.employment_type && (
-                        <span className="px-2 py-1 bg-white/5 rounded text-white/60">
+                        <span className="px-2 py-1 glass-light rounded text-white/60">
                           {rec.employment_type}
                         </span>
                       )}
                       {rec.experience_level && (
-                        <span className="px-2 py-1 bg-white/5 rounded text-white/60">
+                        <span className="px-2 py-1 glass-light rounded text-white/60">
                           {rec.experience_level}
                         </span>
                       )}
                       {rec.department_name && (
-                        <span className="px-2 py-1 bg-white/5 rounded text-white/60">
+                        <span className="px-2 py-1 glass-light rounded text-white/60">
                           {rec.department_name}
                         </span>
                       )}
@@ -313,7 +313,7 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
                           e.stopPropagation();
                           handleNavigateToVacancy(rec.vacancy_id);
                         }}
-                        className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-white/70 hover:text-white transition-colors"
+                        className="px-4 py-2 glass-light hover:bg-white/10 rounded-lg text-sm text-white/70 hover:text-white transition-colors"
                       >
                         Открыть
                       </button>

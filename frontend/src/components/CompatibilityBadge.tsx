@@ -121,7 +121,7 @@ export default function CompatibilityBadge({
   // Loading state
   if (isLoading) {
     return (
-      <div className={`inline-flex items-center gap-1.5 ${sizeClasses[size]} rounded-md bg-white/5 border border-white/10`}>
+      <div className={`inline-flex items-center gap-1.5 ${sizeClasses[size]} rounded-md glass-light`}>
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
@@ -283,7 +283,7 @@ export default function CompatibilityBadge({
                   onCalculate();
                   setIsOpen(false);
                 }}
-                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 mt-2 text-xs text-white/60 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
+                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 mt-2 text-xs text-white/60 hover:text-white glass-light hover:bg-white/10 rounded-lg transition-colors"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 Пересчитать

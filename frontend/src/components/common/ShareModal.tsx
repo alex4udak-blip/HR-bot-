@@ -176,7 +176,7 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
             <>
               {/* Add new share - only visible if user can manage access */}
               {canManageAccess && (
-                <div className="bg-white/5 rounded-xl p-4 mb-6 flex-shrink-0">
+                <div className="glass-light rounded-xl p-4 mb-6 flex-shrink-0">
                   <h4 className="text-sm font-medium text-white mb-3">Добавить доступ</h4>
 
                   {availableUsers.length === 0 ? (
@@ -187,7 +187,7 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
                       <select
                         value={selectedUserId || ''}
                         onChange={(e) => setSelectedUserId(e.target.value ? Number(e.target.value) : null)}
-                        className="w-full p-2 bg-white/5 border border-white/10 rounded-lg text-white mb-3"
+                        className="w-full p-2 glass-light rounded-lg text-white mb-3"
                         aria-label="Выберите пользователя для предоставления доступа"
                       >
                         <option value="">Выберите пользователя...</option>
@@ -222,7 +222,7 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
                                   'flex-1 p-2 rounded-lg border transition-colors text-sm',
                                   accessLevel === level.id
                                     ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
-                                    : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+                                    : 'glass-light border-white/10 text-white/60 hover:bg-white/10'
                                 )}
                                 role="radio"
                                 aria-checked={accessLevel === level.id}
@@ -242,7 +242,7 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
                         placeholder="Комментарий (опционально)"
                         value={note}
                         onChange={(e) => setNote(e.target.value)}
-                        className="w-full p-2 bg-white/5 border border-white/10 rounded-lg text-white mb-3 placeholder-white/40"
+                        className="w-full p-2 glass-light rounded-lg text-white mb-3 placeholder-white/40"
                         aria-label="Комментарий к доступу"
                       />
 
@@ -284,7 +284,7 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
                       return (
                         <div
                           key={share.id}
-                          className="p-3 bg-white/5 rounded-lg flex items-center justify-between"
+                          className="p-3 glass-light rounded-lg flex items-center justify-between"
                         >
                           <div>
                             <p className="text-white font-medium">{share.shared_with_name}</p>

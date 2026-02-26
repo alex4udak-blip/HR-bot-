@@ -220,7 +220,7 @@ export default function ExternalLinksModal({
               </div>
               <button
                 onClick={handleClose}
-                className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white transition-colors"
+                className="p-2 rounded-lg hover:bg-dark-800/50 text-white/60 hover:text-white transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -237,13 +237,13 @@ export default function ExternalLinksModal({
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                     placeholder="https://docs.google.com/document/d/..."
-                    className="w-full px-4 py-3 pr-24 bg-white/5 border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition-colors"
+                    className="w-full px-4 py-3 pr-24 glass-light rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition-colors"
                     disabled={isProcessing}
                   />
                   <button
                     onClick={handlePaste}
                     disabled={isProcessing}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 text-xs font-medium text-white/60 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors flex items-center gap-1.5"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 text-xs font-medium text-white/60 hover:text-white glass-light hover:bg-white/10 rounded-lg transition-colors flex items-center gap-1.5"
                   >
                     <Copy className="w-3.5 h-3.5" />
                     Вставить
@@ -283,7 +283,7 @@ export default function ExternalLinksModal({
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="Название записи"
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition-colors"
+                  className="w-full px-4 py-3 glass-light rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition-colors"
                   disabled={isProcessing}
                 />
               </div>
@@ -295,7 +295,7 @@ export default function ExternalLinksModal({
                   <select
                     value={entityId || ''}
                     onChange={(e) => setEntityId(e.target.value ? Number(e.target.value) : undefined)}
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition-colors"
+                    className="w-full px-4 py-3 glass-light rounded-xl text-white focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition-colors"
                     disabled={isProcessing}
                   >
                     <option value="">Не привязывать</option>
@@ -309,7 +309,7 @@ export default function ExternalLinksModal({
               )}
 
               {/* Supported Types Info */}
-              <div className="p-4 bg-white/5 rounded-xl space-y-3">
+              <div className="p-4 glass-light rounded-xl space-y-3">
                 <h4 className="text-sm font-medium text-white/70 flex items-center gap-2">
                   <HelpCircle className="w-4 h-4" />
                   Поддерживаемые типы ссылок
@@ -351,7 +351,7 @@ export default function ExternalLinksModal({
               <button
                 onClick={handleClose}
                 disabled={isProcessing}
-                className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                className="px-4 py-2 text-sm font-medium text-white/60 hover:text-white hover:bg-dark-800/50 rounded-lg transition-colors"
               >
                 Отмена
               </button>

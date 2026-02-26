@@ -154,7 +154,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
               'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-colors',
               showFilters
                 ? 'bg-purple-500/20 text-purple-300'
-                : 'bg-white/5 hover:bg-white/10 text-white/60'
+                : 'glass-light hover:bg-white/10 text-white/60'
             )}
           >
             <Filter size={14} />
@@ -164,7 +164,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
           <button
             onClick={loadCandidates}
             disabled={loading}
-            className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/60 transition-colors"
+            className="p-1.5 glass-light hover:bg-white/10 rounded-lg text-white/60 transition-colors"
             title="Обновить список"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -181,7 +181,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden"
           >
-            <div className="p-4 bg-white/5 rounded-xl border border-white/10 space-y-4">
+            <div className="p-4 glass-light rounded-xl space-y-4">
               {/* Min score slider */}
               <div>
                 <label className="text-xs text-white/60 block mb-2">
@@ -211,7 +211,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                         'px-3 py-1.5 rounded-lg text-xs transition-colors',
                         selectedStage === stage.value
                           ? 'bg-purple-500/30 text-purple-300 border border-purple-500/50'
-                          : 'bg-white/5 text-white/60 hover:bg-white/10'
+                          : 'glass-light text-white/60 hover:bg-white/10'
                       )}
                     >
                       {stage.label}
@@ -265,7 +265,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
             exit={{ opacity: 0, y: -10 }}
             transition={{ delay: index * 0.03 }}
             className={clsx(
-              'bg-white/5 rounded-xl border transition-all duration-200',
+              'glass-light rounded-xl border transition-all duration-200',
               expandedId === candidate.entity_id
                 ? 'border-blue-500/50 bg-white/8'
                 : 'border-white/10 hover:border-white/20'
@@ -452,7 +452,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                           e.stopPropagation();
                           handleNavigateToEntity(candidate.entity_id);
                         }}
-                        className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-white/70 hover:text-white transition-colors"
+                        className="px-4 py-2 glass-light hover:bg-white/10 rounded-lg text-sm text-white/70 hover:text-white transition-colors"
                       >
                         Профиль
                       </button>

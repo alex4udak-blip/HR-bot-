@@ -410,7 +410,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
         <div className="flex-1 overflow-x-auto overflow-y-hidden p-4">
           <div className="flex gap-4 h-full min-w-max">
             {VISIBLE_STAGES.slice(0, 5).map((stage) => (
-              <div key={stage} className="w-72 flex-shrink-0 flex flex-col rounded-xl border border-white/10 bg-white/5">
+              <div key={stage} className="w-72 flex-shrink-0 flex flex-col rounded-xl glass-light">
                 <div className="p-3 border-b border-white/10">
                   <Skeleton variant="text" className="h-5 w-24" />
                 </div>
@@ -525,7 +525,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                   'w-64 sm:w-72 flex-shrink-0 flex flex-col rounded-xl border transition-all duration-200',
                   isDropping
                     ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20'
-                    : 'border-white/10 bg-white/5'
+                    : 'border-white/10 glass-light'
                 )}
                 onDragOver={(e) => {
                   handleColumnDragOver(e, stage);
@@ -591,7 +591,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                             onDragStart={(e) => handleDragStart(e as unknown as React.DragEvent, app)}
                             onDragEnd={handleDragEnd}
                             className={clsx(
-                              'p-3 bg-white/5 hover:bg-white/10 border rounded-xl cursor-grab active:cursor-grabbing transition-all duration-200 group touch-manipulation',
+                              'p-3 glass-light hover:bg-white/10 border rounded-xl cursor-grab active:cursor-grabbing transition-all duration-200 group touch-manipulation',
                               draggedApp?.id === app.id
                                 ? 'border-blue-500/50 bg-blue-500/10 shadow-lg shadow-blue-500/20'
                                 : 'border-white/10',
@@ -749,7 +749,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                   {/* Empty state */}
                   {apps.length === 0 && !isDropping && (
                     <div className="flex-1 flex flex-col items-center justify-center py-12 px-4 text-center">
-                      <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mb-3">
+                      <div className="w-12 h-12 rounded-full glass-light flex items-center justify-center mb-3">
                         <Users className="w-6 h-6 text-white/20" />
                       </div>
                       <p className="text-sm font-medium text-white/30">Пусто</p>

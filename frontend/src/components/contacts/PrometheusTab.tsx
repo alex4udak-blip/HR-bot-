@@ -57,14 +57,14 @@ function PrometheusTabSkeleton() {
       {/* Metrics cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div key={i} className="glass-light rounded-lg p-3">
             <div className="h-3 w-16 bg-white/10 rounded mb-2" />
             <div className="h-6 w-12 bg-white/10 rounded" />
           </div>
         ))}
       </div>
       {/* Review block */}
-      <div className="bg-white/5 rounded-xl p-4 border border-white/5">
+      <div className="glass-light rounded-xl p-4">
         <div className="h-5 w-48 bg-white/10 rounded mb-3" />
         <div className="space-y-2">
           <div className="h-4 w-full bg-white/10 rounded" />
@@ -75,7 +75,7 @@ function PrometheusTabSkeleton() {
       {/* Trails */}
       <div className="space-y-2">
         {Array.from({ length: 2 }).map((_, i) => (
-          <div key={i} className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div key={i} className="glass-light rounded-lg p-3">
             <div className="h-4 w-40 bg-white/10 rounded mb-2" />
             <div className="h-1.5 w-full bg-white/10 rounded-full" />
           </div>
@@ -96,7 +96,7 @@ function TrailCard({ trail }: { trail: ContactReviewTrail }) {
     'bg-blue-400';
 
   return (
-    <div className="bg-white/5 rounded-lg p-3 border border-white/5 overflow-hidden">
+    <div className="glass-light rounded-lg p-3 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full text-left"
@@ -232,7 +232,7 @@ export default function PrometheusTab({ entityId, email }: PrometheusTabProps) {
           <p className="text-sm text-white/40">{error}</p>
           <button
             onClick={fetchData}
-            className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors text-white/70"
+            className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 glass-light hover:bg-white/10 rounded-lg text-sm transition-colors text-white/70"
           >
             <RefreshCw className="w-4 h-4" />
             Повторить
@@ -265,7 +265,7 @@ export default function PrometheusTab({ entityId, email }: PrometheusTabProps) {
           </p>
           <button
             onClick={fetchData}
-            className="mt-3 flex items-center gap-2 mx-auto px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs transition-colors text-white/60"
+            className="mt-3 flex items-center gap-2 mx-auto px-3 py-1.5 glass-light hover:bg-white/10 rounded-lg text-xs transition-colors text-white/60"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             Обновить
@@ -314,7 +314,7 @@ export default function PrometheusTab({ entityId, email }: PrometheusTabProps) {
           )}
           <button
             onClick={fetchData}
-            className="p-1.5 hover:bg-white/5 rounded-lg transition-colors text-white/40 hover:text-white/70"
+            className="p-1.5 hover:bg-dark-800/50 rounded-lg transition-colors text-white/40 hover:text-white/70"
             title="Обновить данные"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -325,21 +325,21 @@ export default function PrometheusTab({ entityId, email }: PrometheusTabProps) {
       <div className="space-y-4">
         {/* Overview metrics */}
         <div className="grid grid-cols-3 gap-3">
-          <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div className="glass-light rounded-lg p-3">
             <div className="flex items-center gap-1.5 text-white/40 mb-1">
               <Zap className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-xs">XP</span>
             </div>
             <p className="text-lg font-semibold text-white">{m.totalXP.toLocaleString()}</p>
           </div>
-          <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div className="glass-light rounded-lg p-3">
             <div className="flex items-center gap-1.5 text-white/40 mb-1">
               <GitBranch className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-xs">Трейлов</span>
             </div>
             <p className="text-lg font-semibold text-white">{m.trailCount}</p>
           </div>
-          <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div className="glass-light rounded-lg p-3">
             <div className="flex items-center gap-1.5 text-white/40 mb-1">
               <BookOpen className="w-3.5 h-3.5 text-blue-400" />
               <span className="text-xs">Модулей</span>
@@ -351,7 +351,7 @@ export default function PrometheusTab({ entityId, email }: PrometheusTabProps) {
         </div>
 
         {/* Overall progress bar */}
-        <div className="bg-white/5 rounded-xl p-4 border border-white/5">
+        <div className="glass-light rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-cyan-400" />
@@ -375,7 +375,7 @@ export default function PrometheusTab({ entityId, email }: PrometheusTabProps) {
         </div>
 
         {/* HR Review */}
-        <div className="bg-white/5 rounded-xl p-4 border border-white/5">
+        <div className="glass-light rounded-xl p-4">
           <h4 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-cyan-400" />
             HR-ревью: {review.headline}

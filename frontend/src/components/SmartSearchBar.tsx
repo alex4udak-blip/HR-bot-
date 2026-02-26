@@ -220,7 +220,7 @@ export default function SmartSearchBar({
       <div
         className={clsx(
           'relative flex items-center gap-2',
-          'bg-white/5 border border-white/10 rounded-xl',
+          'glass-light rounded-xl',
           'transition-all duration-200',
           isFocused && 'ring-2 ring-blue-500/50 border-blue-500/50',
           error && 'border-red-500/50'
@@ -285,7 +285,7 @@ export default function SmartSearchBar({
           onClick={() => setShowDropdown(!showDropdown)}
           className={clsx(
             'p-2 hover:bg-white/10 rounded-lg transition-colors mr-2',
-            showDropdown && 'bg-white/5'
+            showDropdown && 'glass-light'
           )}
           aria-expanded={showDropdown}
           aria-label={showDropdown ? 'Скрыть список' : 'Показать список'}
@@ -356,7 +356,7 @@ export default function SmartSearchBar({
                     'text-left transition-colors',
                     selectedIndex === index
                       ? 'bg-blue-500/20 text-white'
-                      : 'hover:bg-white/5 text-white/80'
+                      : 'hover:bg-dark-800/50 text-white/80'
                   )}
                   role="option"
                   aria-selected={selectedIndex === index}
@@ -414,7 +414,7 @@ export default function SmartSearchBar({
                       'text-left transition-colors',
                       selectedIndex === index
                         ? 'bg-blue-500/20 text-white'
-                        : 'hover:bg-white/5 text-white/80'
+                        : 'hover:bg-dark-800/50 text-white/80'
                     )}
                     role="option"
                     aria-selected={selectedIndex === index}
@@ -440,7 +440,7 @@ export default function SmartSearchBar({
                     onClick={() => handleExampleClick(example)}
                     className={clsx(
                       'px-3 py-1.5 rounded-lg text-sm',
-                      'bg-white/5 hover:bg-white/10 text-white/70',
+                      'glass-light hover:bg-white/10 text-white/70',
                       'transition-colors'
                     )}
                   >

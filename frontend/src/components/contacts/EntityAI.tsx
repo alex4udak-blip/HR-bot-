@@ -390,7 +390,7 @@ export default function EntityAI({ entity }: EntityAIProps) {
               'p-3 rounded-lg overflow-hidden group',
               msg.role === 'user'
                 ? 'bg-cyan-500/20 ml-4 sm:ml-8'
-                : 'bg-white/5 mr-2 sm:mr-4'
+                : 'glass-light mr-2 sm:mr-4'
             )}
           >
             {msg.role === 'assistant' ? (
@@ -419,7 +419,7 @@ export default function EntityAI({ entity }: EntityAIProps) {
         ))}
 
         {streamingContent && (
-          <div className="p-3 rounded-lg bg-white/5 mr-2 sm:mr-4 overflow-hidden">
+          <div className="p-3 rounded-lg glass-light mr-2 sm:mr-4 overflow-hidden">
             <div className="prose prose-invert prose-sm max-w-none break-words overflow-wrap-anywhere">
               <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{streamingContent}</ReactMarkdown>
             </div>
@@ -427,7 +427,7 @@ export default function EntityAI({ entity }: EntityAIProps) {
         )}
 
         {loading && !streamingContent && (
-          <div className="p-3 rounded-lg bg-white/5 mr-2 sm:mr-4">
+          <div className="p-3 rounded-lg glass-light mr-2 sm:mr-4">
             <div className="flex items-center gap-2 text-white/60">
               <Loader2 size={16} className="animate-spin flex-shrink-0" />
               <span className="truncate">Анализирую данные...</span>

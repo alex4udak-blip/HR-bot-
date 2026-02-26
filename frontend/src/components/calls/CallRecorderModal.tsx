@@ -203,7 +203,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
               'flex-1 p-3 rounded-lg flex items-center justify-center gap-2 transition-colors',
               mode === 'bot'
                 ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
-                : 'bg-white/5 text-white/60 border border-white/10 hover:bg-white/10'
+                : 'glass-light text-white/60 hover:bg-white/10'
             )}
           >
             <Video size={20} />
@@ -215,7 +215,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
               'flex-1 p-3 rounded-lg flex items-center justify-center gap-2 transition-colors',
               mode === 'upload'
                 ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
-                : 'bg-white/5 text-white/60 border border-white/10 hover:bg-white/10'
+                : 'glass-light text-white/60 hover:bg-white/10'
             )}
           >
             <Upload size={20} />
@@ -282,7 +282,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
                     value={meetingUrl}
                     onChange={(e) => setMeetingUrl(e.target.value)}
                     className={clsx(
-                      'w-full pl-10 pr-4 py-2 bg-white/5 border rounded-lg text-white placeholder-white/40 focus:outline-none',
+                      'w-full pl-10 pr-4 py-2 glass-light border rounded-lg text-white placeholder-white/40 focus:outline-none',
                       meetingUrl && !isValidUrl(meetingUrl)
                         ? 'border-red-500/50 focus:border-red-500/50'
                         : 'border-white/10 focus:border-cyan-500/50'
@@ -306,7 +306,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
                   type="text"
                   value={botName}
                   onChange={(e) => setBotName(e.target.value)}
-                  className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+                  className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
                   placeholder="HR Recorder"
                 />
               </div>
@@ -325,7 +325,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
                 value={selectedEntity ? selectedEntity.name : entitySearch.searchQuery}
                 onChange={(e) => dispatchEntitySearch({ type: 'UPDATE_SEARCH', query: e.target.value })}
                 onFocus={() => dispatchEntitySearch({ type: 'SHOW_DROPDOWN' })}
-                className="w-full pl-10 pr-10 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50 truncate"
+                className="w-full pl-10 pr-10 py-2 glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50 truncate"
                 placeholder="Поиск контактов..."
               />
               {entitySearch.selectedEntityId && (
@@ -373,7 +373,7 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 transition-colors min-w-[120px]"
+              className="flex-1 px-4 py-2 glass-light text-white/60 rounded-lg hover:bg-white/10 transition-colors min-w-[120px]"
             >
               Отмена
             </button>

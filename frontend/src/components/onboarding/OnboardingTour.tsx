@@ -442,7 +442,7 @@ export function OnboardingTour({
                 <div className="flex items-center justify-between p-4 pt-2 border-t border-white/10">
                   <button
                     onClick={handleSkip}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-white/60 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-white/60 hover:text-white hover:bg-dark-800/50 rounded-lg transition-colors"
                   >
                     <SkipForward className="w-4 h-4" />
                     Пропустить
@@ -452,7 +452,7 @@ export function OnboardingTour({
                     {!isFirstStep && (
                       <button
                         onClick={prevStep}
-                        className="flex items-center gap-1 px-3 py-1.5 text-sm text-white/80 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm text-white/80 hover:text-white glass-light hover:bg-white/10 rounded-lg transition-colors"
                       >
                         <ChevronLeft className="w-4 h-4" />
                         Назад

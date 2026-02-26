@@ -94,7 +94,7 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
 
           {/* What will be transferred */}
           {(entity.chats_count || entity.calls_count) && (
-            <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+            <div className="glass-light rounded-lg p-4">
               <p className="text-sm font-medium text-white mb-2">Что будет передано:</p>
               <ul className="space-y-1 text-sm text-white/60">
                 <li className="flex items-center gap-2">
@@ -143,7 +143,7 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
                         'w-full p-3 rounded-lg flex items-center gap-3 transition-colors text-left',
                         selectedUserId === user.id
                           ? 'bg-purple-500/20 border border-purple-500/50'
-                          : 'bg-white/5 border border-white/10 hover:bg-white/10'
+                          : 'glass-light hover:bg-white/10'
                       )}
                     >
                       <div className={clsx(
@@ -174,7 +174,7 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-purple-500/50 resize-none"
+              className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-purple-500/50 resize-none"
               rows={3}
               placeholder="Добавьте заметку о передаче..."
             />
@@ -185,7 +185,7 @@ export default function TransferModal({ entity, onClose, onSuccess }: TransferMo
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 transition-colors"
+              className="flex-1 px-4 py-2 glass-light text-white/60 rounded-lg hover:bg-white/10 transition-colors"
             >
               Отмена
             </button>

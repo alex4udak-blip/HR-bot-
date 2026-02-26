@@ -221,7 +221,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
               </div>
               <button
                 onClick={handleClose}
-                className="p-2 rounded-lg hover:bg-white/5 transition-colors flex-shrink-0"
+                className="p-2 rounded-lg hover:bg-dark-800/50 transition-colors flex-shrink-0"
                 aria-label="Закрыть окно"
               >
                 <X className="w-5 h-5" aria-hidden="true" />
@@ -237,7 +237,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                   className={clsx(
                     'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors',
                     platform === 'mac'
-                      ? 'bg-white/5 text-white'
+                      ? 'glass-light text-white'
                       : 'text-dark-400 hover:text-dark-200'
                   )}
                   role="tab"
@@ -252,7 +252,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                   className={clsx(
                     'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors',
                     platform === 'windows'
-                      ? 'bg-white/5 text-white'
+                      ? 'glass-light text-white'
                       : 'text-dark-400 hover:text-dark-200'
                   )}
                   role="tab"
@@ -292,16 +292,16 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
                 <p className="font-medium mb-3">📦 Шаг 2: Сжатие в ZIP (если файл большой)</p>
                 {platform === 'mac' ? (
                   <ol className="list-decimal list-inside space-y-1.5 text-dark-300 mb-4">
-                    <li>Откройте папку <code className="px-1 py-0.5 rounded bg-white/5">Telegram Desktop</code></li>
-                    <li>Найдите папку <code className="px-1 py-0.5 rounded bg-white/5">ChatExport_дата</code></li>
+                    <li>Откройте папку <code className="px-1 py-0.5 rounded glass-light">Telegram Desktop</code></li>
+                    <li>Найдите папку <code className="px-1 py-0.5 rounded glass-light">ChatExport_дата</code></li>
                     <li>Правый клик на <strong>result.json</strong></li>
                     <li>Выберите <strong>Сжать "result.json"</strong></li>
                     <li>Получится файл <strong>result.json.zip</strong></li>
                   </ol>
                 ) : (
                   <ol className="list-decimal list-inside space-y-1.5 text-dark-300 mb-4">
-                    <li>Откройте папку <code className="px-1 py-0.5 rounded bg-white/5">Telegram Desktop</code></li>
-                    <li>Найдите папку <code className="px-1 py-0.5 rounded bg-white/5">ChatExport_дата</code></li>
+                    <li>Откройте папку <code className="px-1 py-0.5 rounded glass-light">Telegram Desktop</code></li>
+                    <li>Найдите папку <code className="px-1 py-0.5 rounded glass-light">ChatExport_дата</code></li>
                     <li>Правый клик на <strong>result.json</strong></li>
                     <li>Выберите <strong>Отправить → Сжатая ZIP-папка</strong></li>
                     <li>Получится файл <strong>result.zip</strong></li>

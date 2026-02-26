@@ -548,7 +548,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 'px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-1.5',
                 activeTab === tab.id
                   ? 'bg-cyan-500/20 text-cyan-400 shadow-sm'
-                  : 'text-white/60 hover:bg-white/5 hover:text-white/80'
+                  : 'text-white/60 hover:bg-dark-800/50 hover:text-white/80'
               )}
             >
               {Icon && <Icon size={14} className="flex-shrink-0" />}
@@ -644,7 +644,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                     <div
                       key={chat.id}
                       onClick={() => navigate(`/chats/${chat.id}`)}
-                      className="p-3 bg-white/5 rounded-lg cursor-pointer hover:bg-white/10 transition-colors flex items-center justify-between gap-2"
+                      className="p-3 glass-light rounded-lg cursor-pointer hover:bg-white/10 transition-colors flex items-center justify-between gap-2"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-white font-medium truncate">{chat.title}</p>
@@ -682,7 +682,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                     <div
                       key={call.id}
                       onClick={() => navigate(`/calls/${call.id}`)}
-                      className="p-3 bg-white/5 rounded-lg cursor-pointer hover:bg-white/10 transition-colors"
+                      className="p-3 glass-light rounded-lg cursor-pointer hover:bg-white/10 transition-colors"
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className={clsx('text-xs px-2 py-0.5 rounded-full', CALL_STATUS_COLORS[call.status])}>
@@ -735,7 +735,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               {entity.transfers && entity.transfers.length > 0 ? (
                 <div className="space-y-2">
                   {entity.transfers.slice(0, 5).map((transfer) => (
-                    <div key={transfer.id} className="p-3 bg-white/5 rounded-lg">
+                    <div key={transfer.id} className="p-3 glass-light rounded-lg">
                       <div className="flex items-center gap-2 text-sm">
                         <span className="text-white/60">{transfer.from_user_name || 'Неизвестно'}</span>
                         <ArrowRightLeft size={14} className="text-white/40" />
@@ -765,7 +765,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   onClick={() => navigate(`/chats/${chat.id}`)}
-                  className="p-4 bg-white/5 rounded-xl cursor-pointer hover:bg-white/10 transition-colors flex items-center justify-between gap-3"
+                  className="p-4 glass-light rounded-xl cursor-pointer hover:bg-white/10 transition-colors flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="p-2 bg-cyan-500/20 rounded-lg flex-shrink-0">
@@ -796,7 +796,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   onClick={() => navigate(`/calls/${call.id}`)}
-                  className="p-4 bg-white/5 rounded-xl cursor-pointer hover:bg-white/10 transition-colors"
+                  className="p-4 glass-light rounded-xl cursor-pointer hover:bg-white/10 transition-colors"
                 >
                   <div className="flex items-center justify-between gap-3 mb-2">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -905,7 +905,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </h4>
                 <div className="space-y-2">
                   {entity.transfers.map((transfer) => (
-                    <div key={transfer.id} className="p-3 bg-white/5 rounded-lg flex items-start gap-3">
+                    <div key={transfer.id} className="p-3 glass-light rounded-lg flex items-start gap-3">
                       <div className="p-2 bg-purple-500/20 rounded-lg">
                         <ArrowRightLeft size={16} className="text-purple-400" />
                       </div>
@@ -935,7 +935,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                 </h4>
                 <div className="space-y-2">
                   {entity.analyses.map((analysis) => (
-                    <div key={analysis.id} className="p-3 bg-white/5 rounded-lg flex items-start gap-3">
+                    <div key={analysis.id} className="p-3 glass-light rounded-lg flex items-start gap-3">
                       <div className="p-2 bg-cyan-500/20 rounded-lg">
                         <FileText size={16} className="text-cyan-400" />
                       </div>
@@ -1083,7 +1083,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                       key={chat.id}
                       onClick={() => handleLinkChat(chat.id)}
                       disabled={asyncState.loadingLink}
-                      className="w-full p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-3 disabled:opacity-50"
+                      className="w-full p-3 glass-light rounded-lg hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-3 disabled:opacity-50"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-white font-medium truncate">{chat.title}</p>
@@ -1147,7 +1147,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                       key={call.id}
                       onClick={() => handleLinkCall(call.id)}
                       disabled={asyncState.loadingLink}
-                      className="w-full p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-3 disabled:opacity-50"
+                      className="w-full p-3 glass-light rounded-lg hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-3 disabled:opacity-50"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-white font-medium truncate">

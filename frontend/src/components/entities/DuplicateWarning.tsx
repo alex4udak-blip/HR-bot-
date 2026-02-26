@@ -257,7 +257,7 @@ export default function DuplicateWarning({
               <div className="p-6">
                 {/* Visual merge representation */}
                 <div className="flex items-center justify-center gap-4 mb-6">
-                  <div className="flex-1 p-4 bg-white/5 rounded-xl text-center">
+                  <div className="flex-1 p-4 glass-light rounded-xl text-center">
                     <p className="text-xs text-white/40 mb-1">Останется</p>
                     <p className="font-medium text-white">{entityName}</p>
                   </div>
@@ -284,7 +284,7 @@ export default function DuplicateWarning({
                       return (
                         <div
                           key={field}
-                          className="flex items-center gap-3 p-3 bg-white/5 rounded-lg"
+                          className="flex items-center gap-3 p-3 glass-light rounded-lg"
                         >
                           <Icon size={16} className="text-white/40 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
@@ -301,7 +301,7 @@ export default function DuplicateWarning({
                 </div>
 
                 {/* Options */}
-                <div className="p-4 bg-white/5 rounded-xl mb-6">
+                <div className="p-4 glass-light rounded-xl mb-6">
                   <label className="flex items-start gap-3 cursor-pointer">
                     <input
                       type="checkbox"

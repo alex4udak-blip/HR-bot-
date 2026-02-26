@@ -415,7 +415,7 @@ export default function CallsPage() {
             <div className="p-4 border-b border-white/5 flex items-center gap-4 overflow-hidden">
               <button
                 onClick={handleBack}
-                className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex-shrink-0"
+                className="p-2 rounded-lg glass-light hover:bg-white/10 transition-colors flex-shrink-0"
               >
                 <ChevronLeft size={20} className="text-white/60" />
               </button>

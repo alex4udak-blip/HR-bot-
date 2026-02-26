@@ -390,7 +390,7 @@ export default function AccessMatrix() {
       </div>
 
       {/* Legend */}
-      <div className="px-6 py-4 bg-white/5 border-b border-white/5">
+      <div className="px-6 py-4 glass-light border-b border-white/5">
         <div className="flex flex-wrap gap-6 text-sm">
           <div className="flex items-center gap-2">
             <div className="p-1.5 bg-green-500/10 rounded">
@@ -417,7 +417,7 @@ export default function AccessMatrix() {
       <div className="overflow-x-auto">
         <table className="w-full">
           {/* Table Header */}
-          <thead className="bg-white/5 sticky top-0 z-10">
+          <thead className="glass-light sticky top-0 z-10">
             <tr>
               <th className="px-6 py-4 text-left text-sm font-semibold text-white border-b border-white/5">
                 Permission
@@ -442,7 +442,7 @@ export default function AccessMatrix() {
             {PERMISSIONS_MATRIX.map((category, categoryIdx) => (
               <React.Fragment key={category.category}>
                 {/* Category Header */}
-                <tr className="bg-white/5">
+                <tr className="glass-light">
                   <td
                     colSpan={roles.length + 1}
                     className="px-6 py-3 text-sm font-semibold text-white border-b border-white/5"
@@ -461,7 +461,7 @@ export default function AccessMatrix() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: categoryIdx * 0.1 + permIdx * 0.05 }}
-                    className="hover:bg-white/5 transition-colors"
+                    className="hover:bg-dark-800/50 transition-colors"
                   >
                     <td className="px-6 py-4 border-b border-white/5">
                       <Tooltip content={permission.description}>
@@ -495,7 +495,7 @@ export default function AccessMatrix() {
       </div>
 
       {/* Footer Note */}
-      <div className="px-6 py-4 bg-white/5 border-t border-white/5">
+      <div className="px-6 py-4 glass-light border-t border-white/5">
         <p className="text-xs text-dark-400">
           <strong className="text-dark-300">Note:</strong> Hover over role names and conditional
           permissions (yellow icons) to see detailed explanations. This matrix reflects the actual

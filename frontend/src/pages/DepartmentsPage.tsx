@@ -509,7 +509,7 @@ function CreateDepartmentModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={parentId ? "Рекрутинг" : "HR отдел"}
-              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40"
+              className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40"
             />
           </div>
 
@@ -520,7 +520,7 @@ function CreateDepartmentModal({
               onChange={(e) => setDescription(e.target.value)}
               placeholder={parentId ? "Подразделение для поиска кандидатов" : "Отдел по работе с персоналом"}
               rows={2}
-              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 resize-none"
+              className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40 resize-none"
             />
           </div>
 
@@ -623,7 +623,7 @@ function EditDepartmentModal({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
+              className="w-full px-4 py-2 glass-light rounded-lg text-white"
             />
           </div>
 
@@ -633,7 +633,7 @@ function EditDepartmentModal({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
-              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white resize-none"
+              className="w-full px-4 py-2 glass-light rounded-lg text-white resize-none"
             />
           </div>
 
@@ -661,7 +661,7 @@ function EditDepartmentModal({
               id="isActive"
               checked={isActive}
               onChange={(e) => setIsActive(e.target.checked)}
-              className="w-4 h-4 rounded bg-white/5 border-white/20"
+              className="w-4 h-4 rounded glass-light border-white/20"
             />
             <label htmlFor="isActive" className="text-white/60">
               Активен
@@ -864,7 +864,7 @@ function DepartmentMembersModal({
                           <select
                             value={member.role}
                             onChange={(e) => handleRoleChange(member.user_id, e.target.value as DeptRole)}
-                            className="px-2 py-1 bg-white/5 border border-white/10 rounded text-white text-sm"
+                            className="px-2 py-1 glass-light rounded text-white text-sm"
                           >
                             <option value="lead">Руководитель</option>
                             <option value="sub_admin">Саб-админ</option>
@@ -874,7 +874,7 @@ function DepartmentMembersModal({
                           <select
                             value={member.role}
                             onChange={(e) => handleRoleChange(member.user_id, e.target.value as DeptRole)}
-                            className="px-2 py-1 bg-white/5 border border-white/10 rounded text-white text-sm"
+                            className="px-2 py-1 glass-light rounded text-white text-sm"
                             disabled={member.role === 'lead'}
                           >
                             {member.role === 'lead' && <option value="lead">Руководитель</option>}
@@ -944,7 +944,7 @@ function AddMemberForm({
         <select
           value={userId}
           onChange={(e) => setUserId(e.target.value ? Number(e.target.value) : '')}
-          className="flex-1 min-w-0 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm truncate"
+          className="flex-1 min-w-0 px-3 py-1.5 glass-light rounded-lg text-white text-sm truncate"
         >
           <option value="">Выберите пользователя</option>
           {availableMembers.map((m) => (
@@ -962,7 +962,7 @@ function AddMemberForm({
           <select
             value={role}
             onChange={(e) => setRole(e.target.value as DeptRole)}
-            className="w-full sm:w-auto px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm flex-shrink-0"
+            className="w-full sm:w-auto px-3 py-1.5 glass-light rounded-lg text-white text-sm flex-shrink-0"
           >
             <option value="lead">Руководитель</option>
             <option value="sub_admin">Саб-админ</option>
@@ -972,14 +972,14 @@ function AddMemberForm({
           <select
             value={role}
             onChange={(e) => setRole(e.target.value as DeptRole)}
-            className="w-full sm:w-auto px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm flex-shrink-0"
+            className="w-full sm:w-auto px-3 py-1.5 glass-light rounded-lg text-white text-sm flex-shrink-0"
           >
             <option value="sub_admin">Саб-админ</option>
             <option value="member">Участник</option>
           </select>
         ) : (
           // Sub_admin: can only add members
-          <span className="w-full sm:w-auto px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm flex-shrink-0">
+          <span className="w-full sm:w-auto px-3 py-1.5 glass-light rounded-lg text-white text-sm flex-shrink-0">
             Участник
           </span>
         )}

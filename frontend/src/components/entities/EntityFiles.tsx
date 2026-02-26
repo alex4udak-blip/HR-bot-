@@ -276,14 +276,14 @@ export default function EntityFiles({ entityId, canEdit = true }: EntityFilesPro
                     setShowUploadForm(false);
                     setSelectedFile(null);
                   }}
-                  className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+                  className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
                 >
                   <X size={20} />
                 </button>
               </div>
 
               {/* Selected file info */}
-              <div className="p-3 bg-white/5 rounded-lg mb-4 flex items-center gap-3">
+              <div className="p-3 glass-light rounded-lg mb-4 flex items-center gap-3">
                 <File className="w-8 h-8 text-blue-400" />
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{selectedFile.name}</p>
@@ -297,7 +297,7 @@ export default function EntityFiles({ entityId, canEdit = true }: EntityFilesPro
                 <select
                   value={fileType}
                   onChange={(e) => setFileType(e.target.value)}
-                  className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500"
                 >
                   {FILE_TYPE_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -313,7 +313,7 @@ export default function EntityFiles({ entityId, canEdit = true }: EntityFilesPro
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Добавьте описание файла..."
-                  className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500"
                 />
               </div>
 
@@ -358,7 +358,7 @@ export default function EntityFiles({ entityId, canEdit = true }: EntityFilesPro
                 key={file.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="p-3 bg-white/5 rounded-lg border border-white/10 flex items-center gap-3 group"
+                className="p-3 glass-light rounded-lg flex items-center gap-3 group"
               >
                 <div className="p-2 bg-blue-500/20 rounded-lg flex-shrink-0">
                   <FileIcon size={20} className="text-blue-400" />

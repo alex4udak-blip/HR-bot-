@@ -228,7 +228,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
                       'p-3 rounded-lg flex flex-col items-center gap-2 transition-colors',
                       formData.type === option.id
                         ? 'bg-cyan-500/20 border border-cyan-500/50 text-cyan-400'
-                        : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10'
+                        : 'glass-light text-white/60 hover:bg-white/10'
                     )}
                   >
                     <Icon size={20} className="flex-shrink-0" />
@@ -248,7 +248,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
               value={formData.name}
               onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
               className={clsx(
-                'w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50',
+                'w-full px-4 py-2 glass-light border rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50',
                 errors.name ? 'border-red-500/50' : 'border-white/10'
               )}
               placeholder="Иван Иванов"
@@ -262,7 +262,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
             <select
               value={formData.status}
               onChange={(e) => setFormData((prev) => ({ ...prev, status: e.target.value as EntityStatus }))}
-              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-cyan-500/50"
+              className="w-full px-4 py-2 glass-light rounded-lg text-white focus:outline-none focus:border-cyan-500/50"
             >
               {availableStatuses.map((status) => (
                 <option key={status} value={status} className="bg-gray-900">
@@ -281,7 +281,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
               type="text"
               value={formData.telegram_usernames}
               onChange={(e) => setFormData((prev) => ({ ...prev, telegram_usernames: e.target.value }))}
-              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+              className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
               placeholder="@username1, @username2"
             />
             <p className="text-xs text-white/40 mt-1">Для связывания чатов с контактом</p>
@@ -298,7 +298,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
                 value={formData.emails}
                 onChange={(e) => setFormData((prev) => ({ ...prev, emails: e.target.value }))}
                 className={clsx(
-                  'w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50',
+                  'w-full px-4 py-2 glass-light border rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50',
                   errors.emails ? 'border-red-500/50' : 'border-white/10'
                 )}
                 placeholder="john@example.com, john.doe@company.com"
@@ -314,7 +314,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
                 type="text"
                 value={formData.phones}
                 onChange={(e) => setFormData((prev) => ({ ...prev, phones: e.target.value }))}
-                className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+                className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
                 placeholder="+7 999 123-45-67, +1 234 567 890"
               />
             </div>
@@ -328,7 +328,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
                 type="text"
                 value={formData.company}
                 onChange={(e) => setFormData((prev) => ({ ...prev, company: e.target.value }))}
-                className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+                className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
                 placeholder="ООО Компания"
               />
             </div>
@@ -339,7 +339,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
                 type="text"
                 value={formData.position}
                 onChange={(e) => setFormData((prev) => ({ ...prev, position: e.target.value }))}
-                className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+                className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
                 placeholder="Разработчик"
               />
             </div>
@@ -358,7 +358,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
                     type="number"
                     value={formData.expected_salary_min}
                     onChange={(e) => setFormData((prev) => ({ ...prev, expected_salary_min: e.target.value }))}
-                    className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+                    className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
                     placeholder="Min"
                     min="0"
                   />
@@ -368,7 +368,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
                     type="number"
                     value={formData.expected_salary_max}
                     onChange={(e) => setFormData((prev) => ({ ...prev, expected_salary_max: e.target.value }))}
-                    className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+                    className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
                     placeholder="Max"
                     min="0"
                   />
@@ -377,7 +377,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
                   <select
                     value={formData.expected_salary_currency}
                     onChange={(e) => setFormData((prev) => ({ ...prev, expected_salary_currency: e.target.value as CurrencyCode }))}
-                    className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-cyan-500/50"
+                    className="w-full px-4 py-2 glass-light rounded-lg text-white focus:outline-none focus:border-cyan-500/50"
                   >
                     {CURRENCIES.map((curr) => (
                       <option key={curr.code} value={curr.code} className="bg-gray-900">
@@ -399,7 +399,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
               type="text"
               value={formData.tags}
               onChange={(e) => setFormData((prev) => ({ ...prev, tags: e.target.value }))}
-              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+              className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
               placeholder="senior, удалённо, frontend"
             />
           </div>
@@ -409,7 +409,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 bg-white/5 text-white/60 rounded-lg hover:bg-white/10 transition-colors"
+              className="flex-1 px-4 py-2 glass-light text-white/60 rounded-lg hover:bg-white/10 transition-colors"
             >
               Отмена
             </button>

@@ -261,7 +261,7 @@ export default function InternsStagesTab() {
         <select
           value={selectedTrail}
           onChange={e => setSelectedTrail(e.target.value)}
-          className="px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-emerald-500/50 [&>option]:bg-dark-900 [&>option]:text-white"
+          className="px-3 py-2 glass-light rounded-xl text-sm focus:outline-none focus:border-emerald-500/50 [&>option]:bg-dark-900 [&>option]:text-white"
         >
           <option value="all">Все трейлы</option>
           {trailFilters.map(t => (
@@ -379,7 +379,7 @@ export default function InternsStagesTab() {
                     placeholder="Название трейла..."
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
+                    className="w-full pl-10 pr-4 py-2 glass-light rounded-lg focus:outline-none focus:border-emerald-500/50 text-sm"
                   />
                 </div>
               </div>
@@ -395,7 +395,7 @@ export default function InternsStagesTab() {
                         setSearchQuery(e.target.value);
                       }
                     }}
-                    className="w-full appearance-none pl-3 pr-8 py-2 bg-white/5 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer [&>option]:bg-dark-900 [&>option]:text-white"
+                    className="w-full appearance-none pl-3 pr-8 py-2 glass-light rounded-lg text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer [&>option]:bg-dark-900 [&>option]:text-white"
                   >
                     <option value="">Выберите трейл...</option>
                     {dropoffTrails.map(t => (
@@ -511,7 +511,7 @@ export default function InternsStagesTab() {
                 {/* Trail Header */}
                 <button
                   onClick={() => toggleTrail(trail.trailId)}
-                  className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors text-left"
+                  className="w-full flex items-center justify-between p-4 hover:bg-dark-800/50 transition-colors text-left"
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <GitBranch className="w-5 h-5 text-emerald-400 flex-shrink-0" />
@@ -587,7 +587,7 @@ export default function InternsStagesTab() {
                               <div key={mod.id} className="glass-light rounded-lg overflow-hidden">
                                 <button
                                   onClick={() => toggleModule(moduleKey)}
-                                  className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-colors text-left"
+                                  className="w-full flex items-center justify-between p-3 hover:bg-dark-800/50 transition-colors text-left"
                                 >
                                   <div className="flex items-center gap-2 min-w-0 flex-1">
                                     {mod.completionRate === 100 ? (

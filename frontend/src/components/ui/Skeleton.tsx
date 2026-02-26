@@ -50,7 +50,7 @@ export function Skeleton({
 
 export function VacancyCardSkeleton() {
   return (
-    <div className="p-4 bg-white/5 border border-white/10 rounded-xl animate-pulse">
+    <div className="p-4 glass-light rounded-xl animate-pulse">
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1">
           <Skeleton variant="text" className="h-6 w-3/4 mb-2" />
@@ -81,7 +81,7 @@ export function VacancyCardSkeleton() {
 
 export function EntityCardSkeleton() {
   return (
-    <div className="p-4 bg-white/5 border border-white/10 rounded-xl animate-pulse">
+    <div className="p-4 glass-light rounded-xl animate-pulse">
       <div className="flex items-center gap-3 mb-3">
         <Skeleton variant="circular" width={40} height={40} />
         <div className="flex-1">
@@ -158,13 +158,13 @@ export function DetailSkeleton() {
       </div>
       <div className="grid grid-cols-2 gap-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="p-4 bg-white/5 rounded-xl">
+          <div key={i} className="p-4 glass-light rounded-xl">
             <Skeleton variant="text" className="h-4 w-20 mb-2" />
             <Skeleton variant="text" className="h-6 w-28" />
           </div>
         ))}
       </div>
-      <div className="p-6 bg-white/5 rounded-xl">
+      <div className="p-6 glass-light rounded-xl">
         <Skeleton variant="text" className="h-6 w-32 mb-4" />
         <div className="space-y-2">
           <Skeleton variant="text" className="h-4 w-full" />
@@ -180,7 +180,7 @@ export function ListSkeleton({ count = 5 }: { count?: number }) {
   return (
     <div className="space-y-3">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="p-4 bg-white/5 rounded-xl animate-pulse">
+        <div key={i} className="p-4 glass-light rounded-xl animate-pulse">
           <div className="flex items-center gap-3">
             <Skeleton variant="circular" width={40} height={40} />
             <div className="flex-1">

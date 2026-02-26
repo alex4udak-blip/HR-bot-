@@ -232,7 +232,7 @@ export default function CommandPalette() {
                 />
 
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-1 text-xs text-white/40 bg-white/5 border border-white/10 rounded-lg" aria-hidden="true">
+                  <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-1 text-xs text-white/40 glass-light rounded-lg" aria-hidden="true">
                     Esc
                   </kbd>
                   <button
@@ -265,7 +265,7 @@ export default function CommandPalette() {
                         <button
                           key={search}
                           onClick={() => setQuery(search)}
-                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-white/5 transition-colors"
+                          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-dark-800/50 transition-colors"
                           role="option"
                           aria-label={`Искать: ${search}`}
                         >
@@ -319,14 +319,14 @@ export default function CommandPalette() {
                             onMouseEnter={() => setSelectedIndex(flatIndex)}
                             className={clsx(
                               'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors group',
-                              isSelected ? 'bg-accent-500/20 text-white' : 'hover:bg-white/5 text-white/80'
+                              isSelected ? 'bg-accent-500/20 text-white' : 'hover:bg-dark-800/50 text-white/80'
                             )}
                             role="option"
                             aria-selected={isSelected}
                           >
                             <div className={clsx(
                               'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
-                              isSelected ? 'bg-accent-500/30' : 'bg-white/5'
+                              isSelected ? 'bg-accent-500/30' : 'glass-light'
                             )}>
                               <ItemIcon className={clsx(
                                 'w-4 h-4',
@@ -346,7 +346,7 @@ export default function CommandPalette() {
                             </div>
 
                             {item.shortcut && (
-                              <kbd className="hidden sm:inline-flex items-center px-2 py-1 text-xs text-white/40 bg-white/5 border border-white/10 rounded" aria-hidden="true">
+                              <kbd className="hidden sm:inline-flex items-center px-2 py-1 text-xs text-white/40 glass-light rounded" aria-hidden="true">
                                 {item.shortcut}
                               </kbd>
                             )}
@@ -370,16 +370,16 @@ export default function CommandPalette() {
                       Начните вводить для поиска
                     </p>
                     <div className="flex flex-wrap justify-center gap-2 text-xs">
-                      <span className="px-2 py-1 bg-white/5 rounded-lg text-white/40">
+                      <span className="px-2 py-1 glass-light rounded-lg text-white/40">
                         Кандидаты
                       </span>
-                      <span className="px-2 py-1 bg-white/5 rounded-lg text-white/40">
+                      <span className="px-2 py-1 glass-light rounded-lg text-white/40">
                         Вакансии
                       </span>
-                      <span className="px-2 py-1 bg-white/5 rounded-lg text-white/40">
+                      <span className="px-2 py-1 glass-light rounded-lg text-white/40">
                         Страницы
                       </span>
-                      <span className="px-2 py-1 bg-white/5 rounded-lg text-white/40">
+                      <span className="px-2 py-1 glass-light rounded-lg text-white/40">
                         Действия
                       </span>
                     </div>
@@ -391,23 +391,23 @@ export default function CommandPalette() {
               <div className="px-4 py-2.5 border-t border-white/5 flex items-center justify-between text-xs text-white/30">
                 <div className="flex items-center gap-4">
                   <span className="flex items-center gap-1">
-                    <kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-white/50">Enter</kbd>
+                    <kbd className="px-1.5 py-0.5 glass-light rounded text-white/50">Enter</kbd>
                     <span className="hidden sm:inline">выбрать</span>
                   </span>
                   <span className="flex items-center gap-1">
-                    <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-white/50">...</kbd>
+                    <kbd className="px-1 py-0.5 glass-light rounded text-white/50">...</kbd>
                     <span className="hidden sm:inline">навигация</span>
                   </span>
                   <span className="flex items-center gap-1">
-                    <kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-white/50">Esc</kbd>
+                    <kbd className="px-1.5 py-0.5 glass-light rounded text-white/50">Esc</kbd>
                     <span className="hidden sm:inline">закрыть</span>
                   </span>
                 </div>
 
                 <div className="hidden sm:flex items-center gap-1.5">
-                  <kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-white/50">{modifierKey}</kbd>
+                  <kbd className="px-1.5 py-0.5 glass-light rounded text-white/50">{modifierKey}</kbd>
                   <span>+</span>
-                  <kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-white/50">K</kbd>
+                  <kbd className="px-1.5 py-0.5 glass-light rounded text-white/50">K</kbd>
                 </div>
               </div>
             </div>
@@ -429,11 +429,11 @@ export function CommandPaletteHint({ className }: { className?: string }) {
       'flex items-center gap-1.5 text-xs text-white/40 cursor-pointer hover:text-white/60 transition-colors',
       className
     )}>
-      <kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded">
+      <kbd className="px-1.5 py-0.5 glass-light rounded">
         {isMac ? 'Cmd' : 'Ctrl'}
       </kbd>
       <span>+</span>
-      <kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded">K</kbd>
+      <kbd className="px-1.5 py-0.5 glass-light rounded">K</kbd>
       <span className="ml-1 hidden sm:inline">для поиска</span>
     </div>
   );

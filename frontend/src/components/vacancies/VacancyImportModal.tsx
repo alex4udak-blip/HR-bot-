@@ -125,7 +125,7 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+            className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -138,7 +138,7 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm transition-colors ${
               mode === 'url'
                 ? 'text-blue-400 border-b-2 border-blue-400 bg-blue-500/5'
-                : 'text-white/60 hover:text-white hover:bg-white/5'
+                : 'text-white/60 hover:text-white hover:bg-dark-800/50'
             }`}
           >
             <Link className="w-4 h-4" />
@@ -149,7 +149,7 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm transition-colors ${
               mode === 'file'
                 ? 'text-blue-400 border-b-2 border-blue-400 bg-blue-500/5'
-                : 'text-white/60 hover:text-white hover:bg-white/5'
+                : 'text-white/60 hover:text-white hover:bg-dark-800/50'
             }`}
           >
             <FileUp className="w-4 h-4" />
@@ -177,7 +177,7 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                     placeholder="https://hh.ru/vacancy/12345678"
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-sm"
+                    className="w-full px-4 py-3 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm"
                     disabled={loading}
                     onKeyDown={(e) => e.key === 'Enter' && handleUrlSubmit()}
                   />
@@ -228,7 +228,7 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
                   className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${
                     dragActive
                       ? 'border-blue-400 bg-blue-500/10'
-                      : 'border-white/20 hover:border-white/40 hover:bg-white/5'
+                      : 'border-white/20 hover:border-white/40 hover:bg-dark-800/50'
                   } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <input
@@ -247,7 +247,7 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-3">
-                      <div className="p-4 bg-white/5 rounded-xl">
+                      <div className="p-4 glass-light rounded-xl">
                         <FileUp className="w-8 h-8 text-white/40" />
                       </div>
                       <div>

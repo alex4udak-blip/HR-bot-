@@ -66,7 +66,7 @@ function RiskScoreIndicator({ score }: { score: number }) {
   const Icon = getIcon();
 
   return (
-    <div className="flex items-center gap-3 p-4 bg-white/5 rounded-xl border border-white/10">
+    <div className="flex items-center gap-3 p-4 glass-light rounded-xl">
       <div className={clsx('p-3 rounded-xl bg-gradient-to-br', getColor())}>
         <Icon size={24} className="text-white" />
       </div>
@@ -115,7 +115,7 @@ function RedFlagCard({ flag, isExpanded, onToggle }: {
       {/* Header */}
       <button
         onClick={onToggle}
-        className="w-full p-4 flex items-start gap-3 text-left hover:bg-white/5 transition-colors"
+        className="w-full p-4 flex items-start gap-3 text-left hover:bg-dark-800/50 transition-colors"
       >
         <Icon size={20} className={clsx('flex-shrink-0 mt-0.5', config.textColor)} />
         <div className="flex-1 min-w-0">
@@ -266,7 +266,7 @@ export default function RedFlagsPanel({ entityId, vacancyId, className }: RedFla
       <RiskScoreIndicator score={analysis.risk_score} />
 
       {/* Summary */}
-      <div className="p-4 bg-white/5 rounded-xl border border-white/10">
+      <div className="p-4 glass-light rounded-xl">
         <p className="text-white/80">{analysis.summary}</p>
       </div>
 

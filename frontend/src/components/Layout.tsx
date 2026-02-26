@@ -183,7 +183,7 @@ export default function Layout() {
                   'flex items-center gap-3 py-2.5 px-4 rounded-xl transition-all duration-200',
                   isActive
                     ? 'bg-accent-500/20 text-accent-400'
-                    : 'text-dark-300 hover:text-dark-100 hover:bg-white/5'
+                    : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
                 )
               }
             >
@@ -237,7 +237,7 @@ export default function Layout() {
         </h1>
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="p-2 rounded-lg hover:bg-white/5"
+          className="p-2 rounded-lg hover:bg-dark-800/50"
           aria-expanded={mobileMenuOpen}
           aria-controls="mobile-menu"
           aria-label={mobileMenuOpen ? 'Закрыть меню' : 'Открыть меню'}
@@ -278,7 +278,7 @@ export default function Layout() {
                       'flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200',
                       isActive
                         ? 'bg-accent-500/20 text-accent-400'
-                        : 'text-dark-300 hover:text-dark-100 hover:bg-white/5'
+                        : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
                     )
                   }
                 >

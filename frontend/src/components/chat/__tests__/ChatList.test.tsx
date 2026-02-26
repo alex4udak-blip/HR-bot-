@@ -345,7 +345,7 @@ describe('ChatList', () => {
       render(<ChatList chats={mockChats} selectedId={null} onSelect={mockOnSelect} />);
 
       const chatButton = screen.getByText('Work Chat').closest('button');
-      expect(chatButton).toHaveClass('hover:bg-white/5');
+      expect(chatButton).toHaveClass('hover:bg-dark-800/50');
     });
 
     it('should truncate long chat titles', () => {

@@ -83,7 +83,7 @@ function ReviewSkeleton() {
         </div>
       </div>
       {/* Profile card */}
-      <div className="bg-white/5 rounded-xl p-4 border border-white/5">
+      <div className="glass-light rounded-xl p-4">
         <div className="h-5 w-64 bg-white/10 rounded mb-3" />
         <div className="space-y-2">
           <div className="h-4 w-full bg-white/10 rounded" />
@@ -99,7 +99,7 @@ function ReviewSkeleton() {
       {/* Competencies */}
       <div className="grid grid-cols-2 gap-3">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div key={i} className="glass-light rounded-lg p-3">
             <div className="h-3 w-20 bg-white/10 rounded mb-2" />
             <div className="h-6 w-12 bg-white/10 rounded mb-1" />
             <div className="h-2 w-full bg-white/10 rounded-full" />
@@ -109,7 +109,7 @@ function ReviewSkeleton() {
       {/* Trails */}
       <div className="space-y-2">
         {[1, 2].map((i) => (
-          <div key={i} className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div key={i} className="glass-light rounded-lg p-3">
             <div className="h-4 w-40 bg-white/10 rounded mb-2" />
             <div className="h-3 w-full bg-white/10 rounded" />
           </div>
@@ -185,7 +185,7 @@ function TrailDetailCard({
         : 'bg-blue-400';
 
   return (
-    <div className="bg-white/5 rounded-lg p-3 border border-white/5 overflow-hidden">
+    <div className="glass-light rounded-lg p-3 overflow-hidden">
       <button onClick={() => setExpanded(!expanded)} className="w-full text-left">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -293,7 +293,7 @@ function CertificateCard({ cert }: { cert: Certificate }) {
   const style = levelColors[cert.level] || levelColors.Junior;
 
   return (
-    <div className="bg-white/5 rounded-lg p-3 border border-white/5 flex items-center gap-3">
+    <div className="glass-light rounded-lg p-3 flex items-center gap-3">
       <div className="p-2 rounded-lg bg-amber-500/15">
         <Medal className="w-4 h-4 text-amber-400" />
       </div>
@@ -414,7 +414,7 @@ export default function PrometheusDetailedReview({
           <p className="text-sm text-white/40">{error}</p>
           <button
             onClick={() => fetchData()}
-            className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors text-white/70"
+            className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 glass-light hover:bg-white/10 rounded-lg text-sm transition-colors text-white/70"
           >
             <RefreshCw className="w-4 h-4" />
             Повторить
@@ -444,7 +444,7 @@ export default function PrometheusDetailedReview({
           </p>
           <button
             onClick={() => fetchData()}
-            className="mt-3 flex items-center gap-2 mx-auto px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs transition-colors text-white/60"
+            className="mt-3 flex items-center gap-2 mx-auto px-3 py-1.5 glass-light hover:bg-white/10 rounded-lg text-xs transition-colors text-white/60"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             Обновить
@@ -625,7 +625,7 @@ export default function PrometheusDetailedReview({
 
         {/* ── Key Metrics ── */}
         <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div className="glass-light rounded-lg p-3">
             <div className="flex items-center gap-1.5 text-white/40 mb-1">
               <Zap className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-xs">XP</span>
@@ -634,14 +634,14 @@ export default function PrometheusDetailedReview({
               {m.totalXP.toLocaleString()}
             </p>
           </div>
-          <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div className="glass-light rounded-lg p-3">
             <div className="flex items-center gap-1.5 text-white/40 mb-1">
               <GitBranch className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-xs">Трейлов</span>
             </div>
             <p className="text-lg font-semibold text-white">{m.trailCount}</p>
           </div>
-          <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div className="glass-light rounded-lg p-3">
             <div className="flex items-center gap-1.5 text-white/40 mb-1">
               <BookOpen className="w-3.5 h-3.5 text-blue-400" />
               <span className="text-xs">Модулей</span>
@@ -653,7 +653,7 @@ export default function PrometheusDetailedReview({
         </div>
 
         {/* ── Overall Progress ── */}
-        <div className="bg-white/5 rounded-xl p-4 border border-white/5 mb-4">
+        <div className="glass-light rounded-xl p-4 mb-4">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-cyan-400" />

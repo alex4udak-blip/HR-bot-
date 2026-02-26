@@ -171,7 +171,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-white/5 rounded-lg transition-colors touch-manipulation"
+            className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors touch-manipulation"
           >
             <X className="w-5 h-5" />
           </button>
@@ -186,7 +186,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 type="text"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                className="w-full px-3 py-2.5 sm:py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
                 placeholder="Senior Python Developer"
               />
             </div>
@@ -198,7 +198,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <select
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value as VacancyStatus })}
-                  className="w-full px-3 py-2.5 sm:py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
                 >
                   {Object.entries(VACANCY_STATUS_LABELS).map(([value, label]) => (
                     <option key={value} value={value}>{label}</option>
@@ -210,7 +210,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <select
                   value={formData.priority}
                   onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) })}
-                  className="w-full px-3 py-2.5 sm:py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
                 >
                   <option value={0}>Обычный</option>
                   <option value={1}>Важно</option>
@@ -227,7 +227,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   type="text"
                   value={formData.location}
                   onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  className="w-full px-3 py-2.5 sm:py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
                   placeholder="Удалённо / Москва"
                 />
               </div>
@@ -236,7 +236,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <select
                   value={formData.employment_type}
                   onChange={(e) => setFormData({ ...formData, employment_type: e.target.value })}
-                  className="w-full px-3 py-2.5 sm:py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
                 >
                   <option value="">Не указан</option>
                   {EMPLOYMENT_TYPES.map((type) => (
@@ -253,7 +253,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <select
                   value={formData.experience_level}
                   onChange={(e) => setFormData({ ...formData, experience_level: e.target.value })}
-                  className="w-full px-3 py-2.5 sm:py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
                 >
                   <option value="">Не указан</option>
                   {EXPERIENCE_LEVELS.map((level) => (
@@ -266,7 +266,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <select
                   value={formData.department_id}
                   onChange={(e) => setFormData({ ...formData, department_id: e.target.value })}
-                  className="w-full px-3 py-2.5 sm:py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
                 >
                   <option value="">Не указан</option>
                   {departments.map((dept) => (
@@ -284,7 +284,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   type="number"
                   value={formData.salary_min}
                   onChange={(e) => setFormData({ ...formData, salary_min: e.target.value })}
-                  className="w-full px-3 py-2.5 sm:py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
                   placeholder="100000"
                 />
               </div>
@@ -294,7 +294,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   type="number"
                   value={formData.salary_max}
                   onChange={(e) => setFormData({ ...formData, salary_max: e.target.value })}
-                  className="w-full px-3 py-2.5 sm:py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
                   placeholder="200000"
                 />
               </div>
@@ -314,7 +314,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
               <select
                 value={formData.hiring_manager_id}
                 onChange={(e) => setFormData({ ...formData, hiring_manager_id: e.target.value })}
-                className="w-full px-3 py-2.5 sm:py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
               >
                 <option value="">Не назначен</option>
                 {users.map((user) => (
@@ -348,7 +348,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 rows={3}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base"
+                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base"
                 placeholder="Краткое описание вакансии..."
               />
               {canSplitDescription && (
@@ -365,7 +365,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 value={formData.requirements}
                 onChange={(e) => setFormData({ ...formData, requirements: e.target.value })}
                 rows={3}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base"
+                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base"
                 placeholder="Необходимые навыки и опыт..."
               />
             </div>
@@ -377,7 +377,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 value={formData.responsibilities}
                 onChange={(e) => setFormData({ ...formData, responsibilities: e.target.value })}
                 rows={3}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base"
+                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base"
                 placeholder="Ключевые обязанности..."
               />
             </div>
@@ -389,7 +389,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 type="text"
                 value={formData.tags}
                 onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-                className="w-full px-3 py-2.5 sm:py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
                 placeholder="python, backend, fastapi"
               />
             </div>

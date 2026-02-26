@@ -149,7 +149,7 @@ export default function ErrorMessage({
       )}
       role="alert"
     >
-      <div className="p-4 bg-white/5 rounded-full mb-4">
+      <div className="p-4 glass-light rounded-full mb-4">
         <Icon className={clsx(styles.icon, config.iconColor)} aria-hidden="true" />
       </div>
       <h3 className={clsx('font-semibold text-white', styles.title)}>

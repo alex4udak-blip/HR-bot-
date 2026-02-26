@@ -210,7 +210,7 @@ function PermissionEditor({ role, onClose }: PermissionEditorProps) {
               <div key={category} className="glass-light rounded-xl overflow-hidden">
                 <button
                   onClick={() => toggleCategory(category)}
-                  className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
+                  className="w-full flex items-center justify-between p-4 hover:bg-dark-800/50 transition-colors"
                 >
                   <span className="font-medium">{category}</span>
                   {expandedCategories.includes(category) ? (
@@ -235,7 +235,7 @@ function PermissionEditor({ role, onClose }: PermissionEditorProps) {
                         return (
                           <div
                             key={perm.id}
-                            className="flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors"
+                            className="flex items-center justify-between px-4 py-3 hover:bg-dark-800/50 transition-colors"
                           >
                             <div>
                               <span className="text-sm font-medium">{perm.label}</span>
@@ -635,7 +635,7 @@ export default function RoleManagement() {
             'flex items-center gap-2 px-4 py-2 rounded-t-lg transition-colors',
             activeTab === 'users'
               ? 'bg-accent-500/20 text-accent-400 border-b-2 border-accent-400'
-              : 'text-dark-400 hover:text-white hover:bg-white/5'
+              : 'text-dark-400 hover:text-white hover:bg-dark-800/50'
           )}
         >
           <Users className="w-5 h-5" />
@@ -647,7 +647,7 @@ export default function RoleManagement() {
             'flex items-center gap-2 px-4 py-2 rounded-t-lg transition-colors',
             activeTab === 'roles'
               ? 'bg-accent-500/20 text-accent-400 border-b-2 border-accent-400'
-              : 'text-dark-400 hover:text-white hover:bg-white/5'
+              : 'text-dark-400 hover:text-white hover:bg-dark-800/50'
           )}
         >
           <Shield className="w-5 h-5" />
@@ -659,7 +659,7 @@ export default function RoleManagement() {
             'flex items-center gap-2 px-4 py-2 rounded-t-lg transition-colors',
             activeTab === 'matrix'
               ? 'bg-accent-500/20 text-accent-400 border-b-2 border-accent-400'
-              : 'text-dark-400 hover:text-white hover:bg-white/5'
+              : 'text-dark-400 hover:text-white hover:bg-dark-800/50'
           )}
         >
           <Grid3X3 className="w-5 h-5" />
@@ -728,7 +728,7 @@ export default function RoleManagement() {
                                 role: e.target.value as OrgRole
                               })}
                               disabled={changeOrgRoleMutation.isPending}
-                              className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm min-w-[140px]"
+                              className="px-3 py-1.5 glass-light rounded-lg text-white text-sm min-w-[140px]"
                             >
                               <option value="admin">Администратор</option>
                               <option value="member">Участник</option>
@@ -767,7 +767,7 @@ export default function RoleManagement() {
                                   }
                                 }}
                                 disabled={assignRoleMutation.isPending || unassignRoleMutation.isPending}
-                                className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm min-w-[140px]"
+                                className="px-3 py-1.5 glass-light rounded-lg text-white text-sm min-w-[140px]"
                               >
                                 <option value="">— Нет —</option>
                                 {roles.filter(r => r.is_active).map(role => (
@@ -795,7 +795,7 @@ export default function RoleManagement() {
                           ) : (
                             <span className={clsx(
                               'px-3 py-1.5 rounded-lg text-sm',
-                              member.custom_role_name ? 'bg-purple-500/20 text-purple-400' : 'bg-white/5 text-dark-500'
+                              member.custom_role_name ? 'bg-purple-500/20 text-purple-400' : 'glass-light text-dark-500'
                             )}>
                               {member.custom_role_name || '— Нет —'}
                             </span>
@@ -1104,7 +1104,7 @@ export default function RoleManagement() {
               ) : (
                 <div className="divide-y divide-white/5">
                   {auditLogs.map(log => (
-                    <div key={log.id} className="p-3 hover:bg-white/5">
+                    <div key={log.id} className="p-3 hover:bg-dark-800/50">
                       <div className="flex items-center justify-between text-sm">
                         <span className={clsx(
                           'px-2 py-0.5 rounded text-xs',

@@ -51,7 +51,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             type="text"
             value={resumeData.name || ''}
             onChange={(e) => handleChange('name', e.target.value)}
-            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+            className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
             placeholder="Иван Петров"
           />
         </div>
@@ -64,7 +64,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
               type="email"
               value={resumeData.email || ''}
               onChange={(e) => handleChange('email', e.target.value)}
-              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
               placeholder="ivan@mail.ru"
             />
           </div>
@@ -74,7 +74,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
               type="text"
               value={resumeData.phone || ''}
               onChange={(e) => handleChange('phone', e.target.value)}
-              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
               placeholder="+7 999 123-45-67"
             />
           </div>
@@ -87,7 +87,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             type="text"
             value={resumeData.telegram || ''}
             onChange={(e) => handleChange('telegram', e.target.value)}
-            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+            className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
             placeholder="@username"
           />
         </div>
@@ -100,7 +100,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
               type="text"
               value={resumeData.position || ''}
               onChange={(e) => handleChange('position', e.target.value)}
-              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
               placeholder="Python Developer"
             />
           </div>
@@ -110,7 +110,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
               type="text"
               value={resumeData.company || ''}
               onChange={(e) => handleChange('company', e.target.value)}
-              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
               placeholder="ООО Компания"
             />
           </div>
@@ -124,7 +124,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
               type="number"
               value={resumeData.experience_years || ''}
               onChange={(e) => handleNumberChange('experience_years', e.target.value)}
-              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
               placeholder="5"
             />
           </div>
@@ -134,7 +134,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
               type="text"
               value={resumeData.location || ''}
               onChange={(e) => handleChange('location', e.target.value)}
-              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
               placeholder="Москва"
             />
           </div>
@@ -148,7 +148,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
               type="number"
               value={resumeData.salary_min || ''}
               onChange={(e) => handleNumberChange('salary_min', e.target.value)}
-              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
               placeholder="200000"
             />
           </div>
@@ -158,7 +158,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
               type="number"
               value={resumeData.salary_max || ''}
               onChange={(e) => handleNumberChange('salary_max', e.target.value)}
-              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
               placeholder="300000"
             />
           </div>
@@ -167,7 +167,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             <select
               value={resumeData.salary_currency || 'RUB'}
               onChange={(e) => handleChange('salary_currency', e.target.value)}
-              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
             >
               {CURRENCY_DROPDOWN_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -178,7 +178,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
 
         {/* Formatted salary preview */}
         {(resumeData.salary_min || resumeData.salary_max) && (
-          <div className="p-3 bg-white/5 rounded-lg border border-white/10">
+          <div className="p-3 glass-light rounded-lg">
             <span className="text-sm text-white/60">Formatted: </span>
             <span className="text-sm font-medium">
               {formatSalary(resumeData.salary_min, resumeData.salary_max, resumeData.salary_currency || 'RUB')}
@@ -193,7 +193,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             type="text"
             value={(resumeData.skills || []).join(', ')}
             onChange={(e) => handleSkillsChange(e.target.value)}
-            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+            className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
             placeholder="Python, FastAPI, PostgreSQL"
           />
           {resumeData.skills && resumeData.skills.length > 0 && (
@@ -217,7 +217,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             value={resumeData.summary || ''}
             onChange={(e) => handleChange('summary', e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm resize-none"
+            className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm resize-none"
             placeholder="Краткое описание кандидата..."
           />
         </div>
@@ -242,7 +242,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
           value={vacancyData.title || ''}
           onChange={(e) => handleChange('title', e.target.value)}
           className={clsx(
-            'w-full px-3 py-2 bg-white/5 border rounded-lg focus:outline-none focus:border-cyan-500 text-sm',
+            'w-full px-3 py-2 glass-light border rounded-lg focus:outline-none focus:border-cyan-500 text-sm',
             !vacancyData.title ? 'border-red-500/50' : 'border-white/10'
           )}
           placeholder="Senior Python Developer"
@@ -263,7 +263,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             type="text"
             value={vacancyData.company_name || ''}
             onChange={(e) => handleChange('company_name', e.target.value)}
-            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+            className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
             placeholder="ООО Компания"
           />
         </div>
@@ -273,7 +273,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             type="text"
             value={vacancyData.location || ''}
             onChange={(e) => handleChange('location', e.target.value)}
-            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+            className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
             placeholder="Москва / Удалённо"
           />
         </div>
@@ -286,7 +286,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
           <select
             value={vacancyData.employment_type || ''}
             onChange={(e) => handleChange('employment_type', e.target.value)}
-            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+            className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
           >
             <option value="">Не указано</option>
             <option value="full-time">Полная занятость</option>
@@ -301,7 +301,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
           <select
             value={vacancyData.experience_level || ''}
             onChange={(e) => handleChange('experience_level', e.target.value)}
-            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+            className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
           >
             <option value="">Не указано</option>
             <option value="intern">Стажёр</option>
@@ -322,7 +322,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             type="number"
             value={vacancyData.salary_min || ''}
             onChange={(e) => handleNumberChange('salary_min', e.target.value)}
-            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+            className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
             placeholder="200000"
           />
         </div>
@@ -332,7 +332,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             type="number"
             value={vacancyData.salary_max || ''}
             onChange={(e) => handleNumberChange('salary_max', e.target.value)}
-            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+            className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
             placeholder="300000"
           />
         </div>
@@ -341,7 +341,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
           <select
             value={vacancyData.salary_currency || 'RUB'}
             onChange={(e) => handleChange('salary_currency', e.target.value)}
-            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
+            className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm"
           >
             {CURRENCY_DROPDOWN_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
@@ -352,7 +352,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
 
       {/* Formatted salary preview */}
       {(vacancyData.salary_min || vacancyData.salary_max) && (
-        <div className="p-3 bg-white/5 rounded-lg border border-white/10">
+        <div className="p-3 glass-light rounded-lg">
           <span className="text-sm text-white/60">Formatted: </span>
           <span className="text-sm font-medium">
             {formatSalary(vacancyData.salary_min, vacancyData.salary_max, vacancyData.salary_currency || 'RUB')}
@@ -367,7 +367,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
           value={vacancyData.description || ''}
           onChange={(e) => handleChange('description', e.target.value)}
           rows={3}
-          className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm resize-none"
+          className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm resize-none"
           placeholder="Описание вакансии..."
         />
       </div>
@@ -379,7 +379,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
           value={vacancyData.requirements || ''}
           onChange={(e) => handleChange('requirements', e.target.value)}
           rows={3}
-          className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm resize-none"
+          className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm resize-none"
           placeholder="Требуемые навыки и опыт..."
         />
       </div>
@@ -391,7 +391,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
           value={vacancyData.responsibilities || ''}
           onChange={(e) => handleChange('responsibilities', e.target.value)}
           rows={3}
-          className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-cyan-500 text-sm resize-none"
+          className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-cyan-500 text-sm resize-none"
           placeholder="Основные обязанности..."
         />
       </div>

@@ -178,7 +178,7 @@ export default function TrashPage() {
                 </div>
                 <button
                   onClick={() => setConfirmDelete(null)}
-                  className="p-2 rounded-lg hover:bg-white/5 text-dark-400"
+                  className="p-2 rounded-lg hover:bg-dark-800/50 text-dark-400"
                 >
                   <X className="w-5 h-5" />
                 </button>

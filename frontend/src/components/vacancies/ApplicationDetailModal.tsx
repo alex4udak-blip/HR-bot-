@@ -97,14 +97,14 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
           <div className="flex items-center gap-2">
             <button
               onClick={handleViewCandidate}
-              className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+              className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
               title="Открыть карточку кандидата"
             >
               <ExternalLink className="w-5 h-5" />
             </button>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+              className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -118,7 +118,7 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
             <select
               value={formData.stage}
               onChange={(e) => setFormData({ ...formData, stage: e.target.value as ApplicationStage })}
-              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500"
             >
               {Object.entries(APPLICATION_STAGE_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>{label}</option>
@@ -162,7 +162,7 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
               type="datetime-local"
               value={formData.next_interview_at}
               onChange={(e) => setFormData({ ...formData, next_interview_at: e.target.value })}
-              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500"
             />
           </div>
 
@@ -173,7 +173,7 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
               rows={3}
-              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 resize-none"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 resize-none"
               placeholder="Добавьте заметки о кандидате..."
             />
           </div>
@@ -186,7 +186,7 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
                 type="text"
                 value={formData.rejection_reason}
                 onChange={(e) => setFormData({ ...formData, rejection_reason: e.target.value })}
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500"
                 placeholder="Укажите причину отказа"
               />
             </div>
