@@ -144,7 +144,7 @@ export default function ChatsPage() {
                     'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all',
                     isActive
                       ? 'bg-accent-500/20 text-accent-400'
-                      : 'text-dark-400 hover:text-dark-200 hover:bg-white/5'
+                      : 'text-dark-400 hover:text-dark-200 hover:bg-dark-800/50'
                   )}
                 >
                   <Icon className="w-3.5 h-3.5" />
@@ -235,7 +235,7 @@ export default function ChatsPage() {
             <div className="lg:hidden flex items-center gap-3 p-4 border-b border-white/5 glass">
               <button
                 onClick={handleCloseChat}
-                className="p-2 rounded-lg hover:bg-white/5"
+                className="p-2 rounded-lg hover:bg-dark-800/50"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
@@ -251,7 +251,7 @@ export default function ChatsPage() {
                 onClick={() => setShowAIPanel(!showAIPanel)}
                 className={clsx(
                   'p-2 rounded-lg transition-colors',
-                  showAIPanel ? 'bg-accent-500/20 text-accent-400' : 'hover:bg-white/5'
+                  showAIPanel ? 'bg-accent-500/20 text-accent-400' : 'hover:bg-dark-800/50'
                 )}
               >
                 <MessageSquare className="w-5 h-5" />
@@ -302,7 +302,7 @@ export default function ChatsPage() {
               <h3 className="font-semibold">AI Ассистент</h3>
               <button
                 onClick={() => setShowAIPanel(false)}
-                className="p-2 rounded-lg hover:bg-white/5"
+                className="p-2 rounded-lg hover:bg-dark-800/50"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -356,7 +356,7 @@ export default function ChatsPage() {
                 </div>
                 <button
                   onClick={() => setShowAddModal(false)}
-                  className="p-2 rounded-lg hover:bg-white/5 text-dark-400"
+                  className="p-2 rounded-lg hover:bg-dark-800/50 text-dark-400"
                 >
                   <X className="w-5 h-5" />
                 </button>

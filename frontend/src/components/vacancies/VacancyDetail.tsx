@@ -53,28 +53,28 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
       <div className="max-w-4xl mx-auto p-6 space-y-6">
         {/* Overview Cards */}
         <div className="grid grid-cols-4 gap-4">
-          <div className="p-4 bg-white/5 border border-white/10 rounded-xl">
+          <div className="p-4 glass-light rounded-xl">
             <div className="flex items-center gap-2 text-white/60 mb-2">
               <Users className="w-4 h-4" />
               <span className="text-sm">Всего кандидатов</span>
             </div>
             <p className="text-2xl font-bold">{totalCandidates}</p>
           </div>
-          <div className="p-4 bg-white/5 border border-white/10 rounded-xl">
+          <div className="p-4 glass-light rounded-xl">
             <div className="flex items-center gap-2 text-blue-400 mb-2">
               <TrendingUp className="w-4 h-4" />
               <span className="text-sm">В процессе</span>
             </div>
             <p className="text-2xl font-bold">{inProgressCount}</p>
           </div>
-          <div className="p-4 bg-white/5 border border-white/10 rounded-xl">
+          <div className="p-4 glass-light rounded-xl">
             <div className="flex items-center gap-2 text-green-400 mb-2">
               <CheckCircle className="w-4 h-4" />
               <span className="text-sm">Наняты</span>
             </div>
             <p className="text-2xl font-bold">{hiredCount}</p>
           </div>
-          <div className="p-4 bg-white/5 border border-white/10 rounded-xl">
+          <div className="p-4 glass-light rounded-xl">
             <div className="flex items-center gap-2 text-red-400 mb-2">
               <XCircle className="w-4 h-4" />
               <span className="text-sm">Отклонены</span>
@@ -86,7 +86,7 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
         {/* Main Info */}
         <div className="grid md:grid-cols-2 gap-6">
           {/* Details Card */}
-          <div className="p-6 bg-white/5 border border-white/10 rounded-xl">
+          <div className="p-6 glass-light rounded-xl">
             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <FileText className="w-5 h-5 text-blue-400" />
               Детали вакансии
@@ -152,7 +152,7 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
           </div>
 
           {/* Pipeline Overview */}
-          <div className="p-6 bg-white/5 border border-white/10 rounded-xl">
+          <div className="p-6 glass-light rounded-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-blue-400" />
@@ -177,7 +177,7 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
                         <span>{APPLICATION_STAGE_LABELS[stage as keyof typeof APPLICATION_STAGE_LABELS] || stage}</span>
                         <span className="text-white/60">{count} ({percentage}%)</span>
                       </div>
-                      <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-2 glass-light rounded-full overflow-hidden">
                         <motion.div
                           initial={{ width: 0 }}
                           animate={{ width: `${percentage}%` }}
@@ -196,14 +196,14 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
 
         {/* Description sections */}
         {vacancy.description && (
-          <div className="p-6 bg-white/5 border border-white/10 rounded-xl">
+          <div className="p-6 glass-light rounded-xl">
             <h3 className="text-lg font-semibold mb-3">Описание</h3>
             <p className="text-white/80 whitespace-pre-wrap">{vacancy.description}</p>
           </div>
         )}
 
         {vacancy.requirements && (
-          <div className="p-6 bg-white/5 border border-white/10 rounded-xl">
+          <div className="p-6 glass-light rounded-xl">
             <h3 className="text-lg font-semibold mb-3">Требования</h3>
             <div className="prose prose-invert prose-sm max-w-none text-white/80 prose-li:marker:text-white/60">
               <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{vacancy.requirements}</ReactMarkdown>
@@ -212,7 +212,7 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
         )}
 
         {vacancy.responsibilities && (
-          <div className="p-6 bg-white/5 border border-white/10 rounded-xl">
+          <div className="p-6 glass-light rounded-xl">
             <h3 className="text-lg font-semibold mb-3">Обязанности</h3>
             <div className="prose prose-invert prose-sm max-w-none text-white/80 prose-li:marker:text-white/60">
               <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{vacancy.responsibilities}</ReactMarkdown>
@@ -222,7 +222,7 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
 
         {/* Tags */}
         {vacancy.tags.length > 0 && (
-          <div className="p-6 bg-white/5 border border-white/10 rounded-xl">
+          <div className="p-6 glass-light rounded-xl">
             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
               <Tag className="w-5 h-5 text-blue-400" />
               Теги

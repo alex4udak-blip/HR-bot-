@@ -614,7 +614,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
               {canEdit() && (
                 <button
                   onClick={() => setIsEditing(true)}
-                  className="p-2 rounded-lg hover:bg-white/5 text-dark-400 hover:text-dark-200"
+                  className="p-2 rounded-lg hover:bg-dark-800/50 text-dark-400 hover:text-dark-200"
                 >
                   <Edit3 className="w-4 h-4" />
                 </button>
@@ -663,7 +663,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                         'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors',
                         isActive
                           ? 'bg-accent-500/20 text-accent-400'
-                          : 'text-dark-200 hover:bg-white/5'
+                          : 'text-dark-200 hover:bg-dark-800/50'
                       )}
                     >
                       <Icon className="w-4 h-4" />
@@ -734,7 +734,7 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
                           'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors',
                           isActive
                             ? 'bg-green-500/20 text-green-400'
-                            : 'text-dark-200 hover:bg-white/5'
+                            : 'text-dark-200 hover:bg-dark-800/50'
                         )}
                       >
                         <UserCheck className="w-4 h-4 flex-shrink-0" />

@@ -139,7 +139,7 @@ function CollapsibleSection({
     <div className="glass-light rounded-xl overflow-hidden">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors text-left"
+        className="w-full flex items-center justify-between p-4 hover:bg-dark-800/50 transition-colors text-left"
       >
         <div className="flex items-center gap-3">
           <Icon className="w-5 h-5 text-amber-400 flex-shrink-0" />
@@ -608,7 +608,7 @@ export default function InternStatsPage() {
       {/* Header */}
       <div className="p-4 border-b border-white/10">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/interns')} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
+          <button onClick={() => navigate('/interns')} className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors">
             <ArrowLeft className="w-5 h-5 text-white/60" />
           </button>
           <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -641,7 +641,7 @@ export default function InternStatsPage() {
               className={clsx(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex-shrink-0 border',
                 exportLoading
-                  ? 'bg-white/5 text-white/30 border-white/10 cursor-wait'
+                  ? 'glass-light text-white/30 border-white/10 cursor-wait'
                   : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border-emerald-500/30'
               )}
               title="Экспортировать кандидата в контакты"

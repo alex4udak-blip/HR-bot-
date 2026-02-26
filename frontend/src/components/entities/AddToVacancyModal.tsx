@@ -113,7 +113,7 @@ export default function AddToVacancyModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+            className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -128,7 +128,7 @@ export default function AddToVacancyModal({
               placeholder="Поиск вакансии..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500"
+              className="w-full pl-10 pr-4 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500"
             />
           </div>
 
@@ -138,7 +138,7 @@ export default function AddToVacancyModal({
             <select
               value={source}
               onChange={(e) => setSource(e.target.value)}
-              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500"
             >
               <option value="">Не указан</option>
               {SOURCE_OPTIONS.map((opt) => (
@@ -170,7 +170,7 @@ export default function AddToVacancyModal({
                       'w-full p-3 rounded-lg border text-left transition-colors',
                       selectedVacancy?.id === vacancy.id
                         ? 'border-blue-500 bg-blue-500/10'
-                        : 'border-white/10 bg-white/5 hover:bg-white/10'
+                        : 'border-white/10 glass-light hover:bg-white/10'
                     )}
                   >
                     <div className="flex items-center justify-between mb-1">

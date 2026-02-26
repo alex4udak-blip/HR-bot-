@@ -420,7 +420,7 @@ export default function SettingsPage() {
               'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
               activeTab === 'general'
                 ? 'bg-accent-500/20 text-accent-400'
-                : 'bg-white/5 text-white/60 hover:bg-white/10'
+                : 'glass-light text-white/60 hover:bg-white/10'
             )}
           >
             <UserIcon className="w-4 h-4" />
@@ -432,7 +432,7 @@ export default function SettingsPage() {
               'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
               activeTab === 'presets'
                 ? 'bg-accent-500/20 text-accent-400'
-                : 'bg-white/5 text-white/60 hover:bg-white/10'
+                : 'glass-light text-white/60 hover:bg-white/10'
             )}
           >
             <Target className="w-4 h-4" />
@@ -445,7 +445,7 @@ export default function SettingsPage() {
                 'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
                 activeTab === 'roles'
                   ? 'bg-accent-500/20 text-accent-400'
-                  : 'bg-white/5 text-white/60 hover:bg-white/10'
+                  : 'glass-light text-white/60 hover:bg-white/10'
               )}
             >
               <Shield className="w-4 h-4" />
@@ -459,7 +459,7 @@ export default function SettingsPage() {
                 'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
                 activeTab === 'features'
                   ? 'bg-accent-500/20 text-accent-400'
-                  : 'bg-white/5 text-white/60 hover:bg-white/10'
+                  : 'glass-light text-white/60 hover:bg-white/10'
               )}
             >
               <ToggleRight className="w-4 h-4" />
@@ -473,7 +473,7 @@ export default function SettingsPage() {
                 'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
                 activeTab === 'email-templates'
                   ? 'bg-accent-500/20 text-accent-400'
-                  : 'bg-white/5 text-white/60 hover:bg-white/10'
+                  : 'glass-light text-white/60 hover:bg-white/10'
               )}
             >
               <Mail className="w-4 h-4" />
@@ -535,7 +535,7 @@ export default function SettingsPage() {
                       </div>
 
                       {/* Org-wide Toggle */}
-                      <div className="p-3 bg-white/5 rounded-lg mb-4">
+                      <div className="p-3 glass-light rounded-lg mb-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <Globe className="w-4 h-4 text-purple-400" />
@@ -627,7 +627,7 @@ export default function SettingsPage() {
                               const values = Array.from(e.target.selectedOptions, option => parseInt(option.value));
                               setSelectedDepartments(prev => ({ ...prev, [featureName]: values }));
                             }}
-                            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent-500 min-h-[80px]"
+                            className="flex-1 glass-light rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent-500 min-h-[80px]"
                           >
                             {departments
                               .filter((dept): dept is Department & { id: number } =>
@@ -851,7 +851,7 @@ export default function SettingsPage() {
                     </div>
                   </form>
                   <Dialog.Close asChild>
-                    <button className="absolute top-4 right-4 p-2 rounded-lg hover:bg-white/5">
+                    <button className="absolute top-4 right-4 p-2 rounded-lg hover:bg-dark-800/50">
                       <X className="w-5 h-5" />
                     </button>
                   </Dialog.Close>
@@ -971,7 +971,7 @@ export default function SettingsPage() {
               <div className="flex gap-2">
                 <button
                   onClick={handleCancelEdit}
-                  className="px-3 py-1.5 rounded-lg text-sm text-dark-400 hover:bg-white/5 transition-colors"
+                  className="px-3 py-1.5 rounded-lg text-sm text-dark-400 hover:bg-dark-800/50 transition-colors"
                 >
                   Отмена
                 </button>
@@ -1058,7 +1058,7 @@ export default function SettingsPage() {
                       onChange={(e) => setNewEmail(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddEmail())}
                       placeholder="email@example.com"
-                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent-500"
+                      className="flex-1 glass-light rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent-500"
                     />
                     <button
                       onClick={handleAddEmail}
@@ -1120,7 +1120,7 @@ export default function SettingsPage() {
                       onChange={(e) => setNewTelegramUsername(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTelegramUsername())}
                       placeholder="@username"
-                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent-500"
+                      className="flex-1 glass-light rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent-500"
                     />
                     <button
                       onClick={handleAddTelegramUsername}

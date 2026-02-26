@@ -83,7 +83,7 @@ function ReviewSkeleton() {
         </div>
       </div>
       {/* Profile card */}
-      <div className="bg-white/5 rounded-xl p-4 border border-white/5">
+      <div className="glass-light rounded-xl p-4">
         <div className="h-5 w-64 bg-white/10 rounded mb-3" />
         <div className="space-y-2">
           <div className="h-4 w-full bg-white/10 rounded" />
@@ -99,7 +99,7 @@ function ReviewSkeleton() {
       {/* Competencies */}
       <div className="grid grid-cols-2 gap-3">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div key={i} className="glass-light rounded-lg p-3">
             <div className="h-3 w-20 bg-white/10 rounded mb-2" />
             <div className="h-6 w-12 bg-white/10 rounded mb-1" />
             <div className="h-2 w-full bg-white/10 rounded-full" />
@@ -109,7 +109,7 @@ function ReviewSkeleton() {
       {/* Trails */}
       <div className="space-y-2">
         {[1, 2].map((i) => (
-          <div key={i} className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div key={i} className="glass-light rounded-lg p-3">
             <div className="h-4 w-40 bg-white/10 rounded mb-2" />
             <div className="h-3 w-full bg-white/10 rounded" />
           </div>
@@ -142,18 +142,18 @@ function CompetencyGauge({
           : 'bg-red-400';
 
   return (
-    <div className="bg-white/5 rounded-lg p-3 border border-white/5">
-      <div className="flex items-center gap-1.5 text-white/40 mb-1.5">
+    <div className="glass-light rounded-lg p-3">
+      <div className="flex items-center gap-1.5 text-dark-400 mb-1.5">
         <Icon className={clsx('w-3.5 h-3.5', color)} />
         <span className="text-xs">{label}</span>
       </div>
       <div className="flex items-baseline gap-2 mb-1.5">
-        <span className="text-lg font-bold text-white">{data.score}</span>
-        <span className="text-[10px] text-white/40 uppercase tracking-wide">
+        <span className="text-lg font-bold">{data.score}</span>
+        <span className="text-[10px] text-dark-400 uppercase tracking-wide">
           {data.label}
         </span>
       </div>
-      <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-1.5">
+      <div className="w-full h-1.5 bg-dark-600/30 rounded-full overflow-hidden mb-1.5">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${data.score}%` }}
@@ -161,7 +161,7 @@ function CompetencyGauge({
           className={clsx('h-full rounded-full', barColor)}
         />
       </div>
-      <p className="text-[10px] text-white/35 leading-relaxed">{data.detail}</p>
+      <p className="text-[10px] text-dark-400 leading-relaxed">{data.detail}</p>
     </div>
   );
 }
@@ -185,7 +185,7 @@ function TrailDetailCard({
         : 'bg-blue-400';
 
   return (
-    <div className="bg-white/5 rounded-lg p-3 border border-white/5 overflow-hidden">
+    <div className="glass-light rounded-lg p-3 overflow-hidden">
       <button onClick={() => setExpanded(!expanded)} className="w-full text-left">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -293,7 +293,7 @@ function CertificateCard({ cert }: { cert: Certificate }) {
   const style = levelColors[cert.level] || levelColors.Junior;
 
   return (
-    <div className="bg-white/5 rounded-lg p-3 border border-white/5 flex items-center gap-3">
+    <div className="glass-light rounded-lg p-3 flex items-center gap-3">
       <div className="p-2 rounded-lg bg-amber-500/15">
         <Medal className="w-4 h-4 text-amber-400" />
       </div>
@@ -414,7 +414,7 @@ export default function PrometheusDetailedReview({
           <p className="text-sm text-white/40">{error}</p>
           <button
             onClick={() => fetchData()}
-            className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors text-white/70"
+            className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 glass-light hover:bg-white/10 rounded-lg text-sm transition-colors text-white/70"
           >
             <RefreshCw className="w-4 h-4" />
             Повторить
@@ -444,7 +444,7 @@ export default function PrometheusDetailedReview({
           </p>
           <button
             onClick={() => fetchData()}
-            className="mt-3 flex items-center gap-2 mx-auto px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs transition-colors text-white/60"
+            className="mt-3 flex items-center gap-2 mx-auto px-3 py-1.5 glass-light hover:bg-white/10 rounded-lg text-xs transition-colors text-white/60"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             Обновить
@@ -479,19 +479,19 @@ export default function PrometheusDetailedReview({
     <div className="space-y-4 min-w-0">
       {/* ── Team Fit Recommendation (AI) — shown first for HR ── */}
       {detailed?.teamFitRecommendation && (
-        <div className="glass rounded-xl border border-white/10 p-4 sm:p-6">
-          <h4 className="text-sm font-medium text-white/50 mb-3 flex items-center gap-2">
+        <div className="glass rounded-xl p-4 sm:p-6">
+          <h4 className="text-sm font-medium text-dark-400 mb-3 flex items-center gap-2">
             <Users className="w-4 h-4 text-blue-400" />
             Рекомендация по интеграции в команду
           </h4>
-          <div className="bg-white/5 rounded-xl p-4 border border-white/5 space-y-3">
+          <div className="glass-light rounded-xl p-4 space-y-3">
             <div className="flex items-center gap-3">
               <ReadinessBadge level={detailed.teamFitRecommendation.readinessLevel} />
             </div>
 
             {detailed.teamFitRecommendation.recommendedRoles.length > 0 && (
               <div>
-                <span className="text-[10px] text-white/40 uppercase tracking-wide">
+                <span className="text-[10px] text-dark-400 uppercase tracking-wide">
                   Рекомендуемые роли
                 </span>
                 <div className="flex flex-wrap gap-1.5 mt-1">
@@ -507,7 +507,7 @@ export default function PrometheusDetailedReview({
               </div>
             )}
 
-            <p className="text-sm text-white/55 leading-relaxed">
+            <p className="text-sm text-dark-300 leading-relaxed">
               {detailed.teamFitRecommendation.integrationAdvice}
             </p>
 
@@ -520,7 +520,7 @@ export default function PrometheusDetailedReview({
                   {detailed.teamFitRecommendation.watchPoints.map((wp, i) => (
                     <li
                       key={i}
-                      className="text-xs text-white/45 flex items-start gap-1.5"
+                      className="text-xs text-dark-400 flex items-start gap-1.5"
                     >
                       <AlertTriangle className="w-3 h-3 text-amber-400 flex-shrink-0 mt-0.5" />
                       <span>{wp}</span>
@@ -625,7 +625,7 @@ export default function PrometheusDetailedReview({
 
         {/* ── Key Metrics ── */}
         <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div className="glass-light rounded-lg p-3">
             <div className="flex items-center gap-1.5 text-white/40 mb-1">
               <Zap className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-xs">XP</span>
@@ -634,14 +634,14 @@ export default function PrometheusDetailedReview({
               {m.totalXP.toLocaleString()}
             </p>
           </div>
-          <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div className="glass-light rounded-lg p-3">
             <div className="flex items-center gap-1.5 text-white/40 mb-1">
               <GitBranch className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-xs">Трейлов</span>
             </div>
             <p className="text-lg font-semibold text-white">{m.trailCount}</p>
           </div>
-          <div className="bg-white/5 rounded-lg p-3 border border-white/5">
+          <div className="glass-light rounded-lg p-3">
             <div className="flex items-center gap-1.5 text-white/40 mb-1">
               <BookOpen className="w-3.5 h-3.5 text-blue-400" />
               <span className="text-xs">Модулей</span>
@@ -653,7 +653,7 @@ export default function PrometheusDetailedReview({
         </div>
 
         {/* ── Overall Progress ── */}
-        <div className="bg-white/5 rounded-xl p-4 border border-white/5 mb-4">
+        <div className="glass-light rounded-xl p-4 mb-4">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-cyan-400" />
@@ -686,7 +686,7 @@ export default function PrometheusDetailedReview({
         {/* ── Competency Analysis (AI) ── */}
         {detailed?.competencyAnalysis && (
           <div className="mb-4">
-            <h4 className="text-sm font-medium text-white/50 mb-3 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-dark-400 mb-3 flex items-center gap-2">
               <Target className="w-4 h-4 text-purple-400" />
               Компетенции
             </h4>

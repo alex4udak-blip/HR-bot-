@@ -116,7 +116,7 @@ function ParsedDataPreview({ data }: { data: ParsedResume }) {
       initial={{ opacity: 0, height: 0 }}
       animate={{ opacity: 1, height: 'auto' }}
       exit={{ opacity: 0, height: 0 }}
-      className="mt-3 p-3 bg-white/5 rounded-lg border border-white/10 space-y-2"
+      className="mt-3 p-3 glass-light rounded-lg space-y-2"
     >
       {data.name && (
         <div className="flex items-center gap-2 text-sm">
@@ -213,12 +213,12 @@ function FileItem({
           ? 'bg-red-500/10 border-red-500/30'
           : file.status === 'done'
             ? 'bg-green-500/10 border-green-500/30'
-            : 'bg-white/5 border-white/10'
+            : 'glass-light border-white/10'
       )}
     >
       <div className="flex items-start gap-3">
         {/* File icon */}
-        <div className="flex-shrink-0 p-2 bg-white/5 rounded-lg">
+        <div className="flex-shrink-0 p-2 glass-light rounded-lg">
           {getFileIcon(file.file.name)}
         </div>
 
@@ -487,8 +487,8 @@ export default function ResumeUploader({
           isDragging
             ? 'border-blue-500 bg-blue-500/10 scale-[1.02]'
             : disabled
-              ? 'border-white/10 bg-white/5 opacity-50 cursor-not-allowed'
-              : 'border-white/20 hover:border-white/40 hover:bg-white/5'
+              ? 'border-white/10 glass-light opacity-50 cursor-not-allowed'
+              : 'border-white/20 hover:border-white/40 hover:bg-dark-800/50'
         )}
         role="button"
         tabIndex={disabled ? -1 : 0}
@@ -512,7 +512,7 @@ export default function ResumeUploader({
           'mx-auto w-16 h-16 rounded-full flex items-center justify-center mb-4 transition-colors',
           isDragging
             ? 'bg-blue-500/20'
-            : 'bg-white/5'
+            : 'glass-light'
         )}>
           <Upload className={clsx(
             'w-8 h-8 transition-colors',
@@ -540,7 +540,7 @@ export default function ResumeUploader({
           {SUPPORTED_EXTENSIONS.map(ext => (
             <span
               key={ext}
-              className="px-2 py-0.5 bg-white/5 rounded"
+              className="px-2 py-0.5 glass-light rounded"
             >
               {ext.toUpperCase()}
             </span>
@@ -563,7 +563,7 @@ export default function ResumeUploader({
 
       {/* Overall progress */}
       {isUploading && (
-        <div className="p-3 bg-white/5 rounded-lg" role="status" aria-live="polite">
+        <div className="p-3 glass-light rounded-lg" role="status" aria-live="polite">
           <div className="flex items-center justify-between text-sm mb-2">
             <span className="text-white/60">Загрузка файлов...</span>
             <span className="text-white/40" aria-label={`${overallProgress} процентов`}>{overallProgress}%</span>

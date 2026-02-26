@@ -66,7 +66,7 @@ const ChatItem = memo(function ChatItem({ chat, isSelected, onSelect, index, dis
           </span>
         </div>
         <div className="flex items-center gap-3 text-sm text-dark-400 overflow-hidden flex-wrap">
-          <span className={clsx('text-xs px-1.5 py-0.5 rounded flex-shrink-0', typeConfig.color, 'bg-white/5')}>
+          <span className={clsx('text-xs px-1.5 py-0.5 rounded flex-shrink-0', typeConfig.color, 'glass-light')}>
             {chat.custom_type_name || typeConfig.name}
           </span>
           <span className="flex items-center gap-1 flex-shrink-0">
@@ -100,7 +100,7 @@ const ChatItem = memo(function ChatItem({ chat, isSelected, onSelect, index, dis
   );
 
   const buttonClass = clsx(
-    'w-full p-4 text-left transition-all duration-200 hover:bg-white/5 border-b border-white/5',
+    'w-full p-4 text-left transition-all duration-200 hover:bg-dark-800/50 border-b border-white/5',
     isSelected && 'bg-accent-500/10 border-l-2 border-accent-500'
   );
 

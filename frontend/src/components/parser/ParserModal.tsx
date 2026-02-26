@@ -244,7 +244,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted }: P
           </OnboardingTooltip>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+            className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
             aria-label="Закрыть окно"
           >
             <X className="w-5 h-5" aria-hidden="true" />
@@ -262,8 +262,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted }: P
             className={clsx(
               'flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm transition-colors',
               activeTab === 'url'
-                ? 'bg-white/5 text-white border-b-2 border-cyan-500'
-                : 'text-white/60 hover:text-white hover:bg-white/5'
+                ? 'glass-light text-white border-b-2 border-cyan-500'
+                : 'text-white/60 hover:text-white hover:bg-dark-800/50'
             )}
             role="tab"
             aria-selected={activeTab === 'url'}
@@ -283,8 +283,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted }: P
               className={clsx(
                 'flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm transition-colors',
                 activeTab === 'file'
-                  ? 'bg-white/5 text-white border-b-2 border-cyan-500'
-                  : 'text-white/60 hover:text-white hover:bg-white/5'
+                  ? 'glass-light text-white border-b-2 border-cyan-500'
+                  : 'text-white/60 hover:text-white hover:bg-dark-800/50'
               )}
               role="tab"
               aria-selected={activeTab === 'file'}
@@ -327,7 +327,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted }: P
                         : 'https://hh.ru/vacancy/123456'
                       }
                       className={clsx(
-                        'w-full px-4 py-3 bg-white/5 border rounded-lg focus:outline-none text-sm pr-24',
+                        'w-full px-4 py-3 glass-light border rounded-lg focus:outline-none text-sm pr-24',
                         error ? 'border-red-500/50' : 'border-white/10 focus:border-cyan-500'
                       )}
                       disabled={loading}
@@ -373,7 +373,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted }: P
                       'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors',
                       isDragging
                         ? 'border-cyan-500 bg-cyan-500/10'
-                        : 'border-white/20 hover:border-white/40 hover:bg-white/5'
+                        : 'border-white/20 hover:border-white/40 hover:bg-dark-800/50'
                     )}
                     role="button"
                     tabIndex={0}
@@ -418,7 +418,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted }: P
                   className={clsx(
                     'w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition-colors',
                     loading || !isUrlValid
-                      ? 'bg-white/5 text-white/40 cursor-not-allowed'
+                      ? 'glass-light text-white/40 cursor-not-allowed'
                       : 'bg-cyan-600 hover:bg-cyan-500 text-white'
                   )}
                   aria-busy={loading}

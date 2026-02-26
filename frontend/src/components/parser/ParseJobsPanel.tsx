@@ -144,7 +144,7 @@ export default function ParseJobsPanel({ refreshTrigger, onJobComplete }: ParseJ
                 'flex items-center gap-3 p-2 rounded-lg',
                 job.status === 'completed' ? 'bg-green-500/10' :
                 job.status === 'failed' ? 'bg-red-500/10' :
-                'bg-white/5'
+                'glass-light'
               )}
             >
               {/* Status icon */}

@@ -205,7 +205,7 @@ export default function InternsAnalyticsTab() {
             <select
               value={selectedTrail}
               onChange={e => setSelectedTrail(e.target.value)}
-              className="appearance-none pl-3 pr-8 py-2 bg-white/5 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer [&>option]:bg-dark-900 [&>option]:text-white"
+              className="appearance-none pl-3 pr-8 py-2 glass-light rounded-lg text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer [&>option]:bg-dark-900 [&>option]:text-white"
             >
               <option value="all">Все трейлы</option>
               {filters.trails.map(trail => (
@@ -422,7 +422,7 @@ export default function InternsAnalyticsTab() {
                 {analytics.trailProgress.map(trail => {
                   const avgTime = trailAvgTimeMap.get(trail.id);
                   return (
-                    <tr key={trail.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                    <tr key={trail.id} className="border-b border-white/5 hover:bg-dark-800/50 transition-colors">
                       <td className="px-4 py-3 font-medium truncate max-w-[200px]">{trail.title}</td>
                       <td className="px-4 py-3 text-white/60">{trail.enrollments}</td>
                       <td className="px-4 py-3 text-white/60">{trail.completedModules}</td>

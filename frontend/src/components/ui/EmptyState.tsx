@@ -214,7 +214,7 @@ export default function EmptyState({
       {/* Tips */}
       {tips && tips.length > 0 && (
         <ItemWrapper {...itemProps}>
-          <div className="mt-4 p-4 bg-white/5 rounded-xl border border-white/10 max-w-md">
+          <div className="mt-4 p-4 glass-light rounded-xl max-w-md">
             <p className="text-xs text-white/40 uppercase tracking-wider mb-2">Советы</p>
             <ul className="space-y-1.5">
               {tips.map((tip) => (
@@ -236,8 +236,8 @@ export default function EmptyState({
               const ActionIcon = actionItem.icon;
               const buttonVariantStyles = {
                 primary: 'bg-cyan-600 hover:bg-cyan-500 text-white',
-                secondary: 'bg-white/5 hover:bg-white/10 border border-white/10 text-white/80',
-                ghost: 'hover:bg-white/5 text-white/60 hover:text-white/80'
+                secondary: 'glass-light hover:bg-white/10 text-white/80',
+                ghost: 'hover:bg-dark-800/50 text-white/60 hover:text-white/80'
               };
               return (
                 <button
@@ -342,7 +342,7 @@ function KanbanIllustration({ className }: { className?: string }) {
           <div
             key={i}
             className={clsx(
-              'w-8 rounded-lg border border-white/10 bg-white/5 flex flex-col items-center py-2 gap-1',
+              'w-8 rounded-lg glass-light flex flex-col items-center py-2 gap-1',
               i === 1 && 'h-16',
               i === 2 && 'h-20',
               i === 3 && 'h-12'

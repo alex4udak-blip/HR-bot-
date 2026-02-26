@@ -443,14 +443,14 @@ export default function CriteriaPanelEntity({ entityId, entityType }: CriteriaPa
                 value={templateName}
                 onChange={(e) => setTemplateName(e.target.value)}
                 placeholder="Название шаблона..."
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/40 focus:outline-none focus:border-purple-500 mb-4"
+                className="w-full px-4 py-3 glass-light rounded-xl text-white placeholder-white/40 focus:outline-none focus:border-purple-500 mb-4"
                 autoFocus
               />
 
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowSaveAsTemplate(false)}
-                  className="flex-1 px-4 py-2 rounded-xl bg-white/5 text-white/60 hover:bg-white/10 transition-colors"
+                  className="flex-1 px-4 py-2 rounded-xl glass-light text-white/60 hover:bg-white/10 transition-colors"
                 >
                   Отмена
                 </button>

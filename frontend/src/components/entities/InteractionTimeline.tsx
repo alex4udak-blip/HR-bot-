@@ -324,7 +324,7 @@ export default function InteractionTimeline({
         {expanded && (
           <div className="flex items-center gap-2">
             {/* Filter buttons */}
-            <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
+            <div className="flex items-center gap-1 glass-light rounded-lg p-1">
               <button
                 onClick={() => setFilter(null)}
                 className={clsx(
@@ -467,7 +467,7 @@ export default function InteractionTimeline({
             {filteredEvents.length > 10 && !showAllEvents && (
               <button
                 onClick={() => setShowAllEvents(true)}
-                className="w-full py-3 text-center text-sm text-purple-400 hover:text-purple-300 bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
+                className="w-full py-3 text-center text-sm text-purple-400 hover:text-purple-300 glass-light hover:bg-white/10 rounded-lg transition-colors"
               >
                 Показать ещё {filteredEvents.length - 10} событий
               </button>

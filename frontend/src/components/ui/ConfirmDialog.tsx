@@ -94,7 +94,7 @@ export default function ConfirmDialog({
               <button
                 onClick={onCancel}
                 disabled={loading}
-                className="p-1 hover:bg-white/5 rounded-lg transition-colors disabled:opacity-50"
+                className="p-1 hover:bg-dark-800/50 rounded-lg transition-colors disabled:opacity-50"
                 aria-label="Close dialog"
               >
                 <X className="w-5 h-5 text-white/40" />
@@ -102,12 +102,12 @@ export default function ConfirmDialog({
             </div>
 
             {/* Actions */}
-            <div className="flex items-center justify-end gap-3 px-5 py-4 bg-white/5 border-t border-white/10">
+            <div className="flex items-center justify-end gap-3 px-5 py-4 glass-light border-t border-white/10">
               <button
                 type="button"
                 onClick={onCancel}
                 disabled={loading}
-                className="px-4 py-2 text-white/60 hover:text-white hover:bg-white/5 rounded-lg transition-colors disabled:opacity-50"
+                className="px-4 py-2 text-white/60 hover:text-white hover:bg-dark-800/50 rounded-lg transition-colors disabled:opacity-50"
               >
                 {cancelLabel}
               </button>

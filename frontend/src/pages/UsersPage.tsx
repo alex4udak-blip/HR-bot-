@@ -60,7 +60,7 @@ export default function UsersPage() {
                     'px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2',
                     activeTab === 'org'
                       ? 'bg-cyan-500/20 text-cyan-400'
-                      : 'bg-white/5 text-white/60 hover:bg-white/10'
+                      : 'glass-light text-white/60 hover:bg-white/10'
                   )}
                 >
                   <Building2 size={16} />
@@ -72,7 +72,7 @@ export default function UsersPage() {
                     'px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2',
                     activeTab === 'system'
                       ? 'bg-cyan-500/20 text-cyan-400'
-                      : 'bg-white/5 text-white/60 hover:bg-white/10'
+                      : 'glass-light text-white/60 hover:bg-white/10'
                   )}
                 >
                   <Shield size={16} />
@@ -240,7 +240,7 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
                 'px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2',
                 !showInvitationsTab
                   ? 'bg-cyan-500/20 text-cyan-400'
-                  : 'bg-white/5 text-white/60 hover:bg-white/10'
+                  : 'glass-light text-white/60 hover:bg-white/10'
               )}
             >
               <Users size={14} />
@@ -253,7 +253,7 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
                   'px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2',
                   showInvitationsTab
                     ? 'bg-cyan-500/20 text-cyan-400'
-                    : 'bg-white/5 text-white/60 hover:bg-white/10'
+                    : 'glass-light text-white/60 hover:bg-white/10'
                 )}
               >
                 <Send size={14} />
@@ -333,7 +333,7 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
                       <select
                         value={member.role}
                         onChange={(e) => handleChangeRole(member.user_id, e.target.value as OrgRole)}
-                        className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm"
+                        className="px-3 py-1.5 glass-light rounded-lg text-white text-sm"
                       >
                         <option value="admin">Администратор</option>
                         <option value="member">Участник</option>
@@ -356,7 +356,7 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
                           'p-2 rounded-lg transition-colors flex items-center gap-1.5',
                           member.has_full_access
                             ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
-                            : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60'
+                            : 'glass-light text-white/40 hover:bg-white/10 hover:text-white/60'
                         )}
                         title={member.has_full_access ? 'Полный доступ к базе (нажмите чтобы отключить)' : 'Дать полный доступ к базе'}
                       >
@@ -515,7 +515,7 @@ function InvitationCard({ invitation, onRevoke }: { invitation: Invitation; onRe
           )}
 
           {/* Invite Link */}
-          <div className="flex items-center gap-2 p-2 bg-white/5 rounded-lg">
+          <div className="flex items-center gap-2 p-2 glass-light rounded-lg">
             <input
               type="text"
               value={inviteUrl}
@@ -685,7 +685,7 @@ function InviteMemberModal({
           {/* Invite Link */}
           <div className="mb-6">
             <label className="block text-sm text-white/60 mb-2">Ссылка для приглашения</label>
-            <div className="flex items-center gap-2 p-3 bg-white/5 rounded-lg border border-white/10">
+            <div className="flex items-center gap-2 p-3 glass-light rounded-lg">
               <input
                 type="text"
                 value={inviteUrl}
@@ -717,7 +717,7 @@ function InviteMemberModal({
                 setEmail('');
                 setSelectedDepartments([]);
               }}
-              className="flex-1 py-2.5 bg-white/5 text-white rounded-lg hover:bg-white/10 transition-colors"
+              className="flex-1 py-2.5 glass-light text-white rounded-lg hover:bg-white/10 transition-colors"
             >
               Создать ещё
             </button>
@@ -768,7 +768,7 @@ function InviteMemberModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Иван Иванов"
-              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40"
+              className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40"
             />
             <p className="text-xs text-white/30 mt-1">Будет предзаполнено в форме регистрации</p>
           </div>
@@ -780,7 +780,7 @@ function InviteMemberModal({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="user@company.com"
-              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40"
+              className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40"
             />
           </div>
 
@@ -800,7 +800,7 @@ function InviteMemberModal({
                         'p-3 rounded-lg border transition-colors text-left',
                         role === r
                           ? 'bg-cyan-500/20 border-cyan-500/50'
-                          : 'bg-white/5 border-white/10 hover:bg-white/10'
+                          : 'glass-light border-white/10 hover:bg-white/10'
                       )}
                     >
                       <div className="flex items-center gap-2 mb-1">
@@ -829,14 +829,14 @@ function InviteMemberModal({
                         'flex items-center gap-3 p-2.5 rounded-lg transition-colors',
                         selected
                           ? 'bg-cyan-500/20 border border-cyan-500/50'
-                          : 'bg-white/5 border border-transparent hover:bg-white/10'
+                          : 'glass-light border border-transparent hover:bg-white/10'
                       )}
                     >
                       <input
                         type="checkbox"
                         checked={!!selected}
                         onChange={() => toggleDepartment(dept.id)}
-                        className="w-4 h-4 rounded border-white/20 bg-white/5 text-cyan-500 focus:ring-cyan-500"
+                        className="w-4 h-4 rounded border-white/20 glass-light text-cyan-500 focus:ring-cyan-500"
                       />
                       <div
                         className="w-3 h-3 rounded-full"
@@ -849,7 +849,7 @@ function InviteMemberModal({
                           value={selected.role}
                           onChange={(e) => setDepartmentRole(dept.id, e.target.value as DeptRole)}
                           onClick={(e) => e.stopPropagation()}
-                          className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-white text-xs"
+                          className="px-2 py-0.5 glass-light rounded text-white text-xs"
                         >
                           <option value="member">Участник</option>
                           <option value="sub_admin">Саб-админ</option>
@@ -869,7 +869,7 @@ function InviteMemberModal({
             <select
               value={expiresInDays}
               onChange={(e) => setExpiresInDays(Number(e.target.value))}
-              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
+              className="w-full px-4 py-2 glass-light rounded-lg text-white"
             >
               <option value={1}>1 день</option>
               <option value={3}>3 дня</option>
@@ -1016,8 +1016,8 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
             </Dialog.Trigger>
           <Dialog.Portal>
             <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
-            <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-y-auto bg-gray-900 border border-white/10 rounded-xl p-6 z-50">
-              <Dialog.Title className="text-xl font-semibold mb-4 text-white">
+            <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-y-auto glass rounded-2xl p-6 shadow-xl z-50">
+              <Dialog.Title className="text-xl font-semibold mb-4">
                 Создать пользователя
               </Dialog.Title>
               <form
@@ -1028,41 +1028,41 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
                 className="space-y-4"
               >
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Имя</label>
+                  <label className="block text-sm text-dark-400 mb-1">Имя</label>
                   <input
                     type="text"
                     value={newUser.name}
                     onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
                     required
-                    className="w-full bg-white/5 border border-white/10 rounded-lg py-2.5 px-4 text-white"
+                    className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Email</label>
+                  <label className="block text-sm text-dark-400 mb-1">Email</label>
                   <input
                     type="email"
                     value={newUser.email}
                     onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
                     required
-                    className="w-full bg-white/5 border border-white/10 rounded-lg py-2.5 px-4 text-white"
+                    className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Пароль</label>
+                  <label className="block text-sm text-dark-400 mb-1">Пароль</label>
                   <input
                     type="password"
                     value={newUser.password}
                     onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
                     required
-                    className="w-full bg-white/5 border border-white/10 rounded-lg py-2.5 px-4 text-white"
+                    className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Системная роль</label>
+                  <label className="block text-sm text-dark-400 mb-1">Системная роль</label>
                   <select
                     value={newUser.role}
                     onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg py-2.5 px-4 text-white"
+                    className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
                   >
                     <option value="admin">Admin</option>
                     <option value="superadmin">Superadmin</option>
@@ -1070,21 +1070,21 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
                 </div>
                 <div className="flex gap-3 pt-4">
                   <Dialog.Close asChild>
-                    <button type="button" className="flex-1 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-white">
+                    <button type="button" className="flex-1 py-2.5 rounded-xl glass-light hover:bg-white/10 transition-colors">
                       Отмена
                     </button>
                   </Dialog.Close>
                   <button
                     type="submit"
                     disabled={createMutation.isPending}
-                    className="flex-1 py-2.5 rounded-lg bg-cyan-500 text-white hover:bg-cyan-600 disabled:opacity-50"
+                    className="flex-1 py-2.5 rounded-xl bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50 transition-colors"
                   >
                     {createMutation.isPending ? 'Создание...' : 'Создать'}
                   </button>
                 </div>
               </form>
               <Dialog.Close asChild>
-                <button className="absolute top-4 right-4 p-2 rounded-lg hover:bg-white/5 text-white/60">
+                <button className="absolute top-4 right-4 p-2 rounded-lg hover:bg-dark-800/50 text-dark-400">
                   <X className="w-5 h-5" />
                 </button>
               </Dialog.Close>
@@ -1113,7 +1113,7 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: index * 0.05 }}
-                className="flex items-center gap-4 p-4 hover:bg-white/5 transition-colors"
+                className="flex items-center gap-4 p-4 hover:bg-dark-800/50 transition-colors"
               >
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500/20 to-purple-500/20 flex items-center justify-center">
                   <span className="text-lg font-semibold text-cyan-400">
@@ -1172,18 +1172,18 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
       <Dialog.Root open={!!passwordResetResult} onOpenChange={(open) => !open && setPasswordResetResult(null)}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
-          <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-gray-900 border border-white/10 rounded-xl p-6 z-50">
-            <Dialog.Title className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+          <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md glass rounded-2xl p-6 shadow-xl z-50">
+            <Dialog.Title className="text-xl font-semibold mb-4 flex items-center gap-2">
               <Key className="text-cyan-400" />
               Пароль сброшен
             </Dialog.Title>
             {passwordResetResult && (
               <div className="space-y-4">
-                <p className="text-white/60 text-sm">
-                  Временный пароль для <span className="text-white font-medium">{passwordResetResult.email}</span>:
+                <p className="text-dark-400 text-sm">
+                  Временный пароль для <span className="text-dark-100 font-medium">{passwordResetResult.email}</span>:
                 </p>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 bg-white/5 border border-white/10 rounded-lg py-3 px-4 text-cyan-400 font-mono text-lg">
+                  <code className="flex-1 glass-light rounded-lg py-3 px-4 text-cyan-400 font-mono text-lg">
                     {passwordResetResult.password}
                   </code>
                   <button
@@ -1193,23 +1193,23 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
                       setTimeout(() => setCopiedPassword(false), 2000);
                       toast.success('Пароль скопирован');
                     }}
-                    className="p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                    className="p-3 rounded-lg glass-light hover:bg-white/10 transition-colors"
                   >
-                    {copiedPassword ? <Check className="w-5 h-5 text-green-400" /> : <Copy className="w-5 h-5 text-white/60" />}
+                    {copiedPassword ? <Check className="w-5 h-5 text-green-400" /> : <Copy className="w-5 h-5 text-dark-400" />}
                   </button>
                 </div>
                 <p className="text-yellow-400/80 text-sm bg-yellow-500/10 rounded-lg p-3">
                   ⚠️ Пользователь должен будет сменить пароль при следующем входе
                 </p>
                 <Dialog.Close asChild>
-                  <button className="w-full py-2.5 rounded-lg bg-cyan-500 text-white hover:bg-cyan-600">
+                  <button className="w-full py-2.5 rounded-xl bg-accent-500 text-white hover:bg-accent-600 transition-colors">
                     Закрыть
                   </button>
                 </Dialog.Close>
               </div>
             )}
             <Dialog.Close asChild>
-              <button className="absolute top-4 right-4 p-2 rounded-lg hover:bg-white/5 text-white/60">
+              <button className="absolute top-4 right-4 p-2 rounded-lg hover:bg-dark-800/50 text-dark-400">
                 <X className="w-5 h-5" />
               </button>
             </Dialog.Close>

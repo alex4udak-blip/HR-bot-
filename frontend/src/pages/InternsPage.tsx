@@ -453,7 +453,7 @@ export default function InternsPage() {
                 <GraduationCap className="w-6 h-6 text-emerald-400" />
                 База практикантов
                 {!isLoading && !isError && (
-                  <span className="text-sm font-medium text-white/40 bg-white/5 px-2 py-0.5 rounded-full ml-1">
+                  <span className="text-sm font-medium text-white/40 glass-light px-2 py-0.5 rounded-full ml-1">
                     {filteredInterns.length}
                   </span>
                 )}
@@ -486,7 +486,7 @@ export default function InternsPage() {
                   placeholder="Поиск по имени, email, трекам..."
                   value={searchQuery}
                   onChange={(e) => { setSearchQuery(e.target.value); resetPage(); }}
-                  className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 text-sm transition-all"
+                  className="w-full pl-10 pr-4 py-2.5 glass-light rounded-xl focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 text-sm transition-all"
                 />
               </div>
 
@@ -500,7 +500,7 @@ export default function InternsPage() {
                   <select
                     value={selectedTrailFilter}
                     onChange={e => { setSelectedTrailFilter(e.target.value); resetPage(); }}
-                    className="appearance-none pl-3 pr-8 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer min-w-[140px] [&>option]:bg-dark-900 [&>option]:text-white"
+                    className="appearance-none pl-3 pr-8 py-2.5 glass-light rounded-xl text-sm focus:outline-none focus:border-emerald-500/50 cursor-pointer min-w-[140px] [&>option]:bg-dark-900 [&>option]:text-white"
                   >
                     <option value="all">Все трейлы</option>
                     {availableTrails.map(trail => (

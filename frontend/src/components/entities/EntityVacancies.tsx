@@ -70,7 +70,7 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           onClick={() => handleNavigateToVacancy(app.vacancy_id)}
-          className="p-4 bg-white/5 rounded-xl border border-white/10 cursor-pointer hover:bg-white/10 transition-colors group"
+          className="p-4 glass-light rounded-xl cursor-pointer hover:bg-white/10 transition-colors group"
         >
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -95,7 +95,7 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
                     {APPLICATION_STAGE_LABELS[app.stage]}
                   </span>
                   {app.source && (
-                    <span className="text-xs px-2 py-0.5 bg-white/5 rounded-full text-white/40">
+                    <span className="text-xs px-2 py-0.5 glass-light rounded-full text-white/40">
                       {app.source}
                     </span>
                   )}
@@ -118,7 +118,7 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
 
           {/* Notes preview */}
           {app.notes && (
-            <div className="mt-3 p-2 bg-white/5 rounded-lg text-sm text-white/60 line-clamp-2">
+            <div className="mt-3 p-2 glass-light rounded-lg text-sm text-white/60 line-clamp-2">
               {app.notes}
             </div>
           )}

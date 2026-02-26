@@ -336,7 +336,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
                   placeholder="Например: Интервью с кандидатом"
-                  className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-500/50"
+                  className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-500/50"
                 />
               </div>
 
@@ -349,7 +349,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                   <select
                     value={editEntityId || ''}
                     onChange={(e) => setEditEntityId(e.target.value ? parseInt(e.target.value) : null)}
-                    className="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-cyan-500/50 appearance-none cursor-pointer"
+                    className="flex-1 px-4 py-2 glass-light rounded-lg text-white focus:outline-none focus:border-cyan-500/50 appearance-none cursor-pointer"
                   >
                     <option value="" className="bg-gray-900">Не связан</option>
                     {entities.map((entity) => (
@@ -445,7 +445,7 @@ export default function CallDetail({ call }: CallDetailProps) {
 
       {/* Info Cards */}
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-white/5 rounded-xl p-4">
+        <div className="glass-light rounded-xl p-4">
           <div className="flex items-center gap-2 text-white/40 text-sm mb-2">
             <Clock size={16} />
             Длительность
@@ -455,7 +455,7 @@ export default function CallDetail({ call }: CallDetailProps) {
           </p>
         </div>
 
-        <div className="bg-white/5 rounded-xl p-4">
+        <div className="glass-light rounded-xl p-4">
           <div className="flex items-center gap-2 text-white/40 text-sm mb-2">
             <FileText size={16} />
             Источник
@@ -465,7 +465,7 @@ export default function CallDetail({ call }: CallDetailProps) {
           </p>
         </div>
 
-        <div className="bg-white/5 rounded-xl p-4 relative group overflow-hidden">
+        <div className="glass-light rounded-xl p-4 relative group overflow-hidden">
           <div className="flex items-center gap-2 text-white/40 text-sm mb-2">
             <User size={16} className="flex-shrink-0" />
             Контакт
@@ -495,7 +495,7 @@ export default function CallDetail({ call }: CallDetailProps) {
 
       {/* Speaker Statistics */}
       {call.status === 'done' && speakerStats.length > 0 && (
-        <div className="bg-white/5 rounded-xl p-4 mb-6 overflow-hidden">
+        <div className="glass-light rounded-xl p-4 mb-6 overflow-hidden">
           <h3 className="text-sm font-medium text-white/60 flex items-center gap-2 mb-4">
             <Users size={16} />
             Статистика участников
@@ -546,7 +546,7 @@ export default function CallDetail({ call }: CallDetailProps) {
       {(call.title || !isEditing) && (
         <div className="flex items-center gap-3 mb-6">
           {call.title && (
-            <div className="flex-1 bg-white/5 rounded-xl p-4">
+            <div className="flex-1 glass-light rounded-xl p-4">
               <div className="flex items-center gap-2 text-white/40 text-sm mb-1">
                 <FileText size={14} />
                 Название
@@ -584,7 +584,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                     'px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors flex-shrink-0',
                     activeTab === tab.id
                       ? 'bg-cyan-500/20 text-cyan-400'
-                      : 'bg-white/5 text-white/60 hover:bg-white/10'
+                      : 'glass-light text-white/60 hover:bg-white/10'
                   )}
                 >
                   <Icon size={16} className="flex-shrink-0" />
@@ -599,7 +599,7 @@ export default function CallDetail({ call }: CallDetailProps) {
             key={activeTab}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white/5 rounded-xl p-6"
+            className="glass-light rounded-xl p-6"
           >
             {activeTab === 'summary' && (
               <div className="space-y-6 overflow-hidden">
@@ -637,7 +637,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                       </h3>
                       <button
                         onClick={() => handleCopy(call.summary || '')}
-                        className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex-shrink-0"
+                        className="p-2 rounded-lg glass-light hover:bg-white/10 transition-colors flex-shrink-0"
                       >
                         {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} className="text-white/40" />}
                       </button>
@@ -688,7 +688,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                         </button>
                         <button
                           onClick={() => handleCopy(call.transcript || '')}
-                          className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex-shrink-0"
+                          className="p-2 rounded-lg glass-light hover:bg-white/10 transition-colors flex-shrink-0"
                           title="Копировать"
                         >
                           {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} className="text-white/40" />}
@@ -775,7 +775,7 @@ export default function CallDetail({ call }: CallDetailProps) {
                 {call.action_items && call.action_items.length > 0 ? (
                   <ul className="space-y-3 overflow-hidden">
                     {call.action_items.map((item, idx) => (
-                      <li key={idx} className="flex items-start gap-3 p-3 bg-white/5 rounded-lg overflow-hidden">
+                      <li key={idx} className="flex items-start gap-3 p-3 glass-light rounded-lg overflow-hidden">
                         <div className="w-5 h-5 rounded border border-green-500/50 flex items-center justify-center flex-shrink-0 mt-0.5">
                           <CheckSquare size={12} className="text-green-400 opacity-0" />
                         </div>

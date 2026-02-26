@@ -506,7 +506,7 @@ export default function AdminSimulatorPage() {
                     'px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                     matrixMode === mode.id
                       ? `bg-${mode.color}-500/30 text-${mode.color}-400 border border-${mode.color}-500/50`
-                      : 'bg-white/5 text-white/60 hover:bg-white/10 border border-white/10'
+                      : 'glass-light text-white/60 hover:bg-white/10'
                   )}
                   style={matrixMode === mode.id ? {
                     backgroundColor: mode.color === 'green' ? 'rgba(34, 197, 94, 0.3)' :
@@ -544,7 +544,7 @@ export default function AdminSimulatorPage() {
               <span className="text-white/60">Разрешено</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg glass-light flex items-center justify-center">
                 <X size={16} className="text-white/40" />
               </div>
               <span className="text-white/60">Запрещено</span>
@@ -605,7 +605,7 @@ export default function AdminSimulatorPage() {
                           <div className="flex justify-center">
                             <div className={clsx(
                               'w-8 h-8 rounded-lg flex items-center justify-center',
-                              allowed ? 'bg-green-500/20' : 'bg-white/5'
+                              allowed ? 'bg-green-500/20' : 'glass-light'
                             )}>
                               {allowed ? (
                                 <Check size={16} className="text-green-400" />
@@ -660,7 +660,7 @@ export default function AdminSimulatorPage() {
                 <select
                   value={scenario.actorRole}
                   onChange={(e) => setScenario({ ...scenario, actorRole: e.target.value as OrgRole })}
-                  className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-cyan-500/50"
+                  className="w-full px-4 py-2.5 glass-light rounded-xl text-white focus:outline-none focus:border-cyan-500/50"
                 >
                   {ROLES.map((role) => (
                     <option key={role.id} value={role.id}>
@@ -679,7 +679,7 @@ export default function AdminSimulatorPage() {
                       onChange={(e) => setScenario({ ...scenario, actorIsOwner: e.target.checked })}
                       className="sr-only peer"
                     />
-                    <div className="w-5 h-5 border-2 border-white/30 rounded bg-white/5 peer-checked:bg-cyan-500 peer-checked:border-cyan-500 transition-colors flex items-center justify-center">
+                    <div className="w-5 h-5 border-2 border-white/30 rounded glass-light peer-checked:bg-cyan-500 peer-checked:border-cyan-500 transition-colors flex items-center justify-center">
                       {scenario.actorIsOwner && <Check size={14} className="text-white" />}
                     </div>
                   </div>
@@ -697,7 +697,7 @@ export default function AdminSimulatorPage() {
                         onChange={(e) => setScenario({ ...scenario, actorSameDepartment: e.target.checked })}
                         className="sr-only peer"
                       />
-                      <div className="w-5 h-5 border-2 border-white/30 rounded bg-white/5 peer-checked:bg-cyan-500 peer-checked:border-cyan-500 transition-colors flex items-center justify-center">
+                      <div className="w-5 h-5 border-2 border-white/30 rounded glass-light peer-checked:bg-cyan-500 peer-checked:border-cyan-500 transition-colors flex items-center justify-center">
                         {scenario.actorSameDepartment && <Check size={14} className="text-white" />}
                       </div>
                     </div>
@@ -716,7 +716,7 @@ export default function AdminSimulatorPage() {
                         onChange={(e) => setScenario({ ...scenario, resourceIsShared: e.target.checked })}
                         className="sr-only peer"
                       />
-                      <div className="w-5 h-5 border-2 border-white/30 rounded bg-white/5 peer-checked:bg-cyan-500 peer-checked:border-cyan-500 transition-colors flex items-center justify-center">
+                      <div className="w-5 h-5 border-2 border-white/30 rounded glass-light peer-checked:bg-cyan-500 peer-checked:border-cyan-500 transition-colors flex items-center justify-center">
                         {scenario.resourceIsShared && <Check size={14} className="text-white" />}
                       </div>
                     </div>
@@ -731,7 +731,7 @@ export default function AdminSimulatorPage() {
                   <select
                     value={scenario.resourceAccessLevel}
                     onChange={(e) => setScenario({ ...scenario, resourceAccessLevel: e.target.value as AccessLevel })}
-                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-cyan-500/50"
+                    className="w-full px-4 py-2.5 glass-light rounded-xl text-white focus:outline-none focus:border-cyan-500/50"
                   >
                     {ACCESS_LEVELS.map((level) => (
                       <option key={level.id} value={level.id}>
@@ -755,7 +755,7 @@ export default function AdminSimulatorPage() {
                 <select
                   value={scenario.resourceType}
                   onChange={(e) => setScenario({ ...scenario, resourceType: e.target.value as ResourceType })}
-                  className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-cyan-500/50"
+                  className="w-full px-4 py-2.5 glass-light rounded-xl text-white focus:outline-none focus:border-cyan-500/50"
                 >
                   {RESOURCES.map((resource) => (
                     <option key={resource.id} value={resource.id}>
@@ -770,7 +770,7 @@ export default function AdminSimulatorPage() {
                 <select
                   value={scenario.action}
                   onChange={(e) => setScenario({ ...scenario, action: e.target.value as ActionType })}
-                  className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-cyan-500/50"
+                  className="w-full px-4 py-2.5 glass-light rounded-xl text-white focus:outline-none focus:border-cyan-500/50"
                 >
                   {ACTIONS.map((action) => (
                     <option key={action.id} value={action.id}>
@@ -787,7 +787,7 @@ export default function AdminSimulatorPage() {
                     <select
                       value={scenario.targetUserRole}
                       onChange={(e) => setScenario({ ...scenario, targetUserRole: e.target.value as OrgRole })}
-                      className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-cyan-500/50"
+                      className="w-full px-4 py-2.5 glass-light rounded-xl text-white focus:outline-none focus:border-cyan-500/50"
                     >
                       {ROLES.map((role) => (
                         <option key={role.id} value={role.id}>
@@ -806,7 +806,7 @@ export default function AdminSimulatorPage() {
                           onChange={(e) => setScenario({ ...scenario, targetSameDepartment: e.target.checked })}
                           className="sr-only peer"
                         />
-                        <div className="w-5 h-5 border-2 border-white/30 rounded bg-white/5 peer-checked:bg-cyan-500 peer-checked:border-cyan-500 transition-colors flex items-center justify-center">
+                        <div className="w-5 h-5 border-2 border-white/30 rounded glass-light peer-checked:bg-cyan-500 peer-checked:border-cyan-500 transition-colors flex items-center justify-center">
                           {scenario.targetSameDepartment && <Check size={14} className="text-white" />}
                         </div>
                       </div>
@@ -1023,7 +1023,7 @@ export default function AdminSimulatorPage() {
           {sandboxStatus.exists && sandboxStatus.users && (
             <div className="space-y-6">
               {/* Department info */}
-              <div className="p-4 bg-white/5 rounded-xl">
+              <div className="p-4 glass-light rounded-xl">
                 <div className="flex items-center gap-2 text-cyan-400 mb-1">
                   <Building2 className="w-5 h-5" />
                   <span className="font-semibold">Департамент</span>
@@ -1047,7 +1047,7 @@ export default function AdminSimulatorPage() {
                     </thead>
                     <tbody>
                       {sandboxStatus.users?.map((user) => (
-                        <tr key={user.email} className="border-b border-white/5 hover:bg-white/5">
+                        <tr key={user.email} className="border-b border-white/5 hover:bg-dark-800/50">
                           <td className="py-3 px-4">
                             <span className="text-white font-mono text-sm">{user.email}</span>
                           </td>
@@ -1081,7 +1081,7 @@ export default function AdminSimulatorPage() {
 
               {/* Stats */}
               {sandboxStatus.stats && (
-                <div className="p-4 bg-white/5 rounded-xl">
+                <div className="p-4 glass-light rounded-xl">
                   <div className="flex items-center gap-2 text-white/60 mb-2">
                     <CheckCircle2 className="w-5 h-5" />
                     <span className="font-semibold">Статистика</span>

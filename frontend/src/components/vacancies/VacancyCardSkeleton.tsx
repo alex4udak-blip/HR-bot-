@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui';
  */
 export default function VacancyCardSkeleton() {
   return (
-    <div className="p-4 bg-white/5 border border-white/10 rounded-xl animate-pulse">
+    <div className="p-4 glass-light rounded-xl animate-pulse">
       {/* Header: Title and Status Badge */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1 min-w-0">

@@ -278,7 +278,7 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.05 }}
-            className="p-4 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10 transition-colors"
+            className="p-4 glass-light rounded-xl hover:bg-white/10 transition-colors"
           >
             <div className="flex items-start justify-between gap-3">
               {/* Candidate Info */}
@@ -348,7 +348,7 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
                   className={clsx(
                     'flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors',
                     comparingId === candidate.entity_id
-                      ? 'bg-white/5 text-white/30 cursor-wait'
+                      ? 'glass-light text-white/30 cursor-wait'
                       : 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
                   )}
                 >
@@ -397,7 +397,7 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
               </div>
 
               {/* Names header */}
-              <div className="p-4 border-b border-white/5 flex items-center justify-between flex-shrink-0 bg-white/5">
+              <div className="p-4 border-b border-white/5 flex items-center justify-between flex-shrink-0 glass-light">
                 <div className="text-center flex-1 min-w-0">
                   <p className="text-xs text-white/60 mb-0.5">Текущий</p>
                   <p className="font-medium text-white truncate">{entityName}</p>
