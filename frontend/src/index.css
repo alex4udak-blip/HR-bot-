@@ -1371,3 +1371,24 @@ body.performance-mode .glass-card:hover {
 [data-theme="light"] .bg-blue-600\/20 {
   background-color: rgba(37, 99, 235, 0.12) !important;
 }
+
+/* ============================================
+   LIGHT THEME: bg-gray-900 override
+   Used on <option> elements and any remaining
+   dark backgrounds — remap to light surface
+   ============================================ */
+[data-theme="light"] .bg-gray-900 {
+  background-color: var(--bg-surface) !important;
+  color: var(--fg-body) !important;
+}
+
+/* ============================================
+   LIGHT THEME: Placeholder text overrides
+   placeholder-white/* is invisible on light bg
+   ============================================ */
+[data-theme="light"] .placeholder-white\/40::placeholder {
+  color: rgba(26, 26, 46, 0.45) !important;
+}
+[data-theme="light"] .placeholder-white\/30::placeholder {
+  color: rgba(26, 26, 46, 0.35) !important;
+}

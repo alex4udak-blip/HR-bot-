@@ -158,7 +158,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-gray-900 border border-white/10 rounded-xl w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden"
+        className="glass rounded-xl w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden"
       >
         <div className="flex items-center justify-between p-3 sm:p-4 border-b border-white/10">
           <div className="flex items-center gap-2 sm:gap-3">

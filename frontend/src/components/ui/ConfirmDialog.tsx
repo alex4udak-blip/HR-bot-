@@ -75,7 +75,7 @@ export default function ConfirmDialog({
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
             onClick={(e) => e.stopPropagation()}
-            className="bg-gray-900 border border-white/10 rounded-xl w-full max-w-md overflow-hidden"
+            className="glass rounded-xl w-full max-w-md overflow-hidden"
           >
             {/* Header */}
             <div className="flex items-start gap-4 p-5">

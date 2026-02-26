@@ -396,7 +396,7 @@ export function OnboardingTour({
           >
             {/* Main tooltip container */}
             <div className="relative bg-gradient-to-br from-cyan-600 to-blue-600 rounded-2xl p-0.5 shadow-2xl shadow-cyan-500/20">
-              <div className="bg-gray-900 rounded-[14px] overflow-hidden">
+              <div className="glass rounded-[14px] overflow-hidden">
                 {/* Header with icon and close button */}
                 <div className="flex items-center justify-between p-4 pb-2">
                   <div className="flex items-center gap-2">
@@ -497,7 +497,7 @@ export function OnboardingTour({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.3, delay: 0.3 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2 p-2 bg-gray-900/90 backdrop-blur-sm rounded-full border border-white/10"
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2 p-2 glass backdrop-blur-sm rounded-full"
           >
             {Array.from({ length: totalSteps }).map((_, index) => (
               <button

@@ -380,7 +380,7 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-2xl bg-gray-900 rounded-2xl border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
+              className="w-full max-w-2xl glass rounded-2xl overflow-hidden max-h-[90vh] flex flex-col"
             >
               {/* Header */}
               <div className="p-4 border-b border-white/10 flex items-center justify-between flex-shrink-0">

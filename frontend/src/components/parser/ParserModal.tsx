@@ -224,7 +224,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted }: P
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-gray-900 border border-white/10 rounded-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
+        className="glass rounded-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10 flex-shrink-0">

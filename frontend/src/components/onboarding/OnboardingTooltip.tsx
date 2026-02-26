@@ -245,7 +245,7 @@ export function OnboardingTooltip({
 
             {/* Main tooltip container */}
             <div className="relative bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl p-0.5 shadow-xl shadow-purple-500/20">
-              <div className="bg-gray-900 rounded-[10px] p-4">
+              <div className="glass rounded-[10px] p-4">
                 {/* Header */}
                 <div className="flex items-start gap-3 mb-2">
                   <div className="p-1.5 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-lg flex-shrink-0">
