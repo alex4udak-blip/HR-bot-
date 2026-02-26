@@ -1060,3 +1060,314 @@ body.performance-mode .glass-card:hover {
 [data-theme="light"] .text-gray-400 {
   color: #6b7280 !important;
 }
+
+/* ============================================
+   LIGHT THEME: Remap -300 text colors for contrast
+   -300 shades are pastel (designed for dark bg)
+   → remap to -600/-700 equivalents for light bg
+   ============================================ */
+[data-theme="light"] .text-blue-300 {
+  color: #2563eb !important;
+}
+[data-theme="light"] .text-cyan-300 {
+  color: #0891b2 !important;
+}
+[data-theme="light"] .text-green-300 {
+  color: #16a34a !important;
+}
+[data-theme="light"] .text-emerald-300 {
+  color: #059669 !important;
+}
+[data-theme="light"] .text-red-300 {
+  color: #dc2626 !important;
+}
+[data-theme="light"] .text-amber-300 {
+  color: #d97706 !important;
+}
+[data-theme="light"] .text-orange-300 {
+  color: #ea580c !important;
+}
+[data-theme="light"] .text-yellow-300 {
+  color: #ca8a04 !important;
+}
+[data-theme="light"] .text-purple-300 {
+  color: #7c3aed !important;
+}
+[data-theme="light"] .text-indigo-300 {
+  color: #4f46e5 !important;
+}
+[data-theme="light"] .text-gray-300 {
+  color: #4b5563 !important;
+}
+
+/* Missing -400 overrides */
+[data-theme="light"] .text-green-400 {
+  color: #16a34a !important;
+}
+[data-theme="light"] .text-accent-300 {
+  color: #0084c9 !important;
+}
+[data-theme="light"] .text-accent-400 {
+  color: #0084c9 !important;
+}
+
+/* ============================================
+   LIGHT THEME: Hover text-*-300 → darker on hover
+   ============================================ */
+[data-theme="light"] .hover\:text-blue-300:hover {
+  color: #1d4ed8 !important;
+}
+[data-theme="light"] .hover\:text-cyan-300:hover {
+  color: #0e7490 !important;
+}
+[data-theme="light"] .hover\:text-green-300:hover {
+  color: #15803d !important;
+}
+[data-theme="light"] .hover\:text-emerald-300:hover {
+  color: #047857 !important;
+}
+[data-theme="light"] .hover\:text-red-300:hover {
+  color: #b91c1c !important;
+}
+[data-theme="light"] .hover\:text-amber-300:hover {
+  color: #b45309 !important;
+}
+[data-theme="light"] .hover\:text-orange-300:hover {
+  color: #c2410c !important;
+}
+[data-theme="light"] .hover\:text-yellow-300:hover {
+  color: #a16207 !important;
+}
+[data-theme="light"] .hover\:text-purple-300:hover {
+  color: #6d28d9 !important;
+}
+[data-theme="light"] .hover\:text-indigo-300:hover {
+  color: #4338ca !important;
+}
+[data-theme="light"] .hover\:text-gray-300:hover {
+  color: #374151 !important;
+}
+[data-theme="light"] .hover\:text-accent-300:hover {
+  color: #0169a3 !important;
+}
+
+/* ============================================
+   LIGHT THEME: Hover text-*-400 → darker on hover
+   ============================================ */
+[data-theme="light"] .hover\:text-blue-400:hover {
+  color: #1d4ed8 !important;
+}
+[data-theme="light"] .hover\:text-cyan-400:hover {
+  color: #0e7490 !important;
+}
+[data-theme="light"] .hover\:text-green-400:hover {
+  color: #15803d !important;
+}
+[data-theme="light"] .hover\:text-emerald-400:hover {
+  color: #047857 !important;
+}
+[data-theme="light"] .hover\:text-red-400:hover {
+  color: #b91c1c !important;
+}
+[data-theme="light"] .hover\:text-amber-400:hover {
+  color: #b45309 !important;
+}
+[data-theme="light"] .hover\:text-orange-400:hover {
+  color: #c2410c !important;
+}
+[data-theme="light"] .hover\:text-yellow-400:hover {
+  color: #a16207 !important;
+}
+[data-theme="light"] .hover\:text-purple-400:hover {
+  color: #6d28d9 !important;
+}
+[data-theme="light"] .hover\:text-indigo-400:hover {
+  color: #4338ca !important;
+}
+[data-theme="light"] .hover\:text-gray-400:hover {
+  color: #374151 !important;
+}
+[data-theme="light"] .hover\:text-accent-400:hover {
+  color: #0169a3 !important;
+}
+
+/* ============================================
+   LIGHT THEME: Opacity sub-variants of -300 colors
+   Boost opacity for readability on light bg
+   ============================================ */
+[data-theme="light"] .text-red-300\/60 {
+  color: rgba(220, 38, 38, 0.75) !important;
+}
+[data-theme="light"] .text-cyan-300\/60 {
+  color: rgba(8, 145, 178, 0.75) !important;
+}
+[data-theme="light"] .text-orange-300\/70 {
+  color: rgba(234, 88, 12, 0.85) !important;
+}
+[data-theme="light"] .text-blue-300\/80 {
+  color: rgba(37, 99, 235, 0.9) !important;
+}
+[data-theme="light"] .text-yellow-300\/80 {
+  color: rgba(202, 138, 4, 0.9) !important;
+}
+
+/* ============================================
+   LIGHT THEME: Strengthen badge/tag backgrounds
+   bg-*-500/10 and bg-*-500/20 → more visible tints
+   ============================================ */
+[data-theme="light"] .bg-blue-500\/10 {
+  background-color: rgba(37, 99, 235, 0.1) !important;
+}
+[data-theme="light"] .bg-blue-500\/20 {
+  background-color: rgba(37, 99, 235, 0.12) !important;
+}
+[data-theme="light"] .bg-cyan-500\/20 {
+  background-color: rgba(6, 182, 212, 0.12) !important;
+}
+[data-theme="light"] .bg-green-500\/10 {
+  background-color: rgba(16, 185, 129, 0.1) !important;
+}
+[data-theme="light"] .bg-green-500\/20 {
+  background-color: rgba(16, 185, 129, 0.12) !important;
+}
+[data-theme="light"] .bg-emerald-500\/20 {
+  background-color: rgba(16, 185, 129, 0.12) !important;
+}
+[data-theme="light"] .bg-red-500\/10 {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+}
+[data-theme="light"] .bg-red-500\/20 {
+  background-color: rgba(239, 68, 68, 0.12) !important;
+}
+[data-theme="light"] .bg-amber-500\/20 {
+  background-color: rgba(245, 158, 11, 0.12) !important;
+}
+[data-theme="light"] .bg-orange-500\/20 {
+  background-color: rgba(249, 115, 22, 0.12) !important;
+}
+[data-theme="light"] .bg-yellow-500\/10 {
+  background-color: rgba(234, 179, 8, 0.1) !important;
+}
+[data-theme="light"] .bg-yellow-500\/20 {
+  background-color: rgba(234, 179, 8, 0.12) !important;
+}
+[data-theme="light"] .bg-purple-500\/20 {
+  background-color: rgba(168, 85, 247, 0.12) !important;
+}
+[data-theme="light"] .bg-indigo-500\/20 {
+  background-color: rgba(99, 102, 241, 0.12) !important;
+}
+[data-theme="light"] .bg-gray-500\/20 {
+  background-color: rgba(107, 114, 128, 0.12) !important;
+}
+[data-theme="light"] .bg-accent-500\/20 {
+  background-color: rgba(12, 165, 235, 0.12) !important;
+}
+[data-theme="light"] .bg-accent-500\/30 {
+  background-color: rgba(12, 165, 235, 0.18) !important;
+}
+
+/* Hover bg variants: slightly stronger on light */
+[data-theme="light"] .hover\:bg-blue-500\/30:hover {
+  background-color: rgba(37, 99, 235, 0.18) !important;
+}
+[data-theme="light"] .hover\:bg-cyan-500\/30:hover {
+  background-color: rgba(6, 182, 212, 0.18) !important;
+}
+[data-theme="light"] .hover\:bg-red-500\/30:hover {
+  background-color: rgba(239, 68, 68, 0.18) !important;
+}
+[data-theme="light"] .hover\:bg-orange-500\/30:hover {
+  background-color: rgba(249, 115, 22, 0.18) !important;
+}
+[data-theme="light"] .hover\:bg-purple-500\/30:hover {
+  background-color: rgba(168, 85, 247, 0.18) !important;
+}
+[data-theme="light"] .hover\:bg-accent-500\/30:hover {
+  background-color: rgba(12, 165, 235, 0.18) !important;
+}
+
+/* ============================================
+   LIGHT THEME: Border colors for badges
+   Slightly stronger borders on light backgrounds
+   ============================================ */
+[data-theme="light"] .border-blue-500\/30 {
+  border-color: rgba(37, 99, 235, 0.25) !important;
+}
+[data-theme="light"] .border-cyan-500\/30 {
+  border-color: rgba(6, 182, 212, 0.25) !important;
+}
+[data-theme="light"] .border-green-500\/30 {
+  border-color: rgba(16, 185, 129, 0.25) !important;
+}
+[data-theme="light"] .border-emerald-500\/30 {
+  border-color: rgba(16, 185, 129, 0.25) !important;
+}
+[data-theme="light"] .border-red-500\/30 {
+  border-color: rgba(239, 68, 68, 0.25) !important;
+}
+[data-theme="light"] .border-red-500\/20 {
+  border-color: rgba(239, 68, 68, 0.2) !important;
+}
+[data-theme="light"] .border-amber-500\/30 {
+  border-color: rgba(245, 158, 11, 0.25) !important;
+}
+[data-theme="light"] .border-orange-500\/30 {
+  border-color: rgba(249, 115, 22, 0.25) !important;
+}
+[data-theme="light"] .border-yellow-500\/30 {
+  border-color: rgba(234, 179, 8, 0.25) !important;
+}
+[data-theme="light"] .border-purple-500\/30 {
+  border-color: rgba(168, 85, 247, 0.25) !important;
+}
+[data-theme="light"] .border-purple-500\/50 {
+  border-color: rgba(168, 85, 247, 0.35) !important;
+}
+[data-theme="light"] .border-indigo-500\/30 {
+  border-color: rgba(99, 102, 241, 0.25) !important;
+}
+[data-theme="light"] .border-gray-500\/30 {
+  border-color: rgba(107, 114, 128, 0.25) !important;
+}
+[data-theme="light"] .border-blue-500\/20 {
+  border-color: rgba(37, 99, 235, 0.2) !important;
+}
+[data-theme="light"] .border-blue-500\/50 {
+  border-color: rgba(37, 99, 235, 0.35) !important;
+}
+
+/* ============================================
+   LIGHT THEME: Additional color overrides
+   pink, rose, violet used in specific components
+   ============================================ */
+[data-theme="light"] .text-pink-400 {
+  color: #db2777 !important;
+}
+[data-theme="light"] .text-rose-400 {
+  color: #e11d48 !important;
+}
+[data-theme="light"] .text-violet-400 {
+  color: #7c3aed !important;
+}
+[data-theme="light"] .bg-pink-500\/20 {
+  background-color: rgba(236, 72, 153, 0.12) !important;
+}
+[data-theme="light"] .bg-rose-400\/5 {
+  background-color: rgba(251, 113, 133, 0.08) !important;
+}
+[data-theme="light"] .bg-rose-500\/10 {
+  background-color: rgba(244, 63, 94, 0.1) !important;
+}
+[data-theme="light"] .bg-violet-500\/20 {
+  background-color: rgba(139, 92, 246, 0.12) !important;
+}
+[data-theme="light"] .border-pink-500\/30 {
+  border-color: rgba(236, 72, 153, 0.25) !important;
+}
+[data-theme="light"] .border-rose-500\/30 {
+  border-color: rgba(244, 63, 94, 0.25) !important;
+}
+[data-theme="light"] .bg-blue-600\/20 {
+  background-color: rgba(37, 99, 235, 0.12) !important;
+}
