@@ -1,44 +1,58 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
   Download,
-  Users,
+  GraduationCap,
   BarChart3,
   GitBranch,
   ArrowLeft,
   AlertTriangle,
   FileSpreadsheet,
-  ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import clsx from 'clsx';
+import {
+  getPrometheusInterns,
+  getPrometheusAnalytics,
+} from '@/services/api';
+import type {
+  PrometheusIntern,
+  PrometheusAnalyticsResponse,
+  TrailProgressItem,
+} from '@/services/api';
 
-type CsvPanel = 'overview' | 'users' | 'analytics' | 'stages';
+type CsvPanel = 'overview' | 'interns' | 'analytics' | 'trails';
 
 interface ExportCard {
-  id: 'users' | 'analytics' | 'stages';
-  icon: typeof Users;
+  id: 'interns' | 'analytics' | 'trails';
+  icon: typeof GraduationCap;
   title: string;
   description: string;
-  endpoint: string;
   columns: { name: string; desc: string }[];
 }
 
 const EXPORT_CARDS: ExportCard[] = [
   {
-    id: 'users',
-    icon: Users,
-    title: 'Пользователи CSV',
+    id: 'interns',
+    icon: GraduationCap,
+    title: 'Практиканты CSV',
     description:
-      'Список пользователей организации: ID, имя, email, роль, активность, Telegram, дата регистрации.',
-    endpoint: '/api/exports/users.csv',
+      'Список практикантов: имя, email, Telegram, XP, серия дней, последняя активность, трейлы и прогресс по модулям.',
     columns: [
-      { name: 'id', desc: 'Идентификатор' },
+      { name: 'id', desc: 'Идентификатор практиканта' },
       { name: 'name', desc: 'ФИО' },
       { name: 'email', desc: 'Email' },
-      { name: 'role', desc: 'Роль в системе' },
-      { name: 'is_active', desc: 'Активен (yes/no)' },
-      { name: 'telegram_username', desc: 'Telegram' },
-      { name: 'created_at', desc: 'Дата регистрации (ISO)' },
+      { name: 'telegram', desc: 'Telegram username' },
+      { name: 'total_xp', desc: 'Общий XP' },
+      { name: 'current_streak', desc: 'Текущая серия (дней)' },
+      { name: 'last_active_at', desc: 'Последняя активность' },
+      { name: 'days_since_active', desc: 'Дней с последней активности' },
+      { name: 'trails_count', desc: 'Количество трейлов' },
+      { name: 'trail_names', desc: 'Названия трейлов' },
+      { name: 'completed_modules', desc: 'Завершённых модулей (всего)' },
+      { name: 'total_modules', desc: 'Всего модулей (всего)' },
+      { name: 'created_at', desc: 'Дата регистрации' },
     ],
   },
   {
@@ -46,8 +60,7 @@ const EXPORT_CARDS: ExportCard[] = [
     icon: BarChart3,
     title: 'Аналитика CSV',
     description:
-      'Ключевые HR-метрики: вакансии, кандидаты, заявки, наймы, отказы, воронка по этапам, статистика по отделам.',
-    endpoint: '/api/exports/analytics.csv',
+      'Ключевые метрики практикантов: общее количество, риск оттока, конверсия, активность, распределение оценок, топ-студенты.',
     columns: [
       { name: 'metric', desc: 'Код метрики' },
       { name: 'value', desc: 'Значение' },
@@ -55,63 +68,212 @@ const EXPORT_CARDS: ExportCard[] = [
     ],
   },
   {
-    id: 'stages',
+    id: 'trails',
     icon: GitBranch,
-    title: 'Этапы прохождения CSV',
+    title: 'Трейлы CSV',
     description:
-      'Пайплайн кандидатов по вакансиям: вакансия, кандидат, текущий этап, рейтинг, источник, дата подачи, причина отказа.',
-    endpoint: '/api/exports/stages.csv',
+      'Прогресс по трейлам: записано, сертификатов, модулей, завершено, работ, одобрено, процент завершения и одобрения.',
     columns: [
-      { name: 'vacancy_id', desc: 'ID вакансии' },
-      { name: 'vacancy_title', desc: 'Название вакансии' },
-      { name: 'candidate_id', desc: 'ID кандидата' },
-      { name: 'candidate_name', desc: 'Имя кандидата' },
-      { name: 'stage', desc: 'Текущий этап' },
-      { name: 'rating', desc: 'Рейтинг' },
-      { name: 'source', desc: 'Источник' },
-      { name: 'applied_at', desc: 'Дата подачи (ISO)' },
-      { name: 'last_stage_change', desc: 'Последнее изменение этапа (ISO)' },
-      { name: 'rejection_reason', desc: 'Причина отказа' },
+      { name: 'trail_id', desc: 'ID трейла' },
+      { name: 'title', desc: 'Название трейла' },
+      { name: 'enrollments', desc: 'Записано студентов' },
+      { name: 'certificates', desc: 'Выдано сертификатов' },
+      { name: 'total_modules', desc: 'Всего модулей' },
+      { name: 'completed_modules', desc: 'Завершено модулей' },
+      { name: 'submissions_count', desc: 'Работ отправлено' },
+      { name: 'approved_submissions', desc: 'Работ одобрено' },
+      { name: 'completion_rate', desc: 'Процент завершения (%)' },
+      { name: 'approval_rate', desc: 'Процент одобрения (%)' },
     ],
   },
 ];
 
+/** Escape a CSV value (wrap in quotes, escape internal quotes) */
+function escapeCsvValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const s = String(value);
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+/** Convert rows to CSV string with BOM for Excel */
+function toCsvString(headers: string[], rows: unknown[][]): string {
+  const bom = '\uFEFF';
+  const headerLine = headers.map(escapeCsvValue).join(',');
+  const dataLines = rows.map(row => row.map(escapeCsvValue).join(','));
+  return bom + [headerLine, ...dataLines].join('\r\n');
+}
+
+/** Trigger a download from a string */
+function downloadCsv(content: string, filename: string) {
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/** Build CSV for interns list */
+function buildInternsCsv(interns: PrometheusIntern[]): string {
+  const headers = [
+    'id', 'name', 'email', 'telegram', 'total_xp', 'current_streak',
+    'last_active_at', 'days_since_active', 'trails_count', 'trail_names',
+    'completed_modules', 'total_modules', 'created_at',
+  ];
+  const rows = interns.map(intern => {
+    const trailNames = intern.trails.map(t => t.trailName).filter(Boolean).join('; ');
+    const completedModules = intern.trails.reduce((sum, t) => sum + (t.completedModules || 0), 0);
+    const totalModules = intern.trails.reduce((sum, t) => sum + (t.totalModules || 0), 0);
+    return [
+      intern.id,
+      intern.name,
+      intern.email || '',
+      intern.telegramUsername || '',
+      intern.totalXP,
+      intern.currentStreak,
+      intern.lastActiveAt || '',
+      intern.daysSinceActive ?? '',
+      intern.trails.length,
+      trailNames,
+      completedModules,
+      totalModules,
+      intern.createdAt || '',
+    ];
+  });
+  return toCsvString(headers, rows);
+}
+
+/** Build CSV for analytics metrics */
+function buildAnalyticsCsv(analytics: PrometheusAnalyticsResponse): string {
+  const headers = ['metric', 'value', 'description'];
+  const rows: unknown[][] = [];
+
+  // Summary metrics
+  const { summary } = analytics;
+  rows.push(['total_students', summary.totalStudents, 'Всего практикантов']);
+  rows.push(['at_risk_students', summary.atRiskStudents, 'Практикантов в зоне риска']);
+  rows.push(['conversion_rate', `${summary.conversionRate}%`, 'Конверсия']);
+  rows.push(['avg_daily_active', summary.avgDailyActiveUsers, 'Среднее активных в день']);
+
+  // Score distribution
+  const { scoreDistribution: sd } = analytics;
+  rows.push(['score_excellent', sd.excellent, 'Оценки: Отлично (9-10)']);
+  rows.push(['score_good', sd.good, 'Оценки: Хорошо (7-8)']);
+  rows.push(['score_average', sd.average, 'Оценки: Удовлетворительно (5-6)']);
+  rows.push(['score_poor', sd.poor, 'Оценки: Слабо (0-4)']);
+  rows.push(['score_total', sd.total, 'Всего оценок']);
+  rows.push(['score_avg', sd.avgScore, 'Средний балл']);
+
+  // Churn risk
+  const { churnRisk } = analytics;
+  rows.push(['churn_risk_high', churnRisk.highCount, 'Риск оттока: Высокий (14+ дней неактивности)']);
+  rows.push(['churn_risk_medium', churnRisk.mediumCount, 'Риск оттока: Средний (7-14 дней)']);
+  rows.push(['churn_risk_low', churnRisk.lowCount, 'Риск оттока: Низкий (<7 дней)']);
+
+  // Funnel stages
+  analytics.funnel.forEach(stage => {
+    rows.push([`funnel_${stage.stage}`, stage.count, `Воронка: ${stage.stage} (${stage.percent}%)`]);
+  });
+
+  // Top students
+  analytics.topStudents.forEach((student, idx) => {
+    rows.push([
+      `top_student_${idx + 1}`,
+      `${student.name} (XP: ${student.totalXP}, модулей: ${student.modulesCompleted})`,
+      `Топ-студент #${idx + 1}`,
+    ]);
+  });
+
+  return toCsvString(headers, rows);
+}
+
+/** Build CSV for trail progress */
+function buildTrailsCsv(trailProgress: TrailProgressItem[]): string {
+  const headers = [
+    'trail_id', 'title', 'enrollments', 'certificates', 'total_modules',
+    'completed_modules', 'submissions_count', 'approved_submissions',
+    'completion_rate', 'approval_rate',
+  ];
+  const rows = trailProgress.map(trail => [
+    trail.id,
+    trail.title,
+    trail.enrollments,
+    trail.certificates,
+    trail.totalModules,
+    trail.completedModules,
+    trail.submissionsCount,
+    trail.approvedSubmissions,
+    trail.completionRate,
+    trail.approvalRate,
+  ]);
+  return toCsvString(headers, rows);
+}
+
 export default function InternsCsvTab() {
   const [activePanel, setActivePanel] = useState<CsvPanel>('overview');
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const activeCard = EXPORT_CARDS.find((c) => c.id === activePanel);
 
-  const handleDownloadClick = (endpoint: string) => {
+  // Pre-fetch data so we have it ready
+  const { data: interns, isLoading: internsLoading } = useQuery({
+    queryKey: ['prometheus-interns'],
+    queryFn: getPrometheusInterns,
+    staleTime: 60000,
+    retry: 1,
+  });
+
+  const { data: analytics, isLoading: analyticsLoading } = useQuery({
+    queryKey: ['prometheus-analytics', 'all', '30'],
+    queryFn: () => getPrometheusAnalytics('all', '30'),
+    staleTime: 60000,
+    retry: 1,
+  });
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+
+  const handleDownload = useCallback(async (type: 'interns' | 'analytics' | 'trails') => {
     setDownloadError(null);
-    // We use a regular <a> link for the actual download,
-    // but this handler can verify connectivity first if needed.
-    // The <a> element handles the download natively without blob.
-    // If fetch fails or returns non-ok, we show error.
-    fetch(endpoint, { method: 'HEAD', credentials: 'same-origin' })
-      .then((res) => {
-        if (res.status === 401 || res.status === 403) {
-          setDownloadError(
-            'Нет доступа к экспорту. Убедитесь, что вы авторизованы и имеете права администратора.',
-          );
+    setIsDownloading(true);
+
+    try {
+      if (type === 'interns') {
+        if (!interns || interns.length === 0) {
+          setDownloadError('Нет данных практикантов для выгрузки. Попробуйте обновить страницу.');
           return;
         }
-        if (!res.ok) {
-          setDownloadError(`Ошибка сервера (${res.status}). Попробуйте позже.`);
+        const csv = buildInternsCsv(interns);
+        downloadCsv(csv, `praktikanty-${dateStr}.csv`);
+      } else if (type === 'analytics') {
+        if (!analytics) {
+          setDownloadError('Нет данных аналитики для выгрузки. Попробуйте обновить страницу.');
           return;
         }
-        // All good — trigger native download via hidden link
-        const a = document.createElement('a');
-        a.href = endpoint;
-        a.download = '';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      })
-      .catch(() => {
-        setDownloadError('Не удалось связаться с сервером. Проверьте подключение к сети.');
-      });
-  };
+        const csv = buildAnalyticsCsv(analytics);
+        downloadCsv(csv, `analytika-praktikantov-${dateStr}.csv`);
+      } else if (type === 'trails') {
+        if (!analytics || !analytics.trailProgress || analytics.trailProgress.length === 0) {
+          setDownloadError('Нет данных по трейлам для выгрузки. Попробуйте обновить страницу.');
+          return;
+        }
+        const csv = buildTrailsCsv(analytics.trailProgress);
+        downloadCsv(csv, `treyly-${dateStr}.csv`);
+      }
+    } catch {
+      setDownloadError('Произошла ошибка при формировании файла. Попробуйте позже.');
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [interns, analytics, dateStr]);
+
+  const isDataLoading = internsLoading || analyticsLoading;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 w-full">
@@ -122,9 +284,17 @@ export default function InternsCsvTab() {
           <h2 className="text-xl font-bold">Выгрузка в CSV</h2>
         </div>
         <p className="text-sm text-white/50">
-          Выберите тип данных для экспорта. Файл формируется на сервере и скачивается напрямую.
+          Выберите тип данных для экспорта. Файл формируется из данных практикантов Prometheus.
         </p>
       </div>
+
+      {/* Loading indicator */}
+      {isDataLoading && (
+        <div className="flex items-center gap-3 p-4 glass-light rounded-xl">
+          <Loader2 className="w-5 h-5 text-emerald-400 animate-spin flex-shrink-0" />
+          <p className="text-sm text-white/50">Загрузка данных практикантов...</p>
+        </div>
+      )}
 
       {/* Global error callout */}
       {downloadError && (
@@ -147,7 +317,7 @@ export default function InternsCsvTab() {
       )}
 
       {activePanel === 'overview' ? (
-        /* ── Cards grid ── */
+        /* Cards grid */
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {EXPORT_CARDS.map((card, idx) => (
             <motion.button
@@ -170,7 +340,7 @@ export default function InternsCsvTab() {
           ))}
         </div>
       ) : (
-        /* ── Detail panel ── */
+        /* Detail panel */
         activeCard && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -220,27 +390,24 @@ export default function InternsCsvTab() {
             {/* Download */}
             <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center gap-3">
               <button
-                onClick={() => handleDownloadClick(activeCard.endpoint)}
+                onClick={() => handleDownload(activeCard.id)}
+                disabled={isDataLoading || isDownloading}
                 className={clsx(
                   'inline-flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all',
                   'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30',
+                  'disabled:opacity-50 disabled:cursor-not-allowed',
                 )}
               >
-                <Download className="w-5 h-5" />
-                Скачать CSV
+                {isDownloading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Download className="w-5 h-5" />
+                )}
+                {isDownloading ? 'Формирование...' : 'Скачать CSV'}
               </button>
-              <a
-                href={activeCard.endpoint}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm text-white/40 hover:text-white/70 glass-button transition-all"
-              >
-                <ExternalLink className="w-4 h-4" />
-                Открыть в новой вкладке
-              </a>
             </div>
             <p className="text-white/30 text-xs">
-              Файл формируется на сервере в реальном времени. Имя файла включает текущую дату.
+              Файл формируется из данных Prometheus. Имя файла включает текущую дату.
             </p>
           </motion.div>
         )
