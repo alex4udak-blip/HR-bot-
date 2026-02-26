@@ -348,7 +348,7 @@ export default function CandidatesPage() {
           'w-full text-left p-3 rounded-lg transition-all duration-200 group overflow-hidden',
           isSelected
             ? 'bg-cyan-500/20 border border-cyan-500/50'
-            : 'glass-light hover:bg-white/10'
+            : 'glass-card'
         )}
       >
         <button
@@ -402,7 +402,7 @@ export default function CandidatesPage() {
                 e.stopPropagation();
                 setShowVacancyDetail(true);
               }}
-              className="flex items-center justify-center p-1.5 bg-white/5 hover:bg-white/10 rounded text-xs transition-colors"
+              className="flex items-center justify-center p-1.5 glass-button rounded text-xs"
               title="Просмотр деталей"
             >
               <Eye className="w-3.5 h-3.5" />
@@ -413,7 +413,7 @@ export default function CandidatesPage() {
                 setVacancyPrefillData(null);
                 setShowCreateVacancyModal(true);
               }}
-              className="flex items-center justify-center p-1.5 bg-white/5 hover:bg-white/10 rounded text-xs transition-colors"
+              className="flex items-center justify-center p-1.5 glass-button rounded text-xs"
               title="Редактировать"
             >
               <Edit className="w-3.5 h-3.5" />
@@ -463,7 +463,7 @@ export default function CandidatesPage() {
               e.stopPropagation();
               handleApplicationClick(app);
             }}
-            className="p-1 hover:bg-white/10 rounded"
+            className="p-1 glass-button rounded"
             title="Детали"
           >
             <Edit className="w-3.5 h-3.5" />
@@ -473,7 +473,7 @@ export default function CandidatesPage() {
               e.stopPropagation();
               handleViewCandidateProfile(app);
             }}
-            className="p-1 hover:bg-white/10 rounded"
+            className="p-1 glass-button rounded"
             title="Профиль"
           >
             <ExternalLink className="w-3.5 h-3.5" />
@@ -517,7 +517,7 @@ export default function CandidatesPage() {
             </div>
           )}
           {app.source && (
-            <span className="text-xs px-1.5 py-0.5 bg-white/5 rounded text-white/40">
+            <span className="text-xs px-1.5 py-0.5 glass-light rounded text-white/40">
               {app.source}
             </span>
           )}
@@ -530,7 +530,7 @@ export default function CandidatesPage() {
 
       {/* Notes Preview */}
       {app.notes && (
-        <div className="mt-2 p-2 bg-white/5 rounded text-xs text-white/60 line-clamp-2 ml-6">
+        <div className="mt-2 p-2 glass-light rounded text-xs text-white/60 line-clamp-2 ml-6">
           {app.notes}
         </div>
       )}
@@ -614,7 +614,7 @@ export default function CandidatesPage() {
           )}
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="p-1.5 hover:bg-white/5 rounded-lg transition-colors"
+            className="p-1.5 glass-button rounded-lg"
           >
             <ChevronRight className={clsx(
               'w-4 h-4 transition-transform',
@@ -640,7 +640,7 @@ export default function CandidatesPage() {
               </button>
               <button
                 onClick={() => setShowImportVacancyModal(true)}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 glass-button rounded-lg text-sm"
               >
                 <Sparkles className="w-4 h-4 text-purple-400" />
                 Импорт из URL/файла
@@ -656,7 +656,7 @@ export default function CandidatesPage() {
                   'w-full text-left p-3 rounded-lg transition-all duration-200',
                   selectedVacancyId === null
                     ? 'bg-purple-500/20 border border-purple-500/50'
-                    : 'glass-light hover:bg-white/10'
+                    : 'glass-card'
                 )}
               >
                 <div className="flex items-center gap-2">
@@ -707,7 +707,7 @@ export default function CandidatesPage() {
                 'w-10 h-10 rounded-lg flex items-center justify-center transition-colors',
                 selectedVacancyId === null
                   ? 'bg-purple-500/20 text-purple-300'
-                  : 'bg-white/5 hover:bg-white/10 text-white/60'
+                  : 'glass-button text-white/60'
               )}
               title="База кандидатов"
             >
@@ -718,7 +718,7 @@ export default function CandidatesPage() {
 
             <button
               onClick={() => setShowCreateVacancyModal(true)}
-              className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+              className="p-2 glass-button rounded-lg"
               title="Новая вакансия"
             >
               <Plus className="w-5 h-5 text-cyan-400" />
@@ -731,7 +731,7 @@ export default function CandidatesPage() {
                   'w-10 h-10 rounded-lg flex items-center justify-center text-xs font-medium transition-colors',
                   vacancy.id === selectedVacancyId
                     ? 'bg-cyan-500/20 text-cyan-300'
-                    : 'bg-white/5 hover:bg-white/10 text-white/60'
+                    : 'glass-button text-white/60'
                 )}
                 title={vacancy.title}
               >
@@ -776,7 +776,7 @@ export default function CandidatesPage() {
               </button>
               {/* View Mode Toggle - only when vacancy selected */}
               {currentVacancy && (
-                <div className="flex items-center bg-white/5 rounded-lg p-1">
+                <div className="flex items-center glass-light rounded-lg p-1">
                   <button
                     onClick={() => setViewMode('kanban')}
                     className={clsx(
@@ -804,7 +804,7 @@ export default function CandidatesPage() {
                 <>
                   <button
                     onClick={() => setShowParserModal(true)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs transition-colors"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 glass-button rounded-lg text-xs"
                     title="Загрузить резюме"
                   >
                     <Upload className="w-3.5 h-3.5" />
@@ -833,7 +833,7 @@ export default function CandidatesPage() {
                   'px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors',
                   selectedStage === ALL_STAGES_TAB
                     ? 'bg-cyan-600 text-white'
-                    : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+                    : 'glass-button text-white/60 hover:text-white'
                 )}
               >
                 Все ({stageCounts.all || 0})
@@ -852,7 +852,7 @@ export default function CandidatesPage() {
                     'px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors',
                     selectedStage === stage
                       ? APPLICATION_STAGE_COLORS[stage]
-                      : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+                      : 'glass-button text-white/60 hover:text-white'
                   )}
                 >
                   {APPLICATION_STAGE_LABELS[stage]} ({stageCounts[stage] || 0})
@@ -903,7 +903,7 @@ export default function CandidatesPage() {
                     <div
                       key={app.id}
                       onClick={() => handleApplicationClick(app)}
-                      className="p-4 glass-light rounded-xl cursor-pointer hover:bg-white/10 transition-colors"
+                      className="p-4 glass-card rounded-xl cursor-pointer"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -960,7 +960,7 @@ export default function CandidatesPage() {
                               e.stopPropagation();
                               handleViewCandidateProfile(app);
                             }}
-                            className="p-2 hover:bg-white/5 rounded-lg text-white/60 hover:text-white"
+                            className="p-2 glass-button rounded-lg text-white/60 hover:text-white"
                           >
                             <ExternalLink className="w-4 h-4" />
                           </button>

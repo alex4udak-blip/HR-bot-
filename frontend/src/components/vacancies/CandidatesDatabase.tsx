@@ -565,7 +565,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           onDragEnd={handleDragEnd}
           onClick={() => handleCandidateClick(candidate)}
           className={clsx(
-            'flex items-center p-3 bg-white/5 hover:bg-white/10 border rounded-lg cursor-pointer transition-colors group',
+            'flex items-center p-3 glass-card rounded-lg cursor-pointer group',
             draggedCandidate?.id === candidate.id && 'opacity-50',
             selectedCandidates.has(candidate.id) ? 'border-purple-500 bg-purple-500/10' : 'border-white/10'
           )}
@@ -591,7 +591,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           </div>
           {/* Status badge - fixed 100px */}
           <div className="w-[100px] min-w-[100px] flex-shrink-0 mr-3">
-            <span className={clsx('px-2 py-1 text-xs rounded-full whitespace-nowrap inline-block', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
+            <span className={clsx('px-2 py-1 text-xs rounded-full whitespace-nowrap inline-block', STATUS_COLORS[candidate.status as EntityStatus] || 'glass-light')}>
               {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
             </span>
           </div>
@@ -606,7 +606,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                 }}
                 title={`Перевести в: ${STATUS_LABELS[nextStage]}`}
                 className={clsx(
-                  "opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all max-w-full truncate",
+                  "opacity-0 group-hover:opacity-100 px-2 py-1 text-xs glass-button rounded-full max-w-full truncate",
                   isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
                 )}
               >
@@ -653,7 +653,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
         onDragEnd={handleDragEnd}
         onClick={() => handleCandidateClick(candidate)}
         className={clsx(
-          'p-3 bg-white/5 hover:bg-white/10 border rounded-xl cursor-pointer transition-colors group overflow-hidden',
+          'p-3 glass-card rounded-xl cursor-pointer group overflow-hidden',
           selectedCandidates.has(candidate.id) ? 'border-purple-500 bg-purple-500/10' : 'border-white/10',
           draggedCandidate?.id === candidate.id && 'opacity-50'
         )}
@@ -677,7 +677,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           </div>
         </div>
         <div className="flex items-center justify-between gap-2 mb-2 ml-7">
-          <span className={clsx('px-2 py-0.5 text-xs rounded-full whitespace-nowrap flex-shrink-0', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/10')}>
+          <span className={clsx('px-2 py-0.5 text-xs rounded-full whitespace-nowrap flex-shrink-0', STATUS_COLORS[candidate.status as EntityStatus] || 'glass-light')}>
             {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
           </span>
           {nextStage && (
@@ -689,7 +689,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               }}
               title={`Перевести в: ${STATUS_LABELS[nextStage]}`}
               className={clsx(
-                "opacity-0 group-hover:opacity-100 px-2 py-0.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-all truncate max-w-[100px]",
+                "opacity-0 group-hover:opacity-100 px-2 py-0.5 text-xs glass-button rounded-full truncate max-w-[100px]",
                 isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
               )}
             >
@@ -721,7 +721,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
         {candidate.tags && candidate.tags.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1 ml-7">
             {candidate.tags.slice(0, 3).map(tag => (
-              <span key={tag} className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/60 truncate max-w-[80px]">{tag}</span>
+              <span key={tag} className="px-1.5 py-0.5 glass-light rounded text-xs text-white/60 truncate max-w-[80px]">{tag}</span>
             ))}
             {candidate.tags.length > 3 && <span className="text-xs text-white/40">+{candidate.tags.length - 3}</span>}
           </div>
@@ -761,7 +761,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               e.stopPropagation();
               handleCandidateClick(candidate);
             }}
-            className="p-1 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-2"
+            className="p-1 glass-button rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-2"
           >
             <ExternalLink className="w-3 h-3" />
           </button>
@@ -778,7 +778,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
           <h2 className="text-xl font-bold flex items-center gap-2 whitespace-nowrap">
             <Users className="w-6 h-6 text-purple-400" />
             База кандидатов
-            <span className="text-sm font-medium text-white/40 bg-white/5 px-2 py-0.5 rounded-full ml-1">
+            <span className="text-sm font-medium text-white/40 glass-light px-2 py-0.5 rounded-full ml-1">
               {isLoading ? '...' : (typeCounts?.candidate || entities.length)}
             </span>
           </h2>
@@ -795,12 +795,12 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             )}
             <button
               onClick={() => setShowParserModal(true)}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-medium transition-all active:scale-95 whitespace-nowrap"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 glass-button rounded-xl text-sm font-medium active:scale-95 whitespace-nowrap"
             >
               <Upload className="w-4 h-4 text-purple-400" />
               <span>Резюме</span>
             </button>
-            <label className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-medium transition-all cursor-pointer active:scale-95 whitespace-nowrap">
+            <label className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 glass-button rounded-xl text-sm font-medium cursor-pointer active:scale-95 whitespace-nowrap">
               <FolderArchive className="w-4 h-4 text-blue-400" />
               <span>ZIP</span>
               <input ref={bulkImportInputRef} type="file" accept=".zip" onChange={handleBulkImport} className="hidden" />
@@ -836,7 +836,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
             onClick={() => setSelectedStage('all')}
             className={clsx(
               'px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all active:scale-95',
-              selectedStage === 'all' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/30' : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'
+              selectedStage === 'all' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/30' : 'glass-button text-white/50 hover:text-white'
             )}
           >
             Все ({stageCounts.all})
@@ -853,7 +853,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               }}
               className={clsx(
                 'px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all active:scale-95',
-                selectedStage === stage ? `${STATUS_COLORS[stage]} shadow-lg` : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'
+                selectedStage === stage ? `${STATUS_COLORS[stage]} shadow-lg` : 'glass-button text-white/50 hover:text-white'
               )}
             >
               {STATUS_LABELS[stage]} ({stageCounts[stage] || 0})
@@ -869,7 +869,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               placeholder="Поиск по имени, email, навыкам..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-purple-500/50 focus:bg-white/10 text-sm transition-all"
+              className="w-full pl-10 pr-4 py-2.5 glass-light rounded-xl focus:outline-none focus:border-purple-500/50 text-sm transition-all"
             />
           </div>
           <div className="flex items-center gap-2">
@@ -877,7 +877,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
               onClick={() => setShowFilters(!showFilters)}
               className={clsx(
                 'flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium transition-all active:scale-95 whitespace-nowrap',
-                selectedTags.length > 0 ? 'bg-purple-600/20 border-purple-500/50 text-purple-300' : 'bg-white/5 border-white/10 hover:bg-white/10'
+                selectedTags.length > 0 ? 'bg-purple-600/20 border-purple-500/50 text-purple-300' : 'glass-button'
               )}
             >
               <Filter className="w-4 h-4" />
@@ -889,14 +889,14 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                 onClick={handleSelectAll}
                 className={clsx(
                   'flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium transition-all active:scale-95 whitespace-nowrap',
-                  selectedCandidates.size === filteredCandidates.length ? 'bg-purple-600/20 border-purple-500/50 text-purple-300' : 'bg-white/5 border-white/10 hover:bg-white/10'
+                  selectedCandidates.size === filteredCandidates.length ? 'bg-purple-600/20 border-purple-500/50 text-purple-300' : 'glass-button'
                 )}
               >
                 <Check className="w-4 h-4" />
                 <span>{selectedCandidates.size === filteredCandidates.length ? 'Снять' : 'Выбрать'}</span>
               </button>
             )}
-            <div className="flex items-center bg-white/5 rounded-xl p-1 border border-white/10">
+            <div className="flex items-center glass-light rounded-xl p-1">
               <button
                 onClick={() => setViewMode('cards')}
                 className={clsx('p-2 rounded-lg transition-all active:scale-90', viewMode === 'cards' ? 'bg-purple-600 text-white shadow-md' : 'text-white/40 hover:text-white')}
@@ -921,13 +921,13 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
 
         <AnimatePresence>
           {showFilters && allTags.length > 0 && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="p-3 bg-white/5 rounded-lg border border-white/10 overflow-hidden">
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="p-3 glass-light rounded-lg overflow-hidden">
               <div className="flex flex-wrap gap-2">
                 {allTags.slice(0, 30).map(tag => (
                   <button
                     key={tag}
                     onClick={() => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
-                    className={clsx('px-2.5 py-1 text-xs rounded-full border transition-colors', selectedTags.includes(tag) ? 'bg-purple-600/20 border-purple-500/50 text-purple-300' : 'bg-white/5 border-white/10 hover:bg-white/10 text-white/70')}
+                    className={clsx('px-2.5 py-1 text-xs rounded-full transition-colors', selectedTags.includes(tag) ? 'bg-purple-600/20 border border-purple-500/50 text-purple-300' : 'glass-button text-white/70')}
                   >
                     {tag}
                   </button>
@@ -966,7 +966,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                     onDragLeave={handleStageDragLeave}
                     onDrop={(e) => handleStageDrop(e, stage)}
                     className={clsx(
-                      'w-72 flex-shrink-0 flex flex-col bg-white/5 rounded-xl border transition-all',
+                      'w-72 flex-shrink-0 flex flex-col glass-light rounded-xl transition-all',
                       dropTargetStage === stage
                         ? 'border-purple-500 bg-purple-500/10 scale-[1.02]'
                         : 'border-white/10'
@@ -981,7 +981,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                     </div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-2">
                       {candidatesByStatus[stage]?.map(candidate => (
-                        <div key={candidate.id} draggable onDragStart={() => handleKanbanDragStart(candidate)} onDragEnd={() => handleKanbanDragEnd()} onClick={() => handleCandidateClick(candidate)} className={clsx('p-3 bg-gray-800/50 hover:bg-gray-800 border border-white/10 rounded-lg cursor-grab active:cursor-grabbing transition-all group', draggedForKanban?.id === candidate.id && 'opacity-50 scale-95')}>
+                        <div key={candidate.id} draggable onDragStart={() => handleKanbanDragStart(candidate)} onDragEnd={() => handleKanbanDragEnd()} onClick={() => handleCandidateClick(candidate)} className={clsx('p-3 glass-card rounded-lg cursor-grab active:cursor-grabbing group', draggedForKanban?.id === candidate.id && 'opacity-50 scale-95')}>
                           <div className="flex items-start gap-2">
                             <GripVertical className="w-4 h-4 text-white/20 flex-shrink-0 mt-1" />
                             <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-xs flex-shrink-0">{getAvatarInitials(candidate.name || 'UK')}</div>
@@ -997,7 +997,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                           </div>
                           {candidate.tags && candidate.tags.length > 0 && (
                             <div className="mt-2 ml-6 flex flex-wrap gap-1">
-                              {candidate.tags.slice(0, 2).map(tag => <span key={tag} className="px-1.5 py-0.5 bg-white/5 rounded text-xs text-white/50 truncate max-w-[70px]">{tag}</span>)}
+                              {candidate.tags.slice(0, 2).map(tag => <span key={tag} className="px-1.5 py-0.5 glass-light rounded text-xs text-white/50 truncate max-w-[70px]">{tag}</span>)}
                               {candidate.tags.length > 2 && <span className="text-xs text-white/30">+{candidate.tags.length - 2}</span>}
                             </div>
                           )}
@@ -1046,14 +1046,14 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
         {showParserModal && <ParserModal type="resume" onClose={() => setShowParserModal(false)} onParsed={(data) => handleParsedResume(data as ParsedResume)} onJobStarted={() => { setShowParserModal(false); }} />}
         {showAddToVacancyModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowAddToVacancyModal(false)}>
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-md bg-gray-900 rounded-xl border border-white/10 shadow-xl overflow-hidden">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-md glass rounded-xl shadow-xl overflow-hidden">
               <div className="p-4 border-b border-white/10 flex items-center justify-between">
                 <h3 className="font-semibold">Выберите вакансию</h3>
-                <button onClick={() => setShowAddToVacancyModal(false)} className="p-1 hover:bg-white/10 rounded"><X className="w-5 h-5" /></button>
+                <button onClick={() => setShowAddToVacancyModal(false)} className="p-1 glass-button rounded"><X className="w-5 h-5" /></button>
               </div>
               <div className="p-4 space-y-2 max-h-96 overflow-y-auto">
                 {openVacancies.length === 0 ? <div className="text-center py-8 text-white/40"><Briefcase className="w-10 h-10 mx-auto mb-2 opacity-50" /><p className="text-sm">Нет открытых вакансий</p></div> : openVacancies.map(vacancy => (
-                  <button key={vacancy.id} onClick={() => handleBulkAddToVacancy(vacancy.id)} className="w-full p-3 text-left bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 transition-colors">
+                  <button key={vacancy.id} onClick={() => handleBulkAddToVacancy(vacancy.id)} className="w-full p-3 text-left glass-card rounded-lg">
                     <h4 className="font-medium">{vacancy.title}</h4>
                     <p className="text-xs text-white/40 mt-1">{vacancy.department_name && `${vacancy.department_name} • `}{vacancy.applications_count} кандидатов</p>
                   </button>
@@ -1064,10 +1064,10 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
         )}
         {showBulkImportModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={closeBulkImportModal}>
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} onClick={(e) => e.stopPropagation()} className="bg-gray-900 border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} onClick={(e) => e.stopPropagation()} className="glass rounded-2xl w-full max-w-lg overflow-hidden">
               <div className="p-4 border-b border-white/10 flex items-center justify-between">
                 <h3 className="font-semibold flex items-center gap-2"><FolderArchive className="w-5 h-5 text-purple-400" />Массовый импорт резюме</h3>
-                {!bulkImportLoading && <button onClick={closeBulkImportModal} className="p-1 hover:bg-white/10 rounded"><X className="w-5 h-5" /></button>}
+                {!bulkImportLoading && <button onClick={closeBulkImportModal} className="p-1 glass-button rounded"><X className="w-5 h-5" /></button>}
               </div>
               <div className="p-6">
                 {bulkImportLoading ? (
@@ -1078,7 +1078,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                   </div>
                 ) : bulkImportResult ? (
                   <div className="space-y-4">
-                    <div className="mt-4 p-4 bg-white/5 rounded-lg border border-white/10 space-y-3">
+                    <div className="mt-4 p-4 glass-light rounded-lg space-y-3">
                       <div className="grid grid-cols-2 gap-4">
                         <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-lg text-center">
                           <div className="text-2xl font-bold text-emerald-400">{bulkImportResult.successful}</div>
@@ -1118,7 +1118,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
                       </div>
                     )}
                     {bulkImportResult.error && <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-center"><p className="text-sm text-rose-400">{bulkImportResult.error}</p></div>}
-                    <button onClick={closeBulkImportModal} className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-medium transition-all active:scale-95">Закрыть</button>
+                    <button onClick={closeBulkImportModal} className="w-full py-3 glass-button rounded-xl text-sm font-medium active:scale-95">Закрыть</button>
                   </div>
                 ) : null}
               </div>
