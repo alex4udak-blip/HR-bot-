@@ -110,7 +110,7 @@ function MetaCard({
   valueColor?: string;
 }) {
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+    <div className="glass-light rounded-xl p-3">
       <div className="flex items-center gap-2 text-white/40 mb-1">
         <Icon className="w-3.5 h-3.5" />
         <span className="text-xs">{label}</span>
@@ -136,7 +136,7 @@ function CollapsibleSection({
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+    <div className="glass-light rounded-xl overflow-hidden">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors text-left"
@@ -229,7 +229,7 @@ function TrailProgressCard({
   const hasModules = modules && modules.length > 0;
 
   return (
-    <div className="p-3 bg-white/5 rounded-lg">
+    <div className="p-3 glass-light rounded-lg">
       <button
         onClick={() => hasModules && setShowModules(!showModules)}
         className={clsx('w-full text-left', hasModules && 'cursor-pointer')}
@@ -591,7 +591,7 @@ export default function InternStatsPage() {
               {(error as Error)?.message?.includes('404') ? 'Студент не найден' : 'Ошибка загрузки'}
             </h3>
             <p className="text-sm mb-4">{(error as Error)?.message || 'Не удалось загрузить данные'}</p>
-            <button onClick={() => refetch()} className="flex items-center gap-2 mx-auto px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors">
+            <button onClick={() => refetch()} className="flex items-center gap-2 mx-auto px-4 py-2 glass-button rounded-lg text-sm transition-colors">
               <RefreshCw className="w-4 h-4" />
               Попробовать снова
             </button>
@@ -700,7 +700,7 @@ export default function InternStatsPage() {
         {/* Charts Row */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Submission Stats Chart */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-light rounded-xl p-4">
             <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Статистика работ</h3>
             {submissionChartData.length > 0 ? (
               <>
@@ -732,7 +732,7 @@ export default function InternStatsPage() {
           </motion.div>
 
           {/* Trail Completion Chart */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white/5 border border-white/10 rounded-xl p-4">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-light rounded-xl p-4">
             <h3 className="text-sm font-medium text-white/70 mb-3 text-center">Прохождение трейлов</h3>
             {trailCompletion ? (
               <>
@@ -770,28 +770,28 @@ export default function InternStatsPage() {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
           <h3 className="text-sm font-medium text-white/50 mb-3">Показатели</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+            <div className="glass-light rounded-xl p-3">
               <div className="flex items-center gap-2 text-white/50 mb-1">
                 <Zap className="w-4 h-4 text-amber-400" />
                 <span className="text-xs">Опыт (XP)</span>
               </div>
               <p className="text-xl font-bold">{student.totalXP}</p>
             </div>
-            <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+            <div className="glass-light rounded-xl p-3">
               <div className="flex items-center gap-2 text-white/50 mb-1">
                 <BookOpen className="w-4 h-4 text-blue-400" />
                 <span className="text-xs">Модулей пройдено</span>
               </div>
               <p className="text-xl font-bold">{student.modulesCompleted}</p>
             </div>
-            <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+            <div className="glass-light rounded-xl p-3">
               <div className="flex items-center gap-2 text-white/50 mb-1">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                 <span className="text-xs">Работ одобрено</span>
               </div>
               <p className="text-xl font-bold">{submissionStats.approved}</p>
             </div>
-            <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+            <div className="glass-light rounded-xl p-3">
               <div className="flex items-center gap-2 text-white/50 mb-1">
                 <TrendingUp className="w-4 h-4 text-purple-400" />
                 <span className="text-xs">Всего работ</span>
@@ -805,7 +805,7 @@ export default function InternStatsPage() {
         {submissionStats.total > 0 && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
             <h3 className="text-sm font-medium text-white/50 mb-3">Статус работ</h3>
-            <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+            <div className="glass-light rounded-xl p-4">
               <div className="flex items-center gap-3 flex-wrap">
                 <SubmissionBadge label="Одобрено" count={submissionStats.approved} color="bg-emerald-500/20 text-emerald-400" icon={CheckCircle2} />
                 <SubmissionBadge label="На проверке" count={submissionStats.pending} color="bg-amber-500/20 text-amber-400" icon={FileCheck} />
@@ -975,7 +975,7 @@ export default function InternStatsPage() {
             >
               <div className="mt-3 space-y-2">
                 {certificates.map(cert => (
-                  <div key={cert.id} className="p-3 bg-white/5 rounded-lg flex items-center gap-3">
+                  <div key={cert.id} className="p-3 glass-light rounded-lg flex items-center gap-3">
                     <div
                       className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
                       style={{ backgroundColor: cert.trail.color ? `${cert.trail.color}20` : 'rgba(255,255,255,0.1)' }}

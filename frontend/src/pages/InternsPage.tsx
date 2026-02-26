@@ -285,7 +285,7 @@ export default function InternsPage() {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         onClick={() => navigate(`/interns/${intern.id}/stats`)}
-        className="p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors group overflow-hidden flex flex-col cursor-pointer"
+        className="p-3 glass-light rounded-xl transition-colors group overflow-hidden flex flex-col cursor-pointer hover:border-emerald-500/30"
       >
         {/* Name + avatar */}
         <div className="flex items-start gap-2 mb-2">
@@ -411,7 +411,7 @@ export default function InternsPage() {
         </p>
         <button
           onClick={() => refetch()}
-          className="flex items-center gap-2 mx-auto px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm transition-colors"
+          className="flex items-center gap-2 mx-auto px-4 py-2 glass-button rounded-lg text-sm transition-colors"
         >
           <RefreshCw className="w-4 h-4" />
           Попробовать снова
@@ -468,7 +468,7 @@ export default function InternsPage() {
                 <button
                   onClick={() => refetch()}
                   disabled={isLoading}
-                  className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                  className="flex items-center gap-2 px-3 py-2 glass-button rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
                 >
                   <RefreshCw className={clsx('w-3.5 h-3.5', isLoading && 'animate-spin')} />
                   Обновить
@@ -531,7 +531,7 @@ export default function InternsPage() {
                       'px-2 py-1 text-xs rounded-lg border transition-colors flex items-center gap-1',
                       sortField === opt.field
                         ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                        : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
+                        : 'glass-light text-white/50 hover:border-emerald-500/20'
                     )}
                   >
                     {opt.label}
@@ -553,7 +553,7 @@ export default function InternsPage() {
                       'px-2 py-1 text-xs rounded-lg border transition-colors',
                       pageSize === size
                         ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                        : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
+                        : 'glass-light text-white/50 hover:border-emerald-500/20'
                     )}
                   >
                     {size}
@@ -597,7 +597,7 @@ export default function InternsPage() {
                       <button
                         onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                         disabled={safePage <= 1}
-                        className="p-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="p-1.5 glass-light rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:border-emerald-500/20"
                       >
                         <ChevronLeft className="w-4 h-4" />
                       </button>
@@ -619,7 +619,7 @@ export default function InternsPage() {
                                 'min-w-[28px] h-7 px-1.5 text-xs rounded-lg border transition-colors',
                                 safePage === item
                                   ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                                  : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
+                                  : 'glass-light text-white/50 hover:border-emerald-500/20'
                               )}
                             >
                               {item}
@@ -629,7 +629,7 @@ export default function InternsPage() {
                       <button
                         onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                         disabled={safePage >= totalPages}
-                        className="p-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="p-1.5 glass-light rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:border-emerald-500/20"
                       >
                         <ChevronRight className="w-4 h-4" />
                       </button>

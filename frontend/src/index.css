@@ -945,33 +945,40 @@ body.performance-mode .glass-card:hover {
    border-white/N → border-black/N
    ============================================ */
 
-/* Text colors: white → dark */
+/* Light theme: better text rendering — subpixel antialiasing for thicker, crisper text */
+[data-theme="light"] body {
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+  text-rendering: optimizeLegibility;
+}
+
+/* Text colors: white → dark (boosted opacity for light bg readability) */
 [data-theme="light"] .text-white {
   color: #1a1a2e !important;
 }
 [data-theme="light"] .text-white\/90 {
-  color: rgba(26, 26, 46, 0.9) !important;
+  color: rgba(26, 26, 46, 0.92) !important;
 }
 [data-theme="light"] .text-white\/80 {
-  color: rgba(26, 26, 46, 0.8) !important;
+  color: rgba(26, 26, 46, 0.82) !important;
 }
 [data-theme="light"] .text-white\/70 {
-  color: rgba(26, 26, 46, 0.7) !important;
+  color: rgba(26, 26, 46, 0.74) !important;
 }
 [data-theme="light"] .text-white\/60 {
-  color: rgba(26, 26, 46, 0.6) !important;
+  color: rgba(26, 26, 46, 0.68) !important;
 }
 [data-theme="light"] .text-white\/50 {
-  color: rgba(26, 26, 46, 0.5) !important;
+  color: rgba(26, 26, 46, 0.62) !important;
 }
 [data-theme="light"] .text-white\/40 {
-  color: rgba(26, 26, 46, 0.4) !important;
+  color: rgba(26, 26, 46, 0.55) !important;
 }
 [data-theme="light"] .text-white\/30 {
-  color: rgba(26, 26, 46, 0.3) !important;
+  color: rgba(26, 26, 46, 0.42) !important;
 }
 [data-theme="light"] .text-white\/20 {
-  color: rgba(26, 26, 46, 0.2) !important;
+  color: rgba(26, 26, 46, 0.3) !important;
 }
 
 /* Background: white overlays → dark overlays */
@@ -1020,4 +1027,36 @@ body.performance-mode .glass-card:hover {
 }
 [data-theme="light"] .hover\:text-white:hover {
   color: #1a1a2e !important;
+}
+
+/* Light theme: darken accent colors for button/icon contrast */
+[data-theme="light"] .text-cyan-400 {
+  color: #0891b2 !important;
+}
+[data-theme="light"] .text-emerald-400 {
+  color: #059669 !important;
+}
+[data-theme="light"] .text-amber-400 {
+  color: #d97706 !important;
+}
+[data-theme="light"] .text-red-400 {
+  color: #dc2626 !important;
+}
+[data-theme="light"] .text-blue-400 {
+  color: #2563eb !important;
+}
+[data-theme="light"] .text-purple-400 {
+  color: #7c3aed !important;
+}
+[data-theme="light"] .text-yellow-400 {
+  color: #ca8a04 !important;
+}
+[data-theme="light"] .text-indigo-400 {
+  color: #4f46e5 !important;
+}
+[data-theme="light"] .text-orange-400 {
+  color: #ea580c !important;
+}
+[data-theme="light"] .text-gray-400 {
+  color: #6b7280 !important;
 }
