@@ -85,18 +85,6 @@ function getAvatarInitials(name: string) {
     .toUpperCase();
 }
 
-// Stub content for non-implemented tabs
-function TabStub({ title, icon: Icon }: { title: string; icon: typeof GraduationCap }) {
-  return (
-    <div className="h-full flex items-center justify-center">
-      <div className="text-center text-white/40">
-        <Icon className="w-16 h-16 mx-auto mb-4 opacity-50" />
-        <h3 className="text-lg font-medium mb-2">{title}</h3>
-        <p className="text-sm">Раздел в разработке</p>
-      </div>
-    </div>
-  );
-}
 
 function formatDaysSinceActive(daysSinceActive: number | null, lastActiveAt: string | null): string {
   if (daysSinceActive === null && lastActiveAt === null) return 'Нет данных';
