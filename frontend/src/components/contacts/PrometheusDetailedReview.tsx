@@ -142,18 +142,18 @@ function CompetencyGauge({
           : 'bg-red-400';
 
   return (
-    <div className="bg-white/5 rounded-lg p-3 border border-white/5">
-      <div className="flex items-center gap-1.5 text-white/40 mb-1.5">
+    <div className="glass-light rounded-lg p-3">
+      <div className="flex items-center gap-1.5 text-dark-400 mb-1.5">
         <Icon className={clsx('w-3.5 h-3.5', color)} />
         <span className="text-xs">{label}</span>
       </div>
       <div className="flex items-baseline gap-2 mb-1.5">
-        <span className="text-lg font-bold text-white">{data.score}</span>
-        <span className="text-[10px] text-white/40 uppercase tracking-wide">
+        <span className="text-lg font-bold">{data.score}</span>
+        <span className="text-[10px] text-dark-400 uppercase tracking-wide">
           {data.label}
         </span>
       </div>
-      <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-1.5">
+      <div className="w-full h-1.5 bg-dark-600/30 rounded-full overflow-hidden mb-1.5">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${data.score}%` }}
@@ -161,7 +161,7 @@ function CompetencyGauge({
           className={clsx('h-full rounded-full', barColor)}
         />
       </div>
-      <p className="text-[10px] text-white/35 leading-relaxed">{data.detail}</p>
+      <p className="text-[10px] text-dark-400 leading-relaxed">{data.detail}</p>
     </div>
   );
 }
@@ -479,19 +479,19 @@ export default function PrometheusDetailedReview({
     <div className="space-y-4 min-w-0">
       {/* ── Team Fit Recommendation (AI) — shown first for HR ── */}
       {detailed?.teamFitRecommendation && (
-        <div className="glass rounded-xl border border-white/10 p-4 sm:p-6">
-          <h4 className="text-sm font-medium text-white/50 mb-3 flex items-center gap-2">
+        <div className="glass rounded-xl p-4 sm:p-6">
+          <h4 className="text-sm font-medium text-dark-400 mb-3 flex items-center gap-2">
             <Users className="w-4 h-4 text-blue-400" />
             Рекомендация по интеграции в команду
           </h4>
-          <div className="bg-white/5 rounded-xl p-4 border border-white/5 space-y-3">
+          <div className="glass-light rounded-xl p-4 space-y-3">
             <div className="flex items-center gap-3">
               <ReadinessBadge level={detailed.teamFitRecommendation.readinessLevel} />
             </div>
 
             {detailed.teamFitRecommendation.recommendedRoles.length > 0 && (
               <div>
-                <span className="text-[10px] text-white/40 uppercase tracking-wide">
+                <span className="text-[10px] text-dark-400 uppercase tracking-wide">
                   Рекомендуемые роли
                 </span>
                 <div className="flex flex-wrap gap-1.5 mt-1">
@@ -507,7 +507,7 @@ export default function PrometheusDetailedReview({
               </div>
             )}
 
-            <p className="text-sm text-white/55 leading-relaxed">
+            <p className="text-sm text-dark-300 leading-relaxed">
               {detailed.teamFitRecommendation.integrationAdvice}
             </p>
 
@@ -520,7 +520,7 @@ export default function PrometheusDetailedReview({
                   {detailed.teamFitRecommendation.watchPoints.map((wp, i) => (
                     <li
                       key={i}
-                      className="text-xs text-white/45 flex items-start gap-1.5"
+                      className="text-xs text-dark-400 flex items-start gap-1.5"
                     >
                       <AlertTriangle className="w-3 h-3 text-amber-400 flex-shrink-0 mt-0.5" />
                       <span>{wp}</span>
@@ -686,7 +686,7 @@ export default function PrometheusDetailedReview({
         {/* ── Competency Analysis (AI) ── */}
         {detailed?.competencyAnalysis && (
           <div className="mb-4">
-            <h4 className="text-sm font-medium text-white/50 mb-3 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-dark-400 mb-3 flex items-center gap-2">
               <Target className="w-4 h-4 text-purple-400" />
               Компетенции
             </h4>
