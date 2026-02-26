@@ -27,6 +27,7 @@ import type { PrometheusIntern } from '@/services/api';
 import { usePrometheusBulkSync } from '@/hooks';
 import InternsAnalyticsTab from '@/components/interns/InternsAnalyticsTab';
 import InternsStagesTab from '@/components/interns/InternsStagesTab';
+import InternsCsvTab from '@/components/interns/InternsCsvTab';
 
 // ── Status badge helper ──
 
@@ -661,7 +662,7 @@ export default function InternsPage() {
         </div>
       ) : (
         <div className="flex-1 overflow-auto p-4">
-          <TabStub title="Выгрузка в CSV" icon={Download} />
+          <InternsCsvTab />
         </div>
       )}
     </div>
