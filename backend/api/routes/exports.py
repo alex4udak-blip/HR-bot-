@@ -55,6 +55,8 @@ def _make_csv_response(rows: list[list[str]], headers: list[str], filename_prefi
         media_type="text/csv; charset=utf-8",
         headers={
             "Content-Disposition": f'attachment; filename="{filename_prefix}-{date_str}.csv"',
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
         },
     )
 

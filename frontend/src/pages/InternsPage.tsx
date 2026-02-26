@@ -27,6 +27,7 @@ import type { PrometheusIntern } from '@/services/api';
 import { usePrometheusBulkSync } from '@/hooks';
 import InternsAnalyticsTab from '@/components/interns/InternsAnalyticsTab';
 import InternsStagesTab from '@/components/interns/InternsStagesTab';
+import InternsCsvTab from '@/components/interns/InternsCsvTab';
 
 // ── Status badge helper ──
 
@@ -84,18 +85,6 @@ function getAvatarInitials(name: string) {
     .toUpperCase();
 }
 
-// Stub content for non-implemented tabs
-function TabStub({ title, icon: Icon }: { title: string; icon: typeof GraduationCap }) {
-  return (
-    <div className="h-full flex items-center justify-center">
-      <div className="text-center text-white/40">
-        <Icon className="w-16 h-16 mx-auto mb-4 opacity-50" />
-        <h3 className="text-lg font-medium mb-2">{title}</h3>
-        <p className="text-sm">Раздел в разработке</p>
-      </div>
-    </div>
-  );
-}
 
 function formatDaysSinceActive(daysSinceActive: number | null, lastActiveAt: string | null): string {
   if (daysSinceActive === null && lastActiveAt === null) return 'Нет данных';
@@ -661,7 +650,7 @@ export default function InternsPage() {
         </div>
       ) : (
         <div className="flex-1 overflow-auto p-4">
-          <TabStub title="Выгрузка в CSV" icon={Download} />
+          <InternsCsvTab />
         </div>
       )}
     </div>
