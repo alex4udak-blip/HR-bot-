@@ -91,12 +91,12 @@
   --glass-light-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.85) 0%, rgba(245, 247, 250, 0.9) 100%);
   --glass-card-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.94) 100%);
   --glass-card-hover-bg: rgba(255, 255, 255, 0.95);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04) inset;
-  --glass-card-shadow: 0 4px 24px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.03) inset;
+  --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --glass-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
   /* Input */
   --input-bg: rgba(255, 255, 255, 0.8);
   --input-focus-bg: rgba(255, 255, 255, 0.95);
-  --input-focus-shadow: 0 0 0 4px rgba(12, 165, 235, 0.15), 0 0 20px rgba(12, 165, 235, 0.1), 0 4px 12px rgba(0, 0, 0, 0.08);
+  --input-focus-shadow: 0 0 0 3px rgba(12, 165, 235, 0.15), 0 1px 3px rgba(0, 0, 0, 0.08);
   /* Select */
   --select-option-bg: #ffffff;
   --select-option-fg: #1a1a2e;
@@ -902,15 +902,14 @@ body.performance-mode .glass-card:hover {
   opacity: 0.3;
 }
 
-/* Light theme: glass-card hover — softer shadow, no bright cyan glow */
+/* Light theme: glass-card hover — clean neutral shadow */
 [data-theme="light"] .glass-card:hover {
   background: var(--glass-card-hover-bg);
-  border-color: rgba(12, 165, 235, 0.3);
+  border-color: rgba(0, 0, 0, 0.12);
   box-shadow:
-    0 12px 40px rgba(0, 0, 0, 0.1),
-    0 4px 16px rgba(12, 165, 235, 0.08),
-    0 0 0 1px rgba(12, 165, 235, 0.15);
-  transform: translateY(-4px);
+    0 4px 12px rgba(0, 0, 0, 0.08),
+    0 2px 4px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
 }
 
 /* Light theme: stat-card animated border — reduced opacity */
@@ -926,12 +925,12 @@ body.performance-mode .glass-card:hover {
   animation: borderGradient 6s ease infinite;
 }
 
-/* Light theme: premium button hover — lighter shadow */
+/* Light theme: premium button hover — clean neutral shadow */
 [data-theme="light"] .btn-premium:hover {
-  transform: translateY(-3px) scale(1.02);
+  transform: translateY(-2px) scale(1.01);
   box-shadow:
-    0 12px 32px rgba(12, 165, 235, 0.2),
-    0 0 0 2px rgba(12, 165, 235, 0.25);
+    0 4px 16px rgba(0, 0, 0, 0.12),
+    0 2px 4px rgba(0, 0, 0, 0.08);
 }
 
 /* Light theme: shimmer — use dark overlay instead of white (invisible on white bg) */
@@ -959,23 +958,17 @@ body.performance-mode .glass-card:hover {
   background-clip: padding-box;
 }
 
-/* Light theme glow - more subtle */
+/* Light theme glow - disabled, use neutral shadows instead */
 [data-theme="light"] .glow-accent {
-  box-shadow:
-    0 0 12px rgba(12, 165, 235, 0.25),
-    0 0 24px rgba(12, 165, 235, 0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 [data-theme="light"] .glow-text {
-  text-shadow:
-    0 0 8px rgba(12, 165, 235, 0.3),
-    0 0 16px rgba(12, 165, 235, 0.15);
+  text-shadow: none;
 }
 
 [data-theme="light"] .glow-purple {
-  box-shadow:
-    0 0 12px rgba(139, 92, 246, 0.2),
-    0 0 24px rgba(139, 92, 246, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 [data-theme="light"] .pulse-glow {
@@ -984,10 +977,10 @@ body.performance-mode .glass-card:hover {
 
 @keyframes pulseGlowLight {
   0%, 100% {
-    box-shadow: 0 0 12px rgba(12, 165, 235, 0.2);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   }
   50% {
-    box-shadow: 0 0 24px rgba(12, 165, 235, 0.35), 0 0 40px rgba(12, 165, 235, 0.15);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   }
 }
 
