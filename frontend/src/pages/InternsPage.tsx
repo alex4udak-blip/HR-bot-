@@ -19,6 +19,7 @@ import {
   ChevronRight,
   UserCheck,
   ArrowUpDown,
+  Send,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { formatRelativeTime } from '@/utils';
@@ -298,7 +299,10 @@ export default function InternsPage() {
               <p className="text-xs text-white/50 truncate">{intern.email}</p>
             )}
             {intern.telegramUsername && (
-              <p className="text-xs text-white/50 truncate">{intern.telegramUsername}</p>
+              <p className="text-xs text-white/50 truncate flex items-center gap-1">
+                <Send className="w-3 h-3 flex-shrink-0" />
+                {intern.telegramUsername.startsWith('@') ? intern.telegramUsername : `@${intern.telegramUsername}`}
+              </p>
             )}
           </div>
         </div>
@@ -486,7 +490,7 @@ export default function InternsPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 group-focus-within:text-emerald-400 transition-colors" />
                 <input
                   type="text"
-                  placeholder="Поиск по имени, email, трекам..."
+                  placeholder="Поиск по имени, email, Telegram, трекам..."
                   value={searchQuery}
                   onChange={(e) => { setSearchQuery(e.target.value); resetPage(); }}
                   className="w-full pl-10 pr-4 py-2.5 glass-light rounded-xl focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 text-sm transition-all"
