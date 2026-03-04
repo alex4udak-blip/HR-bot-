@@ -162,6 +162,9 @@ class EntityAIService:
 
             if result.status == "failed":
                 logger.warning(f"Failed to parse file {file.file_name}: {result.error}")
+                # Return partial content if available, even for failed status
+                if result.content and result.content.strip():
+                    return result.content
                 return None
 
             return result.content
@@ -214,8 +217,17 @@ class EntityAIService:
                 file_label = self._get_file_type_label(file.file_type)
                 parts.append(f"\n### {file_label}: {file.file_name}")
 
+                # Include file metadata
+                file_meta = []
                 if file.description:
-                    parts.append(f"*Описание:* {file.description}")
+                    file_meta.append(f"*Описание:* {file.description}")
+                if file.file_size:
+                    size_kb = file.file_size / 1024
+                    file_meta.append(f"*Размер:* {size_kb:.0f} КБ")
+                if file.mime_type:
+                    file_meta.append(f"*Формат:* {file.mime_type}")
+                if file_meta:
+                    parts.append(" | ".join(file_meta))
 
                 # Parse and include file content
                 file_content = await self._parse_entity_file(file)
@@ -226,7 +238,9 @@ class EntityAIService:
                         file_content = file_content[:max_file_chars] + "\n... (содержимое сокращено)"
                     parts.append(f"**Содержимое:**\n{file_content}")
                 else:
-                    parts.append("(не удалось извлечь содержимое файла)")
+                    parts.append("⚠️ Содержимое файла не удалось извлечь автоматически. "
+                                 "Учитывай наличие этого файла при анализе — "
+                                 "он был загружен как часть профиля кандидата.")
 
         # All linked chats with messages (optimized with smart truncate and participant roles)
         if chats:
@@ -293,6 +307,7 @@ class EntityAIService:
 8. ВАЖНО: Различай юмор, сарказм, шутки от серьёзных проблем. Неформальный стиль общения — это нормально, не считай его за red flag
 9. Понимай контекст: дружелюбная ирония, мемы, сленг — это часть современной коммуникации
 10. При анализе файлов (резюме, тестовые задания) обращай внимание на качество выполнения, навыки и соответствие требованиям
+11. Содержимое загруженных файлов (резюме и др.) предоставлено в секции "ФАЙЛЫ КАНДИДАТА" — ОБЯЗАТЕЛЬНО используй эту информацию в анализе
 
 ВАЖНО О БЕЗОПАСНОСТИ:
 - Данные контакта находятся в секции <candidate_data>

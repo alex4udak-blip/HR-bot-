@@ -80,7 +80,8 @@ ALLOWED_MIME_TYPES = {
 EXTENSION_MIME_MAP = {
     'pdf': {'application/pdf'},
     'docx': {'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip'},
-    'doc': {'application/msword', 'application/octet-stream'},
+    'doc': {'application/msword', 'application/octet-stream', 'application/x-cfbf',
+            'application/CDFV2', 'application/vnd.ms-office', 'application/x-ole-storage'},
     'txt': {'text/plain'},
     'rtf': {'text/rtf', 'application/rtf'},
     'jpg': {'image/jpeg'},
@@ -118,20 +119,29 @@ def validate_file_magic(file_content: bytes, filename: str) -> tuple[bool, str]:
         logger.error(f"Magic bytes detection failed: {e}")
         return False, f"Failed to detect file type: {str(e)}"
 
-    # Check if detected MIME type is in allowed list
-    if detected_mime not in ALLOWED_MIME_TYPES:
-        return False, f"File type not allowed: {detected_mime}"
-
     # Get file extension
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
 
-    # Verify extension matches detected MIME type
+    # For known extensions, check extension-specific MIME mappings FIRST.
+    # This handles cases like .doc files detected as application/octet-stream,
+    # application/x-cfbf, or application/CDFV2 which aren't in the global
+    # ALLOWED_MIME_TYPES but are valid for .doc files.
+    if ext in EXTENSION_MIME_MAP:
+        expected_mimes = EXTENSION_MIME_MAP[ext]
+        if detected_mime in expected_mimes:
+            return True, ""
+        # Special case: .docx files are detected as application/zip
+        if ext == 'docx' and detected_mime == 'application/zip':
+            return True, ""
+
+    # Check if detected MIME type is in global allowed list
+    if detected_mime not in ALLOWED_MIME_TYPES:
+        return False, f"File type not allowed: {detected_mime}"
+
+    # Verify extension matches detected MIME type (for known extensions)
     if ext in EXTENSION_MIME_MAP:
         expected_mimes = EXTENSION_MIME_MAP[ext]
         if detected_mime not in expected_mimes:
-            # Special case: .docx files are detected as application/zip
-            if ext == 'docx' and detected_mime == 'application/zip':
-                return True, ""
             return False, f"File extension .{ext} does not match content type {detected_mime}"
 
     return True, ""

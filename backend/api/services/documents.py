@@ -248,31 +248,142 @@ class DocumentParser:
             async with aiofiles.open(temp_input, 'wb') as f:
                 await f.write(file_bytes)
 
-            # Convert using LibreOffice
-            process = await asyncio.create_subprocess_exec(
-                'libreoffice', '--headless', '--convert-to', 'docx',
-                '--outdir', temp_dir, temp_input,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            await process.communicate()
-
-            # Find the output file
-            output_name = Path(temp_input).stem + ".docx"
-            output_path = os.path.join(temp_dir, output_name)
-
-            if os.path.exists(output_path):
-                async with aiofiles.open(output_path, 'rb') as f:
-                    docx_bytes = await f.read()
-                result = await self._parse_docx(docx_bytes, filename)
-                result.metadata["converted_from"] = ext
-                return result
-            else:
-                return DocumentParseResult(
-                    status="failed",
-                    error="LibreOffice conversion failed"
+            # Try 1: Convert using LibreOffice to docx
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    'libreoffice', '--headless', '--convert-to', 'docx',
+                    '--outdir', temp_dir, temp_input,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
                 )
+                await asyncio.wait_for(process.communicate(), timeout=30)
+
+                output_name = Path(temp_input).stem + ".docx"
+                output_path = os.path.join(temp_dir, output_name)
+
+                if os.path.exists(output_path):
+                    async with aiofiles.open(output_path, 'rb') as f:
+                        docx_bytes = await f.read()
+                    result = await self._parse_docx(docx_bytes, filename)
+                    result.metadata["converted_from"] = ext
+                    return result
+            except (asyncio.TimeoutError, FileNotFoundError, Exception) as e:
+                logger.warning(f"LibreOffice docx conversion failed for {filename}: {e}")
+
+            # Try 2: Convert using LibreOffice to txt (simpler, more reliable)
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    'libreoffice', '--headless', '--convert-to', 'txt:Text',
+                    '--outdir', temp_dir, temp_input,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await asyncio.wait_for(process.communicate(), timeout=30)
+
+                txt_output = os.path.join(temp_dir, Path(temp_input).stem + ".txt")
+                if os.path.exists(txt_output):
+                    async with aiofiles.open(txt_output, 'rb') as f:
+                        txt_bytes = await f.read()
+                    result = await self._parse_text(txt_bytes, filename)
+                    result.metadata["converted_from"] = ext
+                    result.metadata["conversion_method"] = "libreoffice_txt"
+                    return result
+            except (asyncio.TimeoutError, FileNotFoundError, Exception) as e:
+                logger.warning(f"LibreOffice txt conversion failed for {filename}: {e}")
+
+            # Try 3: Use antiword for .doc files
+            if ext.lower() in ('.doc',):
+                try:
+                    process = await asyncio.create_subprocess_exec(
+                        'antiword', temp_input,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
+                    if process.returncode == 0 and stdout:
+                        text = stdout.decode('utf-8', errors='replace')
+                        if text.strip():
+                            return DocumentParseResult(
+                                content=text,
+                                status="parsed",
+                                metadata={"converted_from": ext, "conversion_method": "antiword"}
+                            )
+                except (FileNotFoundError, asyncio.TimeoutError, Exception) as e:
+                    logger.warning(f"antiword failed for {filename}: {e}")
+
+                # Try 4: Use catdoc for .doc files
+                try:
+                    process = await asyncio.create_subprocess_exec(
+                        'catdoc', '-w', temp_input,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
+                    if process.returncode == 0 and stdout:
+                        text = stdout.decode('utf-8', errors='replace')
+                        if text.strip():
+                            return DocumentParseResult(
+                                content=text,
+                                status="parsed",
+                                metadata={"converted_from": ext, "conversion_method": "catdoc"}
+                            )
+                except (FileNotFoundError, asyncio.TimeoutError, Exception) as e:
+                    logger.warning(f"catdoc failed for {filename}: {e}")
+
+            # Try 5: Extract raw text from binary (last resort)
+            try:
+                text = self._extract_text_from_binary(file_bytes)
+                if text and len(text.strip()) > 50:
+                    return DocumentParseResult(
+                        content=text,
+                        status="partial",
+                        metadata={"converted_from": ext, "conversion_method": "binary_extraction"}
+                    )
+            except Exception as e:
+                logger.warning(f"Binary text extraction failed for {filename}: {e}")
+
+            return DocumentParseResult(
+                status="failed",
+                error="All conversion methods failed (LibreOffice, antiword, catdoc, binary extraction)"
+            )
         # temp_dir is automatically cleaned up when exiting the context
+
+    def _extract_text_from_binary(self, file_bytes: bytes) -> str:
+        """Extract readable text from binary file as last resort.
+
+        Scans for sequences of printable characters (Latin + Cyrillic).
+        Useful when all proper parsers fail.
+        """
+        import re
+        # Look for readable text sequences (min 4 chars) including Cyrillic
+        # Match sequences of printable ASCII + Cyrillic characters
+        text_parts = []
+        # Try UTF-16LE first (common in .doc files)
+        try:
+            decoded = file_bytes.decode('utf-16-le', errors='ignore')
+            # Filter to only readable characters
+            cleaned = re.sub(r'[^\w\s.,;:!?()\-–—«»""\'@#$%&*+=\n\r\t/]', ' ', decoded, flags=re.UNICODE)
+            # Remove excessive whitespace
+            cleaned = re.sub(r'\s{3,}', '\n', cleaned)
+            cleaned = re.sub(r' {2,}', ' ', cleaned)
+            if len(cleaned.strip()) > 50:
+                text_parts.append(cleaned.strip())
+        except Exception:
+            pass
+
+        if not text_parts:
+            # Fallback: extract ASCII/Cyrillic sequences from raw bytes
+            try:
+                decoded = file_bytes.decode('cp1251', errors='ignore')
+                cleaned = re.sub(r'[^\w\s.,;:!?()\-–—«»""\'@#$%&*+=\n\r\t/]', ' ', decoded, flags=re.UNICODE)
+                cleaned = re.sub(r'\s{3,}', '\n', cleaned)
+                cleaned = re.sub(r' {2,}', ' ', cleaned)
+                if len(cleaned.strip()) > 50:
+                    text_parts.append(cleaned.strip())
+            except Exception:
+                pass
+
+        return '\n'.join(text_parts) if text_parts else ""
 
     # ========== RTF ==========
     async def _parse_rtf(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
