@@ -328,31 +328,52 @@ def _get_referer_for_url(url: str) -> str:
 async def fetch_url_content(url: str) -> str:
     """Fetch and extract text content from URL.
 
-    Uses browser-like headers and retry logic to avoid anti-bot blocks.
+    Uses browser-like headers, cookie jar, and retry logic to avoid anti-bot blocks.
     """
-    referer = _get_referer_for_url(url)
+    import random
 
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Referer': referer,
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'same-origin',
-        'Sec-Fetch-User': '?1',
-        'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"Windows"',
-        'Cache-Control': 'max-age=0',
-    }
+    # Rotate User-Agent per attempt to avoid fingerprinting
+    user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+    ]
 
     last_error = None
     for attempt in range(3):
+        ua = user_agents[attempt % len(user_agents)]
+
+        # First attempt: direct navigation from the site itself
+        # Subsequent attempts: simulate coming from Google search
+        if attempt == 0:
+            referer = _get_referer_for_url(url)
+            fetch_site = 'same-origin'
+        else:
+            referer = 'https://www.google.com/'
+            fetch_site = 'cross-site'
+
+        headers = {
+            'User-Agent': ua,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Referer': referer,
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': fetch_site,
+            'Sec-Fetch-User': '?1',
+            'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
+            'Cache-Control': 'max-age=0',
+            'Priority': 'u=0, i',
+        }
+
         try:
+            # Use persistent client with cookie jar to handle auth cookies/redirects
             async with httpx.AsyncClient(
                 follow_redirects=True,
                 timeout=30.0,
@@ -363,15 +384,36 @@ async def fetch_url_content(url: str) -> str:
                 return response.text
         except httpx.HTTPStatusError as e:
             last_error = e
-            if e.response.status_code == 403 and attempt < 2:
+            status_code = e.response.status_code
+            if status_code == 403 and attempt < 2:
                 logger.warning(
-                    f"Got 403 on attempt {attempt + 1} for {url}, retrying..."
+                    f"Got 403 on attempt {attempt + 1} for {url}, retrying with different headers..."
                 )
-                await asyncio.sleep(1.5 * (attempt + 1))
-                # Update referer for retry (cross-origin style)
-                headers['Sec-Fetch-Site'] = 'cross-site'
-                headers['Referer'] = 'https://www.google.com/'
+                # Random delay to look more human
+                await asyncio.sleep(1.5 * (attempt + 1) + random.uniform(0.5, 1.5))
                 continue
+            # Convert cryptic httpx error to user-friendly message
+            source = detect_source(url)
+            source_names = {
+                'hh': 'HeadHunter', 'linkedin': 'LinkedIn',
+                'superjob': 'SuperJob', 'habr': 'Хабр Карьера'
+            }
+            site_name = source_names.get(source, 'сайт')
+            if status_code == 403:
+                raise ValueError(
+                    f"Сайт {site_name} заблокировал доступ (403). "
+                    f"Попробуйте скопировать текст резюме и загрузить как файл (.txt/.pdf)."
+                )
+            elif status_code == 404:
+                raise ValueError(
+                    f"Страница не найдена (404). Проверьте правильность ссылки."
+                )
+            else:
+                raise ValueError(
+                    f"Ошибка при загрузке страницы с {site_name} (код {status_code}). "
+                    f"Попробуйте позже или загрузите резюме файлом."
+                )
+        except ValueError:
             raise
         except Exception as e:
             last_error = e
@@ -379,7 +421,9 @@ async def fetch_url_content(url: str) -> str:
                 logger.warning(f"Fetch attempt {attempt + 1} failed for {url}: {e}")
                 await asyncio.sleep(1.0 * (attempt + 1))
                 continue
-            raise
+            raise ValueError(
+                f"Не удалось загрузить страницу. Проверьте ссылку или загрузите резюме файлом."
+            )
 
     raise last_error  # type: ignore[misc]
 

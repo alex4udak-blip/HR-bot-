@@ -93,7 +93,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted }: P
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Ошибка парсинга';
       setError(message);
-      toast.error('Ошибка распознавания');
+      toast.error(message, { duration: 6000 });
     } finally {
       setLoading(false);
     }
@@ -105,10 +105,17 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted }: P
       return;
     }
 
-    // Check file type
+    // Check file type by MIME type AND extension (some browsers return empty file.type)
     const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-    if (!allowedTypes.includes(file.type)) {
-      setError('Поддерживаются только PDF, DOC, DOCX и TXT файлы');
+    const allowedExtensions = ['.pdf', '.doc', '.docx', '.txt'];
+    const fileExtension = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+    const isTypeValid = allowedTypes.includes(file.type) || (file.type === '' && allowedExtensions.includes(fileExtension));
+    const isExtensionValid = allowedExtensions.includes(fileExtension);
+
+    if (!isTypeValid && !isExtensionValid) {
+      const errorMsg = 'Поддерживаются только PDF, DOC, DOCX и TXT файлы';
+      setError(errorMsg);
+      toast.error(errorMsg);
       return;
     }
 
@@ -160,15 +167,18 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted }: P
     setIsDragging(false);
   }, []);
 
+  const handleFileSelectRef = useRef(handleFileSelect);
+  handleFileSelectRef.current = handleFileSelect;
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
 
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      handleFileSelect(files[0]);
+      handleFileSelectRef.current(files[0]);
     }
-  }, [isResume]);
+  }, []);
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
