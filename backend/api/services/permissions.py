@@ -486,39 +486,62 @@ class PermissionService:
         return role == UserRole.superadmin
 
     async def _check_department_access(self, user: User, resource: Any) -> bool:
-        """Check if user has department-based access (LEAD/SUB_ADMIN).
+        """Check if user has department-based access.
+
+        For LEAD/SUB_ADMIN: full department access (read/write).
+        For MEMBER: read-only department access.
 
         Access granted if:
-        a) Resource is in user's admin department, OR
-        b) Resource owner/entity is a member of user's admin department
+        a) Resource is in user's department, OR
+        b) Resource owner/entity is a member of user's department
         """
+        # First check admin departments (lead/sub_admin)
         admin_dept_ids = await self._get_admin_department_ids(user)
-        if not admin_dept_ids:
-            return False
-
-        # a) Check if resource's department is in admin_dept_ids
-        resource_dept_id = getattr(resource, 'department_id', None)
-        if resource_dept_id and resource_dept_id in admin_dept_ids:
-            return True
-
-        # b) For chats/calls, check if linked entity is in admin department
-        entity_id = getattr(resource, 'entity_id', None)
-        if entity_id:
-            entity_result = await self.db.execute(
-                select(Entity.department_id).where(Entity.id == entity_id)
-            )
-            entity_dept_id = entity_result.scalar_one_or_none()
-            if entity_dept_id and entity_dept_id in admin_dept_ids:
+        if admin_dept_ids:
+            if self._resource_in_departments(resource, admin_dept_ids):
                 return True
 
-        # c) Check if resource owner is in admin's department
-        owner_id = getattr(resource, 'owner_id', None) or getattr(resource, 'created_by', None)
-        if owner_id:
-            owner_depts = await self._get_user_department_ids_by_user_id(owner_id)
-            if owner_depts & admin_dept_ids:
-                return True
+            entity_id = getattr(resource, 'entity_id', None)
+            if entity_id:
+                entity_result = await self.db.execute(
+                    select(Entity.department_id).where(Entity.id == entity_id)
+                )
+                entity_dept_id = entity_result.scalar_one_or_none()
+                if entity_dept_id and entity_dept_id in admin_dept_ids:
+                    return True
+
+            owner_id = getattr(resource, 'owner_id', None) or getattr(resource, 'created_by', None)
+            if owner_id:
+                owner_depts = await self._get_user_department_ids_by_user_id(owner_id)
+                if owner_depts & admin_dept_ids:
+                    return True
+
+        # Then check regular member department access (read-only)
+        member_dept_ids = await self._get_user_department_ids(user)
+        if member_dept_ids:
+            # Check if resource owner is in the same department
+            owner_id = getattr(resource, 'owner_id', None) or getattr(resource, 'created_by', None)
+            if owner_id:
+                owner_depts = await self._get_user_department_ids_by_user_id(owner_id)
+                if owner_depts & member_dept_ids:
+                    return True
+
+            # Check if resource's entity is in the same department
+            entity_id = getattr(resource, 'entity_id', None)
+            if entity_id:
+                entity_result = await self.db.execute(
+                    select(Entity.department_id).where(Entity.id == entity_id)
+                )
+                entity_dept_id = entity_result.scalar_one_or_none()
+                if entity_dept_id and entity_dept_id in member_dept_ids:
+                    return True
 
         return False
+
+    def _resource_in_departments(self, resource: Any, dept_ids: set) -> bool:
+        """Check if resource's department_id is in the given set."""
+        resource_dept_id = getattr(resource, 'department_id', None)
+        return resource_dept_id is not None and resource_dept_id in dept_ids
 
     async def _get_admin_department_ids(self, user: User) -> Set[int]:
         """Get department IDs where user is lead or sub_admin."""
@@ -747,9 +770,14 @@ class PermissionService:
         resource_type: str,
         org_id: int
     ) -> Set[int]:
-        """Get resource IDs accessible via department membership (lead/sub_admin)."""
+        """Get resource IDs accessible via department membership (all department members)."""
+        # Use admin departments if user is lead/sub_admin, otherwise use all departments
         admin_dept_ids = await self._get_admin_department_ids(user)
-        if not admin_dept_ids:
+        all_dept_ids = await self._get_user_department_ids(user)
+
+        # Combine: admin departments + regular member departments
+        effective_dept_ids = admin_dept_ids | all_dept_ids
+        if not effective_dept_ids:
             return set()
 
         accessible_ids: Set[int] = set()
@@ -759,13 +787,13 @@ class PermissionService:
             result = await self.db.execute(
                 select(Entity.id).where(
                     Entity.org_id == org_id,
-                    Entity.department_id.in_(admin_dept_ids)
+                    Entity.department_id.in_(effective_dept_ids)
                 )
             )
             accessible_ids.update(result.scalars().all())
 
             # Entities created by department members
-            dept_member_ids = await self._get_department_member_ids(admin_dept_ids)
+            dept_member_ids = await self._get_department_member_ids(effective_dept_ids)
             if dept_member_ids:
                 result = await self.db.execute(
                     select(Entity.id).where(
@@ -783,13 +811,13 @@ class PermissionService:
             entity_result = await self.db.execute(
                 select(Entity.id).where(
                     Entity.org_id == org_id,
-                    Entity.department_id.in_(admin_dept_ids)
+                    Entity.department_id.in_(effective_dept_ids)
                 )
             )
             dept_entity_ids = set(entity_result.scalars().all())
 
             # Also include entities created by department members
-            dept_member_ids = await self._get_department_member_ids(admin_dept_ids)
+            dept_member_ids = await self._get_department_member_ids(effective_dept_ids)
             if dept_member_ids:
                 member_entities_result = await self.db.execute(
                     select(Entity.id).where(
@@ -824,13 +852,13 @@ class PermissionService:
             result = await self.db.execute(
                 select(Vacancy.id).where(
                     Vacancy.org_id == org_id,
-                    Vacancy.department_id.in_(admin_dept_ids)
+                    Vacancy.department_id.in_(effective_dept_ids)
                 )
             )
             accessible_ids.update(result.scalars().all())
 
             # Vacancies created by department members
-            dept_member_ids = await self._get_department_member_ids(admin_dept_ids)
+            dept_member_ids = await self._get_department_member_ids(effective_dept_ids)
             if dept_member_ids:
                 result = await self.db.execute(
                     select(Vacancy.id).where(

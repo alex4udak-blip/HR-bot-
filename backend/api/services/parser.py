@@ -4,11 +4,13 @@ Universal parser service for extracting structured data from:
 - URLs (hh.ru, LinkedIn, SuperJob, Habr Career)
 - Job vacancy pages
 """
+import asyncio
 import httpx
 import re
 import json
 import logging
 from typing import Optional, Dict, Any, Literal, Tuple
+from urllib.parse import urlparse
 from pydantic import BaseModel, field_validator
 from anthropic import AsyncAnthropic
 from .documents import document_parser
@@ -317,16 +319,69 @@ VACANCY_SPLIT_PROMPT = """Раздели текст описания вакан�
 """
 
 
+def _get_referer_for_url(url: str) -> str:
+    """Generate appropriate Referer header based on URL domain."""
+    parsed = urlparse(url)
+    return f"{parsed.scheme}://{parsed.netloc}/"
+
+
 async def fetch_url_content(url: str) -> str:
-    """Fetch and extract text content from URL"""
-    async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-        response = await client.get(url, headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-        })
-        response.raise_for_status()
-        return response.text
+    """Fetch and extract text content from URL.
+
+    Uses browser-like headers and retry logic to avoid anti-bot blocks.
+    """
+    referer = _get_referer_for_url(url)
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Referer': referer,
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Cache-Control': 'max-age=0',
+    }
+
+    last_error = None
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=True,
+                timeout=30.0,
+                http2=True,
+            ) as client:
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                return response.text
+        except httpx.HTTPStatusError as e:
+            last_error = e
+            if e.response.status_code == 403 and attempt < 2:
+                logger.warning(
+                    f"Got 403 on attempt {attempt + 1} for {url}, retrying..."
+                )
+                await asyncio.sleep(1.5 * (attempt + 1))
+                # Update referer for retry (cross-origin style)
+                headers['Sec-Fetch-Site'] = 'cross-site'
+                headers['Referer'] = 'https://www.google.com/'
+                continue
+            raise
+        except Exception as e:
+            last_error = e
+            if attempt < 2:
+                logger.warning(f"Fetch attempt {attempt + 1} failed for {url}: {e}")
+                await asyncio.sleep(1.0 * (attempt + 1))
+                continue
+            raise
+
+    raise last_error  # type: ignore[misc]
 
 
 def detect_source(url: str) -> str:
