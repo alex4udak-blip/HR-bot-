@@ -122,25 +122,23 @@ async def get_chats(
             )
             shared_chat_ids = [r for r in shared_result.scalars().all()]
 
-            # Get departments where user is lead or sub_admin
-            # Use enum values for proper PostgreSQL enum comparison
-            lead_dept_result = await db.execute(
+            # Get ALL departments where user is a member (any role)
+            all_dept_result = await db.execute(
                 select(DepartmentMember.department_id).where(
-                    DepartmentMember.user_id == user.id,
-                    DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+                    DepartmentMember.user_id == user.id
                 )
             )
-            lead_dept_ids = [r for r in lead_dept_result.scalars().all()]
+            user_dept_ids = [r for r in all_dept_result.scalars().all()]
 
-            # DEBUG: Log user's department admin status
-            logger.info(f"get_chats: user={user.id} ({user.email}), org_role={user_role}, lead_dept_ids={lead_dept_ids}")
+            # DEBUG: Log user's department status
+            logger.info(f"get_chats: user={user.id} ({user.email}), org_role={user_role}, user_dept_ids={user_dept_ids}")
 
-            # Get user IDs in departments where current user is lead
+            # Get user IDs in the same departments
             dept_member_ids = []
-            if lead_dept_ids:
+            if user_dept_ids:
                 dept_members_result = await db.execute(
                     select(DepartmentMember.user_id).where(
-                        DepartmentMember.department_id.in_(lead_dept_ids)
+                        DepartmentMember.department_id.in_(user_dept_ids)
                     )
                 )
                 dept_member_ids = [r for r in dept_members_result.scalars().all()]
@@ -149,11 +147,11 @@ async def get_chats(
             # Get entity IDs that belong to user's departments (for entity-based access)
             # Include entities with department_id AND entities created by department members
             dept_entity_ids = []
-            if lead_dept_ids:
+            if user_dept_ids:
                 # Entities explicitly assigned to department
                 dept_entities_result = await db.execute(
                     select(Entity.id).where(
-                        Entity.department_id.in_(lead_dept_ids)
+                        Entity.department_id.in_(user_dept_ids)
                     )
                 )
                 dept_entity_ids = [r for r in dept_entities_result.scalars().all()]
