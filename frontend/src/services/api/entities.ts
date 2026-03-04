@@ -604,7 +604,9 @@ interface ParseResponse<T> {
 }
 
 export const parseResumeFromUrl = async (url: string): Promise<ParsedResume> => {
-  const { data: response } = await debouncedMutation<ParseResponse<ParsedResume>>('post', '/parser/resume/url', { url });
+  const { data: response } = await debouncedMutation<ParseResponse<ParsedResume>>(
+    'post', '/parser/resume/url', { url }, { timeout: 120000 } // 2 minutes for URL fetch + AI parsing
+  );
   if (!response.success || !response.data) {
     throw new Error(response.error || 'Error parsing resume');
   }
@@ -625,7 +627,9 @@ export const parseResumeFromFile = async (file: File): Promise<ParsedResume> => 
 };
 
 export const parseVacancyFromUrl = async (url: string): Promise<ParsedVacancy> => {
-  const { data: response } = await debouncedMutation<ParseResponse<ParsedVacancy>>('post', '/parser/vacancy/url', { url });
+  const { data: response } = await debouncedMutation<ParseResponse<ParsedVacancy>>(
+    'post', '/parser/vacancy/url', { url }, { timeout: 120000 } // 2 minutes for URL fetch + AI parsing
+  );
   if (!response.success || !response.data) {
     throw new Error(response.error || 'Error parsing vacancy');
   }
