@@ -325,33 +325,50 @@ def _get_referer_for_url(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}/"
 
 
-async def fetch_url_content(url: str) -> str:
-    """Fetch and extract text content from URL.
+async def _fetch_with_httpx(url: str) -> str:
+    """Try fetching URL with httpx (fast, lightweight).
 
-    Uses browser-like headers and retry logic to avoid anti-bot blocks.
+    Returns HTML content or raises exception on failure.
     """
-    referer = _get_referer_for_url(url)
+    import random
 
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Referer': referer,
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'same-origin',
-        'Sec-Fetch-User': '?1',
-        'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"Windows"',
-        'Cache-Control': 'max-age=0',
-    }
+    user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+    ]
 
     last_error = None
     for attempt in range(3):
+        ua = user_agents[attempt % len(user_agents)]
+
+        if attempt == 0:
+            referer = _get_referer_for_url(url)
+            fetch_site = 'same-origin'
+        else:
+            referer = 'https://www.google.com/'
+            fetch_site = 'cross-site'
+
+        headers = {
+            'User-Agent': ua,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Referer': referer,
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': fetch_site,
+            'Sec-Fetch-User': '?1',
+            'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
+            'Cache-Control': 'max-age=0',
+            'Priority': 'u=0, i',
+        }
+
         try:
             async with httpx.AsyncClient(
                 follow_redirects=True,
@@ -363,14 +380,12 @@ async def fetch_url_content(url: str) -> str:
                 return response.text
         except httpx.HTTPStatusError as e:
             last_error = e
-            if e.response.status_code == 403 and attempt < 2:
+            status_code = e.response.status_code
+            if status_code == 403 and attempt < 2:
                 logger.warning(
-                    f"Got 403 on attempt {attempt + 1} for {url}, retrying..."
+                    f"Got 403 on attempt {attempt + 1} for {url}, retrying with different headers..."
                 )
-                await asyncio.sleep(1.5 * (attempt + 1))
-                # Update referer for retry (cross-origin style)
-                headers['Sec-Fetch-Site'] = 'cross-site'
-                headers['Referer'] = 'https://www.google.com/'
+                await asyncio.sleep(1.5 * (attempt + 1) + random.uniform(0.5, 1.5))
                 continue
             raise
         except Exception as e:
@@ -382,6 +397,108 @@ async def fetch_url_content(url: str) -> str:
             raise
 
     raise last_error  # type: ignore[misc]
+
+
+async def _fetch_with_playwright(url: str) -> str:
+    """Fallback: fetch URL using headless Chromium via Playwright.
+
+    This bypasses most anti-bot protections because it's a real browser
+    with proper TLS fingerprint, JS execution, and cookie handling.
+    """
+    from .external_links import ensure_playwright_installed
+
+    playwright_ready = await ensure_playwright_installed()
+    if not playwright_ready:
+        raise RuntimeError("Playwright browser not available")
+
+    from playwright.async_api import async_playwright
+
+    logger.info(f"Fetching URL with Playwright: {url}")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--single-process',
+            ]
+        )
+        try:
+            context = await browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                viewport={'width': 1920, 'height': 1080},
+                locale='ru-RU',
+            )
+            page = await context.new_page()
+
+            # Navigate and wait for content to load
+            try:
+                await page.goto(url, wait_until='networkidle', timeout=30000)
+            except Exception:
+                # Fallback to domcontentloaded if networkidle times out
+                logger.warning(f"networkidle timeout for {url}, trying domcontentloaded")
+                await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+                await page.wait_for_timeout(3000)
+
+            html_content = await page.content()
+            logger.info(f"Playwright fetched {len(html_content)} chars from {url}")
+            return html_content
+        finally:
+            await browser.close()
+
+
+async def fetch_url_content(url: str) -> str:
+    """Fetch and extract text content from URL.
+
+    Strategy:
+    1. Try httpx (fast, lightweight) with retry logic
+    2. On 403/block, fall back to Playwright (real Chromium browser)
+    3. Return user-friendly error if both fail
+    """
+    # Step 1: Try httpx first (fast path)
+    try:
+        return await _fetch_with_httpx(url)
+    except httpx.HTTPStatusError as e:
+        status_code = e.response.status_code
+        if status_code == 404:
+            raise ValueError(
+                "Страница не найдена (404). Проверьте правильность ссылки."
+            )
+        if status_code != 403:
+            source = detect_source(url)
+            source_names = {
+                'hh': 'HeadHunter', 'linkedin': 'LinkedIn',
+                'superjob': 'SuperJob', 'habr': 'Хабр Карьера'
+            }
+            site_name = source_names.get(source, 'сайт')
+            raise ValueError(
+                f"Ошибка при загрузке страницы с {site_name} (код {status_code}). "
+                f"Попробуйте позже или загрузите резюме файлом."
+            )
+        # 403 → fall through to Playwright
+        logger.info(f"httpx got 403 for {url}, falling back to Playwright...")
+    except Exception as httpx_err:
+        logger.warning(f"httpx failed for {url}: {httpx_err}, trying Playwright...")
+
+    # Step 2: Fallback to Playwright (real browser, bypasses most anti-bot)
+    try:
+        return await _fetch_with_playwright(url)
+    except Exception as pw_err:
+        logger.error(f"Playwright also failed for {url}: {pw_err}")
+
+    # Step 3: Both methods failed
+    source = detect_source(url)
+    source_names = {
+        'hh': 'HeadHunter', 'linkedin': 'LinkedIn',
+        'superjob': 'SuperJob', 'habr': 'Хабр Карьера'
+    }
+    site_name = source_names.get(source, 'сайт')
+    raise ValueError(
+        f"Сайт {site_name} заблокировал доступ. "
+        f"Попробуйте скопировать текст резюме и загрузить как файл (.txt/.pdf)."
+    )
 
 
 def detect_source(url: str) -> str:
