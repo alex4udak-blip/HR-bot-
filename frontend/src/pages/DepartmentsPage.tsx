@@ -34,6 +34,7 @@ import {
 } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
+import { getErrorDetail } from '@/utils';
 import clsx from 'clsx';
 
 const DEPT_ROLE_CONFIG: Record<DeptRole, { label: string; icon: typeof Crown; color: string; description: string }> = {
@@ -462,7 +463,7 @@ function CreateDepartmentModal({
       toast.success(parentId ? 'Под-департамент создан' : 'Департамент создан');
       onSuccess();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || 'Ошибка создания');
+      toast.error(getErrorDetail(e, 'Ошибка создания'));
     } finally {
       setLoading(false);
     }
@@ -585,7 +586,7 @@ function EditDepartmentModal({
       toast.success('Департамент обновлён');
       onSuccess();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || 'Ошибка обновления');
+      toast.error(getErrorDetail(e, 'Ошибка обновления'));
     } finally {
       setLoading(false);
     }
@@ -733,7 +734,7 @@ function DepartmentMembersModal({
       loadMembers();
       onUpdate();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || 'Ошибка');
+      toast.error(getErrorDetail(e, 'Ошибка'));
     }
   };
 
@@ -746,7 +747,7 @@ function DepartmentMembersModal({
       loadMembers();
       onUpdate();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || 'Ошибка');
+      toast.error(getErrorDetail(e, 'Ошибка'));
     }
   };
 
@@ -758,7 +759,7 @@ function DepartmentMembersModal({
       loadMembers();
       onUpdate();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || 'Ошибка');
+      toast.error(getErrorDetail(e, 'Ошибка'));
     }
   };
 

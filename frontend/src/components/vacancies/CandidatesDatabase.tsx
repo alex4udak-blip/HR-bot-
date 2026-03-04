@@ -27,6 +27,7 @@ import {
   User
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getErrorDetail } from '@/utils';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
 import { useVacancyStore } from '@/stores/vacancyStore';
@@ -207,8 +208,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
         toast.success(`${draggedCandidate.name} добавлен в вакансию`);
         onRefreshVacancies();
       } catch (error: any) {
-        const message = error?.response?.data?.detail || 'Не удалось добавить кандидата';
-        toast.error(message);
+        toast.error(getErrorDetail(error, 'Не удалось добавить кандидата'));
       }
     }
     setDraggedCandidate(null);
@@ -389,8 +389,7 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
         await addCandidateToVacancy(vacancyId, candidateId, 'database_bulk');
         success++;
       } catch (error: any) {
-        const detail = error?.response?.data?.detail || 'Неизвестная ошибка';
-        errors.push(detail);
+        errors.push(getErrorDetail(error, 'Неизвестная ошибка'));
       }
     }
 

@@ -15,7 +15,7 @@ import {
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { getEntityFiles, uploadEntityFile, deleteEntityFile, downloadEntityFile } from '@/services/api';
-import { formatDate } from '@/utils';
+import { formatDate, getErrorDetail } from '@/utils';
 import { EmptyFiles } from '@/components/ui';
 import type { EntityFile } from '@/services/api';
 
@@ -119,8 +119,7 @@ export default function EntityFiles({ entityId, canEdit = true }: EntityFilesPro
       setFileType('resume');
       loadFiles();
     } catch (err: any) {
-      const message = err?.response?.data?.detail || 'Ошибка при загрузке файла';
-      toast.error(message);
+      toast.error(getErrorDetail(err, 'Ошибка при загрузке файла'));
     } finally {
       setUploading(false);
     }
@@ -135,8 +134,7 @@ export default function EntityFiles({ entityId, canEdit = true }: EntityFilesPro
       toast.success('Файл удалён');
       setFiles(files.filter(f => f.id !== fileId));
     } catch (err: any) {
-      const message = err?.response?.data?.detail || 'Ошибка при удалении файла';
-      toast.error(message);
+      toast.error(getErrorDetail(err, 'Ошибка при удалении файла'));
     }
   };
 

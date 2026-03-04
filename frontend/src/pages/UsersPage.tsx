@@ -25,6 +25,7 @@ import { getUsers, createUser, deleteUser, adminResetPassword, getOrgMembers, re
 import type { OrgMember, OrgRole, Organization } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
+import { getErrorDetail } from '@/utils';
 import clsx from 'clsx';
 
 const ORG_ROLE_CONFIG: Record<OrgRole, { label: string; icon: typeof Crown; color: string; description: string }> = {
@@ -172,7 +173,7 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
       toast.success(newValue ? 'Полный доступ включён' : 'Полный доступ отключён');
       loadData();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || 'Не удалось изменить доступ');
+      toast.error(getErrorDetail(e, 'Не удалось изменить доступ'));
     }
   };
 
@@ -637,7 +638,7 @@ function InviteMemberModal({
       setCreatedInvitation(invitation);
       toast.success('Приглашение создано!');
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || 'Ошибка создания приглашения');
+      toast.error(getErrorDetail(e, 'Ошибка создания приглашения'));
     } finally {
       setLoading(false);
     }
@@ -920,7 +921,7 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
       toast.success('Пользователь создан');
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Ошибка создания');
+      toast.error(getErrorDetail(error, 'Ошибка создания'));
     },
   });
 
@@ -942,7 +943,7 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
       toast.success('Пароль сброшен');
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Ошибка сброса пароля');
+      toast.error(getErrorDetail(error, 'Ошибка сброса пароля'));
     },
   });
 

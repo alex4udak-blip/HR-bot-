@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, User, Sparkles, CheckCircle, XCircle, Send, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getErrorDetail } from '@/utils';
 import { validateInvitation, acceptInvitation, type InvitationValidation } from '@/services/api';
 import BackgroundEffects from '@/components/BackgroundEffects';
 
@@ -65,7 +66,7 @@ export default function InvitePage() {
       setRegistrationComplete(true);
       toast.success('Регистрация завершена!');
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Ошибка регистрации');
+      toast.error(getErrorDetail(error, 'Ошибка регистрации'));
     } finally {
       setSubmitting(false);
     }
