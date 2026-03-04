@@ -273,6 +273,7 @@ export {
   getCalls,
   getCall,
   uploadCallRecording,
+  uploadTextCall,
   startCallBot,
   getCallStatus,
   stopCallRecording,

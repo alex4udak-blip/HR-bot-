@@ -324,6 +324,96 @@ async def upload_call(
     return {"id": call.id, "status": call.status.value}
 
 
+@router.post("/upload-text")
+async def upload_text_call(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    entity_id: Optional[int] = None,
+    title: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Upload a text file (transcript) for AI analysis - skips transcription."""
+    current_user = await db.merge(current_user)
+
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    # Allow text-based and document formats
+    text_extensions = {'.txt', '.csv', '.md', '.rtf', '.log'}
+    doc_extensions = {'.pdf', '.doc', '.docx', '.html', '.htm'}
+    allowed_extensions = text_extensions | doc_extensions
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in allowed_extensions:
+        raise HTTPException(
+            400,
+            f"Unsupported format. Allowed: {', '.join(sorted(allowed_extensions))}"
+        )
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "File is empty")
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(400, "File too large (max 20MB)")
+
+    # Extract text content based on file type
+    transcript_text = None
+
+    if ext in text_extensions:
+        # Plain text files - read directly
+        for encoding in ['utf-8', 'cp1251', 'latin-1']:
+            try:
+                transcript_text = content.decode(encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        if not transcript_text:
+            raise HTTPException(400, "Could not decode text file")
+    elif ext in doc_extensions:
+        # Document files - use document parser
+        try:
+            from ..services.documents import document_parser
+            result = await document_parser.parse(content, file.filename or "document")
+            if result.status == "failed":
+                raise HTTPException(400, f"Could not parse document: {result.error}")
+            transcript_text = result.content
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error parsing document: {e}")
+            raise HTTPException(400, f"Could not parse document: {str(e)}")
+
+    if not transcript_text or len(transcript_text.strip()) < 10:
+        raise HTTPException(400, "File contains no meaningful text")
+
+    # Create call record with transcript already set (skip transcription)
+    call = CallRecording(
+        org_id=org.id,
+        entity_id=entity_id,
+        owner_id=current_user.id,
+        source_type=CallSource.upload,
+        status=CallStatus.analyzing,
+        title=title or f"Transcript - {file.filename}",
+        transcript=transcript_text
+    )
+    db.add(call)
+    await db.commit()
+    await db.refresh(call)
+
+    # Start AI analysis in background (skip transcription, go straight to analysis)
+    async def analyze_text_call(call_id: int, text: str):
+        from ..services.call_processor import call_processor
+        call_processor._init_clients()
+        await call_processor.analyze_transcript(call_id, text, [])
+
+    background_tasks.add_task(analyze_text_call, call.id, transcript_text)
+
+    logger.info(f"Text call {call.id} uploaded and queued for analysis")
+
+    return {"id": call.id, "status": call.status.value}
+
+
 @router.post("/start-bot")
 async def start_bot(
     data: StartBotRequest,

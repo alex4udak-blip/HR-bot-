@@ -1061,6 +1061,11 @@ export default function CandidatesPage() {
             onClose={() => setShowParserModal(false)}
             onParsed={(data) => handleParsedResume(data as ParsedResume)}
             onJobStarted={() => { setShowParserModal(false); }}
+            onAttachedToEntity={(entityId) => {
+              setShowParserModal(false);
+              toast.success('Резюме прикреплено к существующему кандидату');
+              navigate(`/contacts/${entityId}`);
+            }}
           />
         )}
       </AnimatePresence>
