@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useReducer, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { X, Upload, Video, Link as LinkIcon, User } from 'lucide-react';
+import { X, Upload, Video, Link as LinkIcon, User, FileText } from 'lucide-react';
 import clsx from 'clsx';
 import { useCallStore } from '@/stores/callStore';
-import { getEntities } from '@/services/api';
+import { getEntities, uploadTextCall } from '@/services/api';
+import toast from 'react-hot-toast';
 import type { Entity } from '@/types';
 
 interface CallRecorderModalProps {
@@ -145,6 +146,13 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
     }
   };
 
+  // Detect if file is a text/document type (not audio/video)
+  const isTextFile = (f: File): boolean => {
+    const textExtensions = ['.txt', '.csv', '.md', '.rtf', '.log', '.pdf', '.doc', '.docx', '.html', '.htm'];
+    const ext = f.name.toLowerCase().slice(f.name.lastIndexOf('.'));
+    return textExtensions.includes(ext);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -153,7 +161,19 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
 
       if (mode === 'upload') {
         if (!file) return;
-        callId = await uploadCall(file, entitySearch.selectedEntityId || undefined);
+
+        if (isTextFile(file)) {
+          // Text/document file - use text upload endpoint (skip transcription)
+          const result = await uploadTextCall(
+            file,
+            entitySearch.selectedEntityId || undefined
+          );
+          callId = result.id;
+          toast.success('Текстовый файл загружен. AI анализ запущен.');
+        } else {
+          // Audio/video file - use standard upload
+          callId = await uploadCall(file, entitySearch.selectedEntityId || undefined);
+        }
       } else {
         if (!meetingUrl) return;
         callId = await startBot(meetingUrl, botName, entitySearch.selectedEntityId || undefined);
@@ -161,7 +181,8 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
 
       onSuccess(callId);
     } catch (err) {
-      // Error is handled by store
+      const message = err instanceof Error ? err.message : 'Ошибка загрузки';
+      toast.error(message);
     }
   };
 
@@ -242,27 +263,35 @@ export default function CallRecorderModal({ onClose, onSuccess }: CallRecorderMo
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="audio/*,video/*,.mp3,.mp4,.wav,.m4a,.webm,.ogg"
+                  accept="audio/*,video/*,.mp3,.mp4,.wav,.m4a,.webm,.ogg,.txt,.csv,.md,.rtf,.log,.pdf,.doc,.docx,.html,.htm"
                   onChange={handleFileChange}
                   className="hidden"
                 />
                 {file ? (
                   <div className="flex flex-col items-center overflow-hidden max-w-full">
-                    <Upload size={40} className="text-cyan-400 mb-3 flex-shrink-0" />
+                    {isTextFile(file) ? (
+                      <FileText size={40} className="text-blue-400 mb-3 flex-shrink-0" />
+                    ) : (
+                      <Upload size={40} className="text-cyan-400 mb-3 flex-shrink-0" />
+                    )}
                     <p className="text-white font-medium truncate max-w-full px-4">{file.name}</p>
                     <p className="text-sm text-white/40 mt-1">
                       {(file.size / 1024 / 1024).toFixed(2)} MB
+                      {isTextFile(file) && ' · Текстовый файл (без транскрибации)'}
                     </p>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center">
                     <Upload size={40} className="text-white/40 mb-3" />
-                    <p className="text-white/60">Перетащите аудио/видео файл сюда</p>
+                    <p className="text-white/60">Перетащите файл сюда</p>
                     <p className="text-sm text-white/40 mt-1">
                       или нажмите для выбора
                     </p>
                     <p className="text-xs text-white/30 mt-3">
-                      MP3, MP4, WAV, M4A, WebM, OGG
+                      Аудио/Видео: MP3, MP4, WAV, M4A, WebM, OGG
+                    </p>
+                    <p className="text-xs text-white/30 mt-1">
+                      Текст: TXT, CSV, PDF, DOC, DOCX, MD, HTML
                     </p>
                   </div>
                 )}

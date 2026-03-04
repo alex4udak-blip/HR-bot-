@@ -357,6 +357,9 @@ class CallProcessor:
 
                 logger.info(f"Call {call_id} transcript analyzed successfully")
 
+                # Try to auto-link to candidate after analysis
+                await auto_link_call_to_entity(call_id)
+
             except (APIError, APIConnectionError) as e:
                 logger.error(f"API error analyzing transcript for call {call_id}: {e}", exc_info=True)
                 call.status = CallStatus.failed
@@ -795,9 +798,109 @@ class CallProcessor:
 call_processor = CallProcessor()
 
 
+async def auto_link_call_to_entity(call_id: int):
+    """
+    Try to automatically link a call to an entity by matching speaker names
+    from the transcript to existing candidates in the same organization.
+    Only links if the call is not already linked to an entity.
+    """
+    from ..models.database import Entity, EntityType
+    from sqlalchemy import select, func
+
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(CallRecording).where(CallRecording.id == call_id)
+            )
+            call = result.scalar_one_or_none()
+
+            if not call or call.entity_id or call.status != CallStatus.done:
+                return  # Already linked or not done
+
+            # Collect candidate names from transcript/title/speakers
+            search_names = set()
+
+            # From speakers data
+            if call.speakers:
+                for segment in call.speakers:
+                    speaker = segment.get('speaker', '') if isinstance(segment, dict) else ''
+                    if speaker and speaker.lower() not in ('unknown', 'speaker 1', 'speaker 2', 'спикер 1', 'спикер 2'):
+                        search_names.add(speaker.strip())
+
+            # From speaker_stats
+            if call.speaker_stats and isinstance(call.speaker_stats, dict):
+                for name in call.speaker_stats.keys():
+                    if name and name.lower() not in ('unknown',):
+                        search_names.add(name.strip())
+
+            # From title
+            if call.title:
+                # Common patterns: "Interview with John Smith", "Звонок с Иван Петров"
+                import re
+                title_patterns = [
+                    r'(?:with|с|interview|интервью|звонок)\s+(.+)',
+                    r'(.+?)\s*[-–—]\s*(?:interview|интервью|звонок|встреча)',
+                ]
+                for pattern in title_patterns:
+                    match = re.search(pattern, call.title, re.IGNORECASE)
+                    if match:
+                        name = match.group(1).strip()
+                        if len(name) > 2 and len(name) < 100:
+                            search_names.add(name)
+
+            if not search_names:
+                return
+
+            # Search for matching entities
+            for name in search_names:
+                # Try exact and partial name matching
+                name_parts = name.split()
+
+                # Search by full name first
+                result = await db.execute(
+                    select(Entity).where(
+                        Entity.org_id == call.org_id,
+                        Entity.type == EntityType.candidate,
+                        func.lower(Entity.name).contains(name.lower())
+                    ).limit(1)
+                )
+                entity = result.scalar_one_or_none()
+
+                # If not found by full name and we have first+last, try parts
+                if not entity and len(name_parts) >= 2:
+                    for part in name_parts:
+                        if len(part) < 3:
+                            continue
+                        result = await db.execute(
+                            select(Entity).where(
+                                Entity.org_id == call.org_id,
+                                Entity.type == EntityType.candidate,
+                                func.lower(Entity.name).contains(part.lower())
+                            ).limit(5)
+                        )
+                        candidates = list(result.scalars().all())
+                        # If exactly one match - use it
+                        if len(candidates) == 1:
+                            entity = candidates[0]
+                            break
+
+                if entity:
+                    call.entity_id = entity.id
+                    await db.commit()
+                    logger.info(f"Auto-linked call {call_id} to entity {entity.id} ({entity.name}) by name match '{name}'")
+                    return
+
+            logger.debug(f"No entity match found for call {call_id} with names: {search_names}")
+
+    except Exception as e:
+        logger.warning(f"Auto-link failed for call {call_id}: {e}")
+
+
 async def process_call_background(call_id: int):
     """Background task wrapper for call processing."""
     await call_processor.process_call(call_id)
+    # Try to auto-link to candidate after processing
+    await auto_link_call_to_entity(call_id)
 
 
 # =============================================================================

@@ -86,6 +86,34 @@ export const linkCallToEntity = async (callId: number, entityId: number): Promis
   await debouncedMutation<void>('post', `/calls/${callId}/link-entity/${entityId}`);
 };
 
+export const uploadTextCall = async (
+  file: File,
+  entityId?: number,
+  title?: string
+): Promise<{ id: number; status: string }> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (entityId) {
+    formData.append('entity_id', String(entityId));
+  }
+  if (title) {
+    formData.append('title', title);
+  }
+
+  const response = await fetch('/api/calls/upload-text', {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Upload error' }));
+    throw new Error(error.detail || 'Upload failed');
+  }
+
+  return response.json();
+};
+
 export const reprocessCall = async (id: number): Promise<{ success: boolean; status: string }> => {
   const { data } = await debouncedMutation<{ success: boolean; status: string }>('post', `/calls/${id}/reprocess`);
   return data;

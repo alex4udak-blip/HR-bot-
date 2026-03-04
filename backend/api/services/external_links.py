@@ -2306,9 +2306,22 @@ class ExternalLinkProcessor:
                 # Stage 2: Loading page
                 await self._update_progress(call_id, 10, "Загрузка страницы Fireflies...", org_id)
 
-                # Process Fireflies - this takes 1-2 minutes
+                # Process Fireflies with a global timeout (5 minutes max)
                 # The _process_fireflies method will update progress internally
-                call = await self._process_fireflies(call, call.source_url, call_id)
+                try:
+                    call = await asyncio.wait_for(
+                        self._process_fireflies(call, call.source_url, call_id),
+                        timeout=300  # 5 minutes max
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(f"Fireflies processing timed out for call {call_id}")
+                    call.status = CallStatus.failed
+                    call.error_message = "Обработка заняла слишком много времени. Попробуйте загрузить транскрипт как текстовый файл."
+                    call.progress = 0
+                    call.progress_stage = "Таймаут"
+                    await db.commit()
+                    await self._broadcast_call_failed_safe(org_id, call_id, call.error_message)
+                    return
 
                 # Identify participant roles (evaluator, target, others)
                 if call.speakers and call.status == CallStatus.done:
@@ -2322,6 +2335,16 @@ class ExternalLinkProcessor:
                 # Stage 5: Complete
                 call.progress = 100
                 call.progress_stage = "Готово"
+
+                # Auto-link call to candidate by name if not already linked
+                if not call.entity_id and call.status == CallStatus.done:
+                    try:
+                        from .call_processor import auto_link_call_to_entity
+                        await auto_link_call_to_entity(call_id)
+                        # Refresh call to get updated entity_id
+                        await db.refresh(call)
+                    except Exception as e:
+                        logger.warning(f"Auto-link failed for Fireflies call {call_id}: {e}")
 
                 # Save the updated call
                 await db.commit()

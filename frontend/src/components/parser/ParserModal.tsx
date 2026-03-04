@@ -1,16 +1,19 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Search, Link, FileText, Upload, Loader2, Check, AlertCircle, Clock } from 'lucide-react';
+import { X, Search, Link, FileText, Upload, Loader2, AlertCircle, UserCheck, Plus } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import type { ParsedResume, ParsedVacancy } from '@/services/api';
 import {
   parseResumeFromUrl,
+  parseResumeFromFile,
   parseVacancyFromUrl,
-  startParseJob
+  getEntities,
+  uploadEntityFile,
 } from '@/services/api';
 import ParsedDataPreview from './ParsedDataPreview';
 import { OnboardingTooltip } from '@/components/onboarding';
+import type { Entity } from '@/types';
 
 interface ParserModalProps {
   type: 'resume' | 'vacancy';
@@ -18,6 +21,8 @@ interface ParserModalProps {
   onParsed: (data: ParsedResume | ParsedVacancy) => void;
   /** Callback when background job is started */
   onJobStarted?: (jobId: number, fileName: string) => void;
+  /** Callback when resume is attached to existing entity */
+  onAttachedToEntity?: (entityId: number) => void;
 }
 
 type TabType = 'url' | 'file';
@@ -62,7 +67,7 @@ const isValidUrl = (url: string): boolean => {
   }
 };
 
-export default function ParserModal({ type, onClose, onParsed, onJobStarted }: ParserModalProps) {
+export default function ParserModal({ type, onClose, onParsed, onJobStarted: _onJobStarted, onAttachedToEntity }: ParserModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('url');
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -71,9 +76,70 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted }: P
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Candidate matching state
+  const [matchedCandidates, setMatchedCandidates] = useState<Entity[]>([]);
+  const [isSearchingCandidates, setIsSearchingCandidates] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [isAttaching, setIsAttaching] = useState(false);
+
   const detectedSource = url ? detectSource(url) : null;
   const isUrlValid = url && isValidUrl(url);
   const isResume = type === 'resume';
+
+  // Search for matching candidates when resume is parsed
+  useEffect(() => {
+    if (!parsedData || type !== 'resume') return;
+    const resumeData = parsedData as ParsedResume;
+    if (!resumeData.name && !resumeData.email) return;
+
+    const searchMatches = async () => {
+      setIsSearchingCandidates(true);
+      try {
+        const candidates: Entity[] = [];
+
+        // Search by name
+        if (resumeData.name) {
+          const byName = await getEntities({ search: resumeData.name, type: 'candidate', limit: 10 });
+          candidates.push(...byName);
+        }
+
+        // Search by email
+        if (resumeData.email) {
+          const byEmail = await getEntities({ search: resumeData.email, type: 'candidate', limit: 10 });
+          for (const c of byEmail) {
+            if (!candidates.find(existing => existing.id === c.id)) {
+              candidates.push(c);
+            }
+          }
+        }
+
+        setMatchedCandidates(candidates);
+      } catch (err) {
+        console.error('Error searching candidates:', err);
+      } finally {
+        setIsSearchingCandidates(false);
+      }
+    };
+
+    searchMatches();
+  }, [parsedData, type]);
+
+  // Attach resume file to existing candidate
+  const handleAttachToCandidate = async (candidateId: number) => {
+    if (!uploadedFile) return;
+    setIsAttaching(true);
+    try {
+      await uploadEntityFile(candidateId, uploadedFile, 'resume', 'Resume (attached via parser)');
+      toast.success('Резюме прикреплено к кандидату');
+      onAttachedToEntity?.(candidateId);
+      onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Ошибка прикрепления файла';
+      toast.error(message);
+    } finally {
+      setIsAttaching(false);
+    }
+  };
 
   const handleParse = async () => {
     if (!isUrlValid) {
@@ -128,30 +194,18 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted }: P
     setLoading(true);
     setError(null);
     setParsedData(null);
+    setUploadedFile(file);
+    setMatchedCandidates([]);
 
     try {
-      // Start background parsing job - returns immediately
-      const result = await startParseJob(file);
-
-      // Show success toast with file name
-      toast.success(
-        <div className="flex items-center gap-2">
-          <Clock className="w-4 h-4" />
-          <span>Парсинг "{file.name}" запущен</span>
-        </div>,
-        { duration: 4000 }
-      );
-
-      // Notify parent about job started
-      if (onJobStarted) {
-        onJobStarted(result.job_id, file.name);
-      }
-
-      onClose();
+      // Parse resume inline - shows results in preview
+      const data = await parseResumeFromFile(file);
+      setParsedData(data);
+      toast.success('Резюме распознано');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Ошибка запуска парсинга';
+      const message = err instanceof Error ? err.message : 'Ошибка парсинга файла';
       setError(message);
-      toast.error('Не удалось запустить парсинг');
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -457,11 +511,57 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted }: P
             </div>
           ) : (
             // Preview section
-            <ParsedDataPreview
-              type={type}
-              data={parsedData}
-              onDataChange={handleDataChange}
-            />
+            <div className="space-y-4">
+              <ParsedDataPreview
+                type={type}
+                data={parsedData}
+                onDataChange={handleDataChange}
+              />
+
+              {/* Matched candidates section for resume */}
+              {isResume && (isSearchingCandidates || matchedCandidates.length > 0) && (
+                <div className="border-t border-white/10 pt-4">
+                  <h3 className="text-sm font-medium text-white/70 mb-3 flex items-center gap-2">
+                    <UserCheck className="w-4 h-4" />
+                    {isSearchingCandidates ? 'Поиск совпадений...' : `Найденные кандидаты (${matchedCandidates.length})`}
+                  </h3>
+                  {isSearchingCandidates ? (
+                    <div className="flex items-center gap-2 text-white/40 text-sm py-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Поиск существующих кандидатов...
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {matchedCandidates.map((candidate) => (
+                        <div
+                          key={candidate.id}
+                          className="flex items-center justify-between p-3 glass-light rounded-lg"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-white truncate">{candidate.name}</p>
+                            <p className="text-xs text-white/40 truncate">
+                              {[candidate.email, candidate.phone, candidate.position].filter(Boolean).join(' · ')}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleAttachToCandidate(candidate.id)}
+                            disabled={isAttaching}
+                            className="flex-shrink-0 ml-3 px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                          >
+                            {isAttaching ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Upload className="w-3 h-3" />
+                            )}
+                            Прикрепить
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -478,8 +578,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted }: P
               onClick={handleCreate}
               className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition-colors"
             >
-              <Check className="w-4 h-4" aria-hidden="true" />
-              {isResume ? 'Создать контакт' : 'Создать вакансию'}
+              <Plus className="w-4 h-4" aria-hidden="true" />
+              {isResume ? 'Создать нового кандидата' : 'Создать вакансию'}
             </button>
           )}
         </div>
