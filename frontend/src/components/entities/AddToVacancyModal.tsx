@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { X, Search, Briefcase, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getErrorDetail } from '@/utils';
 import clsx from 'clsx';
 import { getVacancies, applyEntityToVacancy } from '@/services/api';
 import type { Vacancy } from '@/types';
@@ -72,8 +73,7 @@ export default function AddToVacancyModal({
       toast.success('Кандидат добавлен в вакансию');
       onSuccess();
     } catch (error: any) {
-      const message = error?.response?.data?.detail || 'Ошибка при добавлении';
-      toast.error(message);
+      toast.error(getErrorDetail(error, 'Ошибка при добавлении'));
     } finally {
       setLoading(false);
     }

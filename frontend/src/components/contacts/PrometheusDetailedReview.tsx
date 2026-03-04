@@ -161,7 +161,7 @@ function CompetencyGauge({
           className={clsx('h-full rounded-full', barColor)}
         />
       </div>
-      <p className="text-[10px] text-dark-400 leading-relaxed">{data.detail}</p>
+      <p className="text-[10px] text-dark-400 leading-relaxed">{typeof data.detail === 'string' ? data.detail : ''}</p>
     </div>
   );
 }

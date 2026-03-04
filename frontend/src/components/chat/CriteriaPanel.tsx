@@ -31,6 +31,7 @@ import {
 } from '@/services/api';
 import type { Criterion, ChatTypeId } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
+import { getErrorDetail } from '@/utils';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -98,15 +99,14 @@ export default function CriteriaPanel({ chatId, chatType }: CriteriaPanelProps) 
       toast.success('Критерии сохранены');
     },
     onError: (error: unknown) => {
-      const axiosErr = error as { response?: { status?: number; data?: { detail?: string } }; message?: string };
+      const axiosErr = error as { response?: { status?: number } };
       const status = axiosErr?.response?.status;
-      const detail = axiosErr?.response?.data?.detail;
       if (status === 401) {
         toast.error('Сессия истекла. Перезайдите в систему');
       } else if (status === 403) {
-        toast.error(detail || 'Нет прав для сохранения критериев');
+        toast.error(getErrorDetail(error, 'Нет прав для сохранения критериев'));
       } else {
-        toast.error(detail || 'Ошибка сохранения');
+        toast.error(getErrorDetail(error, 'Ошибка сохранения'));
       }
     },
   });

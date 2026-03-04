@@ -487,7 +487,7 @@ async def update_chat_criteria(
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
     permission_service = PermissionService(db)
-    if not await permission_service.can_access_resource(user, chat, "write"):
+    if not await permission_service.can_access_resource(user, chat, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = await db.execute(select(ChatCriteria).where(ChatCriteria.chat_id == chat_id))
@@ -660,12 +660,13 @@ async def get_entity_criteria(
     user: User = Depends(get_current_user),
 ):
     user = await db.merge(user)
-    # Check access
+    # Check access using PermissionService (consistent with other endpoints)
     result = await db.execute(select(Entity).where(Entity.id == entity_id))
     entity = result.scalar_one_or_none()
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if user.role != UserRole.superadmin and entity.created_by != user.id:
+    permission_service = PermissionService(db)
+    if not await permission_service.can_access_resource(user, entity, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = await db.execute(select(EntityCriteria).where(EntityCriteria.entity_id == entity_id))
@@ -728,12 +729,13 @@ async def update_entity_criteria(
     user: User = Depends(get_current_user),
 ):
     user = await db.merge(user)
-    # Check access
+    # Check access using PermissionService (consistent with other endpoints)
     result = await db.execute(select(Entity).where(Entity.id == entity_id))
     entity = result.scalar_one_or_none()
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if user.role != UserRole.superadmin and entity.created_by != user.id:
+    permission_service = PermissionService(db)
+    if not await permission_service.can_access_resource(user, entity, "read"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = await db.execute(select(EntityCriteria).where(EntityCriteria.entity_id == entity_id))
