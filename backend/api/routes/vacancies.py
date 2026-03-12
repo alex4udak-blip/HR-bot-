@@ -148,21 +148,32 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
     Access rules:
     - Superadmin/Owner: can access all vacancies in org
     - Member with has_full_access flag: can access all vacancies in org
-    - Lead/Sub_admin of department: can access all vacancies in their department
-    - Member: can only access vacancies they created or where they are hiring manager
+    - visible_to_all flag: any org member can access
+    - Department member (any role): can access all vacancies in their department
+    - Creator/hiring manager: can access their own vacancies
     - Member with SharedAccess: can access vacancies shared with them
     """
     # Full database access (superadmin, owner, or member with has_full_access)
     if await has_full_database_access(user, org, db):
         return True
 
+    # Vacancy marked as visible to all org members
+    if getattr(vacancy, 'visible_to_all', False):
+        return True
+
     # User is the creator or hiring manager
     if vacancy.created_by == user.id or vacancy.hiring_manager_id == user.id:
         return True
 
-    # If vacancy has a department, check if user is lead/sub_admin of that dept
+    # If vacancy has a department, check if user is a member of that dept (any role)
     if vacancy.department_id:
-        if await is_dept_lead_or_admin(user.id, vacancy.department_id, db):
+        dept_member_result = await db.execute(
+            select(DepartmentMember).where(
+                DepartmentMember.user_id == user.id,
+                DepartmentMember.department_id == vacancy.department_id
+            )
+        )
+        if dept_member_result.scalar_one_or_none() is not None:
             return True
 
     # Check if user has shared access to this vacancy
@@ -178,7 +189,8 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
 
     Edit rules:
     - Superadmin/Owner: can edit all vacancies in org
-    - Lead/Sub_admin of department: can edit vacancies in their department
+    - visible_to_all flag: any org member can edit
+    - Department member (any role): can edit vacancies in their department
     - Creator: can edit their own vacancies
     - Hiring manager: can edit vacancies where they are hiring manager
     - User with SharedAccess (edit or full level): can edit vacancies shared with them
@@ -187,13 +199,23 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
     if await is_org_owner(user, org, db):
         return True
 
+    # Vacancy marked as visible to all org members
+    if getattr(vacancy, 'visible_to_all', False):
+        return True
+
     # User is the creator or hiring manager
     if vacancy.created_by == user.id or vacancy.hiring_manager_id == user.id:
         return True
 
-    # If vacancy has a department, check if user is lead/sub_admin of that dept
+    # If vacancy has a department, check if user is a member of that dept (any role)
     if vacancy.department_id:
-        if await is_dept_lead_or_admin(user.id, vacancy.department_id, db):
+        dept_member_result = await db.execute(
+            select(DepartmentMember).where(
+                DepartmentMember.user_id == user.id,
+                DepartmentMember.department_id == vacancy.department_id
+            )
+        )
+        if dept_member_result.scalar_one_or_none() is not None:
             return True
 
     # Check if user has shared access with edit level
@@ -294,6 +316,7 @@ class VacancyCreate(BaseModel):
     department_id: Optional[int] = None
     hiring_manager_id: Optional[int] = None
     closes_at: Optional[datetime] = None
+    visible_to_all: bool = False
 
     @field_validator("title")
     @classmethod
@@ -378,6 +401,7 @@ class VacancyUpdate(BaseModel):
     department_id: Optional[int] = None
     hiring_manager_id: Optional[int] = None
     closes_at: Optional[datetime] = None
+    visible_to_all: Optional[bool] = None
 
     @field_validator("title")
     @classmethod
@@ -462,6 +486,7 @@ class VacancyResponse(BaseModel):
     priority: int = 0
     tags: List[str] = []
     extra_data: dict = {}
+    visible_to_all: bool = False
     department_id: Optional[int] = None
     department_name: Optional[str] = None
     hiring_manager_id: Optional[int] = None
@@ -560,8 +585,8 @@ async def list_vacancies(
 
     Access rules:
     - Superadmin/Owner: sees all vacancies in org
-    - Lead/Sub_admin: sees vacancies in their department + own vacancies
-    - Member: sees only own vacancies (created_by or hiring_manager)
+    - Department member (any role): sees all vacancies in their department
+    - Additionally: own vacancies (created_by or hiring_manager) + shared
     """
     org = await get_user_org(current_user, db)
 
@@ -579,14 +604,13 @@ async def list_vacancies(
     has_full_access = await has_full_database_access(current_user, org, db)
 
     if not has_full_access:
-        # Get departments where user is lead/sub_admin (not just member)
-        lead_dept_result = await db.execute(
+        # Get ALL departments where user is a member (any role)
+        all_dept_result = await db.execute(
             select(DepartmentMember.department_id).where(
-                DepartmentMember.user_id == current_user.id,
-                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+                DepartmentMember.user_id == current_user.id
             )
         )
-        lead_dept_ids = [row[0] for row in lead_dept_result.all()]
+        all_dept_ids = [row[0] for row in all_dept_result.all()]
 
         # Get vacancy IDs shared with user
         shared_vacancy_ids = await get_shared_vacancy_ids(current_user.id, db)
@@ -594,18 +618,22 @@ async def list_vacancies(
         # User can see:
         # 1. Vacancies they created
         # 2. Vacancies where they are hiring manager
-        # 3. Vacancies in departments where they are lead/sub_admin
+        # 3. Vacancies in ANY department they belong to (all roles)
         # 4. Vacancies shared with them via SharedAccess
+        # 5. Vacancies marked as visible_to_all (org-wide)
         access_conditions = []
 
         # Always add created_by and hiring_manager conditions
         access_conditions.append(Vacancy.created_by == current_user.id)
         access_conditions.append(Vacancy.hiring_manager_id == current_user.id)
 
-        if lead_dept_ids:
-            access_conditions.append(Vacancy.department_id.in_(lead_dept_ids))
+        if all_dept_ids:
+            access_conditions.append(Vacancy.department_id.in_(all_dept_ids))
         if shared_vacancy_ids:
             access_conditions.append(Vacancy.id.in_(shared_vacancy_ids))
+
+        # Vacancies marked as visible to all org members
+        access_conditions.append(Vacancy.visible_to_all == True)
 
         # Apply OR filter - user must match at least one condition
         query = query.where(or_(*access_conditions))
@@ -703,6 +731,7 @@ async def list_vacancies(
             priority=vacancy.priority or 0,
             tags=vacancy.tags or [],
             extra_data=vacancy.extra_data or {},
+            visible_to_all=bool(getattr(vacancy, 'visible_to_all', False)),
             department_id=vacancy.department_id,
             department_name=dept_name,
             hiring_manager_id=vacancy.hiring_manager_id,
@@ -745,6 +774,7 @@ async def create_vacancy(
         priority=data.priority,
         tags=data.tags,
         extra_data=data.extra_data,
+        visible_to_all=data.visible_to_all,
         department_id=data.department_id,
         hiring_manager_id=data.hiring_manager_id,
         closes_at=data.closes_at,
@@ -774,6 +804,7 @@ async def create_vacancy(
         priority=vacancy.priority or 0,
         tags=vacancy.tags or [],
         extra_data=vacancy.extra_data or {},
+        visible_to_all=bool(getattr(vacancy, 'visible_to_all', False)),
         department_id=vacancy.department_id,
         hiring_manager_id=vacancy.hiring_manager_id,
         created_by=vacancy.created_by,
@@ -860,6 +891,7 @@ async def get_vacancy(
         priority=vacancy.priority or 0,
         tags=vacancy.tags or [],
         extra_data=vacancy.extra_data or {},
+        visible_to_all=bool(getattr(vacancy, 'visible_to_all', False)),
         department_id=vacancy.department_id,
         department_name=dept_name,
         hiring_manager_id=vacancy.hiring_manager_id,

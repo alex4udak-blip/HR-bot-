@@ -33,6 +33,7 @@ export interface VacancyCreate {
   priority?: number;
   tags?: string[];
   extra_data?: Record<string, unknown>;
+  visible_to_all?: boolean;
   department_id?: number;
   hiring_manager_id?: number;
   closes_at?: string;
@@ -53,6 +54,7 @@ export interface VacancyUpdate {
   priority?: number;
   tags?: string[];
   extra_data?: Record<string, unknown>;
+  visible_to_all?: boolean;
   department_id?: number;
   hiring_manager_id?: number;
   closes_at?: string;
