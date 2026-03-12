@@ -140,12 +140,17 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
     Access rules:
     - Superadmin/Owner: can access all vacancies in org
     - Member with has_full_access flag: can access all vacancies in org
+    - visible_to_all flag: any org member can access
     - Lead/Sub_admin of department: can access all vacancies in their department
     - Member: can only access vacancies they created or where they are hiring manager
     - Member with SharedAccess: can access vacancies shared with them
     """
     # Full database access (superadmin, owner, or member with has_full_access)
     if await has_full_database_access(user, org, db):
+        return True
+
+    # Vacancy marked as visible to all org members
+    if getattr(vacancy, 'visible_to_all', False):
         return True
 
     # User is the creator or hiring manager
@@ -170,6 +175,7 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
 
     Edit rules:
     - Superadmin/Owner: can edit all vacancies in org
+    - visible_to_all flag: any org member can edit
     - Lead/Sub_admin of department: can edit vacancies in their department
     - Creator: can edit their own vacancies
     - Hiring manager: can edit vacancies where they are hiring manager
@@ -177,6 +183,10 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
     """
     # Org admin/owner can edit all
     if await is_org_owner(user, org, db):
+        return True
+
+    # Vacancy marked as visible to all org members
+    if getattr(vacancy, 'visible_to_all', False):
         return True
 
     # User is the creator or hiring manager
@@ -278,6 +288,7 @@ class VacancyCreate(BaseModel):
     priority: int = 0
     tags: List[str] = []
     extra_data: dict = {}
+    visible_to_all: bool = False
     department_id: Optional[int] = None
     hiring_manager_id: Optional[int] = None
     closes_at: Optional[datetime] = None
@@ -362,6 +373,7 @@ class VacancyUpdate(BaseModel):
     priority: Optional[int] = None
     tags: Optional[List[str]] = None
     extra_data: Optional[dict] = None
+    visible_to_all: Optional[bool] = None
     department_id: Optional[int] = None
     hiring_manager_id: Optional[int] = None
     closes_at: Optional[datetime] = None
@@ -449,6 +461,7 @@ class VacancyResponse(BaseModel):
     priority: int = 0
     tags: List[str] = []
     extra_data: dict = {}
+    visible_to_all: bool = False
     department_id: Optional[int] = None
     department_name: Optional[str] = None
     hiring_manager_id: Optional[int] = None
