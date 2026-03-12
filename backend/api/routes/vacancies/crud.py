@@ -14,7 +14,7 @@ from .common import (
     check_vacancy_access, has_full_database_access, can_access_vacancy,
     can_edit_vacancy, get_shared_vacancy_ids
 )
-from ...services.auth import get_user_org
+from ...services.auth import get_current_user, get_user_org
 from ...services.cache import scoring_cache
 
 router = APIRouter()
@@ -448,14 +448,17 @@ async def delete_vacancy(
 @router.get("/assignable-users")
 async def get_assignable_users(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(check_vacancy_access)
+    current_user: User = Depends(get_current_user)
 ):
-    """Return all org members for the 'Responsible' dropdown.
+    """Return all active org members for the 'Responsible' dropdown.
 
-    Any user with vacancy access can see all org members (id + name)
-    so they can assign a hiring manager.
+    Any authenticated org member can see all other members (id + name)
+    so they can assign a hiring manager to a vacancy.
+    No feature-gate: this is a basic org-member listing, not a restricted feature.
     """
     org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=403, detail="Organization not found")
 
     result = await db.execute(
         select(User.id, User.name)

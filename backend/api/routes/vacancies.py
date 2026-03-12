@@ -571,6 +571,30 @@ class BulkStageUpdate(BaseModel):
 
 # === Vacancy CRUD Endpoints ===
 
+@router.get("/assignable-users")
+async def get_assignable_users(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Return all active org members for the 'Responsible' dropdown.
+
+    Any authenticated org member can see all other members (id + name)
+    so they can assign a hiring manager to a vacancy.
+    No feature-gate: this is a basic org-member listing, not a restricted feature.
+    """
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=403, detail="Organization not found")
+
+    result = await db.execute(
+        select(User.id, User.name)
+        .join(OrgMember, OrgMember.user_id == User.id)
+        .where(OrgMember.org_id == org.id, User.is_active == True)
+        .order_by(User.name)
+    )
+    return [{"id": row[0], "name": row[1]} for row in result.all()]
+
+
 @router.get("", response_model=List[VacancyResponse])
 async def list_vacancies(
     status: Optional[VacancyStatus] = None,
