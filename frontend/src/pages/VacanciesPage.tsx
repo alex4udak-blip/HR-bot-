@@ -471,6 +471,23 @@ export default function VacanciesPage() {
           onCancel={handleCancelConfirm}
           loading={deleteLoading}
         />
+
+        {/* Edit Modal for detail view */}
+        <AnimatePresence>
+          {editingVacancy && (
+            <VacancyForm
+              vacancy={editingVacancy}
+              onClose={() => {
+                setEditingVacancy(null);
+              }}
+              onSuccess={() => {
+                setEditingVacancy(null);
+                fetchVacancy(currentVacancy.id);
+                fetchVacancies();
+              }}
+            />
+          )}
+        </AnimatePresence>
       </div>
     );
   }
