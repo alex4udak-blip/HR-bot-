@@ -42,7 +42,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     tags: initialData?.tags?.join(', ') || '',
     department_id: vacancy?.department_id || '',
     hiring_manager_id: vacancy?.hiring_manager_id || '',
-    visible_to_all: vacancy?.visible_to_all || false,
+    visible_to_all: vacancy?.visible_to_all ?? false,
   });
 
   useEffect(() => {

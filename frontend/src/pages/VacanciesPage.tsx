@@ -473,9 +473,10 @@ export default function VacanciesPage() {
         />
 
         {/* Edit Modal for detail view */}
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
           {editingVacancy && (
             <VacancyForm
+              key={`edit-detail-${editingVacancy.id}`}
               vacancy={editingVacancy}
               onClose={() => {
                 setEditingVacancy(null);
@@ -907,9 +908,10 @@ export default function VacanciesPage() {
       )}
 
       {/* Create/Edit Modal */}
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         {(showCreateModal || editingVacancy) && (
           <VacancyForm
+            key={editingVacancy ? `edit-list-${editingVacancy.id}` : 'create'}
             vacancy={editingVacancy || undefined}
             prefillData={prefillData || undefined}
             onClose={() => {
