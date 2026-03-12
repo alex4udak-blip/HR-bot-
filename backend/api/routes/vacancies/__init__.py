@@ -53,6 +53,7 @@ from .crud import (
     get_vacancy,
     update_vacancy,
     delete_vacancy,
+    get_assignable_users,
 )
 
 # Import application handlers
@@ -106,6 +107,9 @@ router.add_api_route("/applications/bulk-move", bulk_move_applications, methods=
 # Applications update/delete by ID: /applications/{application_id}
 router.add_api_route("/applications/{application_id}", update_application, methods=["PUT"], tags=["vacancy-applications"])
 router.add_api_route("/applications/{application_id}", delete_application, methods=["DELETE"], tags=["vacancy-applications"])
+
+# Assignable users for responsible dropdown (must be before /{vacancy_id})
+router.add_api_route("/assignable-users", get_assignable_users, methods=["GET"], tags=["vacancies"])
 
 # CRUD: list and create vacancies (root path)
 router.add_api_route("", list_vacancies, methods=["GET"], tags=["vacancies"])

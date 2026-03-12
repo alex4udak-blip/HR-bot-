@@ -330,6 +330,8 @@ export {
   getMatchingCandidates,
   notifyMatchingCandidates,
   inviteCandidateToVacancy,
+  // Assignable users
+  getAssignableUsers,
   // AI Scoring
   calculateCompatibilityScore,
   findBestMatchesForVacancy,
@@ -345,7 +347,8 @@ export type {
   VacancyCreate,
   VacancyUpdate,
   ApplicationCreate,
-  ApplicationUpdate
+  ApplicationUpdate,
+  AssignableUser
 } from './vacancies';
 
 // Interns (Prometheus proxy)
