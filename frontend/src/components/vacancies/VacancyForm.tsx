@@ -46,19 +46,13 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   });
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [depts, usersList] = await Promise.all([
-          getDepartments(-1),
-          getAssignableUsers()
-        ]);
-        setDepartments(depts);
-        setUsers(usersList);
-      } catch (error) {
-        console.error('Failed to load data:', error);
-      }
-    };
-    loadData();
+    // Load departments and users independently so one failure doesn't block the other
+    getDepartments(-1)
+      .then(setDepartments)
+      .catch((err) => console.error('Failed to load departments:', err));
+    getAssignableUsers()
+      .then(setUsers)
+      .catch((err) => console.error('Failed to load assignable users:', err));
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
