@@ -820,6 +820,8 @@ class Vacancy(Base):
     priority = Column(Integer, default=0)  # 0=normal, 1=high, 2=urgent
     tags = Column(JSON, default=list)
     extra_data = Column(JSON, default=dict)  # Additional custom fields
+    # Visibility
+    visible_to_all = Column(Boolean, default=False, server_default="false")  # Visible to all org members
     # Hiring team
     hiring_manager_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

@@ -797,14 +797,21 @@ export default function VacanciesPage() {
                         <h3 className="font-semibold text-lg truncate">{vacancy.title}</h3>
                         <VacancyStatusBadge status={vacancy.status} size="sm" />
                       </div>
-                      {vacancy.priority > 0 && (
-                        <span className={clsx(
-                          'text-xs px-2 py-0.5 rounded-full',
-                          vacancy.priority === 2 ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'
-                        )}>
-                          {vacancy.priority === 2 ? 'Срочно' : 'Важно'}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {vacancy.visible_to_all && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-300" title="Видна всем сотрудникам">
+                            Общая
+                          </span>
+                        )}
+                        {vacancy.priority > 0 && (
+                          <span className={clsx(
+                            'text-xs px-2 py-0.5 rounded-full',
+                            vacancy.priority === 2 ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'
+                          )}>
+                            {vacancy.priority === 2 ? 'Срочно' : 'Важно'}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Info */}

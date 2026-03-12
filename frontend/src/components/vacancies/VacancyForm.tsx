@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Save, Briefcase, Sparkles, Loader2 } from 'lucide-react';
+import { X, Save, Briefcase, Sparkles, Loader2, Globe } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import type { Vacancy, VacancyStatus, User } from '@/types';
@@ -42,6 +42,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     tags: initialData?.tags?.join(', ') || '',
     department_id: vacancy?.department_id || '',
     hiring_manager_id: vacancy?.hiring_manager_id || '',
+    visible_to_all: vacancy?.visible_to_all || false,
   });
 
   useEffect(() => {
@@ -83,6 +84,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
         status: formData.status,
         priority: formData.priority,
         tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean),
+        visible_to_all: formData.visible_to_all,
         department_id: formData.department_id ? parseInt(String(formData.department_id)) : undefined,
         hiring_manager_id: formData.hiring_manager_id ? parseInt(String(formData.hiring_manager_id)) : undefined,
       };
@@ -321,6 +323,27 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   <option key={user.id} value={user.id}>{user.name}</option>
                 ))}
               </select>
+            </div>
+
+            {/* Visible to all toggle */}
+            <div
+              className="flex items-center gap-3 p-3 glass-light rounded-lg cursor-pointer hover:bg-white/5 transition-colors"
+              onClick={() => setFormData({ ...formData, visible_to_all: !formData.visible_to_all })}
+            >
+              <div className={`p-1.5 rounded-lg transition-colors ${formData.visible_to_all ? 'bg-green-500/20' : 'bg-white/5'}`}>
+                <Globe className={`w-4 h-4 transition-colors ${formData.visible_to_all ? 'text-green-400' : 'text-white/40'}`} />
+              </div>
+              <div className="flex-1">
+                <div className="text-sm font-medium">Видна всем</div>
+                <div className="text-xs text-white/40">Вакансия будет доступна всем сотрудникам организации</div>
+              </div>
+              <div
+                className={`w-10 h-5 rounded-full transition-colors relative ${formData.visible_to_all ? 'bg-green-500' : 'bg-white/20'}`}
+              >
+                <div
+                  className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${formData.visible_to_all ? 'translate-x-5' : 'translate-x-0.5'}`}
+                />
+              </div>
             </div>
 
             {/* Description */}

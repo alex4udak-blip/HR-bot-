@@ -574,6 +574,7 @@ export interface Vacancy {
   priority: number;
   tags: string[];
   extra_data: Record<string, unknown>;
+  visible_to_all: boolean;
   department_id?: number;
   department_name?: string;
   hiring_manager_id?: number;

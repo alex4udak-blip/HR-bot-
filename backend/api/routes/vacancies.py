@@ -148,12 +148,17 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
     Access rules:
     - Superadmin/Owner: can access all vacancies in org
     - Member with has_full_access flag: can access all vacancies in org
+    - visible_to_all flag: any org member can access
     - Department member (any role): can access all vacancies in their department
     - Creator/hiring manager: can access their own vacancies
     - Member with SharedAccess: can access vacancies shared with them
     """
     # Full database access (superadmin, owner, or member with has_full_access)
     if await has_full_database_access(user, org, db):
+        return True
+
+    # Vacancy marked as visible to all org members
+    if getattr(vacancy, 'visible_to_all', False):
         return True
 
     # User is the creator or hiring manager
@@ -184,6 +189,7 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
 
     Edit rules:
     - Superadmin/Owner: can edit all vacancies in org
+    - visible_to_all flag: any org member can edit
     - Department member (any role): can edit vacancies in their department
     - Creator: can edit their own vacancies
     - Hiring manager: can edit vacancies where they are hiring manager
@@ -191,6 +197,10 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
     """
     # Org admin/owner can edit all
     if await is_org_owner(user, org, db):
+        return True
+
+    # Vacancy marked as visible to all org members
+    if getattr(vacancy, 'visible_to_all', False):
         return True
 
     # User is the creator or hiring manager
@@ -306,6 +316,7 @@ class VacancyCreate(BaseModel):
     department_id: Optional[int] = None
     hiring_manager_id: Optional[int] = None
     closes_at: Optional[datetime] = None
+    visible_to_all: bool = False
 
     @field_validator("title")
     @classmethod
@@ -390,6 +401,7 @@ class VacancyUpdate(BaseModel):
     department_id: Optional[int] = None
     hiring_manager_id: Optional[int] = None
     closes_at: Optional[datetime] = None
+    visible_to_all: Optional[bool] = None
 
     @field_validator("title")
     @classmethod
@@ -474,6 +486,7 @@ class VacancyResponse(BaseModel):
     priority: int = 0
     tags: List[str] = []
     extra_data: dict = {}
+    visible_to_all: bool = False
     department_id: Optional[int] = None
     department_name: Optional[str] = None
     hiring_manager_id: Optional[int] = None
@@ -607,6 +620,7 @@ async def list_vacancies(
         # 2. Vacancies where they are hiring manager
         # 3. Vacancies in ANY department they belong to (all roles)
         # 4. Vacancies shared with them via SharedAccess
+        # 5. Vacancies marked as visible_to_all (org-wide)
         access_conditions = []
 
         # Always add created_by and hiring_manager conditions
@@ -617,6 +631,9 @@ async def list_vacancies(
             access_conditions.append(Vacancy.department_id.in_(all_dept_ids))
         if shared_vacancy_ids:
             access_conditions.append(Vacancy.id.in_(shared_vacancy_ids))
+
+        # Vacancies marked as visible to all org members
+        access_conditions.append(Vacancy.visible_to_all == True)
 
         # Apply OR filter - user must match at least one condition
         query = query.where(or_(*access_conditions))
@@ -714,6 +731,7 @@ async def list_vacancies(
             priority=vacancy.priority or 0,
             tags=vacancy.tags or [],
             extra_data=vacancy.extra_data or {},
+            visible_to_all=bool(getattr(vacancy, 'visible_to_all', False)),
             department_id=vacancy.department_id,
             department_name=dept_name,
             hiring_manager_id=vacancy.hiring_manager_id,
@@ -756,6 +774,7 @@ async def create_vacancy(
         priority=data.priority,
         tags=data.tags,
         extra_data=data.extra_data,
+        visible_to_all=data.visible_to_all,
         department_id=data.department_id,
         hiring_manager_id=data.hiring_manager_id,
         closes_at=data.closes_at,
@@ -785,6 +804,7 @@ async def create_vacancy(
         priority=vacancy.priority or 0,
         tags=vacancy.tags or [],
         extra_data=vacancy.extra_data or {},
+        visible_to_all=bool(getattr(vacancy, 'visible_to_all', False)),
         department_id=vacancy.department_id,
         hiring_manager_id=vacancy.hiring_manager_id,
         created_by=vacancy.created_by,
@@ -871,6 +891,7 @@ async def get_vacancy(
         priority=vacancy.priority or 0,
         tags=vacancy.tags or [],
         extra_data=vacancy.extra_data or {},
+        visible_to_all=bool(getattr(vacancy, 'visible_to_all', False)),
         department_id=vacancy.department_id,
         department_name=dept_name,
         hiring_manager_id=vacancy.hiring_manager_id,
