@@ -3,10 +3,10 @@ import { motion } from 'framer-motion';
 import { X, Save, Briefcase, Sparkles, Loader2, Globe } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
-import type { Vacancy, VacancyStatus, User } from '@/types';
+import type { Vacancy, VacancyStatus } from '@/types';
 import { VACANCY_STATUS_LABELS, EMPLOYMENT_TYPES, EXPERIENCE_LEVELS } from '@/types';
-import { getDepartments, getUsers, splitVacancyDescription } from '@/services/api';
-import type { Department } from '@/services/api';
+import { getDepartments, getAssignableUsers, splitVacancyDescription } from '@/services/api';
+import type { Department, AssignableUser } from '@/services/api';
 import { CurrencySelect } from '@/components/ui';
 
 interface VacancyFormProps {
@@ -21,7 +21,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   const [loading, setLoading] = useState(false);
   const [splitting, setSplitting] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<AssignableUser[]>([]);
 
   // Use prefillData when creating new vacancy, vacancy when editing
   const initialData = vacancy || prefillData;
@@ -50,7 +50,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
       try {
         const [depts, usersList] = await Promise.all([
           getDepartments(-1),
-          getUsers()
+          getAssignableUsers()
         ]);
         setDepartments(depts);
         setUsers(usersList);

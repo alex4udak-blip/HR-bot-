@@ -108,6 +108,16 @@ export const deleteVacancy = async (id: number): Promise<void> => {
   await debouncedMutation<void>('delete', `/vacancies/${id}`);
 };
 
+export interface AssignableUser {
+  id: number;
+  name: string;
+}
+
+export const getAssignableUsers = async (): Promise<AssignableUser[]> => {
+  const { data } = await deduplicatedGet<AssignableUser[]>('/vacancies/assignable-users');
+  return data;
+};
+
 // ============================================================
 // VACANCY APPLICATIONS API
 // ============================================================

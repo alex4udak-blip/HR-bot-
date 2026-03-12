@@ -9,7 +9,7 @@ from datetime import datetime
 
 from .common import (
     logger, get_db, Vacancy, VacancyStatus, VacancyApplication,
-    User, Department, DepartmentMember, DeptRole,
+    User, Department, DepartmentMember, DeptRole, OrgMember,
     VacancyCreate, VacancyUpdate, VacancyResponse,
     check_vacancy_access, has_full_database_access, can_access_vacancy,
     can_edit_vacancy, get_shared_vacancy_ids
@@ -443,3 +443,24 @@ async def delete_vacancy(
     await db.commit()
 
     logger.info(f"Deleted vacancy {vacancy_id}")
+
+
+@router.get("/assignable-users")
+async def get_assignable_users(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(check_vacancy_access)
+):
+    """Return all org members for the 'Responsible' dropdown.
+
+    Any user with vacancy access can see all org members (id + name)
+    so they can assign a hiring manager.
+    """
+    org = await get_user_org(current_user, db)
+
+    result = await db.execute(
+        select(User.id, User.name)
+        .join(OrgMember, OrgMember.user_id == User.id)
+        .where(OrgMember.org_id == org.id, User.is_active == True)
+        .order_by(User.name)
+    )
+    return [{"id": row[0], "name": row[1]} for row in result.all()]
