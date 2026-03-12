@@ -119,10 +119,10 @@ async def get_users(
             .order_by(User.created_at.desc())
         )
         users = result.scalars().all()
-    # ADMIN/SUB_ADMIN sees:
+    # ADMIN/SUB_ADMIN/MEMBER sees:
     # - All users in their department
     # - Only ADMIN/SUB_ADMIN from other departments (not MEMBER)
-    elif current_user.role in (UserRole.admin, UserRole.sub_admin):
+    else:
         # Get current user's department
         dept_member_result = await db.execute(
             select(DepartmentMember).where(DepartmentMember.user_id == current_user.id)
@@ -130,7 +130,7 @@ async def get_users(
         dept_member = dept_member_result.scalar_one_or_none()
 
         if not dept_member:
-            # Admin without department - should not happen but handle gracefully
+            # User without department - handle gracefully
             return []
 
         # Get all users from same department
@@ -160,9 +160,6 @@ async def get_users(
         # Combine and deduplicate
         users = list(same_dept_users | other_admins)
         users.sort(key=lambda u: u.created_at, reverse=True)
-    else:
-        # Regular users without role - should not happen
-        return []
 
     # Get chat counts for all users
     chat_counts = {}
