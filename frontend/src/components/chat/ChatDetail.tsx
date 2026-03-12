@@ -33,7 +33,11 @@ import {
   Loader2,
   Upload,
   Link,
-  Unlink
+  Unlink,
+  Play,
+  Pause,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { Chat, Message, ChatTypeId } from '@/types';
@@ -207,12 +211,121 @@ const AuthVideo = ({ src, className, controls, preload, isRound }: {
   );
 };
 
-// Authenticated Audio component
+// Volume persistence key for localStorage
+const VOLUME_STORAGE_KEY = 'hr-bot-audio-volume';
+const MUTED_STORAGE_KEY = 'hr-bot-audio-muted';
+
+const getSavedVolume = (): number => {
+  try {
+    const saved = localStorage.getItem(VOLUME_STORAGE_KEY);
+    if (saved !== null) {
+      const val = parseFloat(saved);
+      if (!isNaN(val) && val >= 0 && val <= 1) return val;
+    }
+  } catch {}
+  return 0.7;
+};
+
+const getSavedMuted = (): boolean => {
+  try {
+    return localStorage.getItem(MUTED_STORAGE_KEY) === 'true';
+  } catch {}
+  return false;
+};
+
+// Authenticated Audio component with custom controls and volume persistence
 const AuthAudio = ({ src, className }: {
   src: string;
   className?: string;
 }) => {
   const { blobUrl, error } = useAuthMedia(src);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
+
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(getSavedVolume);
+  const [isMuted, setIsMuted] = useState(getSavedMuted);
+  const [showVolume, setShowVolume] = useState(false);
+
+  // Apply volume/mute to audio element
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = volume;
+    audio.muted = isMuted;
+  }, [volume, isMuted, blobUrl]);
+
+  // Persist volume changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(VOLUME_STORAGE_KEY, String(volume));
+      localStorage.setItem(MUTED_STORAGE_KEY, String(isMuted));
+    } catch {}
+  }, [volume, isMuted]);
+
+  // Audio event listeners
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const onLoadedMetadata = () => setDuration(audio.duration);
+    const onEnded = () => setIsPlaying(false);
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+
+    audio.addEventListener('timeupdate', onTimeUpdate);
+    audio.addEventListener('loadedmetadata', onLoadedMetadata);
+    audio.addEventListener('ended', onEnded);
+    audio.addEventListener('play', onPlay);
+    audio.addEventListener('pause', onPause);
+
+    return () => {
+      audio.removeEventListener('timeupdate', onTimeUpdate);
+      audio.removeEventListener('loadedmetadata', onLoadedMetadata);
+      audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('pause', onPause);
+    };
+  }, [blobUrl]);
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isPlaying) {
+      audio.pause();
+    } else {
+      audio.play();
+    }
+  };
+
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const audio = audioRef.current;
+    const bar = progressRef.current;
+    if (!audio || !bar || !duration) return;
+    const rect = bar.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    audio.currentTime = ratio * duration;
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    setVolume(val);
+    if (val > 0 && isMuted) setIsMuted(false);
+  };
+
+  const toggleMute = () => {
+    setIsMuted(prev => !prev);
+  };
+
+  const formatDuration = (sec: number) => {
+    if (!isFinite(sec) || sec < 0) return '0:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
 
   if (error) {
     return (
@@ -224,13 +337,74 @@ const AuthAudio = ({ src, className }: {
 
   if (!blobUrl) return null;
 
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
   return (
-    <audio
-      src={blobUrl}
-      controls
-      preload="metadata"
-      className={className}
-    />
+    <div className={clsx('flex items-center gap-2 p-2 glass rounded-lg', className)}>
+      <audio ref={audioRef} src={blobUrl} preload="metadata" />
+
+      {/* Play/Pause */}
+      <button
+        onClick={togglePlay}
+        className="w-8 h-8 flex-shrink-0 rounded-full bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 flex items-center justify-center transition-colors"
+      >
+        {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+      </button>
+
+      {/* Time */}
+      <span className="text-xs text-dark-400 w-[72px] text-center flex-shrink-0 tabular-nums">
+        {formatDuration(currentTime)} / {formatDuration(duration)}
+      </span>
+
+      {/* Progress bar */}
+      <div
+        ref={progressRef}
+        onClick={handleProgressClick}
+        className="flex-1 h-1.5 bg-dark-700 rounded-full cursor-pointer group relative"
+      >
+        <div
+          className="h-full bg-accent-500 rounded-full transition-[width] duration-100"
+          style={{ width: `${progress}%` }}
+        />
+        <div
+          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-accent-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow"
+          style={{ left: `calc(${progress}% - 6px)` }}
+        />
+      </div>
+
+      {/* Volume control */}
+      <div className="relative flex-shrink-0">
+        <button
+          onClick={toggleMute}
+          onMouseEnter={() => setShowVolume(true)}
+          className="p-1 rounded text-dark-400 hover:text-accent-400 transition-colors"
+        >
+          {isMuted || volume === 0 ? (
+            <VolumeX className="w-4 h-4" />
+          ) : (
+            <Volume2 className="w-4 h-4" />
+          )}
+        </button>
+
+        {showVolume && (
+          <div
+            className="absolute bottom-full right-0 mb-2 p-2 glass rounded-lg border border-white/10 shadow-xl z-50"
+            onMouseEnter={() => setShowVolume(true)}
+            onMouseLeave={() => setShowVolume(false)}
+          >
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={isMuted ? 0 : volume}
+              onChange={handleVolumeChange}
+              className="w-24 h-1.5 accent-accent-500 cursor-pointer"
+            />
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 
