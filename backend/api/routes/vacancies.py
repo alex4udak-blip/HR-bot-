@@ -148,8 +148,8 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
     Access rules:
     - Superadmin/Owner: can access all vacancies in org
     - Member with has_full_access flag: can access all vacancies in org
-    - Lead/Sub_admin of department: can access all vacancies in their department
-    - Member: can only access vacancies they created or where they are hiring manager
+    - Department member (any role): can access all vacancies in their department
+    - Creator/hiring manager: can access their own vacancies
     - Member with SharedAccess: can access vacancies shared with them
     """
     # Full database access (superadmin, owner, or member with has_full_access)
@@ -160,9 +160,15 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
     if vacancy.created_by == user.id or vacancy.hiring_manager_id == user.id:
         return True
 
-    # If vacancy has a department, check if user is lead/sub_admin of that dept
+    # If vacancy has a department, check if user is a member of that dept (any role)
     if vacancy.department_id:
-        if await is_dept_lead_or_admin(user.id, vacancy.department_id, db):
+        dept_member_result = await db.execute(
+            select(DepartmentMember).where(
+                DepartmentMember.user_id == user.id,
+                DepartmentMember.department_id == vacancy.department_id
+            )
+        )
+        if dept_member_result.scalar_one_or_none() is not None:
             return True
 
     # Check if user has shared access to this vacancy
@@ -178,7 +184,7 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
 
     Edit rules:
     - Superadmin/Owner: can edit all vacancies in org
-    - Lead/Sub_admin of department: can edit vacancies in their department
+    - Department member (any role): can edit vacancies in their department
     - Creator: can edit their own vacancies
     - Hiring manager: can edit vacancies where they are hiring manager
     - User with SharedAccess (edit or full level): can edit vacancies shared with them
@@ -191,9 +197,15 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
     if vacancy.created_by == user.id or vacancy.hiring_manager_id == user.id:
         return True
 
-    # If vacancy has a department, check if user is lead/sub_admin of that dept
+    # If vacancy has a department, check if user is a member of that dept (any role)
     if vacancy.department_id:
-        if await is_dept_lead_or_admin(user.id, vacancy.department_id, db):
+        dept_member_result = await db.execute(
+            select(DepartmentMember).where(
+                DepartmentMember.user_id == user.id,
+                DepartmentMember.department_id == vacancy.department_id
+            )
+        )
+        if dept_member_result.scalar_one_or_none() is not None:
             return True
 
     # Check if user has shared access with edit level
@@ -560,8 +572,8 @@ async def list_vacancies(
 
     Access rules:
     - Superadmin/Owner: sees all vacancies in org
-    - Lead/Sub_admin: sees vacancies in their department + own vacancies
-    - Member: sees only own vacancies (created_by or hiring_manager)
+    - Department member (any role): sees all vacancies in their department
+    - Additionally: own vacancies (created_by or hiring_manager) + shared
     """
     org = await get_user_org(current_user, db)
 
@@ -579,14 +591,13 @@ async def list_vacancies(
     has_full_access = await has_full_database_access(current_user, org, db)
 
     if not has_full_access:
-        # Get departments where user is lead/sub_admin (not just member)
-        lead_dept_result = await db.execute(
+        # Get ALL departments where user is a member (any role)
+        all_dept_result = await db.execute(
             select(DepartmentMember.department_id).where(
-                DepartmentMember.user_id == current_user.id,
-                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
+                DepartmentMember.user_id == current_user.id
             )
         )
-        lead_dept_ids = [row[0] for row in lead_dept_result.all()]
+        all_dept_ids = [row[0] for row in all_dept_result.all()]
 
         # Get vacancy IDs shared with user
         shared_vacancy_ids = await get_shared_vacancy_ids(current_user.id, db)
@@ -594,7 +605,7 @@ async def list_vacancies(
         # User can see:
         # 1. Vacancies they created
         # 2. Vacancies where they are hiring manager
-        # 3. Vacancies in departments where they are lead/sub_admin
+        # 3. Vacancies in ANY department they belong to (all roles)
         # 4. Vacancies shared with them via SharedAccess
         access_conditions = []
 
@@ -602,8 +613,8 @@ async def list_vacancies(
         access_conditions.append(Vacancy.created_by == current_user.id)
         access_conditions.append(Vacancy.hiring_manager_id == current_user.id)
 
-        if lead_dept_ids:
-            access_conditions.append(Vacancy.department_id.in_(lead_dept_ids))
+        if all_dept_ids:
+            access_conditions.append(Vacancy.department_id.in_(all_dept_ids))
         if shared_vacancy_ids:
             access_conditions.append(Vacancy.id.in_(shared_vacancy_ids))
 
