@@ -75,6 +75,9 @@ async def list_vacancies(
         if shared_vacancy_ids:
             access_conditions.append(Vacancy.id.in_(shared_vacancy_ids))
 
+        # Vacancies marked as visible to all org members
+        access_conditions.append(Vacancy.visible_to_all == True)
+
         # Apply OR filter - user must match at least one condition
         query = query.where(or_(*access_conditions))
 
@@ -171,6 +174,7 @@ async def list_vacancies(
             priority=vacancy.priority or 0,
             tags=vacancy.tags or [],
             extra_data=vacancy.extra_data or {},
+            visible_to_all=vacancy.visible_to_all or False,
             department_id=vacancy.department_id,
             department_name=dept_name,
             hiring_manager_id=vacancy.hiring_manager_id,
@@ -213,6 +217,7 @@ async def create_vacancy(
         priority=data.priority,
         tags=data.tags,
         extra_data=data.extra_data,
+        visible_to_all=data.visible_to_all,
         department_id=data.department_id,
         hiring_manager_id=data.hiring_manager_id,
         closes_at=data.closes_at,
@@ -242,6 +247,7 @@ async def create_vacancy(
         priority=vacancy.priority or 0,
         tags=vacancy.tags or [],
         extra_data=vacancy.extra_data or {},
+        visible_to_all=vacancy.visible_to_all or False,
         department_id=vacancy.department_id,
         hiring_manager_id=vacancy.hiring_manager_id,
         created_by=vacancy.created_by,
@@ -328,6 +334,7 @@ async def get_vacancy(
         priority=vacancy.priority or 0,
         tags=vacancy.tags or [],
         extra_data=vacancy.extra_data or {},
+        visible_to_all=vacancy.visible_to_all or False,
         department_id=vacancy.department_id,
         department_name=dept_name,
         hiring_manager_id=vacancy.hiring_manager_id,
