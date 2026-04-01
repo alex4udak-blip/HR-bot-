@@ -74,6 +74,7 @@ const AllTasksPage = lazyWithRetry(() => import('@/pages/AllTasksPage'));
 const SaturnPage = lazyWithRetry(() => import('@/pages/SaturnPage'));
 const TeamPage = lazyWithRetry(() => import('@/pages/TeamPage'));
 const DeptManagerPage = lazyWithRetry(() => import('@/pages/DeptManagerPage'));
+const AllCandidatesPage = lazyWithRetry(() => import('@/pages/AllCandidatesPage'));
 
 // Loading fallback component for Suspense
 function PageLoader() {
@@ -181,6 +182,7 @@ export default function App() {
           <Route path="saturn" element={<Suspense fallback={<PageLoader />}><SaturnPage /></Suspense>} />
           <Route path="team" element={<Suspense fallback={<PageLoader />}><TeamPage /></Suspense>} />
           <Route path="dept-manager" element={<Suspense fallback={<PageLoader />}><DeptManagerPage /></Suspense>} />
+          <Route path="all-candidates" element={<Suspense fallback={<PageLoader />}><AllCandidatesPage /></Suspense>} />
           <Route path="trash" element={<Suspense fallback={<PageLoader />}><TrashPage /></Suspense>} />
           <Route path="users" element={<Suspense fallback={<PageLoader />}><UsersPage /></Suspense>} />
           <Route path="departments" element={<Suspense fallback={<PageLoader />}><DepartmentsPage /></Suspense>} />
