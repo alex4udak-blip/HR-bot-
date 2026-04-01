@@ -351,6 +351,119 @@ export type {
   AssignableUser
 } from './vacancies';
 
+// Projects
+export {
+  getProjects,
+  getProject,
+  createProject,
+  updateProject,
+  deleteProject,
+  // Members
+  getProjectMembers,
+  addProjectMember,
+  updateProjectMember,
+  removeProjectMember,
+  // Tasks
+  getProjectTasks,
+  createProjectTask,
+  updateProjectTask,
+  deleteProjectTask,
+  getTaskKanban,
+  bulkMoveTasks,
+  getSubtasks,
+  // Milestones
+  getProjectMilestones,
+  createMilestone,
+  updateMilestone,
+  deleteMilestone,
+  // Time logs
+  createTimeLog,
+  getTaskTimeLogs,
+  // Effort & Analytics
+  getProjectEffort,
+  getProjectsOverview,
+  getResourceAllocation,
+  getProjectAnalytics,
+  getAllTasks,
+  // Custom fields
+  getCustomFields,
+  createCustomField,
+  updateCustomField,
+  deleteCustomField,
+  getTaskFieldValues,
+  setTaskFieldValue,
+  // Task statuses
+  getProjectStatuses,
+  createProjectStatus,
+  updateProjectStatus,
+  deleteProjectStatus,
+  reorderProjectStatuses,
+  // Task comments
+  getTaskComments,
+  createTaskComment,
+  updateTaskComment,
+  deleteTaskComment,
+  // Task attachments
+  getTaskAttachments,
+  uploadTaskAttachment,
+  deleteTaskAttachment,
+  // AI task creation
+  aiParsePlan,
+  aiCreateTasks,
+  // Saturn integration
+  getSaturnProjects,
+  getSaturnProject,
+  triggerSaturnSync,
+  getSaturnSyncStatus,
+  // Project status definitions (org-level)
+  getProjectStatusDefs,
+  createProjectStatusDef,
+  updateProjectStatusDef,
+  deleteProjectStatusDef,
+  reorderProjectStatusDefs,
+} from './projects';
+
+// Project types
+export type {
+  ProjectStatus,
+  TaskStatus,
+  ProjectRole,
+  Project,
+  ProjectMember,
+  ProjectTask,
+  ProjectMilestone,
+  TaskTimeLog,
+  TaskKanbanColumn,
+  TaskKanbanBoard,
+  ProjectFilters,
+  ProjectCreate,
+  ProjectUpdate,
+  TaskCreate,
+  TaskUpdate,
+  MemberCreate,
+  MemberUpdate,
+  MilestoneCreate,
+  TimeLogCreate,
+  ProjectEffort,
+  ProjectsOverview,
+  ResourceAllocation,
+  ProjectAnalytics,
+  AllTasksProjectGroup,
+  AllTasksFilters,
+  CustomFieldType,
+  ProjectCustomField,
+  TaskFieldValue,
+  ProjectTaskStatusDef,
+  TaskComment,
+  TaskAttachment,
+  ParsedTaskItem,
+  AIParsePlanResponse,
+  SaturnProject,
+  SaturnApplication,
+  SaturnSyncStatus,
+  ProjectStatusDef2,
+} from './projects';
+
 // Interns (Prometheus proxy)
 export {
   getPrometheusInterns,
@@ -410,3 +523,16 @@ export type {
   SyncStatusesResponse,
   SyncSingleStatusResponse,
 } from './interns';
+
+// Notifications
+export {
+  getNotifications,
+  getUnreadCount,
+  markNotificationRead,
+  markAllNotificationsRead,
+} from './notifications';
+
+export type {
+  Notification as AppNotification,
+  UnreadCountResponse,
+} from './notifications';

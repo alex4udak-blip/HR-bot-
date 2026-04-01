@@ -68,6 +68,12 @@ const AnalyticsPage = lazyWithRetry(() => import('@/pages/AnalyticsPage'));
 const InternsPage = lazyWithRetry(() => import('@/pages/InternsPage'));
 const InternStatsPage = lazyWithRetry(() => import('@/pages/InternStatsPage'));
 const ExportsPage = lazyWithRetry(() => import('@/pages/ExportsPage'));
+const ProjectsPage = lazyWithRetry(() => import('@/pages/ProjectsPage'));
+const ProjectDetailPage = lazyWithRetry(() => import('@/pages/ProjectDetailPage'));
+const AllTasksPage = lazyWithRetry(() => import('@/pages/AllTasksPage'));
+const SaturnPage = lazyWithRetry(() => import('@/pages/SaturnPage'));
+const TeamPage = lazyWithRetry(() => import('@/pages/TeamPage'));
+const DeptManagerPage = lazyWithRetry(() => import('@/pages/DeptManagerPage'));
 
 // Loading fallback component for Suspense
 function PageLoader() {
@@ -169,6 +175,12 @@ export default function App() {
           <Route path="email-templates" element={<Suspense fallback={<PageLoader />}><EmailTemplatesPage /></Suspense>} />
           <Route path="analytics" element={<Suspense fallback={<PageLoader />}><AnalyticsPage /></Suspense>} />
           <Route path="exports" element={<Suspense fallback={<PageLoader />}><ExportsPage /></Suspense>} />
+          <Route path="projects" element={<Suspense fallback={<PageLoader />}><ProjectsPage /></Suspense>} />
+          <Route path="projects/:projectId" element={<Suspense fallback={<PageLoader />}><ProjectDetailPage /></Suspense>} />
+          <Route path="all-tasks" element={<Suspense fallback={<PageLoader />}><AllTasksPage /></Suspense>} />
+          <Route path="saturn" element={<Suspense fallback={<PageLoader />}><SaturnPage /></Suspense>} />
+          <Route path="team" element={<Suspense fallback={<PageLoader />}><TeamPage /></Suspense>} />
+          <Route path="dept-manager" element={<Suspense fallback={<PageLoader />}><DeptManagerPage /></Suspense>} />
           <Route path="trash" element={<Suspense fallback={<PageLoader />}><TrashPage /></Suspense>} />
           <Route path="users" element={<Suspense fallback={<PageLoader />}><UsersPage /></Suspense>} />
           <Route path="departments" element={<Suspense fallback={<PageLoader />}><DepartmentsPage /></Suspense>} />

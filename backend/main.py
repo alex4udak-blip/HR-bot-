@@ -20,7 +20,7 @@ from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
 from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser, search, scoring, currency, parse_jobs, interns
-from api.routes import email_templates, analytics, exports
+from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
@@ -78,6 +78,35 @@ async def prometheus_auto_export_task():
 
         # Run every 5 minutes
         await asyncio.sleep(300)
+
+
+async def saturn_auto_sync_task():
+    """Periodically sync projects from Saturn (every 5 min)."""
+    from api.database import AsyncSessionLocal
+    from api.services.saturn_sync import SaturnSyncService
+
+    # Wait for startup to complete
+    await asyncio.sleep(30)
+
+    # Initial sync on startup
+    try:
+        async with AsyncSessionLocal() as session:
+            service = SaturnSyncService(session)
+            result = await service.sync_all()
+            logger.info(f"Saturn initial sync: {result.get('projects_synced', 0)} projects, {result.get('apps_synced', 0)} apps")
+    except Exception as e:
+        logger.error(f"Saturn initial sync error: {e}")
+
+    # Then every 5 minutes
+    while True:
+        await asyncio.sleep(300)
+        try:
+            async with AsyncSessionLocal() as session:
+                service = SaturnSyncService(session)
+                result = await service.sync_all()
+                logger.info(f"Saturn sync: {result.get('projects_synced', 0)} projects, {result.get('apps_synced', 0)} apps")
+        except Exception as e:
+            logger.error(f"Saturn auto-sync error: {e}")
 
 
 async def check_playwright_status():
@@ -168,6 +197,12 @@ async def lifespan(app: FastAPI):
     # Start Prometheus auto-export task (every 5 min)
     auto_export_task = asyncio.create_task(prometheus_auto_export_task())
 
+    # Start Saturn auto-sync task (every 5 min)
+    saturn_sync_task = None
+    if os.environ.get("SATURN_API_TOKEN"):
+        saturn_sync_task = asyncio.create_task(saturn_auto_sync_task())
+        logger.info("Saturn auto-sync task started (every 5 min)")
+
     # Log all registered routes for debugging
     logger.info("=== REGISTERED API ROUTES ===")
     vacancy_routes = []
@@ -189,6 +224,8 @@ async def lifespan(app: FastAPI):
         cleanup_task.cancel()
     if auto_export_task:
         auto_export_task.cancel()
+    if saturn_sync_task:
+        saturn_sync_task.cancel()
 
     # Close Redis connection
     try:
@@ -329,6 +366,38 @@ try:
     logger.info("Interns router registered successfully at /api/interns")
 except Exception as e:
     logger.error(f"FAILED to register interns router: {e}")
+    raise
+
+logger.info("=== REGISTERING PROJECTS ROUTER ===")
+try:
+    app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+    logger.info("Projects router registered successfully at /api/projects")
+except Exception as e:
+    logger.error(f"FAILED to register projects router: {e}")
+    raise
+
+logger.info("=== REGISTERING SATURN ROUTER ===")
+try:
+    app.include_router(saturn.router, prefix="/api/saturn", tags=["saturn"])
+    logger.info("Saturn router registered successfully at /api/saturn")
+except Exception as e:
+    logger.error(f"FAILED to register saturn router: {e}")
+    raise
+
+logger.info("=== REGISTERING NOTIFICATIONS ROUTER ===")
+try:
+    app.include_router(notifications.router, prefix="/api", tags=["notifications"])
+    logger.info("Notifications router registered successfully at /api")
+except Exception as e:
+    logger.error(f"FAILED to register notifications router: {e}")
+    raise
+
+logger.info("=== REGISTERING PROJECT STATUSES ROUTER ===")
+try:
+    app.include_router(project_statuses.router, prefix="/api/project-statuses", tags=["project-statuses"])
+    logger.info("Project statuses router registered successfully at /api/project-statuses")
+except Exception as e:
+    logger.error(f"FAILED to register project statuses router: {e}")
     raise
 
 

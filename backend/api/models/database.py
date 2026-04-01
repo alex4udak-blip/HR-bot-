@@ -83,6 +83,33 @@ class VacancyStatus(str, enum.Enum):
     cancelled = "cancelled"  # Cancelled/no longer needed
 
 
+class ProjectStatus(str, enum.Enum):
+    """Status of a project"""
+    planning = "planning"        # Планирование
+    active = "active"            # В разработке
+    on_hold = "on_hold"          # На паузе
+    completed = "completed"      # Завершён
+    cancelled = "cancelled"      # Отменён
+
+
+class TaskStatus(str, enum.Enum):
+    """Status of a project task"""
+    backlog = "backlog"          # Бэклог
+    todo = "todo"                # К выполнению
+    in_progress = "in_progress"  # В работе
+    review = "review"            # На ревью
+    done = "done"                # Готово
+    cancelled = "cancelled"      # Отменено
+
+
+class ProjectRole(str, enum.Enum):
+    """Role of a user within a project"""
+    manager = "manager"          # Менеджер проекта
+    developer = "developer"      # Разработчик
+    reviewer = "reviewer"        # Ревьюер
+    observer = "observer"        # Наблюдатель
+
+
 class ApplicationStage(str, enum.Enum):
     """Pipeline stage for candidate application
 
@@ -637,6 +664,7 @@ class ResourceType(str, enum.Enum):
     entity = "entity"
     call = "call"
     vacancy = "vacancy"  # Job vacancy
+    project = "project"  # Project
 
 
 class AccessLevel(str, enum.Enum):
@@ -1068,3 +1096,323 @@ class PrometheusReviewCache(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     entity = relationship("Entity")
+
+
+# ==================== PROJECT MANAGEMENT ====================
+
+class Project(Base):
+    """Project tracked in the PM module"""
+    __tablename__ = "projects"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
+    name = Column(String(300), nullable=False)
+    prefix = Column(String(10), nullable=True)  # Short code like "PM", "HR", "XERO" for task IDs
+    task_counter = Column(Integer, default=0)    # Auto-increment counter for task numbers
+    description = Column(Text, nullable=True)
+    status = Column(SQLEnum(ProjectStatus, name="projectstatus", create_constraint=False, native_enum=False), nullable=False, default=ProjectStatus.planning)  # stores slug strings from ProjectStatusDef
+    priority = Column(Integer, default=1)  # 0=low, 1=normal, 2=high, 3=critical
+    client_name = Column(String(300), nullable=True)
+    progress_percent = Column(Integer, default=0)  # 0-100
+    progress_mode = Column(String(10), default="auto")  # "auto" or "manual"
+    start_date = Column(DateTime, nullable=True)
+    target_date = Column(DateTime, nullable=True)
+    predicted_date = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    tags = Column(JSON, default=list)
+    extra_data = Column(JSON, default=dict)
+    color = Column(String(20), nullable=True)  # hex color for UI
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('ix_project_org_status', 'org_id', 'status'),
+        Index('ix_project_dept_status', 'department_id', 'status'),
+    )
+
+    organization = relationship("Organization")
+    department = relationship("Department")
+    creator = relationship("User", foreign_keys=[created_by])
+    members = relationship("ProjectMember", back_populates="project", cascade="all, delete-orphan")
+    milestones = relationship("ProjectMilestone", back_populates="project", cascade="all, delete-orphan")
+    tasks = relationship("ProjectTask", back_populates="project", cascade="all, delete-orphan")
+    task_statuses = relationship("ProjectTaskStatus", back_populates="project", cascade="all, delete-orphan", order_by="ProjectTaskStatus.sort_order")
+
+
+class ProjectStatusDef(Base):
+    """Custom project status definitions per organization"""
+    __tablename__ = "project_status_defs"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    slug = Column(String(100), nullable=False)
+    color = Column(String(20), default="#6366f1")
+    sort_order = Column(Integer, default=0)
+    is_done = Column(Boolean, default=False)  # marks project as "completed" for health calc
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('org_id', 'slug', name='uq_project_status_def_slug'),
+        Index('ix_psd_org_sort', 'org_id', 'sort_order'),
+    )
+
+    organization = relationship("Organization")
+
+
+class ProjectMember(Base):
+    """User assigned to a project with a specific role"""
+    __tablename__ = "project_members"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(SQLEnum(ProjectRole, name="projectrole", create_constraint=False, native_enum=False), nullable=False, default=ProjectRole.developer)
+    allocation_percent = Column(Integer, default=100)  # 0-100, how much of their time
+    joined_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('project_id', 'user_id', name='uq_project_member'),
+    )
+
+    project = relationship("Project", back_populates="members")
+    user = relationship("User")
+
+
+class ProjectTaskStatus(Base):
+    """Custom task status definitions per project"""
+    __tablename__ = "project_task_statuses"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)  # e.g. "In Review", "Selected for Dev"
+    slug = Column(String(100), nullable=False)   # e.g. "in_review", "selected_for_dev"
+    color = Column(String(20), default="#6366f1") # hex color
+    sort_order = Column(Integer, default=0)
+    is_done = Column(Boolean, default=False)     # marks tasks as "completed" for progress calc
+    is_default = Column(Boolean, default=False)  # default status for new tasks
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('project_id', 'slug', name='uq_project_status_slug'),
+        Index('ix_pts_project_sort', 'project_id', 'sort_order'),
+    )
+
+    project = relationship("Project", back_populates="task_statuses")
+
+
+class ProjectMilestone(Base):
+    """Development phase/stage within a project"""
+    __tablename__ = "project_milestones"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(300), nullable=False)
+    description = Column(Text, nullable=True)
+    target_date = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=func.now())
+
+    project = relationship("Project", back_populates="milestones")
+    tasks = relationship("ProjectTask", back_populates="milestone")
+
+
+class ProjectTask(Base):
+    """Task within a project, optionally tied to a milestone"""
+    __tablename__ = "project_tasks"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    task_number = Column(Integer, nullable=True)  # Sequential number within project, e.g. 1, 2, 3
+    milestone_id = Column(Integer, ForeignKey("project_milestones.id", ondelete="SET NULL"), nullable=True, index=True)
+    title = Column(String(500), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(SQLEnum(TaskStatus, name="taskstatus", create_constraint=False, native_enum=False), nullable=False, default=TaskStatus.backlog)
+    priority = Column(Integer, default=1)  # 0=low, 1=normal, 2=high, 3=critical
+    assignee_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    estimated_hours = Column(Integer, nullable=True)
+    due_date = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    sort_order = Column(Integer, default=0)
+    tags = Column(JSON, default=list)
+    parent_task_id = Column(Integer, ForeignKey("project_tasks.id", ondelete="CASCADE"), nullable=True, index=True)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('ix_task_project_status', 'project_id', 'status'),
+        Index('ix_task_assignee_status', 'assignee_id', 'status'),
+    )
+
+    project = relationship("Project", back_populates="tasks")
+    milestone = relationship("ProjectMilestone", back_populates="tasks")
+    assignee = relationship("User", foreign_keys=[assignee_id])
+    creator = relationship("User", foreign_keys=[created_by])
+    time_logs = relationship("TaskTimeLog", back_populates="task", cascade="all, delete-orphan")
+    subtasks = relationship("ProjectTask", back_populates="parent_task", cascade="all, delete-orphan")
+    parent_task = relationship("ProjectTask", remote_side=[id], back_populates="subtasks")
+    comments = relationship("TaskComment", back_populates="task", cascade="all, delete-orphan", order_by="TaskComment.created_at")
+    attachments = relationship("TaskAttachment", back_populates="task", cascade="all, delete-orphan", order_by="TaskAttachment.created_at")
+
+
+class TaskTimeLog(Base):
+    """Light effort tracking — hours spent on a task"""
+    __tablename__ = "task_time_logs"
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("project_tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    hours = Column(Integer, nullable=False)  # whole hours
+    date = Column(DateTime, nullable=False)
+    note = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    task = relationship("ProjectTask", back_populates="time_logs")
+    user = relationship("User")
+
+
+class TaskComment(Base):
+    """Comment on a project task"""
+    __tablename__ = "task_comments"
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("project_tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    edited_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    task = relationship("ProjectTask", back_populates="comments")
+    user = relationship("User")
+
+
+class TaskAttachment(Base):
+    """File attachment on a project task"""
+    __tablename__ = "task_attachments"
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("project_tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    filename = Column(String(500), nullable=False)
+    original_filename = Column(String(500), nullable=False)
+    file_size = Column(Integer, nullable=False)  # bytes
+    content_type = Column(String(200), nullable=True)
+    storage_path = Column(String(1000), nullable=False)  # local file path
+    created_at = Column(DateTime, default=func.now())
+
+    task = relationship("ProjectTask", back_populates="attachments")
+    user = relationship("User")
+
+
+class ProjectCustomField(Base):
+    """Custom field definition for a project"""
+    __tablename__ = "project_custom_fields"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(200), nullable=False)      # "Dev Cost", "Sprint", "Story Points"
+    field_type = Column(String(30), nullable=False)  # "text", "number", "currency", "select", "date", "checkbox"
+    options = Column(JSON, default=list)              # for "select" type: ["Option A", "Option B"]
+    currency = Column(String(10), nullable=True)      # for "currency" type: "USD", "RUB"
+    sort_order = Column(Integer, default=0)
+    is_required = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=func.now())
+
+    project = relationship("Project")
+
+    __table_args__ = (
+        Index('ix_cf_project', 'project_id', 'sort_order'),
+    )
+
+
+class TaskCustomFieldValue(Base):
+    """Value of a custom field on a specific task"""
+    __tablename__ = "task_custom_field_values"
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("project_tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    field_id = Column(Integer, ForeignKey("project_custom_fields.id", ondelete="CASCADE"), nullable=False, index=True)
+    value = Column(Text, nullable=True)  # stored as string, parsed by type
+
+    __table_args__ = (
+        UniqueConstraint('task_id', 'field_id', name='uq_task_field_value'),
+    )
+
+    task = relationship("ProjectTask")
+    field = relationship("ProjectCustomField")
+
+
+# ============================================================
+# SATURN INTEGRATION (Coolify-based deployment platform)
+# ============================================================
+
+class SaturnProject(Base):
+    __tablename__ = "saturn_projects"
+
+    id = Column(Integer, primary_key=True)
+    saturn_uuid = Column(String(100), unique=True, nullable=False, index=True)
+    saturn_id = Column(Integer)
+    name = Column(String(300), nullable=False)
+    description = Column(Text, nullable=True)
+    is_archived = Column(Boolean, default=False)
+    enceladus_project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)
+    last_synced_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    enceladus_project = relationship("Project")
+
+
+class SaturnApplication(Base):
+    __tablename__ = "saturn_applications"
+
+    id = Column(Integer, primary_key=True)
+    saturn_uuid = Column(String(100), unique=True, nullable=False, index=True)
+    saturn_project_id = Column(Integer, ForeignKey("saturn_projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(300), nullable=False)
+    fqdn = Column(String(500), nullable=True)
+    status = Column(String(100), nullable=True)  # running:healthy, exited:unhealthy, etc
+    build_pack = Column(String(50), nullable=True)
+    git_repository = Column(String(500), nullable=True)
+    git_branch = Column(String(200), nullable=True)
+    environment_name = Column(String(100), nullable=True)  # development/uat/production
+    last_synced_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    saturn_project = relationship("SaturnProject")
+
+
+class SaturnSyncLog(Base):
+    __tablename__ = "saturn_sync_logs"
+
+    id = Column(Integer, primary_key=True)
+    sync_type = Column(String(20), nullable=False)  # "full", "webhook", "manual"
+    projects_synced = Column(Integer, default=0)
+    apps_synced = Column(Integer, default=0)
+    errors = Column(JSON, default=list)
+    created_at = Column(DateTime, default=func.now())
+
+
+# ============================================================
+# NOTIFICATIONS
+# ============================================================
+
+class Notification(Base):
+    """In-app notification for users"""
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    type = Column(String(50), nullable=False)  # task_assigned, deadline_tomorrow, comment_added
+    title = Column(String(300), nullable=False)
+    message = Column(Text, nullable=True)
+    link = Column(String(500), nullable=True)  # e.g. /projects/1/tasks/5
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=func.now())
+
+    user = relationship("User")

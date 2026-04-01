@@ -1,11 +1,9 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
-  MessageSquare,
   Users,
   Settings,
-  Trash2,
   LogOut,
   Menu,
   X,
@@ -13,57 +11,32 @@ import {
   Building2,
   Shield,
   UserCog,
-  UserPlus,
   Briefcase,
   UserCheck,
   GraduationCap,
   HelpCircle,
   FileSpreadsheet,
+  FolderKanban,
+  ListTodo,
+  Cloud,
+  Bell,
+  Check,
+  BarChart3,
+  Plus,
+  UserPlus,
   type LucideIcon
 } from 'lucide-react';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useOnboardingTour } from '@/hooks/useOnboardingTour';
+import * as notificationsApi from '@/services/api/notifications';
+import type { Notification as AppNotification } from '@/services/api/notifications';
 import BackgroundEffects from './BackgroundEffects';
 import ThemeToggle from './ThemeToggle';
 import { OnboardingTour } from './onboarding';
 import clsx from 'clsx';
 
-// Icon mapping for dynamic menu
-const iconMap: Record<string, LucideIcon> = {
-  LayoutDashboard,
-  MessageSquare,
-  Users,
-  Phone,
-  Building2,
-  UserCog,
-  UserPlus,
-  Settings,
-  Shield,
-  Trash2,
-  Briefcase,
-  UserCheck,
-  GraduationCap,
-  FileSpreadsheet,
-};
-
-// Localized labels
-const labelMap: Record<string, string> = {
-  'Dashboard': 'Главная',
-  'Candidates': 'База кандидатов',
-  'Chats': 'Чаты',
-  'Contacts': 'Контакты',
-  'Calls': 'Созвоны',
-  'Vacancies': 'Вакансии',
-  'Departments': 'Департаменты',
-  'Users': 'Пользователи',
-  'Invite': 'Приглашения',
-  'Settings': 'Настройки',
-  'Admin Panel': 'Симулятор ролей',
-  'Trash': 'Корзина',
-  'Interns': 'База практикантов',
-  'Exports': 'Экспорт CSV',
-};
+// Note: iconMap and labelMap removed — using section-based navigation now
 
 // Map paths to data-tour attributes
 const pathToTourAttribute: Record<string, string> = {
@@ -73,11 +46,151 @@ const pathToTourAttribute: Record<string, string> = {
   '/dashboard': 'dashboard-link',
 };
 
+const BLOCK_ICONS: Record<string, LucideIcon> = {
+  projects: FolderKanban,
+  hr: Briefcase,
+  admin: Shield,
+};
+
+const BLOCK_ACTIVE_BG: Record<string, string> = {
+  projects: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  hr: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+  admin: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+};
+
+const BLOCK_ACCENT: Record<string, string> = {
+  projects: 'bg-blue-500/20 text-blue-400',
+  hr: 'bg-emerald-500/20 text-emerald-400',
+  admin: 'bg-amber-500/20 text-amber-400',
+};
+
+// FAB — floating action button for HR block
+function FABButton({ navigate }: { navigate: (path: string) => void }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="fixed bottom-6 right-6 z-50">
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.9 }}
+            className="absolute bottom-16 right-0 flex flex-col gap-2 items-end mb-2"
+          >
+            <button
+              onClick={() => { navigate('/vacancies?new=1'); setOpen(false); }}
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-xl shadow-lg shadow-emerald-500/30 transition-colors whitespace-nowrap"
+            >
+              <Briefcase className="w-4 h-4" />
+              Добавить вакансию
+            </button>
+            <button
+              onClick={() => { navigate('/candidates?new=1'); setOpen(false); }}
+              className="flex items-center gap-2 px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-xl shadow-lg shadow-blue-500/30 transition-colors whitespace-nowrap"
+            >
+              <UserPlus className="w-4 h-4" />
+              Добавить кандидата
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <button
+        onClick={() => setOpen(!open)}
+        className={clsx(
+          'w-14 h-14 rounded-full flex items-center justify-center shadow-xl transition-all duration-300',
+          open
+            ? 'bg-red-500 hover:bg-red-600 rotate-45 shadow-red-500/30'
+            : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/30'
+        )}
+      >
+        <Plus className="w-6 h-6 text-white" />
+      </button>
+    </div>
+  );
+}
+
 export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { user, logout, isImpersonating, exitImpersonation, menuItems, fetchPermissions, customRoleName, hasFeature } = useAuthStore();
+  const [activeBlock, setActiveBlock] = useState<string>('projects');
+  const location = useLocation();
+  const { user, logout, isImpersonating, exitImpersonation, fetchPermissions, customRoleName, hasFeature } = useAuthStore();
   const navigate = useNavigate();
   const { startTour, resetTour, hasCompletedTour } = useOnboardingTour();
+
+  // Notifications state
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationsList, setNotificationsList] = useState<AppNotification[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const result = await notificationsApi.getUnreadCount();
+      setUnreadCount(result.count);
+    } catch {
+      // silently ignore
+    }
+  }, []);
+
+  const fetchNotifications = useCallback(async () => {
+    setNotificationsLoading(true);
+    try {
+      const list = await notificationsApi.getNotifications();
+      setNotificationsList(list);
+    } catch {
+      // silently ignore
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
+
+  const handleToggleNotifications = () => {
+    const next = !showNotifications;
+    setShowNotifications(next);
+    if (next) fetchNotifications();
+  };
+
+  const handleMarkRead = async (id: number) => {
+    try {
+      await notificationsApi.markNotificationRead(id);
+      setNotificationsList((prev) => prev.map((n) => n.id === id ? { ...n, is_read: true } : n));
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    } catch {
+      // silently ignore
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await notificationsApi.markAllNotificationsRead();
+      setNotificationsList((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      setUnreadCount(0);
+    } catch {
+      // silently ignore
+    }
+  };
+
+  // Close notifications on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setShowNotifications(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Poll unread count every 30s
+  useEffect(() => {
+    if (!user) return;
+    fetchUnreadCount();
+    const interval = setInterval(fetchUnreadCount, 30000);
+    return () => clearInterval(interval);
+  }, [user?.id, fetchUnreadCount]);
 
   // Handler for starting/restarting the tour
   const handleHelpClick = () => {
@@ -100,56 +213,85 @@ export default function Layout() {
     }
   };
 
-  // Use dynamic menu from backend if available, otherwise fall back to static menu
-  const navItems = useMemo(() => {
-    // If we have menu items from backend, use them
-    if (menuItems && menuItems.length > 0) {
-      return menuItems.map(item => ({
-        path: item.path === '/' ? '/dashboard' : item.path,
-        icon: iconMap[item.icon] || LayoutDashboard,
-        label: labelMap[item.label] || item.label,
-      }));
+  // Auto-switch active block based on current URL
+  useEffect(() => {
+    const path = location.pathname;
+    if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path === '/dashboard' || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager')) {
+      setActiveBlock('projects');
+    } else if (['/vacancies', '/candidates', '/interns', '/analytics', '/calls', '/exports'].some(p => path.startsWith(p))) {
+      setActiveBlock('hr');
+    } else if (['/users', '/departments', '/settings', '/admin', '/trash'].some(p => path.startsWith(p))) {
+      setActiveBlock('admin');
     }
+  }, [location.pathname]);
 
-    // Fallback to static menu - base items for all users
-    const items = [
-      { path: '/dashboard', icon: LayoutDashboard, label: 'Главная' },
-      { path: '/chats', icon: MessageSquare, label: 'Чаты' },
-      { path: '/contacts', icon: Users, label: 'Контакты' },
-    ];
+  // Navigation sections — 3 blocks: Projects, HR, Analytics + Admin
+  type NavSection = {
+    id: string;
+    label: string;
+    items: { path: string; icon: LucideIcon; label: string }[];
+  };
 
-    // Add candidate database features only for HR department (feature-gated) - after "Контакты"
-    if (hasFeature('candidate_database')) {
-      items.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
-      items.push({ path: '/candidates', icon: UserCheck, label: 'База кандидатов' });
+  const navSections = useMemo((): NavSection[] => {
+    const sections: NavSection[] = [];
+
+    // PROJECTS block — everyone sees this
+    sections.push({
+      id: 'projects',
+      label: 'Проекты',
+      items: [
+        { path: '/projects', icon: FolderKanban, label: 'Все проекты' },
+        { path: '/all-tasks', icon: ListTodo, label: 'Все задачи' },
+        { path: '/team', icon: Users, label: 'Команда' },
+        { path: '/dept-manager', icon: Building2, label: 'Отделы' },
+        { path: '/saturn', icon: Cloud, label: 'Saturn' },
+        { path: '/dashboard', icon: LayoutDashboard, label: 'Дашборд' },
+      ],
+    });
+
+    // HR block
+    const hrItems: { path: string; icon: LucideIcon; label: string }[] = [];
+    if (hasFeature('candidate_database') || user?.role === 'superadmin' || user?.org_role === 'owner') {
+      hrItems.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
+      hrItems.push({ path: '/candidates', icon: UserCheck, label: 'База кандидатов' });
     }
-
-    // Interns page is available to all roles (no feature gating)
-    items.push({ path: '/interns', icon: GraduationCap, label: 'База практикантов' });
-
-    // Add remaining items
-    items.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
-    items.push({ path: '/trash', icon: Trash2, label: 'Корзина' });
-
-    // Add menu items for superadmin
-    if (user?.role === 'superadmin') {
-      items.push({ path: '/users', icon: Users, label: 'Пользователи' });
-    }
-
-    // Add menu items for superadmin and org owner
+    hrItems.push({ path: '/interns', icon: GraduationCap, label: 'Практиканты' });
+    hrItems.push({ path: '/analytics', icon: BarChart3, label: 'HR Аналитика' });
+    hrItems.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
     if (user?.role === 'superadmin' || user?.org_role === 'owner') {
-      items.push({ path: '/exports', icon: FileSpreadsheet, label: 'Экспорт CSV' });
-      items.push({ path: '/departments', icon: Building2, label: 'Департаменты' });
-      items.push({ path: '/settings', icon: Settings, label: 'Настройки' });
+      hrItems.push({ path: '/exports', icon: FileSpreadsheet, label: 'Экспорт CSV' });
     }
 
-    // Add admin simulator only for superadmin
-    if (user?.role === 'superadmin') {
-      items.push({ path: '/admin/simulator', icon: Shield, label: 'Симулятор ролей' });
+    sections.push({
+      id: 'hr',
+      label: 'HR',
+      items: hrItems,
+    });
+
+    // ADMIN block — superadmin/owner only
+    if (user?.role === 'superadmin' || user?.org_role === 'owner') {
+      const adminItems: { path: string; icon: LucideIcon; label: string }[] = [
+        { path: '/departments', icon: Building2, label: 'Департаменты' },
+        { path: '/settings', icon: Settings, label: 'Настройки' },
+      ];
+      if (user?.role === 'superadmin') {
+        adminItems.unshift({ path: '/users', icon: UserCog, label: 'Пользователи' });
+        adminItems.push({ path: '/admin/simulator', icon: Shield, label: 'Симулятор ролей' });
+      }
+      sections.push({
+        id: 'admin',
+        label: 'Управление',
+        items: adminItems,
+      });
     }
 
-    return items;
-  }, [menuItems, user?.role, user?.org_role, hasFeature]);
+    return sections;
+  }, [user?.role, user?.org_role, hasFeature]);
+
+  // Flat list for mobile bottom nav
+  const navItems = useMemo(() => {
+    return navSections.flatMap((s) => s.items);
+  }, [navSections]);
 
   const handleLogout = () => {
     logout();
@@ -165,35 +307,139 @@ export default function Layout() {
         role="navigation"
         aria-label="Main navigation"
       >
-        <div className="p-6 border-b border-white/5">
-          <h1 className="text-xl font-bold bg-gradient-to-r from-accent-400 to-accent-600 bg-clip-text text-transparent">
-            Чат Аналитика
-          </h1>
+        {/* Block switcher — top row of icons */}
+        <div className="p-3 border-b border-white/5">
+          <div className="flex items-center gap-1">
+            {navSections.map((section) => {
+              const Icon = BLOCK_ICONS[section.id] || LayoutDashboard;
+              const isActive = activeBlock === section.id;
+              return (
+                <button
+                  key={section.id}
+                  onClick={() => setActiveBlock(section.id)}
+                  className={clsx(
+                    'flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all duration-200',
+                    isActive
+                      ? clsx('border', BLOCK_ACTIVE_BG[section.id])
+                      : 'text-white/30 hover:text-white/50 hover:bg-white/[0.03] border border-transparent'
+                  )}
+                  title={section.label}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="text-[9px] font-semibold uppercase tracking-wider">{section.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto" aria-label="Primary navigation">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              end={item.path.includes('?')}
-              data-tour={pathToTourAttribute[item.path]}
-              className={({ isActive }) =>
-                clsx(
-                  'flex items-center gap-3 py-2.5 px-4 rounded-xl transition-all duration-200',
-                  isActive
-                    ? 'bg-accent-500/20 text-accent-400'
-                    : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
-                )
-              }
-            >
-              <item.icon className="w-5 h-5 flex-shrink-0" />
-              <span className="font-medium truncate">{item.label}</span>
-            </NavLink>
-          ))}
+        {/* Active block navigation */}
+        <nav className="flex-1 px-3 py-3 overflow-y-auto" aria-label="Primary navigation">
+          {navSections
+            .filter((s) => s.id === activeBlock)
+            .map((section) => (
+              <div key={section.id}>
+                <div className="space-y-0.5">
+                  {section.items.map((item) => (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      end={item.path.includes('?')}
+                      data-tour={pathToTourAttribute[item.path]}
+                      className={({ isActive }) =>
+                        clsx(
+                          'flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all duration-200 text-sm',
+                          isActive
+                            ? clsx(BLOCK_ACCENT[activeBlock])
+                            : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
+                        )
+                      }
+                    >
+                      <item.icon className="w-4 h-4 flex-shrink-0" />
+                      <span className="font-medium truncate">{item.label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            ))}
         </nav>
 
         <div className="p-4 border-t border-white/5">
+          {/* Notification bell */}
+          <div className="relative mb-3" ref={notifRef}>
+            <button
+              onClick={handleToggleNotifications}
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-dark-300 hover:text-blue-400 hover:bg-blue-500/10 transition-all duration-200 relative"
+            >
+              <Bell className="w-5 h-5" />
+              <span className="font-medium text-sm">Уведомления</span>
+              {unreadCount > 0 && (
+                <span className="absolute top-1.5 left-7 w-4.5 h-4.5 flex items-center justify-center text-[9px] font-bold bg-red-500 text-white rounded-full min-w-[18px] px-1">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* Notifications dropdown */}
+            {showNotifications && (
+              <div className="absolute bottom-full left-0 mb-2 w-80 max-h-96 bg-dark-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+                  <span className="text-sm font-medium text-white">Уведомления</span>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                    >
+                      <Check className="w-3 h-3" />
+                      Прочитать все
+                    </button>
+                  )}
+                </div>
+                <div className="overflow-y-auto max-h-80">
+                  {notificationsLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full" />
+                    </div>
+                  ) : notificationsList.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-white/30">Нет уведомлений</div>
+                  ) : (
+                    notificationsList.map((notif) => (
+                      <button
+                        key={notif.id}
+                        onClick={() => {
+                          if (!notif.is_read) handleMarkRead(notif.id);
+                          if (notif.link) {
+                            navigate(notif.link);
+                            setShowNotifications(false);
+                          }
+                        }}
+                        className={clsx(
+                          'w-full text-left px-4 py-3 border-b border-white/[0.03] hover:bg-white/[0.03] transition-colors',
+                          !notif.is_read && 'bg-blue-500/[0.05]'
+                        )}
+                      >
+                        <div className="flex items-start gap-2">
+                          {!notif.is_read && (
+                            <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0 mt-1.5" />
+                          )}
+                          <div className={clsx('flex-1 min-w-0', notif.is_read && 'ml-4')}>
+                            <p className="text-xs font-medium text-white truncate">{notif.title}</p>
+                            {notif.message && (
+                              <p className="text-[11px] text-white/30 truncate mt-0.5">{notif.message}</p>
+                            )}
+                            <p className="text-[10px] text-white/20 mt-1">
+                              {new Date(notif.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-3 mb-4 px-2">
             <div className="w-10 h-10 rounded-full bg-accent-500/20 flex items-center justify-center">
               <span className="text-accent-400 font-semibold">
@@ -233,7 +479,7 @@ export default function Layout() {
       {/* Mobile Header */}
       <header className="lg:hidden glass border-b border-white/5 px-4 py-3 flex items-center justify-between" role="banner">
         <h1 className="text-lg font-bold bg-gradient-to-r from-accent-400 to-accent-600 bg-clip-text text-transparent">
-          Чат Аналитика
+          Enceladus
         </h1>
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -267,25 +513,53 @@ export default function Layout() {
             onClick={(e) => e.stopPropagation()}
             id="mobile-menu"
           >
-            <nav className="p-4 space-y-1 overflow-y-auto flex-1" aria-label="Mobile navigation">
-              {navItems.map((item) => (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={({ isActive }) =>
-                    clsx(
-                      'flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200',
-                      isActive
-                        ? 'bg-accent-500/20 text-accent-400'
-                        : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
-                    )
-                  }
-                >
-                  <item.icon className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
-                  <span className="font-medium truncate">{item.label}</span>
-                </NavLink>
-              ))}
+            <nav className="p-3 overflow-y-auto flex-1" aria-label="Mobile navigation">
+              {/* Block switcher */}
+              <div className="flex gap-1 mb-4">
+                {navSections.map((section) => {
+                  const Icon = BLOCK_ICONS[section.id] || LayoutDashboard;
+                  return (
+                    <button
+                      key={section.id}
+                      onClick={() => setActiveBlock(section.id)}
+                      className={clsx(
+                        'flex-1 flex flex-col items-center gap-1 py-2 rounded-xl transition-all text-xs',
+                        activeBlock === section.id
+                          ? clsx('border', BLOCK_ACTIVE_BG[section.id])
+                          : 'text-white/30 border border-transparent'
+                      )}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span className="text-[9px] font-semibold uppercase">{section.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Active block items */}
+              {navSections
+                .filter((s) => s.id === activeBlock)
+                .map((section) => (
+                  <div key={section.id}>
+                    {section.items.map((item) => (
+                      <NavLink
+                        key={item.path}
+                        to={item.path}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className={({ isActive }) =>
+                          clsx(
+                            'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-sm',
+                            isActive
+                              ? clsx(BLOCK_ACCENT[activeBlock])
+                              : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
+                          )
+                        }
+                      >
+                        <item.icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                        <span className="font-medium truncate">{item.label}</span>
+                      </NavLink>
+                    ))}
+                  </div>
+                ))}
               <ThemeToggle />
               <button
                 onClick={handleLogout}
@@ -335,8 +609,13 @@ export default function Layout() {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden relative">
           <Outlet />
+
+          {/* FAB — floating action button for HR block */}
+          {activeBlock === 'hr' && (
+            <FABButton navigate={navigate} />
+          )}
         </div>
       </main>
 
