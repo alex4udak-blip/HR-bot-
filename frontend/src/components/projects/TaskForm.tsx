@@ -94,70 +94,70 @@ export default function TaskForm({ task, members = [], parentTaskId, isOpen, onC
   return (
     <AnimatePresence>
       {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-          onClick={onClose}
-        >
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50"
+            onClick={onClose}
+          />
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
-            className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-lg max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
           >
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-white/10">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-purple-500/20">
-                  <ListTodo className="w-5 h-5 text-purple-400" />
+                <div className="p-2 rounded-xl bg-purple-50">
+                  <ListTodo className="w-5 h-5 text-purple-600" />
                 </div>
-                <h2 className="text-lg font-semibold text-white">
+                <h2 className="text-lg font-bold text-gray-900">
                   {isEditing ? 'Редактировать задачу' : 'Новая задача'}
                 </h2>
               </div>
-              <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10 transition-colors">
-                <X className="w-5 h-5 text-white/60" />
+              <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form id="task-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
               {/* Title */}
               <div>
-                <label className="block text-sm font-medium text-white/70 mb-1">Название *</label>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Название *</label>
                 <input
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="Название задачи"
-                  className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   required
                 />
               </div>
 
               {/* Description */}
               <div>
-                <label className="block text-sm font-medium text-white/70 mb-1">Описание</label>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Описание</label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Описание задачи..."
                   rows={3}
-                  className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 resize-none"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-y min-h-[80px]"
                 />
               </div>
 
               {/* Status & Priority row */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-white/70 mb-1">Статус</label>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Статус</label>
                   <select
                     value={status}
                     onChange={(e) => setStatus(e.target.value as TaskStatus)}
-                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
                   >
                     {TASK_STATUS_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
@@ -165,11 +165,11 @@ export default function TaskForm({ task, members = [], parentTaskId, isOpen, onC
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-white/70 mb-1">Приоритет</label>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Приоритет</label>
                   <select
                     value={priority}
                     onChange={(e) => setPriority(Number(e.target.value))}
-                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
                   >
                     {PRIORITY_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
@@ -180,11 +180,11 @@ export default function TaskForm({ task, members = [], parentTaskId, isOpen, onC
 
               {/* Assignee */}
               <div>
-                <label className="block text-sm font-medium text-white/70 mb-1">Исполнитель</label>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Исполнитель</label>
                 <select
                   value={assigneeId}
                   onChange={(e) => setAssigneeId(e.target.value ? Number(e.target.value) : '')}
-                  className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
                 >
                   <option value="">Не назначен</option>
                   {members.map((m) => (
@@ -196,7 +196,7 @@ export default function TaskForm({ task, members = [], parentTaskId, isOpen, onC
               {/* Estimated hours & Due date row */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-white/70 mb-1">Оценка (часы)</label>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Оценка (часы)</label>
                   <input
                     type="number"
                     min="0"
@@ -204,41 +204,42 @@ export default function TaskForm({ task, members = [], parentTaskId, isOpen, onC
                     value={estimatedHours}
                     onChange={(e) => setEstimatedHours(e.target.value)}
                     placeholder="0"
-                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-white/70 mb-1">Дедлайн</label>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">Дедлайн</label>
                   <input
                     type="date"
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   />
                 </div>
               </div>
-
-              {/* Submit */}
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
-                >
-                  Отмена
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-purple-500 hover:bg-purple-600 disabled:opacity-50 rounded-xl transition-colors"
-                >
-                  <Save className="w-4 h-4" />
-                  {isSubmitting ? 'Сохранение...' : isEditing ? 'Сохранить' : 'Создать'}
-                </button>
-              </div>
             </form>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                type="submit"
+                form="task-form"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg transition-colors shadow-sm"
+              >
+                <Save className="w-4 h-4" />
+                {isSubmitting ? 'Сохранение...' : isEditing ? 'Сохранить' : 'Создать'}
+              </button>
+            </div>
           </motion.div>
-        </motion.div>
+        </div>
       )}
     </AnimatePresence>
   );

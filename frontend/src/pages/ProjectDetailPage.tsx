@@ -1482,45 +1482,47 @@ export default function ProjectDetailPage() {
       {/* Delete confirmation */}
       <AnimatePresence>
         {showDeleteConfirm && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={() => setShowDeleteConfirm(false)}
-          >
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowDeleteConfirm(false)}
+            />
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-6 w-full max-w-md shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-md bg-[#1a1a2e]/98 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
             >
-              <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center gap-3 p-6 pb-4">
                 <div className="p-2 rounded-xl bg-red-500/20">
                   <Trash2 className="w-5 h-5 text-red-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-white">Удалить проект?</h3>
+                <h3 className="text-lg font-bold text-white">Удалить проект?</h3>
               </div>
-              <p className="text-sm text-white/50 mb-6">
-                Проект &laquo;{currentProject.name}&raquo; будет удалён вместе со всеми задачами и данными. Это действие необратимо.
-              </p>
-              <div className="flex justify-end gap-3">
+              <div className="px-6 pb-4">
+                <p className="text-sm text-white/50">
+                  Проект &laquo;{currentProject.name}&raquo; будет удалён вместе со всеми задачами и данными. Это действие необратимо.
+                </p>
+              </div>
+              <div className="flex justify-end gap-3 p-6 pt-4 border-t border-white/5">
                 <button
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="px-4 py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
+                  className="px-4 py-2 text-sm text-white/50 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
                 >
                   Отмена
                 </button>
                 <button
                   onClick={handleDelete}
-                  className="px-5 py-2.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors"
+                  className="px-5 py-2.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors shadow-lg shadow-red-500/20"
                 >
                   Удалить
                 </button>
               </div>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

@@ -58,12 +58,8 @@ export default function ConfirmDialog({
   return (
     <AnimatePresence>
       {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={loading ? undefined : onCancel}
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
           onKeyDown={handleKeyDown}
           role="alertdialog"
           aria-modal="true"
@@ -71,43 +67,49 @@ export default function ConfirmDialog({
           aria-describedby="confirm-dialog-description"
         >
           <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={loading ? undefined : onCancel}
+          />
+          <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
-            onClick={(e) => e.stopPropagation()}
-            className="glass rounded-xl w-full max-w-md overflow-hidden"
+            className="relative w-full max-w-md bg-[#1a1a2e]/98 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
           >
             {/* Header */}
-            <div className="flex items-start gap-4 p-5">
-              <div className={clsx('p-2 rounded-lg', config.bgColor)}>
+            <div className="flex items-start gap-4 p-6 pb-4">
+              <div className={clsx('p-2 rounded-xl', config.bgColor)}>
                 <Icon className={clsx('w-6 h-6', config.iconColor)} aria-hidden="true" />
               </div>
               <div className="flex-1 min-w-0">
                 <h3
                   id="confirm-dialog-title"
-                  className="text-lg font-semibold text-white"
+                  className="text-lg font-bold text-white"
                 >
                   {title}
                 </h3>
-                <p id="confirm-dialog-description" className="mt-2 text-sm text-white/60">{message}</p>
+                <p id="confirm-dialog-description" className="mt-2 text-sm text-white/50">{message}</p>
               </div>
               <button
                 onClick={onCancel}
                 disabled={loading}
-                className="p-1 hover:bg-dark-800/50 rounded-lg transition-colors disabled:opacity-50"
+                className="p-2 text-white/30 hover:text-white hover:bg-white/10 rounded-xl transition-colors disabled:opacity-50"
                 aria-label="Close dialog"
               >
-                <X className="w-5 h-5 text-white/40" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Actions */}
-            <div className="flex items-center justify-end gap-3 px-5 py-4 glass-light border-t border-white/10">
+            <div className="flex items-center justify-end gap-3 p-6 pt-4 border-t border-white/5">
               <button
                 type="button"
                 onClick={onCancel}
                 disabled={loading}
-                className="px-4 py-2 text-white/60 hover:text-white hover:bg-dark-800/50 rounded-lg transition-colors disabled:opacity-50"
+                className="px-4 py-2 text-sm text-white/50 hover:text-white hover:bg-white/5 rounded-xl transition-colors disabled:opacity-50"
               >
                 {cancelLabel}
               </button>
@@ -116,7 +118,7 @@ export default function ConfirmDialog({
                 onClick={onConfirm}
                 disabled={loading}
                 className={clsx(
-                  'px-4 py-2 rounded-lg transition-colors disabled:opacity-50',
+                  'px-5 py-2.5 text-sm font-medium text-white rounded-xl transition-colors disabled:opacity-50',
                   config.buttonColor
                 )}
               >
@@ -124,7 +126,7 @@ export default function ConfirmDialog({
               </button>
             </div>
           </motion.div>
-        </motion.div>
+        </div>
       )}
     </AnimatePresence>
   );
