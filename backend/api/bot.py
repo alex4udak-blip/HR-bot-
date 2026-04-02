@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, ChatMemberUpdatedFilter, IS_NOT_MEMBER, IS_MEMBER
-from aiogram.types import ChatMemberUpdated, ContentType
+from aiogram.types import ChatMemberUpdated, ContentType, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
@@ -893,6 +893,449 @@ async def cmd_department(message: types.Message):
 # ─── End of project management commands ──────────────────────────────
 
 
+# ─── Inline button menu system ───────────────────────────────────────
+
+def main_menu_kb() -> InlineKeyboardMarkup:
+    """Build the main menu inline keyboard."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Статус отделов", callback_data="menu:status")],
+        [InlineKeyboardButton(text="📋 Мои задачи", callback_data="menu:my")],
+        [InlineKeyboardButton(text="🏢 Отделы", callback_data="menu:depts")],
+        [InlineKeyboardButton(text="📁 Проекты", callback_data="menu:projects")],
+    ])
+
+
+def _back_main_row() -> list[InlineKeyboardButton]:
+    """Row with just 'Home' button."""
+    return [InlineKeyboardButton(text="🏠 Главная", callback_data="menu:main")]
+
+
+def _back_and_main_row(back_data: str) -> list[InlineKeyboardButton]:
+    """Row with 'Back' and 'Home' buttons."""
+    return [
+        InlineKeyboardButton(text="← Назад", callback_data=back_data),
+        InlineKeyboardButton(text="🏠 Главная", callback_data="menu:main"),
+    ]
+
+
+@dp.message(Command("menu"))
+async def cmd_menu(message: types.Message):
+    """Show inline button main menu."""
+    await message.answer("📱 Главное меню:", reply_markup=main_menu_kb())
+
+
+@dp.callback_query(F.data == "menu:main")
+async def cb_main_menu(callback: CallbackQuery):
+    """Return to main menu."""
+    await callback.message.edit_text("📱 Главное меню:", reply_markup=main_menu_kb())
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "menu:status")
+async def cb_status(callback: CallbackQuery):
+    """Status overview — same logic as /status but via inline button."""
+    async with async_session() as session:
+        user, org_id = await _get_user_org_id(session, callback.from_user.id)
+        if not user or not org_id:
+            await callback.message.edit_text(
+                "Сначала привяжите аккаунт: /bind <email>",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[_back_main_row()]),
+            )
+            await callback.answer()
+            return
+
+        dept_result = await session.execute(
+            select(Department).where(
+                Department.org_id == org_id,
+                Department.is_active == True,
+            ).order_by(Department.name)
+        )
+        departments = dept_result.scalars().all()
+
+        proj_result = await session.execute(
+            select(Project).where(Project.org_id == org_id).order_by(Project.name)
+        )
+        projects = proj_result.scalars().all()
+
+        dept_projects: dict[int | None, list] = {}
+        for p in projects:
+            dept_projects.setdefault(p.department_id, []).append(p)
+
+        if not departments and not projects:
+            await callback.message.edit_text(
+                "Нет данных по отделам и проектам.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[_back_main_row()]),
+            )
+            await callback.answer()
+            return
+
+        lines = ["📊 <b>Статус отделов:</b>\n"]
+        for dept in departments:
+            d_projects = dept_projects.get(dept.id, [])
+            lines.append(f"🏢 <b>{dept.name}</b> ({len(d_projects)} проект{'а' if 1 < len(d_projects) < 5 else 'ов' if len(d_projects) >= 5 or len(d_projects) == 0 else ''})")
+            for i, p in enumerate(d_projects):
+                is_last = i == len(d_projects) - 1
+                prefix = "  └ " if is_last else "  ├ "
+                status_label = PROJECT_STATUS_LABELS.get(p.status, str(p.status))
+                health = _health_emoji(p.progress_percent or 0)
+                lines.append(f"{prefix}{p.name} — {status_label} {p.progress_percent or 0}% {health}")
+            lines.append("")
+
+        no_dept = dept_projects.get(None, [])
+        if no_dept:
+            lines.append(f"📂 <b>Без отдела</b> ({len(no_dept)} проект.)")
+            for i, p in enumerate(no_dept):
+                is_last = i == len(no_dept) - 1
+                prefix = "  └ " if is_last else "  ├ "
+                status_label = PROJECT_STATUS_LABELS.get(p.status, str(p.status))
+                health = _health_emoji(p.progress_percent or 0)
+                lines.append(f"{prefix}{p.name} — {status_label} {p.progress_percent or 0}% {health}")
+
+        await callback.message.edit_text(
+            "\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[_back_main_row()]),
+        )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "menu:my")
+async def cb_my_tasks(callback: CallbackQuery):
+    """My tasks — same logic as /my but via inline button, with 'mark done' buttons."""
+    async with async_session() as session:
+        user, org_id = await _get_user_org_id(session, callback.from_user.id)
+        if not user or not org_id:
+            await callback.message.edit_text(
+                "Сначала привяжите аккаунт: /bind <email>",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[_back_main_row()]),
+            )
+            await callback.answer()
+            return
+
+        tasks_result = await session.execute(
+            select(ProjectTask).where(
+                ProjectTask.assignee_id == user.id,
+                ProjectTask.status.notin_([TaskStatus.done, TaskStatus.cancelled]),
+            ).options(
+                selectinload(ProjectTask.project),
+            ).order_by(ProjectTask.due_date.asc().nullslast(), ProjectTask.sort_order)
+        )
+        tasks = tasks_result.scalars().all()
+
+        if not tasks:
+            await callback.message.edit_text(
+                "📋 У вас нет активных задач.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[_back_main_row()]),
+            )
+            await callback.answer()
+            return
+
+        by_project: dict[str, list] = {}
+        for t in tasks:
+            pname = t.project.name if t.project else "Без проекта"
+            by_project.setdefault(pname, []).append(t)
+
+        lines = ["📋 <b>Мои задачи:</b>\n"]
+        for pname, ptasks in by_project.items():
+            lines.append(f"<b>{pname}:</b>")
+            for t in ptasks:
+                task_key = ""
+                if t.project and t.project.prefix and t.task_number:
+                    task_key = f"{t.project.prefix}-{t.task_number} "
+                deadline = ""
+                dl_emoji = ""
+                if t.due_date:
+                    dl_text = _deadline_text(t.due_date)
+                    dl_emoji = _deadline_emoji(t.due_date)
+                    deadline = f" ({dl_text})" if dl_text else ""
+                lines.append(f"  • {task_key}{t.title}{deadline} {dl_emoji}")
+            lines.append("")
+
+        lines.append(f"Всего: {len(tasks)} задач")
+
+        # Add per-task "done" buttons (up to 8 to avoid overflow)
+        buttons: list[list[InlineKeyboardButton]] = []
+        for t in tasks[:8]:
+            task_key = ""
+            if t.project and t.project.prefix and t.task_number:
+                task_key = f"{t.project.prefix}-{t.task_number} "
+            buttons.append([InlineKeyboardButton(
+                text=f"✅ {task_key}{t.title[:30]}",
+                callback_data=f"task_done:{t.id}",
+            )])
+        buttons.append(_back_main_row())
+
+        await callback.message.edit_text(
+            "\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("task_done:"))
+async def cb_task_done(callback: CallbackQuery):
+    """Mark a task as done."""
+    task_id = int(callback.data.split(":")[1])
+    async with async_session() as session:
+        result = await session.execute(
+            select(ProjectTask).where(ProjectTask.id == task_id).options(selectinload(ProjectTask.project))
+        )
+        task = result.scalar_one_or_none()
+        if not task:
+            await callback.answer("Задача не найдена", show_alert=True)
+            return
+
+        task.status = TaskStatus.done
+        await session.commit()
+
+        task_key = ""
+        if task.project and task.project.prefix and task.task_number:
+            task_key = f"{task.project.prefix}-{task.task_number} "
+        await callback.answer(f"✅ {task_key}{task.title} — готово!")
+
+    # Refresh the my tasks view
+    await cb_my_tasks(callback)
+
+
+@dp.callback_query(F.data == "menu:depts")
+async def cb_departments(callback: CallbackQuery):
+    """List departments as inline buttons."""
+    async with async_session() as session:
+        user, org_id = await _get_user_org_id(session, callback.from_user.id)
+        if not user or not org_id:
+            await callback.message.edit_text(
+                "Сначала привяжите аккаунт: /bind <email>",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[_back_main_row()]),
+            )
+            await callback.answer()
+            return
+
+        dept_result = await session.execute(
+            select(Department).where(
+                Department.org_id == org_id,
+                Department.is_active == True,
+            ).order_by(Department.name)
+        )
+        departments = dept_result.scalars().all()
+
+        if not departments:
+            await callback.message.edit_text(
+                "Нет доступных отделов.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[_back_main_row()]),
+            )
+            await callback.answer()
+            return
+
+        # Count members per department
+        buttons: list[list[InlineKeyboardButton]] = []
+        for dept in departments:
+            count_result = await session.execute(
+                select(func.count(DepartmentMember.id)).where(
+                    DepartmentMember.department_id == dept.id
+                )
+            )
+            member_count = count_result.scalar() or 0
+            buttons.append([InlineKeyboardButton(
+                text=f"🏢 {dept.name} ({member_count})",
+                callback_data=f"dept:{dept.id}",
+            )])
+
+        buttons.append(_back_main_row())
+        await callback.message.edit_text(
+            "🏢 Выберите отдел:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("dept:"))
+async def cb_department_detail(callback: CallbackQuery):
+    """Show department detail with project buttons."""
+    dept_id = int(callback.data.split(":")[1])
+    async with async_session() as session:
+        result = await session.execute(
+            select(Department).where(Department.id == dept_id)
+        )
+        dept = result.scalar_one_or_none()
+        if not dept:
+            await callback.answer("Отдел не найден", show_alert=True)
+            return
+
+        # Get members
+        members_result = await session.execute(
+            select(DepartmentMember).where(
+                DepartmentMember.department_id == dept.id,
+            ).options(selectinload(DepartmentMember.user))
+        )
+        members = members_result.scalars().all()
+        lead_name = None
+        member_count = len(members)
+        for m in members:
+            if m.user and m.role and m.role.value == "lead":
+                lead_name = m.user.name
+
+        # Get projects
+        proj_result = await session.execute(
+            select(Project).where(Project.department_id == dept.id).order_by(Project.name)
+        )
+        projects = proj_result.scalars().all()
+
+        lines = [f"🏢 <b>{dept.name}</b>"]
+        if lead_name:
+            lines.append(f"Лид: {lead_name}")
+        lines.append(f"Участников: {member_count}")
+
+        buttons: list[list[InlineKeyboardButton]] = []
+        # Project buttons — up to 3 per row
+        row: list[InlineKeyboardButton] = []
+        for p in projects:
+            pct = p.progress_percent or 0
+            row.append(InlineKeyboardButton(
+                text=f"{p.name} {pct}%",
+                callback_data=f"proj:{p.id}",
+            ))
+            if len(row) >= 3:
+                buttons.append(row)
+                row = []
+        if row:
+            buttons.append(row)
+
+        buttons.append(_back_and_main_row("menu:depts"))
+
+        await callback.message.edit_text(
+            "\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "menu:projects")
+async def cb_projects_list(callback: CallbackQuery):
+    """List all projects as inline buttons."""
+    async with async_session() as session:
+        user, org_id = await _get_user_org_id(session, callback.from_user.id)
+        if not user or not org_id:
+            await callback.message.edit_text(
+                "Сначала привяжите аккаунт: /bind <email>",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[_back_main_row()]),
+            )
+            await callback.answer()
+            return
+
+        proj_result = await session.execute(
+            select(Project).where(Project.org_id == org_id).order_by(Project.name)
+        )
+        projects = proj_result.scalars().all()
+
+        if not projects:
+            await callback.message.edit_text(
+                "Нет доступных проектов.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[_back_main_row()]),
+            )
+            await callback.answer()
+            return
+
+        buttons: list[list[InlineKeyboardButton]] = []
+        for p in projects:
+            pct = p.progress_percent or 0
+            status_label = PROJECT_STATUS_LABELS.get(p.status, str(p.status))
+            buttons.append([InlineKeyboardButton(
+                text=f"📋 {p.name} — {pct}% {status_label}",
+                callback_data=f"proj:{p.id}",
+            )])
+
+        buttons.append(_back_main_row())
+        await callback.message.edit_text(
+            "📁 Выберите проект:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("proj:"))
+async def cb_project_detail(callback: CallbackQuery):
+    """Show project detail with tasks and navigation."""
+    project_id = int(callback.data.split(":")[1])
+    async with async_session() as session:
+        result = await session.execute(
+            select(Project).where(Project.id == project_id)
+        )
+        project = result.scalar_one_or_none()
+        if not project:
+            await callback.answer("Проект не найден", show_alert=True)
+            return
+
+        # Get team members
+        members_result = await session.execute(
+            select(ProjectMember).where(
+                ProjectMember.project_id == project.id
+            ).options(selectinload(ProjectMember.user))
+        )
+        members = members_result.scalars().all()
+        team_names = [m.user.name for m in members if m.user] if members else []
+
+        # Get tasks
+        tasks_result = await session.execute(
+            select(ProjectTask).where(
+                ProjectTask.project_id == project.id,
+            ).options(selectinload(ProjectTask.assignee)).order_by(ProjectTask.sort_order)
+        )
+        tasks = tasks_result.scalars().all()
+
+        done_count = sum(1 for t in tasks if t.status == TaskStatus.done)
+        total_count = len(tasks)
+
+        active_tasks = [
+            t for t in tasks
+            if t.status not in (TaskStatus.done, TaskStatus.cancelled, TaskStatus.backlog)
+        ]
+
+        status_label = PROJECT_STATUS_LABELS.get(project.status, str(project.status))
+        pct = project.progress_percent or 0
+        bar = _progress_bar(pct)
+
+        lines = [
+            f"📋 <b>{project.name}</b> — {status_label}",
+            f"Прогресс: {pct}% {bar}",
+        ]
+        if team_names:
+            lines.append(f"Команда: {', '.join(team_names)}")
+        lines.append(f"Задачи: {done_count}/{total_count}")
+
+        if active_tasks:
+            lines.append("\n📌 <b>Активные задачи:</b>")
+            for t in active_tasks[:10]:
+                task_key = f"{project.prefix or ''}-{t.task_number}" if t.task_number else f"#{t.id}"
+                assignee_name = t.assignee.name if t.assignee else "—"
+                deadline = ""
+                if t.due_date:
+                    dl_text = _deadline_text(t.due_date)
+                    dl_emoji = _deadline_emoji(t.due_date)
+                    deadline = f" {dl_emoji}" if dl_emoji else ""
+                lines.append(f"  • {task_key} {t.title} → {assignee_name}{deadline}")
+
+        # Navigation buttons
+        back_data = f"dept:{project.department_id}" if project.department_id else "menu:projects"
+        back_label = "← Назад к отделу" if project.department_id else "← Назад"
+        buttons: list[list[InlineKeyboardButton]] = []
+        buttons.append([
+            InlineKeyboardButton(text=back_label, callback_data=back_data),
+            InlineKeyboardButton(text="🏠 Главная", callback_data="menu:main"),
+        ])
+
+        await callback.message.edit_text(
+            "\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        )
+    await callback.answer()
+
+
+# ─── End of inline button menu ───────────────────────────────────────
+
+
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
 async def collect_group_message(message: types.Message):
     """Silently collect all messages from groups."""
@@ -1152,17 +1595,13 @@ async def cmd_start(message: types.Message):
             pass
 
     await message.answer(
-        "🤖 Чат Аналитика\n\n"
+        "👋 Добро пожаловать в Enceladus!\n\n"
         "Добавьте меня в группу для анализа сообщений.\n"
         "Используйте веб-панель для просмотра аналитики.\n\n"
-        "📋 Команды:\n"
+        "Выберите действие или используйте команды:\n"
         "/bind <email> — привязать аккаунт\n"
-        "/settype — установить тип чата (в группе)\n"
-        "/chats — список ваших чатов\n"
-        "/status — статус отделов и проектов\n"
-        "/project <название> — подробности по проекту\n"
-        "/my — мои задачи\n"
-        "/dept <название> — подробности по отделу"
+        "/menu — главное меню",
+        reply_markup=main_menu_kb(),
     )
 
 
