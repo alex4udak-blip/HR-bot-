@@ -592,29 +592,86 @@ async def _get_user_org_id(session: AsyncSession, telegram_id: int):
     return user, org_id
 
 
+async def _get_user_access(session: AsyncSession, telegram_id: int) -> dict | None:
+    """Get user's access level and allowed resources.
+
+    Returns dict with keys:
+        user, user_id, org_id, is_admin, is_dept_lead, dept_ids, project_ids
+    or None if user not found / not linked.
+    """
+    user = await find_user_by_telegram_id(session, telegram_id)
+    if not user:
+        return None
+
+    # Get org membership
+    org_result = await session.execute(
+        select(OrgMember).where(OrgMember.user_id == user.id)
+    )
+    org_member = org_result.scalar_one_or_none()
+
+    is_admin = user.role.value == 'superadmin' or (
+        org_member and org_member.role.value in ('owner', 'admin')
+    )
+
+    # Get department memberships
+    dept_result = await session.execute(
+        select(DepartmentMember).where(DepartmentMember.user_id == user.id)
+    )
+    dept_memberships = list(dept_result.scalars().all())
+    dept_ids = [dm.department_id for dm in dept_memberships]
+    is_dept_lead = any(
+        dm.role.value in ('lead', 'sub_admin') for dm in dept_memberships
+    )
+
+    # Get project memberships
+    proj_result = await session.execute(
+        select(ProjectMember).where(ProjectMember.user_id == user.id)
+    )
+    project_ids = [pm.project_id for pm in proj_result.scalars().all()]
+
+    return {
+        'user': user,
+        'user_id': user.id,
+        'org_id': org_member.org_id if org_member else None,
+        'is_admin': is_admin,
+        'is_dept_lead': is_dept_lead,
+        'dept_ids': dept_ids,
+        'project_ids': project_ids,
+    }
+
+
 @dp.message(Command("status"))
 async def cmd_status(message: types.Message):
-    """Overview of all departments and their projects."""
+    """Overview of departments and their projects — filtered by role."""
     async with async_session() as session:
-        user, org_id = await _get_user_org_id(session, message.from_user.id)
-        if not user or not org_id:
+        access = await _get_user_access(session, message.from_user.id)
+        if not access or not access['org_id']:
             await message.answer("Сначала привяжите аккаунт: /bind <email>")
             return
 
-        # Get departments with their projects
-        dept_result = await session.execute(
-            select(Department).where(
-                Department.org_id == org_id,
-                Department.is_active == True,
-            ).order_by(Department.name)
-        )
+        # Developer: no access
+        if not access['is_admin'] and not access['is_dept_lead']:
+            await message.answer("🔒 Нет доступа. Используйте /my для просмотра своих задач.")
+            return
+
+        org_id = access['org_id']
+
+        # Get departments filtered by role
+        dept_query = select(Department).where(
+            Department.org_id == org_id,
+            Department.is_active == True,
+        ).order_by(Department.name)
+        if access['is_dept_lead'] and not access['is_admin']:
+            dept_query = dept_query.where(Department.id.in_(access['dept_ids']))
+
+        dept_result = await session.execute(dept_query)
         departments = dept_result.scalars().all()
 
-        proj_result = await session.execute(
-            select(Project).where(
-                Project.org_id == org_id,
-            ).order_by(Project.name)
-        )
+        proj_query = select(Project).where(Project.org_id == org_id).order_by(Project.name)
+        if access['is_dept_lead'] and not access['is_admin']:
+            proj_query = proj_query.where(Project.department_id.in_(access['dept_ids']))
+
+        proj_result = await session.execute(proj_query)
         projects = proj_result.scalars().all()
 
         # Group projects by department
@@ -626,7 +683,8 @@ async def cmd_status(message: types.Message):
             await message.answer("Нет данных по отделам и проектам.")
             return
 
-        lines = ["📊 <b>Статус отделов:</b>\n"]
+        title = "📊 <b>Статус отделов:</b>\n" if access['is_admin'] else "📊 <b>Мой отдел:</b>\n"
+        lines = [title]
 
         for dept in departments:
             d_projects = dept_projects.get(dept.id, [])
@@ -639,23 +697,24 @@ async def cmd_status(message: types.Message):
                 lines.append(f"{prefix}{p.name} — {status_label} {p.progress_percent or 0}% {health}")
             lines.append("")
 
-        # Projects without department
-        no_dept = dept_projects.get(None, [])
-        if no_dept:
-            lines.append(f"📂 <b>Без отдела</b> ({len(no_dept)} проект.)")
-            for i, p in enumerate(no_dept):
-                is_last = i == len(no_dept) - 1
-                prefix = "  └ " if is_last else "  ├ "
-                status_label = PROJECT_STATUS_LABELS.get(p.status, str(p.status))
-                health = _health_emoji(p.progress_percent or 0)
-                lines.append(f"{prefix}{p.name} — {status_label} {p.progress_percent or 0}% {health}")
+        # Projects without department — only for admins
+        if access['is_admin']:
+            no_dept = dept_projects.get(None, [])
+            if no_dept:
+                lines.append(f"📂 <b>Без отдела</b> ({len(no_dept)} проект.)")
+                for i, p in enumerate(no_dept):
+                    is_last = i == len(no_dept) - 1
+                    prefix = "  └ " if is_last else "  ├ "
+                    status_label = PROJECT_STATUS_LABELS.get(p.status, str(p.status))
+                    health = _health_emoji(p.progress_percent or 0)
+                    lines.append(f"{prefix}{p.name} — {status_label} {p.progress_percent or 0}% {health}")
 
         await message.answer("\n".join(lines), parse_mode="HTML")
 
 
 @dp.message(Command("project"))
 async def cmd_project(message: types.Message):
-    """Detailed project info."""
+    """Detailed project info — filtered by role."""
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
         await message.answer("Использование: /project <название>")
@@ -664,10 +723,12 @@ async def cmd_project(message: types.Message):
     project_name = args[1].strip()
 
     async with async_session() as session:
-        user, org_id = await _get_user_org_id(session, message.from_user.id)
-        if not user or not org_id:
+        access = await _get_user_access(session, message.from_user.id)
+        if not access or not access['org_id']:
             await message.answer("Сначала привяжите аккаунт: /bind <email>")
             return
+
+        org_id = access['org_id']
 
         # Find project by name (case-insensitive partial match)
         result = await session.execute(
@@ -679,10 +740,16 @@ async def cmd_project(message: types.Message):
         project = result.scalar_one_or_none()
 
         if not project:
-            # List available projects
-            all_proj = await session.execute(
-                select(Project.name).where(Project.org_id == org_id).order_by(Project.name)
-            )
+            # List available projects filtered by access
+            proj_query = select(Project.name).where(Project.org_id == org_id).order_by(Project.name)
+            if not access['is_admin']:
+                if access['is_dept_lead']:
+                    proj_query = proj_query.where(
+                        (Project.department_id.in_(access['dept_ids'])) | (Project.id.in_(access['project_ids']))
+                    )
+                else:
+                    proj_query = proj_query.where(Project.id.in_(access['project_ids']))
+            all_proj = await session.execute(proj_query)
             names = [r[0] for r in all_proj.all()]
             if names:
                 listing = "\n".join(f"  • {n}" for n in names)
@@ -690,6 +757,14 @@ async def cmd_project(message: types.Message):
             else:
                 await message.answer("Проект не найден. Нет доступных проектов.")
             return
+
+        # Access check for found project
+        if not access['is_admin']:
+            in_dept = access['is_dept_lead'] and project.department_id in access['dept_ids']
+            in_project = project.id in access['project_ids']
+            if not in_dept and not in_project:
+                await message.answer("🔒 Нет доступа к этому проекту.")
+                return
 
         # Get team members
         members_result = await session.execute(
@@ -798,7 +873,7 @@ async def cmd_my_tasks(message: types.Message):
 
 @dp.message(Command("dept"))
 async def cmd_department(message: types.Message):
-    """Department details."""
+    """Department details — filtered by role."""
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
         await message.answer("Использование: /dept <название отдела>")
@@ -807,9 +882,16 @@ async def cmd_department(message: types.Message):
     dept_name = args[1].strip()
 
     async with async_session() as session:
-        user, org_id = await _get_user_org_id(session, message.from_user.id)
-        if not user or not org_id:
+        access = await _get_user_access(session, message.from_user.id)
+        if not access or not access['org_id']:
             await message.answer("Сначала привяжите аккаунт: /bind <email>")
+            return
+
+        org_id = access['org_id']
+
+        # Developer: no access to dept details
+        if not access['is_admin'] and not access['is_dept_lead']:
+            await message.answer("🔒 Нет доступа. Используйте /my для просмотра своих задач.")
             return
 
         # Find department by name
@@ -823,18 +905,25 @@ async def cmd_department(message: types.Message):
         dept = result.scalar_one_or_none()
 
         if not dept:
-            all_depts = await session.execute(
-                select(Department.name).where(
-                    Department.org_id == org_id,
-                    Department.is_active == True,
-                ).order_by(Department.name)
-            )
+            # List available depts filtered by access
+            dept_query = select(Department.name).where(
+                Department.org_id == org_id,
+                Department.is_active == True,
+            ).order_by(Department.name)
+            if access['is_dept_lead'] and not access['is_admin']:
+                dept_query = dept_query.where(Department.id.in_(access['dept_ids']))
+            all_depts = await session.execute(dept_query)
             names = [r[0] for r in all_depts.all()]
             if names:
                 listing = "\n".join(f"  • {n}" for n in names)
                 await message.answer(f"Отдел не найден.\n\nДоступные отделы:\n{listing}")
             else:
                 await message.answer("Отдел не найден. Нет доступных отделов.")
+            return
+
+        # Access check: dept lead can only see their own departments
+        if access['is_dept_lead'] and not access['is_admin'] and dept.id not in access['dept_ids']:
+            await message.answer("🔒 Нет доступа к этому отделу.")
             return
 
         # Get members
@@ -895,14 +984,34 @@ async def cmd_department(message: types.Message):
 
 # ─── Inline button menu system ───────────────────────────────────────
 
-def main_menu_kb() -> InlineKeyboardMarkup:
-    """Build the main menu inline keyboard."""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 Статус отделов", callback_data="menu:status")],
-        [InlineKeyboardButton(text="📋 Мои задачи", callback_data="menu:my")],
-        [InlineKeyboardButton(text="🏢 Отделы", callback_data="menu:depts")],
-        [InlineKeyboardButton(text="📁 Проекты", callback_data="menu:projects")],
-    ])
+def main_menu_kb(access: dict | None = None) -> InlineKeyboardMarkup:
+    """Build the main menu inline keyboard based on user access level."""
+    buttons: list[list[InlineKeyboardButton]] = []
+
+    if access is None or access['is_admin']:
+        # Admin / fallback: show everything
+        buttons.append([InlineKeyboardButton(text="📊 Статус отделов", callback_data="menu:status")])
+        buttons.append([InlineKeyboardButton(text="🏢 Отделы", callback_data="menu:depts")])
+        buttons.append([InlineKeyboardButton(text="📋 Мои задачи", callback_data="menu:my")])
+        buttons.append([InlineKeyboardButton(text="📁 Проекты", callback_data="menu:projects")])
+    elif access['is_dept_lead']:
+        # Department lead: status of their dept, tasks, projects
+        buttons.append([InlineKeyboardButton(text="📊 Мой отдел", callback_data="menu:status")])
+        buttons.append([InlineKeyboardButton(text="📋 Мои задачи", callback_data="menu:my")])
+        buttons.append([InlineKeyboardButton(text="📁 Проекты", callback_data="menu:projects")])
+    else:
+        # Developer / regular member: only their tasks and projects
+        buttons.append([InlineKeyboardButton(text="📋 Мои задачи", callback_data="menu:my")])
+        buttons.append([InlineKeyboardButton(text="📁 Мои проекты", callback_data="menu:projects")])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def _access_denied_kb() -> InlineKeyboardMarkup:
+    """Keyboard with just a Home button for access denied messages."""
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🏠 Главная", callback_data="menu:main"),
+    ]])
 
 
 def _back_main_row() -> list[InlineKeyboardButton]:
@@ -921,40 +1030,79 @@ def _back_and_main_row(back_data: str) -> list[InlineKeyboardButton]:
 @dp.message(Command("menu"))
 async def cmd_menu(message: types.Message):
     """Show inline button main menu."""
-    await message.answer("📱 Главное меню:", reply_markup=main_menu_kb())
+    async with async_session() as session:
+        access = await _get_user_access(session, message.from_user.id)
+        if not access:
+            await message.answer("Сначала привяжите аккаунт командой /bind <email>")
+            return
+        await message.answer("📱 Главное меню:", reply_markup=main_menu_kb(access))
 
 
 @dp.callback_query(F.data == "menu:main")
 async def cb_main_menu(callback: CallbackQuery):
     """Return to main menu."""
-    await callback.message.edit_text("📱 Главное меню:", reply_markup=main_menu_kb())
+    async with async_session() as session:
+        access = await _get_user_access(session, callback.from_user.id)
+        if not access:
+            await callback.message.edit_text(
+                "Сначала привяжите аккаунт командой /bind <email>",
+                reply_markup=_access_denied_kb(),
+            )
+            await callback.answer()
+            return
+        await callback.message.edit_text("📱 Главное меню:", reply_markup=main_menu_kb(access))
     await callback.answer()
 
 
 @dp.callback_query(F.data == "menu:status")
 async def cb_status(callback: CallbackQuery):
-    """Status overview — same logic as /status but via inline button."""
+    """Status overview — filtered by access level."""
     async with async_session() as session:
-        user, org_id = await _get_user_org_id(session, callback.from_user.id)
-        if not user or not org_id:
+        access = await _get_user_access(session, callback.from_user.id)
+        if not access:
             await callback.message.edit_text(
-                "Сначала привяжите аккаунт: /bind <email>",
+                "Сначала привяжите аккаунт командой /bind <email>",
+                reply_markup=_access_denied_kb(),
+            )
+            await callback.answer()
+            return
+
+        org_id = access['org_id']
+        if not org_id:
+            await callback.message.edit_text(
+                "Вы не состоите в организации.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[_back_main_row()]),
             )
             await callback.answer()
             return
 
-        dept_result = await session.execute(
-            select(Department).where(
-                Department.org_id == org_id,
-                Department.is_active == True,
-            ).order_by(Department.name)
-        )
+        # Developer: no access to status overview
+        if not access['is_admin'] and not access['is_dept_lead']:
+            await callback.message.edit_text(
+                "🔒 Нет доступа к этому разделу. Используйте «Мои задачи» для просмотра своих задач.",
+                reply_markup=_access_denied_kb(),
+            )
+            await callback.answer()
+            return
+
+        # Build department query with role filtering
+        dept_query = select(Department).where(
+            Department.org_id == org_id,
+            Department.is_active == True,
+        ).order_by(Department.name)
+
+        if access['is_dept_lead'] and not access['is_admin']:
+            dept_query = dept_query.where(Department.id.in_(access['dept_ids']))
+
+        dept_result = await session.execute(dept_query)
         departments = dept_result.scalars().all()
 
-        proj_result = await session.execute(
-            select(Project).where(Project.org_id == org_id).order_by(Project.name)
-        )
+        # Build project query with role filtering
+        proj_query = select(Project).where(Project.org_id == org_id).order_by(Project.name)
+        if access['is_dept_lead'] and not access['is_admin']:
+            proj_query = proj_query.where(Project.department_id.in_(access['dept_ids']))
+
+        proj_result = await session.execute(proj_query)
         projects = proj_result.scalars().all()
 
         dept_projects: dict[int | None, list] = {}
@@ -969,7 +1117,8 @@ async def cb_status(callback: CallbackQuery):
             await callback.answer()
             return
 
-        lines = ["📊 <b>Статус отделов:</b>\n"]
+        title = "📊 <b>Статус отделов:</b>\n" if access['is_admin'] else "📊 <b>Мой отдел:</b>\n"
+        lines = [title]
         for dept in departments:
             d_projects = dept_projects.get(dept.id, [])
             lines.append(f"🏢 <b>{dept.name}</b> ({len(d_projects)} проект{'а' if 1 < len(d_projects) < 5 else 'ов' if len(d_projects) >= 5 or len(d_projects) == 0 else ''})")
@@ -981,15 +1130,17 @@ async def cb_status(callback: CallbackQuery):
                 lines.append(f"{prefix}{p.name} — {status_label} {p.progress_percent or 0}% {health}")
             lines.append("")
 
-        no_dept = dept_projects.get(None, [])
-        if no_dept:
-            lines.append(f"📂 <b>Без отдела</b> ({len(no_dept)} проект.)")
-            for i, p in enumerate(no_dept):
-                is_last = i == len(no_dept) - 1
-                prefix = "  └ " if is_last else "  ├ "
-                status_label = PROJECT_STATUS_LABELS.get(p.status, str(p.status))
-                health = _health_emoji(p.progress_percent or 0)
-                lines.append(f"{prefix}{p.name} — {status_label} {p.progress_percent or 0}% {health}")
+        # Show projects without department only for admins
+        if access['is_admin']:
+            no_dept = dept_projects.get(None, [])
+            if no_dept:
+                lines.append(f"📂 <b>Без отдела</b> ({len(no_dept)} проект.)")
+                for i, p in enumerate(no_dept):
+                    is_last = i == len(no_dept) - 1
+                    prefix = "  └ " if is_last else "  ├ "
+                    status_label = PROJECT_STATUS_LABELS.get(p.status, str(p.status))
+                    health = _health_emoji(p.progress_percent or 0)
+                    lines.append(f"{prefix}{p.name} — {status_label} {p.progress_percent or 0}% {health}")
 
         await callback.message.edit_text(
             "\n".join(lines),
@@ -1003,15 +1154,16 @@ async def cb_status(callback: CallbackQuery):
 async def cb_my_tasks(callback: CallbackQuery):
     """My tasks — same logic as /my but via inline button, with 'mark done' buttons."""
     async with async_session() as session:
-        user, org_id = await _get_user_org_id(session, callback.from_user.id)
-        if not user or not org_id:
+        access = await _get_user_access(session, callback.from_user.id)
+        if not access:
             await callback.message.edit_text(
-                "Сначала привяжите аккаунт: /bind <email>",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[_back_main_row()]),
+                "Сначала привяжите аккаунт командой /bind <email>",
+                reply_markup=_access_denied_kb(),
             )
             await callback.answer()
             return
 
+        user = access['user']
         tasks_result = await session.execute(
             select(ProjectTask).where(
                 ProjectTask.assignee_id == user.id,
@@ -1100,23 +1252,36 @@ async def cb_task_done(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "menu:depts")
 async def cb_departments(callback: CallbackQuery):
-    """List departments as inline buttons."""
+    """List departments as inline buttons — filtered by access."""
     async with async_session() as session:
-        user, org_id = await _get_user_org_id(session, callback.from_user.id)
-        if not user or not org_id:
+        access = await _get_user_access(session, callback.from_user.id)
+        if not access or not access['org_id']:
             await callback.message.edit_text(
-                "Сначала привяжите аккаунт: /bind <email>",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[_back_main_row()]),
+                "Сначала привяжите аккаунт командой /bind <email>",
+                reply_markup=_access_denied_kb(),
             )
             await callback.answer()
             return
 
-        dept_result = await session.execute(
-            select(Department).where(
-                Department.org_id == org_id,
-                Department.is_active == True,
-            ).order_by(Department.name)
-        )
+        # Only admins and dept leads can see departments list
+        if not access['is_admin'] and not access['is_dept_lead']:
+            await callback.message.edit_text(
+                "🔒 Нет доступа к этому разделу.",
+                reply_markup=_access_denied_kb(),
+            )
+            await callback.answer()
+            return
+
+        dept_query = select(Department).where(
+            Department.org_id == access['org_id'],
+            Department.is_active == True,
+        ).order_by(Department.name)
+
+        # Dept lead: only their departments
+        if access['is_dept_lead'] and not access['is_admin']:
+            dept_query = dept_query.where(Department.id.in_(access['dept_ids']))
+
+        dept_result = await session.execute(dept_query)
         departments = dept_result.scalars().all()
 
         if not departments:
@@ -1151,9 +1316,28 @@ async def cb_departments(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("dept:"))
 async def cb_department_detail(callback: CallbackQuery):
-    """Show department detail with project buttons."""
+    """Show department detail with project buttons — access checked."""
     dept_id = int(callback.data.split(":")[1])
     async with async_session() as session:
+        access = await _get_user_access(session, callback.from_user.id)
+        if not access:
+            await callback.message.edit_text(
+                "Сначала привяжите аккаунт командой /bind <email>",
+                reply_markup=_access_denied_kb(),
+            )
+            await callback.answer()
+            return
+
+        # Access check: admin sees all, dept lead only their depts, others denied
+        if not access['is_admin']:
+            if not access['is_dept_lead'] or dept_id not in access['dept_ids']:
+                await callback.message.edit_text(
+                    "🔒 Нет доступа к этому разделу.",
+                    reply_markup=_access_denied_kb(),
+                )
+                await callback.answer()
+                return
+
         result = await session.execute(
             select(Department).where(Department.id == dept_id)
         )
@@ -1213,20 +1397,38 @@ async def cb_department_detail(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "menu:projects")
 async def cb_projects_list(callback: CallbackQuery):
-    """List all projects as inline buttons."""
+    """List projects as inline buttons — filtered by access."""
     async with async_session() as session:
-        user, org_id = await _get_user_org_id(session, callback.from_user.id)
-        if not user or not org_id:
+        access = await _get_user_access(session, callback.from_user.id)
+        if not access or not access['org_id']:
             await callback.message.edit_text(
-                "Сначала привяжите аккаунт: /bind <email>",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[_back_main_row()]),
+                "Сначала привяжите аккаунт командой /bind <email>",
+                reply_markup=_access_denied_kb(),
             )
             await callback.answer()
             return
 
-        proj_result = await session.execute(
-            select(Project).where(Project.org_id == org_id).order_by(Project.name)
-        )
+        org_id = access['org_id']
+
+        if access['is_admin']:
+            # Admin: all projects
+            proj_query = select(Project).where(
+                Project.org_id == org_id,
+            ).order_by(Project.name)
+        elif access['is_dept_lead']:
+            # Dept lead: projects in their departments + projects they are a member of
+            proj_query = select(Project).where(
+                Project.org_id == org_id,
+                (Project.department_id.in_(access['dept_ids'])) | (Project.id.in_(access['project_ids'])),
+            ).order_by(Project.name)
+        else:
+            # Developer: only projects they are a member of
+            proj_query = select(Project).where(
+                Project.org_id == org_id,
+                Project.id.in_(access['project_ids']),
+            ).order_by(Project.name)
+
+        proj_result = await session.execute(proj_query)
         projects = proj_result.scalars().all()
 
         if not projects:
@@ -1237,6 +1439,7 @@ async def cb_projects_list(callback: CallbackQuery):
             await callback.answer()
             return
 
+        title = "📁 Выберите проект:" if access['is_admin'] else "📁 Мои проекты:"
         buttons: list[list[InlineKeyboardButton]] = []
         for p in projects:
             pct = p.progress_percent or 0
@@ -1248,7 +1451,7 @@ async def cb_projects_list(callback: CallbackQuery):
 
         buttons.append(_back_main_row())
         await callback.message.edit_text(
-            "📁 Выберите проект:",
+            title,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         )
     await callback.answer()
@@ -1256,9 +1459,18 @@ async def cb_projects_list(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("proj:"))
 async def cb_project_detail(callback: CallbackQuery):
-    """Show project detail with tasks and navigation."""
+    """Show project detail with tasks and navigation — access checked."""
     project_id = int(callback.data.split(":")[1])
     async with async_session() as session:
+        access = await _get_user_access(session, callback.from_user.id)
+        if not access:
+            await callback.message.edit_text(
+                "Сначала привяжите аккаунт командой /bind <email>",
+                reply_markup=_access_denied_kb(),
+            )
+            await callback.answer()
+            return
+
         result = await session.execute(
             select(Project).where(Project.id == project_id)
         )
@@ -1266,6 +1478,20 @@ async def cb_project_detail(callback: CallbackQuery):
         if not project:
             await callback.answer("Проект не найден", show_alert=True)
             return
+
+        # Access check
+        if not access['is_admin']:
+            # Dept lead can see projects in their departments
+            in_dept = access['is_dept_lead'] and project.department_id in access['dept_ids']
+            # Member can see projects they belong to
+            in_project = project_id in access['project_ids']
+            if not in_dept and not in_project:
+                await callback.message.edit_text(
+                    "🔒 Нет доступа к этому проекту.",
+                    reply_markup=_access_denied_kb(),
+                )
+                await callback.answer()
+                return
 
         # Get team members
         members_result = await session.execute(
@@ -1316,9 +1542,14 @@ async def cb_project_detail(callback: CallbackQuery):
                     deadline = f" {dl_emoji}" if dl_emoji else ""
                 lines.append(f"  • {task_key} {t.title} → {assignee_name}{deadline}")
 
-        # Navigation buttons
-        back_data = f"dept:{project.department_id}" if project.department_id else "menu:projects"
-        back_label = "← Назад к отделу" if project.department_id else "← Назад"
+        # Navigation buttons — back goes to dept only if user has access
+        back_data = "menu:projects"
+        back_label = "← Назад"
+        if project.department_id:
+            if access['is_admin'] or (access['is_dept_lead'] and project.department_id in access['dept_ids']):
+                back_data = f"dept:{project.department_id}"
+                back_label = "← Назад к отделу"
+
         buttons: list[list[InlineKeyboardButton]] = []
         buttons.append([
             InlineKeyboardButton(text=back_label, callback_data=back_data),
@@ -1594,6 +1825,10 @@ async def cmd_start(message: types.Message):
         except ValueError:
             pass
 
+    # Build access-aware menu
+    async with async_session() as session:
+        access = await _get_user_access(session, message.from_user.id)
+
     await message.answer(
         "👋 Добро пожаловать в Enceladus!\n\n"
         "Добавьте меня в группу для анализа сообщений.\n"
@@ -1601,7 +1836,7 @@ async def cmd_start(message: types.Message):
         "Выберите действие или используйте команды:\n"
         "/bind <email> — привязать аккаунт\n"
         "/menu — главное меню",
-        reply_markup=main_menu_kb(),
+        reply_markup=main_menu_kb(access),
     )
 
 
