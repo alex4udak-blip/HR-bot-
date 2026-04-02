@@ -22,6 +22,7 @@ import {
   getDepartmentMembers,
   addDepartmentMember,
   removeDepartmentMember,
+  quickAddDepartmentMember,
   getOrgMembers,
   type Department,
   type DepartmentMember,
@@ -193,6 +194,7 @@ function MembersPanel({
   orgMembers,
   onAdd,
   onRemove,
+  onQuickAdd,
   onClose,
 }: {
   dept: Department;
@@ -200,11 +202,29 @@ function MembersPanel({
   orgMembers: OrgMember[];
   onAdd: (userId: number) => void;
   onRemove: (userId: number) => void;
+  onQuickAdd: (data: { name: string; email: string; role: string }) => Promise<void>;
   onClose: () => void;
 }) {
   const [showAddDropdown, setShowAddDropdown] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newRole, setNewRole] = useState('member');
+  const [quickAdding, setQuickAdding] = useState(false);
   const memberUserIds = new Set(members.map(m => m.user_id));
   const availableMembers = orgMembers.filter(m => !memberUserIds.has(m.user_id));
+
+  const handleQuickAdd = async () => {
+    if (!newName.trim() || !newEmail.trim()) return;
+    setQuickAdding(true);
+    try {
+      await onQuickAdd({ name: newName.trim(), email: newEmail.trim(), role: newRole });
+      setNewName('');
+      setNewEmail('');
+      setNewRole('member');
+    } finally {
+      setQuickAdding(false);
+    }
+  };
 
   return (
     <motion.div
@@ -281,6 +301,40 @@ function MembersPanel({
         {members.length === 0 && (
           <div className="text-xs text-white/20 text-center py-6">Нет участников</div>
         )}
+      </div>
+
+      {/* Quick add new user */}
+      <div className="border-t border-white/10 pt-3 mt-3">
+        <p className="text-[10px] text-white/30 uppercase tracking-wider mb-2">Новый сотрудник</p>
+        <input
+          placeholder="Имя"
+          value={newName}
+          onChange={e => setNewName(e.target.value)}
+          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-white/25 mb-2 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+        />
+        <input
+          placeholder="Email"
+          value={newEmail}
+          onChange={e => setNewEmail(e.target.value)}
+          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-white/25 mb-2 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+        />
+        <select
+          value={newRole}
+          onChange={e => setNewRole(e.target.value)}
+          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white mb-2 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+        >
+          <option value="member">Участник</option>
+          <option value="lead">Лид</option>
+          <option value="sub_admin">Зам. лида</option>
+        </select>
+        <button
+          onClick={handleQuickAdd}
+          disabled={!newName.trim() || !newEmail.trim() || quickAdding}
+          className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium text-white bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors"
+        >
+          {quickAdding && <Loader2 className="w-3 h-3 animate-spin" />}
+          Создать и добавить
+        </button>
       </div>
     </motion.div>
   );
@@ -372,6 +426,25 @@ export default function DeptManagerPage() {
       toast.success('Участник удалён');
     } catch {
       toast.error('Не удалось удалить');
+    }
+  };
+
+  const handleQuickAddMember = async (data: { name: string; email: string; role: string }) => {
+    if (!selectedDeptId) return;
+    try {
+      const result = await quickAddDepartmentMember(selectedDeptId, data);
+      if (result.already_existed) {
+        toast.success('Пользователь уже существует, добавлен в отдел');
+      } else if (result.password_generated) {
+        toast.success(`Пользователь создан! Пароль: ${result.password_generated}`, { duration: 15000 });
+      }
+      const updated = await getDepartmentMembers(selectedDeptId);
+      setMembers(updated);
+      // Refresh org members list so the new user appears in the dropdown too
+      getOrgMembers().then((m: OrgMember[]) => setOrgMembers(m)).catch(() => {});
+      fetchDepts();
+    } catch {
+      toast.error('Не удалось создать пользователя');
     }
   };
 
@@ -487,6 +560,7 @@ export default function DeptManagerPage() {
                 orgMembers={orgMembers}
                 onAdd={handleAddMember}
                 onRemove={handleRemoveMember}
+                onQuickAdd={handleQuickAddMember}
                 onClose={() => setSelectedDeptId(null)}
               />
             )}

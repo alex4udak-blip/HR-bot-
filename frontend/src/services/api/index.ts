@@ -52,6 +52,7 @@ export {
   addDepartmentMember,
   updateDepartmentMember,
   removeDepartmentMember,
+  quickAddDepartmentMember,
   getMyDepartments,
   getMyDeptRoles,
   getMyManagedUserIds,

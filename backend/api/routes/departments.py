@@ -1,10 +1,11 @@
 """API routes for department management"""
+import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 
 from ..database import get_db
 from ..models.database import (
@@ -12,7 +13,7 @@ from ..models.database import (
     Department, DepartmentMember, DeptRole
 )
 from typing import Union
-from ..services.auth import get_current_user, get_user_org
+from ..services.auth import get_current_user, get_user_org, hash_password
 
 router = APIRouter()
 
@@ -40,6 +41,20 @@ class DepartmentMemberAdd(BaseModel):
 
 class DepartmentMemberUpdate(BaseModel):
     role: DeptRole
+
+
+class QuickAddMemberRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    email: EmailStr
+    role: DeptRole = DeptRole.member
+
+
+class QuickAddMemberResponse(BaseModel):
+    user_id: int
+    name: str
+    email: str
+    password_generated: Optional[str] = None
+    already_existed: bool
 
 
 class DepartmentResponse(BaseModel):
@@ -855,6 +870,111 @@ async def add_department_member(
         user_email=user.email,
         role=member.role,
         created_at=member.created_at
+    )
+
+
+@router.post("/{department_id}/quick-add-member", response_model=QuickAddMemberResponse)
+async def quick_add_member(
+    department_id: int,
+    data: QuickAddMemberRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Quick-create a user and add them to a department in one step.
+
+    If a user with the given email already exists, just adds them to the department.
+    If the user is new, creates the account with a random password and adds to org + department.
+
+    Returns the generated password (only for new users) so admin can share it once.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=403, detail="No organization access")
+
+    # Verify department exists and belongs to org
+    result = await db.execute(
+        select(Department).where(Department.id == department_id, Department.org_id == org.id)
+    )
+    dept = result.scalar_one_or_none()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+
+    # Check permissions - org admin/owner, lead, or sub_admin of THIS department
+    is_org_admin = await is_org_admin_or_owner(current_user, org, db)
+    is_lead = await is_dept_lead(current_user, department_id, db)
+    is_sub = await is_dept_admin(current_user, department_id, db)
+
+    if not is_org_admin and not is_lead and not is_sub:
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    # Check if user with this email already exists
+    result = await db.execute(select(User).where(User.email == data.email))
+    user = result.scalar_one_or_none()
+
+    already_existed = user is not None
+    password_generated = None
+
+    if not user:
+        # Create new user
+        password_generated = secrets.token_urlsafe(8)
+        user = User(
+            name=data.name,
+            email=data.email,
+            password_hash=hash_password(password_generated),
+            role=UserRole.member,
+            is_active=True,
+        )
+        db.add(user)
+        await db.flush()  # get user.id
+
+        # Add to organization
+        org_member = OrgMember(
+            org_id=org.id,
+            user_id=user.id,
+            role=OrgRole.member,
+        )
+        db.add(org_member)
+    else:
+        # Check if already in org
+        result = await db.execute(
+            select(OrgMember).where(
+                OrgMember.org_id == org.id,
+                OrgMember.user_id == user.id
+            )
+        )
+        if not result.scalar_one_or_none():
+            org_member = OrgMember(
+                org_id=org.id,
+                user_id=user.id,
+                role=OrgRole.member,
+            )
+            db.add(org_member)
+
+    # Check if already a department member
+    result = await db.execute(
+        select(DepartmentMember).where(
+            DepartmentMember.department_id == department_id,
+            DepartmentMember.user_id == user.id
+        )
+    )
+    existing_member = result.scalar_one_or_none()
+    if not existing_member:
+        dept_member = DepartmentMember(
+            department_id=department_id,
+            user_id=user.id,
+            role=data.role,
+        )
+        db.add(dept_member)
+
+    await db.commit()
+
+    return QuickAddMemberResponse(
+        user_id=user.id,
+        name=user.name,
+        email=user.email,
+        password_generated=password_generated,
+        already_existed=already_existed,
     )
 
 

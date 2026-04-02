@@ -353,6 +353,26 @@ export const removeDepartmentMember = async (departmentId: number, userId: numbe
   await debouncedMutation<void>('delete', `/departments/${departmentId}/members/${userId}`);
 };
 
+export interface QuickAddMemberResult {
+  user_id: number;
+  name: string;
+  email: string;
+  password_generated: string | null;
+  already_existed: boolean;
+}
+
+export const quickAddDepartmentMember = async (
+  departmentId: number,
+  memberData: { name: string; email: string; role: string }
+): Promise<QuickAddMemberResult> => {
+  const { data } = await debouncedMutation<QuickAddMemberResult>(
+    'post',
+    `/departments/${departmentId}/quick-add-member`,
+    memberData
+  );
+  return data;
+};
+
 export const getMyDepartments = async (): Promise<Department[]> => {
   const { data } = await deduplicatedGet<Department[]>('/departments/my/departments');
   return data;
