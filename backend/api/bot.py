@@ -5,11 +5,16 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, ChatMemberUpdatedFilter, IS_NOT_MEMBER, IS_MEMBER
 from aiogram.types import ChatMemberUpdated, ContentType
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from .config import settings
-from .models.database import Base, User, Chat, Message, ChatType, OrgMember
+from .models.database import (
+    Base, User, Chat, Message, ChatType, OrgMember,
+    Project, ProjectTask, ProjectMember, Department, DepartmentMember,
+    ProjectStatus, TaskStatus,
+)
+from sqlalchemy.orm import selectinload
 from .services.transcription import transcription_service
 from .utils.db_url import get_database_url
 from .services.documents import document_parser
@@ -502,6 +507,392 @@ async def _transcribe_media_link_to_chat_message(url: str, link_type: str, chat_
         logger.error(f"❌ Error transcribing media link to chat message: {e}")
 
 
+# ─── Project management commands ───────────────────────────────────────
+
+PROJECT_STATUS_LABELS = {
+    ProjectStatus.planning: "Планирование",
+    ProjectStatus.active: "В разработке",
+    ProjectStatus.on_hold: "На паузе",
+    ProjectStatus.completed: "Завершён",
+    ProjectStatus.cancelled: "Отменён",
+}
+
+TASK_STATUS_LABELS = {
+    TaskStatus.backlog: "Бэклог",
+    TaskStatus.todo: "К выполнению",
+    TaskStatus.in_progress: "В работе",
+    TaskStatus.review: "На ревью",
+    TaskStatus.done: "Готово",
+    TaskStatus.cancelled: "Отменено",
+}
+
+
+def _progress_bar(percent: int, length: int = 10) -> str:
+    """Generate a text progress bar using block characters."""
+    filled = round(percent / 100 * length)
+    return "█" * filled + "░" * (length - filled)
+
+
+def _health_emoji(percent: int) -> str:
+    """Return a health emoji based on progress percentage."""
+    if percent >= 70:
+        return "✅"
+    elif percent >= 30:
+        return "⚠️"
+    return "🔴"
+
+
+def _deadline_emoji(due_date) -> str:
+    """Return an emoji based on how close the deadline is."""
+    if not due_date:
+        return ""
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    if hasattr(due_date, 'date'):
+        due = due_date
+    else:
+        due = due_date
+    diff = (due - now).days
+    if diff < 0:
+        return "🔴"
+    elif diff == 0:
+        return "🔴"
+    elif diff <= 7:
+        return "⚠️"
+    return ""
+
+
+def _deadline_text(due_date) -> str:
+    """Return human-readable deadline text."""
+    if not due_date:
+        return ""
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    diff = (due - now).days if (due := due_date) else 0
+    if diff < 0:
+        return "просрочено"
+    elif diff == 0:
+        return "сегодня"
+    elif diff == 1:
+        return "завтра"
+    elif diff <= 7:
+        return f"через {diff} дн."
+    return due_date.strftime("%d.%m")
+
+
+async def _get_user_org_id(session: AsyncSession, telegram_id: int):
+    """Get user and their org_id from telegram_id."""
+    user = await find_user_by_telegram_id(session, telegram_id)
+    if not user:
+        return None, None
+    org_result = await session.execute(
+        select(OrgMember.org_id).where(OrgMember.user_id == user.id).limit(1)
+    )
+    org_id = org_result.scalar_one_or_none()
+    return user, org_id
+
+
+@dp.message(Command("status"))
+async def cmd_status(message: types.Message):
+    """Overview of all departments and their projects."""
+    async with async_session() as session:
+        user, org_id = await _get_user_org_id(session, message.from_user.id)
+        if not user or not org_id:
+            await message.answer("Сначала привяжите аккаунт: /bind <email>")
+            return
+
+        # Get departments with their projects
+        dept_result = await session.execute(
+            select(Department).where(
+                Department.org_id == org_id,
+                Department.is_active == True,
+            ).order_by(Department.name)
+        )
+        departments = dept_result.scalars().all()
+
+        proj_result = await session.execute(
+            select(Project).where(
+                Project.org_id == org_id,
+            ).order_by(Project.name)
+        )
+        projects = proj_result.scalars().all()
+
+        # Group projects by department
+        dept_projects: dict[int | None, list] = {}
+        for p in projects:
+            dept_projects.setdefault(p.department_id, []).append(p)
+
+        if not departments and not projects:
+            await message.answer("Нет данных по отделам и проектам.")
+            return
+
+        lines = ["📊 <b>Статус отделов:</b>\n"]
+
+        for dept in departments:
+            d_projects = dept_projects.get(dept.id, [])
+            lines.append(f"🏢 <b>{dept.name}</b> ({len(d_projects)} проект{'а' if 1 < len(d_projects) < 5 else 'ов' if len(d_projects) >= 5 or len(d_projects) == 0 else ''})")
+            for i, p in enumerate(d_projects):
+                is_last = i == len(d_projects) - 1
+                prefix = "  └ " if is_last else "  ├ "
+                status_label = PROJECT_STATUS_LABELS.get(p.status, str(p.status))
+                health = _health_emoji(p.progress_percent or 0)
+                lines.append(f"{prefix}{p.name} — {status_label} {p.progress_percent or 0}% {health}")
+            lines.append("")
+
+        # Projects without department
+        no_dept = dept_projects.get(None, [])
+        if no_dept:
+            lines.append(f"📂 <b>Без отдела</b> ({len(no_dept)} проект.)")
+            for i, p in enumerate(no_dept):
+                is_last = i == len(no_dept) - 1
+                prefix = "  └ " if is_last else "  ├ "
+                status_label = PROJECT_STATUS_LABELS.get(p.status, str(p.status))
+                health = _health_emoji(p.progress_percent or 0)
+                lines.append(f"{prefix}{p.name} — {status_label} {p.progress_percent or 0}% {health}")
+
+        await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+@dp.message(Command("project"))
+async def cmd_project(message: types.Message):
+    """Detailed project info."""
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Использование: /project <название>")
+        return
+
+    project_name = args[1].strip()
+
+    async with async_session() as session:
+        user, org_id = await _get_user_org_id(session, message.from_user.id)
+        if not user or not org_id:
+            await message.answer("Сначала привяжите аккаунт: /bind <email>")
+            return
+
+        # Find project by name (case-insensitive partial match)
+        result = await session.execute(
+            select(Project).where(
+                Project.org_id == org_id,
+                Project.name.ilike(f"%{project_name}%"),
+            )
+        )
+        project = result.scalar_one_or_none()
+
+        if not project:
+            # List available projects
+            all_proj = await session.execute(
+                select(Project.name).where(Project.org_id == org_id).order_by(Project.name)
+            )
+            names = [r[0] for r in all_proj.all()]
+            if names:
+                listing = "\n".join(f"  • {n}" for n in names)
+                await message.answer(f"Проект не найден.\n\nДоступные проекты:\n{listing}")
+            else:
+                await message.answer("Проект не найден. Нет доступных проектов.")
+            return
+
+        # Get team members
+        members_result = await session.execute(
+            select(ProjectMember).where(
+                ProjectMember.project_id == project.id
+            ).options(selectinload(ProjectMember.user))
+        )
+        members = members_result.scalars().all()
+        team_names = [m.user.name for m in members if m.user] if members else []
+
+        # Get tasks
+        tasks_result = await session.execute(
+            select(ProjectTask).where(
+                ProjectTask.project_id == project.id,
+            ).options(selectinload(ProjectTask.assignee)).order_by(ProjectTask.sort_order)
+        )
+        tasks = tasks_result.scalars().all()
+
+        done_count = sum(1 for t in tasks if t.status == TaskStatus.done)
+        total_count = len(tasks)
+
+        # Active tasks (not done, not cancelled)
+        active_tasks = [
+            t for t in tasks
+            if t.status not in (TaskStatus.done, TaskStatus.cancelled, TaskStatus.backlog)
+        ]
+
+        status_label = PROJECT_STATUS_LABELS.get(project.status, str(project.status))
+        pct = project.progress_percent or 0
+        bar = _progress_bar(pct)
+
+        lines = [
+            f"📋 <b>{project.name}</b>",
+            f"Статус: {status_label}",
+            f"Прогресс: {pct}% {bar}",
+        ]
+        if team_names:
+            lines.append(f"Команда: {', '.join(team_names)}")
+        lines.append(f"Задачи: {done_count} done / {total_count} total")
+
+        if active_tasks:
+            lines.append("\n📌 <b>Активные задачи:</b>")
+            for t in active_tasks[:10]:
+                task_key = f"{project.prefix or ''}-{t.task_number}" if t.task_number else f"#{t.id}"
+                assignee_name = t.assignee.name if t.assignee else "—"
+                deadline = ""
+                if t.due_date:
+                    dl_text = _deadline_text(t.due_date)
+                    dl_emoji = _deadline_emoji(t.due_date)
+                    deadline = f" ({dl_text}) {dl_emoji}" if dl_text else ""
+                lines.append(f"  • {task_key} {t.title} → {assignee_name}{deadline}")
+
+        await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+@dp.message(Command("my"))
+async def cmd_my_tasks(message: types.Message):
+    """My tasks for today and upcoming."""
+    async with async_session() as session:
+        user, org_id = await _get_user_org_id(session, message.from_user.id)
+        if not user or not org_id:
+            await message.answer("Сначала привяжите аккаунт: /bind <email>")
+            return
+
+        # Get all active tasks assigned to this user
+        tasks_result = await session.execute(
+            select(ProjectTask).where(
+                ProjectTask.assignee_id == user.id,
+                ProjectTask.status.notin_([TaskStatus.done, TaskStatus.cancelled]),
+            ).options(
+                selectinload(ProjectTask.project),
+            ).order_by(ProjectTask.due_date.asc().nullslast(), ProjectTask.sort_order)
+        )
+        tasks = tasks_result.scalars().all()
+
+        if not tasks:
+            await message.answer("📋 У вас нет активных задач.")
+            return
+
+        # Group by project
+        by_project: dict[str, list] = {}
+        for t in tasks:
+            pname = t.project.name if t.project else "Без проекта"
+            by_project.setdefault(pname, []).append(t)
+
+        lines = ["📋 <b>Мои задачи:</b>\n"]
+        for pname, ptasks in by_project.items():
+            lines.append(f"<b>{pname}:</b>")
+            for t in ptasks:
+                task_key = ""
+                if t.project and t.project.prefix and t.task_number:
+                    task_key = f"{t.project.prefix}-{t.task_number} "
+                deadline = ""
+                dl_emoji = ""
+                if t.due_date:
+                    dl_text = _deadline_text(t.due_date)
+                    dl_emoji = _deadline_emoji(t.due_date)
+                    deadline = f" ({dl_text})" if dl_text else ""
+                lines.append(f"  • {task_key}{t.title}{deadline} {dl_emoji}")
+            lines.append("")
+
+        lines.append(f"Всего: {len(tasks)} задач{'а' if 1 < len(tasks) < 5 else '' if len(tasks) == 1 else ''}")
+
+        await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+@dp.message(Command("dept"))
+async def cmd_department(message: types.Message):
+    """Department details."""
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Использование: /dept <название отдела>")
+        return
+
+    dept_name = args[1].strip()
+
+    async with async_session() as session:
+        user, org_id = await _get_user_org_id(session, message.from_user.id)
+        if not user or not org_id:
+            await message.answer("Сначала привяжите аккаунт: /bind <email>")
+            return
+
+        # Find department by name
+        result = await session.execute(
+            select(Department).where(
+                Department.org_id == org_id,
+                Department.is_active == True,
+                Department.name.ilike(f"%{dept_name}%"),
+            )
+        )
+        dept = result.scalar_one_or_none()
+
+        if not dept:
+            all_depts = await session.execute(
+                select(Department.name).where(
+                    Department.org_id == org_id,
+                    Department.is_active == True,
+                ).order_by(Department.name)
+            )
+            names = [r[0] for r in all_depts.all()]
+            if names:
+                listing = "\n".join(f"  • {n}" for n in names)
+                await message.answer(f"Отдел не найден.\n\nДоступные отделы:\n{listing}")
+            else:
+                await message.answer("Отдел не найден. Нет доступных отделов.")
+            return
+
+        # Get members
+        members_result = await session.execute(
+            select(DepartmentMember).where(
+                DepartmentMember.department_id == dept.id,
+            ).options(selectinload(DepartmentMember.user))
+        )
+        members = members_result.scalars().all()
+        member_names = []
+        for m in members:
+            if m.user:
+                role_suffix = " (лид)" if m.role and m.role.value == "lead" else ""
+                member_names.append(f"{m.user.name}{role_suffix}")
+
+        # Get projects in this department
+        proj_result = await session.execute(
+            select(Project).where(
+                Project.department_id == dept.id,
+            ).order_by(Project.name)
+        )
+        projects = proj_result.scalars().all()
+
+        # Count active tasks across all department projects
+        active_task_count = 0
+        if projects:
+            project_ids = [p.id for p in projects]
+            count_result = await session.execute(
+                select(func.count(ProjectTask.id)).where(
+                    ProjectTask.project_id.in_(project_ids),
+                    ProjectTask.status.notin_([TaskStatus.done, TaskStatus.cancelled]),
+                )
+            )
+            active_task_count = count_result.scalar() or 0
+
+        lines = [
+            f"🏢 <b>{dept.name}</b>",
+        ]
+        if member_names:
+            lines.append(f"Участники: {', '.join(member_names)}")
+        lines.append(f"Проектов: {len(projects)}")
+
+        if projects:
+            lines.append("\n📊 <b>Проекты:</b>")
+            for p in projects:
+                pct = p.progress_percent or 0
+                bar = _progress_bar(pct)
+                status_label = PROJECT_STATUS_LABELS.get(p.status, str(p.status))
+                lines.append(f"  {p.name} — {pct}% {bar} {status_label}")
+
+        lines.append(f"\n📌 Активные задачи: {active_task_count}")
+
+        await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+# ─── End of project management commands ──────────────────────────────
+
+
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
 async def collect_group_message(message: types.Message):
     """Silently collect all messages from groups."""
@@ -767,7 +1158,11 @@ async def cmd_start(message: types.Message):
         "📋 Команды:\n"
         "/bind <email> — привязать аккаунт\n"
         "/settype — установить тип чата (в группе)\n"
-        "/chats — список ваших чатов"
+        "/chats — список ваших чатов\n"
+        "/status — статус отделов и проектов\n"
+        "/project <название> — подробности по проекту\n"
+        "/my — мои задачи\n"
+        "/dept <название> — подробности по отделу"
     )
 
 
