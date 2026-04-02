@@ -900,7 +900,7 @@ function InviteMemberModal({
 // System Users Component (for superadmin)
 function SystemUsers({ currentUser }: { currentUser: any }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [newUser, setNewUser] = useState({ email: '', password: '', name: '', role: 'admin' });
+  const [newUser, setNewUser] = useState({ email: '', password: '', name: '', role: 'member' });
   const [passwordResetResult, setPasswordResetResult] = useState<{ email: string; password: string } | null>(null);
   const [copiedPassword, setCopiedPassword] = useState(false);
   const queryClient = useQueryClient();
