@@ -1225,10 +1225,45 @@ function TasksTab({
 function TeamTab({
   members,
   isLoading,
+  projectId,
+  onMemberAdded,
 }: {
   members: ProjectMember[];
   isLoading: boolean;
+  projectId: number;
+  onMemberAdded?: () => void;
 }) {
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addUserId, setAddUserId] = useState<number | ''>('');
+  const [addRole, setAddRole] = useState('developer');
+  const [orgUsers, setOrgUsers] = useState<{id: number; user_id: number; user_name: string; user_email: string}[]>([]);
+  const [adding, setAdding] = useState(false);
+
+  const loadOrgUsers = async () => {
+    try {
+      const users = await api.getOrgMembers();
+      setOrgUsers(users as any);
+    } catch {}
+  };
+
+  const handleAdd = async () => {
+    if (!addUserId) return;
+    setAdding(true);
+    try {
+      await api.addProjectMember(projectId, { user_id: Number(addUserId), role: addRole as any });
+      toast.success('Участник добавлен');
+      setAddUserId('');
+      setShowAddForm(false);
+      onMemberAdded?.();
+    } catch {
+      toast.error('Не удалось добавить');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const memberIds = new Set(members.map(m => m.user_id));
+  const availableUsers = orgUsers.filter(u => !memberIds.has(u.user_id));
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -1254,13 +1289,77 @@ function TeamTab({
           <Users className="w-8 h-8 text-white/20" />
         </div>
         <h3 className="text-sm font-medium text-white/50 mb-1">Нет участников</h3>
-        <p className="text-xs text-white/30">Добавьте участников в проект</p>
+        <p className="text-xs text-white/30 mb-4">Добавьте участников в проект</p>
+        <button
+          onClick={() => { setShowAddForm(true); loadOrgUsers(); }}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Добавить участника
+        </button>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
+      {/* Add member button */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs text-white/30">{members.length} участников</span>
+        <button
+          onClick={() => { setShowAddForm(true); loadOrgUsers(); }}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-lg transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Добавить
+        </button>
+      </div>
+
+      {/* Add member form */}
+      {showAddForm && (
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3"
+        >
+          <select
+            value={addUserId}
+            onChange={(e) => setAddUserId(e.target.value ? Number(e.target.value) : '')}
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none"
+          >
+            <option value="">Выберите сотрудника...</option>
+            {availableUsers.map(u => (
+              <option key={u.user_id} value={u.user_id}>{u.user_name} ({u.user_email})</option>
+            ))}
+          </select>
+          <select
+            value={addRole}
+            onChange={(e) => setAddRole(e.target.value)}
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none"
+          >
+            <option value="manager">Менеджер</option>
+            <option value="developer">Разработчик</option>
+            <option value="reviewer">Ревьюер</option>
+            <option value="observer">Наблюдатель</option>
+          </select>
+          <div className="flex gap-2">
+            <button
+              onClick={handleAdd}
+              disabled={!addUserId || adding}
+              className="flex-1 py-2 text-xs font-medium text-white bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 rounded-lg transition-colors"
+            >
+              {adding ? 'Добавляю...' : 'Добавить'}
+            </button>
+            <button
+              onClick={() => setShowAddForm(false)}
+              className="px-4 py-2 text-xs text-white/50 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            >
+              Отмена
+            </button>
+          </div>
+        </motion.div>
+      )}
+
       {members.map((member) => (
         <motion.div
           key={member.id}
@@ -1466,7 +1565,7 @@ export default function ProjectDetailPage() {
             <TasksTab projectId={id} members={members} />
           )}
           {activeTab === 'team' && (
-            <TeamTab members={members} isLoading={membersLoading} />
+            <TeamTab members={members} isLoading={membersLoading} projectId={id} onMemberAdded={() => api.getProjectMembers(id).then(m => setMembers(m)).catch(() => {})} />
           )}
         </motion.div>
       </AnimatePresence>
