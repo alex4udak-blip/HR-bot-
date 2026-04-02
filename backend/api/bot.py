@@ -14,6 +14,7 @@ from .services.transcription import transcription_service
 from .utils.db_url import get_database_url
 from .services.documents import document_parser
 from .services.external_links import external_link_processor, LinkType
+from .services.task_trigger import create_tasks_from_message
 
 # Bot logging
 logger = logging.getLogger("hr-analyzer.bot")
@@ -719,6 +720,24 @@ async def collect_group_message(message: types.Message):
             # Auto-detect and process external links (Fireflies, Google Docs/Sheets/Forms)
             if content_type == "text" and content and org_id:
                 await process_external_links_in_message(content, org_id, owner_id, chat.id)
+
+            # Auto-create tasks from planning messages
+            if content_type == "text" and content:
+                try:
+                    created_tasks = await create_tasks_from_message(
+                        db=session,
+                        message_text=content,
+                        user_name=message.from_user.full_name,
+                        telegram_user_id=message.from_user.id,
+                        chat_id=message.chat.id,
+                    )
+                    if created_tasks:
+                        lines = ["\u2705 Задачи созданы из плана:"]
+                        for t in created_tasks:
+                            lines.append(f"  \u2022 {t['task_key']} \"{t['title']}\" \u2192 {t['assignee']}")
+                        await message.reply("\n".join(lines))
+                except Exception as e:
+                    logger.error(f"Task trigger error: {e}")
 
     except Exception as e:
         logger.error(f"❌ Error collecting message: {type(e).__name__}: {e}")

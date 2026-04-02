@@ -26,6 +26,7 @@ from .statuses import list_statuses, create_status, update_status, delete_status
 from .comments import list_comments, create_comment, update_comment, delete_comment
 from .attachments import list_attachments, upload_attachment, download_attachment, delete_attachment
 from .ai_tasks import ai_parse_plan, ai_create_tasks
+from .triggers import test_trigger
 
 # Register routes — specific paths before parameterized ones
 
@@ -39,6 +40,7 @@ router.add_api_route("/all-tasks", get_all_tasks, methods=["GET"], tags=["projec
 # AI task creation (before /{project_id} catch-all)
 router.add_api_route("/{project_id}/ai/parse-plan", ai_parse_plan, methods=["POST"], tags=["project-ai"])
 router.add_api_route("/{project_id}/ai/create-tasks", ai_create_tasks, methods=["POST"], tags=["project-ai"])
+router.add_api_route("/{project_id}/trigger-test", test_trigger, methods=["POST"], tags=["project-triggers"])
 
 # CRUD: list and create (root path)
 router.add_api_route("", list_projects, methods=["GET"], tags=["projects"])

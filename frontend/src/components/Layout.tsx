@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
   Users,
+  MessageSquare,
   Settings,
   LogOut,
   Menu,
@@ -216,7 +217,7 @@ export default function Layout() {
   // Auto-switch active block based on current URL
   useEffect(() => {
     const path = location.pathname;
-    if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path === '/dashboard' || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager')) {
+    if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path === '/dashboard' || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager') || path.startsWith('/chats')) {
       setActiveBlock('projects');
     } else if (['/all-candidates', '/vacancies', '/candidates', '/interns', '/analytics', '/calls', '/exports'].some(p => path.startsWith(p))) {
       setActiveBlock('hr');
@@ -242,6 +243,7 @@ export default function Layout() {
       items: [
         { path: '/projects', icon: FolderKanban, label: 'Все проекты' },
         { path: '/all-tasks', icon: ListTodo, label: 'Все задачи' },
+        { path: '/chats', icon: MessageSquare, label: 'Чаты' },
         { path: '/team', icon: Users, label: 'Команда' },
         { path: '/dept-manager', icon: Building2, label: 'Отделы' },
         { path: '/saturn', icon: Cloud, label: 'Saturn' },
