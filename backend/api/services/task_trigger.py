@@ -14,7 +14,16 @@ logger = logging.getLogger("hr-analyzer.task_trigger")
 
 # Trigger words (Russian)
 TRIGGER_PATTERNS = [
-    r'планиру[юет]',          # планирую, планирует
+    # Прямая постановка задачи
+    r'задача[:\s]',              # "задача: сделать X"
+    r'задача по проекту',        # "задача по проекту Platform:"
+    r'ставлю задачу',            # "ставлю задачу на Клима"
+    r'создай задачу',
+    r'новая задача',
+    r'таск[:\s]',                # "таск: фикс бага"
+    r'todo[:\s]',
+    # Планирование
+    r'планиру[юет]',
     r'план на сегодня',
     r'сегодня буду',
     r'собираюсь',
@@ -22,7 +31,7 @@ TRIGGER_PATTERNS = [
     r'доделаю',
     r'буду работать над',
     r'займусь',
-    r'пофикш[уит]',           # пофикшу, пофикшит
+    r'пофикш[уит]',
     r'исправлю',
     r'нужно сделать',
     r'надо сделать',
@@ -30,7 +39,7 @@ TRIGGER_PATTERNS = [
     r'закончу',
     r'доработаю',
     r'начну делать',
-    r'сегодня:',               # "сегодня: 1. то 2. сё"
+    r'сегодня:',
     r'good morning',
     r'гуд морнинг',
     r'утренний план',
@@ -79,10 +88,19 @@ async def parse_message_to_tasks(text: str, user_name: str, existing_tasks: list
 {{
   "title": "Краткое название задачи",
   "description": "Детальное описание из контекста сообщения",
-  "priority": 1,
+  "priority": 0-3 (0=низкий, 1=нормальный, 2=высокий, 3=критический),
   "estimated_hours": число или null,
-  "is_duplicate": true/false (есть ли похожая в существующих)
+  "is_duplicate": true/false (есть ли похожая в существующих),
+  "assignee_name": "имя человека если указано в тексте (например 'на Клима' или 'для Миши')" или null,
+  "project_hint": "название проекта если указано (например 'по проекту Platform')" или null,
+  "deadline_hint": "когда дедлайн если указано (сегодня/завтра/дата)" или "сегодня"
 }}
+
+Правила:
+- Если написано "задача:" или "ставлю задачу" — это прямая постановка, приоритет выше (2)
+- Если указан конкретный человек — он assignee, иначе автор сообщения
+- Если указан проект — запомни его в project_hint
+- Дедлайн по умолчанию — сегодня, если не указано иное
 
 Верни ТОЛЬКО JSON массив, без markdown."""}],
         )
@@ -148,7 +166,13 @@ async def create_tasks_from_message(
         logger.warning(f"No active projects for user {user_name}")
         return []
 
-    # Use first active project (or try to match by chat)
+    # Also get all org projects for project_hint matching
+    all_projects_result = await db.execute(
+        select(Project).where(Project.org_id == projects[0].org_id)
+    )
+    all_projects = list(all_projects_result.scalars().all())
+
+    # Use first active project as default
     project = projects[0]
 
     # If chat is linked to a project, prefer that project
@@ -158,7 +182,6 @@ async def create_tasks_from_message(
         )
         chat = chat_result.scalar_one_or_none()
         if chat and chat.entity_id:
-            # Try to find project linked to this entity/chat
             for p in projects:
                 if p.id == chat.entity_id:
                     project = p
@@ -188,29 +211,51 @@ async def create_tasks_from_message(
         if task_data.get("is_duplicate"):
             continue
 
+        # Resolve project from hint
+        target_project = project
+        project_hint = task_data.get("project_hint")
+        if project_hint:
+            for p in all_projects:
+                if project_hint.lower() in p.name.lower():
+                    target_project = p
+                    break
+
+        # Resolve assignee from hint
+        assignee_id = user.id
+        assignee_display = user_name
+        assignee_hint = task_data.get("assignee_name")
+        if assignee_hint:
+            assignee_result = await db.execute(
+                select(User).where(User.name.ilike(f"%{assignee_hint}%"))
+            )
+            found_user = assignee_result.scalar_one_or_none()
+            if found_user:
+                assignee_id = found_user.id
+                assignee_display = found_user.name
+
         # Increment project task counter
-        project.task_counter = (project.task_counter or 0) + 1
+        target_project.task_counter = (target_project.task_counter or 0) + 1
 
         task = ProjectTask(
-            project_id=project.id,
-            task_number=project.task_counter,
+            project_id=target_project.id,
+            task_number=target_project.task_counter,
             title=task_data.get("title", "Без названия"),
             description=task_data.get("description"),
             status="todo",
             priority=task_data.get("priority", 1),
             estimated_hours=task_data.get("estimated_hours"),
-            assignee_id=user.id,
+            assignee_id=assignee_id,
             due_date=today,
             created_by=user.id,
         )
         db.add(task)
 
-        task_key = f"{project.prefix}-{project.task_counter}" if project.prefix else f"#{project.task_counter}"
+        task_key = f"{target_project.prefix}-{target_project.task_counter}" if target_project.prefix else f"#{target_project.task_counter}"
         created.append({
             "task_key": task_key,
             "title": task_data.get("title"),
-            "assignee": user_name,
-            "project": project.name,
+            "assignee": assignee_display,
+            "project": target_project.name,
         })
 
     if created:
