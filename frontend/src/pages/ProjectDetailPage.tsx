@@ -1290,13 +1290,57 @@ function TeamTab({
         </div>
         <h3 className="text-sm font-medium text-white/50 mb-1">Нет участников</h3>
         <p className="text-xs text-white/30 mb-4">Добавьте участников в проект</p>
-        <button
-          onClick={() => { setShowAddForm(true); loadOrgUsers(); }}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Добавить участника
-        </button>
+        {!showAddForm ? (
+          <button
+            onClick={() => { setShowAddForm(true); loadOrgUsers(); }}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Добавить участника
+          </button>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="w-full max-w-sm bg-white/5 border border-white/10 rounded-xl p-4 space-y-3"
+          >
+            <select
+              value={addUserId}
+              onChange={(e) => setAddUserId(e.target.value ? Number(e.target.value) : '')}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none"
+            >
+              <option value="">Выберите сотрудника...</option>
+              {availableUsers.map(u => (
+                <option key={u.user_id} value={u.user_id}>{u.user_name} ({u.user_email})</option>
+              ))}
+            </select>
+            <select
+              value={addRole}
+              onChange={(e) => setAddRole(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none"
+            >
+              <option value="manager">Менеджер</option>
+              <option value="developer">Разработчик</option>
+              <option value="reviewer">Ревьюер</option>
+              <option value="observer">Наблюдатель</option>
+            </select>
+            <div className="flex gap-2">
+              <button
+                onClick={handleAdd}
+                disabled={!addUserId || adding}
+                className="flex-1 py-2 text-xs font-medium text-white bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 rounded-lg transition-colors"
+              >
+                {adding ? 'Добавляю...' : 'Добавить'}
+              </button>
+              <button
+                onClick={() => setShowAddForm(false)}
+                className="px-4 py-2 text-xs text-white/50 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              >
+                Отмена
+              </button>
+            </div>
+          </motion.div>
+        )}
       </div>
     );
   }
