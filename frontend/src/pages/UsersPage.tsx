@@ -1065,8 +1065,9 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
                     onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
                     className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
                   >
-                    <option value="admin">Admin</option>
-                    <option value="superadmin">Superadmin</option>
+                    <option value="member">Сотрудник</option>
+                    <option value="admin">Админ</option>
+                    <option value="superadmin">Суперадмин</option>
                   </select>
                 </div>
                 <div className="flex gap-3 pt-4">
