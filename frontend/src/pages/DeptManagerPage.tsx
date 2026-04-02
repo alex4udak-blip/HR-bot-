@@ -34,8 +34,8 @@ import {
 interface OrgMember {
   id: number;
   user_id: number;
-  name: string;
-  email: string;
+  user_name: string;
+  user_email: string;
   role: string;
 }
 
@@ -242,11 +242,11 @@ function MembersPanel({
                 className="w-full text-left px-3 py-2 text-xs text-white/70 hover:bg-white/[0.06] transition-colors flex items-center gap-2"
               >
                 <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-white/50 font-medium">
-                  {m.name?.charAt(0) || m.email?.charAt(0) || '?'}
+                  {m.user_name?.charAt(0) || m.user_email?.charAt(0) || '?'}
                 </div>
                 <div className="min-w-0">
-                  <div className="truncate">{m.name || m.email}</div>
-                  {m.name && <div className="text-[10px] text-white/30 truncate">{m.email}</div>}
+                  <div className="truncate">{m.user_name || m.user_email}</div>
+                  {m.user_name && <div className="text-[10px] text-white/30 truncate">{m.user_email}</div>}
                 </div>
               </button>
             ))}
