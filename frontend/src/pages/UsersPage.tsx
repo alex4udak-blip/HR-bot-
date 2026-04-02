@@ -21,7 +21,7 @@ import {
   Key,
   Database
 } from 'lucide-react';
-import { getUsers, createUser, deleteUser, adminResetPassword, getOrgMembers, removeMember, updateMemberRole, toggleMemberFullAccess, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, getMyManagedUserIds, createInvitation, getInvitations, revokeInvitation, type Department, type DeptRole, type Invitation } from '@/services/api';
+import { getUsers, createUser, deleteUser, adminResetPassword, getOrgMembers, removeMember, updateMemberRole, toggleMemberFullAccess, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, getMyManagedUserIds, createInvitation, getInvitations, revokeInvitation, addDepartmentMember, type Department, type DeptRole, type Invitation } from '@/services/api';
 import type { OrgMember, OrgRole, Organization } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
@@ -901,6 +901,14 @@ function InviteMemberModal({
 function SystemUsers({ currentUser }: { currentUser: any }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', password: '', name: '', role: 'member' });
+  const [selectedDeptId, setSelectedDeptId] = useState<number | ''>('');
+  const [selectedDeptRole, setSelectedDeptRole] = useState('member');
+  const [deptsList, setDeptsList] = useState<{id: number; name: string}[]>([]);
+
+  // Load departments
+  useEffect(() => {
+    getDepartments().then((d: any[]) => setDeptsList(d.map(x => ({id: x.id, name: x.name})))).catch(() => {});
+  }, []);
   const [passwordResetResult, setPasswordResetResult] = useState<{ email: string; password: string } | null>(null);
   const [copiedPassword, setCopiedPassword] = useState(false);
   const queryClient = useQueryClient();
@@ -913,11 +921,24 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => createUser(newUser),
+    mutationFn: async () => {
+      const user = await createUser(newUser);
+      // Add to department if selected
+      if (selectedDeptId && user?.id) {
+        try {
+          await addDepartmentMember(Number(selectedDeptId), { user_id: user.id, role: selectedDeptRole as any });
+        } catch (e) {
+          console.error('Failed to add to department:', e);
+        }
+      }
+      return user;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setIsDialogOpen(false);
-      setNewUser({ email: '', password: '', name: '', role: 'admin' });
+      setNewUser({ email: '', password: '', name: '', role: 'member' });
+      setSelectedDeptId('');
+      setSelectedDeptRole('member');
       toast.success('Пользователь создан');
     },
     onError: (error: any) => {
@@ -1070,6 +1091,35 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
                     <option value="superadmin">Суперадмин</option>
                   </select>
                 </div>
+                {deptsList.length > 0 && (
+                  <div>
+                    <label className="block text-sm text-dark-400 mb-1">Отдел</label>
+                    <select
+                      value={selectedDeptId}
+                      onChange={(e) => setSelectedDeptId(e.target.value ? Number(e.target.value) : '')}
+                      className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+                    >
+                      <option value="">Без отдела</option>
+                      {deptsList.map(d => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {selectedDeptId && (
+                  <div>
+                    <label className="block text-sm text-dark-400 mb-1">Роль в отделе</label>
+                    <select
+                      value={selectedDeptRole}
+                      onChange={(e) => setSelectedDeptRole(e.target.value)}
+                      className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+                    >
+                      <option value="member">Участник</option>
+                      <option value="lead">Лид отдела</option>
+                      <option value="sub_admin">Зам. лида</option>
+                    </select>
+                  </div>
+                )}
                 <div className="flex gap-3 pt-4">
                   <Dialog.Close asChild>
                     <button type="button" className="flex-1 py-2.5 rounded-xl glass-light hover:bg-white/10 transition-colors">
