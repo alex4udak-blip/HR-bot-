@@ -1,6 +1,7 @@
 """
 Auto-creates project tasks from Telegram chat messages.
 Triggers on planning-related keywords and uses Claude AI to parse.
+Also detects status reports and updates project progress.
 """
 import re
 import os
@@ -55,6 +56,182 @@ TRIGGER_REGEX = re.compile('|'.join(TRIGGER_PATTERNS), re.IGNORECASE)
 def should_trigger(text: str) -> bool:
     """Check if message contains trigger words."""
     return bool(TRIGGER_REGEX.search(text))
+
+
+# ---------------------------------------------------------------------------
+# Status report detection & parsing
+# ---------------------------------------------------------------------------
+
+STATUS_PATTERNS = [
+    r'статус.*проект',           # "статус по проектам"
+    r'готовность\s*\d+',         # "готовность 90%"
+    r'статус[:\s]',              # "статус:"
+    r'\d+%\s*(готов|готовность)', # "90% готово"
+    r'статус.?отч[её]т',        # "статус-отчёт" / "статус отчет"
+    r'status\s*report',
+]
+STATUS_REGEX = re.compile('|'.join(STATUS_PATTERNS), re.IGNORECASE)
+
+
+def is_status_report(text: str) -> bool:
+    """Check if message is a status report (not a task).
+
+    A status report typically lists several projects with progress percentages
+    or completion markers. We require the pattern match plus at least one
+    line that looks like a project-progress entry (contains ``%`` or a
+    completion keyword).
+    """
+    if not STATUS_REGEX.search(text):
+        return False
+    # Extra heuristic: message should contain at least one percentage or
+    # a completion keyword on a separate line to avoid false positives.
+    pct_or_done = re.compile(r'\d+\s*%|завершён|завершен|done|готов[оа]?\b', re.IGNORECASE)
+    return bool(pct_or_done.search(text))
+
+
+async def parse_status_report(text: str) -> list[dict]:
+    """Use Claude AI to extract project names and progress from a status report."""
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        logger.warning("ANTHROPIC_API_KEY not set, cannot parse status report")
+        return []
+
+    try:
+        import anthropic
+    except ImportError:
+        logger.warning("anthropic package not installed, cannot parse status report")
+        return []
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1000,
+            messages=[{"role": "user", "content": f"""Разбери статус-отчёт по проектам. Извлеки название проекта и процент готовности.
+
+ТЕКСТ:
+{text}
+
+Для каждого проекта верни JSON:
+{{
+  "project_name": "название проекта",
+  "progress_percent": число 0-100 (если указан диапазон — среднее),
+  "status_text": "текст статуса если есть" или null,
+  "is_completed": true/false (если написано "завершён/готов/done")
+}}
+
+Верни ТОЛЬКО JSON массив, без markdown."""}],
+        )
+
+        ai_text = response.content[0].text.strip()
+        if ai_text.startswith("```"):
+            ai_text = ai_text.split("```")[1]
+            if ai_text.startswith("json"):
+                ai_text = ai_text[4:]
+            ai_text = ai_text.strip()
+
+        return json.loads(ai_text)
+    except Exception as e:
+        logger.error(f"AI status report parse error: {e}")
+        return []
+
+
+async def update_projects_from_status(
+    db: AsyncSession,
+    message_text: str,
+    user_name: str,
+    telegram_user_id: int | None,
+) -> list[dict]:
+    """Parse status report and update project progress in the database.
+
+    Returns a list of dicts describing which projects were updated, or an
+    empty list if the message is not a status report or nothing matched.
+    """
+    from ..models.database import Project, User, OrgMember
+
+    if not is_status_report(message_text):
+        return []
+
+    logger.info(f"Status report detected from {user_name}")
+
+    # Find user by telegram_id
+    user = None
+    if telegram_user_id:
+        result = await db.execute(select(User).where(User.telegram_id == telegram_user_id))
+        user = result.scalar_one_or_none()
+
+    if not user and user_name:
+        result = await db.execute(select(User).where(User.name.ilike(f"%{user_name}%")))
+        user = result.scalar_one_or_none()
+
+    if not user:
+        logger.warning(f"Status report: user not found — {user_name} (tg_id={telegram_user_id})")
+        return []
+
+    # Find user's organisation
+    org_result = await db.execute(select(OrgMember).where(OrgMember.user_id == user.id))
+    org_member = org_result.scalar_one_or_none()
+    if not org_member:
+        logger.warning(f"Status report: no org membership for user {user_name}")
+        return []
+
+    # Get all projects in the organisation
+    projects_result = await db.execute(
+        select(Project).where(Project.org_id == org_member.org_id)
+    )
+    all_projects = list(projects_result.scalars().all())
+
+    if not all_projects:
+        logger.warning(f"Status report: no projects in org for user {user_name}")
+        return []
+
+    # Parse status report with AI
+    parsed = await parse_status_report(message_text)
+    if not parsed:
+        return []
+
+    updated: list[dict] = []
+    for item in parsed:
+        project_name = item.get("project_name", "")
+        progress = item.get("progress_percent")
+        is_completed = item.get("is_completed", False)
+
+        # Fuzzy match: substring in either direction
+        matched_project = None
+        for p in all_projects:
+            if project_name.lower() in p.name.lower() or p.name.lower() in project_name.lower():
+                matched_project = p
+                break
+
+        if not matched_project:
+            logger.debug(f"Status report: no project matched for '{project_name}'")
+            continue
+
+        # Update progress
+        if progress is not None:
+            matched_project.progress_percent = int(progress)
+            matched_project.progress_mode = "manual"
+
+        if is_completed:
+            matched_project.status = "completed"
+            matched_project.progress_percent = 100
+            matched_project.completed_at = datetime.utcnow()
+
+        updated.append({
+            "project_name": matched_project.name,
+            "progress": matched_project.progress_percent,
+            "status": "completed" if is_completed else (
+                matched_project.status if isinstance(matched_project.status, str)
+                else matched_project.status.value
+            ),
+        })
+
+    if updated:
+        await db.commit()
+        logger.info(f"Updated {len(updated)} projects from status report by {user_name}")
+
+    return updated
 
 
 async def parse_message_to_tasks(text: str, user_name: str, existing_tasks: list[dict]) -> list[dict]:
