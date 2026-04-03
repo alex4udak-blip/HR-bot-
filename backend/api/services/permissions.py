@@ -221,9 +221,10 @@ class PermissionService:
             to_dept_ids = await self._get_user_department_ids(to_user)
             return bool(from_dept_admin_ids & to_dept_ids)
 
-        # MEMBER can only share within their department
+        # MEMBER can share with anyone in the same organization
+        # (previously restricted to same department — too strict for HR workflows)
         if from_user_role == OrgRole.member:
-            return await self._are_in_same_department(from_user, to_user)
+            return to_user_org_role is not None  # just needs to be in same org
 
         return False
 
