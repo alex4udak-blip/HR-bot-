@@ -20,6 +20,8 @@ import {
   FolderKanban,
   ListTodo,
   Cloud,
+  GitBranch,
+  ClipboardList,
   Bell,
   Check,
   BarChart3,
@@ -219,7 +221,7 @@ export default function Layout() {
     const path = location.pathname;
     if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path === '/dashboard' || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager') || path.startsWith('/chats')) {
       setActiveBlock('projects');
-    } else if (['/all-candidates', '/vacancies', '/candidates', '/interns', '/analytics', '/calls', '/exports'].some(p => path.startsWith(p))) {
+    } else if (['/all-candidates', '/my-funnels', '/practice-list', '/vacancies', '/candidates', '/interns', '/analytics', '/calls', '/exports'].some(p => path.startsWith(p))) {
       setActiveBlock('hr');
     } else if (['/users', '/departments', '/settings', '/admin', '/trash'].some(p => path.startsWith(p))) {
       setActiveBlock('admin');
@@ -254,6 +256,8 @@ export default function Layout() {
     // HR block
     const hrItems: { path: string; icon: LucideIcon; label: string }[] = [];
     hrItems.push({ path: '/all-candidates', icon: Users, label: 'Все кандидаты' });
+    hrItems.push({ path: '/my-funnels', icon: GitBranch, label: 'Мои воронки' });
+    hrItems.push({ path: '/practice-list', icon: ClipboardList, label: 'Лист практики' });
     if (hasFeature('candidate_database') || user?.role === 'superadmin' || user?.org_role === 'owner') {
       hrItems.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
       hrItems.push({ path: '/candidates', icon: UserCheck, label: 'База кандидатов' });
