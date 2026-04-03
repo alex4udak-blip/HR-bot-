@@ -84,6 +84,20 @@ export const deleteUser = async (id: number): Promise<void> => {
   await debouncedMutation<void>('delete', `/users/${id}`);
 };
 
+export interface AdminUserUpdate {
+  name?: string;
+  email?: string;
+  role?: string;
+  telegram_username?: string | null;
+  department_id?: number | null;
+  is_active?: boolean;
+}
+
+export const adminUpdateUser = async (userId: number, data: AdminUserUpdate): Promise<User> => {
+  const { data: user } = await api.patch(`/users/${userId}`, data);
+  return user;
+};
+
 export interface PasswordResetResponse {
   message: string;
   temporary_password: string;

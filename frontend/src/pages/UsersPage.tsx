@@ -19,10 +19,13 @@ import {
   Send,
   Sparkles,
   Key,
-  Database
+  Database,
+  Pencil,
+  MessageCircle
 } from 'lucide-react';
-import { getUsers, createUser, deleteUser, adminResetPassword, getOrgMembers, removeMember, updateMemberRole, toggleMemberFullAccess, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, getMyManagedUserIds, createInvitation, getInvitations, revokeInvitation, addDepartmentMember, type Department, type DeptRole, type Invitation } from '@/services/api';
+import { getUsers, createUser, deleteUser, adminResetPassword, adminUpdateUser, getOrgMembers, removeMember, updateMemberRole, toggleMemberFullAccess, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, getMyManagedUserIds, createInvitation, getInvitations, revokeInvitation, addDepartmentMember, type Department, type DeptRole, type Invitation } from '@/services/api';
 import type { OrgMember, OrgRole, Organization } from '@/services/api';
+import type { User } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
 import { getErrorDetail } from '@/utils';
@@ -909,6 +912,7 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
   useEffect(() => {
     getDepartments().then((d: any[]) => setDeptsList(d.map(x => ({id: x.id, name: x.name})))).catch(() => {});
   }, []);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [passwordResetResult, setPasswordResetResult] = useState<{ email: string; password: string } | null>(null);
   const [copiedPassword, setCopiedPassword] = useState(false);
   const queryClient = useQueryClient();
@@ -1186,34 +1190,55 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
                       {user.role}
                     </span>
                   </div>
-                  <p className="text-sm text-white/40 truncate">{user.email}</p>
-                </div>
-                {user.id !== currentUser?.id && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => {
-                        if (confirm(`Сбросить пароль для ${user.email}?\n\nБудет сгенерирован временный пароль.`)) {
-                          resetPasswordMutation.mutate(user.id);
-                        }
-                      }}
-                      disabled={resetPasswordMutation.isPending}
-                      className="p-2 rounded-lg text-white/40 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors disabled:opacity-50"
-                      title="Сбросить пароль"
-                    >
-                      <Key className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (confirm('Удалить пользователя?')) {
-                          deleteMutation.mutate(user.id);
-                        }
-                      }}
-                      className="p-2 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                  <div className="flex items-center gap-3">
+                    <p className="text-sm text-white/40 truncate">{user.email}</p>
+                    {user.telegram_username ? (
+                      <span className="flex items-center gap-1 text-xs text-green-400">
+                        <MessageCircle size={12} />
+                        @{user.telegram_username}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-white/25">Нет TG</span>
+                    )}
                   </div>
-                )}
+                </div>
+                <div className="flex items-center gap-1">
+                  {user.id !== currentUser?.id && (
+                    <button
+                      onClick={() => setEditingUser(user)}
+                      className="p-2 rounded-lg text-white/40 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
+                      title="Редактировать"
+                    >
+                      <Pencil className="w-5 h-5" />
+                    </button>
+                  )}
+                  {user.id !== currentUser?.id && (
+                    <>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Сбросить пароль для ${user.email}?\n\nБудет сгенерирован временный пароль.`)) {
+                            resetPasswordMutation.mutate(user.id);
+                          }
+                        }}
+                        disabled={resetPasswordMutation.isPending}
+                        className="p-2 rounded-lg text-white/40 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors disabled:opacity-50"
+                        title="Сбросить пароль"
+                      >
+                        <Key className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm('Удалить пользователя?')) {
+                            deleteMutation.mutate(user.id);
+                          }
+                        }}
+                        className="p-2 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </>
+                  )}
+                </div>
               </motion.div>
             ))}
           </div>
@@ -1268,6 +1293,189 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+
+      {/* Edit User Modal */}
+      <AnimatePresence>
+        {editingUser && (
+          <EditUserModal
+            user={editingUser}
+            departments={deptsList}
+            onClose={() => setEditingUser(null)}
+            onSuccess={() => {
+              setEditingUser(null);
+              queryClient.invalidateQueries({ queryKey: ['users'] });
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+// Edit User Modal
+function EditUserModal({
+  user,
+  departments,
+  onClose,
+  onSuccess,
+}: {
+  user: User;
+  departments: { id: number; name: string }[];
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [name, setName] = useState(user.name || '');
+  const [email, setEmail] = useState(user.email || '');
+  const [role, setRole] = useState<string>(user.role || 'member');
+  const [telegramUsername, setTelegramUsername] = useState(user.telegram_username || '');
+  const [departmentId, setDepartmentId] = useState<number | ''>('');
+  const [saving, setSaving] = useState(false);
+
+  // Try to determine the user's current department from departments list
+  // The user object doesn't carry department_id directly, so we leave it as ''
+  // unless we can infer it. The admin can set/change it here.
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const payload: Record<string, unknown> = {};
+      if (name.trim() !== (user.name || '')) payload.name = name.trim();
+      if (email.trim() !== (user.email || '')) payload.email = email.trim();
+      if (role !== user.role) payload.role = role;
+
+      // Normalize telegram username
+      const normalizedTg = telegramUsername.trim().replace(/^@/, '').toLowerCase() || null;
+      const currentTg = user.telegram_username || null;
+      if (normalizedTg !== currentTg) payload.telegram_username = normalizedTg;
+
+      if (departmentId) payload.department_id = departmentId;
+
+      if (Object.keys(payload).length === 0) {
+        onClose();
+        return;
+      }
+
+      await adminUpdateUser(user.id, payload as any);
+      toast.success('Пользователь обновлён');
+      onSuccess();
+    } catch (err: any) {
+      toast.error(getErrorDetail(err, 'Ошибка обновления'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="glass rounded-2xl p-6 w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-y-auto shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+            <Pencil className="text-cyan-400" size={20} />
+            Редактировать пользователя
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-white/10 text-white/40 transition-colors"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm text-dark-400 mb-1">Имя</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-dark-400 mb-1">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-dark-400 mb-1">Системная роль</label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+            >
+              <option value="member">Сотрудник</option>
+              <option value="admin">Админ</option>
+              <option value="superadmin">Суперадмин</option>
+            </select>
+          </div>
+
+          {departments.length > 0 && (
+            <div>
+              <label className="block text-sm text-dark-400 mb-1">Отдел</label>
+              <select
+                value={departmentId}
+                onChange={(e) => setDepartmentId(e.target.value ? Number(e.target.value) : '')}
+                className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+              >
+                <option value="">Не менять</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm text-dark-400 mb-1">Telegram</label>
+            <input
+              type="text"
+              value={telegramUsername}
+              onChange={(e) => setTelegramUsername(e.target.value)}
+              placeholder="@username"
+              className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+            />
+            <p className="text-xs text-white/30 mt-1">Юзернейм без @, например: Vova_Danilkovich</p>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl glass-light hover:bg-white/10 transition-colors"
+            >
+              Отмена
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 py-2.5 rounded-xl bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50 transition-colors"
+            >
+              {saving ? 'Сохранение...' : 'Сохранить'}
+            </button>
+          </div>
+        </form>
+      </motion.div>
     </motion.div>
   );
 }

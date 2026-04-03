@@ -27,6 +27,7 @@ export {
   createUser,
   deleteUser,
   adminResetPassword,
+  adminUpdateUser,
   updateUserProfile,
   // Organizations
   getCurrentOrganization,
@@ -91,6 +92,7 @@ export {
 // Auth types
 export type {
   PasswordResetResponse,
+  AdminUserUpdate,
   UserProfileUpdate,
   OrgRole,
   Organization,
