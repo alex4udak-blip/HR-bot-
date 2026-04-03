@@ -308,7 +308,7 @@ async def create_tasks_from_message(
 ) -> list[dict]:
     """Full pipeline: detect trigger -> parse -> create tasks -> return results."""
     from ..models.database import (
-        Project, ProjectTask, ProjectMember, User, Chat,
+        Project, ProjectTask, ProjectMember, User, Chat, OrgMember,
     )
 
     if not should_trigger(message_text):
@@ -334,6 +334,21 @@ async def create_tasks_from_message(
         logger.warning(f"User not found: {user_name} (tg_id={telegram_user_id})")
         return []
 
+    # Find user's org first
+    org_result = await db.execute(
+        select(OrgMember).where(OrgMember.user_id == user.id)
+    )
+    org_member = org_result.scalar_one_or_none()
+    if not org_member:
+        logger.warning(f"User {user_name} not in any organization")
+        return []
+
+    # Get ALL org projects (for project_hint matching from text)
+    all_projects_result = await db.execute(
+        select(Project).where(Project.org_id == org_member.org_id)
+    )
+    all_projects = list(all_projects_result.scalars().all())
+
     # Find user's projects (where they are a member)
     result = await db.execute(
         select(Project)
@@ -343,13 +358,23 @@ async def create_tasks_from_message(
     )
     projects = list(result.scalars().all())
 
+    # If user has no projects but text mentions a project name, try to find it
+    if not projects:
+        # Check if text mentions any project by name
+        text_lower = message_text.lower()
+        for p in all_projects:
+            if p.name.lower() in text_lower:
+                projects = [p]
+                logger.info(f"Matched project '{p.name}' from message text for user {user_name}")
+                break
+
     if not projects:
         logger.warning(f"No active projects for user {user_name}")
         return []
 
-    # Also get all org projects for project_hint matching
-    all_projects_result = await db.execute(
-        select(Project).where(Project.org_id == projects[0].org_id)
+    # all_projects already loaded above — reuse
+    _all_projects_result = await db.execute(
+        select(Project).where(Project.org_id == org_member.org_id)
     )
     all_projects = list(all_projects_result.scalars().all())
 
