@@ -566,6 +566,28 @@ export type {
   ReminderItem,
 } from './employees';
 
+// Documents
+export {
+  getDocumentTemplates,
+  createDocumentTemplate,
+  updateDocumentTemplate,
+  deleteDocumentTemplate,
+  generateDocument,
+  getMyDocuments,
+  getDocument,
+  signDocument,
+  getEmployeeDocuments,
+} from './documents';
+
+export type {
+  DocumentTemplate,
+  DocumentTemplateCreate,
+  DocumentTemplateUpdate,
+  SignedDocument,
+  GenerateDocRequest,
+  SignDocRequest,
+} from './documents';
+
 // Forms
 export {
   getMyForms,

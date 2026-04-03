@@ -79,6 +79,7 @@ const RecruiterFunnelsPage = lazyWithRetry(() => import('@/pages/RecruiterFunnel
 const PracticeListPage = lazyWithRetry(() => import('@/pages/PracticeListPage'));
 const FormBuilderPage = lazyWithRetry(() => import('@/pages/FormBuilderPage'));
 const PublicFormPage = lazyWithRetry(() => import('@/pages/PublicFormPage'));
+const DocumentTemplatesPage = lazyWithRetry(() => import('@/pages/DocumentTemplatesPage'));
 
 // Loading fallback component for Suspense
 function PageLoader() {
@@ -192,6 +193,7 @@ export default function App() {
           <Route path="practice-list" element={<Suspense fallback={<PageLoader />}><PracticeListPage /></Suspense>} />
           <Route path="form-builder" element={<Suspense fallback={<PageLoader />}><FormBuilderPage /></Suspense>} />
           <Route path="form-builder/:formId" element={<Suspense fallback={<PageLoader />}><FormBuilderPage /></Suspense>} />
+          <Route path="document-templates" element={<Suspense fallback={<PageLoader />}><DocumentTemplatesPage /></Suspense>} />
           <Route path="trash" element={<Suspense fallback={<PageLoader />}><TrashPage /></Suspense>} />
           <Route path="users" element={<Suspense fallback={<PageLoader />}><UsersPage /></Suspense>} />
           <Route path="departments" element={<Suspense fallback={<PageLoader />}><DepartmentsPage /></Suspense>} />

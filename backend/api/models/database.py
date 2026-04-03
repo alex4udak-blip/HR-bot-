@@ -1532,3 +1532,42 @@ class LeaveRequest(Base):
 
     employee = relationship("Employee", back_populates="leave_requests")
     approver = relationship("User", foreign_keys=[approved_by])
+
+
+# ============================================================
+# DOCUMENT SIGNING (Templates, Signed Documents, Canvas Signature)
+# ============================================================
+
+class DocumentTemplate(Base):
+    """Template for documents like NDA, contracts"""
+    __tablename__ = "document_templates"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(300), nullable=False)
+    content = Column(Text, nullable=False)
+    variables = Column(JSON, default=list)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    organization = relationship("Organization")
+
+
+class SignedDocument(Base):
+    """A signed document instance"""
+    __tablename__ = "signed_documents"
+
+    id = Column(Integer, primary_key=True)
+    template_id = Column(Integer, ForeignKey("document_templates.id", ondelete="SET NULL"), nullable=True)
+    employee_id = Column(Integer, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(300), nullable=False)
+    content_rendered = Column(Text, nullable=False)
+    signature_data = Column(Text, nullable=True)
+    signed_at = Column(DateTime, nullable=True)
+    signer_ip = Column(String(50), nullable=True)
+    status = Column(String(20), default="pending")
+    created_at = Column(DateTime, default=func.now())
+
+    template = relationship("DocumentTemplate")
+    employee = relationship("Employee")

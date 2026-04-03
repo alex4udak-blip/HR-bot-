@@ -8,10 +8,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Users, Calendar, AlertTriangle, CheckCircle, XCircle,
-  Clock, FileText, User, Building2, Briefcase,
+  Clock, FileText, User, Building2, Briefcase, PenTool, X,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import * as employeesApi from '@/services/api/employees';
+import * as docsApi from '@/services/api/documents';
+import type { SignedDocument } from '@/services/api/documents';
+import SignatureCanvas from '@/components/SignatureCanvas';
 import type {
   EmployeeData,
   LeaveBalance,
@@ -43,6 +46,115 @@ const STATUS_LABELS: Record<string, string> = {
   approved: 'Одобрено',
   rejected: 'Отклонено',
 };
+
+// ─── Document Signing Modal ─────────────────────────────────
+
+function DocumentSigningModal({
+  doc,
+  onClose,
+  onSigned,
+}: {
+  doc: SignedDocument;
+  onClose: () => void;
+  onSigned: () => void;
+}) {
+  const [signatureData, setSignatureData] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSign = async () => {
+    if (!signatureData || !confirmed) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      await docsApi.signDocument(doc.id, { signature_data: signatureData });
+      onSigned();
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setError(err?.response?.data?.detail || 'Ошибка подписания');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">{doc.title}</h2>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Document content */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          <div className="prose prose-sm max-w-none text-gray-800 whitespace-pre-wrap leading-relaxed mb-8">
+            {doc.content_rendered}
+          </div>
+
+          {/* Signature area */}
+          <div className="border-t border-gray-200 pt-5">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <PenTool className="w-4 h-4 text-gray-500" />
+              Ваша подпись
+            </h3>
+            <SignatureCanvas
+              onSignatureChange={setSignatureData}
+              width={400}
+              height={180}
+            />
+
+            {/* Confirmation checkbox */}
+            <label className="flex items-start gap-3 mt-4 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={confirmed}
+                onChange={(e) => setConfirmed(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
+              />
+              <span className="text-sm text-gray-600">
+                Подтверждаю, что ознакомился(ась) с содержанием документа и согласен(на) с его условиями
+              </span>
+            </label>
+
+            {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            Отмена
+          </button>
+          <button
+            onClick={handleSign}
+            disabled={!signatureData || !confirmed || submitting}
+            className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-xl transition-colors ${
+              !signatureData || !confirmed || submitting
+                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
+            }`}
+          >
+            <PenTool className="w-4 h-4" />
+            {submitting ? 'Подписание...' : 'Подписать документ'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Leave Request Modal ────────────────────────────────────
 
@@ -187,6 +299,8 @@ function MyProfileView() {
   const [loading, setLoading] = useState(true);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [error, setError] = useState('');
+  const [myDocs, setMyDocs] = useState<SignedDocument[]>([]);
+  const [signingDoc, setSigningDoc] = useState<SignedDocument | null>(null);
 
   const loadProfile = useCallback(async () => {
     try {
@@ -194,6 +308,13 @@ function MyProfileView() {
       setProfile(p);
       const b = await employeesApi.getLeaveBalance(p.id);
       setBalance(b);
+      // Load documents
+      try {
+        const docs = await docsApi.getMyDocuments();
+        setMyDocs(docs);
+      } catch {
+        // silently ignore
+      }
     } catch (e: unknown) {
       const err = e as { response?: { status?: number } };
       if (err?.response?.status === 404) {
@@ -315,6 +436,7 @@ function MyProfileView() {
           Документы
         </h3>
         <div className="space-y-3">
+          {/* Static NDA / Contract status */}
           <div className="flex items-center gap-3 text-sm">
             <FileText className="w-4 h-4 text-white/30" />
             <span className="text-white/60">NDA:</span>
@@ -345,6 +467,34 @@ function MyProfileView() {
               </span>
             )}
           </div>
+
+          {/* Dynamic signed documents */}
+          {myDocs.length > 0 && (
+            <div className="border-t border-white/5 pt-3 mt-3 space-y-2">
+              {myDocs.map((doc) => (
+                <div key={doc.id} className="flex items-center justify-between gap-3 text-sm">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="w-4 h-4 text-white/30 flex-shrink-0" />
+                    <span className="text-white/80 truncate">{doc.title}</span>
+                  </div>
+                  {doc.status === 'signed' ? (
+                    <span className="flex items-center gap-1 text-emerald-400 flex-shrink-0 text-xs">
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      Подписан {formatDate(doc.signed_at)}
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setSigningDoc(doc)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-xs font-medium transition-colors flex-shrink-0"
+                    >
+                      <PenTool className="w-3.5 h-3.5" />
+                      Подписать
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -354,6 +504,15 @@ function MyProfileView() {
           employeeId={profile.id}
           onClose={() => setShowLeaveModal(false)}
           onCreated={loadProfile}
+        />
+      )}
+
+      {/* Document signing modal */}
+      {signingDoc && (
+        <DocumentSigningModal
+          doc={signingDoc}
+          onClose={() => setSigningDoc(null)}
+          onSigned={() => { setSigningDoc(null); loadProfile(); }}
         />
       )}
     </div>
