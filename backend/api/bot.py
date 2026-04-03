@@ -1521,11 +1521,30 @@ async def cb_project_detail(callback: CallbackQuery):
         status_label = PROJECT_STATUS_LABELS.get(project.status, str(project.status))
         pct = project.progress_percent or 0
         bar = _progress_bar(pct)
+        health = _health_emoji(pct)
+
+        PRIORITY_LABELS = {0: "🟢 Низкий", 1: "🔵 Нормальный", 2: "🟡 Высокий", 3: "🔴 Критический"}
+        priority_label = PRIORITY_LABELS.get(project.priority, "🔵 Нормальный")
+
+        # Find project manager
+        manager = next((m for m in members if m.role and (m.role.value if hasattr(m.role, 'value') else m.role) == 'manager'), None)
+        manager_name = manager.user.name if manager and manager.user else "Не назначен"
 
         lines = [
-            f"📋 <b>{project.name}</b> — {status_label}",
+            f"📋 <b>{project.name}</b> — {status_label} {health}",
             f"Прогресс: {pct}% {bar}",
+            f"Приоритет: {priority_label}",
+            f"Ответственный: {manager_name}",
         ]
+        if project.description:
+            desc = project.description[:200] + ("..." if len(project.description or "") > 200 else "")
+            lines.append(f"\n📝 {desc}")
+        if project.client_name:
+            lines.append(f"Клиент: {project.client_name}")
+        if project.target_date:
+            dl_text = _deadline_text(project.target_date)
+            dl_emoji = _deadline_emoji(project.target_date)
+            lines.append(f"Дедлайн: {dl_text} {dl_emoji}")
         if team_names:
             lines.append(f"Команда: {', '.join(team_names)}")
         lines.append(f"Задачи: {done_count}/{total_count}")
@@ -1542,7 +1561,7 @@ async def cb_project_detail(callback: CallbackQuery):
                     deadline = f" {dl_emoji}" if dl_emoji else ""
                 lines.append(f"  • {task_key} {t.title} → {assignee_name}{deadline}")
 
-        # Navigation buttons — back goes to dept only if user has access
+        # Navigation + action buttons
         back_data = "menu:projects"
         back_label = "← Назад"
         if project.department_id:
@@ -1551,6 +1570,17 @@ async def cb_project_detail(callback: CallbackQuery):
                 back_label = "← Назад к отделу"
 
         buttons: list[list[InlineKeyboardButton]] = []
+
+        # Priority change buttons (only for admin/manager)
+        can_edit = access['is_admin'] or (manager and manager.user_id == access['user_id'])
+        if can_edit:
+            prio_buttons = []
+            for pval, plabel in [(0, "🟢"), (1, "🔵"), (2, "🟡"), (3, "🔴")]:
+                if pval != project.priority:
+                    prio_buttons.append(InlineKeyboardButton(text=plabel, callback_data=f"prio:{project.id}:{pval}"))
+            if prio_buttons:
+                buttons.append(prio_buttons)
+
         buttons.append([
             InlineKeyboardButton(text=back_label, callback_data=back_data),
             InlineKeyboardButton(text="🏠 Главная", callback_data="menu:main"),
@@ -1562,6 +1592,35 @@ async def cb_project_detail(callback: CallbackQuery):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         )
     await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("prio:"))
+async def cb_change_priority(callback: CallbackQuery):
+    """Change project priority via inline button."""
+    parts = callback.data.split(":")
+    project_id = int(parts[1])
+    new_priority = int(parts[2])
+    PRIO_NAMES = {0: "Низкий", 1: "Нормальный", 2: "Высокий", 3: "Критический"}
+
+    async with async_session() as session:
+        access = await _get_user_access(session, callback.from_user.id)
+        if not access:
+            await callback.answer("Привяжите аккаунт", show_alert=True)
+            return
+
+        result = await session.execute(select(Project).where(Project.id == project_id))
+        project = result.scalar_one_or_none()
+        if not project:
+            await callback.answer("Проект не найден", show_alert=True)
+            return
+
+        project.priority = new_priority
+        await session.commit()
+
+    await callback.answer(f"Приоритет → {PRIO_NAMES.get(new_priority, '?')}", show_alert=False)
+    # Refresh project detail
+    callback.data = f"proj:{project_id}"
+    await cb_project_detail(callback)
 
 
 # ─── End of inline button menu ───────────────────────────────────────
