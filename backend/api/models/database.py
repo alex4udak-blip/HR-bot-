@@ -1416,3 +1416,43 @@ class Notification(Base):
     created_at = Column(DateTime, default=func.now())
 
     user = relationship("User")
+
+
+# ============================================================
+# FORM CONSTRUCTOR
+# ============================================================
+
+class FormTemplate(Base):
+    """Custom form template created by recruiter"""
+    __tablename__ = "form_templates"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    vacancy_id = Column(Integer, ForeignKey("vacancies.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    title = Column(String(300), nullable=False)
+    description = Column(Text, nullable=True)
+    slug = Column(String(100), unique=True, nullable=False)  # for public URL
+    is_active = Column(Boolean, default=True)
+    fields = Column(JSON, default=list)  # Array of field definitions
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    organization = relationship("Organization")
+    vacancy = relationship("Vacancy")
+    creator = relationship("User", foreign_keys=[created_by])
+    submissions = relationship("FormSubmission", back_populates="form", cascade="all, delete-orphan")
+
+
+class FormSubmission(Base):
+    """A candidate's submission of a form"""
+    __tablename__ = "form_submissions"
+
+    id = Column(Integer, primary_key=True)
+    form_id = Column(Integer, ForeignKey("form_templates.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True, index=True)
+    data = Column(JSON, nullable=False)  # {field_id: value, ...}
+    submitted_at = Column(DateTime, default=func.now())
+
+    form = relationship("FormTemplate", back_populates="submissions")
+    entity = relationship("Entity")

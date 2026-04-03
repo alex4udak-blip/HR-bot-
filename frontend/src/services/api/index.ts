@@ -539,3 +539,24 @@ export type {
   Notification as AppNotification,
   UnreadCountResponse,
 } from './notifications';
+
+// Forms
+export {
+  getMyForms,
+  createForm,
+  getForm,
+  updateForm,
+  deleteForm,
+  getFormSubmissions,
+  getPublicForm,
+  submitPublicForm,
+} from './forms';
+
+export type {
+  FormField,
+  FormTemplate,
+  FormSubmission,
+  PublicFormData,
+  FormCreateData,
+  FormUpdateData,
+} from './forms';
