@@ -935,6 +935,15 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
           console.error('Failed to add to department:', e);
         }
       }
+      // Update telegram_username if provided
+      const tgUsername = (newUser as any).telegram_username;
+      if (tgUsername && user?.id) {
+        try {
+          await adminUpdateUser(user.id, { telegram_username: tgUsername.replace('@', '') });
+        } catch (e) {
+          console.error('Failed to set telegram_username:', e);
+        }
+      }
       return user;
     },
     onSuccess: () => {
@@ -1124,6 +1133,16 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
                     </select>
                   </div>
                 )}
+                <div>
+                  <label className="block text-sm text-dark-400 mb-1">Telegram username</label>
+                  <input
+                    type="text"
+                    value={(newUser as any).telegram_username || ''}
+                    onChange={(e) => setNewUser({ ...newUser, telegram_username: e.target.value } as any)}
+                    placeholder="@username"
+                    className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+                  />
+                </div>
                 <div className="flex gap-3 pt-4">
                   <Dialog.Close asChild>
                     <button type="button" className="flex-1 py-2.5 rounded-xl glass-light hover:bg-white/10 transition-colors">
