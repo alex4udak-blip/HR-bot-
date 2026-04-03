@@ -266,7 +266,7 @@ export default function Layout() {
     if (user?.role === 'superadmin' || user?.org_role === 'owner') {
       hrItems.push({ path: '/employees', icon: UserCog, label: 'Сотрудники' });
     }
-    hrItems.push({ path: '/my-profile', icon: User, label: 'Мой профиль' });
+    // "Мой профиль" moved to sidebar footer (between theme toggle and help)
     if (hasFeature('candidate_database') || user?.role === 'superadmin' || user?.org_role === 'owner') {
       hrItems.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
       hrItems.push({ path: '/candidates', icon: UserCheck, label: 'База кандидатов' });
@@ -473,6 +473,20 @@ export default function Layout() {
             </div>
           </div>
           <ThemeToggle />
+          <NavLink
+            to="/my-profile"
+            className={({ isActive }) =>
+              clsx(
+                'w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 mb-1',
+                isActive
+                  ? 'text-accent-400 bg-accent-500/10'
+                  : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
+              )
+            }
+          >
+            <User className="w-5 h-5" />
+            <span className="font-medium">Мой профиль</span>
+          </NavLink>
           <button
             onClick={handleHelpClick}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-dark-300 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all duration-200 mb-2"
