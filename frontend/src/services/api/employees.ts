@@ -119,12 +119,12 @@ export interface ReminderItem {
 // ─── API functions ──────────────────────────────────────────
 
 export async function getEmployees(activeOnly = true): Promise<EmployeeData[]> {
-  const { data } = await api.get('/api/employees', { params: { active_only: activeOnly } });
+  const { data } = await api.get('/employees', { params: { active_only: activeOnly } });
   return data;
 }
 
 export async function getMyEmployeeProfile(): Promise<EmployeeData> {
-  const { data } = await api.get('/api/employees/me');
+  const { data } = await api.get('/employees/me');
   return data;
 }
 
@@ -134,7 +134,7 @@ export async function getEmployee(id: number): Promise<EmployeeData> {
 }
 
 export async function createEmployee(payload: EmployeeCreate): Promise<EmployeeData> {
-  const { data } = await api.post('/api/employees', payload);
+  const { data } = await api.post('/employees', payload);
   return data;
 }
 
@@ -159,7 +159,7 @@ export async function createLeaveRequest(employeeId: number, payload: LeaveReque
 }
 
 export async function getAllLeaveRequests(statusFilter?: string): Promise<LeaveRequestData[]> {
-  const { data } = await api.get('/api/employees/leave-requests', {
+  const { data } = await api.get('/employees/leave-requests', {
     params: statusFilter ? { status_filter: statusFilter } : undefined,
   });
   return data;
@@ -176,6 +176,6 @@ export async function rejectLeaveRequest(requestId: number): Promise<{ ok: boole
 }
 
 export async function getEmployeeReminders(): Promise<ReminderItem[]> {
-  const { data } = await api.get('/api/employees/reminders');
+  const { data } = await api.get('/employees/reminders');
   return data;
 }

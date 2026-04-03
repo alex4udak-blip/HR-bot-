@@ -57,48 +57,48 @@ export interface SignDocRequest {
 // Templates (admin)
 
 export async function getDocumentTemplates(): Promise<DocumentTemplate[]> {
-  const { data } = await api.get('/api/documents/templates');
+  const { data } = await api.get('/documents/templates');
   return data;
 }
 
 export async function createDocumentTemplate(payload: DocumentTemplateCreate): Promise<DocumentTemplate> {
-  const { data } = await api.post('/api/documents/templates', payload);
+  const { data } = await api.post('/documents/templates', payload);
   return data;
 }
 
 export async function updateDocumentTemplate(id: number, payload: DocumentTemplateUpdate): Promise<DocumentTemplate> {
-  const { data } = await api.put(`/api/documents/templates/${id}`, payload);
+  const { data } = await api.put(`/documents/templates/${id}`, payload);
   return data;
 }
 
 export async function deleteDocumentTemplate(id: number): Promise<{ ok: boolean }> {
-  const { data } = await api.delete(`/api/documents/templates/${id}`);
+  const { data } = await api.delete(`/documents/templates/${id}`);
   return data;
 }
 
 // Documents
 
 export async function generateDocument(payload: GenerateDocRequest): Promise<SignedDocument> {
-  const { data } = await api.post('/api/documents/generate', payload);
+  const { data } = await api.post('/documents/generate', payload);
   return data;
 }
 
 export async function getMyDocuments(): Promise<SignedDocument[]> {
-  const { data } = await api.get('/api/documents/my');
+  const { data } = await api.get('/documents/my');
   return data;
 }
 
 export async function getDocument(id: number): Promise<SignedDocument> {
-  const { data } = await api.get(`/api/documents/${id}`);
+  const { data } = await api.get(`/documents/${id}`);
   return data;
 }
 
 export async function signDocument(id: number, payload: SignDocRequest): Promise<SignedDocument> {
-  const { data } = await api.post(`/api/documents/${id}/sign`, payload);
+  const { data } = await api.post(`/documents/${id}/sign`, payload);
   return data;
 }
 
 export async function getEmployeeDocuments(employeeId: number): Promise<SignedDocument[]> {
-  const { data } = await api.get(`/api/documents/employee/${employeeId}`);
+  const { data } = await api.get(`/documents/employee/${employeeId}`);
   return data;
 }
