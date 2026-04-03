@@ -20,7 +20,7 @@ from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
 from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser, search, scoring, currency, parse_jobs, interns
-from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms
+from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
@@ -107,6 +107,107 @@ async def saturn_auto_sync_task():
                 logger.info(f"Saturn sync: {result.get('projects_synced', 0)} projects, {result.get('apps_synced', 0)} apps")
         except Exception as e:
             logger.error(f"Saturn auto-sync error: {e}")
+
+
+async def employee_reminders_task():
+    """Daily check for probation endings and 1-year anniversaries, creates notifications for HRD."""
+    from datetime import datetime, timedelta
+    from api.database import AsyncSessionLocal
+    from api.models.database import Employee, Notification, OrgMember, OrgRole
+    from sqlalchemy import select, and_, or_
+    from sqlalchemy.orm import selectinload
+
+    # Wait for database to initialize
+    await asyncio.sleep(120)
+
+    while True:
+        try:
+            async with AsyncSessionLocal() as db:
+                now = datetime.utcnow()
+                in_7_days = now + timedelta(days=7)
+
+                # Find employees with upcoming probation end or 1-year anniversary
+                result = await db.execute(
+                    select(Employee)
+                    .options(selectinload(Employee.user))
+                    .where(
+                        Employee.is_active == True,
+                        or_(
+                            and_(
+                                Employee.probation_end_date != None,
+                                Employee.probation_end_date >= now,
+                                Employee.probation_end_date <= in_7_days,
+                            ),
+                            and_(
+                                Employee.one_year_date != None,
+                                Employee.one_year_date >= now,
+                                Employee.one_year_date <= in_7_days,
+                            ),
+                        ),
+                    )
+                )
+                employees = list(result.scalars().all())
+
+                for emp in employees:
+                    name = emp.user.name if emp.user else f"Сотрудник #{emp.id}"
+
+                    # Find org admins/owners to notify
+                    admins_result = await db.execute(
+                        select(OrgMember.user_id).where(
+                            OrgMember.org_id == emp.org_id,
+                            OrgMember.role.in_([OrgRole.owner, OrgRole.admin]),
+                        )
+                    )
+                    admin_ids = [row[0] for row in admins_result.all()]
+
+                    for admin_id in admin_ids:
+                        if emp.probation_end_date and now <= emp.probation_end_date <= in_7_days:
+                            days_left = (emp.probation_end_date - now).days
+                            # Check if notification already exists today
+                            existing = await db.execute(
+                                select(Notification).where(
+                                    Notification.user_id == admin_id,
+                                    Notification.type == "probation_ending",
+                                    Notification.link == f"/employees?highlight={emp.id}",
+                                    Notification.created_at >= now.replace(hour=0, minute=0, second=0),
+                                )
+                            )
+                            if not existing.scalar_one_or_none():
+                                db.add(Notification(
+                                    user_id=admin_id,
+                                    type="probation_ending",
+                                    title=f"Испытательный срок: {name}",
+                                    message=f"Испытательный срок заканчивается через {days_left} дн.",
+                                    link=f"/employees?highlight={emp.id}",
+                                ))
+
+                        if emp.one_year_date and now <= emp.one_year_date <= in_7_days:
+                            days_left = (emp.one_year_date - now).days
+                            existing = await db.execute(
+                                select(Notification).where(
+                                    Notification.user_id == admin_id,
+                                    Notification.type == "one_year_anniversary",
+                                    Notification.link == f"/employees?highlight={emp.id}",
+                                    Notification.created_at >= now.replace(hour=0, minute=0, second=0),
+                                )
+                            )
+                            if not existing.scalar_one_or_none():
+                                db.add(Notification(
+                                    user_id=admin_id,
+                                    type="one_year_anniversary",
+                                    title=f"1 год работы: {name}",
+                                    message=f"Годовщина работы через {days_left} дн.",
+                                    link=f"/employees?highlight={emp.id}",
+                                ))
+
+                await db.commit()
+                if employees:
+                    logger.info(f"Employee reminders: checked {len(employees)} employees with upcoming dates")
+        except Exception as e:
+            logger.error(f"Employee reminders task error: {e}")
+
+        # Run every 24 hours
+        await asyncio.sleep(86400)
 
 
 async def check_playwright_status():
@@ -203,6 +304,10 @@ async def lifespan(app: FastAPI):
         saturn_sync_task = asyncio.create_task(saturn_auto_sync_task())
         logger.info("Saturn auto-sync task started (every 5 min)")
 
+    # Start employee reminders task (daily)
+    employee_reminders_bg_task = asyncio.create_task(employee_reminders_task())
+    logger.info("Employee reminders task started (daily)")
+
     # Log all registered routes for debugging
     logger.info("=== REGISTERED API ROUTES ===")
     vacancy_routes = []
@@ -226,6 +331,8 @@ async def lifespan(app: FastAPI):
         auto_export_task.cancel()
     if saturn_sync_task:
         saturn_sync_task.cancel()
+    if employee_reminders_bg_task:
+        employee_reminders_bg_task.cancel()
 
     # Close Redis connection
     try:
@@ -406,6 +513,14 @@ try:
     logger.info("Forms router registered successfully at /api/forms")
 except Exception as e:
     logger.error(f"FAILED to register forms router: {e}")
+    raise
+
+logger.info("=== REGISTERING EMPLOYEES ROUTER ===")
+try:
+    app.include_router(employees.router, prefix="/api/employees", tags=["employees"])
+    logger.info("Employees router registered successfully at /api/employees")
+except Exception as e:
+    logger.error(f"FAILED to register employees router: {e}")
     raise
 
 

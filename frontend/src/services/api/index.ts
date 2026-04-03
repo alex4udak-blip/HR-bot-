@@ -540,6 +540,32 @@ export type {
   UnreadCountResponse,
 } from './notifications';
 
+// Employees
+export {
+  getEmployees,
+  getMyEmployeeProfile,
+  getEmployee,
+  createEmployee,
+  updateEmployee,
+  dismissEmployee,
+  getLeaveBalance,
+  createLeaveRequest,
+  getAllLeaveRequests,
+  approveLeaveRequest,
+  rejectLeaveRequest,
+  getEmployeeReminders,
+} from './employees';
+
+export type {
+  EmployeeData,
+  EmployeeCreate,
+  EmployeeUpdate,
+  LeaveBalance,
+  LeaveRequestCreate,
+  LeaveRequestData,
+  ReminderItem,
+} from './employees';
+
 // Forms
 export {
   getMyForms,

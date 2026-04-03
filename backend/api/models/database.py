@@ -1456,3 +1456,79 @@ class FormSubmission(Base):
 
     form = relationship("FormTemplate", back_populates="submissions")
     entity = relationship("Entity")
+
+
+# ============================================================
+# EMPLOYEE MANAGEMENT (Personal Cabinet, Leave Counter, Reminders)
+# ============================================================
+
+class Employee(Base):
+    """Employee record — created when candidate transitions to staff"""
+    __tablename__ = "employees"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True)  # link to candidate record
+    department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True)
+
+    # Personal info
+    position = Column(String(300), nullable=True)
+    phone = Column(String(50), nullable=True)
+    telegram_username = Column(String(200), nullable=True)
+
+    # Employment dates
+    practice_start_date = Column(DateTime, nullable=True)
+    department_start_date = Column(DateTime, nullable=True)  # when moved to dept (first working day)
+    probation_end_date = Column(DateTime, nullable=True)     # auto: department_start_date + 3 months
+    one_year_date = Column(DateTime, nullable=True)          # auto: department_start_date + 1 year
+
+    # Leave counters
+    vacation_days_total = Column(Integer, default=0)         # accumulated vacation days
+    vacation_days_used = Column(Integer, default=0)
+    sick_days_total = Column(Integer, default=10)            # 10 per year
+    sick_days_used = Column(Integer, default=0)
+    family_leave_days_total = Column(Integer, default=3)
+    family_leave_days_used = Column(Integer, default=0)
+
+    # Contract
+    nda_signed = Column(Boolean, default=False)
+    nda_signed_at = Column(DateTime, nullable=True)
+    contract_signed = Column(Boolean, default=False)
+    contract_signed_at = Column(DateTime, nullable=True)
+
+    # Status
+    is_active = Column(Boolean, default=True)
+    dismissed_at = Column(DateTime, nullable=True)
+    dismissal_reason = Column(Text, nullable=True)
+
+    # Metadata
+    extra_data = Column(JSON, default=dict)  # wallet, passport hash, etc
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    user = relationship("User")
+    organization = relationship("Organization")
+    department = relationship("Department")
+    entity = relationship("Entity")
+    leave_requests = relationship("LeaveRequest", back_populates="employee", cascade="all, delete-orphan")
+
+
+class LeaveRequest(Base):
+    """Employee leave/vacation request"""
+    __tablename__ = "leave_requests"
+
+    id = Column(Integer, primary_key=True)
+    employee_id = Column(Integer, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    type = Column(String(30), nullable=False)  # vacation, sick, family_leave, bereavement
+    start_date = Column(DateTime, nullable=False)
+    end_date = Column(DateTime, nullable=False)
+    days = Column(Integer, nullable=False)
+    reason = Column(Text, nullable=True)
+    status = Column(String(20), default="pending")  # pending, approved, rejected
+    approved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    employee = relationship("Employee", back_populates="leave_requests")
+    approver = relationship("User", foreign_keys=[approved_by])
