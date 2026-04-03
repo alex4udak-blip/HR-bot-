@@ -1875,6 +1875,7 @@ async def collect_group_message(message: types.Message):
                             user_name=message.from_user.full_name,
                             telegram_user_id=message.from_user.id,
                             chat_id=message.chat.id,
+                            telegram_username=message.from_user.username,
                         )
                         if created_tasks:
                             lines = ["\u2705 Задачи созданы из плана:"]

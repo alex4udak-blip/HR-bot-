@@ -305,6 +305,7 @@ async def create_tasks_from_message(
     user_name: str,
     telegram_user_id: int | None,
     chat_id: int | None,
+    telegram_username: str | None = None,
 ) -> list[dict]:
     """Full pipeline: detect trigger -> parse -> create tasks -> return results."""
     from ..models.database import (
@@ -316,13 +317,24 @@ async def create_tasks_from_message(
 
     logger.info(f"Task trigger activated for user {user_name}: {message_text[:100]}...")
 
-    # Find user by telegram_id or name
+    # Find user by telegram_id, then telegram_username, then name
     user = None
     if telegram_user_id:
         result = await db.execute(
             select(User).where(User.telegram_id == telegram_user_id)
         )
         user = result.scalar_one_or_none()
+
+        # If not found by telegram_id, auto-bind for future lookups
+        if not user and telegram_username:
+            result = await db.execute(
+                select(User).where(User.telegram_username == telegram_username)
+            )
+            user = result.scalar_one_or_none()
+            if user and not user.telegram_id:
+                user.telegram_id = telegram_user_id
+                await db.flush()
+                logger.info(f"Auto-bound telegram_id {telegram_user_id} to user {user.name}")
 
     if not user and user_name:
         result = await db.execute(
@@ -358,15 +370,23 @@ async def create_tasks_from_message(
     )
     projects = list(result.scalars().all())
 
-    # If user has no projects but text mentions a project name, try to find it
-    if not projects:
-        # Check if text mentions any project by name
-        text_lower = message_text.lower()
-        for p in all_projects:
-            if p.name.lower() in text_lower:
-                projects = [p]
-                logger.info(f"Matched project '{p.name}' from message text for user {user_name}")
-                break
+    # ALWAYS check if text mentions a project name — prioritize it over user's first project
+    text_lower = message_text.lower()
+    text_matched_project = None
+    for p in all_projects:
+        if p.name.lower() in text_lower:
+            text_matched_project = p
+            logger.info(f"Matched project '{p.name}' from message text")
+            break
+
+    # If text mentions a project, use it (even if user is not a member)
+    if text_matched_project:
+        if text_matched_project not in projects:
+            projects.insert(0, text_matched_project)
+        else:
+            # Move matched to front
+            projects.remove(text_matched_project)
+            projects.insert(0, text_matched_project)
 
     if not projects:
         logger.warning(f"No active projects for user {user_name}")
