@@ -65,7 +65,10 @@
       </div>
       <div class="field">
         <label>Пароль</label>
-        <input type="password" id="loginPassword" />
+        <div style="position:relative;">
+          <input type="password" id="loginPassword" style="padding-right:40px;" />
+          <button type="button" id="togglePassword" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;font-size:16px;padding:4px;">👁</button>
+        </div>
       </div>
       <button class="btn btn-primary" id="loginBtn">Войти</button>
       <div class="error" id="loginError"></div>

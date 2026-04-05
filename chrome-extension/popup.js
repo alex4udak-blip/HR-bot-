@@ -10,14 +10,42 @@ const parseForm = document.getElementById('parseForm');
 const noData = document.getElementById('noData');
 const resultView = document.getElementById('resultView');
 
+// Password toggle
+document.getElementById('togglePassword')?.addEventListener('click', () => {
+  const input = document.getElementById('loginPassword');
+  const btn = document.getElementById('togglePassword');
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁';
+  }
+});
+
 // Init
 document.addEventListener('DOMContentLoaded', async () => {
   // Load saved settings
   const stored = await chrome.storage.local.get(['serverUrl', 'authToken']);
-  serverUrl = stored.serverUrl || '';
+  serverUrl = stored.serverUrl || 'https://hr-bot-production-c613.up.railway.app';
   authToken = stored.authToken || '';
 
-  document.getElementById('serverUrl').value = serverUrl || 'https://hr-bot-production-c613.up.railway.app';
+  document.getElementById('serverUrl').value = serverUrl;
+
+  // Try to use existing browser session (cookie sync)
+  if (!authToken) {
+    try {
+      const resp = await fetch(serverUrl + '/api/auth/me', { credentials: 'include' });
+      if (resp.ok) {
+        const user = await resp.json();
+        authToken = 'session-sync';
+        await chrome.storage.local.set({ serverUrl, authToken, userName: user.name });
+        console.log('Session synced from browser:', user.name);
+      }
+    } catch (e) {
+      // No active session, show login
+    }
+  }
 
   if (!authToken) {
     showView('login');
