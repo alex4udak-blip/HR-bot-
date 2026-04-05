@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 380px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #fff; }
+    .header { padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; }
+    .header img { width: 28px; height: 28px; }
+    .header h1 { font-size: 16px; font-weight: 600; }
+    .content { padding: 16px; }
+    .login-form, .parse-form, .result { display: none; }
+    .login-form.active, .parse-form.active, .result.active { display: block; }
+
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .field input, .field select, .field textarea { width: 100%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 10px 12px; color: #fff; font-size: 13px; outline: none; }
+    .field input:focus, .field select:focus, .field textarea:focus { border-color: rgba(99,102,241,0.5); }
+    .field textarea { resize: vertical; min-height: 60px; }
+    .field select option { background: #1a1a2e; }
+
+    .parsed-info { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 12px; margin-bottom: 16px; }
+    .parsed-info .name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .parsed-info .details { font-size: 12px; color: rgba(255,255,255,0.5); line-height: 1.5; }
+    .parsed-info .source { display: inline-block; background: rgba(99,102,241,0.2); color: #818cf8; padding: 2px 8px; border-radius: 4px; font-size: 10px; margin-top: 6px; }
+
+    .duplicate-warning { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 12px; color: #fca5a5; }
+    .duplicate-warning .icon { color: #ef4444; font-size: 14px; }
+
+    .btn { width: 100%; padding: 12px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: rgba(255,255,255,0.1); color: #fff; margin-top: 8px; }
+
+    .success { text-align: center; padding: 20px; }
+    .success .icon { font-size: 48px; margin-bottom: 12px; }
+    .success h2 { font-size: 16px; margin-bottom: 8px; }
+    .success p { font-size: 13px; color: rgba(255,255,255,0.5); }
+
+    .error { color: #ef4444; font-size: 12px; margin-top: 8px; }
+    .no-data { text-align: center; padding: 30px; color: rgba(255,255,255,0.4); font-size: 13px; }
+
+    .settings-link { text-align: center; margin-top: 12px; }
+    .settings-link a { color: rgba(255,255,255,0.3); font-size: 11px; text-decoration: none; }
+    .settings-link a:hover { color: rgba(255,255,255,0.6); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div style="width:28px;height:28px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;">E</div>
+    <h1>Enceladus</h1>
+  </div>
+
+  <div class="content">
+    <!-- Login Form -->
+    <div class="login-form" id="loginForm">
+      <div class="field">
+        <label>Сервер</label>
+        <input type="text" id="serverUrl" placeholder="https://hr-bot-production-c613.up.railway.app" />
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="loginEmail" placeholder="email@company.com" />
+      </div>
+      <div class="field">
+        <label>Пароль</label>
+        <input type="password" id="loginPassword" />
+      </div>
+      <button class="btn btn-primary" id="loginBtn">Войти</button>
+      <div class="error" id="loginError"></div>
+    </div>
+
+    <!-- Parse Form -->
+    <div class="parse-form" id="parseForm">
+      <div class="parsed-info" id="parsedInfo">
+        <div class="name" id="parsedName">&mdash;</div>
+        <div class="details" id="parsedDetails"></div>
+        <div class="source" id="parsedSource"></div>
+      </div>
+
+      <div id="duplicateWarning" class="duplicate-warning" style="display:none;">
+        <span class="icon">!</span> <span id="duplicateText"></span>
+      </div>
+
+      <div class="field">
+        <label>Воронка</label>
+        <select id="funnelSelect">
+          <option value="">Без воронки</option>
+        </select>
+      </div>
+
+      <div class="field" id="emailField" style="display:none;">
+        <label>Email (не распознан)</label>
+        <input type="email" id="manualEmail" placeholder="candidate@email.com" />
+      </div>
+
+      <div class="field">
+        <label>Комментарий</label>
+        <textarea id="commentField" placeholder="Заметки о кандидате..."></textarea>
+      </div>
+
+      <button class="btn btn-primary" id="addBtn">Добавить кандидата</button>
+      <button class="btn btn-secondary" id="copyFormLink">Копировать ссылку на форму</button>
+      <div class="error" id="addError"></div>
+
+      <div class="settings-link">
+        <a href="#" id="logoutLink">Выйти из аккаунта</a>
+      </div>
+    </div>
+
+    <!-- No Data -->
+    <div class="no-data" id="noData" style="display:none;">
+      <p>Откройте страницу резюме на<br><b>hh.ru</b>, <b>career.habr.com</b> или <b>linkedin.com</b></p>
+    </div>
+
+    <!-- Success Result -->
+    <div class="result" id="resultView">
+      <div class="success">
+        <div class="icon" id="resultIcon">OK</div>
+        <h2 id="resultTitle">Кандидат добавлен!</h2>
+        <p id="resultMessage"></p>
+        <button class="btn btn-secondary" id="addAnotherBtn" style="margin-top:16px;">Добавить ещё</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -20,7 +20,7 @@ from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
 from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser, search, scoring, currency, parse_jobs, interns
-from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees, documents
+from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees, documents, magic_button
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
@@ -361,9 +361,12 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS - use allowed origins from settings (not wildcard)
+# Chrome extensions use chrome-extension:// origins — allow all extension origins
+cors_origins = settings.get_allowed_origins_list()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.get_allowed_origins_list(),
+    allow_origins=cors_origins,
+    allow_origin_regex=r"^chrome-extension://.*$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
@@ -529,6 +532,14 @@ try:
     logger.info("Documents router registered successfully at /api/documents")
 except Exception as e:
     logger.error(f"FAILED to register documents router: {e}")
+    raise
+
+logger.info("=== REGISTERING MAGIC BUTTON ROUTER ===")
+try:
+    app.include_router(magic_button.router, prefix="/api/magic-button", tags=["magic-button"])
+    logger.info("Magic button router registered successfully at /api/magic-button")
+except Exception as e:
+    logger.error(f"FAILED to register magic button router: {e}")
     raise
 
 
