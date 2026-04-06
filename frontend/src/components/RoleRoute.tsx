@@ -1,23 +1,16 @@
 /**
  * RoleRoute — route-level access guard based on user role.
  *
- * Usage:
- *   <RoleRoute allow={['superadmin']}>
- *     <AdminPage />
- *   </RoleRoute>
+ * Real role hierarchy:
+ *   superadmin  — Витя, Саша (system-wide, sees everything)
+ *   owner       — org owner (full org access)
+ *   admin       — Настя = HR admin (full HR access: candidates, vacancies, funnels, analytics, PEN)
+ *   member      — сотрудники (profile, projects, documents, signing only)
  *
- *   <RoleRoute allow={['superadmin', 'owner', 'admin']}>
- *     <SettingsPage />
- *   </RoleRoute>
- *
- * Allowed role tokens:
- *   'superadmin'  — system superadmin (user.role === 'superadmin')
- *   'owner'       — org owner (user.org_role === 'owner')
- *   'admin'       — org admin (user.org_role === 'admin')
- *   'lead'        — department lead (user.department_role === 'lead')
- *   'sub_admin'   — department sub-admin (user.department_role === 'sub_admin')
- *   'member'      — any authenticated user
- *   'hr'          — shortcut for superadmin | owner | admin | lead
+ * Shortcuts:
+ *   'hr'        — superadmin | owner | admin  (anyone with HR access)
+ *   'management'— superadmin | owner          (org management: settings, departments, users)
+ *   'any'       — any authenticated user
  */
 
 import { Navigate } from 'react-router-dom';
@@ -27,45 +20,40 @@ interface RoleRouteProps {
   children: React.ReactNode;
   allow: string[];
   feature?: string;
-  redirectTo?: string;
 }
 
-export default function RoleRoute({ children, allow, feature, redirectTo = '/dashboard' }: RoleRouteProps) {
+export default function RoleRoute({ children, allow, feature }: RoleRouteProps) {
   const { user, hasFeature } = useAuthStore();
 
   if (!user) return <Navigate to="/login" replace />;
 
-  // Feature check first
-  if (feature && !hasFeature(feature)) {
-    // Superadmin always passes
-    if (user.role !== 'superadmin') {
-      return <AccessDenied />;
-    }
+  // Feature check
+  if (feature && !hasFeature(feature) && user.role !== 'superadmin') {
+    return <AccessDenied />;
   }
 
-  // 'member' means any authenticated user
-  if (allow.includes('member')) return <>{children}</>;
+  // 'any' / 'member' = any authenticated user
+  if (allow.includes('any') || allow.includes('member')) return <>{children}</>;
 
-  // Expand 'hr' shortcut
+  // Expand shortcuts
   const roles = new Set(allow);
   if (roles.has('hr')) {
     roles.add('superadmin');
     roles.add('owner');
     roles.add('admin');
-    roles.add('lead');
+  }
+  if (roles.has('management')) {
+    roles.add('superadmin');
+    roles.add('owner');
   }
 
-  // Check each role token
+  // Check access: superadmin (system role) OR org_role (owner/admin)
   const hasAccess =
     (roles.has('superadmin') && user.role === 'superadmin') ||
-    (roles.has('owner') && user.org_role === 'owner') ||
-    (roles.has('admin') && (user.org_role === 'admin' || user.org_role === 'owner')) ||
-    (roles.has('lead') && user.department_role === 'lead') ||
-    (roles.has('sub_admin') && user.department_role === 'sub_admin');
+    (roles.has('owner') && (user.org_role === 'owner' || user.role === 'superadmin')) ||
+    (roles.has('admin') && (user.org_role === 'admin' || user.org_role === 'owner' || user.role === 'superadmin'));
 
-  if (!hasAccess) {
-    return <AccessDenied />;
-  }
+  if (!hasAccess) return <AccessDenied />;
 
   return <>{children}</>;
 }
@@ -75,7 +63,7 @@ function AccessDenied() {
     <div className="min-h-[60vh] flex flex-col items-center justify-center text-center p-8">
       <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4">
         <svg className="w-8 h-8 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v.01M12 9v3m-7 4h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" />
         </svg>
       </div>
       <h2 className="text-xl font-semibold text-white mb-2">Доступ запрещён</h2>

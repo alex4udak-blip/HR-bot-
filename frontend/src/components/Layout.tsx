@@ -259,29 +259,26 @@ export default function Layout() {
       ],
     });
 
-    // HR block — only for HR roles (superadmin, owner, admin, dept lead)
-    const isHrRole = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin' || user?.department_role === 'lead';
+    // HR block — superadmin, owner, admin (Настя = admin HR)
+    // member (обычные сотрудники) НЕ видят HR блок
+    const isHrRole = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
     if (isHrRole) {
       const hrItems: { path: string; icon: LucideIcon; label: string }[] = [];
       hrItems.push({ path: '/all-candidates', icon: Users, label: 'Все кандидаты' });
       hrItems.push({ path: '/my-funnels', icon: GitBranch, label: 'Мои воронки' });
-      hrItems.push({ path: '/form-builder', icon: FileText, label: 'Конструктор форм' });
-      hrItems.push({ path: '/practice-list', icon: ClipboardList, label: 'Лист практики' });
-      hrItems.push({ path: '/document-templates', icon: FileSignature, label: 'Шаблоны документов' });
-      if (user?.role === 'superadmin' || user?.org_role === 'owner') {
-        hrItems.push({ path: '/employees', icon: UserCog, label: 'Сотрудники' });
-      }
       hrItems.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
       hrItems.push({ path: '/candidates', icon: UserCheck, label: 'База кандидатов' });
       hrItems.push({ path: '/interns', icon: GraduationCap, label: 'Практиканты' });
-      hrItems.push({ path: '/analytics', icon: BarChart3, label: 'HR Аналитика' });
-      // ПЭН — only for lead/admin/owner/superadmin
-      if (user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin') {
-        hrItems.push({ path: '/pen', icon: TrendingUp, label: 'ПЭН (бонусы)' });
-      }
+      hrItems.push({ path: '/practice-list', icon: ClipboardList, label: 'Лист практики' });
       hrItems.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
+      hrItems.push({ path: '/analytics', icon: BarChart3, label: 'HR Аналитика' });
+      hrItems.push({ path: '/pen', icon: TrendingUp, label: 'ПЭН (бонусы)' });
+      hrItems.push({ path: '/form-builder', icon: FileText, label: 'Конструктор форм' });
+      hrItems.push({ path: '/document-templates', icon: FileSignature, label: 'Шаблоны документов' });
       hrItems.push({ path: '/extension', icon: Puzzle, label: 'Волшебная кнопка' });
+      // Экспорт/Импорт — owner и superadmin
       if (user?.role === 'superadmin' || user?.org_role === 'owner') {
+        hrItems.push({ path: '/employees', icon: UserCog, label: 'Сотрудники' });
         hrItems.push({ path: '/exports', icon: FileSpreadsheet, label: 'Экспорт CSV' });
         hrItems.push({ path: '/import', icon: Upload, label: 'Импорт CSV' });
       }

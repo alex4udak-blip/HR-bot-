@@ -208,7 +208,7 @@ export default function App() {
           <Route path="exports" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><ExportsPage /></RoleRoute></Suspense>} />
           <Route path="import" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><CsvImportPage /></RoleRoute></Suspense>} />
           <Route path="employees" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><EmployeePortalPage /></RoleRoute></Suspense>} />
-          <Route path="dept-manager" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner', 'admin', 'lead']}><DeptManagerPage /></RoleRoute></Suspense>} />
+          <Route path="dept-manager" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><DeptManagerPage /></RoleRoute></Suspense>} />
           <Route path="trash" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><TrashPage /></RoleRoute></Suspense>} />
 
           {/* Admin routes — superadmin and owner only */}
