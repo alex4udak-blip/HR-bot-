@@ -470,6 +470,48 @@ async def bulk_action(
 
 
 # ---------------------------------------------------------------------------
+# PATCH /{entity_id}/status  — quick status change (drag-n-drop kanban)
+# ---------------------------------------------------------------------------
+
+class ChangeStatusRequest(BaseModel):
+    status: str
+
+
+@router.patch("/{entity_id}/status")
+async def change_candidate_status(
+    entity_id: int,
+    body: ChangeStatusRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Quick status change for kanban drag-n-drop."""
+    current_user = await db.merge(current_user)
+
+    try:
+        new_status = EntityStatus(body.status)
+    except ValueError:
+        raise HTTPException(400, f"Invalid status: {body.status}")
+
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.type == EntityType.candidate)
+    )
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Candidate not found")
+
+    old_status = entity.status
+    entity.status = new_status
+    await db.commit()
+
+    return {
+        "success": True,
+        "entity_id": entity_id,
+        "old_status": old_status.value if hasattr(old_status, "value") else str(old_status),
+        "new_status": new_status.value,
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /recruiters  — list of users who created candidates (for filter dropdown)
 # ---------------------------------------------------------------------------
 
@@ -520,3 +562,143 @@ async def list_tags(
             all_tags.update(row.tags)
 
     return sorted(all_tags)
+
+
+# ---------------------------------------------------------------------------
+# GET /kanban  — candidates grouped by status for kanban board
+# ---------------------------------------------------------------------------
+
+KANBAN_STATUSES = ["new", "screening", "practice", "tech_practice", "is_interview", "offer", "hired", "rejected"]
+
+KANBAN_STATUS_LABELS = {
+    "new": "Новый",
+    "screening": "Скрининг",
+    "practice": "Практика",
+    "tech_practice": "Тех-практика",
+    "is_interview": "ИС",
+    "offer": "Оффер",
+    "hired": "Принят",
+    "rejected": "Отклонён",
+}
+
+
+class KanbanCard(BaseModel):
+    id: int
+    name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    telegram_username: Optional[str] = None
+    position: Optional[str] = None
+    source: Optional[str] = None
+    recruiter_name: Optional[str] = None
+    created_at: datetime
+    tags: list = []
+    photo_url: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class KanbanColumn(BaseModel):
+    status: str
+    label: str
+    cards: List[KanbanCard]
+    count: int
+
+
+class KanbanBoardResponse(BaseModel):
+    columns: List[KanbanColumn]
+    total: int
+
+
+@router.get("/kanban", response_model=KanbanBoardResponse)
+async def get_candidates_kanban(
+    q: Optional[str] = None,
+    recruiter_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get candidates grouped by EntityStatus for kanban board view."""
+    current_user = await db.merge(current_user)
+    org_id = await _get_org_id(current_user, db)
+    isolated_ids = await get_isolated_creator_ids(current_user, db) if org_id else []
+
+    base_q = _base_candidate_query(org_id, current_user, isolated_ids)
+
+    # Optional text search
+    if q and q.strip():
+        search_term = f"%{q.strip().lower()}%"
+        base_q = base_q.where(
+            or_(
+                Entity.name.ilike(search_term),
+                Entity.email.ilike(search_term),
+                Entity.phone.ilike(search_term),
+                Entity.position.ilike(search_term),
+            )
+        )
+
+    # Recruiter filter
+    if recruiter_id:
+        base_q = base_q.where(Entity.created_by == recruiter_id)
+
+    # Only fetch candidates in kanban statuses
+    status_enums = []
+    for s in KANBAN_STATUSES:
+        try:
+            status_enums.append(EntityStatus(s))
+        except ValueError:
+            pass
+    base_q = base_q.where(Entity.status.in_(status_enums))
+
+    # Order within each column: newest first
+    base_q = base_q.order_by(Entity.created_at.desc())
+
+    result = await db.execute(base_q)
+    entities = result.scalars().all()
+
+    # Get recruiter names
+    creator_ids = {e.created_by for e in entities if e.created_by}
+    recruiter_map = {}
+    if creator_ids:
+        r = await db.execute(
+            select(User.id, User.name).where(User.id.in_(creator_ids))
+        )
+        recruiter_map = {row.id: row.name for row in r.all()}
+
+    # Group by status
+    grouped: dict[str, list] = {s: [] for s in KANBAN_STATUSES}
+    for e in entities:
+        status_val = e.status.value if hasattr(e.status, "value") else str(e.status)
+        if status_val in grouped:
+            tg = e.telegram_usernames[0] if e.telegram_usernames else None
+            source_val = None
+            if e.extra_data and isinstance(e.extra_data, dict):
+                source_val = e.extra_data.get("source")
+
+            grouped[status_val].append(KanbanCard(
+                id=e.id,
+                name=e.name,
+                email=e.email,
+                phone=e.phone,
+                telegram_username=tg,
+                position=e.position,
+                source=source_val,
+                recruiter_name=recruiter_map.get(e.created_by),
+                created_at=e.created_at,
+                tags=e.tags or [],
+                photo_url=None,  # TODO: add photo support
+            ))
+
+    columns = []
+    total = 0
+    for s in KANBAN_STATUSES:
+        cards = grouped.get(s, [])
+        total += len(cards)
+        columns.append(KanbanColumn(
+            status=s,
+            label=KANBAN_STATUS_LABELS.get(s, s),
+            cards=cards,
+            count=len(cards),
+        ))
+
+    return KanbanBoardResponse(columns=columns, total=total)

@@ -127,3 +127,65 @@ export const getCandidateTags = async (): Promise<string[]> => {
   const { data } = await deduplicatedGet<string[]>('/candidates/tags');
   return data;
 };
+
+
+// ============================================================
+// KANBAN BOARD API
+// ============================================================
+
+export interface KanbanCard {
+  id: number;
+  name: string;
+  email?: string;
+  phone?: string;
+  telegram_username?: string;
+  position?: string;
+  source?: string;
+  recruiter_name?: string;
+  created_at: string;
+  tags: string[];
+  photo_url?: string;
+}
+
+export interface KanbanColumn {
+  status: string;
+  label: string;
+  cards: KanbanCard[];
+  count: number;
+}
+
+export interface KanbanBoardResponse {
+  columns: KanbanColumn[];
+  total: number;
+}
+
+/**
+ * Get candidates kanban board grouped by status.
+ */
+export const getCandidatesKanban = async (params?: {
+  q?: string;
+  recruiter_id?: number;
+}): Promise<KanbanBoardResponse> => {
+  const searchParams: Record<string, string> = {};
+  if (params?.q) searchParams.q = params.q;
+  if (params?.recruiter_id) searchParams.recruiter_id = String(params.recruiter_id);
+  const { data } = await deduplicatedGet<KanbanBoardResponse>('/candidates/kanban', {
+    params: searchParams,
+  });
+  return data;
+};
+
+/**
+ * Quick status change for kanban drag-n-drop.
+ */
+export const changeCandidateStatus = async (
+  entityId: number,
+  status: string,
+): Promise<{ success: boolean }> => {
+  const { data } = await debouncedMutation<{ success: boolean }>(
+    'patch',
+    `/candidates/${entityId}/status`,
+    { status },
+  );
+  return data;
+};

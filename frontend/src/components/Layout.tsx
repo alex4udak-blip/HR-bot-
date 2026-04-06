@@ -122,9 +122,23 @@ function FABButton({ navigate }: { navigate: (path: string) => void }) {
 
 export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeBlock, setActiveBlock] = useState<string>('projects');
   const location = useLocation();
   const { user, logout, isImpersonating, exitImpersonation, fetchPermissions, customRoleName, hasFeature } = useAuthStore();
+
+  const defaultBlock = useMemo(() => {
+    if (user?.org_role === 'admin' || user?.org_role === 'hr') return 'hr';
+    return 'projects';
+  }, [user?.org_role]);
+  const [activeBlock, setActiveBlock] = useState<string>(defaultBlock);
+
+  // Sync default block when user role becomes available
+  useEffect(() => {
+    if (!location.pathname || location.pathname === '/') {
+      if (user?.org_role === 'admin' || user?.org_role === 'hr') {
+        setActiveBlock('hr');
+      }
+    }
+  }, [user?.org_role]);
   const navigate = useNavigate();
   const { startTour, resetTour, hasCompletedTour } = useOnboardingTour();
 
