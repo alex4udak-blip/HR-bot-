@@ -39,6 +39,16 @@ async def magic_button_parse(
     current_user: User = Depends(get_current_user),
 ):
     """Process a resume parsed by the Chrome extension."""
+    import traceback
+    import logging
+    logger = logging.getLogger("hr-analyzer.magic-button")
+    try:
+        return await _do_magic_parse(data, db, current_user)
+    except Exception as e:
+        logger.error(f"Magic button error: {e}\n{traceback.format_exc()}")
+        raise HTTPException(500, detail=f"Error: {str(e)}")
+
+async def _do_magic_parse(data, db, current_user):
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(400, "User not in organization")
