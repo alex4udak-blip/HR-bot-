@@ -36,11 +36,43 @@ async def get_current_user_info(
     )
     chats_count = result.scalar() or 0
 
+    # Get org role and department info
+    org_role_value = None
+    department_id = None
+    department_name = None
+    department_role_value = None
+
+    # Find org membership
+    org_member_result = await db.execute(
+        select(OrgMember).where(OrgMember.user_id == current_user.id)
+    )
+    org_member = org_member_result.scalar_one_or_none()
+    if org_member:
+        org_role_value = org_member.role.value if org_member.role else None
+
+    # Find department membership
+    from ..models.database import Department
+    dept_result = await db.execute(
+        select(DepartmentMember, Department)
+        .join(Department, Department.id == DepartmentMember.department_id)
+        .where(DepartmentMember.user_id == current_user.id)
+    )
+    dept_row = dept_result.first()
+    if dept_row:
+        dept_member, dept = dept_row
+        department_id = dept.id
+        department_name = dept.name
+        department_role_value = dept_member.role.value if dept_member.role else None
+
     return UserResponse(
         id=current_user.id,
         email=current_user.email,
         name=current_user.name,
         role=current_user.role.value,
+        org_role=org_role_value,
+        department_id=department_id,
+        department_name=department_name,
+        department_role=department_role_value,
         telegram_id=current_user.telegram_id,
         telegram_username=current_user.telegram_username,
         additional_emails=current_user.additional_emails or [],
