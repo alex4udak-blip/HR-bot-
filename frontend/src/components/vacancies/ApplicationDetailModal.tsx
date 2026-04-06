@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Save, Star, ExternalLink, Trash2 } from 'lucide-react';
+import { X, Save, Star, ExternalLink, Trash2, GraduationCap, Loader2, History, ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
 import { useVacancyStore } from '@/stores/vacancyStore';
+import { getApplicationHistory } from '@/services/api';
+import type { ApplicationHistoryEntry } from '@/services/api/vacancies';
 import type { VacancyApplication, ApplicationStage } from '@/types';
 import { APPLICATION_STAGE_LABELS } from '@/types';
 
@@ -17,6 +19,21 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
   const navigate = useNavigate();
   const { updateApplication, removeApplication, fetchKanbanBoard, kanbanBoard } = useVacancyStore();
   const [loading, setLoading] = useState(false);
+  const [inviting, setInviting] = useState(false);
+
+  const [activeTab, setActiveTab] = useState<'details' | 'history'>('details');
+  const [history, setHistory] = useState<ApplicationHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === 'history' && history.length === 0) {
+      setHistoryLoading(true);
+      getApplicationHistory(application.id)
+        .then((data) => setHistory(data))
+        .catch(() => { /* silently fail — history is optional */ })
+        .finally(() => setHistoryLoading(false));
+    }
+  }, [activeTab, application.id, history.length]);
 
   const [formData, setFormData] = useState({
     stage: application.stage,
@@ -72,6 +89,30 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
     onClose();
   };
 
+  const handleInvitePrometheus = async () => {
+    setInviting(true);
+    try {
+      const resp = await fetch('/api/prometheus/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entity_id: application.entity_id,
+          vacancy_id: kanbanBoard?.vacancy_id,
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        toast.success(data.message);
+      } else {
+        toast.error(data.detail || 'Ошибка при отправке приглашения');
+      }
+    } catch {
+      toast.error('Ошибка сети');
+    } finally {
+      setInviting(false);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -111,6 +152,34 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
           </div>
         </div>
 
+        {/* Tabs */}
+        <div className="flex border-b border-white/10">
+          <button
+            onClick={() => setActiveTab('details')}
+            className={clsx(
+              'flex-1 px-4 py-2.5 text-sm font-medium transition-colors',
+              activeTab === 'details'
+                ? 'text-white border-b-2 border-blue-500'
+                : 'text-white/40 hover:text-white/60'
+            )}
+          >
+            Детали
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={clsx(
+              'flex-1 px-4 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-1.5',
+              activeTab === 'history'
+                ? 'text-white border-b-2 border-blue-500'
+                : 'text-white/40 hover:text-white/60'
+            )}
+          >
+            <History className="w-3.5 h-3.5" />
+            История
+          </button>
+        </div>
+
+        {activeTab === 'details' ? (
         <div className="p-4 space-y-4">
           {/* Stage */}
           <div>
@@ -198,7 +267,95 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
             <p>Добавлен: {new Date(application.applied_at).toLocaleDateString('ru-RU')}</p>
             <p>Последнее изменение: {new Date(application.last_stage_change_at).toLocaleDateString('ru-RU')}</p>
           </div>
+
+          {/* Invite to Prometheus */}
+          <button
+            onClick={handleInvitePrometheus}
+            disabled={inviting}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/20 rounded-lg text-purple-300 transition-all disabled:opacity-50"
+          >
+            {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <GraduationCap className="w-4 h-4" />}
+            {inviting ? 'Отправка...' : 'Пригласить в Prometheus'}
+          </button>
         </div>
+        ) : (
+        <div className="p-4 max-h-80 overflow-y-auto">
+          {historyLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-5 h-5 animate-spin text-white/40" />
+              <span className="ml-2 text-sm text-white/40">Загрузка истории...</span>
+            </div>
+          ) : history.length === 0 ? (
+            <div className="text-center py-8 text-white/30 text-sm">
+              История переходов пока пуста
+            </div>
+          ) : (
+            <div className="relative pl-6">
+              {/* Vertical timeline line */}
+              <div className="absolute left-[9px] top-2 bottom-2 w-px bg-white/10" />
+
+              <div className="space-y-4">
+                {history
+                  .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                  .map((entry) => {
+                    const stageLabelTo = APPLICATION_STAGE_LABELS[entry.to_stage as ApplicationStage] || entry.to_stage;
+                    const stageLabelFrom = entry.from_stage
+                      ? (APPLICATION_STAGE_LABELS[entry.from_stage as ApplicationStage] || entry.from_stage)
+                      : null;
+
+                    return (
+                      <div key={entry.id} className="relative">
+                        {/* Timeline dot */}
+                        <div className="absolute -left-6 top-1 w-[10px] h-[10px] rounded-full bg-blue-500 border-2 border-[#1a1a2e] z-10" />
+
+                        <div className="space-y-1">
+                          {/* Stage transition badges */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {stageLabelFrom && (
+                              <>
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-white/[0.06] text-white/50 border border-white/[0.06]">
+                                  {stageLabelFrom}
+                                </span>
+                                <ArrowRight className="w-3 h-3 text-white/30" />
+                              </>
+                            )}
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                              {stageLabelTo}
+                            </span>
+                          </div>
+
+                          {/* Meta info */}
+                          <div className="flex items-center gap-2 text-[11px] text-white/30">
+                            <span>
+                              {new Date(entry.created_at).toLocaleDateString('ru-RU', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                            {entry.changed_by && (
+                              <>
+                                <span className="text-white/10">|</span>
+                                <span>{entry.changed_by}</span>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Comment */}
+                          {entry.comment && (
+                            <p className="text-xs text-white/50 mt-0.5">{entry.comment}</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+        </div>
+        )}
 
         <div className="flex items-center justify-between p-4 border-t border-white/10">
           <button

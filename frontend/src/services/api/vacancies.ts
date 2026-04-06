@@ -386,6 +386,28 @@ export const bulkCalculateScores = async (
 };
 
 // ============================================================
+// APPLICATION HISTORY API
+// ============================================================
+
+export interface ApplicationHistoryEntry {
+  id: number;
+  from_stage: string | null;
+  to_stage: string;
+  changed_by: string | null;
+  comment: string | null;
+  created_at: string;
+}
+
+export const getApplicationHistory = async (
+  applicationId: number
+): Promise<ApplicationHistoryEntry[]> => {
+  const { data } = await deduplicatedGet<ApplicationHistoryEntry[]>(
+    `/vacancies/applications/${applicationId}/history`
+  );
+  return data;
+};
+
+// ============================================================
 // VACANCY SHARING API
 // ============================================================
 

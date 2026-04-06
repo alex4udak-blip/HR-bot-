@@ -121,6 +121,22 @@ async def _do_magic_parse(data, db, current_user):
 
     await db.commit()
 
+    # --- Notification: new candidate from magic button ---
+    if data.vacancy_id:
+        try:
+            from ..services.hr_notifications import notify_new_candidate
+            vac_result = await db.execute(
+                select(Vacancy).where(Vacancy.id == data.vacancy_id)
+            )
+            vacancy = vac_result.scalar_one_or_none()
+            if vacancy:
+                await notify_new_candidate(db, entity, vacancy, current_user)
+        except Exception:
+            import logging
+            logging.getLogger("hr-analyzer.magic-button").exception(
+                "notify_new_candidate failed (non-critical)"
+            )
+
     return MagicButtonResponse(
         success=True,
         entity_id=entity.id,

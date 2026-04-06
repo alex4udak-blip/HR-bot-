@@ -495,6 +495,7 @@ class ApplicationUpdate(BaseModel):
     rating: Optional[int] = None
     notes: Optional[str] = None
     rejection_reason: Optional[str] = None
+    interview_summary: Optional[str] = None
     next_interview_at: Optional[datetime] = None
 
 
@@ -513,6 +514,7 @@ class ApplicationResponse(BaseModel):
     rating: Optional[int] = None
     notes: Optional[str] = None
     rejection_reason: Optional[str] = None
+    interview_summary: Optional[str] = None
     source: Optional[str] = None
     next_interview_at: Optional[datetime] = None
     applied_at: datetime

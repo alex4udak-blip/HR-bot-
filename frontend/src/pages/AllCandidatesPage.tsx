@@ -25,6 +25,7 @@ import {
   Filter,
   X,
   Trash2,
+  GraduationCap,
 } from 'lucide-react';
 import clsx from 'clsx';
 import {
@@ -496,6 +497,32 @@ export default function AllCandidatesPage() {
               >
                 <Briefcase className="w-3 h-3" />
                 К вакансии
+              </button>
+
+              {/* Invite to Prometheus */}
+              <button
+                onClick={async () => {
+                  if (!window.confirm(`Пригласить ${selected.size} кандидат(ов) в Prometheus?`)) return;
+                  setBulkLoading(true);
+                  try {
+                    const resp = await fetch('/api/prometheus/invite/bulk', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ entity_ids: Array.from(selected) }),
+                    });
+                    const data = await resp.json();
+                    if (resp.ok) {
+                      alert(`Отправлено: ${data.sent}, Пропущено: ${data.skipped}`);
+                    }
+                  } catch { /* ignore */ } finally {
+                    setBulkLoading(false);
+                  }
+                }}
+                disabled={bulkLoading}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 rounded-lg text-xs text-purple-400 transition-all"
+              >
+                <GraduationCap className="w-3 h-3" />
+                В Prometheus
               </button>
 
               {/* Delete */}

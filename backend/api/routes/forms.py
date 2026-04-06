@@ -468,6 +468,7 @@ async def submit_public_form(
     db.add(submission)
 
     # If form has vacancy_id, create VacancyApplication
+    vacancy = None
     if form.vacancy_id:
         # Check vacancy exists
         vac_result = await db.execute(
@@ -485,5 +486,19 @@ async def submit_public_form(
             db.add(application)
 
     await db.commit()
+
+    # --- Notification: new candidate from public form ---
+    if form.vacancy_id and vacancy:
+        try:
+            from ..services.hr_notifications import notify_new_candidate
+            # For public forms, use the form creator as the "added_by" user
+            creator_result = await db.execute(
+                select(User).where(User.id == form.created_by)
+            )
+            form_creator = creator_result.scalar_one_or_none()
+            if form_creator:
+                await notify_new_candidate(db, entity, vacancy, form_creator)
+        except Exception:
+            logger.exception("notify_new_candidate (form) failed (non-critical)")
 
     return {"message": "Спасибо! Ваша анкета успешно отправлена."}

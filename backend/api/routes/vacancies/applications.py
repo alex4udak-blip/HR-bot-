@@ -74,6 +74,7 @@ async def list_applications(
             rating=app.rating,
             notes=app.notes,
             rejection_reason=app.rejection_reason,
+            interview_summary=app.interview_summary,
             source=app.source,
             next_interview_at=app.next_interview_at,
             applied_at=app.applied_at,
@@ -192,6 +193,26 @@ async def create_application(
     await db.commit()
     await db.refresh(application)
 
+    # Record initial stage transition
+    from ...services.stage_transitions import record_transition
+    await record_transition(
+        db=db,
+        application_id=application.id,
+        entity_id=data.entity_id,
+        from_stage=None,
+        to_stage=initial_stage.value,
+        changed_by_id=current_user.id,
+        comment="Initial application",
+    )
+    await db.commit()
+
+    # --- Notification: new candidate added ---
+    try:
+        from ...services.hr_notifications import notify_new_candidate
+        await notify_new_candidate(db, entity, vacancy, current_user)
+    except Exception:
+        logger.exception("notify_new_candidate failed (non-critical)")
+
     logger.info(f"Created application {application.id} for vacancy {vacancy_id}")
 
     return ApplicationResponse(
@@ -208,6 +229,7 @@ async def create_application(
         rating=application.rating,
         notes=application.notes,
         rejection_reason=application.rejection_reason,
+        interview_summary=application.interview_summary,
         source=application.source,
         next_interview_at=application.next_interview_at,
         applied_at=application.applied_at,
@@ -225,6 +247,7 @@ async def update_application(
 ):
     """Update an application (move stage, add notes, etc.) - with access control."""
     from .kanban import rebalance_stage_orders
+    from ...services.stage_transitions import record_transition
 
     org = await get_user_org(current_user, db)
 
@@ -243,6 +266,19 @@ async def update_application(
     vacancy = vacancy_result.scalar()
     if vacancy and not await can_access_vacancy(vacancy, current_user, org, db):
         raise HTTPException(status_code=403, detail="Access denied to this vacancy")
+
+    # Save old values for notifications
+    old_stage = application.stage
+    old_interview_at = application.next_interview_at
+
+    # Validate: interview_summary required before moving to practice stage
+    if data.stage == ApplicationStage.phone_screen and data.stage != application.stage:
+        summary = data.interview_summary if hasattr(data, 'interview_summary') and data.interview_summary else application.interview_summary
+        if not summary or not summary.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Необходимо заполнить итог собеседования перед переводом на практику"
+            )
 
     # Track stage change
     if data.stage and data.stage != application.stage:
@@ -284,6 +320,17 @@ async def update_application(
             entity_to_sync.updated_at = datetime.utcnow()
             logger.info(f"Synchronized application {application_id} stage {data.stage} to entity {application.entity_id} status {new_status}")
 
+    # Record stage transition in audit log
+    if data.stage and data.stage != old_stage:
+        await record_transition(
+            db=db,
+            application_id=application.id,
+            entity_id=application.entity_id,
+            from_stage=old_stage.value if old_stage else None,
+            to_stage=data.stage.value,
+            changed_by_id=current_user.id,
+        )
+
     await db.commit()
     await db.refresh(application)
 
@@ -298,6 +345,33 @@ async def update_application(
         select(Vacancy.title).where(Vacancy.id == application.vacancy_id)
     )
     vacancy_title = vacancy_result.scalar()
+
+    # --- Notifications (fire-and-forget) ---
+    try:
+        from ...services.hr_notifications import (
+            notify_stage_change, notify_interview_scheduled, notify_practice_started,
+        )
+
+        # Stage change notification
+        if data.stage and data.stage != old_stage and entity:
+            await notify_stage_change(
+                db, application, entity, old_stage, data.stage, current_user
+            )
+            # Practice started
+            if data.stage == ApplicationStage.phone_screen:
+                await notify_practice_started(db, application, entity, current_user)
+
+        # Interview scheduled notification
+        if (
+            data.next_interview_at
+            and data.next_interview_at != old_interview_at
+            and entity
+        ):
+            await notify_interview_scheduled(
+                db, application, entity, data.next_interview_at, current_user
+            )
+    except Exception:
+        logger.exception("Update-application notifications failed (non-critical)")
 
     logger.info(f"Updated application {application.id}, stage: {application.stage}")
 
@@ -316,6 +390,7 @@ async def update_application(
         rating=application.rating,
         notes=application.notes,
         rejection_reason=application.rejection_reason,
+        interview_summary=application.interview_summary,
         source=application.source,
         next_interview_at=application.next_interview_at,
         applied_at=application.applied_at,

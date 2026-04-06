@@ -21,6 +21,8 @@ import { useVacancyStore } from '@/stores/vacancyStore';
 import { updateApplication, calculateCompatibilityScore } from '@/services/api';
 import AddCandidateModal from './AddCandidateModal';
 import ApplicationDetailModal from './ApplicationDetailModal';
+import InterviewSummaryModal from './InterviewSummaryModal';
+import type { InterviewSummaryData } from './InterviewSummaryModal';
 import { KanbanCardSkeleton, Skeleton, EmptyKanban, ConfirmDialog, ErrorMessage } from '@/components/ui';
 import { OnboardingTooltip } from '@/components/onboarding';
 import CompatibilityBadge from '@/components/CompatibilityBadge';
@@ -113,6 +115,12 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
 
   // Track which applications are currently being moved (prevents double-click)
   const [movingApps, setMovingApps] = useState<Set<number>>(new Set());
+
+  // Interview summary modal state (for moves to phone_screen / "Практика")
+  const [pendingMove, setPendingMove] = useState<{
+    application: VacancyApplication;
+    targetStage: ApplicationStage;
+  } | null>(null);
 
   // AI Scoring state - tracks loading and errors per application
   const [scoringState, setScoringState] = useState<Record<number, {
@@ -223,11 +231,17 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
 
       // Check if moving to different stage
       if (currentTarget.stage !== currentApp.stage) {
-        try {
-          await moveApplication(currentApp.id, currentTarget.stage);
-          toast.success(`Кандидат перемещён в "${APPLICATION_STAGE_LABELS[currentTarget.stage]}"`);
-        } catch {
-          toast.error('Ошибка при перемещении кандидата');
+        // Intercept moves to "Практика" (phone_screen) — require interview summary
+        if (currentTarget.stage === 'phone_screen') {
+          setPendingMove({ application: currentApp, targetStage: currentTarget.stage });
+          // Don't move yet — wait for modal confirmation
+        } else {
+          try {
+            await moveApplication(currentApp.id, currentTarget.stage);
+            toast.success(`Кандидат перемещён в "${APPLICATION_STAGE_LABELS[currentTarget.stage]}"`);
+          } catch {
+            toast.error('Ошибка при перемещении кандидата');
+          }
         }
       } else if (currentTarget.index !== null) {
         // Reordering within same column
@@ -705,6 +719,12 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                                       // Prevent double-click
                                       if (movingApps.has(app.id)) return;
 
+                                      // Intercept moves to phone_screen — require interview summary
+                                      if (nextStage === 'phone_screen') {
+                                        setPendingMove({ application: app, targetStage: nextStage });
+                                        return;
+                                      }
+
                                       setMovingApps(prev => new Set(prev).add(app.id));
                                       try {
                                         await moveApplication(app.id, nextStage);
@@ -789,6 +809,31 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
         <ApplicationDetailModal
           application={selectedApplication}
           onClose={() => setSelectedApplication(null)}
+        />
+      )}
+
+      {/* Interview Summary Modal */}
+      {pendingMove && (
+        <InterviewSummaryModal
+          application={pendingMove.application}
+          targetStage={pendingMove.targetStage}
+          onConfirm={async (data: InterviewSummaryData) => {
+            const { application, targetStage } = pendingMove;
+            // Save interview summary as notes, then move
+            await updateApplication(application.id, {
+              notes: [
+                application.notes,
+                `--- Итог собеседования ---\n${data.interview_summary}`,
+                data.rating ? `Оценка: ${data.rating}/5` : '',
+                data.recommendation ? `Рекомендация: ${data.recommendation}` : '',
+              ].filter(Boolean).join('\n'),
+              rating: data.rating || application.rating,
+            });
+            await moveApplication(application.id, targetStage);
+            toast.success(`Кандидат перемещён в "${APPLICATION_STAGE_LABELS[targetStage]}"`);
+            setPendingMove(null);
+          }}
+          onCancel={() => setPendingMove(null)}
         />
       )}
 

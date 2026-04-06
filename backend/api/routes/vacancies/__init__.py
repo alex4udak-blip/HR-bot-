@@ -82,6 +82,12 @@ from .matching import (
     NotifyCandidatesResponse,
 )
 
+# Import history handlers
+from .history import (
+    get_application_history,
+    StageTransitionResponse,
+)
+
 # Import sharing handlers
 from .sharing import (
     share_vacancy,
@@ -103,6 +109,9 @@ router.add_api_route("/stats/overview", get_vacancies_stats, methods=["GET"], ta
 
 # Applications bulk-move: /applications/bulk-move must be before /applications/{application_id}
 router.add_api_route("/applications/bulk-move", bulk_move_applications, methods=["POST"], tags=["vacancy-kanban"])
+
+# Application stage transition history
+router.add_api_route("/applications/{application_id}/history", get_application_history, methods=["GET"], tags=["vacancy-applications"])
 
 # Applications update/delete by ID: /applications/{application_id}
 router.add_api_route("/applications/{application_id}", update_application, methods=["PUT"], tags=["vacancy-applications"])
@@ -156,6 +165,7 @@ __all__ = [
     "VacancyShareResponse",
     "CandidateMatchResponse",
     "NotifyCandidatesResponse",
+    "StageTransitionResponse",
     # Helper functions
     "is_org_owner",
     "has_full_database_access",

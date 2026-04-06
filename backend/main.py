@@ -21,7 +21,7 @@ from slowapi.errors import RateLimitExceeded
 from api.limiter import limiter
 from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser, search, scoring, currency, parse_jobs, interns
 from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees, documents, magic_button, pen
-from api.routes import candidate_search, extension_download
+from api.routes import candidate_search, extension_download, prometheus_invite
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
@@ -560,6 +560,7 @@ except Exception as e:
     raise
 
 app.include_router(extension_download.router, prefix="/api/extension", tags=["extension"])
+app.include_router(prometheus_invite.router, prefix="/api/prometheus", tags=["prometheus"])
 
 
 @app.get("/health")

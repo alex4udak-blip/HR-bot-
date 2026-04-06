@@ -322,6 +322,8 @@ export {
   // Kanban
   getKanbanBoard,
   bulkMoveApplications,
+  // History
+  getApplicationHistory,
   // Stats
   getVacancyStats,
   // Entity-Vacancy

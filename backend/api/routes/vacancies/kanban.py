@@ -230,6 +230,7 @@ async def get_kanban_column(
             rating=app.rating,
             notes=app.notes,
             rejection_reason=app.rejection_reason,
+            interview_summary=app.interview_summary,
             source=app.source,
             next_interview_at=app.next_interview_at,
             applied_at=app.applied_at,
@@ -348,6 +349,18 @@ async def bulk_move_applications(
                 detail=f"Entity {entity.id} does not belong to your organization"
             )
 
+    # Validate: interview_summary required before moving to practice stage
+    if data.stage == ApplicationStage.phone_screen:
+        for app in applications:
+            if app.stage != ApplicationStage.phone_screen:
+                if not app.interview_summary or not app.interview_summary.strip():
+                    entity = entities_map.get(app.entity_id)
+                    name = entity.name if entity else f"ID {app.entity_id}"
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Необходимо заполнить итог собеседования перед переводом на практику (кандидат: {name})"
+                    )
+
     # Get max stage_order for the new stage
     # SECURITY: Use FOR UPDATE to prevent race condition in bulk move
     max_order_result = await db.execute(
@@ -361,6 +374,9 @@ async def bulk_move_applications(
     max_order = max_order_result.scalar() or 0
 
     now = datetime.utcnow()
+
+    # Save old stages for audit log
+    old_stages = {app.id: app.stage for app in applications}
 
     # Synchronize VacancyApplication.stage -> Entity.status
     new_entity_status = STAGE_SYNC_MAP.get(data.stage)
@@ -378,7 +394,37 @@ async def bulk_move_applications(
                 entity.updated_at = now
                 logger.info(f"bulk-move: Synchronized application {app.id} stage {data.stage} -> entity {entity.id} status {new_entity_status}")
 
+    # Record stage transitions in audit log
+    from ...services.stage_transitions import record_transition
+    for app in applications:
+        prev_stage = old_stages.get(app.id)
+        if prev_stage != data.stage:
+            await record_transition(
+                db=db,
+                application_id=app.id,
+                entity_id=app.entity_id,
+                from_stage=prev_stage.value if prev_stage else None,
+                to_stage=data.stage.value,
+                changed_by_id=current_user.id,
+            )
+
     await db.commit()
+
+    # --- Notifications (fire-and-forget) ---
+    try:
+        from ...services.hr_notifications import notify_stage_change, notify_practice_started
+
+        for app in applications:
+            entity = entities_map.get(app.entity_id)
+            if not entity:
+                continue
+            await notify_stage_change(
+                db, app, entity, ApplicationStage.applied, data.stage, current_user
+            )
+            if data.stage == ApplicationStage.phone_screen:
+                await notify_practice_started(db, app, entity, current_user)
+    except Exception:
+        logger.exception("Bulk-move notifications failed (non-critical)")
 
     # Build response using already loaded entities
     responses = []
@@ -398,6 +444,7 @@ async def bulk_move_applications(
             rating=app.rating,
             notes=app.notes,
             rejection_reason=app.rejection_reason,
+            interview_summary=app.interview_summary,
             source=app.source,
             next_interview_at=app.next_interview_at,
             applied_at=app.applied_at,

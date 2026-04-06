@@ -897,6 +897,8 @@ class VacancyApplication(Base):
     # Format: {overall_score, skills_match, experience_match, salary_match, culture_fit,
     #          strengths: [], weaknesses: [], recommendation, summary, key_factors: []}
     compatibility_score = Column(JSON, nullable=True)
+    # Interview summary — required before moving to practice stage
+    interview_summary = Column(Text, nullable=True)
     # Timestamps for analytics
     applied_at = Column(DateTime, default=func.now())
     last_stage_change_at = Column(DateTime, default=func.now())
@@ -1592,3 +1594,21 @@ class RecruiterBonus(Base):
     organization = relationship("Organization")
     recruiter = relationship("User", foreign_keys=[recruiter_id])
     entity = relationship("Entity")
+
+
+class StageTransition(Base):
+    """Audit log for every stage/status change of a candidate application."""
+    __tablename__ = "stage_transitions"
+
+    id = Column(Integer, primary_key=True)
+    application_id = Column(Integer, ForeignKey("vacancy_applications.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_stage = Column(String(50), nullable=True)  # null for initial creation
+    to_stage = Column(String(50), nullable=False)
+    changed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    comment = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    application = relationship("VacancyApplication")
+    entity = relationship("Entity")
+    changed_by_user = relationship("User", foreign_keys=[changed_by])
