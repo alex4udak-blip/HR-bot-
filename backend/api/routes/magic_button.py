@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from typing import Optional
@@ -47,11 +47,12 @@ async def magic_button_parse(
     duplicate = None
     conditions = []
     if data.email:
-        conditions.append(Entity.extra_data['email'].astext == data.email)
+        conditions.append(Entity.email == data.email)
     if data.phone:
-        conditions.append(Entity.extra_data['phone'].astext == data.phone)
+        conditions.append(Entity.phone == data.phone)
     if data.telegram:
-        conditions.append(Entity.telegram_username == data.telegram)
+        # telegram_usernames is a JSON array, check if it contains the value
+        conditions.append(Entity.telegram_usernames.cast(String).ilike(f"%{data.telegram.lower()}%"))
     # Also check by name (fuzzy)
     conditions.append(Entity.name.ilike(f"%{data.full_name}%"))
 
@@ -78,16 +79,17 @@ async def magic_button_parse(
         }
 
     # Create entity (even if duplicate — per TZ "can still add again")
+    tg_list = [data.telegram.lower().lstrip('@')] if data.telegram else []
     entity = Entity(
         org_id=org.id,
         type=EntityType.candidate,
         name=data.full_name,
         status=EntityStatus.new,
-        telegram_username=data.telegram,
+        email=data.email,
+        phone=data.phone,
+        position=data.position,
+        telegram_usernames=tg_list,
         extra_data={
-            "email": data.email,
-            "phone": data.phone,
-            "position": data.position,
             "source": data.source,
             "source_url": data.source_url,
             "magic_button": True,
