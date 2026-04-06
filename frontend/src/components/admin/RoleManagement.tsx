@@ -390,8 +390,9 @@ function UserAssignmentDialog({ role, onClose }: UserAssignmentDialogProps) {
 // Org role configuration
 const ORG_ROLE_CONFIG: Record<OrgRole, { label: string; icon: typeof Crown; color: string }> = {
   owner: { label: 'Владелец', icon: Crown, color: 'text-yellow-400 bg-yellow-500/20' },
-  admin: { label: 'Администратор', icon: Shield, color: 'text-cyan-400 bg-cyan-500/20' },
-  member: { label: 'Участник', icon: User, color: 'text-white/60 bg-white/10' },
+  admin: { label: 'HR Админ', icon: Shield, color: 'text-cyan-400 bg-cyan-500/20' },
+  hr: { label: 'HR Рекрутер', icon: User, color: 'text-purple-400 bg-purple-500/20' },
+  member: { label: 'Сотрудник', icon: User, color: 'text-white/60 bg-white/10' },
 };
 
 export default function RoleManagement() {
