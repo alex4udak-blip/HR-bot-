@@ -82,6 +82,7 @@ const PublicFormPage = lazyWithRetry(() => import('@/pages/PublicFormPage'));
 const DocumentTemplatesPage = lazyWithRetry(() => import('@/pages/DocumentTemplatesPage'));
 const EmployeePortalPage = lazyWithRetry(() => import('@/pages/EmployeePortalPage'));
 const PENDashboardPage = lazyWithRetry(() => import('@/pages/PENDashboardPage'));
+const ExtensionPage = lazyWithRetry(() => import('@/pages/ExtensionPage'));
 
 // Loading fallback component for Suspense
 function PageLoader() {
@@ -199,6 +200,7 @@ export default function App() {
           <Route path="employees" element={<Suspense fallback={<PageLoader />}><EmployeePortalPage /></Suspense>} />
           <Route path="my-profile" element={<Suspense fallback={<PageLoader />}><EmployeePortalPage /></Suspense>} />
           <Route path="pen" element={<Suspense fallback={<PageLoader />}><PENDashboardPage /></Suspense>} />
+          <Route path="extension" element={<Suspense fallback={<PageLoader />}><ExtensionPage /></Suspense>} />
           <Route path="trash" element={<Suspense fallback={<PageLoader />}><TrashPage /></Suspense>} />
           <Route path="users" element={<Suspense fallback={<PageLoader />}><UsersPage /></Suspense>} />
           <Route path="departments" element={<Suspense fallback={<PageLoader />}><DepartmentsPage /></Suspense>} />
