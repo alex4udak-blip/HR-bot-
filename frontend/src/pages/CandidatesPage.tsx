@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
   UserCheck,
@@ -348,7 +347,7 @@ export default function CandidatesPage() {
           'w-full text-left p-3 rounded-lg transition-all duration-200 group overflow-hidden',
           isSelected
             ? 'bg-cyan-500/20 border border-cyan-500/50'
-            : 'glass-card'
+            : 'border border-white/[0.06] bg-white/[0.02]'
         )}
       >
         <button
@@ -402,7 +401,7 @@ export default function CandidatesPage() {
                 e.stopPropagation();
                 setShowVacancyDetail(true);
               }}
-              className="flex items-center justify-center p-1.5 glass-button rounded text-xs"
+              className="flex items-center justify-center p-1.5 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded text-xs"
               title="Просмотр деталей"
             >
               <Eye className="w-3.5 h-3.5" />
@@ -413,7 +412,7 @@ export default function CandidatesPage() {
                 setVacancyPrefillData(null);
                 setShowCreateVacancyModal(true);
               }}
-              className="flex items-center justify-center p-1.5 glass-button rounded text-xs"
+              className="flex items-center justify-center p-1.5 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded text-xs"
               title="Редактировать"
             >
               <Edit className="w-3.5 h-3.5" />
@@ -426,23 +425,16 @@ export default function CandidatesPage() {
 
   // Render kanban card
   const renderKanbanCard = (app: VacancyApplication) => (
-    <motion.div
+    <div
       key={app.id}
-      layout
       draggable
       onDragStart={() => handleDragStart(app)}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{
-        opacity: draggedApp?.id === app.id ? 0.5 : 1,
-        y: 0,
-        scale: draggedApp?.id === app.id ? 0.98 : 1
-      }}
       className={clsx(
-        'p-3 glass-light rounded-lg cursor-grab active:cursor-grabbing',
-        'hover:border-white/30 transition-all duration-200 group',
+        'p-3 bg-white/[0.04] rounded-lg cursor-grab active:cursor-grabbing',
+        'hover:border-white/20 transition-colors group',
         draggedApp?.id === app.id
-          ? 'border border-cyan-500/50 shadow-lg'
-          : ''
+          ? 'border border-accent-500/50 opacity-50'
+          : 'border border-transparent'
       )}
     >
       {/* Card Header */}
@@ -463,7 +455,7 @@ export default function CandidatesPage() {
               e.stopPropagation();
               handleApplicationClick(app);
             }}
-            className="p-1 glass-button rounded"
+            className="p-1 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded"
             title="Детали"
           >
             <Edit className="w-3.5 h-3.5" />
@@ -473,7 +465,7 @@ export default function CandidatesPage() {
               e.stopPropagation();
               handleViewCandidateProfile(app);
             }}
-            className="p-1 glass-button rounded"
+            className="p-1 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded"
             title="Профиль"
           >
             <ExternalLink className="w-3.5 h-3.5" />
@@ -517,7 +509,7 @@ export default function CandidatesPage() {
             </div>
           )}
           {app.source && (
-            <span className="text-xs px-1.5 py-0.5 glass-light rounded text-white/40">
+            <span className="text-xs px-1.5 py-0.5 bg-white/[0.04] rounded text-white/40">
               {app.source}
             </span>
           )}
@@ -530,11 +522,11 @@ export default function CandidatesPage() {
 
       {/* Notes Preview */}
       {app.notes && (
-        <div className="mt-2 p-2 glass-light rounded text-xs text-white/60 line-clamp-2 ml-6">
+        <div className="mt-2 p-2 bg-white/[0.04] rounded text-xs text-white/60 line-clamp-2 ml-6">
           {app.notes}
         </div>
       )}
-    </motion.div>
+    </div>
   );
 
   // Render kanban column
@@ -553,7 +545,7 @@ export default function CandidatesPage() {
             ? 'border-cyan-500 bg-cyan-500/10 shadow-lg shadow-cyan-500/20'
             : isHighlighted
               ? 'border-yellow-500 bg-yellow-500/10 shadow-lg shadow-yellow-500/20 ring-2 ring-yellow-500/50'
-              : 'border-white/10 glass-light'
+              : 'border-white/10 bg-white/[0.04]'
         )}
         onDragOver={(e) => handleColumnDragOver(e, stage)}
         onDragLeave={handleColumnDragLeave}
@@ -574,9 +566,7 @@ export default function CandidatesPage() {
 
         {/* Cards */}
         <div className="flex-1 overflow-y-auto p-2 space-y-2">
-          <AnimatePresence mode="popLayout">
-            {apps.map(app => renderKanbanCard(app))}
-          </AnimatePresence>
+          {apps.map(app => renderKanbanCard(app))}
 
           {/* Empty state */}
           {apps.length === 0 && !isDropTarget && (
@@ -601,7 +591,7 @@ export default function CandidatesPage() {
     <div className="h-full w-full max-w-full flex overflow-hidden">
       {/* Vacancy Sidebar */}
       <div className={clsx(
-        'flex flex-col border-r border-white/10 glass transition-all duration-300',
+        'flex flex-col border-r border-white/[0.06] bg-white/[0.02] transition-all duration-300',
         sidebarCollapsed ? 'w-16' : 'w-72'
       )}>
         {/* Sidebar Header */}
@@ -614,7 +604,7 @@ export default function CandidatesPage() {
           )}
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="p-1.5 glass-button rounded-lg"
+            className="p-1.5 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-lg"
           >
             <ChevronRight className={clsx(
               'w-4 h-4 transition-transform',
@@ -640,7 +630,7 @@ export default function CandidatesPage() {
               </button>
               <button
                 onClick={() => setShowImportVacancyModal(true)}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 glass-button rounded-lg text-sm"
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-lg text-sm"
               >
                 <Sparkles className="w-4 h-4 text-purple-400" />
                 Импорт из URL/файла
@@ -656,7 +646,7 @@ export default function CandidatesPage() {
                   'w-full text-left p-3 rounded-lg transition-all duration-200',
                   selectedVacancyId === null
                     ? 'bg-purple-500/20 border border-purple-500/50'
-                    : 'glass-card'
+                    : 'border border-white/[0.06] bg-white/[0.02]'
                 )}
               >
                 <div className="flex items-center gap-2">
@@ -707,7 +697,7 @@ export default function CandidatesPage() {
                 'w-10 h-10 rounded-lg flex items-center justify-center transition-colors',
                 selectedVacancyId === null
                   ? 'bg-purple-500/20 text-purple-300'
-                  : 'glass-button text-white/60'
+                  : 'border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] text-white/60'
               )}
               title="База кандидатов"
             >
@@ -718,7 +708,7 @@ export default function CandidatesPage() {
 
             <button
               onClick={() => setShowCreateVacancyModal(true)}
-              className="p-2 glass-button rounded-lg"
+              className="p-2 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-lg"
               title="Новая вакансия"
             >
               <Plus className="w-5 h-5 text-cyan-400" />
@@ -731,7 +721,7 @@ export default function CandidatesPage() {
                   'w-10 h-10 rounded-lg flex items-center justify-center text-xs font-medium transition-colors',
                   vacancy.id === selectedVacancyId
                     ? 'bg-cyan-500/20 text-cyan-300'
-                    : 'glass-button text-white/60'
+                    : 'border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] text-white/60'
                 )}
                 title={vacancy.title}
               >
@@ -776,7 +766,7 @@ export default function CandidatesPage() {
               </button>
               {/* View Mode Toggle - only when vacancy selected */}
               {currentVacancy && (
-                <div className="flex items-center glass-light rounded-lg p-1">
+                <div className="flex items-center bg-white/[0.04] rounded-lg p-1">
                   <button
                     onClick={() => setViewMode('kanban')}
                     className={clsx(
@@ -804,7 +794,7 @@ export default function CandidatesPage() {
                 <>
                   <button
                     onClick={() => setShowParserModal(true)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 glass-button rounded-lg text-xs"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-lg text-xs"
                     title="Загрузить резюме"
                   >
                     <Upload className="w-3.5 h-3.5" />
@@ -833,7 +823,7 @@ export default function CandidatesPage() {
                   'px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors',
                   selectedStage === ALL_STAGES_TAB
                     ? 'bg-cyan-600 text-white'
-                    : 'glass-button text-white/60 hover:text-white'
+                    : 'border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] text-white/60 hover:text-white'
                 )}
               >
                 Все ({stageCounts.all || 0})
@@ -852,7 +842,7 @@ export default function CandidatesPage() {
                     'px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors',
                     selectedStage === stage
                       ? APPLICATION_STAGE_COLORS[stage]
-                      : 'glass-button text-white/60 hover:text-white'
+                      : 'border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] text-white/60 hover:text-white'
                   )}
                 >
                   {APPLICATION_STAGE_LABELS[stage]} ({stageCounts[stage] || 0})
@@ -903,7 +893,7 @@ export default function CandidatesPage() {
                     <div
                       key={app.id}
                       onClick={() => handleApplicationClick(app)}
-                      className="p-4 glass-card rounded-xl cursor-pointer"
+                      className="p-4 border border-white/[0.06] bg-white/[0.02] rounded-xl cursor-pointer"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -960,7 +950,7 @@ export default function CandidatesPage() {
                               e.stopPropagation();
                               handleViewCandidateProfile(app);
                             }}
-                            className="p-2 glass-button rounded-lg text-white/60 hover:text-white"
+                            className="p-2 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-lg text-white/60 hover:text-white"
                           >
                             <ExternalLink className="w-4 h-4" />
                           </button>
@@ -976,8 +966,7 @@ export default function CandidatesPage() {
       </div>
 
       {/* Modals */}
-      <AnimatePresence>
-        {showCreateCandidateModal && (
+      {showCreateCandidateModal && (
           <ContactForm
             prefillData={prefillData || undefined}
             defaultType="candidate"
@@ -1067,8 +1056,7 @@ export default function CandidatesPage() {
               navigate(`/contacts/${entityId}`);
             }}
           />
-        )}
-      </AnimatePresence>
+      )}
 
       {/* Confirmation Dialog */}
       <ConfirmDialog
