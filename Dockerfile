@@ -56,6 +56,9 @@ RUN python -c "from playwright.sync_api import sync_playwright; print('Playwrigh
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /frontend/dist ./static
 
+# Copy chrome extension for download endpoint
+COPY chrome-extension/ ./chrome-extension/
+
 # Create uploads directory
 RUN mkdir -p /app/uploads/calls
 

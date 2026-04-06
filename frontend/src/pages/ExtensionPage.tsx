@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Download, Chrome, Puzzle, FolderOpen, ToggleRight, CheckCircle2, ExternalLink } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const STEPS = [
   {
@@ -41,17 +42,26 @@ export default function ExtensionPage() {
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      const resp = await fetch('/api/extension/download');
-      if (!resp.ok) throw new Error('Download failed');
+      const resp = await fetch('/api/extension/download', {
+        credentials: 'include',
+      });
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        throw new Error(text || `HTTP ${resp.status}`);
+      }
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = 'enceladus-magic-button.zip';
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error(err);
+      toast.success('Расширение скачано!');
+    } catch (err: any) {
+      console.error('Download error:', err);
+      toast.error(err?.message || 'Ошибка скачивания');
     } finally {
       setDownloading(false);
     }

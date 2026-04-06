@@ -8,7 +8,11 @@ from fastapi.responses import StreamingResponse
 
 router = APIRouter()
 
-EXTENSION_DIR = Path(__file__).resolve().parent.parent.parent.parent / "chrome-extension"
+# Try multiple paths: Docker (/app/chrome-extension) and local dev (project root)
+_base = Path(__file__).resolve().parent.parent.parent  # backend/
+EXTENSION_DIR = _base / "chrome-extension"  # Docker: /app/chrome-extension
+if not EXTENSION_DIR.exists():
+    EXTENSION_DIR = _base.parent / "chrome-extension"  # Local dev: project_root/chrome-extension
 
 
 @router.get("/download")
