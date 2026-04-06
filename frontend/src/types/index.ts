@@ -1,5 +1,5 @@
 export type UserRole = 'superadmin' | 'admin';
-export type OrgRole = 'owner' | 'admin' | 'member';
+export type OrgRole = 'owner' | 'admin' | 'hr' | 'member';
 export type DeptRole = 'lead' | 'sub_admin' | 'member';
 
 export interface User {

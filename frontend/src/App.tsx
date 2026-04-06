@@ -182,7 +182,7 @@ export default function App() {
           <Route path="team" element={<Suspense fallback={<PageLoader />}><TeamPage /></Suspense>} />
           <Route path="my-profile" element={<Suspense fallback={<PageLoader />}><EmployeePortalPage /></Suspense>} />
 
-          {/* HR routes — superadmin, owner, admin, lead */}
+          {/* HR routes — superadmin, owner, admin, hr (recruiter like Мария) */}
           <Route path="candidates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><CandidatesPage /></RoleRoute></Suspense>} />
           <Route path="all-candidates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><AllCandidatesPage /></RoleRoute></Suspense>} />
           <Route path="vacancies" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><VacanciesPage /></RoleRoute></Suspense>} />
@@ -203,17 +203,17 @@ export default function App() {
           <Route path="analytics" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><AnalyticsPage /></RoleRoute></Suspense>} />
           <Route path="saturn" element={<Suspense fallback={<PageLoader />}><SaturnPage /></Suspense>} />
 
-          {/* HR lead+ routes — superadmin, owner, admin */}
-          <Route path="pen" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner', 'admin']}><PENDashboardPage /></RoleRoute></Suspense>} />
-          <Route path="exports" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><ExportsPage /></RoleRoute></Suspense>} />
-          <Route path="import" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><CsvImportPage /></RoleRoute></Suspense>} />
-          <Route path="employees" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><EmployeePortalPage /></RoleRoute></Suspense>} />
-          <Route path="dept-manager" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><DeptManagerPage /></RoleRoute></Suspense>} />
-          <Route path="trash" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><TrashPage /></RoleRoute></Suspense>} />
+          {/* HR Admin routes — superadmin, owner, admin (Настя). NOT for hr recruiter */}
+          <Route path="pen" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><PENDashboardPage /></RoleRoute></Suspense>} />
+          <Route path="exports" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><ExportsPage /></RoleRoute></Suspense>} />
+          <Route path="import" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><CsvImportPage /></RoleRoute></Suspense>} />
+          <Route path="employees" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><EmployeePortalPage /></RoleRoute></Suspense>} />
+          <Route path="dept-manager" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><DeptManagerPage /></RoleRoute></Suspense>} />
+          <Route path="trash" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><TrashPage /></RoleRoute></Suspense>} />
 
-          {/* Admin routes — superadmin and owner only */}
-          <Route path="departments" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><DepartmentsPage /></RoleRoute></Suspense>} />
-          <Route path="settings" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><SettingsPage /></RoleRoute></Suspense>} />
+          {/* Management routes — superadmin and owner only */}
+          <Route path="departments" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['management']}><DepartmentsPage /></RoleRoute></Suspense>} />
+          <Route path="settings" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['management']}><SettingsPage /></RoleRoute></Suspense>} />
 
           {/* Superadmin only */}
           <Route path="users" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin']}><UsersPage /></RoleRoute></Suspense>} />

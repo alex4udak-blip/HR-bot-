@@ -259,11 +259,13 @@ export default function Layout() {
       ],
     });
 
-    // HR block — superadmin, owner, admin (Настя = admin HR)
+    // HR block — superadmin, owner, admin (HR Admin = Настя), hr (рекрутер = Мария)
     // member (обычные сотрудники) НЕ видят HR блок
-    const isHrRole = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+    const isHrRole = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin' || user?.org_role === 'hr';
+    const isHrAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
     if (isHrRole) {
       const hrItems: { path: string; icon: LucideIcon; label: string }[] = [];
+      // Базовый HR — видят все HR роли (hr + admin + owner + superadmin)
       hrItems.push({ path: '/all-candidates', icon: Users, label: 'Все кандидаты' });
       hrItems.push({ path: '/my-funnels', icon: GitBranch, label: 'Мои воронки' });
       hrItems.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
@@ -271,13 +273,13 @@ export default function Layout() {
       hrItems.push({ path: '/interns', icon: GraduationCap, label: 'Практиканты' });
       hrItems.push({ path: '/practice-list', icon: ClipboardList, label: 'Лист практики' });
       hrItems.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
-      hrItems.push({ path: '/analytics', icon: BarChart3, label: 'HR Аналитика' });
-      hrItems.push({ path: '/pen', icon: TrendingUp, label: 'ПЭН (бонусы)' });
-      hrItems.push({ path: '/form-builder', icon: FileText, label: 'Конструктор форм' });
-      hrItems.push({ path: '/document-templates', icon: FileSignature, label: 'Шаблоны документов' });
       hrItems.push({ path: '/extension', icon: Puzzle, label: 'Волшебная кнопка' });
-      // Экспорт/Импорт — owner и superadmin
-      if (user?.role === 'superadmin' || user?.org_role === 'owner') {
+      // HR Admin — только admin/owner/superadmin (НЕ hr рекрутер)
+      if (isHrAdmin) {
+        hrItems.push({ path: '/analytics', icon: BarChart3, label: 'HR Аналитика' });
+        hrItems.push({ path: '/pen', icon: TrendingUp, label: 'ПЭН (бонусы)' });
+        hrItems.push({ path: '/form-builder', icon: FileText, label: 'Конструктор форм' });
+        hrItems.push({ path: '/document-templates', icon: FileSignature, label: 'Шаблоны документов' });
         hrItems.push({ path: '/employees', icon: UserCog, label: 'Сотрудники' });
         hrItems.push({ path: '/exports', icon: FileSpreadsheet, label: 'Экспорт CSV' });
         hrItems.push({ path: '/import', icon: Upload, label: 'Импорт CSV' });

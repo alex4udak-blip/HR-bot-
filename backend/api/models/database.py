@@ -198,8 +198,9 @@ class DeliveryMethod(str, enum.Enum):
 
 class OrgRole(str, enum.Enum):
     owner = "owner"      # Full access, can delete org
-    admin = "admin"      # Can manage members, full data access
-    member = "member"    # Read/write own data only
+    admin = "admin"      # HR Admin — всё кроме /users (Настя)
+    hr = "hr"            # HR рекрутер — кандидаты, воронки, вакансии, созвоны (Мария)
+    member = "member"    # Сотрудник — профиль, проекты, документы
 
 
 class DeptRole(str, enum.Enum):
