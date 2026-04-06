@@ -94,6 +94,7 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     name: Optional[str] = None
     role: Optional[UserRole] = None  # Use enum for proper validation
+    org_role: Optional[str] = None  # OrgRole: owner, admin, hr, member
     telegram_id: Optional[int] = None
     telegram_username: Optional[str] = None
     is_active: Optional[bool] = None

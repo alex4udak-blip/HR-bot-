@@ -5,7 +5,7 @@ from sqlalchemy import select, func, delete
 
 from ..database import get_db
 from ..models.database import (
-    User, UserRole, Chat, DepartmentMember, DeptRole, OrgMember, SharedAccess,
+    User, UserRole, Chat, DepartmentMember, DeptRole, OrgMember, OrgRole, SharedAccess,
     AnalysisHistory, AIConversation, Entity, EntityAIConversation, EntityAnalysis,
     EntityTransfer, CallRecording, Invitation, CriteriaPreset, ReportSubscription
 )
@@ -350,6 +350,34 @@ async def update_user(
                 role=dept_role
             )
             db.add(dept_member)
+
+    # Update org role if provided
+    if data.org_role:
+        try:
+            new_org_role = OrgRole(data.org_role)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid org_role: {data.org_role}")
+
+        # Find user's org membership
+        org_member_result = await db.execute(
+            select(OrgMember).where(OrgMember.user_id == user_id)
+        )
+        org_member = org_member_result.scalar_one_or_none()
+
+        if org_member:
+            org_member.role = new_org_role
+        else:
+            # If no membership exists, try to find an org and create one
+            from ..models.database import Organization
+            org_result = await db.execute(select(Organization).limit(1))
+            org = org_result.scalar_one_or_none()
+            if org:
+                new_member = OrgMember(
+                    org_id=org.id,
+                    user_id=user_id,
+                    role=new_org_role
+                )
+                db.add(new_member)
 
     await db.commit()
     await db.refresh(user)

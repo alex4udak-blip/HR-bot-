@@ -1373,25 +1373,14 @@ function EditUserModal({
       if (normalizedTg !== currentTg) payload.telegram_username = normalizedTg;
 
       if (departmentId) payload.department_id = departmentId;
+      if (orgRole) payload.org_role = orgRole;
 
-      if (Object.keys(payload).length === 0 && !orgRole) {
+      if (Object.keys(payload).length === 0) {
         onClose();
         return;
       }
 
-      if (Object.keys(payload).length > 0) {
-        await adminUpdateUser(user.id, payload as any);
-      }
-
-      // Update org role if selected
-      if (orgRole) {
-        try {
-          await updateMemberRole(user.id, orgRole as OrgRole);
-        } catch (e) {
-          console.error('Failed to update org role:', e);
-        }
-      }
-
+      await adminUpdateUser(user.id, payload as any);
       toast.success('Пользователь обновлён');
       onSuccess();
     } catch (err: any) {
