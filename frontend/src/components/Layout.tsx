@@ -1,5 +1,4 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
   Users,
@@ -537,22 +536,15 @@ export default function Layout() {
 
       {/* Mobile Menu Overlay */}
       {mobileMenuOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="lg:hidden fixed inset-0 z-50 bg-dark-950/80"
+        <div
+          className="lg:hidden fixed inset-0 z-50 bg-dark-950/80 animate-[fadeIn_0.15s_ease]"
           onClick={() => setMobileMenuOpen(false)}
           role="dialog"
           aria-modal="true"
           aria-label="Mobile navigation menu"
         >
-          <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="absolute right-0 top-0 h-full w-64 glass flex flex-col"
+          <div
+            className="absolute right-0 top-0 h-full w-64 glass flex flex-col animate-[slideInRight_0.2s_ease]"
             onClick={(e) => e.stopPropagation()}
             id="mobile-menu"
           >
@@ -613,8 +605,8 @@ export default function Layout() {
                 <span className="font-medium">Logout</span>
               </button>
             </nav>
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
       )}
 
       {/* Main Content */}

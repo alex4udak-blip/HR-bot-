@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
   Briefcase,
@@ -133,7 +132,7 @@ export default function RecruiterFunnelsPage() {
         </div>
         <button
           onClick={handleCreateFunnel}
-          className="flex items-center gap-2 px-4 py-2.5 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-xl transition-colors shadow-lg shadow-accent-500/20"
+          className="flex items-center gap-2 px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors"
         >
           <Plus className="w-4 h-4" />
           Новая воронка
@@ -150,20 +149,20 @@ export default function RecruiterFunnelsPage() {
             placeholder="Поиск по названию..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-dark-800/50 border border-white/10 rounded-xl text-sm text-white placeholder-dark-400 focus:outline-none focus:border-accent-500/50"
+            className="w-full pl-10 pr-4 py-2 bg-white/[0.02] border border-white/[0.06] rounded-lg text-sm text-white placeholder-dark-400 focus:outline-none focus:border-accent-500/50"
           />
         </div>
 
         {/* Status tabs */}
-        <div className="flex items-center gap-1 bg-dark-800/50 rounded-xl p-1 border border-white/5">
+        <div className="flex items-center gap-1 bg-white/[0.02] rounded-lg p-1 border border-white/[0.06]">
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.id}
               onClick={() => setStatusFilter(f.id)}
               className={clsx(
-                'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors',
+                'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
                 statusFilter === f.id
-                  ? 'bg-accent-500/20 text-accent-400'
+                  ? 'bg-accent-500/15 text-accent-400'
                   : 'text-dark-400 hover:text-white/70'
               )}
             >
@@ -173,12 +172,12 @@ export default function RecruiterFunnelsPage() {
         </div>
 
         {/* View mode toggle */}
-        <div className="flex items-center gap-1 bg-dark-800/50 rounded-xl p-1 border border-white/5">
+        <div className="flex items-center gap-1 bg-white/[0.02] rounded-lg p-1 border border-white/[0.06]">
           <button
             onClick={() => setViewMode('grid')}
             className={clsx(
-              'p-1.5 rounded-lg transition-colors',
-              viewMode === 'grid' ? 'bg-accent-500/20 text-accent-400' : 'text-dark-400 hover:text-white/70'
+              'p-1.5 rounded-md transition-colors',
+              viewMode === 'grid' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-white/70'
             )}
           >
             <LayoutGrid className="w-4 h-4" />
@@ -186,8 +185,8 @@ export default function RecruiterFunnelsPage() {
           <button
             onClick={() => setViewMode('list')}
             className={clsx(
-              'p-1.5 rounded-lg transition-colors',
-              viewMode === 'list' ? 'bg-accent-500/20 text-accent-400' : 'text-dark-400 hover:text-white/70'
+              'p-1.5 rounded-md transition-colors',
+              viewMode === 'list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-white/70'
             )}
           >
             <List className="w-4 h-4" />
@@ -203,9 +202,7 @@ export default function RecruiterFunnelsPage() {
           </div>
         ) : filteredVacancies.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-dark-800/50 flex items-center justify-center">
-              <Briefcase className="w-8 h-8 text-dark-500" />
-            </div>
+            <Briefcase className="w-10 h-10 text-dark-500" />
             <div className="text-center">
               <p className="text-white font-medium">Пока нет воронок</p>
               <p className="text-dark-400 text-sm mt-1">
@@ -214,7 +211,7 @@ export default function RecruiterFunnelsPage() {
             </div>
             <button
               onClick={handleCreateFunnel}
-              className="flex items-center gap-2 px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-xl transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors"
             >
               <Plus className="w-4 h-4" />
               Создать воронку
@@ -226,9 +223,7 @@ export default function RecruiterFunnelsPage() {
             {recruiterGroups.map((group) => (
               <div key={group.userId}>
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="w-7 h-7 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-                    <Users className="w-3.5 h-3.5 text-emerald-400" />
-                  </div>
+                  <Users className="w-4 h-4 text-emerald-400" />
                   <h2 className="text-sm font-semibold text-white">{group.userName}</h2>
                   <span className="text-xs text-dark-400">
                     {group.vacancies.length} воронок
@@ -257,11 +252,9 @@ export default function RecruiterFunnelsPage() {
 function FunnelGrid({ vacancies, onOpen }: { vacancies: Vacancy[]; onOpen: (id: number) => void }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-      <AnimatePresence mode="popLayout">
-        {vacancies.map((v) => (
-          <FunnelCard key={v.id} vacancy={v} onClick={() => onOpen(v.id)} />
-        ))}
-      </AnimatePresence>
+      {vacancies.map((v) => (
+        <FunnelCard key={v.id} vacancy={v} onClick={() => onOpen(v.id)} />
+      ))}
     </div>
   );
 }
@@ -283,36 +276,32 @@ function FunnelCard({ vacancy, onClick }: { vacancy: Vacancy; onClick: () => voi
   const total = mainStages.reduce((s, k) => s + (stageCounts[k] || 0), 0);
 
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
+    <div
       onClick={onClick}
-      className="glass p-4 rounded-xl border border-white/5 hover:border-accent-500/30 cursor-pointer transition-all group"
+      className="p-3 rounded-lg border border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12] hover:bg-white/[0.04] cursor-pointer transition-colors group"
     >
-      <div className="flex items-start justify-between mb-3">
-        <h3 className="text-sm font-semibold text-white group-hover:text-accent-400 transition-colors line-clamp-2">
+      <div className="flex items-start justify-between mb-2">
+        <h3 className="text-sm font-medium text-white group-hover:text-accent-400 transition-colors line-clamp-2">
           {vacancy.title}
         </h3>
         <ChevronRight className="w-4 h-4 text-dark-500 group-hover:text-accent-400 transition-colors shrink-0 mt-0.5" />
       </div>
 
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-2">
         <VacancyStatusBadge status={vacancy.status} />
         {vacancy.department_name && (
           <span className="text-xs text-dark-400 truncate">{vacancy.department_name}</span>
         )}
       </div>
 
-      <div className="flex items-center gap-1.5 text-xs text-dark-400 mb-3">
+      <div className="flex items-center gap-1.5 text-xs text-dark-400 mb-2">
         <Users className="w-3.5 h-3.5" />
         <span>{count} кандидатов</span>
       </div>
 
       {/* Mini stage bar */}
       {total > 0 && (
-        <div className="flex gap-0.5 h-1.5 rounded-full overflow-hidden bg-dark-700/50">
+        <div className="flex gap-0.5 h-1 rounded-full overflow-hidden bg-white/[0.04]">
           {mainStages.map((stage) => {
             const c = stageCounts[stage] || 0;
             if (c === 0) return null;
@@ -321,14 +310,14 @@ function FunnelCard({ vacancy, onClick }: { vacancy: Vacancy; onClick: () => voi
               <div
                 key={stage}
                 className={clsx(
-                  'h-full rounded-full transition-all',
-                  stage === 'applied' && 'bg-blue-500',
-                  stage === 'screening' && 'bg-cyan-500',
-                  stage === 'phone_screen' && 'bg-purple-500',
-                  stage === 'interview' && 'bg-indigo-500',
-                  stage === 'assessment' && 'bg-orange-500',
-                  stage === 'offer' && 'bg-yellow-500',
-                  stage === 'hired' && 'bg-green-500',
+                  'h-full rounded-full',
+                  stage === 'applied' && 'bg-blue-500/70',
+                  stage === 'screening' && 'bg-cyan-500/70',
+                  stage === 'phone_screen' && 'bg-purple-500/70',
+                  stage === 'interview' && 'bg-indigo-500/70',
+                  stage === 'assessment' && 'bg-orange-500/70',
+                  stage === 'offer' && 'bg-yellow-500/70',
+                  stage === 'hired' && 'bg-green-500/70',
                 )}
                 style={{ width: `${Math.max(pct, 4)}%` }}
                 title={`${stage}: ${c}`}
@@ -337,7 +326,7 @@ function FunnelCard({ vacancy, onClick }: { vacancy: Vacancy; onClick: () => voi
           })}
         </div>
       )}
-    </motion.div>
+    </div>
   );
 }
 
@@ -348,7 +337,7 @@ function FunnelRow({ vacancy, onClick }: { vacancy: Vacancy; onClick: () => void
   return (
     <div
       onClick={onClick}
-      className="flex items-center gap-4 px-4 py-3 glass rounded-xl border border-white/5 hover:border-accent-500/30 cursor-pointer transition-all group"
+      className="flex items-center gap-4 px-3 py-2.5 rounded-lg border border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12] hover:bg-white/[0.04] cursor-pointer transition-colors group"
     >
       <div className="flex-1 min-w-0">
         <h3 className="text-sm font-medium text-white group-hover:text-accent-400 transition-colors truncate">
@@ -367,7 +356,7 @@ function FunnelRow({ vacancy, onClick }: { vacancy: Vacancy; onClick: () => void
       </div>
 
       {/* Stage counts inline */}
-      <div className="hidden lg:flex items-center gap-2 shrink-0">
+      <div className="hidden lg:flex items-center gap-1.5 shrink-0">
         {(['applied', 'screening', 'phone_screen', 'offer', 'hired'] as const).map((stage) => {
           const c = stageCounts[stage] || 0;
           if (c === 0) return null;
@@ -375,12 +364,12 @@ function FunnelRow({ vacancy, onClick }: { vacancy: Vacancy; onClick: () => void
             <span
               key={stage}
               className={clsx(
-                'px-2 py-0.5 text-[10px] font-medium rounded-md border',
-                stage === 'applied' && 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-                stage === 'screening' && 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
-                stage === 'phone_screen' && 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-                stage === 'offer' && 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
-                stage === 'hired' && 'bg-green-500/20 text-green-300 border-green-500/30',
+                'px-1.5 py-0.5 text-[10px] font-medium rounded',
+                stage === 'applied' && 'bg-blue-500/10 text-blue-400',
+                stage === 'screening' && 'bg-cyan-500/10 text-cyan-400',
+                stage === 'phone_screen' && 'bg-purple-500/10 text-purple-400',
+                stage === 'offer' && 'bg-yellow-500/10 text-yellow-400',
+                stage === 'hired' && 'bg-green-500/10 text-green-400',
               )}
             >
               {c}

@@ -358,11 +358,9 @@ export default function ContactsPage() {
       {/* Sidebar - Entity List */}
       {/* When AI panel is open on xl+, sidebar becomes narrow via grid column */}
       {/* On lg screens without AI: fixed 280px. On xl+ with AI: grid controls width */}
-      <motion.div
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
+      <div
         className={clsx(
-          'border-r border-white/5 flex flex-col glass transition-all duration-200 overflow-hidden',
+          'border-r border-white/[0.06] flex flex-col bg-white/[0.02] transition-all duration-200 overflow-hidden',
           layoutMode === 'ai-open'
             ? 'hidden xl:flex xl:w-full min-w-0' // Hidden on <xl, grid controls width on xl+
             : layoutMode === 'detail'
@@ -372,7 +370,7 @@ export default function ContactsPage() {
       >
         {/* Header */}
         <div className={clsx(
-          'border-b border-white/5',
+          'border-b border-white/[0.06]',
           layoutMode === 'ai-open' ? 'p-3' : 'p-4'
         )}>
           <div className="flex items-center justify-between mb-3">
@@ -391,7 +389,7 @@ export default function ContactsPage() {
                 feature="candidate_database"
                 onClick={() => setShowParserModal(true)}
                 className={clsx(
-                  'rounded-lg glass-button text-white/60 disabled:opacity-50 disabled:cursor-not-allowed',
+                  'rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-white/40 disabled:opacity-50 disabled:cursor-not-allowed',
                   layoutMode === 'ai-open' ? 'p-1.5' : 'p-2'
                 )}
                 title="Импорт резюме"
@@ -424,7 +422,7 @@ export default function ContactsPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={clsx(
-                'w-full glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50',
+                'w-full bg-white/[0.03] border border-white/[0.06] rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50',
                 layoutMode === 'ai-open' ? 'pl-8 pr-3 py-1.5 text-sm' : 'pl-10 pr-4 py-2'
               )}
             />
@@ -432,7 +430,7 @@ export default function ContactsPage() {
 
           {/* Ownership Filters */}
           <div className={clsx(
-            'flex gap-1 mb-3 p-1 glass-light rounded-lg',
+            'flex gap-1 mb-3 p-1 bg-white/[0.03] border border-white/[0.06] rounded-lg',
             layoutMode === 'ai-open' && 'overflow-x-auto'
           )}>
             {OWNERSHIP_FILTERS.map((filter) => {
@@ -445,8 +443,8 @@ export default function ContactsPage() {
                     'flex-1 flex items-center justify-center rounded-md transition-colors whitespace-nowrap',
                     layoutMode === 'ai-open' ? 'gap-1 px-2 py-1.5 text-xs' : 'gap-1.5 px-3 py-2 text-sm',
                     ownershipFilter === filter.id
-                      ? 'bg-cyan-500 text-white shadow-lg'
-                      : 'text-white/60 hover:text-white'
+                      ? 'bg-cyan-500/20 text-cyan-400'
+                      : 'text-white/40 hover:text-white/40'
                   )}
                   title={filter.description}
                 >
@@ -464,7 +462,7 @@ export default function ContactsPage() {
                 value={departmentFilter}
                 onChange={(e) => setDepartmentFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
                 className={clsx(
-                  'w-full glass-light rounded-lg text-white focus:outline-none focus:border-cyan-500/50',
+                  'w-full bg-white/[0.03] border border-white/[0.06] rounded-lg text-white focus:outline-none focus:border-cyan-500/50',
                   layoutMode === 'ai-open' ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm'
                 )}
               >
@@ -491,7 +489,7 @@ export default function ContactsPage() {
                   onChange={(e) => setVacancyFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
                   disabled={vacancyFilterLoading}
                   className={clsx(
-                    'w-full glass-light rounded-lg text-white focus:outline-none focus:border-cyan-500/50 appearance-none cursor-pointer disabled:opacity-50',
+                    'w-full bg-white/[0.03] border border-white/[0.06] rounded-lg text-white focus:outline-none focus:border-cyan-500/50 appearance-none cursor-pointer disabled:opacity-50',
                     layoutMode === 'ai-open' ? 'pl-7 pr-3 py-1.5 text-xs' : 'pl-10 pr-4 py-2 text-sm'
                   )}
                 >
@@ -533,7 +531,7 @@ export default function ContactsPage() {
                     layoutMode === 'ai-open' ? 'gap-1 px-2 py-1 text-xs' : 'gap-1.5 px-3 py-1.5 text-sm',
                     typeFilter === filter.id
                       ? 'bg-cyan-500/20 text-cyan-400'
-                      : 'glass-button text-white/60'
+                      : 'bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-white/40'
                   )}
                 >
                   <Icon size={layoutMode === 'ai-open' ? 12 : 14} />
@@ -589,28 +587,26 @@ export default function ContactsPage() {
               const isVeryCompact = layoutMode === 'ai-open'; // Extra compact when AI panel is open
 
               return (
-                <motion.div
+                <div
                   key={entity.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
                   onClick={() => handleSelectEntity(entity.id)}
                   className={clsx(
-                    'rounded-xl cursor-pointer transition-all group overflow-hidden',
-                    isVeryCompact ? 'p-2' : isCompact ? 'p-3' : 'p-4',
+                    'rounded-lg cursor-pointer transition-colors group',
+                    isVeryCompact ? 'p-2' : isCompact ? 'p-2.5' : 'p-3',
                     entity.is_transferred
-                      ? 'bg-white/3 border border-white/5 opacity-60'
+                      ? 'bg-white/[0.02] border border-white/[0.06] opacity-60'
                       : isSelected
-                        ? 'bg-cyan-500/20 border border-cyan-500/30'
-                        : 'glass-card'
+                        ? 'bg-cyan-500/10 border border-cyan-500/20'
+                        : 'border border-transparent hover:border-white/[0.06] hover:bg-white/[0.02]'
                   )}
                 >
                   <div className={clsx('flex items-center', isVeryCompact ? 'gap-2' : 'gap-3')}>
                     <div className={clsx(
                       'rounded-lg flex-shrink-0',
                       isVeryCompact ? 'p-1' : isCompact ? 'p-1.5' : 'p-2',
-                      isSelected ? 'bg-cyan-500/30' : 'bg-white/10'
+                      isSelected ? 'bg-cyan-500/20' : 'bg-white/[0.06]'
                     )}>
-                      <Icon size={isVeryCompact ? 14 : isCompact ? 16 : 20} className={isSelected ? 'text-cyan-400' : 'text-white/60'} />
+                      <Icon size={isVeryCompact ? 14 : isCompact ? 16 : 20} className={isSelected ? 'text-cyan-400' : 'text-white/40'} />
                     </div>
 
                     <div className="flex-1 min-w-0 overflow-hidden">
@@ -663,7 +659,7 @@ export default function ContactsPage() {
                       ) : (
                         <>
                           {(entity.company || entity.position) && (
-                            <p className="text-sm text-white/60 truncate mt-1">
+                            <p className="text-sm text-white/40 truncate mt-1">
                               {entity.position}{entity.position && entity.company && ' @ '}{entity.company}
                             </p>
                           )}
@@ -714,7 +710,7 @@ export default function ContactsPage() {
                               e.stopPropagation();
                               handleTransfer(entity);
                             }}
-                            className="p-1.5 rounded-lg glass-button text-white/60"
+                            className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-white/40"
                             title="Передать"
                           >
                             <ArrowRightLeft size={14} />
@@ -726,7 +722,7 @@ export default function ContactsPage() {
                               e.stopPropagation();
                               handleEdit(entity);
                             }}
-                            className="p-1.5 rounded-lg glass-button text-white/60"
+                            className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-white/40"
                             title="Редактировать"
                           >
                             <Edit size={14} />
@@ -747,12 +743,12 @@ export default function ContactsPage() {
                       </div>
                     )}
                   </div>
-                </motion.div>
+                </div>
               );
             })
           )}
         </div>
-      </motion.div>
+      </div>
 
       {/* Main Content - Entity Detail */}
       <AnimatePresence mode="wait">
@@ -772,12 +768,12 @@ export default function ContactsPage() {
             )}
           >
             {/* Header */}
-            <div className="p-3 xl:p-4 border-b border-white/5 flex items-center gap-2 sm:gap-3 overflow-hidden">
+            <div className="p-3 xl:p-4 border-b border-white/[0.06] flex items-center gap-2 sm:gap-3 overflow-hidden">
               <button
                 onClick={handleBack}
-                className="p-2 rounded-lg glass-button flex-shrink-0"
+                className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] flex-shrink-0"
               >
-                <ChevronLeft size={20} className="text-white/60" />
+                <ChevronLeft size={20} className="text-white/40" />
               </button>
               {/* Back to candidates button for candidate entities */}
               {currentEntity.type === 'candidate' && (
@@ -805,7 +801,7 @@ export default function ContactsPage() {
                     </span>
                   )}
                 </div>
-                <p className="text-xs sm:text-sm text-white/60 truncate">
+                <p className="text-xs sm:text-sm text-white/40 truncate">
                   {ENTITY_TYPES[currentEntity.type].name}
                   {currentEntity.company && ` @ ${currentEntity.company}`}
                 </p>
@@ -818,7 +814,7 @@ export default function ContactsPage() {
                     'p-2 rounded-lg flex items-center gap-1.5 transition-colors',
                     showAIPanel
                       ? 'bg-cyan-500/20 text-cyan-400'
-                      : 'glass-button text-white/60'
+                      : 'bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-white/40'
                   )}
                   title="AI Ассистент"
                 >
@@ -828,7 +824,7 @@ export default function ContactsPage() {
                 {canShare(currentEntity as Entity) && (
                   <button
                     onClick={() => setShowShareModal(true)}
-                    className="p-2 rounded-lg glass-button text-white/60 flex items-center gap-1.5"
+                    className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-white/40 flex items-center gap-1.5"
                     title="Поделиться"
                   >
                     <Share2 size={16} />
@@ -838,7 +834,7 @@ export default function ContactsPage() {
                 {canTransfer(currentEntity as Entity) && (
                   <button
                     onClick={() => handleTransfer(currentEntity as Entity)}
-                    className="p-2 rounded-lg glass-button text-white/60 flex items-center gap-1.5"
+                    className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-white/40 flex items-center gap-1.5"
                     title="Передать"
                   >
                     <ArrowRightLeft size={16} />
@@ -848,7 +844,7 @@ export default function ContactsPage() {
                 {canEdit(currentEntity as Entity) && (
                   <button
                     onClick={() => handleEdit(currentEntity as Entity)}
-                    className="p-2 rounded-lg glass-button text-white/60 flex items-center gap-1.5"
+                    className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-white/40 flex items-center gap-1.5"
                     title="Редактировать"
                   >
                     <Edit size={16} />
@@ -876,16 +872,16 @@ export default function ContactsPage() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="hidden xl:flex flex-col border-l border-white/5 glass overflow-hidden w-full min-w-0"
+            className="hidden xl:flex flex-col border-l border-white/[0.06] bg-white/[0.02] overflow-hidden w-full min-w-0"
           >
-            <div className="p-3 2xl:p-4 border-b border-white/5 flex items-center justify-between flex-shrink-0">
+            <div className="p-3 2xl:p-4 border-b border-white/[0.06] flex items-center justify-between flex-shrink-0">
               <h3 className="text-base 2xl:text-lg font-semibold text-white flex items-center gap-2 truncate">
                 <Bot size={18} className="text-cyan-400 flex-shrink-0" />
                 <span className="truncate">AI Ассистент</span>
               </h3>
               <button
                 onClick={() => setShowAIPanel(false)}
-                className="p-1.5 rounded-lg glass-button text-white/60 flex-shrink-0"
+                className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-white/40 flex-shrink-0"
               >
                 <X size={18} />
               </button>
@@ -905,16 +901,16 @@ export default function ContactsPage() {
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="xl:hidden fixed inset-0 z-50 glass flex flex-col"
+            className="xl:hidden fixed inset-0 z-50 bg-[#0a0a0f]/95 backdrop-blur-sm flex flex-col"
           >
-            <div className="flex items-center justify-between p-4 border-b border-white/5">
+            <div className="flex items-center justify-between p-4 border-b border-white/[0.06]">
               <h3 className="font-semibold text-white flex items-center gap-2">
                 <Bot size={20} className="text-cyan-400" />
                 AI Ассистент
               </h3>
               <button
                 onClick={() => setShowAIPanel(false)}
-                className="p-2 rounded-lg glass-button"
+                className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06]"
               >
                 <X size={20} />
               </button>
@@ -930,7 +926,7 @@ export default function ContactsPage() {
       {currentEntity && !showAIPanel && (
         <button
           onClick={() => setShowAIPanel(true)}
-          className="xl:hidden fixed bottom-4 right-4 p-4 rounded-full bg-cyan-500 text-white shadow-lg shadow-cyan-500/30 z-40"
+          className="xl:hidden fixed bottom-4 right-4 p-4 rounded-full bg-cyan-500 text-white z-40"
         >
           <Bot size={24} />
         </button>

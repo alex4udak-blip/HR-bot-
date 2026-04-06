@@ -170,14 +170,6 @@ select option {
   display: none !important;
 }
 
-
-  .aurora,
-  .particles,
-  .light-rays {
-    display: none !important;
-  }
-}
-
 /* ============================================
    PREMIUM GLASSMORPHISM - OPTIMIZED
    No backdrop-filter blur for better performance
@@ -214,11 +206,9 @@ select option {
 
 .glass-card:hover {
   background: var(--glass-card-hover-bg);
-  border-color: rgba(12, 165, 235, 0.4);
-  box-shadow:
-    0 16px 56px rgba(12, 165, 235, 0.2),
-    0 0 0 1px rgba(12, 165, 235, 0.3);
-  transform: translateY(-6px);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transform: translateY(-1px);
 }
 
 /* ============================================
@@ -250,10 +240,8 @@ select option {
 }
 
 .btn-premium:hover {
-  transform: translateY(-4px) scale(1.02);
-  box-shadow:
-    0 20px 50px rgba(12, 165, 235, 0.5),
-    0 0 0 2px rgba(12, 165, 235, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(12, 165, 235, 0.3);
 }
 
 /* ============================================
@@ -306,14 +294,14 @@ select option {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(12, 165, 235, 0.5), rgba(139, 92, 246, 0.4));
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 4px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(12, 165, 235, 0.7), rgba(139, 92, 246, 0.6));
+  background: rgba(255, 255, 255, 0.2);
   background-clip: padding-box;
 }
 
@@ -329,17 +317,10 @@ select option {
    GRADIENT TEXT - ANIMATED
    ============================================ */
 .gradient-text {
-  background: linear-gradient(135deg, #0ca5eb 0%, #7cd4fd 25%, #c084fc 50%, #7cd4fd 75%, #0ca5eb 100%);
-  background-size: 300% auto;
+  background: linear-gradient(135deg, #0ca5eb 0%, #7cd4fd 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: gradientText 4s ease infinite;
-}
-
-@keyframes gradientText {
-  0%, 100% { background-position: 0% center; }
-  50% { background-position: 100% center; }
 }
 
 /* ============================================
@@ -358,15 +339,7 @@ select option {
   inset: 0;
   padding: 1px;
   border-radius: 20px;
-  background: linear-gradient(
-    135deg,
-    rgba(12, 165, 235, 0.6),
-    rgba(139, 92, 246, 0.4),
-    rgba(6, 182, 212, 0.5),
-    rgba(236, 72, 153, 0.3)
-  );
-  background-size: 300% 300%;
-  animation: borderGradient 6s ease infinite;
+  background: linear-gradient(135deg, rgba(12, 165, 235, 0.3), rgba(139, 92, 246, 0.2));
   -webkit-mask:
     linear-gradient(#fff 0 0) content-box,
     linear-gradient(#fff 0 0);
@@ -376,11 +349,6 @@ select option {
     linear-gradient(#fff 0 0);
   mask-composite: exclude;
   pointer-events: none;
-}
-
-@keyframes borderGradient {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
 }
 
 /* ============================================
@@ -464,16 +432,7 @@ select option {
    PULSE ANIMATION
    ============================================ */
 .pulse-glow {
-  animation: pulseGlow 2s ease-in-out infinite;
-}
-
-@keyframes pulseGlow {
-  0%, 100% {
-    box-shadow: 0 0 20px rgba(12, 165, 235, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 50px rgba(12, 165, 235, 0.7), 0 0 80px rgba(12, 165, 235, 0.4);
-  }
+  box-shadow: 0 0 12px rgba(12, 165, 235, 0.3);
 }
 
 /* ============================================
@@ -496,6 +455,16 @@ select option {
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none; /* Firefox only */
+}
+
+/* Mobile menu animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
 }
 .scrollbar-hide::-webkit-scrollbar {
   display: none;

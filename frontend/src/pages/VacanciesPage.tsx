@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCurrencyRates } from '@/hooks';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import {
   Search,
   Plus,
@@ -513,7 +513,7 @@ export default function VacanciesPage() {
 
             {/* Main Tabs - Show "База" tab only if user has candidate_database feature */}
             {hasCandidateDatabase && (
-              <div className="flex items-center glass-light rounded-lg p-1">
+              <div className="flex items-center bg-white/[0.03] rounded-lg p-1">
                 <button
                   onClick={() => handleMainTabChange('vacancies')}
                   className={clsx(
@@ -589,12 +589,12 @@ export default function VacanciesPage() {
               placeholder="Поиск по названию..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm"
+              className="w-full pl-10 pr-4 py-2 bg-white/[0.03] rounded-lg focus:outline-none focus:border-blue-500 text-sm"
             />
           </div>
 
           {/* Status filter */}
-          <div className="flex items-center gap-1 p-1 glass-light rounded-lg">
+          <div className="flex items-center gap-1 p-1 bg-white/[0.03] rounded-lg">
             {STATUS_FILTERS.map((status) => (
               <button
                 key={status.id}
@@ -615,7 +615,7 @@ export default function VacanciesPage() {
           <select
             value={departmentFilter}
             onChange={(e) => setDepartmentFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-            className="px-3 py-2 glass-light rounded-lg text-sm focus:outline-none focus:border-blue-500"
+            className="px-3 py-2 bg-white/[0.03] rounded-lg text-sm focus:outline-none focus:border-blue-500"
           >
             <option value="all">Все отделы</option>
             {departments.map((dept) => (
@@ -647,13 +647,10 @@ export default function VacanciesPage() {
             </button>
 
             {/* Dropdown Panel */}
-            <AnimatePresence>
+            <>
               {showFiltersDropdown && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="absolute right-0 top-full mt-2 w-80 glass rounded-xl shadow-xl z-50 overflow-hidden"
+                <div
+                  className="absolute right-0 top-full mt-2 w-80 border border-white/[0.06] bg-white/[0.02] rounded-xl shadow-xl z-50 overflow-hidden"
                 >
                   {/* Header */}
                   <div className="flex items-center justify-between p-3 border-b border-white/10">
@@ -745,14 +742,14 @@ export default function VacanciesPage() {
                   </div>
 
                   {/* Results count */}
-                  <div className="p-3 border-t border-white/10 glass-light">
+                  <div className="p-3 border-t border-white/10 bg-white/[0.03]">
                     <span className="text-xs text-white/50">
                       Показано {filteredVacancies.length} из {vacancies.length} вакансий
                     </span>
                   </div>
-                </motion.div>
+                </div>
               )}
-            </AnimatePresence>
+            </>
           </div>
         </div>
         )}
@@ -791,7 +788,7 @@ export default function VacanciesPage() {
           </div>
         ) : (
           <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            <AnimatePresence mode="popLayout">
+            <>
               {filteredVacancies.map((vacancy) => (
                 <ContextMenu
                   key={vacancy.id}
@@ -802,13 +799,9 @@ export default function VacanciesPage() {
                     () => handleCopyLink(vacancy)
                   )}
                 >
-                  <motion.div
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
+                  <div
                     onClick={() => handleVacancyClick(vacancy)}
-                    className="p-4 glass-card rounded-xl cursor-pointer group"
+                    className="p-4 border border-white/[0.06] bg-white/[0.02] rounded-xl cursor-pointer group"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1 min-w-0">
@@ -875,7 +868,7 @@ export default function VacanciesPage() {
                       {Object.keys(vacancy.stage_counts).length > 0 && (
                         <div className="flex items-center gap-1">
                           {Object.entries(vacancy.stage_counts).slice(0, 3).map(([stage, count]) => (
-                            <span key={stage} className="text-xs px-1.5 py-0.5 glass-light rounded">
+                            <span key={stage} className="text-xs px-1.5 py-0.5 bg-white/[0.03] rounded">
                               {count}
                             </span>
                           ))}
@@ -887,7 +880,7 @@ export default function VacanciesPage() {
                     {vacancy.tags.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-1">
                         {vacancy.tags.slice(0, 4).map((tag) => (
-                          <span key={tag} className="text-xs px-2 py-0.5 glass-light rounded-full">
+                          <span key={tag} className="text-xs px-2 py-0.5 bg-white/[0.03] rounded-full">
                             {tag}
                           </span>
                         ))}
@@ -898,10 +891,10 @@ export default function VacanciesPage() {
                         )}
                       </div>
                     )}
-                  </motion.div>
+                  </div>
                 </ContextMenu>
               ))}
-            </AnimatePresence>
+            </>
           </div>
         )}
       </div>

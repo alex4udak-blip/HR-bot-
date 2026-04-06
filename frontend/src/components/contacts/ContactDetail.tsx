@@ -1,6 +1,5 @@
 import { useState, useEffect, useReducer } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   Phone,
   Mail,
@@ -10,7 +9,6 @@ import {
   ArrowRightLeft,
   FileText,
   ChevronRight,
-  Tag,
   User,
   Link2,
   X,
@@ -353,163 +351,149 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
       )}
 
       {/* Contact Info Card */}
-      <div className="glass rounded-xl p-4 sm:p-6 border border-white/10">
-        <div className="flex items-start gap-3 sm:gap-4">
-          <div className="w-12 h-12 sm:w-16 sm:h-16 aspect-square rounded-xl bg-gradient-to-br from-cyan-500/30 to-purple-500/30 flex items-center justify-center flex-shrink-0 border border-white/10">
-            <User size={24} className="text-white sm:hidden" />
-            <User size={32} className="text-white hidden sm:block" />
+      <div className="rounded-xl p-4 sm:p-6 border border-white/[0.06] bg-white/[0.02]">
+        <div className="flex items-start gap-4 sm:gap-5">
+          {/* Large avatar with initials */}
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-cyan-500/40 to-purple-500/40 flex items-center justify-center flex-shrink-0 border border-white/[0.08]">
+            <span className="text-xl sm:text-2xl font-bold text-white/90 select-none">
+              {entity.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+            </span>
           </div>
 
           <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-1">
               <h2 className="text-lg sm:text-2xl font-bold text-white truncate max-w-full">{entity.name}</h2>
-              <span className={clsx('text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1 rounded-full flex-shrink-0 whitespace-nowrap', STATUS_COLORS[entity.status])}>
+              <span className={clsx('text-[11px] sm:text-xs px-2 py-0.5 rounded-md font-medium flex-shrink-0 whitespace-nowrap', STATUS_COLORS[entity.status])}>
                 {STATUS_LABELS[entity.status]}
               </span>
             </div>
 
+            {/* Position & Company subtitle */}
+            {(entity.position || entity.company) && (
+              <p className="text-sm text-white/50 mb-3 truncate">
+                {entity.position}{entity.position && entity.company && ' \u00B7 '}{entity.company}
+              </p>
+            )}
+
             {/* Transferred entity indicator */}
             {entity.is_transferred && (
-              <div className="mb-4 p-3 bg-orange-500/20 border border-orange-500/30 rounded-lg">
+              <div className="mb-3 p-2.5 bg-orange-500/10 border border-orange-500/20 rounded-lg">
                 <div className="flex items-center gap-2 text-orange-300">
-                  <ArrowRightLeft size={16} className="flex-shrink-0" />
-                  <span className="text-sm font-medium">
-                    Контакт передан → {entity.transferred_to_name || 'другому пользователю'}
+                  <ArrowRightLeft size={14} className="flex-shrink-0" />
+                  <span className="text-xs font-medium">
+                    Передан → {entity.transferred_to_name || 'другому пользователю'}
                   </span>
                 </div>
                 {entity.transferred_at && (
-                  <p className="text-xs text-orange-300/70 mt-1 ml-6">
-                    {formatDate(entity.transferred_at, 'long')}
+                  <p className="text-[11px] text-orange-300/60 mt-1 ml-5">
+                    {formatDate(entity.transferred_at, 'long')} &middot; Только для просмотра
                   </p>
                 )}
-                <p className="text-xs text-orange-300/70 mt-1 ml-6">
-                  Это копия только для просмотра. Редактирование недоступно.
-                </p>
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-              {/* Telegram usernames */}
+            {/* Compact inline contact info */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-white/50 mt-2">
+              {/* Telegram */}
               {entity.telegram_usernames && entity.telegram_usernames.length > 0 && (
-                <div className="flex items-start gap-2 text-white/60 min-w-0">
-                  <AtSign size={16} className="flex-shrink-0 mt-0.5" />
-                  <div className="flex flex-wrap gap-1">
-                    {entity.telegram_usernames.map((username, idx) => (
-                      <a
-                        key={idx}
-                        href={`https://t.me/${username}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:text-cyan-400 transition-colors"
-                      >
-                        @{username}{idx < entity.telegram_usernames!.length - 1 && ','}
-                      </a>
-                    ))}
-                  </div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <AtSign size={14} className="flex-shrink-0 text-white/30" />
+                  {entity.telegram_usernames.map((username, idx) => (
+                    <a
+                      key={idx}
+                      href={`https://t.me/${username}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-cyan-400 transition-colors"
+                    >
+                      @{username}{idx < entity.telegram_usernames!.length - 1 && ','}
+                    </a>
+                  ))}
                 </div>
               )}
-              {/* Emails (array first, fallback to single) */}
+              {/* Email */}
               {(entity.emails && entity.emails.length > 0) ? (
-                <div className="flex items-start gap-2 text-white/60 min-w-0">
-                  <Mail size={16} className="flex-shrink-0 mt-0.5" />
-                  <div className="flex flex-wrap gap-1">
-                    {entity.emails.map((email, idx) => (
-                      <a
-                        key={idx}
-                        href={`mailto:${email}`}
-                        className="hover:text-cyan-400 transition-colors truncate"
-                      >
-                        {email}{idx < entity.emails!.length - 1 && ','}
-                      </a>
-                    ))}
-                  </div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Mail size={14} className="flex-shrink-0 text-white/30" />
+                  {entity.emails.map((email, idx) => (
+                    <a
+                      key={idx}
+                      href={`mailto:${email}`}
+                      className="hover:text-cyan-400 transition-colors truncate"
+                    >
+                      {email}{idx < entity.emails!.length - 1 && ','}
+                    </a>
+                  ))}
                 </div>
               ) : entity.email && (
                 <a
                   href={`mailto:${entity.email}`}
-                  className="flex items-center gap-2 text-white/60 hover:text-cyan-400 transition-colors min-w-0"
+                  className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors min-w-0"
                 >
-                  <Mail size={16} className="flex-shrink-0" />
+                  <Mail size={14} className="flex-shrink-0 text-white/30" />
                   <span className="truncate">{entity.email}</span>
                 </a>
               )}
-              {/* Phones (array first, fallback to single) */}
+              {/* Phone */}
               {(entity.phones && entity.phones.length > 0) ? (
-                <div className="flex items-start gap-2 text-white/60 min-w-0">
-                  <Phone size={16} className="flex-shrink-0 mt-0.5" />
-                  <div className="flex flex-wrap gap-1">
-                    {entity.phones.map((phone, idx) => (
-                      <a
-                        key={idx}
-                        href={`tel:${phone}`}
-                        className="hover:text-cyan-400 transition-colors"
-                      >
-                        {phone}{idx < entity.phones!.length - 1 && ','}
-                      </a>
-                    ))}
-                  </div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Phone size={14} className="flex-shrink-0 text-white/30" />
+                  {entity.phones.map((phone, idx) => (
+                    <a
+                      key={idx}
+                      href={`tel:${phone}`}
+                      className="hover:text-cyan-400 transition-colors"
+                    >
+                      {phone}{idx < entity.phones!.length - 1 && ','}
+                    </a>
+                  ))}
                 </div>
               ) : entity.phone && (
                 <a
                   href={`tel:${entity.phone}`}
-                  className="flex items-center gap-2 text-white/60 hover:text-cyan-400 transition-colors min-w-0"
+                  className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors min-w-0"
                 >
-                  <Phone size={16} className="flex-shrink-0" />
+                  <Phone size={14} className="flex-shrink-0 text-white/30" />
                   <span className="truncate">{entity.phone}</span>
                 </a>
               )}
-              {entity.company && (
-                <div className="flex items-center gap-2 text-white/60 min-w-0">
-                  <Building2 size={16} className="flex-shrink-0" />
-                  <span className="truncate">{entity.company}</span>
-                </div>
-              )}
-              {entity.position && (
-                <div className="flex items-center gap-2 text-white/60 min-w-0">
-                  <Briefcase size={16} className="flex-shrink-0" />
-                  <span className="truncate">{entity.position}</span>
-                </div>
-              )}
-              {/* Expected salary for candidates */}
+              {/* Salary */}
               {entity.type === 'candidate' && (entity.expected_salary_min || entity.expected_salary_max) && (
-                <div className="flex items-center gap-2 text-white/60 min-w-0">
-                  <span className="truncate text-green-400">
-                    {formatSalary(entity.expected_salary_min, entity.expected_salary_max, entity.expected_salary_currency)}
-                  </span>
-                </div>
-              )}
-              {/* Owner and department info */}
-              {(entity.owner_name || entity.department_name) && (
-                <div className="flex items-center gap-4 text-white/40 mt-2">
-                  {entity.owner_name && (
-                    <span className="flex items-center gap-1" title="Владелец">
-                      <User size={14} />
-                      <span>Владелец: {entity.owner_name}</span>
-                    </span>
-                  )}
-                  {entity.department_name && (
-                    <span className="flex items-center gap-1" title="Департамент">
-                      <Building2 size={14} />
-                      <span>{entity.department_name}</span>
-                    </span>
-                  )}
-                </div>
+                <span className="text-green-400 text-sm">
+                  {formatSalary(entity.expected_salary_min, entity.expected_salary_max, entity.expected_salary_currency)}
+                </span>
               )}
             </div>
 
+            {/* Owner & Department - subtle row */}
+            {(entity.owner_name || entity.department_name) && (
+              <div className="flex items-center gap-3 text-[11px] text-white/30 mt-2">
+                {entity.owner_name && (
+                  <span className="flex items-center gap-1">
+                    <User size={12} />
+                    {entity.owner_name}
+                  </span>
+                )}
+                {entity.department_name && (
+                  <span className="flex items-center gap-1">
+                    <Building2 size={12} />
+                    {entity.department_name}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Tags */}
             {entity.tags && entity.tags.length > 0 && (
-              <div className="flex items-center gap-2 mt-4">
-                <Tag size={16} className="text-white/40" />
-                <div className="flex flex-wrap gap-2">
-                  {entity.tags.map((tag, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2 py-1 bg-white/10 text-white/60 text-xs rounded-full"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
+              <div className="flex flex-wrap gap-1.5 mt-3">
+                {entity.tags.map((tag, idx) => (
+                  <span
+                    key={idx}
+                    className="px-2 py-0.5 bg-white/[0.06] text-white/50 text-[11px] rounded-md"
+                  >
+                    {tag}
+                  </span>
+                ))}
               </div>
             )}
           </div>
@@ -517,7 +501,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
       </div>
 
       {/* Tabs */}
-      <div className="glass rounded-xl p-1 sm:p-1.5 flex flex-wrap gap-1 border border-white/10 overflow-x-auto">
+      <div className="flex flex-wrap gap-0 border-b border-white/[0.06] overflow-x-auto">
         {[
           { id: 'overview', label: 'Обзор' },
           { id: 'chats', label: `Чаты (${entity.chats?.length || 0})`, shortLabel: `Чаты` },
@@ -531,7 +515,6 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
           { id: 'history', label: 'История' }
         ]
         .filter((tab) => {
-          // Filter out tabs that are only for candidates
           if ('onlyForCandidates' in tab && tab.onlyForCandidates) {
             return entity.type === 'candidate';
           }
@@ -545,10 +528,10 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               key={tab.id}
               onClick={() => setActiveTab(tab.id as typeof activeTab)}
               className={clsx(
-                'px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-1.5',
+                'px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-1.5 border-b-2 -mb-px',
                 activeTab === tab.id
-                  ? 'bg-cyan-500/20 text-cyan-400 shadow-sm'
-                  : 'text-white/60 hover:bg-dark-800/50 hover:text-white/80'
+                  ? 'border-cyan-400 text-cyan-400'
+                  : 'border-transparent text-white/40 hover:text-white/70'
               )}
             >
               {Icon && <Icon size={14} className="flex-shrink-0" />}
@@ -568,7 +551,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
             {/* AI Profile Status - only for candidates */}
             {entity.type === 'candidate' && (
-              <div className="glass rounded-xl p-4 border border-white/10 mt-4">
+              <div className="rounded-xl p-4 border border-white/[0.06] bg-white/[0.02] mt-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className={clsx(
@@ -622,7 +605,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
             <div className={clsx("grid grid-cols-1 2xl:grid-cols-2 gap-4 items-start", showAIInOverview && "mt-6")}>
             {/* Recent Chats */}
-            <div className="glass rounded-xl p-4 h-fit border border-white/10">
+            <div className="rounded-xl p-4 h-fit border border-white/[0.06] bg-white/[0.02]">
               <div className="flex items-center justify-between gap-2 mb-4">
                 <h3 className="text-base font-semibold text-white flex items-center gap-2 min-w-0">
                   <MessageSquare size={18} className="text-cyan-400 flex-shrink-0" />
@@ -644,7 +627,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                     <div
                       key={chat.id}
                       onClick={() => navigate(`/chats/${chat.id}`)}
-                      className="p-3 glass-light rounded-lg cursor-pointer hover:bg-white/10 transition-colors flex items-center justify-between gap-2"
+                      className="p-3 bg-white/[0.03] rounded-lg cursor-pointer hover:bg-white/[0.06] transition-colors flex items-center justify-between gap-2"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-white font-medium truncate">{chat.title}</p>
@@ -660,7 +643,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
             </div>
 
             {/* Recent Calls */}
-            <div className="glass rounded-xl p-4 h-fit border border-white/10">
+            <div className="rounded-xl p-4 h-fit border border-white/[0.06] bg-white/[0.02]">
               <div className="flex items-center justify-between gap-2 mb-4">
                 <h3 className="text-base font-semibold text-white flex items-center gap-2 min-w-0">
                   <Phone size={18} className="text-green-400 flex-shrink-0" />
@@ -682,7 +665,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                     <div
                       key={call.id}
                       onClick={() => navigate(`/calls/${call.id}`)}
-                      className="p-3 glass-light rounded-lg cursor-pointer hover:bg-white/10 transition-colors"
+                      className="p-3 bg-white/[0.03] rounded-lg cursor-pointer hover:bg-white/[0.06] transition-colors"
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className={clsx('text-xs px-2 py-0.5 rounded-full', CALL_STATUS_COLORS[call.status])}>
@@ -703,7 +686,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
             {/* Recommended Vacancies - for all candidates (filtered by user's accessible vacancies on backend) */}
             {entity.type === 'candidate' && (
-              <div className="glass rounded-xl p-4 xl:col-span-2 h-fit border border-white/10">
+              <div className="rounded-xl p-4 xl:col-span-2 h-fit border border-white/[0.06] bg-white/[0.02]">
                 <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
                   <Target size={18} className="text-purple-400" />
                   Подходящие вакансии
@@ -718,7 +701,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
             {/* Similar Candidates - only for candidates */}
             {entity.type === 'candidate' && (
-              <div className="glass rounded-xl p-4 xl:col-span-2 h-fit border border-white/10">
+              <div className="rounded-xl p-4 xl:col-span-2 h-fit border border-white/[0.06] bg-white/[0.02]">
                 <SimilarCandidates
                   entityId={entity.id}
                   entityName={entity.name}
@@ -727,7 +710,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
             )}
 
             {/* Transfer History */}
-            <div className="glass rounded-xl p-4 xl:col-span-2 h-fit border border-white/10">
+            <div className="rounded-xl p-4 xl:col-span-2 h-fit border border-white/[0.06] bg-white/[0.02]">
               <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
                 <ArrowRightLeft size={18} className="text-purple-400" />
                 История передач
@@ -735,7 +718,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
               {entity.transfers && entity.transfers.length > 0 ? (
                 <div className="space-y-2">
                   {entity.transfers.slice(0, 5).map((transfer) => (
-                    <div key={transfer.id} className="p-3 glass-light rounded-lg">
+                    <div key={transfer.id} className="p-3 bg-white/[0.03] rounded-lg">
                       <div className="flex items-center gap-2 text-sm">
                         <span className="text-white/60">{transfer.from_user_name || 'Неизвестно'}</span>
                         <ArrowRightLeft size={14} className="text-white/40" />
@@ -760,12 +743,10 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
           <div className="space-y-2">
             {entity.chats && entity.chats.length > 0 ? (
               entity.chats.map((chat) => (
-                <motion.div
+                <div
                   key={chat.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
                   onClick={() => navigate(`/chats/${chat.id}`)}
-                  className="p-4 glass-light rounded-xl cursor-pointer hover:bg-white/10 transition-colors flex items-center justify-between gap-3"
+                  className="p-4 bg-white/[0.03] rounded-xl cursor-pointer hover:bg-white/[0.06] transition-colors flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="p-2 bg-cyan-500/20 rounded-lg flex-shrink-0">
@@ -774,12 +755,12 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                     <div className="min-w-0 flex-1">
                       <p className="text-white font-medium truncate">{chat.title}</p>
                       <p className="text-sm text-white/40 truncate">
-                        {chat.chat_type} • Создан {formatDate(chat.created_at, 'long')}
+                        {chat.chat_type} &bull; {formatDate(chat.created_at, 'long')}
                       </p>
                     </div>
                   </div>
                   <ChevronRight size={20} className="text-white/40 flex-shrink-0" />
-                </motion.div>
+                </div>
               ))
             ) : (
               <EmptyChats onLink={canEditEntity(entity) ? () => dispatchModal({ type: 'OPEN_MODAL', modal: 'linkChat' }) : undefined} />
@@ -791,12 +772,10 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
           <div className="space-y-2">
             {entity.calls && entity.calls.length > 0 ? (
               entity.calls.map((call) => (
-                <motion.div
+                <div
                   key={call.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
                   onClick={() => navigate(`/calls/${call.id}`)}
-                  className="p-4 glass-light rounded-xl cursor-pointer hover:bg-white/10 transition-colors"
+                  className="p-4 bg-white/[0.03] rounded-xl cursor-pointer hover:bg-white/[0.06] transition-colors"
                 >
                   <div className="flex items-center justify-between gap-3 mb-2">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -822,7 +801,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
                   {call.summary && (
                     <p className="text-sm text-white/60 line-clamp-2 mt-2">{call.summary}</p>
                   )}
-                </motion.div>
+                </div>
               ))
             ) : (
               <EmptyCalls onLink={canEditEntity(entity) ? () => dispatchModal({ type: 'OPEN_MODAL', modal: 'linkCall' }) : undefined} />
@@ -831,7 +810,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
         )}
 
         {activeTab === 'vacancies' && canAccessFeature('candidate_database') && (
-          <div className="glass rounded-xl border border-white/10 p-4">
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold text-white flex items-center gap-2">
                 <Briefcase size={18} className="text-blue-400" />
@@ -854,7 +833,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
         )}
 
         {activeTab === 'files' && (
-          <div className="glass rounded-xl border border-white/10 p-4">
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
             <h3 className="text-base font-semibold text-white flex items-center gap-2 mb-4">
               <FolderOpen size={18} className="text-green-400" />
               Файлы
@@ -866,7 +845,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
         {activeTab === 'history' && (
           <div className="space-y-6">
             {/* Interaction Timeline */}
-            <div className="glass rounded-xl border border-white/10 p-4">
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
               <InteractionTimeline
                 entityId={entity.id}
                 chats={entity.chats?.map(chat => ({
@@ -898,14 +877,14 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
             {/* Transfers */}
             {entity.transfers && entity.transfers.length > 0 && (
-              <div className="glass rounded-xl border border-white/10 p-4">
+              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
                 <h4 className="text-sm font-medium text-white/60 mb-3 flex items-center gap-2">
                   <ArrowRightLeft size={16} className="text-purple-400" />
                   Передачи между сотрудниками
                 </h4>
                 <div className="space-y-2">
                   {entity.transfers.map((transfer) => (
-                    <div key={transfer.id} className="p-3 glass-light rounded-lg flex items-start gap-3">
+                    <div key={transfer.id} className="p-3 bg-white/[0.03] rounded-lg flex items-start gap-3">
                       <div className="p-2 bg-purple-500/20 rounded-lg">
                         <ArrowRightLeft size={16} className="text-purple-400" />
                       </div>
@@ -928,14 +907,14 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
 
             {/* Analyses */}
             {entity.analyses && entity.analyses.length > 0 && (
-              <div className="glass rounded-xl border border-white/10 p-4">
+              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
                 <h4 className="text-sm font-medium text-white/60 mb-3 flex items-center gap-2">
                   <FileText size={16} className="text-cyan-400" />
                   AI Анализы
                 </h4>
                 <div className="space-y-2">
                   {entity.analyses.map((analysis) => (
-                    <div key={analysis.id} className="p-3 glass-light rounded-lg flex items-start gap-3">
+                    <div key={analysis.id} className="p-3 bg-white/[0.03] rounded-lg flex items-start gap-3">
                       <div className="p-2 bg-cyan-500/20 rounded-lg">
                         <FileText size={16} className="text-cyan-400" />
                       </div>
@@ -957,15 +936,15 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
         )}
 
         {activeTab === 'criteria' && (
-          <div className="glass rounded-xl border border-white/10 overflow-hidden">
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
             <CriteriaPanelEntity entityId={entity.id} entityType={entity.type} />
           </div>
         )}
 
         {activeTab === 'reports' && (
-          <div className="glass rounded-xl border border-white/10 p-4">
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
             <div className="space-y-4">
-              <div className="glass-light rounded-xl p-4">
+              <div className="bg-white/[0.03] rounded-xl p-4">
                 <h3 className="font-semibold mb-3">Создать отчёт</h3>
                 <p className="text-sm text-dark-400 mb-4">
                   Скачайте полный аналитический отчёт по этому контакту
@@ -1024,7 +1003,7 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
         )}
 
         {activeTab === 'red-flags' && entity.type === 'candidate' && (
-          <div className="glass rounded-xl border border-white/10 p-4">
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
             <div className="flex items-center gap-2 mb-4">
               <AlertTriangle size={18} className="text-red-400" />
               <h3 className="text-base font-semibold text-white">
@@ -1040,154 +1019,136 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
       </div>
 
       {/* Link Chat Modal */}
-      <AnimatePresence>
-        {modalState.activeModal === 'linkChat' && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-            onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
+      {modalState.activeModal === 'linkChat' && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+          onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
+        >
+          <div
+            className="rounded-xl p-6 w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col border border-white/[0.06] bg-dark-900"
+            onClick={(e) => e.stopPropagation()}
           >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="glass rounded-xl p-6 w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                <h3 className="text-lg font-semibold text-white">Привязать чат</h3>
-                <button
-                  onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
-                  className="p-1 rounded-lg hover:bg-white/10"
-                >
-                  <X size={20} className="text-white/60" />
-                </button>
-              </div>
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <h3 className="text-lg font-semibold text-white">Привязать чат</h3>
+              <button
+                onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
+                className="p-1 rounded-lg hover:bg-white/10"
+              >
+                <X size={20} className="text-white/60" />
+              </button>
+            </div>
 
-              <div className="flex-1 overflow-y-auto space-y-2 max-h-[60vh]">
-                {asyncState.loadingData ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
-                  </div>
-                ) : modalState.unlinkedChats.length === 0 ? (
-                  <div className="text-center py-8 text-white/40">
-                    <MessageSquare className="mx-auto mb-2" size={40} />
-                    <p>Нет доступных чатов для привязки</p>
-                    <p className="text-sm mt-1">Все чаты уже привязаны к контактам</p>
-                  </div>
-                ) : (
-                  modalState.unlinkedChats.map((chat) => (
-                    <button
-                      key={chat.id}
-                      onClick={() => handleLinkChat(chat.id)}
-                      disabled={asyncState.loadingLink}
-                      className="w-full p-3 glass-light rounded-lg hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-3 disabled:opacity-50"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-white font-medium truncate">{chat.title}</p>
-                        <p className="text-xs text-white/40 truncate">{chat.chat_type} • {formatDate(chat.created_at, 'long')}</p>
-                      </div>
-                      {asyncState.loadingLink ? (
-                        <Loader2 size={16} className="text-cyan-400 animate-spin flex-shrink-0" />
-                      ) : (
-                        <Link2 size={16} className="text-cyan-400 flex-shrink-0" />
-                      )}
-                    </button>
-                  ))
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <div className="flex-1 overflow-y-auto space-y-2 max-h-[60vh]">
+              {asyncState.loadingData ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
+                </div>
+              ) : modalState.unlinkedChats.length === 0 ? (
+                <div className="text-center py-8 text-white/40">
+                  <MessageSquare className="mx-auto mb-2" size={40} />
+                  <p>Нет доступных чатов для привязки</p>
+                  <p className="text-sm mt-1">Все чаты уже привязаны к контактам</p>
+                </div>
+              ) : (
+                modalState.unlinkedChats.map((chat) => (
+                  <button
+                    key={chat.id}
+                    onClick={() => handleLinkChat(chat.id)}
+                    disabled={asyncState.loadingLink}
+                    className="w-full p-3 bg-white/[0.03] rounded-lg hover:bg-white/[0.06] transition-colors text-left flex items-center justify-between gap-3 disabled:opacity-50"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-white font-medium truncate">{chat.title}</p>
+                      <p className="text-xs text-white/40 truncate">{chat.chat_type} &bull; {formatDate(chat.created_at, 'long')}</p>
+                    </div>
+                    {asyncState.loadingLink ? (
+                      <Loader2 size={16} className="text-cyan-400 animate-spin flex-shrink-0" />
+                    ) : (
+                      <Link2 size={16} className="text-cyan-400 flex-shrink-0" />
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Link Call Modal */}
-      <AnimatePresence>
-        {modalState.activeModal === 'linkCall' && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-            onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
+      {modalState.activeModal === 'linkCall' && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+          onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
+        >
+          <div
+            className="rounded-xl p-6 w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col border border-white/[0.06] bg-dark-900"
+            onClick={(e) => e.stopPropagation()}
           >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="glass rounded-xl p-6 w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                <h3 className="text-lg font-semibold text-white">Привязать звонок</h3>
-                <button
-                  onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
-                  className="p-1 rounded-lg hover:bg-white/10"
-                >
-                  <X size={20} className="text-white/60" />
-                </button>
-              </div>
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <h3 className="text-lg font-semibold text-white">Привязать звонок</h3>
+              <button
+                onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
+                className="p-1 rounded-lg hover:bg-white/10"
+              >
+                <X size={20} className="text-white/60" />
+              </button>
+            </div>
 
-              <div className="flex-1 overflow-y-auto space-y-2 max-h-[60vh]">
-                {asyncState.loadingData ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-6 h-6 text-green-400 animate-spin" />
-                  </div>
-                ) : modalState.unlinkedCalls.length === 0 ? (
-                  <div className="text-center py-8 text-white/40">
-                    <Phone className="mx-auto mb-2" size={40} />
-                    <p>Нет доступных звонков для привязки</p>
-                    <p className="text-sm mt-1">Все звонки уже привязаны к контактам</p>
-                  </div>
-                ) : (
-                  modalState.unlinkedCalls.map((call) => (
-                    <button
-                      key={call.id}
-                      onClick={() => handleLinkCall(call.id)}
-                      disabled={asyncState.loadingLink}
-                      className="w-full p-3 glass-light rounded-lg hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-3 disabled:opacity-50"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-white font-medium truncate">
-                          Звонок {call.source_type?.toUpperCase() || 'N/A'}
-                        </p>
-                        <p className="text-xs text-white/40 truncate">
-                          {formatDuration(call.duration_seconds)} • {formatDate(call.created_at, 'long')}
-                        </p>
-                        <span className={clsx('text-xs px-2 py-0.5 rounded-full mt-1 inline-block whitespace-nowrap', CALL_STATUS_COLORS[call.status])}>
-                          {CALL_STATUS_LABELS[call.status]}
-                        </span>
-                      </div>
-                      {asyncState.loadingLink ? (
-                        <Loader2 size={16} className="text-green-400 animate-spin flex-shrink-0" />
-                      ) : (
-                        <Link2 size={16} className="text-green-400 flex-shrink-0" />
-                      )}
-                    </button>
-                  ))
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <div className="flex-1 overflow-y-auto space-y-2 max-h-[60vh]">
+              {asyncState.loadingData ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 text-green-400 animate-spin" />
+                </div>
+              ) : modalState.unlinkedCalls.length === 0 ? (
+                <div className="text-center py-8 text-white/40">
+                  <Phone className="mx-auto mb-2" size={40} />
+                  <p>Нет доступных звонков для привязки</p>
+                  <p className="text-sm mt-1">Все звонки уже привязаны к контактам</p>
+                </div>
+              ) : (
+                modalState.unlinkedCalls.map((call) => (
+                  <button
+                    key={call.id}
+                    onClick={() => handleLinkCall(call.id)}
+                    disabled={asyncState.loadingLink}
+                    className="w-full p-3 bg-white/[0.03] rounded-lg hover:bg-white/[0.06] transition-colors text-left flex items-center justify-between gap-3 disabled:opacity-50"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-white font-medium truncate">
+                        Звонок {call.source_type?.toUpperCase() || 'N/A'}
+                      </p>
+                      <p className="text-xs text-white/40 truncate">
+                        {formatDuration(call.duration_seconds)} &bull; {formatDate(call.created_at, 'long')}
+                      </p>
+                      <span className={clsx('text-xs px-2 py-0.5 rounded-full mt-1 inline-block whitespace-nowrap', CALL_STATUS_COLORS[call.status])}>
+                        {CALL_STATUS_LABELS[call.status]}
+                      </span>
+                    </div>
+                    {asyncState.loadingLink ? (
+                      <Loader2 size={16} className="text-green-400 animate-spin flex-shrink-0" />
+                    ) : (
+                      <Link2 size={16} className="text-green-400 flex-shrink-0" />
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add to Vacancy Modal */}
-      <AnimatePresence>
-        {modalState.activeModal === 'addToVacancy' && (
-          <AddToVacancyModal
-            entityId={entity.id}
-            entityName={entity.name}
-            onClose={() => dispatchModal({ type: 'CLOSE_MODAL' })}
-            onSuccess={() => {
-              dispatchModal({ type: 'CLOSE_MODAL' });
-              setVacanciesKey(prev => prev + 1); // Force reload vacancies
-            }}
-          />
-        )}
-      </AnimatePresence>
+      {modalState.activeModal === 'addToVacancy' && (
+        <AddToVacancyModal
+          entityId={entity.id}
+          entityName={entity.name}
+          onClose={() => dispatchModal({ type: 'CLOSE_MODAL' })}
+          onSuccess={() => {
+            dispatchModal({ type: 'CLOSE_MODAL' });
+            setVacanciesKey(prev => prev + 1);
+          }}
+        />
+      )}
     </div>
   );
 }

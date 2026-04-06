@@ -1,11 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, Sparkles, KeyRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
 import { login, changePassword } from '@/services/api';
-import BackgroundEffects from '@/components/BackgroundEffects';
 
 // Helper to extract error message from API response
 const getErrorMessage = (error: any, fallback: string): string => {
@@ -83,30 +81,14 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative">
-      <BackgroundEffects />
-
-      <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="w-full max-w-md relative z-10"
-      >
-        <div className="glass rounded-2xl p-8 shadow-2xl relative overflow-hidden">
-          {/* Decorative gradient orb */}
-          <div className="absolute -top-20 -right-20 w-40 h-40 bg-accent-500/20 rounded-full blur-3xl" />
-          <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl" />
-
-          <div className="text-center mb-8 relative">
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-              className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-accent-500 to-accent-600 mb-4 shadow-lg shadow-accent-500/30"
-            >
-              <Sparkles className="w-8 h-8 text-white" />
-            </motion.div>
-            <h1 className="text-3xl font-bold gradient-text mb-2">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-dark-900">
+      <div className="w-full max-w-md">
+        <div className="border border-white/[0.06] bg-white/[0.02] rounded-2xl p-8">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-accent-500 mb-4">
+              <Sparkles className="w-7 h-7 text-white" />
+            </div>
+            <h1 className="text-3xl font-bold text-dark-100 mb-2">
               Чат Аналитика
             </h1>
             <p className="text-dark-400">
@@ -149,12 +131,10 @@ export default function LoginPage() {
                   </button>
                 </div>
 
-                <motion.button
-                  whileHover={{ scale: 1.02, boxShadow: "0 10px 40px rgba(12, 165, 235, 0.4)" }}
-                  whileTap={{ scale: 0.98 }}
+                <button
                   disabled={loading}
                   type="submit"
-                  className="w-full btn-premium text-white font-semibold py-3.5 rounded-xl transition-all duration-300 disabled:opacity-50 relative overflow-hidden"
+                  className="w-full bg-accent-500 hover:bg-accent-600 text-white font-semibold py-3.5 rounded-xl transition-colors duration-200 disabled:opacity-50"
                 >
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">
@@ -164,7 +144,7 @@ export default function LoginPage() {
                   ) : (
                     'Войти'
                   )}
-                </motion.button>
+                </button>
               </form>
 
               <div className="mt-6 text-center">
@@ -220,12 +200,10 @@ export default function LoginPage() {
                   />
                 </div>
 
-                <motion.button
-                  whileHover={{ scale: 1.02, boxShadow: "0 10px 40px rgba(12, 165, 235, 0.4)" }}
-                  whileTap={{ scale: 0.98 }}
+                <button
                   disabled={loading || newPasswordForm.newPassword !== newPasswordForm.confirmPassword}
                   type="submit"
-                  className="w-full btn-premium text-white font-semibold py-3.5 rounded-xl transition-all duration-300 disabled:opacity-50 relative overflow-hidden"
+                  className="w-full bg-accent-500 hover:bg-accent-600 text-white font-semibold py-3.5 rounded-xl transition-colors duration-200 disabled:opacity-50"
                 >
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">
@@ -235,7 +213,7 @@ export default function LoginPage() {
                   ) : (
                     'Сохранить новый пароль'
                   )}
-                </motion.button>
+                </button>
               </form>
 
               {newPasswordForm.newPassword && newPasswordForm.confirmPassword && newPasswordForm.newPassword !== newPasswordForm.confirmPassword && (
@@ -244,7 +222,7 @@ export default function LoginPage() {
             </>
           )}
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

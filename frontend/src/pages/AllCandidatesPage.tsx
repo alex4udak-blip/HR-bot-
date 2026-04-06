@@ -5,9 +5,6 @@ import {
   Search,
   Loader2,
   Users,
-  GripVertical,
-  Phone,
-  Mail,
   Clock,
   Filter,
   X,
@@ -28,15 +25,15 @@ import type {
 
 // ---------- constants ----------
 
-const STATUS_COLORS: Record<string, string> = {
-  new: 'border-blue-500/40 bg-blue-500/5',
-  screening: 'border-cyan-500/40 bg-cyan-500/5',
-  practice: 'border-purple-500/40 bg-purple-500/5',
-  tech_practice: 'border-indigo-500/40 bg-indigo-500/5',
-  is_interview: 'border-orange-500/40 bg-orange-500/5',
-  offer: 'border-yellow-500/40 bg-yellow-500/5',
-  hired: 'border-green-500/40 bg-green-500/5',
-  rejected: 'border-red-500/40 bg-red-500/5',
+const STATUS_BORDER_LEFT: Record<string, string> = {
+  new: 'border-l-blue-500/60',
+  screening: 'border-l-cyan-500/60',
+  practice: 'border-l-purple-500/60',
+  tech_practice: 'border-l-indigo-500/60',
+  is_interview: 'border-l-orange-500/60',
+  offer: 'border-l-yellow-500/60',
+  hired: 'border-l-green-500/60',
+  rejected: 'border-l-red-500/60',
 };
 
 const STATUS_HEADER_COLORS: Record<string, string> = {
@@ -60,6 +57,17 @@ const STATUS_DOT_COLORS: Record<string, string> = {
   hired: 'bg-green-400',
   rejected: 'bg-red-400',
 };
+
+const AVATAR_COLORS: string[] = [
+  'bg-blue-600',
+  'bg-cyan-600',
+  'bg-purple-600',
+  'bg-indigo-600',
+  'bg-orange-600',
+  'bg-emerald-600',
+  'bg-pink-600',
+  'bg-teal-600',
+];
 
 const SOURCE_LABELS: Record<string, string> = {
   hh: 'hh.ru',
@@ -92,6 +100,22 @@ function timeAgo(dateStr: string): string {
   if (days < 30) return `${days}д`;
   const months = Math.floor(days / 30);
   return `${months}мес`;
+}
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return (parts[0]?.[0] || '?').toUpperCase();
+}
+
+function getAvatarColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
 // ---------- component ----------
@@ -203,12 +227,12 @@ export default function AllCandidatesPage() {
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex-shrink-0 px-4 lg:px-6 py-4 border-b border-white/5">
+      <div className="flex-shrink-0 px-4 lg:px-6 py-3 border-b border-white/5">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Users className="w-6 h-6 text-cyan-400" />
+            <Users className="w-5 h-5 text-cyan-400" />
             <div>
-              <h1 className="text-xl font-bold">База кандидатов</h1>
+              <h1 className="text-lg font-bold">База кандидатов</h1>
               <p className="text-xs text-white/40">{totalCount} кандидатов</p>
             </div>
           </div>
@@ -222,7 +246,7 @@ export default function AllCandidatesPage() {
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
                 placeholder="Поиск..."
-                className="w-48 lg:w-64 pl-9 pr-3 py-2 glass-light rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                className="w-48 lg:w-64 pl-9 pr-3 py-1.5 glass-light rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
               />
               {searchText && (
                 <button
@@ -283,15 +307,15 @@ export default function AllCandidatesPage() {
 
         {/* Stats pills */}
         {board && (
-          <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
+          <div className="flex gap-1.5 mt-2.5 overflow-x-auto pb-1">
             {board.columns.map(col => (
               <div
                 key={col.status}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] text-xs whitespace-nowrap"
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.03] text-[11px] whitespace-nowrap"
               >
-                <span className={clsx('w-2 h-2 rounded-full', STATUS_DOT_COLORS[col.status])} />
-                <span className="text-white/50">{col.label}</span>
-                <span className="font-semibold text-white/80">{col.count}</span>
+                <span className={clsx('w-1.5 h-1.5 rounded-full', STATUS_DOT_COLORS[col.status])} />
+                <span className="text-white/40">{col.label}</span>
+                <span className="font-medium text-white/70">{col.count}</span>
               </div>
             ))}
           </div>
@@ -305,31 +329,31 @@ export default function AllCandidatesPage() {
         </div>
       ) : (
         <div className="flex-1 overflow-x-auto overflow-y-hidden">
-          <div className="flex gap-3 p-4 lg:p-6 h-full min-w-max">
+          <div className="flex gap-2.5 p-3 lg:p-4 h-full min-w-max">
             {board?.columns.map(column => (
               <div
                 key={column.status}
                 className={clsx(
-                  'flex flex-col w-72 lg:w-80 rounded-xl border transition-colors',
+                  'flex flex-col w-[272px] lg:w-[296px] rounded-lg border transition-colors',
                   dropTarget === column.status
-                    ? 'border-cyan-400/60 bg-cyan-500/5 ring-2 ring-cyan-500/20'
-                    : 'border-white/[0.06] bg-white/[0.02]'
+                    ? 'border-cyan-400/50 bg-cyan-500/5 ring-1 ring-cyan-500/20'
+                    : 'border-white/[0.04] bg-white/[0.015]'
                 )}
                 onDragOver={(e) => handleDragOver(e, column.status)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, column.status)}
               >
                 {/* Column header */}
-                <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/[0.06]">
-                  <span className={clsx('w-2.5 h-2.5 rounded-full', STATUS_HEADER_COLORS[column.status])} />
-                  <span className="text-sm font-semibold text-white/90">{column.label}</span>
-                  <span className="ml-auto text-xs text-white/30 bg-white/[0.06] px-1.5 py-0.5 rounded-md">
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-white/[0.04] sticky top-0 z-10 bg-inherit rounded-t-lg">
+                  <span className={clsx('w-2 h-2 rounded-full', STATUS_HEADER_COLORS[column.status])} />
+                  <span className="text-[13px] font-semibold text-white/80 tracking-tight">{column.label}</span>
+                  <span className="ml-auto text-[11px] text-white/30 bg-white/[0.05] px-1.5 py-0.5 rounded font-medium min-w-[20px] text-center">
                     {column.count}
                   </span>
                 </div>
 
                 {/* Cards */}
-                <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-0">
+                <div className="flex-1 overflow-y-auto p-1.5 space-y-1 min-h-0">
                   {column.cards.map(card => (
                     <CandidateCard
                       key={card.id}
@@ -342,7 +366,7 @@ export default function AllCandidatesPage() {
                     />
                   ))}
                   {column.cards.length === 0 && (
-                    <div className="text-center py-8 text-white/20 text-xs">
+                    <div className="text-center py-8 text-white/15 text-xs">
                       Пусто
                     </div>
                   )}
@@ -374,6 +398,9 @@ function CandidateCard({
   onDragEnd: () => void;
   onClick: () => void;
 }) {
+  const initials = getInitials(card.name);
+  const avatarColor = getAvatarColor(card.name);
+
   return (
     <div
       draggable
@@ -384,72 +411,56 @@ function CandidateCard({
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={clsx(
-        'group rounded-lg border p-3 cursor-pointer transition-all',
-        'hover:border-white/20 hover:bg-white/[0.04]',
-        STATUS_COLORS[status],
+        'group rounded-md border-l-2 border border-r-white/[0.04] border-t-white/[0.04] border-b-white/[0.04]',
+        'px-2.5 py-2 cursor-pointer transition-all duration-150',
+        'hover:bg-white/[0.04] hover:shadow-lg hover:shadow-black/20 hover:-translate-y-[1px]',
+        'bg-white/[0.02]',
+        STATUS_BORDER_LEFT[status],
         isDragging && 'opacity-40 scale-95',
       )}
     >
-      {/* Name + drag handle */}
-      <div className="flex items-start gap-2">
-        <GripVertical className="w-3.5 h-3.5 text-white/15 group-hover:text-white/30 mt-0.5 flex-shrink-0 cursor-grab" />
+      {/* Avatar + Name + Position */}
+      <div className="flex items-center gap-2">
+        <div className={clsx(
+          'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-semibold text-white/90',
+          avatarColor,
+        )}>
+          {initials}
+        </div>
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm text-white/90 truncate">{card.name}</div>
+          <div className="font-medium text-[13px] text-white/80 truncate leading-tight">{card.name}</div>
           {card.position && (
-            <div className="text-xs text-white/40 truncate mt-0.5">{card.position}</div>
+            <div className="text-[11px] text-white/40 truncate leading-tight mt-0.5">{card.position}</div>
           )}
         </div>
       </div>
 
-      {/* Contact info */}
-      <div className="mt-2 space-y-1">
-        {card.email && (
-          <div className="flex items-center gap-1.5 text-xs text-white/35">
-            <Mail className="w-3 h-3" />
-            <span className="truncate">{card.email}</span>
-          </div>
-        )}
-        {card.phone && (
-          <div className="flex items-center gap-1.5 text-xs text-white/35">
-            <Phone className="w-3 h-3" />
-            <span>{card.phone}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Footer: source + time */}
-      <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/[0.04]">
-        <div className="flex items-center gap-2">
+      {/* Footer: source + tags + time */}
+      <div className="flex items-center justify-between mt-1.5 gap-2">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
           {card.source && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-white/40">
+            <span className="text-[10px] px-1.5 py-[1px] rounded bg-white/[0.05] text-white/35 flex-shrink-0">
               {SOURCE_LABELS[card.source] || card.source}
             </span>
           )}
-          {card.recruiter_name && (
-            <span className="text-[10px] text-white/25 truncate max-w-[80px]">
-              {card.recruiter_name}
-            </span>
+          {card.tags.length > 0 && (
+            <>
+              {card.tags.slice(0, 2).map(tag => (
+                <span key={tag} className="text-[10px] px-1.5 py-[1px] rounded bg-cyan-500/8 text-cyan-400/50 truncate max-w-[60px] flex-shrink-0">
+                  {tag}
+                </span>
+              ))}
+              {card.tags.length > 2 && (
+                <span className="text-[10px] text-white/20 flex-shrink-0">+{card.tags.length - 2}</span>
+              )}
+            </>
           )}
         </div>
-        <div className="flex items-center gap-1 text-[10px] text-white/25">
+        <div className="flex items-center gap-0.5 text-[10px] text-white/20 flex-shrink-0">
           <Clock className="w-2.5 h-2.5" />
           {timeAgo(card.created_at)}
         </div>
       </div>
-
-      {/* Tags */}
-      {card.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-1.5">
-          {card.tags.slice(0, 3).map(tag => (
-            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400/60">
-              {tag}
-            </span>
-          ))}
-          {card.tags.length > 3 && (
-            <span className="text-[10px] text-white/20">+{card.tags.length - 3}</span>
-          )}
-        </div>
-      )}
     </div>
   );
 }

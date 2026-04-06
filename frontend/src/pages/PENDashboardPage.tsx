@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+
 import {
   BarChart3,
   Users,
@@ -345,10 +345,7 @@ export default function PENDashboardPage() {
         </div>
 
         {/* ============ CONVERSION FUNNEL ============ */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
+        <div
           className="bg-white/[0.04] rounded-xl p-5 border border-dark-700"
         >
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
@@ -386,11 +383,9 @@ export default function PENDashboardPage() {
                       {stage.label}
                     </div>
                     <div className="flex-1 h-8 bg-dark-800 rounded-lg overflow-hidden relative">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${Math.max(pct, 2)}%` }}
-                        transition={{ duration: 0.6, delay: idx * 0.1 }}
-                        className="h-full bg-gradient-to-r from-accent-500 to-accent-400 rounded-lg"
+                      <div
+                        style={{ width: `${Math.max(pct, 2)}%` }}
+                        className="h-full bg-accent-500 rounded-lg"
                       />
                       <span className="absolute inset-0 flex items-center px-3 text-sm font-medium text-white">
                         {stage.value}
@@ -401,13 +396,10 @@ export default function PENDashboardPage() {
               );
             })}
           </div>
-        </motion.div>
+        </div>
 
         {/* ============ RECRUITER TABLE ============ */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
+        <div
           className="bg-white/[0.04] rounded-xl p-5 border border-dark-700"
         >
           <div className="flex items-center justify-between mb-4">
@@ -477,13 +469,10 @@ export default function PENDashboardPage() {
               </tbody>
             </table>
           </div>
-        </motion.div>
+        </div>
 
         {/* ============ SALARY SHEET ============ */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
+        <div
           className="bg-white/[0.04] rounded-xl p-5 border border-dark-700"
         >
           <div className="flex items-center justify-between mb-4">
@@ -588,23 +577,16 @@ export default function PENDashboardPage() {
               </tbody>
             </table>
           </div>
-        </motion.div>
+        </div>
       </div>
 
       {/* ============ ADD BONUS MODAL ============ */}
-      <AnimatePresence>
-        {showBonusModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+      {showBonusModal && (
+          <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
             onClick={() => setShowBonusModal(false)}
           >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
+            <div
               className="bg-dark-800 rounded-xl border border-dark-600 p-6 w-full max-w-md"
               onClick={(e) => e.stopPropagation()}
             >
@@ -708,10 +690,9 @@ export default function PENDashboardPage() {
                   {submittingBonus ? 'Сохранение...' : 'Сохранить'}
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
+            </div>
+          </div>
         )}
-      </AnimatePresence>
     </div>
   );
 }
@@ -741,9 +722,7 @@ function MetricCard({
   const c = COLOR_MAP[color] || COLOR_MAP.blue;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
+    <div
       className={`rounded-xl p-4 border ${c.bg} ${c.border}`}
     >
       <div className="flex items-center gap-2 mb-3">
@@ -759,6 +738,6 @@ function MetricCard({
           Развитие: <span className="text-dark-200">{data.development}</span>
         </span>
       </div>
-    </motion.div>
+    </div>
   );
 }

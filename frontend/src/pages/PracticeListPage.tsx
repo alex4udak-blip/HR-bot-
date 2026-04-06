@@ -233,7 +233,7 @@ export default function PracticeListPage() {
             <p className="text-dark-400 text-sm">Нет записей</p>
           </div>
         ) : (
-          <div className="glass rounded-xl border border-white/5 overflow-hidden">
+          <div className="border border-white/[0.06] bg-white/[0.02] rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/5">
