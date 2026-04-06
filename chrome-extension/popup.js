@@ -97,6 +97,19 @@ function showView(view) {
   if (view === 'result') resultView.classList.add('active');
 }
 
+const STATUS_MAP = {
+  new: { label: 'Новый', badge: 'badge-new' },
+  in_progress: { label: 'В работе', badge: 'badge-interview' },
+  interview: { label: 'Интервью', badge: 'badge-interview' },
+  practice: { label: 'Практика', badge: 'badge-interview' },
+  probation: { label: 'Испытательный', badge: 'badge-interview' },
+  hired: { label: 'Принят', badge: 'badge-hired' },
+  active: { label: 'Работает', badge: 'badge-hired' },
+  rejected: { label: 'Отклонён', badge: 'badge-rejected' },
+  fired: { label: 'Уволен', badge: 'badge-rejected' },
+  archived: { label: 'Архив', badge: 'badge-default' },
+};
+
 function showParsedData() {
   document.getElementById('parsedName').textContent = parsedData.full_name || '\u2014';
 
@@ -111,6 +124,60 @@ function showParsedData() {
   // Show manual email field if not parsed
   if (!parsedData.email) {
     document.getElementById('emailField').style.display = 'block';
+  }
+
+  // Auto-check duplicates
+  checkDuplicatesOnLoad();
+}
+
+async function checkDuplicatesOnLoad() {
+  const dupStatus = document.getElementById('dupStatus');
+  dupStatus.style.display = 'block';
+  dupStatus.className = 'dup-status checking';
+  dupStatus.innerHTML = '🔍 Проверяем базу...';
+
+  try {
+    const manualEmail = document.getElementById('manualEmail')?.value;
+    const checkResp = await apiRequest('POST', '/api/magic-button/check-duplicate', {
+      full_name: parsedData.full_name,
+      email: parsedData.email || manualEmail || null,
+      phone: parsedData.phone || null,
+      telegram: parsedData.telegram || null,
+    });
+
+    if (checkResp.success && checkResp.data.is_duplicate) {
+      const dups = checkResp.data.duplicates;
+      dupStatus.className = 'dup-status found';
+      dupStatus.innerHTML = `⚠️ <b>Уже в базе (${dups.length}):</b>` +
+        dups.map(d => {
+          const st = STATUS_MAP[d.status] || { label: d.status, badge: 'badge-default' };
+          const url = `${serverUrl}/candidates/${d.entity_id}`;
+          const info = [];
+          if (d.email) info.push(d.email);
+          if (d.phone) info.push(d.phone);
+          const infoStr = info.length ? ` <span class="dup-details">${info.join(' · ')}</span>` : '';
+          return `<div class="dup-item">
+            <a href="#" class="dup-name" data-url="${url}">👤 ${d.name}</a>
+            <span class="dup-badge ${st.badge}">${st.label}</span>${infoStr}
+          </div>`;
+        }).join('');
+
+      // Click handlers
+      setTimeout(() => {
+        dupStatus.querySelectorAll('.dup-name').forEach(link => {
+          link.addEventListener('click', (e) => {
+            e.preventDefault();
+            chrome.tabs.create({ url: link.dataset.url });
+          });
+        });
+      }, 0);
+    } else {
+      dupStatus.className = 'dup-status clean';
+      dupStatus.innerHTML = '✅ Новый кандидат — дубликатов нет';
+    }
+  } catch (e) {
+    console.error('Duplicate check failed:', e);
+    dupStatus.style.display = 'none';
   }
 }
 
@@ -198,9 +265,6 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
   document.getElementById('loginBtn').textContent = 'Войти';
 });
 
-// Flag to skip duplicate check (user confirmed)
-let skipDuplicateCheck = false;
-
 // Add candidate
 document.getElementById('addBtn').addEventListener('click', async () => {
   if (!parsedData) return;
@@ -208,62 +272,20 @@ document.getElementById('addBtn').addEventListener('click', async () => {
   const manualEmail = document.getElementById('manualEmail').value;
   const vacancyId = document.getElementById('funnelSelect').value;
   const comment = document.getElementById('commentField').value;
+  const dupStatus = document.getElementById('dupStatus');
+  const hasDuplicates = dupStatus && dupStatus.classList.contains('found');
 
   const btn = document.getElementById('addBtn');
-  btn.disabled = true;
 
-  // Step 1: Check for duplicates first (unless already confirmed)
-  if (!skipDuplicateCheck) {
-    btn.textContent = 'Проверяем дубли...';
-    try {
-      const checkResp = await apiRequest('POST', '/api/magic-button/check-duplicate', {
-        full_name: parsedData.full_name,
-        email: parsedData.email || manualEmail || null,
-        phone: parsedData.phone || null,
-        telegram: parsedData.telegram || null,
-      });
-
-      if (checkResp.success && checkResp.data.is_duplicate) {
-        const dups = checkResp.data.duplicates;
-
-        // Show duplicate warning with clickable links
-        document.getElementById('duplicateWarning').style.display = 'block';
-        document.getElementById('duplicateText').innerHTML =
-          `<b>Найден${dups.length > 1 ? 'о ' + dups.length + ' совпадений' : ' дубликат'}!</b><br>` +
-          dups.map(d => {
-            const info = [];
-            if (d.email) info.push(d.email);
-            if (d.phone) info.push(d.phone);
-            if (d.status) info.push(d.status);
-            const detailStr = info.length ? `<span class="dup-details">${info.join(' · ')}</span>` : '';
-            const url = `${serverUrl}/candidates/${d.entity_id}`;
-            return `<a href="#" class="dup-link" data-url="${url}">👤 ${d.name}</a>${detailStr}`;
-          }).join('<br>');
-
-        // Add click handlers for duplicate links
-        document.querySelectorAll('.dup-link').forEach(link => {
-          link.addEventListener('click', (e) => {
-            e.preventDefault();
-            chrome.tabs.create({ url: link.dataset.url });
-          });
-        });
-
-        // Change button to "Add anyway"
-        btn.textContent = 'Всё равно добавить';
-        btn.classList.add('warning');
-        btn.disabled = false;
-        skipDuplicateCheck = true;
-        return;
-      }
-    } catch (e) {
-      console.error('Duplicate check failed:', e);
-      // Continue with adding even if check fails
-    }
+  // If duplicates were found and user hasn't confirmed yet — ask first
+  if (hasDuplicates && !btn.classList.contains('confirmed')) {
+    btn.textContent = '⚠️ Всё равно добавить?';
+    btn.classList.add('warning', 'confirmed');
+    return;
   }
 
-  // Step 2: Actually add the candidate
+  btn.disabled = true;
   btn.textContent = 'Добавляем...';
-  skipDuplicateCheck = false;
 
   try {
     const resp = await apiRequest('POST', '/api/magic-button/parse', {
@@ -280,13 +302,6 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
     if (resp.success) {
       const result = resp.data;
-
-      if (result.is_duplicate && result.duplicate_info) {
-        document.getElementById('duplicateWarning').style.display = 'block';
-        document.getElementById('duplicateText').textContent =
-          `Кандидат уже в базе! Статус: ${result.duplicate_info.status}. Добавлен повторно.`;
-      }
-
       document.getElementById('resultTitle').textContent = result.is_duplicate
         ? 'Кандидат добавлен (дубликат)'
         : 'Кандидат добавлен!';
@@ -301,7 +316,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
   btn.disabled = false;
   btn.textContent = 'Добавить кандидата';
-  btn.classList.remove('warning');
+  btn.classList.remove('warning', 'confirmed');
 });
 
 // Copy form link
@@ -321,8 +336,7 @@ document.getElementById('addAnotherBtn').addEventListener('click', () => {
   document.getElementById('duplicateWarning').style.display = 'none';
   document.getElementById('addError').textContent = '';
   document.getElementById('addBtn').textContent = 'Добавить кандидата';
-  document.getElementById('addBtn').classList.remove('warning');
-  skipDuplicateCheck = false;
+  document.getElementById('addBtn').classList.remove('warning', 'confirmed');
 });
 
 // Logout
