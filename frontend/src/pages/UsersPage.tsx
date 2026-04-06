@@ -8,6 +8,7 @@ import {
   Trash2,
   Shield,
   User as UserIcon,
+  UserCheck,
   X,
   Crown,
   Building2,
@@ -33,8 +34,9 @@ import clsx from 'clsx';
 
 const ORG_ROLE_CONFIG: Record<OrgRole, { label: string; icon: typeof Crown; color: string; description: string }> = {
   owner: { label: 'Владелец', icon: Crown, color: 'text-yellow-400 bg-yellow-500/20', description: 'Полный доступ, управление организацией' },
-  admin: { label: 'Администратор', icon: Shield, color: 'text-cyan-400 bg-cyan-500/20', description: 'Управление пользователями, доступ к данным' },
-  member: { label: 'Участник', icon: UserIcon, color: 'text-white/60 bg-white/10', description: 'Доступ к своим данным и расшаренному' },
+  admin: { label: 'HR Админ', icon: Shield, color: 'text-cyan-400 bg-cyan-500/20', description: 'Полный HR доступ: ПЭН, аналитика, экспорт, сотрудники' },
+  hr: { label: 'HR Рекрутер', icon: UserCheck, color: 'text-purple-400 bg-purple-500/20', description: 'Кандидаты, воронки, вакансии, созвоны' },
+  member: { label: 'Сотрудник', icon: UserIcon, color: 'text-white/60 bg-white/10', description: 'Профиль, проекты, документы' },
 };
 
 export default function UsersPage() {
@@ -339,8 +341,9 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
                         onChange={(e) => handleChangeRole(member.user_id, e.target.value as OrgRole)}
                         className="px-3 py-1.5 glass-light rounded-lg text-white text-sm"
                       >
-                        <option value="admin">Администратор</option>
-                        <option value="member">Участник</option>
+                        <option value="admin">HR Админ</option>
+                        <option value="hr">HR Рекрутер</option>
+                        <option value="member">Сотрудник</option>
                       </select>
                     )}
 
@@ -792,7 +795,7 @@ function InviteMemberModal({
             <div>
               <label className="block text-sm text-white/60 mb-1">Роль</label>
               <div className="grid grid-cols-2 gap-2">
-                {(['admin', 'member'] as OrgRole[]).map((r) => {
+                {(['admin', 'hr', 'member'] as OrgRole[]).map((r) => {
                   const config = ORG_ROLE_CONFIG[r];
                   const Icon = config.icon;
                   return (
