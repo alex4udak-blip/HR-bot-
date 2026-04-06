@@ -29,16 +29,16 @@
   --border-primary: rgba(255, 255, 255, 0.12);
   --border-subtle: rgba(255, 255, 255, 0.05);
   /* Glass */
-  --glass-bg: linear-gradient(135deg, rgba(20, 20, 35, 0.95) 0%, rgba(12, 12, 20, 0.98) 100%);
-  --glass-light-bg: linear-gradient(135deg, rgba(30, 30, 50, 0.9) 0%, rgba(25, 25, 45, 0.92) 100%);
-  --glass-card-bg: linear-gradient(135deg, rgba(22, 22, 38, 0.93) 0%, rgba(18, 18, 30, 0.95) 100%);
+  --glass-bg: rgba(16, 16, 28, 0.95);
+  --glass-light-bg: rgba(24, 24, 40, 0.9);
+  --glass-card-bg: rgba(20, 20, 34, 0.93);
   --glass-card-hover-bg: rgba(22, 22, 40, 0.85);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) inset, 0 1px 0 rgba(255, 255, 255, 0.1) inset;
-  --glass-card-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  --glass-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --glass-card-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
   /* Input */
   --input-bg: rgba(12, 12, 22, 0.8);
   --input-focus-bg: rgba(18, 18, 32, 0.95);
-  --input-focus-shadow: 0 0 0 4px rgba(12, 165, 235, 0.2), 0 0 30px rgba(12, 165, 235, 0.25), 0 8px 24px rgba(0, 0, 0, 0.4);
+  --input-focus-shadow: 0 0 0 2px rgba(12, 165, 235, 0.25);
   /* Select */
   --select-option-bg: #1a1a2e;
   --select-option-fg: #ebebef;
@@ -164,312 +164,12 @@ select option {
   color: var(--select-option-fg);
 }
 
-/* ============================================
-   PREMIUM ANIMATED BACKGROUND - ENHANCED
-   ============================================ */
-.premium-bg {
-  position: fixed;
-  inset: 0;
-  z-index: -3;
-  background:
-    radial-gradient(ellipse 100% 80% at 50% -30%, rgba(12, 165, 235, 0.3), transparent 60%),
-    radial-gradient(ellipse 80% 60% at 100% 100%, rgba(139, 92, 246, 0.25), transparent 50%),
-    radial-gradient(ellipse 70% 50% at 0% 80%, rgba(6, 182, 212, 0.2), transparent 50%),
-    radial-gradient(ellipse 50% 40% at 30% 20%, rgba(236, 72, 153, 0.12), transparent 50%),
-    linear-gradient(180deg, #05050a 0%, #0a0a15 40%, #0f0a1a 70%, #05050a 100%);
-  background-size: 200% 200%;
-  animation: gradientShift 15s ease infinite;
+/* Background effects removed for minimalism — see BackgroundEffects.tsx */
+.premium-bg, .aurora, .light-rays, .grid-pattern,
+.floating-orb, .particles, .particle, .noise-overlay {
+  display: none !important;
 }
 
-@keyframes gradientShift {
-  0%, 100% { background-position: 0% 0%; }
-  25% { background-position: 100% 50%; }
-  50% { background-position: 50% 100%; }
-  75% { background-position: 0% 50%; }
-}
-
-/* ============================================
-   FLOATING ORBS - OPTIMIZED (no filter blur)
-   Using soft gradients instead of blur for GPU efficiency
-   ============================================ */
-.floating-orb {
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-  will-change: transform;
-  contain: strict;
-  transform: translateZ(0);
-}
-
-.orb-1 {
-  width: 700px;
-  height: 700px;
-  background: radial-gradient(circle,
-    rgba(12, 165, 235, 0.25) 0%,
-    rgba(12, 165, 235, 0.15) 20%,
-    rgba(12, 165, 235, 0.08) 40%,
-    rgba(12, 165, 235, 0.03) 60%,
-    transparent 80%);
-  top: -15%;
-  left: -10%;
-  animation: floatOrb1 12s ease-in-out infinite;
-}
-
-.orb-2 {
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle,
-    rgba(139, 92, 246, 0.25) 0%,
-    rgba(139, 92, 246, 0.15) 20%,
-    rgba(139, 92, 246, 0.08) 40%,
-    rgba(139, 92, 246, 0.03) 60%,
-    transparent 80%);
-  bottom: -10%;
-  right: -10%;
-  animation: floatOrb2 15s ease-in-out infinite;
-}
-
-.orb-3 {
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle,
-    rgba(6, 182, 212, 0.2) 0%,
-    rgba(6, 182, 212, 0.12) 20%,
-    rgba(6, 182, 212, 0.06) 40%,
-    rgba(6, 182, 212, 0.02) 60%,
-    transparent 80%);
-  top: 50%;
-  left: 40%;
-  animation: floatOrb3 18s ease-in-out infinite;
-}
-
-.orb-4 {
-  width: 450px;
-  height: 450px;
-  background: radial-gradient(circle,
-    rgba(236, 72, 153, 0.18) 0%,
-    rgba(236, 72, 153, 0.1) 20%,
-    rgba(236, 72, 153, 0.05) 40%,
-    rgba(236, 72, 153, 0.02) 60%,
-    transparent 80%);
-  top: 20%;
-  right: 15%;
-  animation: floatOrb4 20s ease-in-out infinite;
-}
-
-@keyframes floatOrb1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  25% { transform: translate(80px, 50px) scale(1.15); }
-  50% { transform: translate(40px, 100px) scale(0.9); }
-  75% { transform: translate(-40px, 50px) scale(1.1); }
-}
-
-@keyframes floatOrb2 {
-  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
-  33% { transform: translate(-70px, -80px) scale(1.2) rotate(120deg); }
-  66% { transform: translate(50px, -40px) scale(0.85) rotate(240deg); }
-}
-
-@keyframes floatOrb3 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  20% { transform: translate(-50px, -60px) scale(1.15); }
-  40% { transform: translate(60px, -25px) scale(0.9); }
-  60% { transform: translate(25px, 50px) scale(1.1); }
-  80% { transform: translate(-35px, 25px) scale(0.95); }
-}
-
-@keyframes floatOrb4 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(-80px, 100px) scale(1.25); }
-}
-
-/* ============================================
-   AURORA EFFECT - OPTIMIZED (no filter blur)
-   Using soft gradients instead of blur for GPU efficiency
-   ============================================ */
-.aurora {
-  position: fixed;
-  inset: -50%;
-  width: 200%;
-  height: 200%;
-  z-index: -2;
-  overflow: hidden;
-  opacity: 0.5;
-  mix-blend-mode: screen;
-  contain: strict;
-  transform: translateZ(0);
-  /* NO filter: blur() - causes constant GPU recalculation */
-}
-
-.aurora::before,
-.aurora::after {
-  content: '';
-  position: absolute;
-  width: 200%;
-  height: 200%;
-  /* Soft aurora using wide gradient bands instead of blur */
-  background: conic-gradient(
-    from 0deg at 50% 50%,
-    transparent 0deg,
-    rgba(12, 165, 235, 0.02) 10deg,
-    rgba(12, 165, 235, 0.06) 25deg,
-    rgba(12, 165, 235, 0.12) 45deg,
-    rgba(12, 165, 235, 0.06) 65deg,
-    rgba(12, 165, 235, 0.02) 80deg,
-    transparent 90deg,
-    transparent 120deg,
-    rgba(139, 92, 246, 0.02) 130deg,
-    rgba(139, 92, 246, 0.05) 150deg,
-    rgba(139, 92, 246, 0.1) 165deg,
-    rgba(139, 92, 246, 0.05) 180deg,
-    rgba(139, 92, 246, 0.02) 195deg,
-    transparent 210deg,
-    transparent 240deg,
-    rgba(6, 182, 212, 0.02) 250deg,
-    rgba(6, 182, 212, 0.06) 270deg,
-    rgba(6, 182, 212, 0.12) 285deg,
-    rgba(6, 182, 212, 0.06) 300deg,
-    rgba(6, 182, 212, 0.02) 320deg,
-    transparent 330deg,
-    transparent 360deg
-  );
-  animation: auroraRotate 45s linear infinite;
-  will-change: transform;
-}
-
-.aurora::before {
-  top: -50%;
-  left: -50%;
-}
-
-.aurora::after {
-  bottom: -50%;
-  right: -50%;
-  animation-direction: reverse;
-  animation-duration: 60s;
-  opacity: 0.8;
-}
-
-@keyframes auroraRotate {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-/* Light rays effect */
-.light-rays {
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.light-rays::before {
-  content: '';
-  position: absolute;
-  top: -100%;
-  left: 50%;
-  width: 200%;
-  height: 300%;
-  transform: translateX(-50%);
-  background:
-    linear-gradient(45deg, transparent 40%, rgba(12, 165, 235, 0.06) 48%, rgba(12, 165, 235, 0.12) 50%, rgba(12, 165, 235, 0.06) 52%, transparent 60%),
-    linear-gradient(135deg, transparent 40%, rgba(139, 92, 246, 0.05) 48%, rgba(139, 92, 246, 0.1) 50%, rgba(139, 92, 246, 0.05) 52%, transparent 60%),
-    linear-gradient(90deg, transparent 42%, rgba(6, 182, 212, 0.04) 49%, rgba(6, 182, 212, 0.08) 50%, rgba(6, 182, 212, 0.04) 51%, transparent 58%);
-  animation: raysPulse 8s ease-in-out infinite;
-}
-
-@keyframes raysPulse {
-  0%, 100% { opacity: 0.5; transform: translateX(-50%) scale(1); }
-  50% { opacity: 0.8; transform: translateX(-50%) scale(1.05); }
-}
-
-/* ============================================
-   GRID PATTERN - ENHANCED
-   ============================================ */
-.grid-pattern {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background-image:
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-  background-size: 60px 60px;
-  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 20%, transparent 70%);
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 20%, transparent 70%);
-  animation: gridPulse 8s ease-in-out infinite;
-}
-
-@keyframes gridPulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 0.8; }
-}
-
-/* ============================================
-   PARTICLE FIELD
-   ============================================ */
-.particles {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  overflow: hidden;
-}
-
-.particle {
-  position: absolute;
-  width: 3px;
-  height: 3px;
-  background: rgba(255, 255, 255, 0.7);
-  border-radius: 50%;
-  box-shadow: 0 0 6px rgba(12, 165, 235, 0.5);
-  animation: particleFloat 20s linear infinite;
-}
-
-.particle:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 25s; }
-.particle:nth-child(2) { left: 20%; animation-delay: -5s; animation-duration: 20s; }
-.particle:nth-child(3) { left: 35%; animation-delay: -10s; animation-duration: 28s; }
-.particle:nth-child(4) { left: 50%; animation-delay: -15s; animation-duration: 22s; }
-.particle:nth-child(5) { left: 65%; animation-delay: -7s; animation-duration: 26s; }
-.particle:nth-child(6) { left: 80%; animation-delay: -12s; animation-duration: 24s; }
-.particle:nth-child(7) { left: 90%; animation-delay: -3s; animation-duration: 27s; }
-
-@keyframes particleFloat {
-  0% {
-    transform: translateY(100vh) scale(0);
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-    transform: translateY(90vh) scale(1);
-  }
-  90% {
-    opacity: 1;
-    transform: translateY(10vh) scale(1);
-  }
-  100% {
-    transform: translateY(-10vh) scale(0);
-    opacity: 0;
-  }
-}
-
-/* ============================================
-   REDUCED MOTION - Disable heavy animations
-   for users who prefer reduced motion
-   ============================================ */
-@media (prefers-reduced-motion: reduce) {
-  .premium-bg,
-  .aurora,
-  .aurora::before,
-  .aurora::after,
-  .light-rays,
-  .light-rays::before,
-  .light-rays::after,
-  .floating-orb,
-  .particle,
-  .grid-pattern {
-    animation: none !important;
-    transition: none !important;
-  }
 
   .aurora,
   .particles,
@@ -525,61 +225,28 @@ select option {
    GLOW EFFECTS
    ============================================ */
 .glow-accent {
-  box-shadow:
-    0 0 20px rgba(12, 165, 235, 0.5),
-    0 0 40px rgba(12, 165, 235, 0.3),
-    0 0 60px rgba(12, 165, 235, 0.15);
+  box-shadow: 0 0 12px rgba(12, 165, 235, 0.3);
 }
 
 .glow-text {
-  text-shadow:
-    0 0 10px rgba(12, 165, 235, 0.6),
-    0 0 20px rgba(12, 165, 235, 0.4),
-    0 0 40px rgba(12, 165, 235, 0.2);
+  text-shadow: 0 0 8px rgba(12, 165, 235, 0.4);
 }
 
 .glow-purple {
-  box-shadow:
-    0 0 20px rgba(139, 92, 246, 0.5),
-    0 0 40px rgba(139, 92, 246, 0.25);
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
 }
 
 /* ============================================
    PREMIUM BUTTON
    ============================================ */
 .btn-premium {
-  position: relative;
-  background: linear-gradient(135deg, #0ca5eb 0%, #0891d4 50%, #0ca5eb 100%);
-  background-size: 200% 200%;
+  background: #0ca5eb;
   border: none;
-  overflow: hidden;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  animation: btnGradient 3s ease infinite;
+  transition: opacity 0.2s;
 }
 
-@keyframes btnGradient {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-}
-
-.btn-premium::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.35),
-    transparent
-  );
-  transition: left 0.6s ease;
-}
-
-.btn-premium:hover::before {
-  left: 100%;
+.btn-premium:hover {
+  opacity: 0.9;
 }
 
 .btn-premium:hover {
@@ -838,39 +505,13 @@ select option {
    PAUSE ANIMATIONS WHEN TAB NOT VISIBLE
    Saves CPU/GPU when user switches tabs
    ============================================ */
-body.animations-paused .premium-bg,
-body.animations-paused .aurora,
-body.animations-paused .aurora::before,
-body.animations-paused .aurora::after,
-body.animations-paused .floating-orb,
-body.animations-paused .particle,
-body.animations-paused .grid-pattern,
-body.animations-paused .light-rays::before,
-body.animations-paused .btn-premium,
-body.animations-paused .shimmer,
-body.animations-paused .gradient-text,
-body.animations-paused .stat-card::before,
-body.animations-paused .pulse-glow,
-body.animations-paused .typing-cursor::after {
-  animation-play-state: paused !important;
-}
+
 
 /* ============================================
    PERFORMANCE MODE - Disables all animations
    For users who want minimal CPU/GPU usage
    ============================================ */
-body.performance-mode .premium-bg {
-  animation: none !important;
-  background-position: 50% 50% !important;
-}
 
-body.performance-mode .aurora,
-body.performance-mode .particles,
-body.performance-mode .light-rays,
-body.performance-mode .floating-orb,
-body.performance-mode .grid-pattern {
-  display: none !important;
-}
 
 body.performance-mode .btn-premium,
 body.performance-mode .shimmer,
@@ -889,18 +530,7 @@ body.performance-mode .glass-card:hover {
    LIGHT THEME OVERRIDES
    Hide/dim background effects in light mode
    ============================================ */
-[data-theme="light"] .premium-bg,
-[data-theme="light"] .aurora,
-[data-theme="light"] .light-rays,
-[data-theme="light"] .particles,
-[data-theme="light"] .floating-orb,
-[data-theme="light"] .noise-overlay {
-  display: none !important;
-}
 
-[data-theme="light"] .grid-pattern {
-  opacity: 0.3;
-}
 
 /* Light theme: glass-card hover — clean neutral shadow */
 [data-theme="light"] .glass-card:hover {

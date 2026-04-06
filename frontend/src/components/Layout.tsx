@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
   Users,
@@ -79,42 +79,33 @@ function FABButton({ navigate }: { navigate: (path: string) => void }) {
 
   return (
     <div className="fixed bottom-6 right-6 z-50">
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.9 }}
-            className="absolute bottom-16 right-0 flex flex-col gap-2 items-end mb-2"
+      {open && (
+        <div className="absolute bottom-16 right-0 flex flex-col gap-2 items-end mb-2">
+          <button
+            onClick={() => { navigate('/vacancies?new=1'); setOpen(false); }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-xl transition-colors whitespace-nowrap"
           >
-            <button
-              onClick={() => { navigate('/vacancies?new=1'); setOpen(false); }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-xl shadow-lg shadow-emerald-500/30 transition-colors whitespace-nowrap"
-            >
-              <Briefcase className="w-4 h-4" />
-              Добавить вакансию
-            </button>
-            <button
-              onClick={() => { navigate('/candidates?new=1'); setOpen(false); }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-xl shadow-lg shadow-blue-500/30 transition-colors whitespace-nowrap"
-            >
-              <UserPlus className="w-4 h-4" />
-              Добавить кандидата
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <Briefcase className="w-4 h-4" />
+            Добавить вакансию
+          </button>
+          <button
+            onClick={() => { navigate('/candidates?new=1'); setOpen(false); }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors whitespace-nowrap"
+          >
+            <UserPlus className="w-4 h-4" />
+            Добавить кандидата
+          </button>
+        </div>
+      )}
 
       <button
         onClick={() => setOpen(!open)}
         className={clsx(
-          'w-14 h-14 rounded-full flex items-center justify-center shadow-xl transition-all duration-300',
-          open
-            ? 'bg-red-500 hover:bg-red-600 rotate-45 shadow-red-500/30'
-            : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/30'
+          'w-12 h-12 rounded-full flex items-center justify-center transition-colors',
+          open ? 'bg-red-600 hover:bg-red-500' : 'bg-cyan-600 hover:bg-cyan-500'
         )}
       >
-        <Plus className="w-6 h-6 text-white" />
+        <Plus className={clsx('w-5 h-5 text-white transition-transform', open && 'rotate-45')} />
       </button>
     </div>
   );

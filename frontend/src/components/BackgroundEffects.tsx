@@ -1,39 +1,11 @@
 export default function BackgroundEffects() {
   return (
     <>
-      {/* Premium gradient background */}
-      <div className="premium-bg" />
-
-      {/* Aurora rotating effect */}
-      <div className="aurora" />
-
-      {/* Light rays with smooth gradients */}
-      <div className="light-rays" />
-
-      {/* Grid pattern with pulse */}
-      <div className="grid-pattern" />
-
-      {/* Floating orbs - enhanced */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none" style={{ zIndex: -1 }}>
-        <div className="floating-orb orb-1" />
-        <div className="floating-orb orb-2" />
-        <div className="floating-orb orb-3" />
-        <div className="floating-orb orb-4" />
+      {/* Single subtle gradient background */}
+      <div className="fixed inset-0 pointer-events-none" style={{ zIndex: -2 }}>
+        <div className="absolute inset-0 bg-gradient-to-br from-dark-950 via-dark-900 to-dark-950" />
+        <div className="absolute inset-0 opacity-30 bg-[radial-gradient(ellipse_at_top_left,rgba(6,182,212,0.08),transparent_50%)]" />
       </div>
-
-      {/* Floating particles */}
-      <div className="particles">
-        <div className="particle" />
-        <div className="particle" />
-        <div className="particle" />
-        <div className="particle" />
-        <div className="particle" />
-        <div className="particle" />
-        <div className="particle" />
-      </div>
-
-      {/* Subtle noise texture */}
-      <div className="noise-overlay" />
     </>
   );
 }
