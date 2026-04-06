@@ -1349,6 +1349,7 @@ function EditUserModal({
   const [name, setName] = useState(user.name || '');
   const [email, setEmail] = useState(user.email || '');
   const [role, setRole] = useState<string>(user.role || 'member');
+  const [orgRole, setOrgRole] = useState<string>('');
   const [telegramUsername, setTelegramUsername] = useState(user.telegram_username || '');
   const [departmentId, setDepartmentId] = useState<number | ''>('');
   const [saving, setSaving] = useState(false);
@@ -1373,12 +1374,24 @@ function EditUserModal({
 
       if (departmentId) payload.department_id = departmentId;
 
-      if (Object.keys(payload).length === 0) {
+      if (Object.keys(payload).length === 0 && !orgRole) {
         onClose();
         return;
       }
 
-      await adminUpdateUser(user.id, payload as any);
+      if (Object.keys(payload).length > 0) {
+        await adminUpdateUser(user.id, payload as any);
+      }
+
+      // Update org role if selected
+      if (orgRole) {
+        try {
+          await updateMemberRole(user.id, orgRole as OrgRole);
+        } catch (e) {
+          console.error('Failed to update org role:', e);
+        }
+      }
+
       toast.success('Пользователь обновлён');
       onSuccess();
     } catch (err: any) {
@@ -1449,6 +1462,20 @@ function EditUserModal({
               <option value="member">Сотрудник</option>
               <option value="admin">Админ</option>
               <option value="superadmin">Суперадмин</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm text-dark-400 mb-1">Роль в организации</label>
+            <select
+              value={orgRole}
+              onChange={(e) => setOrgRole(e.target.value)}
+              className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+            >
+              <option value="">Не менять</option>
+              <option value="admin">HR Админ</option>
+              <option value="hr">HR Рекрутер</option>
+              <option value="member">Сотрудник</option>
             </select>
           </div>
 
