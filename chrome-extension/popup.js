@@ -198,6 +198,9 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
   document.getElementById('loginBtn').textContent = 'Войти';
 });
 
+// Flag to skip duplicate check (user confirmed)
+let skipDuplicateCheck = false;
+
 // Add candidate
 document.getElementById('addBtn').addEventListener('click', async () => {
   if (!parsedData) return;
@@ -208,7 +211,55 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
   const btn = document.getElementById('addBtn');
   btn.disabled = true;
+
+  // Step 1: Check for duplicates first (unless already confirmed)
+  if (!skipDuplicateCheck) {
+    btn.textContent = 'Проверяем дубли...';
+    try {
+      const checkResp = await apiRequest('POST', '/api/magic-button/check-duplicate', {
+        full_name: parsedData.full_name,
+        email: parsedData.email || manualEmail || null,
+        phone: parsedData.phone || null,
+        telegram: parsedData.telegram || null,
+      });
+
+      if (checkResp.success && checkResp.data.is_duplicate) {
+        const dups = checkResp.data.duplicates;
+        const dupInfo = dups.map(d => {
+          const parts = [d.name];
+          if (d.email) parts.push(d.email);
+          if (d.phone) parts.push(d.phone);
+          parts.push(`статус: ${d.status}`);
+          return parts.join(' · ');
+        }).join('\n');
+
+        // Show duplicate warning inline
+        document.getElementById('duplicateWarning').style.display = 'block';
+        document.getElementById('duplicateText').innerHTML =
+          `<b>Найден${dups.length > 1 ? 'о ' + dups.length + ' совпадений' : ' дубликат'}!</b><br>` +
+          dups.map(d => {
+            const info = [d.name];
+            if (d.email) info.push(d.email);
+            if (d.status) info.push(`(${d.status})`);
+            return info.join(' · ');
+          }).join('<br>');
+
+        // Change button to "Add anyway"
+        btn.textContent = 'Всё равно добавить';
+        btn.classList.add('warning');
+        btn.disabled = false;
+        skipDuplicateCheck = true;
+        return;
+      }
+    } catch (e) {
+      console.error('Duplicate check failed:', e);
+      // Continue with adding even if check fails
+    }
+  }
+
+  // Step 2: Actually add the candidate
   btn.textContent = 'Добавляем...';
+  skipDuplicateCheck = false;
 
   try {
     const resp = await apiRequest('POST', '/api/magic-button/parse', {
@@ -246,6 +297,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
   btn.disabled = false;
   btn.textContent = 'Добавить кандидата';
+  btn.classList.remove('warning');
 });
 
 // Copy form link
@@ -264,6 +316,9 @@ document.getElementById('addAnotherBtn').addEventListener('click', () => {
   showView('parse');
   document.getElementById('duplicateWarning').style.display = 'none';
   document.getElementById('addError').textContent = '';
+  document.getElementById('addBtn').textContent = 'Добавить кандидата';
+  document.getElementById('addBtn').classList.remove('warning');
+  skipDuplicateCheck = false;
 });
 
 // Logout

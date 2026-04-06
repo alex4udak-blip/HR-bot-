@@ -32,6 +32,69 @@ class MagicButtonResponse(BaseModel):
     duplicate_info: Optional[dict] = None  # who added, when, last status
     message: str
 
+class DuplicateCheckRequest(BaseModel):
+    full_name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    telegram: Optional[str] = None
+
+class DuplicateCheckResponse(BaseModel):
+    is_duplicate: bool
+    duplicates: list = []  # [{entity_id, name, email, phone, status, created_at}]
+
+@router.post("/check-duplicate")
+async def check_duplicate(
+    data: DuplicateCheckRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Check for duplicates before adding a candidate."""
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(400, "User not in organization")
+
+    conditions = []
+    if data.email:
+        conditions.append(Entity.email == data.email)
+    if data.phone:
+        conditions.append(Entity.phone == data.phone)
+    if data.telegram:
+        conditions.append(Entity.telegram_usernames.cast(String).ilike(f"%{data.telegram.lower()}%"))
+    # Name match
+    name_parts = data.full_name.strip().split()
+    if len(name_parts) >= 2:
+        # Match by last name + first name (ignore middle name typos)
+        conditions.append(Entity.name.ilike(f"%{name_parts[0]}%{name_parts[1]}%"))
+    else:
+        conditions.append(Entity.name.ilike(f"%{data.full_name}%"))
+
+    if not conditions:
+        return DuplicateCheckResponse(is_duplicate=False, duplicates=[])
+
+    dup_result = await db.execute(
+        select(Entity).where(
+            Entity.org_id == org.id,
+            Entity.type == EntityType.candidate,
+            or_(*conditions)
+        ).limit(5)
+    )
+    duplicates = dup_result.scalars().all()
+
+    return DuplicateCheckResponse(
+        is_duplicate=len(duplicates) > 0,
+        duplicates=[
+            {
+                "entity_id": d.id,
+                "name": d.name,
+                "email": d.email,
+                "phone": d.phone,
+                "status": d.status.value if d.status else "unknown",
+                "created_at": d.created_at.isoformat() if d.created_at else None,
+            }
+            for d in duplicates
+        ],
+    )
+
 @router.post("/parse")
 async def magic_button_parse(
     data: MagicButtonData,
