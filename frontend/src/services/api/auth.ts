@@ -127,7 +127,7 @@ export const updateUserProfile = async (data: UserProfileUpdate): Promise<User> 
 // ORGANIZATIONS API
 // ============================================================
 
-export type OrgRole = 'owner' | 'admin' | 'member';
+export type OrgRole = 'owner' | 'admin' | 'hr' | 'member';
 
 export interface Organization {
   id: number;
