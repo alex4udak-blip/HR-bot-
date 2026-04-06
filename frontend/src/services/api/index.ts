@@ -608,3 +608,21 @@ export type {
   FormCreateData,
   FormUpdateData,
 } from './forms';
+
+// Candidate Search CRM
+export {
+  searchCandidates,
+  bulkCandidateAction,
+  getCandidateRecruiters,
+  getCandidateTags,
+} from './candidates';
+
+export type {
+  CandidateSearchParams,
+  CandidateItem,
+  CandidateStats,
+  CandidateSearchResult,
+  RecruiterOption,
+  BulkActionPayload,
+  BulkActionResult,
+} from './candidates';

@@ -97,7 +97,7 @@ def _get_client_ip(request: Request) -> str:
     return "unknown"
 
 
-@router.post("/login", response_model=UserResponse)
+@router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
 async def login(
     request: Request,
@@ -218,19 +218,24 @@ async def login(
         department_name = dept.name
         department_role = dept_member.role.value if dept_member.role else None
 
-    # Return user info only (no tokens in response body)
-    return UserResponse(
-        id=authenticated_user.id, email=authenticated_user.email, name=authenticated_user.name,
-        role=authenticated_user.role.value,
-        org_role=org_role,
-        department_id=department_id,
-        department_name=department_name,
-        department_role=department_role,
-        telegram_id=authenticated_user.telegram_id,
-        telegram_username=authenticated_user.telegram_username,
-        is_active=authenticated_user.is_active, created_at=authenticated_user.created_at,
-        chats_count=0,  # Skip lazy loading for login
-        must_change_password=authenticated_user.must_change_password or False
+    # Return access token + user info in response body (needed by Chrome extension)
+    # Cookies are also set above for browser-based auth
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=UserResponse(
+            id=authenticated_user.id, email=authenticated_user.email, name=authenticated_user.name,
+            role=authenticated_user.role.value,
+            org_role=org_role,
+            department_id=department_id,
+            department_name=department_name,
+            department_role=department_role,
+            telegram_id=authenticated_user.telegram_id,
+            telegram_username=authenticated_user.telegram_username,
+            is_active=authenticated_user.is_active, created_at=authenticated_user.created_at,
+            chats_count=0,  # Skip lazy loading for login
+            must_change_password=authenticated_user.must_change_password or False
+        )
     )
 
 

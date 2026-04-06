@@ -20,7 +20,8 @@ from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
 from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser, search, scoring, currency, parse_jobs, interns
-from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees, documents, magic_button
+from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees, documents, magic_button, pen
+from api.routes import candidate_search
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
@@ -540,6 +541,22 @@ try:
     logger.info("Magic button router registered successfully at /api/magic-button")
 except Exception as e:
     logger.error(f"FAILED to register magic button router: {e}")
+    raise
+
+logger.info("=== REGISTERING CANDIDATE SEARCH ROUTER ===")
+try:
+    app.include_router(candidate_search.router, prefix="/api/candidates", tags=["candidate-search"])
+    logger.info("Candidate search router registered successfully at /api/candidates")
+except Exception as e:
+    logger.error(f"FAILED to register candidate search router: {e}")
+    raise
+
+logger.info("=== REGISTERING PEN ROUTER ===")
+try:
+    app.include_router(pen.router, prefix="/api/pen", tags=["pen"])
+    logger.info("PEN router registered successfully at /api/pen")
+except Exception as e:
+    logger.error(f"FAILED to register PEN router: {e}")
     raise
 
 

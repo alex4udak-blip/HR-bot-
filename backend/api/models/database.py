@@ -1571,3 +1571,24 @@ class SignedDocument(Base):
 
     template = relationship("DocumentTemplate")
     employee = relationship("Employee")
+
+
+class RecruiterBonus(Base):
+    """Tracks recruiter bonus accruals per candidate"""
+    __tablename__ = "recruiter_bonuses"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    recruiter_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True)
+    direction = Column(String(30), nullable=False)  # "traffic" or "development"
+    stage = Column(String(30), nullable=False)  # "practice", "department", "probation"
+    amount = Column(Integer, nullable=False)  # bonus amount in USD
+    is_paid = Column(Boolean, default=False)
+    paid_at = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    organization = relationship("Organization")
+    recruiter = relationship("User", foreign_keys=[recruiter_id])
+    entity = relationship("Entity")

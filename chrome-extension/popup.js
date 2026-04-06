@@ -169,22 +169,10 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
     });
 
     if (resp.ok) {
-      // Get token from cookie or response
       const data = await resp.json();
-      // For cookie-based auth, we need to extract the access_token cookie
-      // Since extensions can't read httpOnly cookies, we need a token endpoint
-      // For now, use a workaround: ask backend for a bearer token
-
-      // Try to get auth token from a dedicated endpoint
-      const tokenResp = await fetch(serverUrl + '/api/auth/me', {
-        credentials: 'include',
-        headers: { 'Cookie': resp.headers.get('set-cookie') || '' },
-      });
-
-      // Store server URL and a flag that we're authenticated
-      // We'll use cookie-based auth through the background script
-      authToken = 'cookie-auth'; // placeholder
-      await chrome.storage.local.set({ serverUrl, authToken, userEmail: email, userPassword: password });
+      // Backend returns { access_token, token_type, user } in response body
+      authToken = data.access_token;
+      await chrome.storage.local.set({ serverUrl, authToken, userName: data.user?.name || '' });
 
       document.getElementById('loginError').textContent = '';
 
@@ -222,39 +210,21 @@ document.getElementById('addBtn').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = 'Добавляем...';
 
-  // Re-login to get fresh cookie
-  const stored = await chrome.storage.local.get(['userEmail', 'userPassword', 'serverUrl']);
-  const sv = stored.serverUrl;
-
   try {
-    // Login first to get cookie
-    await fetch(sv + '/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: stored.userEmail, password: stored.userPassword }),
-      credentials: 'include',
+    const resp = await apiRequest('POST', '/api/magic-button/parse', {
+      full_name: parsedData.full_name,
+      email: parsedData.email || manualEmail || null,
+      phone: parsedData.phone || null,
+      telegram: parsedData.telegram || null,
+      position: parsedData.position || null,
+      source_url: parsedData.source_url,
+      source: parsedData.source,
+      vacancy_id: vacancyId ? parseInt(vacancyId) : null,
+      comment: comment || null,
     });
 
-    // Then make the API call
-    const resp = await fetch(sv + '/api/magic-button/parse', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        full_name: parsedData.full_name,
-        email: parsedData.email || manualEmail || null,
-        phone: parsedData.phone || null,
-        telegram: parsedData.telegram || null,
-        position: parsedData.position || null,
-        source_url: parsedData.source_url,
-        source: parsedData.source,
-        vacancy_id: vacancyId ? parseInt(vacancyId) : null,
-        comment: comment || null,
-      }),
-      credentials: 'include',
-    });
-
-    if (resp.ok) {
-      const result = await resp.json();
+    if (resp.success) {
+      const result = resp.data;
 
       if (result.is_duplicate && result.duplicate_info) {
         document.getElementById('duplicateWarning').style.display = 'block';
@@ -268,8 +238,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
       document.getElementById('resultMessage').textContent = result.message;
       showView('result');
     } else {
-      const err = await resp.json();
-      document.getElementById('addError').textContent = err.detail || 'Ошибка добавления';
+      document.getElementById('addError').textContent = resp.error || 'Ошибка добавления';
     }
   } catch (e) {
     document.getElementById('addError').textContent = 'Ошибка: ' + e.message;

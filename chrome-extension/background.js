@@ -21,8 +21,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       },
       body: body ? JSON.stringify(body) : undefined,
     })
-    .then(r => r.json())
-    .then(data => sendResponse({ success: true, data }))
+    .then(r => {
+      if (!r.ok) {
+        return r.text().then(text => {
+          let detail = `HTTP ${r.status}`;
+          try {
+            const json = JSON.parse(text);
+            detail = json.detail || detail;
+          } catch (_) {}
+          sendResponse({ success: false, error: detail });
+        });
+      }
+      const contentType = r.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        return r.json().then(data => sendResponse({ success: true, data }));
+      }
+      return r.text().then(text => sendResponse({ success: false, error: 'Non-JSON response: ' + text.substring(0, 200) }));
+    })
     .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   }

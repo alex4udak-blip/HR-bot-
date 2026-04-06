@@ -30,6 +30,7 @@ import {
   Plus,
   User,
   UserPlus,
+  TrendingUp,
   type LucideIcon
 } from 'lucide-react';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
@@ -224,7 +225,7 @@ export default function Layout() {
     const path = location.pathname;
     if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path === '/dashboard' || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager') || path.startsWith('/chats')) {
       setActiveBlock('projects');
-    } else if (['/all-candidates', '/my-funnels', '/form-builder', '/practice-list', '/document-templates', '/employees', '/my-profile', '/vacancies', '/candidates', '/interns', '/analytics', '/calls', '/exports'].some(p => path.startsWith(p))) {
+    } else if (['/all-candidates', '/my-funnels', '/form-builder', '/practice-list', '/document-templates', '/employees', '/my-profile', '/vacancies', '/candidates', '/interns', '/analytics', '/pen', '/calls', '/exports'].some(p => path.startsWith(p))) {
       setActiveBlock('hr');
     } else if (['/users', '/departments', '/settings', '/admin', '/trash'].some(p => path.startsWith(p))) {
       setActiveBlock('admin');
@@ -273,6 +274,7 @@ export default function Layout() {
     }
     hrItems.push({ path: '/interns', icon: GraduationCap, label: 'Практиканты' });
     hrItems.push({ path: '/analytics', icon: BarChart3, label: 'HR Аналитика' });
+    hrItems.push({ path: '/pen', icon: TrendingUp, label: 'ПЭН (бонусы)' });
     hrItems.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
     if (user?.role === 'superadmin' || user?.org_role === 'owner') {
       hrItems.push({ path: '/exports', icon: FileSpreadsheet, label: 'Экспорт CSV' });

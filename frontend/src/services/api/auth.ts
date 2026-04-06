@@ -6,9 +6,9 @@ import api, { deduplicatedGet, debouncedMutation } from './client';
 // ============================================================
 
 export const login = async (email: string, password: string): Promise<User> => {
-  // Backend returns User directly (cookie is set via Set-Cookie header)
+  // Backend returns { access_token, token_type, user } (cookie is also set via Set-Cookie header)
   const { data } = await api.post('/auth/login', { email, password });
-  return data;
+  return data.user;
 };
 
 export const register = async (email: string, password: string, name: string): Promise<AuthResponse> => {
