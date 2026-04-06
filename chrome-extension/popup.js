@@ -225,24 +225,28 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
       if (checkResp.success && checkResp.data.is_duplicate) {
         const dups = checkResp.data.duplicates;
-        const dupInfo = dups.map(d => {
-          const parts = [d.name];
-          if (d.email) parts.push(d.email);
-          if (d.phone) parts.push(d.phone);
-          parts.push(`статус: ${d.status}`);
-          return parts.join(' · ');
-        }).join('\n');
 
-        // Show duplicate warning inline
+        // Show duplicate warning with clickable links
         document.getElementById('duplicateWarning').style.display = 'block';
         document.getElementById('duplicateText').innerHTML =
           `<b>Найден${dups.length > 1 ? 'о ' + dups.length + ' совпадений' : ' дубликат'}!</b><br>` +
           dups.map(d => {
-            const info = [d.name];
+            const info = [];
             if (d.email) info.push(d.email);
-            if (d.status) info.push(`(${d.status})`);
-            return info.join(' · ');
+            if (d.phone) info.push(d.phone);
+            if (d.status) info.push(d.status);
+            const detailStr = info.length ? `<span class="dup-details">${info.join(' · ')}</span>` : '';
+            const url = `${serverUrl}/candidates/${d.entity_id}`;
+            return `<a href="#" class="dup-link" data-url="${url}">👤 ${d.name}</a>${detailStr}`;
           }).join('<br>');
+
+        // Add click handlers for duplicate links
+        document.querySelectorAll('.dup-link').forEach(link => {
+          link.addEventListener('click', (e) => {
+            e.preventDefault();
+            chrome.tabs.create({ url: link.dataset.url });
+          });
+        });
 
         // Change button to "Add anyway"
         btn.textContent = 'Всё равно добавить';
