@@ -433,6 +433,14 @@ async def bulk_action(
         await db.commit()
         return {"success": True, "action": "add_tag", "affected": updated}
 
+    # --- delete ---
+    elif body.action == "delete":
+        count = len(entities)
+        for entity in entities:
+            await db.delete(entity)
+        await db.commit()
+        return {"success": True, "action": "delete", "affected": count}
+
     # --- export_csv ---
     elif body.action == "export_csv":
         output = io.StringIO()

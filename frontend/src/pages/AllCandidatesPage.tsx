@@ -24,6 +24,7 @@ import {
   Calendar,
   Filter,
   X,
+  Trash2,
 } from 'lucide-react';
 import clsx from 'clsx';
 import {
@@ -495,6 +496,21 @@ export default function AllCandidatesPage() {
               >
                 <Briefcase className="w-3 h-3" />
                 К вакансии
+              </button>
+
+              {/* Delete */}
+              <button
+                onClick={() => {
+                  if (window.confirm(`Удалить ${selected.size} кандидат(ов)? Это действие необратимо.`)) {
+                    doBulk('delete');
+                    setSelected(new Set());
+                  }
+                }}
+                disabled={bulkLoading}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg text-xs text-red-400 transition-all"
+              >
+                <Trash2 className="w-3 h-3" />
+                Удалить
               </button>
 
               {bulkLoading && <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />}
