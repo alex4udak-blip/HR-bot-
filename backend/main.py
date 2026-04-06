@@ -21,7 +21,7 @@ from slowapi.errors import RateLimitExceeded
 from api.limiter import limiter
 from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser, search, scoring, currency, parse_jobs, interns
 from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees, documents, magic_button, pen
-from api.routes import candidate_search, extension_download, prometheus_invite
+from api.routes import candidate_search, extension_download, prometheus_invite, csv_import
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
@@ -557,6 +557,14 @@ try:
     logger.info("PEN router registered successfully at /api/pen")
 except Exception as e:
     logger.error(f"FAILED to register PEN router: {e}")
+    raise
+
+logger.info("=== REGISTERING CSV IMPORT ROUTER ===")
+try:
+    app.include_router(csv_import.router, prefix="/api/import", tags=["import"])
+    logger.info("CSV import router registered successfully at /api/import")
+except Exception as e:
+    logger.error(f"FAILED to register CSV import router: {e}")
     raise
 
 app.include_router(extension_download.router, prefix="/api/extension", tags=["extension"])

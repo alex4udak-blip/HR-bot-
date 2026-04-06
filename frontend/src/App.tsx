@@ -4,6 +4,7 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import { useAuthStore } from '@/stores/authStore';
 import { getCurrentUser } from '@/services/api';
 import Layout from '@/components/Layout';
+import RoleRoute from '@/components/RoleRoute';
 import { WebSocketProvider } from '@/components/WebSocketProvider';
 
 // Code splitting: Lazy load pages for better initial bundle size
@@ -83,6 +84,7 @@ const DocumentTemplatesPage = lazyWithRetry(() => import('@/pages/DocumentTempla
 const EmployeePortalPage = lazyWithRetry(() => import('@/pages/EmployeePortalPage'));
 const PENDashboardPage = lazyWithRetry(() => import('@/pages/PENDashboardPage'));
 const ExtensionPage = lazyWithRetry(() => import('@/pages/ExtensionPage'));
+const CsvImportPage = lazyWithRetry(() => import('@/pages/CsvImportPage'));
 
 // Loading fallback component for Suspense
 function PageLoader() {
@@ -169,44 +171,54 @@ export default function App() {
           }
         >
           {/* Wrap lazy-loaded routes in Suspense for loading state */}
+          {/* Open routes — any authenticated user */}
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
-          <Route path="candidates" element={<Suspense fallback={<PageLoader />}><CandidatesPage /></Suspense>} />
-          <Route path="interns" element={<Suspense fallback={<PageLoader />}><InternsPage /></Suspense>} />
-          <Route path="interns/:internId/stats" element={<Suspense fallback={<PageLoader />}><InternStatsPage /></Suspense>} />
-          <Route path="chats" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
-          <Route path="chats/:chatId" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
-          <Route path="contacts" element={<Suspense fallback={<PageLoader />}><ContactsPage /></Suspense>} />
-          <Route path="contacts/:entityId" element={<Suspense fallback={<PageLoader />}><ContactsPage /></Suspense>} />
-          <Route path="calls" element={<Suspense fallback={<PageLoader />}><CallsPage /></Suspense>} />
-          <Route path="calls/:callId" element={<Suspense fallback={<PageLoader />}><CallsPage /></Suspense>} />
-          <Route path="vacancies" element={<Suspense fallback={<PageLoader />}><VacanciesPage /></Suspense>} />
-          <Route path="vacancies/:vacancyId" element={<Suspense fallback={<PageLoader />}><VacanciesPage /></Suspense>} />
-          <Route path="email-templates" element={<Suspense fallback={<PageLoader />}><EmailTemplatesPage /></Suspense>} />
-          <Route path="analytics" element={<Suspense fallback={<PageLoader />}><AnalyticsPage /></Suspense>} />
-          <Route path="exports" element={<Suspense fallback={<PageLoader />}><ExportsPage /></Suspense>} />
           <Route path="projects" element={<Suspense fallback={<PageLoader />}><ProjectsPage /></Suspense>} />
           <Route path="projects/:projectId" element={<Suspense fallback={<PageLoader />}><ProjectDetailPage /></Suspense>} />
           <Route path="all-tasks" element={<Suspense fallback={<PageLoader />}><AllTasksPage /></Suspense>} />
-          <Route path="saturn" element={<Suspense fallback={<PageLoader />}><SaturnPage /></Suspense>} />
+          <Route path="chats" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
+          <Route path="chats/:chatId" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
           <Route path="team" element={<Suspense fallback={<PageLoader />}><TeamPage /></Suspense>} />
-          <Route path="dept-manager" element={<Suspense fallback={<PageLoader />}><DeptManagerPage /></Suspense>} />
-          <Route path="all-candidates" element={<Suspense fallback={<PageLoader />}><AllCandidatesPage /></Suspense>} />
-          <Route path="my-funnels" element={<Suspense fallback={<PageLoader />}><RecruiterFunnelsPage /></Suspense>} />
-          <Route path="practice-list" element={<Suspense fallback={<PageLoader />}><PracticeListPage /></Suspense>} />
-          <Route path="form-builder" element={<Suspense fallback={<PageLoader />}><FormBuilderPage /></Suspense>} />
-          <Route path="form-builder/:formId" element={<Suspense fallback={<PageLoader />}><FormBuilderPage /></Suspense>} />
-          <Route path="document-templates" element={<Suspense fallback={<PageLoader />}><DocumentTemplatesPage /></Suspense>} />
-          <Route path="employees" element={<Suspense fallback={<PageLoader />}><EmployeePortalPage /></Suspense>} />
           <Route path="my-profile" element={<Suspense fallback={<PageLoader />}><EmployeePortalPage /></Suspense>} />
-          <Route path="pen" element={<Suspense fallback={<PageLoader />}><PENDashboardPage /></Suspense>} />
-          <Route path="extension" element={<Suspense fallback={<PageLoader />}><ExtensionPage /></Suspense>} />
-          <Route path="trash" element={<Suspense fallback={<PageLoader />}><TrashPage /></Suspense>} />
-          <Route path="users" element={<Suspense fallback={<PageLoader />}><UsersPage /></Suspense>} />
-          <Route path="departments" element={<Suspense fallback={<PageLoader />}><DepartmentsPage /></Suspense>} />
-          <Route path="settings" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
+
+          {/* HR routes — superadmin, owner, admin, lead */}
+          <Route path="candidates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><CandidatesPage /></RoleRoute></Suspense>} />
+          <Route path="all-candidates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><AllCandidatesPage /></RoleRoute></Suspense>} />
+          <Route path="vacancies" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><VacanciesPage /></RoleRoute></Suspense>} />
+          <Route path="vacancies/:vacancyId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><VacanciesPage /></RoleRoute></Suspense>} />
+          <Route path="contacts" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><ContactsPage /></RoleRoute></Suspense>} />
+          <Route path="contacts/:entityId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><ContactsPage /></RoleRoute></Suspense>} />
+          <Route path="calls" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><CallsPage /></RoleRoute></Suspense>} />
+          <Route path="calls/:callId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><CallsPage /></RoleRoute></Suspense>} />
+          <Route path="my-funnels" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><RecruiterFunnelsPage /></RoleRoute></Suspense>} />
+          <Route path="interns" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><InternsPage /></RoleRoute></Suspense>} />
+          <Route path="interns/:internId/stats" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><InternStatsPage /></RoleRoute></Suspense>} />
+          <Route path="practice-list" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><PracticeListPage /></RoleRoute></Suspense>} />
+          <Route path="form-builder" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><FormBuilderPage /></RoleRoute></Suspense>} />
+          <Route path="form-builder/:formId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><FormBuilderPage /></RoleRoute></Suspense>} />
+          <Route path="document-templates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><DocumentTemplatesPage /></RoleRoute></Suspense>} />
+          <Route path="email-templates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><EmailTemplatesPage /></RoleRoute></Suspense>} />
+          <Route path="extension" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><ExtensionPage /></RoleRoute></Suspense>} />
+          <Route path="analytics" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><AnalyticsPage /></RoleRoute></Suspense>} />
+          <Route path="saturn" element={<Suspense fallback={<PageLoader />}><SaturnPage /></Suspense>} />
+
+          {/* HR lead+ routes — superadmin, owner, admin */}
+          <Route path="pen" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner', 'admin']}><PENDashboardPage /></RoleRoute></Suspense>} />
+          <Route path="exports" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><ExportsPage /></RoleRoute></Suspense>} />
+          <Route path="import" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><CsvImportPage /></RoleRoute></Suspense>} />
+          <Route path="employees" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><EmployeePortalPage /></RoleRoute></Suspense>} />
+          <Route path="dept-manager" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner', 'admin', 'lead']}><DeptManagerPage /></RoleRoute></Suspense>} />
+          <Route path="trash" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><TrashPage /></RoleRoute></Suspense>} />
+
+          {/* Admin routes — superadmin and owner only */}
+          <Route path="departments" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><DepartmentsPage /></RoleRoute></Suspense>} />
+          <Route path="settings" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin', 'owner']}><SettingsPage /></RoleRoute></Suspense>} />
+
+          {/* Superadmin only */}
+          <Route path="users" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin']}><UsersPage /></RoleRoute></Suspense>} />
           <Route path="admin" element={<Navigate to="/admin/simulator" replace />} />
-          <Route path="admin/simulator" element={<Suspense fallback={<PageLoader />}><AdminSimulatorPage /></Suspense>} />
+          <Route path="admin/simulator" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin']}><AdminSimulatorPage /></RoleRoute></Suspense>} />
           {/* Catch-all for unknown routes */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
