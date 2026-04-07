@@ -17,6 +17,7 @@ import asyncio
 import logging
 
 import aiofiles
+import fitz  # PyMuPDF — PDF to image conversion
 
 from .common import (
     logger, get_db, Entity, EntityType, EntityStatus, User, Department,
@@ -33,6 +34,69 @@ ENTITY_FILES_DIR = Path(__file__).parent.parent.parent.parent / "uploads" / "ent
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 MAX_FILES_PER_ENTITY = 20  # Maximum files per entity
 MIN_DISK_SPACE_MB = 100  # Minimum required free disk space in MB
+PDF_RENDER_DPI = 200  # DPI for PDF-to-image conversion (200 = good quality, reasonable size)
+
+
+async def convert_pdf_to_images(
+    pdf_path: Path,
+    entity_id: int,
+    org_id: int,
+    uploaded_by: int,
+    db: AsyncSession,
+) -> list:
+    """
+    Convert each page of a PDF file to a JPEG image and save as entity files.
+    Returns list of created EntityFile records.
+    """
+    created_files = []
+    entity_files_dir = ENTITY_FILES_DIR / str(entity_id)
+    entity_files_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        pdf_bytes = pdf_path.read_bytes()
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            # Render page to pixmap at specified DPI
+            zoom = PDF_RENDER_DPI / 72  # 72 is default PDF DPI
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat)
+
+            # Save as JPEG
+            img_name = f"cv_page_{page_num + 1}_{uuid.uuid4().hex[:8]}.jpg"
+            img_path = entity_files_dir / img_name
+            pix.save(str(img_path), output="jpeg")
+            img_size = img_path.stat().st_size
+
+            # Create DB record
+            img_file = EntityFile(
+                entity_id=entity_id,
+                org_id=org_id,
+                file_type=EntityFileType.resume,
+                file_name=f"Резюме стр. {page_num + 1}.jpg",
+                file_path=str(img_path),
+                file_size=img_size,
+                mime_type="image/jpeg",
+                description=f"Автоконвертация из PDF (стр. {page_num + 1})",
+                uploaded_by=uploaded_by,
+            )
+            db.add(img_file)
+            created_files.append(img_file)
+
+            file_logger.info(
+                f"PDF_TO_IMAGE: page {page_num + 1}/{len(doc)} | entity_id={entity_id} | "
+                f"size={img_size} bytes | path={img_path}"
+            )
+
+        doc.close()
+        await db.commit()
+
+    except Exception as e:
+        file_logger.error(f"PDF_TO_IMAGE failed for entity {entity_id}: {e}")
+        # Don't crash — PDF was already saved, images are a bonus
+
+    return created_files
 
 # File operations logger
 file_logger = logging.getLogger("hr-analyzer.entity-files")
@@ -514,6 +578,20 @@ async def upload_entity_file(
         f"user_id={current_user.id} | user_name='{current_user.name}' | "
         f"org_id={org.id} | path={file_path}"
     )
+
+    # Auto-convert PDF resume to inline images
+    if file_type_enum == EntityFileType.resume and file_extension == '.pdf':
+        file_logger.info(f"PDF resume detected for entity {entity_id}, converting to images...")
+        try:
+            await convert_pdf_to_images(
+                pdf_path=file_path,
+                entity_id=entity_id,
+                org_id=org.id,
+                uploaded_by=current_user.id,
+                db=db,
+            )
+        except Exception as e:
+            file_logger.error(f"PDF-to-image conversion failed for entity {entity_id}: {e}")
 
     # Generate/regenerate AI profile in background with new file context
     # Always generate profile when new context is added (chat, call, file)
