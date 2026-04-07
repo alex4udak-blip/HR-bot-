@@ -40,18 +40,16 @@ async def get_kanban_board(
     if not await can_access_vacancy(vacancy, current_user, org, db):
         raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
-    # Define stage order and titles (using existing DB enum values with HR labels)
-    # Mapping: applied=Novyj, screening=Skrining, phone_screen=Praktika,
-    #          interview=Tekh-praktika, assessment=IS, offer=Offer, hired=Prinyat, rejected=Otkaz
+    # HR Pipeline по ТЗ (DB enum values → display titles)
     stage_config = [
-        (ApplicationStage.applied, "Novyj", [ApplicationStage.applied]),
-        (ApplicationStage.screening, "Skrining", [ApplicationStage.screening]),
-        (ApplicationStage.phone_screen, "Praktika", [ApplicationStage.phone_screen]),
-        (ApplicationStage.interview, "Tekh-praktika", [ApplicationStage.interview]),
-        (ApplicationStage.assessment, "IS", [ApplicationStage.assessment]),
-        (ApplicationStage.offer, "Offer", [ApplicationStage.offer]),
-        (ApplicationStage.hired, "Prinyat", [ApplicationStage.hired]),
-        (ApplicationStage.rejected, "Otkaz", [ApplicationStage.rejected]),
+        (ApplicationStage.applied, "Новый", [ApplicationStage.applied]),
+        (ApplicationStage.screening, "Отбор", [ApplicationStage.screening]),
+        (ApplicationStage.phone_screen, "Собеседование назначено", [ApplicationStage.phone_screen]),
+        (ApplicationStage.interview, "Собеседование пройдено", [ApplicationStage.interview]),
+        (ApplicationStage.assessment, "Практика", [ApplicationStage.assessment]),
+        (ApplicationStage.offer, "Оффер", [ApplicationStage.offer]),
+        (ApplicationStage.hired, "Вышел на работу", [ApplicationStage.hired]),
+        (ApplicationStage.rejected, "Отказ", [ApplicationStage.rejected]),
     ]
 
     # Get total counts per stage (for UI to show "X more" indicators)

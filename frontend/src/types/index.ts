@@ -463,15 +463,15 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
 };
 
 export const STATUS_LABELS: Record<EntityStatus, string> = {
-  // HR Pipeline (matching backend EntityStatus)
+  // HR Pipeline по ТЗ
   new: 'Новый',
-  screening: 'Скрининг',
-  practice: 'Практика',
-  tech_practice: 'Тех-практика',
-  is_interview: 'ИС',
+  screening: 'Отбор',
+  practice: 'Собеседование назначено',
+  tech_practice: 'Собеседование пройдено',
+  is_interview: 'Практика',
   offer: 'Оффер',
-  hired: 'Принят',
-  rejected: 'Отклонён',
+  hired: 'Вышел на работу',
+  rejected: 'Отказ',
   withdrawn: 'Отозван',
   // General/Legacy statuses
   active: 'Активный',
@@ -480,9 +480,9 @@ export const STATUS_LABELS: Record<EntityStatus, string> = {
   converted: 'Сконвертирован',
   ended: 'Завершён',
   negotiation: 'Переговоры',
-  interview: 'Тех-практика',
+  interview: 'Собеседование пройдено',
   applied: 'Новый',
-  phone_screen: 'Практика',
+  phone_screen: 'Собеседование назначено',
   assessment: 'ИС'
 };
 
@@ -716,14 +716,14 @@ export const VACANCY_STATUS_COLORS: Record<VacancyStatus, string> = {
 };
 
 export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = {
-  // HR Pipeline stages (using existing PostgreSQL enum values with HR labels)
-  applied: 'Новый',           // 'applied' displayed as "Новый"
-  screening: 'Скрининг',
-  phone_screen: 'Практика',   // 'phone_screen' displayed as "Практика"
-  interview: 'Тех-практика',  // 'interview' displayed as "Тех-практика"
-  assessment: 'ИС',           // 'assessment' displayed as "ИС"
+  // HR Pipeline по ТЗ (DB enum values → display labels)
+  applied: 'Новый',
+  screening: 'Отбор',
+  phone_screen: 'Собеседование назначено',
+  interview: 'Собеседование пройдено',
+  assessment: 'Практика',
   offer: 'Оффер',
-  hired: 'Принят',
+  hired: 'Вышел на работу',
   rejected: 'Отказ',
   withdrawn: 'Отозван'
 };

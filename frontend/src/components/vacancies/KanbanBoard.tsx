@@ -77,15 +77,15 @@ function dragReducer(state: DragState, action: DragAction): DragState {
   }
 }
 
-// Use existing PostgreSQL enum values (mapped to HR labels in backend stage_config)
+// HR Pipeline по ТЗ (DB enum → display label)
 const VISIBLE_STAGES: ApplicationStage[] = [
   'applied',      // Новый
-  'screening',    // Скрининг
-  'phone_screen', // Практика
-  'interview',    // Тех-практика
-  'assessment',   // ИС (итоговое собеседование)
+  'screening',    // Отбор
+  'phone_screen', // Собеседование назначено
+  'interview',    // Собеседование пройдено
+  'assessment',   // Практика
   'offer',        // Оффер
-  'hired',        // Принят
+  'hired',        // Вышел на работу
   'rejected'      // Отказ
 ];
 
