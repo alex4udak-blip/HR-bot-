@@ -3,11 +3,14 @@ API routes for form constructor — create custom forms, public submission by ca
 """
 import re
 import uuid
+import json
+import mimetypes
 import logging
 from typing import Optional, List
 from datetime import datetime
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, File, Form, UploadFile
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -16,10 +19,18 @@ from ..database import get_db
 from ..models.database import (
     FormTemplate, FormSubmission,
     Entity, EntityType, EntityStatus,
+    EntityFile, EntityFileType,
     Vacancy, VacancyApplication, ApplicationStage,
     User, UserRole, Organization, OrgMember
 )
 from ..services.auth import get_current_user, get_user_org
+
+# File upload settings for public forms
+ENTITY_FILES_DIR = Path(__file__).parent.parent.parent / "uploads" / "entity_files"
+PUBLIC_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB per file for public forms
+PUBLIC_MAX_FILES = 5  # Max files per public form submission
+ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png", ".webp"}
+PDF_RENDER_DPI = 200
 
 logger = logging.getLogger("hr-analyzer.forms")
 
@@ -501,4 +512,200 @@ async def submit_public_form(
         except Exception:
             logger.exception("notify_new_candidate (form) failed (non-critical)")
 
-    return {"message": "Спасибо! Ваша анкета успешно отправлена."}
+    return {"message": "Спасибо! Ваша анкета успешно отправлена.", "entity_id": entity.id}
+
+
+@router.post("/public/{slug}/submit-with-files")
+async def submit_public_form_with_files(
+    slug: str,
+    data: str = Form(..., description="JSON string with form data {field_id: value}"),
+    files: List[UploadFile] = File(default=[]),
+    db: AsyncSession = Depends(get_db),
+):
+    """Submit a form publicly with file attachments (no auth).
+
+    Accepts multipart/form-data with:
+    - data: JSON string of form field values
+    - files: uploaded files (resume, CV, etc.)
+    """
+    # Parse JSON data
+    try:
+        form_data = json.loads(data)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail="Невалидный JSON в поле data")
+
+    # Find form
+    result = await db.execute(
+        select(FormTemplate).where(FormTemplate.slug == slug, FormTemplate.is_active == True)
+    )
+    form = result.scalar_one_or_none()
+    if not form:
+        raise HTTPException(status_code=404, detail="Форма не найдена")
+
+    fields_by_id = {f["id"]: f for f in (form.fields or [])}
+
+    # Validate required fields (skip file fields — they come separately)
+    for field in (form.fields or []):
+        if field.get("required") and field.get("type") != "file":
+            val = form_data.get(field["id"])
+            if val is None or (isinstance(val, str) and not val.strip()):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Поле '{field['label']}' обязательно для заполнения"
+                )
+
+    # Extract name, email, phone
+    candidate_name = None
+    candidate_email = None
+    candidate_phone = None
+
+    for field_id, value in form_data.items():
+        field_def = fields_by_id.get(field_id)
+        if not field_def:
+            continue
+        ftype = field_def.get("type", "")
+        if ftype == "email" and value:
+            candidate_email = str(value).strip()
+        elif ftype == "phone" and value:
+            candidate_phone = str(value).strip()
+        elif ftype == "text" and not candidate_name and value:
+            candidate_name = str(value).strip()
+
+    if not candidate_name:
+        candidate_name = candidate_email or "Без имени"
+
+    # Create Entity
+    entity = Entity(
+        org_id=form.org_id,
+        type=EntityType.candidate,
+        name=candidate_name,
+        status=EntityStatus.new,
+        email=candidate_email,
+        phone=candidate_phone,
+        created_by=form.created_by,
+        extra_data={"source": "form", "form_id": form.id, "form_title": form.title},
+    )
+    db.add(entity)
+    await db.flush()
+
+    # Create FormSubmission
+    submission = FormSubmission(
+        form_id=form.id,
+        entity_id=entity.id,
+        data=form_data,
+    )
+    db.add(submission)
+
+    # Save uploaded files
+    saved_files = []
+    if files:
+        entity_files_dir = ENTITY_FILES_DIR / str(entity.id)
+        entity_files_dir.mkdir(parents=True, exist_ok=True)
+
+        for i, upload_file in enumerate(files[:PUBLIC_MAX_FILES]):
+            if not upload_file.filename:
+                continue
+
+            original_name = upload_file.filename
+            ext = Path(original_name.lower()).suffix
+            if ext not in ALLOWED_EXTENSIONS:
+                logger.warning(f"Public form: skipped disallowed file type '{ext}' ({original_name})")
+                continue
+
+            content = await upload_file.read()
+            file_size = len(content)
+            if file_size > PUBLIC_MAX_FILE_SIZE or file_size == 0:
+                continue
+
+            content_type = upload_file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+            unique_name = f"{uuid.uuid4().hex}{ext}"
+            file_path = entity_files_dir / unique_name
+
+            with open(file_path, "wb") as f:
+                f.write(content)
+
+            # Determine file_type: if it looks like a resume/CV
+            is_resume = any(kw in original_name.lower() for kw in ["resume", "cv", "резюме"])
+            file_type = EntityFileType.resume if is_resume else EntityFileType.other
+
+            entity_file = EntityFile(
+                entity_id=entity.id,
+                file_type=file_type,
+                file_name=original_name,
+                file_path=str(file_path),
+                file_size=file_size,
+                mime_type=content_type,
+                description=f"Загружено через форму '{form.title}'",
+                uploaded_by=form.created_by,
+            )
+            db.add(entity_file)
+            saved_files.append((entity_file, file_path, content_type))
+
+        await db.flush()
+
+        # Convert PDF resumes to images for inline preview
+        for entity_file, fpath, ctype in saved_files:
+            if ctype == "application/pdf" and entity_file.file_type == EntityFileType.resume:
+                try:
+                    import fitz
+                    doc = fitz.open(str(fpath))
+                    for page_num in range(len(doc)):
+                        page = doc[page_num]
+                        mat = fitz.Matrix(PDF_RENDER_DPI / 72, PDF_RENDER_DPI / 72)
+                        pix = page.get_pixmap(matrix=mat)
+                        img_name = f"{uuid.uuid4().hex}.jpg"
+                        img_path = entity_files_dir / img_name
+                        pix.save(str(img_path))
+
+                        img_file = EntityFile(
+                            entity_id=entity.id,
+                            file_type=EntityFileType.resume,
+                            file_name=f"{Path(original_name).stem}_page_{page_num + 1}.jpg",
+                            file_path=str(img_path),
+                            file_size=img_path.stat().st_size,
+                            mime_type="image/jpeg",
+                            description=f"Страница {page_num + 1} из {original_name}",
+                            uploaded_by=form.created_by,
+                        )
+                        db.add(img_file)
+                    doc.close()
+                except Exception:
+                    logger.exception(f"PDF→image conversion failed for {fpath}")
+
+    # Create VacancyApplication if form has vacancy_id
+    vacancy = None
+    if form.vacancy_id:
+        vac_result = await db.execute(
+            select(Vacancy).where(Vacancy.id == form.vacancy_id)
+        )
+        vacancy = vac_result.scalar_one_or_none()
+        if vacancy:
+            application = VacancyApplication(
+                vacancy_id=vacancy.id,
+                entity_id=entity.id,
+                stage=ApplicationStage.applied,
+                source="form",
+                created_by=form.created_by,
+            )
+            db.add(application)
+
+    await db.commit()
+
+    # Notification
+    if form.vacancy_id and vacancy:
+        try:
+            from ..services.hr_notifications import notify_new_candidate
+            creator_result = await db.execute(
+                select(User).where(User.id == form.created_by)
+            )
+            form_creator = creator_result.scalar_one_or_none()
+            if form_creator:
+                await notify_new_candidate(db, entity, vacancy, form_creator)
+        except Exception:
+            logger.exception("notify_new_candidate (form+files) failed (non-critical)")
+
+    return {
+        "message": "Спасибо! Ваша анкета успешно отправлена.",
+        "entity_id": entity.id,
+        "files_saved": len(saved_files),
+    }
