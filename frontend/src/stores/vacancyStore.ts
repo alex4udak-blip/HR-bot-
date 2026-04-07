@@ -39,7 +39,9 @@ interface VacancyState {
   clearCurrentVacancy: () => void;
 
   // Actions - Kanban
-  fetchKanbanBoard: (vacancyId: number) => Promise<void>;
+  kanbanFilters: api.KanbanFilters;
+  setKanbanFilters: (filters: api.KanbanFilters) => void;
+  fetchKanbanBoard: (vacancyId: number, filters?: api.KanbanFilters) => Promise<void>;
   moveApplication: (applicationId: number, newStage: ApplicationStage) => Promise<void>;
   bulkMoveApplications: (stage: ApplicationStage) => Promise<void>;
 
@@ -70,6 +72,7 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
   filters: {},
   kanbanBoard: null,
   isKanbanLoading: false,
+  kanbanFilters: {},
   stats: null,
   selectedApplicationIds: [],
 
@@ -171,10 +174,15 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
 
   // === KANBAN BOARD ===
 
-  fetchKanbanBoard: async (vacancyId) => {
+  setKanbanFilters: (filters) => {
+    set({ kanbanFilters: filters });
+  },
+
+  fetchKanbanBoard: async (vacancyId, filters) => {
     set({ isKanbanLoading: true, error: null });
     try {
-      const board = await api.getKanbanBoard(vacancyId);
+      const appliedFilters = filters ?? get().kanbanFilters;
+      const board = await api.getKanbanBoard(vacancyId, appliedFilters);
       set({ kanbanBoard: board, isKanbanLoading: false });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch Kanban board';

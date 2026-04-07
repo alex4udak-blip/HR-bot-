@@ -146,8 +146,20 @@ export const deleteApplication = async (applicationId: number): Promise<void> =>
 // KANBAN BOARD API
 // ============================================================
 
-export const getKanbanBoard = async (vacancyId: number): Promise<KanbanBoard> => {
-  const { data } = await deduplicatedGet<KanbanBoard>(`/vacancies/${vacancyId}/kanban`);
+export interface KanbanFilters {
+  created_by?: number;
+  applied_after?: string; // YYYY-MM-DD
+  applied_before?: string; // YYYY-MM-DD
+}
+
+export const getKanbanBoard = async (vacancyId: number, filters?: KanbanFilters): Promise<KanbanBoard> => {
+  const params: Record<string, string> = {};
+  if (filters) {
+    if (filters.created_by) params.created_by = String(filters.created_by);
+    if (filters.applied_after) params.applied_after = filters.applied_after;
+    if (filters.applied_before) params.applied_before = filters.applied_before;
+  }
+  const { data } = await deduplicatedGet<KanbanBoard>(`/vacancies/${vacancyId}/kanban`, { params });
   return data;
 };
 

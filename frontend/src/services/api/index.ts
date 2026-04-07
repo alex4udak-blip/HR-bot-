@@ -353,7 +353,8 @@ export type {
   VacancyUpdate,
   ApplicationCreate,
   ApplicationUpdate,
-  AssignableUser
+  AssignableUser,
+  KanbanFilters
 } from './vacancies';
 
 // Projects

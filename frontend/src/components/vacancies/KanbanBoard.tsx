@@ -10,7 +10,9 @@ import {
   Edit,
   ExternalLink,
   Users,
-  GripVertical
+  GripVertical,
+  Filter,
+  X
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -18,7 +20,8 @@ import { useNavigate } from 'react-router-dom';
 import type { Vacancy, VacancyApplication, ApplicationStage, CompatibilityScore } from '@/types';
 import { APPLICATION_STAGE_LABELS, APPLICATION_STAGE_COLORS } from '@/types';
 import { useVacancyStore } from '@/stores/vacancyStore';
-import { updateApplication, calculateCompatibilityScore } from '@/services/api';
+import { updateApplication, calculateCompatibilityScore, getAssignableUsers } from '@/services/api';
+import type { AssignableUser } from '@/services/api/vacancies';
 import AddCandidateModal from './AddCandidateModal';
 import ApplicationDetailModal from './ApplicationDetailModal';
 import InterviewSummaryModal from './InterviewSummaryModal';
@@ -94,6 +97,20 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   const [showAddCandidate, setShowAddCandidate] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<VacancyApplication | null>(null);
 
+  // Filter state
+  const [showFilters, setShowFilters] = useState(false);
+  const [recruiters, setRecruiters] = useState<AssignableUser[]>([]);
+  const [filterRecruiter, setFilterRecruiter] = useState<number | undefined>();
+  const [filterDateFrom, setFilterDateFrom] = useState<string>('');
+  const [filterDateTo, setFilterDateTo] = useState<string>('');
+
+  const hasActiveFilters = filterRecruiter !== undefined || filterDateFrom !== '' || filterDateTo !== '';
+
+  // Load recruiters list
+  useEffect(() => {
+    getAssignableUsers().then(setRecruiters).catch(() => {});
+  }, []);
+
   // Drag state managed by useReducer
   const [dragState, dispatchDrag] = useReducer(dragReducer, initialDragState);
   const { isDragging, draggedApp, dropTarget } = dragState;
@@ -134,10 +151,30 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     isKanbanLoading,
     error,
     fetchKanbanBoard,
+    setKanbanFilters,
     moveApplication,
     removeApplication,
     clearError
   } = useVacancyStore();
+
+  // Apply filters and fetch
+  const applyFilters = useCallback(() => {
+    const filters = {
+      created_by: filterRecruiter,
+      applied_after: filterDateFrom || undefined,
+      applied_before: filterDateTo || undefined,
+    };
+    setKanbanFilters(filters);
+    fetchKanbanBoard(vacancy.id, filters);
+  }, [vacancy.id, filterRecruiter, filterDateFrom, filterDateTo, fetchKanbanBoard, setKanbanFilters]);
+
+  const clearFilters = useCallback(() => {
+    setFilterRecruiter(undefined);
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setKanbanFilters({});
+    fetchKanbanBoard(vacancy.id, {});
+  }, [vacancy.id, fetchKanbanBoard, setKanbanFilters]);
 
   useEffect(() => {
     fetchKanbanBoard(vacancy.id);
@@ -493,27 +530,117 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 sm:p-4 border-b border-white/10">
-        <div className="flex items-center gap-2 sm:gap-4">
-          <OnboardingTooltip
-            id="kanban-board"
-            content="Перетаскивайте кандидатов между этапами для обновления статуса"
-            position="bottom"
-          >
-            <h2 className="text-base sm:text-lg font-semibold">Kanban доска</h2>
-          </OnboardingTooltip>
-          <span className="text-white/40 text-xs sm:text-sm">
-            {kanbanBoard.total_count} кандидатов
-          </span>
+      <div className="border-b border-white/10">
+        <div className="flex items-center justify-between p-3 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <OnboardingTooltip
+              id="kanban-board"
+              content="Перетаскивайте кандидатов между этапами для обновления статуса"
+              position="bottom"
+            >
+              <h2 className="text-base sm:text-lg font-semibold">Kanban доска</h2>
+            </OnboardingTooltip>
+            <span className="text-white/40 text-xs sm:text-sm">
+              {kanbanBoard.total_count} кандидатов
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={clsx(
+                'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs sm:text-sm transition-colors',
+                hasActiveFilters
+                  ? 'bg-blue-600/30 text-blue-400 border border-blue-500/50'
+                  : 'bg-white/5 hover:bg-white/10 text-white/60'
+              )}
+            >
+              <Filter className="w-4 h-4" />
+              <span className="hidden sm:inline">Фильтры</span>
+              {hasActiveFilters && (
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+              )}
+            </button>
+            <button
+              onClick={() => setShowAddCandidate(true)}
+              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs sm:text-sm transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Добавить кандидата</span>
+              <span className="sm:hidden">Добавить</span>
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => setShowAddCandidate(true)}
-          className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs sm:text-sm transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Добавить кандидата</span>
-          <span className="sm:hidden">Добавить</span>
-        </button>
+
+        {/* Filter Panel */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="px-3 sm:px-4 pb-3 flex flex-wrap items-end gap-3">
+                {/* Recruiter filter */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-white/40">Рекрутер</label>
+                  <select
+                    value={filterRecruiter ?? ''}
+                    onChange={(e) => setFilterRecruiter(e.target.value ? Number(e.target.value) : undefined)}
+                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white/80 min-w-[160px] focus:border-blue-500/50 focus:outline-none"
+                  >
+                    <option value="">Все</option>
+                    {recruiters.map((r) => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Date from */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-white/40">Дата от</label>
+                  <input
+                    type="date"
+                    value={filterDateFrom}
+                    onChange={(e) => setFilterDateFrom(e.target.value)}
+                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white/80 focus:border-blue-500/50 focus:outline-none"
+                  />
+                </div>
+
+                {/* Date to */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-white/40">Дата до</label>
+                  <input
+                    type="date"
+                    value={filterDateTo}
+                    onChange={(e) => setFilterDateTo(e.target.value)}
+                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white/80 focus:border-blue-500/50 focus:outline-none"
+                  />
+                </div>
+
+                {/* Apply / Clear buttons */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={applyFilters}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors"
+                  >
+                    Применить
+                  </button>
+                  {hasActiveFilters && (
+                    <button
+                      onClick={clearFilters}
+                      className="flex items-center gap-1 px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-white/60 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Сбросить
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Board - horizontal scroll on mobile with touch-friendly spacing */}

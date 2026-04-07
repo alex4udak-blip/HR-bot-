@@ -4,8 +4,8 @@ Kanban board endpoints for vacancy management.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
-from datetime import datetime
+from typing import List, Optional
+from datetime import datetime, date
 
 from .common import (
     logger, get_db, Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
@@ -22,10 +22,16 @@ router = APIRouter()
 async def get_kanban_board(
     vacancy_id: int,
     limit_per_column: int = Query(50, ge=1, le=200, description="Max candidates per column"),
+    created_by: Optional[int] = Query(None, description="Filter by recruiter (user who created the application)"),
+    applied_after: Optional[date] = Query(None, description="Filter applications created on or after this date"),
+    applied_before: Optional[date] = Query(None, description="Filter applications created on or before this date"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """Get Kanban board data for a vacancy with pagination per column (with access control)."""
+    """Get Kanban board data for a vacancy with pagination per column (with access control).
+
+    Supports filtering by recruiter (created_by) and date range (applied_after/applied_before).
+    """
     org = await get_user_org(current_user, db)
 
     # Verify vacancy exists
@@ -52,10 +58,19 @@ async def get_kanban_board(
         (ApplicationStage.rejected, "Отказ", [ApplicationStage.rejected]),
     ]
 
+    # Build base filter conditions
+    base_filters = [VacancyApplication.vacancy_id == vacancy_id]
+    if created_by is not None:
+        base_filters.append(VacancyApplication.created_by == created_by)
+    if applied_after is not None:
+        base_filters.append(VacancyApplication.applied_at >= datetime.combine(applied_after, datetime.min.time()))
+    if applied_before is not None:
+        base_filters.append(VacancyApplication.applied_at <= datetime.combine(applied_before, datetime.max.time()))
+
     # Get total counts per stage (for UI to show "X more" indicators)
     counts_result = await db.execute(
         select(VacancyApplication.stage, func.count(VacancyApplication.id))
-        .where(VacancyApplication.vacancy_id == vacancy_id)
+        .where(*base_filters)
         .group_by(VacancyApplication.stage)
     )
     stage_total_counts = {row[0]: row[1] for row in counts_result.all()}
@@ -66,7 +81,7 @@ async def get_kanban_board(
         stage_result = await db.execute(
             select(VacancyApplication)
             .where(
-                VacancyApplication.vacancy_id == vacancy_id,
+                *base_filters,
                 VacancyApplication.stage.in_(query_stages)
             )
             .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
