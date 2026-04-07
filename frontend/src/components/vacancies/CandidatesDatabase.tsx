@@ -1,102 +1,60 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
-  Phone,
-  Mail,
-  Briefcase,
-  ExternalLink,
   Plus,
   Upload,
-  Filter,
-  X,
-  Check,
   Clock,
   Users,
-  UserCheck,
-  Sparkles,
-  FolderArchive,
-  Loader2,
-  CheckCircle,
-  XCircle,
-  LayoutGrid,
-  List,
-  Kanban,
-  GripVertical,
-  User
+  User,
+  Filter,
+  X,
+  ExternalLink
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getErrorDetail } from '@/utils';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
-import { useVacancyStore } from '@/stores/vacancyStore';
-import { logger } from '@/utils/logger';
-import type { Entity, Vacancy, EntityStatus } from '@/types';
+import type { Entity, EntityStatus } from '@/types';
 import {
   STATUS_LABELS,
   STATUS_COLORS,
   ENTITY_PIPELINE_STAGES
 } from '@/types';
-import type { ParsedResume, BulkImportResponse } from '@/services/api';
-import { formatSalary, formatDate } from '@/utils';
-import { bulkImportResumes, updateEntityStatus, generateAllProfiles } from '@/services/api';
+import type { ParsedResume } from '@/services/api';
+import { formatDate } from '@/utils';
 import ContactForm from '@/components/contacts/ContactForm';
 import ParserModal from '@/components/parser/ParserModal';
 import { Skeleton } from '@/components/ui';
 
 interface CandidatesDatabaseProps {
-  vacancies: Vacancy[];
+  vacancies: any[];
   onRefreshVacancies: () => void;
 }
 
-// Stage filter: 'all' or specific stage
+// Helper to safely access extra_data string fields
+const getExtraDataString = (entity: Entity, key: string): string => {
+  const val = entity.extra_data?.[key];
+  return typeof val === 'string' ? val : '';
+};
+
 type StageFilter = 'all' | EntityStatus;
 
-export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: CandidatesDatabaseProps) {
+/**
+ * F-05: Глобальная база кандидатов
+ * Все кандидаты компании в одном месте.
+ * Поиск, фильтры, защита от дублей.
+ */
+export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVacancies: _onRefreshVacancies }: CandidatesDatabaseProps) {
   const navigate = useNavigate();
 
-  // View modes
-  type ViewMode = 'cards' | 'list' | 'kanban';
-
-  // Local state
-  const [viewMode, setViewMode] = useState<ViewMode>('cards');
+  // State
   const [selectedStage, setSelectedStage] = useState<StageFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [selectedCandidates, setSelectedCandidates] = useState<Set<number>>(new Set());
+  const [selectedSource, setSelectedSource] = useState<string>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showParserModal, setShowParserModal] = useState(false);
-  const [showAddToVacancyModal, setShowAddToVacancyModal] = useState(false);
   const [prefillData, setPrefillData] = useState<Partial<Entity> | null>(null);
-
-  // Bulk import state
-  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
-  const [bulkImportLoading, setBulkImportLoading] = useState(false);
-  const [bulkImportResult, setBulkImportResult] = useState<BulkImportResponse | null>(null);
-  const bulkImportInputRef = useRef<HTMLInputElement>(null);
-
-  // Profile generation state
-  const [profileGenerating, setProfileGenerating] = useState(false);
-
-  // Drag state for vacancy assignment
-  const [draggedCandidate, setDraggedCandidate] = useState<Entity | null>(null);
-  const [dropTargetVacancy, setDropTargetVacancy] = useState<number | null>(null);
-
-  // Drag state for Kanban stage change
-  const [draggedForKanban, setDraggedForKanban] = useState<Entity | null>(null);
-  const [dropTargetStage, setDropTargetStage] = useState<EntityStatus | null>(null);
-
-  // Track which candidates are currently being moved (prevents double-click)
-  const [movingCandidates, setMovingCandidates] = useState<Set<number>>(new Set());
-
-  // Kanban auto-scroll refs
-  const kanbanContainerRef = useRef<HTMLDivElement>(null);
-  const stageColumnRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
-  const autoScrollIntervalRef = useRef<number | null>(null);
-  const scrollDirectionRef = useRef<number>(0);
-  const AUTO_SCROLL_THRESHOLD = 200;
-  const AUTO_SCROLL_SPEED = 30;
 
   // Store
   const {
@@ -107,307 +65,74 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     typeCounts
   } = useEntityStore();
 
-  const { addCandidateToVacancy } = useVacancyStore();
-
   // Fetch candidates on mount
   useEffect(() => {
     setFilters({ type: 'candidate' });
   }, [setFilters]);
 
-  // Filter candidates by search and tags
-  const searchFilteredCandidates = useMemo(() => {
+  // Search and filter
+  const filteredCandidates = useMemo(() => {
     let result = entities;
 
+    // Search: name, email, phone, telegram
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase();
       result = result.filter(c =>
-        c.name?.toLowerCase().includes(query) ||
-        c.email?.toLowerCase().includes(query) ||
-        c.phone?.includes(query) ||
-        c.position?.toLowerCase().includes(query) ||
-        c.company?.toLowerCase().includes(query) ||
-        c.tags?.some(t => t.toLowerCase().includes(query))
+        c.name?.toLowerCase().includes(q) ||
+        c.email?.toLowerCase().includes(q) ||
+        c.phone?.includes(q) ||
+        c.telegram_usernames?.some(t => t.toLowerCase().includes(q))
       );
     }
 
-    if (selectedTags.length > 0) {
-      result = result.filter(c =>
-        selectedTags.every(tag => c.tags?.includes(tag))
-      );
+    // Filter by status
+    if (selectedStage !== 'all') {
+      result = result.filter(c => {
+        if (c.status === selectedStage) return true;
+        if (selectedStage === 'new' && !(ENTITY_PIPELINE_STAGES as readonly string[]).includes(c.status)) return true;
+        return false;
+      });
+    }
+
+    // Filter by source
+    if (selectedSource !== 'all') {
+      result = result.filter(c => {
+        const source = getExtraDataString(c, 'source_url');
+        if (selectedSource === 'hh' && source.includes('hh.ru')) return true;
+        if (selectedSource === 'habr' && source.includes('habr')) return true;
+        if (selectedSource === 'linkedin' && source.includes('linkedin')) return true;
+        if (selectedSource === 'manual' && !source) return true;
+        return false;
+      });
     }
 
     return result;
-  }, [entities, searchQuery, selectedTags]);
+  }, [entities, searchQuery, selectedStage, selectedSource]);
 
-  // Count candidates by stage (using EntityStatus)
+  // Stage counts
   const stageCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: searchFilteredCandidates.length };
+    const counts: Record<string, number> = { all: entities.length };
     ENTITY_PIPELINE_STAGES.forEach(stage => {
-      counts[stage] = searchFilteredCandidates.filter(c => c.status === stage).length;
+      counts[stage] = entities.filter(c => c.status === stage).length;
     });
-    // Count candidates with unknown status as 'new' (displayed as "Новый")
     const knownStatuses = new Set<string>(ENTITY_PIPELINE_STAGES);
-    const unknownCount = searchFilteredCandidates.filter(c => !knownStatuses.has(c.status)).length;
+    const unknownCount = entities.filter(c => !knownStatuses.has(c.status)).length;
     counts['new'] = (counts['new'] || 0) + unknownCount;
     return counts;
-  }, [searchFilteredCandidates]);
-
-  // Filter by selected stage
-  const filteredCandidates = useMemo(() => {
-    if (selectedStage === 'all') return searchFilteredCandidates;
-
-    return searchFilteredCandidates.filter(c => {
-      if (c.status === selectedStage) return true;
-      // Include unknown statuses in 'new' (displayed as "Новый")
-      if (selectedStage === 'new' && !(ENTITY_PIPELINE_STAGES as readonly string[]).includes(c.status)) {
-        return true;
-      }
-      return false;
-    });
-  }, [searchFilteredCandidates, selectedStage]);
-
-  // Group candidates by EntityStatus for Kanban view
-  const candidatesByStatus = useMemo(() => {
-    const grouped: Record<EntityStatus, Entity[]> = {} as Record<EntityStatus, Entity[]>;
-    ENTITY_PIPELINE_STAGES.forEach(stage => {
-      grouped[stage] = [];
-    });
-    searchFilteredCandidates.forEach(candidate => {
-      const status = candidate.status as EntityStatus;
-      if (grouped[status]) {
-        grouped[status].push(candidate);
-      } else {
-        grouped['new'].push(candidate);  // Unknown statuses go to 'new' (displayed as "Новый")
-      }
-    });
-    return grouped;
-  }, [searchFilteredCandidates]);
-
-  // Get all unique tags from candidates
-  const allTags = useMemo(() => {
-    const tags = new Set<string>();
-    entities.forEach(c => c.tags?.forEach(t => tags.add(t)));
-    return Array.from(tags).sort();
   }, [entities]);
 
-  // Get open vacancies for drag & drop
-  const openVacancies = useMemo(() => {
-    return vacancies.filter(v => v.status === 'open' || v.status === 'paused' || v.status === 'draft');
-  }, [vacancies]);
+  // Unique sources for filter
+  const sources = [
+    { value: 'all', label: 'Все источники' },
+    { value: 'hh', label: 'HeadHunter' },
+    { value: 'habr', label: 'Habr' },
+    { value: 'linkedin', label: 'LinkedIn' },
+    { value: 'manual', label: 'Вручную' },
+  ];
 
-  // Handlers - Vacancy drag
-  const handleDragStart = (candidate: Entity) => {
-    setDraggedCandidate(candidate);
-  };
-
-  const handleDragEnd = async () => {
-    if (draggedCandidate && dropTargetVacancy) {
-      try {
-        await addCandidateToVacancy(dropTargetVacancy, draggedCandidate.id, 'database_drag');
-        toast.success(`${draggedCandidate.name} добавлен в вакансию`);
-        onRefreshVacancies();
-      } catch (error: any) {
-        toast.error(getErrorDetail(error, 'Не удалось добавить кандидата'));
-      }
-    }
-    setDraggedCandidate(null);
-    setDropTargetVacancy(null);
-  };
-
-  // Handlers - Kanban stage drag
-  const handleKanbanDragStart = (candidate: Entity) => {
-    setDraggedForKanban(candidate);
-    setDraggedCandidate(candidate); // Allow dragging to vacancies sidebar
-  };
-
-  const isMovingRef = useRef(false);
-
-  const handleKanbanDragEnd = async (_e?: React.DragEvent | unknown, targetStage?: EntityStatus) => {
-    stopAutoScroll();
-
-    // Use targetStage from onDrop event if available, otherwise use state
-    const finalStage = targetStage || dropTargetStage;
-
-    // Capture current dragged item before clearing state
-    const itemToMove = draggedForKanban;
-
-    // Reset drag state immediately to prevent double calls and UI flickering
-    setDraggedForKanban(null);
-    setDraggedCandidate(null);
-    setDropTargetStage(null);
-
-    if (itemToMove && finalStage && !isMovingRef.current) {
-      // Check if status actually changed
-      if (itemToMove.status === finalStage) {
-        return;
-      }
-
-      isMovingRef.current = true;
-      try {
-        logger.log(`[Kanban] Moving ${itemToMove.name} from ${itemToMove.status} to ${finalStage}`);
-        await updateEntityStatus(itemToMove.id, finalStage);
-        toast.success(`${itemToMove.name} → ${STATUS_LABELS[finalStage]}`);
-        fetchEntities();
-      } catch (error) {
-        logger.error('[Kanban] Move failed:', error);
-        toast.error('Не удалось изменить статус');
-      } finally {
-        isMovingRef.current = false;
-      }
-    }
-  };
-
-  const handleStageDragOver = (e: React.DragEvent, stage: EntityStatus) => {
-    e.preventDefault();
-    if (draggedForKanban) {
-      setDropTargetStage(stage);
-    }
-  };
-
-  const handleStageDragLeave = (e: React.DragEvent) => {
-    const relatedTarget = e.relatedTarget as HTMLElement;
-    const currentTarget = e.currentTarget as HTMLElement;
-    if (!currentTarget.contains(relatedTarget)) {
-      setDropTargetStage(null);
-    }
-  };
-
-  const handleStageDrop = (e: React.DragEvent, stage: EntityStatus) => {
-    e.preventDefault();
-    e.stopPropagation();
-    handleKanbanDragEnd(e, stage);
-  };
-
-  // Auto-scroll for kanban view
-  const stopAutoScroll = useCallback(() => {
-    if (autoScrollIntervalRef.current !== null) {
-      cancelAnimationFrame(autoScrollIntervalRef.current);
-      autoScrollIntervalRef.current = null;
-    }
-    scrollDirectionRef.current = 0;
-  }, []);
-
-  const startAutoScroll = useCallback(() => {
-    if (autoScrollIntervalRef.current !== null) return;
-
-    const scroll = () => {
-      if (kanbanContainerRef.current && scrollDirectionRef.current !== 0) {
-        kanbanContainerRef.current.scrollLeft += AUTO_SCROLL_SPEED * scrollDirectionRef.current;
-        autoScrollIntervalRef.current = requestAnimationFrame(scroll);
-      } else {
-        stopAutoScroll();
-      }
-    };
-    autoScrollIntervalRef.current = requestAnimationFrame(scroll);
-  }, [stopAutoScroll]);
-
-  // Scroll to stage column in kanban view and highlight it
-  const scrollToStageColumn = useCallback((stage: EntityStatus) => {
-    if (viewMode !== 'kanban') return;
-
-    // stage is already the column key (same as ApplicationStage)
-    const column = stageColumnRefs.current[stage];
-
-    if (column && kanbanContainerRef.current) {
-      column.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-      // Add highlight animation
-      column.classList.add('ring-2', 'ring-purple-500', 'ring-offset-2', 'ring-offset-gray-900');
-      setTimeout(() => {
-        column.classList.remove('ring-2', 'ring-purple-500', 'ring-offset-2', 'ring-offset-gray-900');
-      }, 1500);
-    }
-  }, [viewMode]);
-
-  const handleKanbanBoardDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    if (!kanbanContainerRef.current || (!draggedForKanban && !draggedCandidate)) return;
-
-    const board = kanbanContainerRef.current;
-    const rect = board.getBoundingClientRect();
-    const mouseX = e.clientX;
-
-    const distanceFromLeft = mouseX - rect.left;
-    const distanceFromRight = rect.right - mouseX;
-
-    let newDirection = 0;
-    if (distanceFromLeft < AUTO_SCROLL_THRESHOLD) {
-      newDirection = -1 * (1 - Math.max(0, distanceFromLeft) / AUTO_SCROLL_THRESHOLD);
-    } else if (distanceFromRight < AUTO_SCROLL_THRESHOLD) {
-      newDirection = 1 * (1 - Math.max(0, distanceFromRight) / AUTO_SCROLL_THRESHOLD);
-    }
-
-    if (newDirection !== 0) {
-      scrollDirectionRef.current = newDirection;
-      startAutoScroll();
-    } else {
-      stopAutoScroll();
-    }
-  }, [draggedForKanban, draggedCandidate, startAutoScroll, stopAutoScroll]);
-
-  useEffect(() => {
-    return () => {
-      if (autoScrollIntervalRef.current !== null) {
-        cancelAnimationFrame(autoScrollIntervalRef.current);
-      }
-    };
-  }, []);
-
+  // Handlers
   const handleCandidateClick = (candidate: Entity) => {
     navigate(`/contacts/${candidate.id}`);
-  };
-
-  const handleToggleSelect = (candidateId: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSelectedCandidates(prev => {
-      const next = new Set(prev);
-      if (next.has(candidateId)) {
-        next.delete(candidateId);
-      } else {
-        next.add(candidateId);
-      }
-      return next;
-    });
-  };
-
-  const handleSelectAll = () => {
-    if (selectedCandidates.size === filteredCandidates.length) {
-      setSelectedCandidates(new Set());
-    } else {
-      setSelectedCandidates(new Set(filteredCandidates.map(c => c.id)));
-    }
-  };
-
-  const handleBulkAddToVacancy = async (vacancyId: number) => {
-    if (selectedCandidates.size === 0) return;
-
-    let success = 0;
-    const errors: string[] = [];
-
-    for (const candidateId of selectedCandidates) {
-      try {
-        await addCandidateToVacancy(vacancyId, candidateId, 'database_bulk');
-        success++;
-      } catch (error: any) {
-        errors.push(getErrorDetail(error, 'Неизвестная ошибка'));
-      }
-    }
-
-    if (success > 0) {
-      toast.success(`Добавлено ${success} кандидатов`);
-      onRefreshVacancies();
-    }
-    if (errors.length > 0) {
-      // Show first unique error (most likely all errors are the same reason)
-      const uniqueErrors = [...new Set(errors)];
-      if (uniqueErrors.length === 1) {
-        toast.error(uniqueErrors[0]);
-      } else {
-        toast.error(`Не удалось добавить ${errors.length}: ${uniqueErrors[0]}`);
-      }
-    }
-
-    setSelectedCandidates(new Set());
-    setShowAddToVacancyModal(false);
   };
 
   const handleParsedResume = (data: ParsedResume) => {
@@ -436,689 +161,234 @@ export default function CandidatesDatabase({ vacancies, onRefreshVacancies }: Ca
     toast.success('Данные распознаны');
   };
 
-  const handleBulkImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.name.toLowerCase().endsWith('.zip')) {
-      toast.error('Пожалуйста, выберите ZIP файл');
-      return;
-    }
-
-    setBulkImportLoading(true);
-    setBulkImportResult(null);
-    setShowBulkImportModal(true);
-
-    try {
-      const result = await bulkImportResumes(file);
-      setBulkImportResult(result);
-
-      if (result.successful > 0) {
-        toast.success(`Импортировано ${result.successful} кандидатов`);
-        fetchEntities();
-      }
-      if (result.failed > 0) {
-        toast.error(`Не удалось импортировать ${result.failed} файлов`);
-      }
-    } catch (err) {
-      logger.error('Bulk import error:', err);
-      toast.error('Ошибка массового импорта');
-      setBulkImportResult({
-        success: false,
-        total_files: 0,
-        successful: 0,
-        failed: 0,
-        results: [],
-        error: err instanceof Error ? err.message : 'Неизвестная ошибка'
-      });
-    } finally {
-      setBulkImportLoading(false);
-      if (bulkImportInputRef.current) {
-        bulkImportInputRef.current.value = '';
-      }
-    }
-  };
-
-  const closeBulkImportModal = () => {
-    setShowBulkImportModal(false);
-    setBulkImportResult(null);
-  };
-
-  const handleGenerateAllProfiles = async () => {
-    setProfileGenerating(true);
-    try {
-      const result = await generateAllProfiles(false);
-      if (result.profiles_generated > 0) {
-        toast.success(`Сгенерировано ${result.profiles_generated} профилей из ${result.total_candidates}`);
-        fetchEntities(); // Обновить список для отображения профилей
-      } else if (result.profiles_skipped > 0) {
-        toast.success(`Все ${result.profiles_skipped} профилей уже сгенерированы`);
-      } else if (result.total_candidates === 0) {
-        toast('Нет кандидатов для генерации профилей', { icon: 'ℹ️' });
-      }
-      if (result.errors && result.errors > 0) {
-        toast.error(`Ошибки при генерации: ${result.errors} кандидатов`);
-      }
-    } catch (err: any) {
-      logger.error('Profile generation error:', err);
-      // Handle rate limit error specifically
-      if (err?.response?.status === 429) {
-        toast.error('Подождите минуту перед повторной генерацией');
-      } else {
-        toast.error('Ошибка генерации профилей');
-      }
-    } finally {
-      setProfileGenerating(false);
-    }
-  };
-
   const getAvatarInitials = (name: string) => {
-    return name
-      .split(' ')
-      .slice(0, 2)
-      .map(n => n[0])
-      .join('')
-      .toUpperCase();
+    return name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
   };
 
-
-  // Quick status change handler for cards/list view (with double-click protection)
-  const handleQuickStatusChange = async (candidate: Entity, newStatus: EntityStatus) => {
-    // Prevent double-click
-    if (movingCandidates.has(candidate.id)) return;
-
-    setMovingCandidates(prev => new Set(prev).add(candidate.id));
-    try {
-      await updateEntityStatus(candidate.id, newStatus);
-      toast.success(`${candidate.name} → ${STATUS_LABELS[newStatus]}`);
-      fetchEntities();
-    } catch (error) {
-      logger.error('Status change failed:', error);
-      toast.error('Не удалось изменить статус');
-    } finally {
-      setMovingCandidates(prev => {
-        const next = new Set(prev);
-        next.delete(candidate.id);
-        return next;
-      });
-    }
-  };
-
-  // Check if a candidate is currently being moved
-  const isMovingCandidate = (id: number) => movingCandidates.has(id);
-
-  // Render candidate card
-  const renderCandidateCard = (candidate: Entity, isListView: boolean = false) => {
-    const currentStageIndex = ENTITY_PIPELINE_STAGES.indexOf(candidate.status as EntityStatus);
-    const nextStage = currentStageIndex >= 0 && currentStageIndex < ENTITY_PIPELINE_STAGES.length - 1
-      ? ENTITY_PIPELINE_STAGES[currentStageIndex + 1]
-      : null;
-
-    if (isListView) {
-      return (
-        <div
-          key={candidate.id}
-          draggable
-          onDragStart={() => handleDragStart(candidate)}
-          onDragEnd={handleDragEnd}
-          onClick={() => handleCandidateClick(candidate)}
-          className={clsx(
-            'flex items-center p-3 border border-white/[0.06] bg-white/[0.02] rounded-lg cursor-pointer group',
-            draggedCandidate?.id === candidate.id && 'opacity-50',
-            selectedCandidates.has(candidate.id) ? 'border-purple-500 bg-purple-500/10' : 'border-white/10'
-          )}
-        >
-          {/* Checkbox - fixed 24px */}
-          <button
-            onClick={(e) => handleToggleSelect(candidate.id, e)}
-            className={clsx(
-              'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition-colors mr-3',
-              selectedCandidates.has(candidate.id) ? 'bg-purple-600 border-purple-600' : 'border-white/20 hover:border-white/40'
-            )}
-          >
-            {selectedCandidates.has(candidate.id) && <Check className="w-3 h-3" />}
-          </button>
-          {/* Avatar - fixed 40px */}
-          <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-sm flex-shrink-0 mr-3">
-            {getAvatarInitials(candidate.name || 'UK')}
-          </div>
-          {/* Name - fixed 140px */}
-          <div className="w-[140px] min-w-[140px] flex-shrink-0 mr-3">
-            <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
-            {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
-          </div>
-          {/* Status badge - fixed 100px */}
-          <div className="w-[100px] min-w-[100px] flex-shrink-0 mr-3">
-            <span className={clsx('px-2 py-1 text-xs rounded-full whitespace-nowrap inline-block', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/[0.04]')}>
-              {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
-            </span>
-          </div>
-          {/* Next stage button - fixed 110px */}
-          <div className="w-[110px] min-w-[110px] flex-shrink-0 mr-3">
-            {nextStage && (
-              <button
-                disabled={isMovingCandidate(candidate.id)}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleQuickStatusChange(candidate, nextStage);
-                }}
-                title={`Перевести в: ${STATUS_LABELS[nextStage]}`}
-                className={clsx(
-                  "opacity-0 group-hover:opacity-100 px-2 py-1 text-xs border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-full max-w-full truncate",
-                  isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
-                )}
-              >
-                {isMovingCandidate(candidate.id) ? '...' : `→ ${STATUS_LABELS[nextStage]}`}
-              </button>
-            )}
-          </div>
-          {/* Vacancies count - fixed 50px */}
-          <div className="w-[50px] min-w-[50px] flex-shrink-0 text-xs mr-3 hidden sm:block">
-            {candidate.vacancies_count && candidate.vacancies_count > 0 ? (
-              <span className="text-emerald-400 flex items-center gap-1">
-                <Briefcase className="w-3 h-3" />
-                {candidate.vacancies_count}
-              </span>
-            ) : (
-              <span className="text-white/30">--</span>
-            )}
-          </div>
-          {/* Owner - fixed 100px */}
-          <div className="w-[100px] min-w-[100px] flex-shrink-0 text-xs text-white/40 mr-3 hidden sm:block">
-            {candidate.owner_name ? (
-              <div className="flex items-center gap-1 truncate">
-                <User className="w-3 h-3 flex-shrink-0" />
-                <span className="truncate">{candidate.owner_name}</span>
-              </div>
-            ) : (
-              <span>—</span>
-            )}
-          </div>
-          {/* Date - fixed 70px */}
-          <div className="w-[70px] min-w-[70px] flex-shrink-0 flex items-center gap-1 text-xs text-white/40 whitespace-nowrap">
-            <Clock className="w-3 h-3" />
-            {formatDate(candidate.created_at, 'short')}
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div
-        key={candidate.id}
-        draggable
-        onDragStart={() => handleDragStart(candidate)}
-        onDragEnd={handleDragEnd}
-        onClick={() => handleCandidateClick(candidate)}
-        className={clsx(
-          'p-3 border border-white/[0.06] bg-white/[0.02] rounded-xl cursor-pointer group overflow-hidden',
-          selectedCandidates.has(candidate.id) ? 'border-purple-500 bg-purple-500/10' : 'border-white/10',
-          draggedCandidate?.id === candidate.id && 'opacity-50'
-        )}
-      >
-        <div className="flex items-start gap-2 mb-2">
-          <button
-            onClick={(e) => handleToggleSelect(candidate.id, e)}
-            className={clsx(
-              'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition-colors mt-0.5',
-              selectedCandidates.has(candidate.id) ? 'bg-purple-600 border-purple-600' : 'border-white/20 hover:border-white/40'
-            )}
-          >
-            {selectedCandidates.has(candidate.id) && <Check className="w-3 h-3" />}
-          </button>
-          <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-sm flex-shrink-0">
-            {getAvatarInitials(candidate.name || 'UK')}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
-            {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
-          </div>
-        </div>
-        <div className="flex items-center justify-between gap-2 mb-2 ml-7">
-          <span className={clsx('px-2 py-0.5 text-xs rounded-full whitespace-nowrap flex-shrink-0', STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/[0.04]')}>
-            {STATUS_LABELS[candidate.status as EntityStatus] || candidate.status}
-          </span>
-          {nextStage && (
-            <button
-              disabled={isMovingCandidate(candidate.id)}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleQuickStatusChange(candidate, nextStage);
-              }}
-              title={`Перевести в: ${STATUS_LABELS[nextStage]}`}
-              className={clsx(
-                "opacity-0 group-hover:opacity-100 px-2 py-0.5 text-xs border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-full truncate max-w-[100px]",
-                isMovingCandidate(candidate.id) && "!opacity-50 cursor-not-allowed"
-              )}
-            >
-              {isMovingCandidate(candidate.id) ? '...' : `→ ${STATUS_LABELS[nextStage]}`}
-            </button>
-          )}
-        </div>
-        <div className="space-y-1 text-xs text-white/60 ml-7">
-          {candidate.email && (
-            <div className="flex items-center gap-1.5 truncate">
-              <Mail className="w-3 h-3 flex-shrink-0" />
-              <span className="truncate">{candidate.email}</span>
-            </div>
-          )}
-          {candidate.phone && (
-            <div className="flex items-center gap-1.5 truncate">
-              <Phone className="w-3 h-3 flex-shrink-0" />
-              <span className="truncate">{candidate.phone}</span>
-            </div>
-          )}
-          {(candidate.expected_salary_min || candidate.expected_salary_max) && (
-            <div className="flex items-center gap-1.5 text-green-400">
-              <span>
-                {formatSalary(candidate.expected_salary_min, candidate.expected_salary_max, candidate.expected_salary_currency)}
-              </span>
-            </div>
-          )}
-        </div>
-        {candidate.tags && candidate.tags.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1 ml-7">
-            {candidate.tags.slice(0, 3).map(tag => (
-              <span key={tag} className="px-1.5 py-0.5 bg-white/[0.04] rounded text-xs text-white/60 truncate max-w-[80px]">{tag}</span>
-            ))}
-            {candidate.tags.length > 3 && <span className="text-xs text-white/40">+{candidate.tags.length - 3}</span>}
-          </div>
-        )}
-        <div className="mt-2 ml-7 text-xs">
-          {candidate.vacancies_count && candidate.vacancies_count > 0 ? (
-            <div className="flex items-center gap-1.5 text-emerald-400">
-              <Briefcase className="w-3 h-3" />
-              <span className="truncate">
-                {candidate.vacancy_names?.slice(0, 2).join(', ')}
-                {candidate.vacancies_count > 2 && ` +${candidate.vacancies_count - 2}`}
-              </span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 text-white/30">
-              <Briefcase className="w-3 h-3" />
-              <span>Без вакансии</span>
-            </div>
-          )}
-        </div>
-        <div className="mt-2 pt-2 border-t border-white/5 flex items-center text-xs text-white/40 ml-7">
-          {/* Date - fixed width */}
-          <div className="flex items-center gap-1 whitespace-nowrap flex-shrink-0">
-            <Clock className="w-3 h-3" />
-            {formatDate(candidate.created_at, 'short')}
-          </div>
-          {/* Owner - takes remaining space but truncates */}
-          {candidate.owner_name && (
-            <div className="flex items-center gap-1 ml-3 min-w-0 flex-1 overflow-hidden">
-              <User className="w-3 h-3 flex-shrink-0" />
-              <span className="truncate">{candidate.owner_name}</span>
-            </div>
-          )}
-          {/* External link button - always visible, fixed position */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleCandidateClick(candidate);
-            }}
-            className="p-1 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-2"
-          >
-            <ExternalLink className="w-3 h-3" />
-          </button>
-        </div>
-      </div>
-    );
+  const getSourceLabel = (candidate: Entity): string => {
+    const url = getExtraDataString(candidate, 'source_url');
+    if (url.includes('hh.ru')) return 'HH';
+    if (url.includes('habr')) return 'Habr';
+    if (url.includes('linkedin')) return 'LinkedIn';
+    if (url) return 'Ссылка';
+    return 'Вручную';
   };
 
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="p-4 border-b border-white/10 space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <h2 className="text-xl font-bold flex items-center gap-2 whitespace-nowrap">
-            <Users className="w-6 h-6 text-purple-400" />
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <Users className="w-5 h-5 text-purple-400" />
             База кандидатов
-            <span className="text-sm font-medium text-white/40 bg-white/[0.04] px-2 py-0.5 rounded-full ml-1">
+            <span className="text-sm font-medium text-white/40 bg-white/[0.04] px-2 py-0.5 rounded-full">
               {isLoading ? '...' : (typeCounts?.candidate || entities.length)}
             </span>
           </h2>
-          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-            {selectedCandidates.size > 0 && (
-              <button
-                onClick={() => setShowAddToVacancyModal(true)}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white rounded-xl text-sm font-medium transition-colors whitespace-nowrap"
-              >
-                <Briefcase className="w-4 h-4" />
-                <span>В вакансию</span>
-                <span className="opacity-60">({selectedCandidates.size})</span>
-              </button>
-            )}
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setShowParserModal(true)}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-xl text-sm font-medium active:scale-95 whitespace-nowrap"
+              className="flex items-center gap-1.5 px-3 py-2 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-lg text-sm transition-colors"
             >
               <Upload className="w-4 h-4 text-purple-400" />
-              <span>Резюме</span>
-            </button>
-            <label className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-xl text-sm font-medium cursor-pointer active:scale-95 whitespace-nowrap">
-              <FolderArchive className="w-4 h-4 text-blue-400" />
-              <span>ZIP</span>
-              <input ref={bulkImportInputRef} type="file" accept=".zip" onChange={handleBulkImport} className="hidden" />
-            </label>
-            <button
-              onClick={handleGenerateAllProfiles}
-              disabled={profileGenerating}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-sm font-medium transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Сгенерировать AI-профили для всех кандидатов"
-            >
-              {profileGenerating ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4" />
-              )}
-              <span>AI-профили</span>
+              <span className="hidden sm:inline">Резюме</span>
             </button>
             <button
-              onClick={() => {
-                setPrefillData(null);
-                setShowCreateModal(true);
-              }}
-              className="group flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white rounded-xl text-sm font-medium transition-colors whitespace-nowrap"
+              onClick={() => { setPrefillData(null); setShowCreateModal(true); }}
+              className="flex items-center gap-1.5 px-3 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition-colors"
             >
-              <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform" />
-              <span>Добавить</span>
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Добавить</span>
             </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
+        {/* Search + Filter toggle */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+            <input
+              type="text"
+              placeholder="Поиск по имени, email, телефону, Telegram..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2">
+                <X className="w-4 h-4 text-white/40 hover:text-white" />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={clsx(
+              'flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition-colors',
+              showFilters
+                ? 'border-purple-500/50 bg-purple-500/10 text-purple-300'
+                : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06]'
+            )}
+          >
+            <Filter className="w-4 h-4" />
+            <span className="hidden sm:inline">Фильтры</span>
+          </button>
+        </div>
+
+        {/* Filters panel */}
+        {showFilters && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <select
+              value={selectedSource}
+              onChange={(e) => setSelectedSource(e.target.value)}
+              className="px-3 py-1.5 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+            >
+              {sources.map(s => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+            {(selectedSource !== 'all') && (
+              <button
+                onClick={() => { setSelectedSource('all'); }}
+                className="text-xs text-white/40 hover:text-white"
+              >
+                Сбросить фильтры
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Status tabs */}
+        <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
           <button
             onClick={() => setSelectedStage('all')}
             className={clsx(
-              'px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all active:scale-95',
-              selectedStage === 'all' ? 'bg-accent-500 text-white' : 'border border-white/[0.06] bg-white/[0.02] text-white/50 hover:text-white'
+              'px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors',
+              selectedStage === 'all'
+                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                : 'text-white/50 hover:text-white/70 hover:bg-white/[0.04]'
             )}
           >
-            Все ({stageCounts.all})
+            Все ({stageCounts.all || 0})
           </button>
           {ENTITY_PIPELINE_STAGES.map(stage => (
             <button
               key={stage}
-              onClick={() => {
-                setSelectedStage(stage);
-                // Scroll to stage column in kanban view
-                if (viewMode === 'kanban') {
-                  setTimeout(() => scrollToStageColumn(stage), 100);
-                }
-              }}
+              onClick={() => setSelectedStage(stage)}
               className={clsx(
-                'px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all active:scale-95',
-                selectedStage === stage ? `${STATUS_COLORS[stage]}` : 'border border-white/[0.06] bg-white/[0.02] text-white/50 hover:text-white'
+                'px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors',
+                selectedStage === stage
+                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                  : 'text-white/50 hover:text-white/70 hover:bg-white/[0.04]'
               )}
             >
               {STATUS_LABELS[stage]} ({stageCounts[stage] || 0})
             </button>
           ))}
         </div>
+      </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="relative flex-1 group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 group-focus-within:text-purple-400 transition-colors" />
-            <input
-              type="text"
-              placeholder="Поиск по имени, email, навыкам..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-white/[0.04] rounded-xl focus:outline-none focus:border-purple-500/50 text-sm transition-all"
-            />
+      {/* Candidate list */}
+      <div className="flex-1 overflow-y-auto">
+        {isLoading ? (
+          <div className="p-4 space-y-3">
+            {[...Array(6)].map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full rounded-lg" />
+            ))}
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={clsx(
-                'flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium transition-all active:scale-95 whitespace-nowrap',
-                selectedTags.length > 0 ? 'bg-purple-600/20 border-purple-500/50 text-purple-300' : 'border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06]'
-              )}
-            >
-              <Filter className="w-4 h-4" />
-              <span>Навыки</span>
-              {selectedTags.length > 0 && <span className="px-1.5 py-0.5 bg-purple-600 text-white text-[10px] rounded-full">{selectedTags.length}</span>}
-            </button>
-            {filteredCandidates.length > 0 && viewMode !== 'kanban' && (
-              <button
-                onClick={handleSelectAll}
-                className={clsx(
-                  'flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium transition-all active:scale-95 whitespace-nowrap',
-                  selectedCandidates.size === filteredCandidates.length ? 'bg-purple-600/20 border-purple-500/50 text-purple-300' : 'border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06]'
-                )}
-              >
-                <Check className="w-4 h-4" />
-                <span>{selectedCandidates.size === filteredCandidates.length ? 'Снять' : 'Выбрать'}</span>
+        ) : filteredCandidates.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 text-white/40">
+            <Users className="w-12 h-12 mb-3 opacity-30" />
+            <p className="text-sm">
+              {searchQuery ? 'Ничего не найдено' : 'Нет кандидатов'}
+            </p>
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="mt-2 text-xs text-purple-400 hover:text-purple-300">
+                Сбросить поиск
               </button>
             )}
-            <div className="flex items-center bg-white/[0.04] rounded-xl p-1">
-              <button
-                onClick={() => setViewMode('cards')}
-                className={clsx('p-2 rounded-lg transition-colors', viewMode === 'cards' ? 'bg-accent-500 text-white' : 'text-white/40 hover:text-white')}
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={clsx('p-2 rounded-lg transition-colors', viewMode === 'list' ? 'bg-accent-500 text-white' : 'text-white/40 hover:text-white')}
-              >
-                <List className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('kanban')}
-                className={clsx('p-2 rounded-lg transition-colors', viewMode === 'kanban' ? 'bg-accent-500 text-white' : 'text-white/40 hover:text-white')}
-              >
-                <Kanban className="w-4 h-4" />
-              </button>
-            </div>
           </div>
-        </div>
+        ) : (
+          <div className="divide-y divide-white/[0.04]">
+            {filteredCandidates.map(candidate => (
+              <div
+                key={candidate.id}
+                onClick={() => handleCandidateClick(candidate)}
+                className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] cursor-pointer group transition-colors"
+              >
+                {/* Avatar */}
+                <div className="w-9 h-9 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-xs flex-shrink-0">
+                  {getAvatarInitials(candidate.name || '??')}
+                </div>
 
-        {showFilters && allTags.length > 0 && (
-            <div className="p-3 bg-white/[0.04] rounded-lg overflow-hidden">
-              <div className="flex flex-wrap gap-2">
-                {allTags.slice(0, 30).map(tag => (
-                  <button
-                    key={tag}
-                    onClick={() => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
-                    className={clsx('px-2.5 py-1 text-xs rounded-full transition-colors', selectedTags.includes(tag) ? 'bg-purple-600/20 border border-purple-500/50 text-purple-300' : 'border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] text-white/70')}
-                  >
-                    {tag}
-                  </button>
-                ))}
-                {allTags.length > 30 && <span className="px-2.5 py-1 text-xs text-white/40">+{allTags.length - 30} ещё</span>}
-              </div>
-            </div>
-          )}
-      </div>
+                {/* Name + position */}
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
+                  {candidate.position && (
+                    <p className="text-xs text-white/40 truncate">{candidate.position}</p>
+                  )}
+                </div>
 
-      {/* Content */}
-      <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 overflow-auto p-4">
-          {isLoading && entities.length === 0 ? (
-            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {[1, 2, 3, 4, 5, 6].map(i => <Skeleton key={i} variant="rounded" className="h-48 w-full" />)}
-            </div>
-          ) : filteredCandidates.length === 0 && viewMode !== 'kanban' ? (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-center text-white/40">
-                <UserCheck className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-medium mb-2">{searchQuery || selectedTags.length > 0 ? 'Ничего не найдено' : 'Нет кандидатов'}</h3>
-                <p className="text-sm mb-4">{searchQuery || selectedTags.length > 0 ? 'Попробуйте изменить параметры поиска' : 'Добавьте первого кандидата в базу'}</p>
-                <button onClick={() => { setPrefillData(null); setShowCreateModal(true); }} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors">Добавить кандидата</button>
-              </div>
-            </div>
-          ) : viewMode === 'kanban' ? (
-            <div ref={kanbanContainerRef} className="h-full overflow-x-auto" onDragOver={handleKanbanBoardDragOver} onDragLeave={stopAutoScroll}>
-              <div className="flex gap-3 h-full min-w-max p-1">
-                {ENTITY_PIPELINE_STAGES.map(stage => (
-                  <div
-                    key={stage}
-                    ref={(el) => { stageColumnRefs.current[stage] = el; }}
-                    onDragOver={(e) => handleStageDragOver(e, stage)}
-                    onDragLeave={handleStageDragLeave}
-                    onDrop={(e) => handleStageDrop(e, stage)}
-                    className={clsx(
-                      'w-72 flex-shrink-0 flex flex-col bg-white/[0.04] rounded-xl transition-all',
-                      dropTargetStage === stage
-                        ? 'border-purple-500 bg-purple-500/10 scale-[1.02]'
-                        : 'border-white/10'
-                    )}
-                  >
-                    {/* Column Header */}
-                    <div className={clsx('p-3 border-b border-white/10 rounded-t-xl', STATUS_COLORS[stage])}>
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-medium text-sm">{STATUS_LABELS[stage]}</h3>
-                        <span className="text-xs px-2 py-0.5 bg-black/20 rounded-full">{candidatesByStatus[stage]?.length || 0}</span>
-                      </div>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                      {candidatesByStatus[stage]?.map(candidate => (
-                        <div key={candidate.id} draggable onDragStart={() => handleKanbanDragStart(candidate)} onDragEnd={() => handleKanbanDragEnd()} onClick={() => handleCandidateClick(candidate)} className={clsx('p-3 border border-white/[0.06] bg-white/[0.02] rounded-lg cursor-grab active:cursor-grabbing group', draggedForKanban?.id === candidate.id && 'opacity-50 scale-95')}>
-                          <div className="flex items-start gap-2">
-                            <GripVertical className="w-4 h-4 text-white/20 flex-shrink-0 mt-1" />
-                            <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-xs flex-shrink-0">{getAvatarInitials(candidate.name || 'UK')}</div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-2">
-                                <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
-                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <ExternalLink className="w-3.5 h-3.5 text-white/40" />
-                                </div>
-                              </div>
-                              {candidate.position && <p className="text-xs text-white/50 truncate">{candidate.position}</p>}
-                            </div>
-                          </div>
-                          {candidate.tags && candidate.tags.length > 0 && (
-                            <div className="mt-2 ml-6 flex flex-wrap gap-1">
-                              {candidate.tags.slice(0, 2).map(tag => <span key={tag} className="px-1.5 py-0.5 bg-white/[0.04] rounded text-xs text-white/50 truncate max-w-[70px]">{tag}</span>)}
-                              {candidate.tags.length > 2 && <span className="text-xs text-white/30">+{candidate.tags.length - 2}</span>}
-                            </div>
-                          )}
-                          <div className="mt-1.5 ml-6 flex items-center justify-between text-xs text-white/40">
-                            <div className="flex items-center gap-2">
-                              <Clock className="w-3 h-3" />
-                              {formatDate(candidate.created_at, 'short')}
-                            </div>
-                            {(() => {
-                              const currentIndex = ENTITY_PIPELINE_STAGES.indexOf(stage);
-                              const nStage = currentIndex >= 0 && currentIndex < ENTITY_PIPELINE_STAGES.length - 1 ? ENTITY_PIPELINE_STAGES[currentIndex + 1] : null;
-                              return nStage && (
-                                <button
-                                  disabled={isMovingCandidate(candidate.id)}
-                                  onClick={(e) => { e.stopPropagation(); handleQuickStatusChange(candidate, nStage); }}
-                                  className={clsx("hover:text-white transition-colors", isMovingCandidate(candidate.id) && "opacity-50 cursor-not-allowed")}
-                                >
-                                  {isMovingCandidate(candidate.id) ? '...' : '→'}
-                                </button>
-                              );
-                            })()}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                {/* Status */}
+                <span className={clsx(
+                  'px-2 py-0.5 text-xs rounded-full whitespace-nowrap flex-shrink-0',
+                  STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/[0.04] text-white/50'
+                )}>
+                  {STATUS_LABELS[candidate.status as EntityStatus] || 'Новый'}
+                </span>
+
+                {/* Source */}
+                <span className="text-xs text-white/40 w-16 text-center flex-shrink-0 hidden sm:block">
+                  {getSourceLabel(candidate)}
+                </span>
+
+                {/* Date added */}
+                <div className="flex items-center gap-1 text-xs text-white/30 flex-shrink-0 w-20 hidden sm:flex">
+                  <Clock className="w-3 h-3" />
+                  {formatDate(candidate.created_at, 'short')}
+                </div>
+
+                {/* Owner */}
+                {candidate.owner_name && (
+                  <div className="flex items-center gap-1 text-xs text-white/30 flex-shrink-0 w-24 truncate hidden md:flex">
+                    <User className="w-3 h-3 flex-shrink-0" />
+                    <span className="truncate">{candidate.owner_name}</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          ) : viewMode === 'list' ? (
-            <div className="space-y-2 min-w-[600px]">
-              {filteredCandidates.map(candidate => renderCandidateCard(candidate, true))}
-            </div>
-          ) : (
-            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filteredCandidates.map(candidate => renderCandidateCard(candidate, false))}
-            </div>
-          )}
-        </div>
+                )}
 
-        {/* Vacancy drop panel removed - was taking too much space */}
+                {/* Arrow */}
+                <ExternalLink className="w-3.5 h-3.5 text-white/20 group-hover:text-white/50 transition-colors flex-shrink-0" />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {showCreateModal && <ContactForm prefillData={prefillData || undefined} defaultType="candidate" onClose={() => { setShowCreateModal(false); setPrefillData(null); }} onSuccess={() => { setShowCreateModal(false); setPrefillData(null); fetchEntities(); toast.success('Кандидат создан'); }} />}
-      {showParserModal && <ParserModal type="resume" onClose={() => setShowParserModal(false)} onParsed={(data) => handleParsedResume(data as ParsedResume)} onJobStarted={() => { setShowParserModal(false); }} />}
-      {showAddToVacancyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowAddToVacancyModal(false)}>
-          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-xl border border-white/[0.06] bg-dark-800 shadow-xl overflow-hidden">
-            <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
-              <h3 className="font-semibold">Выберите вакансию</h3>
-              <button onClick={() => setShowAddToVacancyModal(false)} className="p-1 rounded hover:bg-white/[0.06]"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-4 space-y-2 max-h-96 overflow-y-auto">
-              {openVacancies.length === 0 ? <div className="text-center py-8 text-white/40"><Briefcase className="w-10 h-10 mx-auto mb-2 opacity-50" /><p className="text-sm">Нет открытых вакансий</p></div> : openVacancies.map(vacancy => (
-                <button key={vacancy.id} onClick={() => handleBulkAddToVacancy(vacancy.id)} className="w-full p-3 text-left border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] rounded-lg">
-                  <h4 className="font-medium">{vacancy.title}</h4>
-                  <p className="text-xs text-white/40 mt-1">{vacancy.department_name && `${vacancy.department_name} • `}{vacancy.applications_count} кандидатов</p>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+      {/* Create candidate modal */}
+      {showCreateModal && (
+        <ContactForm
+          defaultType="candidate"
+          prefillData={prefillData || undefined}
+          onClose={() => {
+            setShowCreateModal(false);
+            setPrefillData(null);
+          }}
+          onSuccess={() => {
+            setShowCreateModal(false);
+            setPrefillData(null);
+            fetchEntities();
+            toast.success('Кандидат добавлен');
+          }}
+        />
       )}
-      {showBulkImportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={closeBulkImportModal}>
-          <div onClick={(e) => e.stopPropagation()} className="rounded-2xl border border-white/[0.06] bg-dark-800 w-full max-w-lg overflow-hidden">
-              <div className="p-4 border-b border-white/10 flex items-center justify-between">
-                <h3 className="font-semibold flex items-center gap-2"><FolderArchive className="w-5 h-5 text-purple-400" />Массовый импорт резюме</h3>
-                {!bulkImportLoading && <button onClick={closeBulkImportModal} className="p-1 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded"><X className="w-5 h-5" /></button>}
-              </div>
-              <div className="p-6">
-                {bulkImportLoading ? (
-                  <div className="flex flex-col items-center justify-center py-8">
-                    <Loader2 className="w-12 h-12 text-purple-400 animate-spin mb-4" />
-                    <p className="text-white/60">Обрабатываем резюме...</p>
-                    <p className="text-sm text-white/40 mt-1">Это может занять несколько минут</p>
-                  </div>
-                ) : bulkImportResult ? (
-                  <div className="space-y-4">
-                    <div className="mt-4 p-4 bg-white/[0.04] rounded-lg space-y-3">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-lg text-center">
-                          <div className="text-2xl font-bold text-emerald-400">{bulkImportResult.successful}</div>
-                          <div className="text-xs text-white/40">Успешно</div>
-                        </div>
-                        <div className="bg-rose-500/10 border border-rose-500/20 p-3 rounded-lg text-center">
-                          <div className="text-2xl font-bold text-rose-400">{bulkImportResult.failed}</div>
-                          <div className="text-xs text-white/40">Ошибок</div>
-                        </div>
-                      </div>
-                      {bulkImportResult.results && bulkImportResult.results.filter(r => !r.success).length > 0 && (
-                        <div className="space-y-1.5 max-h-40 overflow-auto pr-2">
-                          {bulkImportResult.results.filter(r => !r.success).map((result, idx) => (
-                            <div key={idx} className="flex items-start gap-2 text-xs text-rose-400 bg-rose-400/5 p-2 rounded">
-                              <XCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium truncate">{result.filename}</p>
-                                <p className="opacity-70">{result.error || 'Ошибка импорта'}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {bulkImportResult.results && bulkImportResult.results.length > 0 && (
-                      <div className="max-h-64 overflow-y-auto space-y-2">
-                        {bulkImportResult.results.map((result, index) => (
-                          <div key={index} className={clsx('flex items-center gap-3 p-3 rounded-lg border', result.success ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-rose-500/10 border-rose-500/30')}>
-                            {result.success ? <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" /> : <XCircle className="w-5 h-5 text-red-400 flex-shrink-0" />}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">{result.entity_name || result.filename}</p>
-                              {result.error && <p className="text-xs text-red-400 truncate">{result.error}</p>}
-                            </div>
-                            {result.entity_id && <button onClick={() => { closeBulkImportModal(); navigate(`/contacts/${result.entity_id}`); }} className="text-xs text-blue-400 hover:text-blue-300">Открыть</button>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {bulkImportResult.error && <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-center"><p className="text-sm text-rose-400">{bulkImportResult.error}</p></div>}
-                    <button onClick={closeBulkImportModal} className="w-full py-3 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-xl text-sm font-medium active:scale-95">Закрыть</button>
-                  </div>
-                ) : null}
-              </div>
-          </div>
-        </div>
+
+      {/* Parser modal */}
+      {showParserModal && (
+        <ParserModal
+          type="resume"
+          onClose={() => setShowParserModal(false)}
+          onParsed={(data) => handleParsedResume(data as ParsedResume)}
+        />
       )}
     </div>
   );

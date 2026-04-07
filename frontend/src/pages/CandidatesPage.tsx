@@ -3,21 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import {
   Plus,
   UserCheck,
-  Phone,
-  Mail,
   Upload,
   Edit,
-  Trash2,
   Briefcase,
   LayoutGrid,
   List,
   Users,
   ChevronRight,
   ChevronLeft,
-  Star,
   Clock,
   ExternalLink,
-  GripVertical,
   Eye,
   Sparkles,
   User
@@ -259,10 +254,6 @@ export default function CandidatesPage() {
     navigate(`/contacts/${app.entity_id}`);
   };
 
-  const handleDeleteApplication = (app: VacancyApplication) => {
-    setConfirmDialog({ open: true, candidate: null, application: app, type: 'delete_application' });
-  };
-
   const handleConfirmDelete = async () => {
     setActionLoading(true);
     try {
@@ -423,109 +414,51 @@ export default function CandidatesPage() {
     );
   };
 
-  // Render kanban card
+  // Render kanban card — ТЗ: name, source, date added, last action
   const renderKanbanCard = (app: VacancyApplication) => (
     <div
       key={app.id}
       draggable
       onDragStart={() => handleDragStart(app)}
+      onClick={() => handleApplicationClick(app)}
       className={clsx(
         'p-3 bg-white/[0.04] rounded-lg cursor-grab active:cursor-grabbing',
-        'hover:border-white/20 transition-colors group',
+        'hover:bg-white/[0.06] transition-colors group',
         draggedApp?.id === app.id
-          ? 'border border-accent-500/50 opacity-50'
+          ? 'border border-cyan-500/50 opacity-50'
           : 'border border-transparent'
       )}
     >
-      {/* Card Header */}
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <GripVertical className="w-4 h-4 text-white/30 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <h4 className="font-medium truncate text-sm">{app.entity_name}</h4>
-            {app.entity_position && (
-              <p className="text-xs text-white/40 truncate">{app.entity_position}</p>
-            )}
-          </div>
+      {/* Name */}
+      <div className="flex items-center gap-2 mb-2">
+        <div className="flex-1 min-w-0">
+          <h4 className="font-medium truncate text-sm">{app.entity_name}</h4>
         </div>
-        {/* Action buttons */}
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleApplicationClick(app);
-            }}
-            className="p-1 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded"
-            title="Детали"
-          >
-            <Edit className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleViewCandidateProfile(app);
-            }}
-            className="p-1 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded"
-            title="Профиль"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDeleteApplication(app);
-            }}
-            className="p-1 hover:bg-red-500/20 text-red-400 rounded"
-            title="Удалить"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        {/* Quick action — open profile */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleViewCandidateProfile(app);
+          }}
+          className="p-1 hover:bg-white/[0.06] rounded opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Открыть карточку"
+        >
+          <ExternalLink className="w-3.5 h-3.5 text-white/40" />
+        </button>
       </div>
 
-      {/* Contact Info */}
-      <div className="space-y-1 text-xs text-white/60 ml-6">
-        {app.entity_email && (
-          <div className="flex items-center gap-1.5 truncate">
-            <Mail className="w-3 h-3 flex-shrink-0" />
-            <span className="truncate">{app.entity_email}</span>
-          </div>
+      {/* Source + Date */}
+      <div className="flex items-center justify-between text-xs text-white/40">
+        {app.source ? (
+          <span className="px-1.5 py-0.5 bg-white/[0.04] rounded">{app.source}</span>
+        ) : (
+          <span className="text-white/20">—</span>
         )}
-        {app.entity_phone && (
-          <div className="flex items-center gap-1.5">
-            <Phone className="w-3 h-3 flex-shrink-0" />
-            <span>{app.entity_phone}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5 ml-6">
-        <div className="flex items-center gap-2">
-          {app.rating && (
-            <div className="flex items-center gap-0.5 text-yellow-400">
-              <Star className="w-3 h-3 fill-current" />
-              <span className="text-xs">{app.rating}</span>
-            </div>
-          )}
-          {app.source && (
-            <span className="text-xs px-1.5 py-0.5 bg-white/[0.04] rounded text-white/40">
-              {app.source}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1 text-xs text-white/40">
+        <div className="flex items-center gap-1">
           <Clock className="w-3 h-3" />
           {formatDate(app.applied_at, 'short')}
         </div>
       </div>
-
-      {/* Notes Preview */}
-      {app.notes && (
-        <div className="mt-2 p-2 bg-white/[0.04] rounded text-xs text-white/60 line-clamp-2 ml-6">
-          {app.notes}
-        </div>
-      )}
     </div>
   );
 
