@@ -362,7 +362,7 @@ export default function AllCandidatesPage() {
                       isDragging={draggedCard?.id === card.id}
                       onDragStart={() => handleDragStart(card, column.status)}
                       onDragEnd={handleDragEnd}
-                      onClick={() => navigate(`/candidates/${card.id}`)}
+                      onClick={() => navigate(`/contacts/${card.id}`)}
                     />
                   ))}
                   {column.cards.length === 0 && (
