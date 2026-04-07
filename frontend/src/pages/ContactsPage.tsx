@@ -335,44 +335,29 @@ export default function ContactsPage() {
     return icons[type] || User;
   };
 
-  // Calculate layout mode based on AI panel state
-  // When AI panel is open on xl+ screens, we show all 3 columns: sidebar (240px) + content (1fr) + AI (480px)
-  const layoutMode = currentEntity
+  // Layout mode: when entityId in URL — full-width detail (no sidebar)
+  const layoutMode = entityId
     ? showAIPanel
-      ? 'ai-open' // sidebar (narrow) + content + AI panel
-      : 'detail' // sidebar + content
-    : 'list'; // full width list
+      ? 'ai-open'
+      : 'detail'
+    : 'list';
 
   return (
     <div
       className={clsx(
         'h-full overflow-hidden',
-        // Use CSS Grid for precise layout control with 3 columns when AI panel is open
-        // On xl (1280px): 220px sidebar + flex content + 420px AI = ~1280px fits perfectly
-        // On 2xl (1536px): 260px sidebar + flex content + 480px AI = more breathing room
-        layoutMode === 'ai-open' && 'xl:grid xl:grid-cols-[220px_minmax(300px,1fr)_420px] 2xl:grid-cols-[260px_minmax(400px,1fr)_480px]',
+        layoutMode === 'ai-open' && 'xl:grid xl:grid-cols-[minmax(300px,1fr)_420px] 2xl:grid-cols-[minmax(400px,1fr)_480px]',
         layoutMode === 'detail' && 'flex',
         layoutMode === 'list' && 'flex'
       )}
     >
-      {/* Sidebar - Entity List */}
-      {/* When AI panel is open on xl+, sidebar becomes narrow via grid column */}
-      {/* On lg screens without AI: fixed 280px. On xl+ with AI: grid controls width */}
+      {/* Sidebar - Entity List (only in list mode, hidden when viewing entity detail) */}
+      {!entityId && (
       <div
-        className={clsx(
-          'border-r border-white/[0.06] flex flex-col bg-white/[0.02] transition-all duration-200 overflow-hidden',
-          layoutMode === 'ai-open'
-            ? 'hidden xl:flex xl:w-full min-w-0' // Hidden on <xl, grid controls width on xl+
-            : layoutMode === 'detail'
-              ? 'w-64 lg:w-72 xl:w-80 flex-shrink-0' // Responsive sidebar widths
-              : 'w-full max-w-2xl'
-        )}
+        className="border-r border-white/[0.06] flex flex-col bg-white/[0.02] w-full max-w-2xl overflow-hidden"
       >
         {/* Header */}
-        <div className={clsx(
-          'border-b border-white/[0.06]',
-          layoutMode === 'ai-open' ? 'p-3' : 'p-4'
-        )}>
+        <div className="border-b border-white/[0.06] p-4">
           <div className="flex items-center justify-between mb-3">
             <OnboardingTooltip
               id="contacts-page"
@@ -749,23 +734,14 @@ export default function ContactsPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* Main Content - Entity Detail */}
       <AnimatePresence mode="wait">
         {currentEntity && (
-          <motion.div
+          <div
             key={currentEntity.id}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            className={clsx(
-              'flex flex-col overflow-hidden min-w-0',
-              // When AI panel is open, this is the middle grid column (minmax controls width)
-              // When AI panel is closed, use flex-1 to fill available space
-              layoutMode === 'ai-open'
-                ? 'w-full' // Grid controls width via minmax
-                : 'flex-1' // Flex layout fills remaining space
-            )}
+            className="flex flex-col overflow-hidden min-w-0 flex-1"
           >
             {/* Header */}
             <div className="p-3 xl:p-4 border-b border-white/[0.06] flex items-center gap-2 sm:gap-3 overflow-hidden">
@@ -858,7 +834,7 @@ export default function ContactsPage() {
             <div className="flex-1 overflow-y-auto">
               <ContactDetail entity={currentEntity} showAIInOverview={false} />
             </div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
