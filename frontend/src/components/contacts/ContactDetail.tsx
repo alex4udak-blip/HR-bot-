@@ -1,345 +1,199 @@
-import { useState, useEffect, useReducer } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Phone,
-  Mail,
-  MessageSquare,
-  Building2,
   Briefcase,
   ArrowRightLeft,
-  FileText,
-  ChevronRight,
   User,
-  Link2,
-  X,
-  Loader2,
-  AtSign,
-  Download,
-  Target,
   Plus,
-  FolderOpen,
-  AlertTriangle,
-  Brain,
-  RefreshCw,
-  Flame
+  FileText,
+  Loader2,
+  Clock,
+  ChevronRight,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
-import type { EntityWithRelations, Chat, CallRecording, VacancyApplication } from '@/types';
-import { EmptyChats, EmptyCalls } from '@/components/ui';
-import { STATUS_LABELS, STATUS_COLORS, CALL_STATUS_LABELS, CALL_STATUS_COLORS } from '@/types';
+import type { EntityWithRelations } from '@/types';
+import { STATUS_LABELS, STATUS_COLORS } from '@/types';
+import type { EntityStatus } from '@/types';
 import { formatSalary, formatDate } from '@/utils';
-import EntityAI from './EntityAI';
-import CriteriaPanelEntity from './CriteriaPanelEntity';
 import AddToVacancyModal from '../entities/AddToVacancyModal';
 import EntityVacancies from '../entities/EntityVacancies';
-import RecommendedVacancies from '../entities/RecommendedVacancies';
 import EntityFiles from '../entities/EntityFiles';
-import RedFlagsPanel from '../entities/RedFlagsPanel';
-import SimilarCandidates from '../entities/SimilarCandidates';
 import DuplicateWarning from '../entities/DuplicateWarning';
-import InteractionTimeline from '../entities/InteractionTimeline';
-import PrometheusDetailedReview, { prefetchPrometheusReview } from './PrometheusDetailedReview';
+import RedFlagsPanel from '../entities/RedFlagsPanel';
+import PrometheusDetailedReview from '../contacts/PrometheusDetailedReview';
+import { EmptyCalls } from '@/components/ui';
 import * as api from '@/services/api';
-import type { AIProfile } from '@/services/api';
 import { useEntityStore } from '@/stores/entityStore';
 import { useAuthStore } from '@/stores/authStore';
 import { FeatureGatedButton } from '@/components/auth/FeatureGate';
-import { useCanAccessFeature } from '@/hooks/useCanAccessFeature';
-import type { Entity } from '@/types';
 
 interface ContactDetailProps {
   entity: EntityWithRelations;
   showAIInOverview?: boolean;
 }
 
-// Reducer for modal states (logically related - one modal at a time)
-type ModalType = 'none' | 'linkChat' | 'linkCall' | 'addToVacancy';
+// Statuses for the "Сменить этап" dropdown
+const CANDIDATE_STATUSES: EntityStatus[] = [
+  'new', 'screening', 'practice', 'tech_practice', 'is_interview', 'offer', 'hired', 'rejected', 'withdrawn'
+];
 
-interface ModalState {
-  activeModal: ModalType;
-  unlinkedChats: Chat[];
-  unlinkedCalls: CallRecording[];
-}
-
-type ModalAction =
-  | { type: 'OPEN_MODAL'; modal: ModalType }
-  | { type: 'CLOSE_MODAL' }
-  | { type: 'SET_UNLINKED_CHATS'; chats: Chat[] }
-  | { type: 'SET_UNLINKED_CALLS'; calls: CallRecording[] };
-
-function modalReducer(state: ModalState, action: ModalAction): ModalState {
-  switch (action.type) {
-    case 'OPEN_MODAL':
-      return { ...state, activeModal: action.modal };
-    case 'CLOSE_MODAL':
-      return { ...state, activeModal: 'none' };
-    case 'SET_UNLINKED_CHATS':
-      return { ...state, unlinkedChats: action.chats };
-    case 'SET_UNLINKED_CALLS':
-      return { ...state, unlinkedCalls: action.calls };
-    default:
-      return state;
-  }
-}
-
-const initialModalState: ModalState = {
-  activeModal: 'none',
-  unlinkedChats: [],
-  unlinkedCalls: []
-};
-
-// Reducer for async operations (loading states that are mutually exclusive)
-interface AsyncState {
-  loadingData: boolean;
-  loadingLink: boolean;
-  downloadingReport: string | null;
-}
-
-type AsyncAction =
-  | { type: 'START_LOADING_DATA' }
-  | { type: 'STOP_LOADING_DATA' }
-  | { type: 'START_LOADING_LINK' }
-  | { type: 'STOP_LOADING_LINK' }
-  | { type: 'START_DOWNLOAD'; format: string }
-  | { type: 'STOP_DOWNLOAD' };
-
-function asyncReducer(state: AsyncState, action: AsyncAction): AsyncState {
-  switch (action.type) {
-    case 'START_LOADING_DATA':
-      return { ...state, loadingData: true };
-    case 'STOP_LOADING_DATA':
-      return { ...state, loadingData: false };
-    case 'START_LOADING_LINK':
-      return { ...state, loadingLink: true };
-    case 'STOP_LOADING_LINK':
-      return { ...state, loadingLink: false };
-    case 'START_DOWNLOAD':
-      return { ...state, downloadingReport: action.format };
-    case 'STOP_DOWNLOAD':
-      return { ...state, downloadingReport: null };
-    default:
-      return state;
-  }
-}
-
-const initialAsyncState: AsyncState = {
-  loadingData: false,
-  loadingLink: false,
-  downloadingReport: null
-};
-
-export default function ContactDetail({ entity, showAIInOverview = true }: ContactDetailProps) {
+export default function ContactDetail({ entity }: ContactDetailProps) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'overview' | 'chats' | 'calls' | 'vacancies' | 'files' | 'history' | 'criteria' | 'reports' | 'red-flags' | 'prometheus'>('overview');
+  const [activeTab, setActiveTab] = useState<'calls' | 'vacancies' | 'files' | 'red_flags' | 'prometheus' | 'history'>(entity.type === 'candidate' ? 'vacancies' : 'files');
 
-  // Reducers for related states
-  const [modalState, dispatchModal] = useReducer(modalReducer, initialModalState);
-  const [asyncState, dispatchAsync] = useReducer(asyncReducer, initialAsyncState);
+  // State
+  const [vacanciesKey, setVacanciesKey] = useState(0);
+  const [showAddToVacancyModal, setShowAddToVacancyModal] = useState(false);
+  const [resumeImages, setResumeImages] = useState<{ id: number; url: string; name: string }[]>([]);
+  const [resumeImagesLoading, setResumeImagesLoading] = useState(false);
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
-  // Independent states that don't need reducer
-  const [vacanciesKey, setVacanciesKey] = useState(0); // Key to force reload vacancies
-  const [entityApplications, setEntityApplications] = useState<VacancyApplication[]>([]);
-
-  // AI Profile state
-  const [aiProfile, setAiProfile] = useState<AIProfile | null>(null);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [generatingProfile, setGeneratingProfile] = useState(false);
 
   const { fetchEntity } = useEntityStore();
-  const { canAccessFeature } = useCanAccessFeature();
-  const { isAdmin, canEditResource, canAccessDepartment } = useAuthStore();
+  const { isAdmin } = useAuthStore();
 
-  // Check if user can edit this entity (considering is_transferred and department access)
-  const canEditEntity = (e: EntityWithRelations | Entity): boolean => {
-    // Transferred entities are read-only
-    if (e.is_transferred) return false;
-
-    // Check department access
-    if (!canAccessDepartment(e.department_id)) return false;
-
-    // Check resource-level permissions
-    return canEditResource({
-      owner_id: e.owner_id,
-      is_mine: e.is_mine,
-      access_level: e.access_level
-    });
-  };
-
-  // Load unlinked chats when modal opens
+  // Load photo from entity files
   useEffect(() => {
-    if (modalState.activeModal === 'linkChat') {
-      loadUnlinkedChats();
-    }
-  }, [modalState.activeModal]);
-
-  // Load unlinked calls when modal opens
-  useEffect(() => {
-    if (modalState.activeModal === 'linkCall') {
-      loadUnlinkedCalls();
-    }
-  }, [modalState.activeModal]);
-
-  // Load entity applications for timeline
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadApplications = async () => {
-      try {
-        const data = await api.getEntityVacancies(entity.id);
-        if (isMounted) {
-          setEntityApplications(data);
-        }
-      } catch (e) {
-        if (isMounted) {
-          console.error('Failed to load entity applications:', e);
-        }
+    let mounted = true;
+    const loadPhoto = async () => {
+      const files = entity.files || [];
+      const photoFile = files.find(f =>
+        (f.file_type === 'portfolio' || f.file_type === 'other') &&
+        f.mime_type?.startsWith('image/') &&
+        !f.file_name.toLowerCase().includes('резюме') &&
+        !f.file_name.toLowerCase().includes('resume') &&
+        !f.file_name.toLowerCase().includes('cv')
+      ) || files.find(f =>
+        f.mime_type?.startsWith('image/') &&
+        (f.file_name.toLowerCase().includes('фото') ||
+         f.file_name.toLowerCase().includes('photo') ||
+         f.file_name.toLowerCase().includes('avatar'))
+      );
+      if (photoFile) {
+        try {
+          const blob = await api.downloadEntityFile(entity.id, photoFile.id);
+          if (mounted) setPhotoUrl(URL.createObjectURL(blob));
+        } catch { /* ignore */ }
       }
     };
-    loadApplications();
-
+    loadPhoto();
     return () => {
-      isMounted = false;
+      mounted = false;
+      if (photoUrl) URL.revokeObjectURL(photoUrl);
     };
-  }, [entity.id, vacanciesKey]);
+  }, [entity.id, entity.files]);
 
-  // Prefetch Prometheus review in background (auto-generate for platform contacts)
+  // Load resume files as inline images
   useEffect(() => {
-    prefetchPrometheusReview(entity.id);
-  }, [entity.id]);
+    let mounted = true;
+    setResumeImagesLoading(true);
 
-  // Load AI profile for candidates
-  useEffect(() => {
-    if (entity.type !== 'candidate') return;
-
-    let isMounted = true;
-
-    const loadProfile = async () => {
-      setProfileLoading(true);
+    const loadResumeImages = async () => {
       try {
-        const data = await api.getEntityProfile(entity.id);
-        if (isMounted && data?.profile) {
-          setAiProfile(data.profile);
+        const files = entity.files || [];
+        const resumeFiles = files.filter(f =>
+          f.file_type === 'resume' &&
+          (f.mime_type?.startsWith('image/') ||
+           f.file_name.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i))
+        );
+
+        const images = await Promise.all(
+          resumeFiles.map(async (file) => {
+            try {
+              const blob = await api.downloadEntityFile(entity.id, file.id);
+              return { id: file.id, url: URL.createObjectURL(blob), name: file.file_name };
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        if (mounted) {
+          setResumeImages(images.filter(Boolean) as { id: number; url: string; name: string }[]);
         }
       } catch {
-        // Profile not found is expected for new candidates
-        if (isMounted) {
-          setAiProfile(null);
-        }
+        // ignore
       } finally {
-        if (isMounted) {
-          setProfileLoading(false);
-        }
+        if (mounted) setResumeImagesLoading(false);
       }
     };
-    loadProfile();
 
+    loadResumeImages();
     return () => {
-      isMounted = false;
+      mounted = false;
+      resumeImages.forEach(img => URL.revokeObjectURL(img.url));
     };
-  }, [entity.id, entity.type]);
+  }, [entity.id, entity.files]);
 
-  // Handler for generating/updating AI profile
-  const handleGenerateProfile = async () => {
-    setGeneratingProfile(true);
-    try {
-      const data = await api.generateEntityProfile(entity.id);
-      if (data?.profile) {
-        setAiProfile(data.profile);
-        toast.success('AI профиль обновлён');
-      }
-    } catch {
-      toast.error('Не удалось создать профиль');
-    } finally {
-      setGeneratingProfile(false);
-    }
+  // Helpers
+  const getExtraData = (key: string): string => {
+    const val = entity.extra_data?.[key];
+    return typeof val === 'string' ? val : '';
   };
 
-  const loadUnlinkedChats = async () => {
-    dispatchAsync({ type: 'START_LOADING_DATA' });
-    try {
-      const allChats = await api.getChats();
-      dispatchModal({ type: 'SET_UNLINKED_CHATS', chats: allChats.filter(c => !c.entity_id) });
-    } catch (e) {
-      console.error('Failed to load chats:', e);
-    } finally {
-      dispatchAsync({ type: 'STOP_LOADING_DATA' });
-    }
+  const getExtraDataNumber = (key: string): number | null => {
+    const val = entity.extra_data?.[key];
+    return typeof val === 'number' ? val : null;
   };
 
-  const loadUnlinkedCalls = async () => {
-    dispatchAsync({ type: 'START_LOADING_DATA' });
+  // Status change handler
+  const handleStatusChange = async (newStatus: EntityStatus) => {
+    setStatusUpdating(true);
     try {
-      const allCalls = await api.getCalls({});
-      dispatchModal({ type: 'SET_UNLINKED_CALLS', calls: allCalls.filter(c => !c.entity_id) });
-    } catch (e) {
-      console.error('Failed to load calls:', e);
-    } finally {
-      dispatchAsync({ type: 'STOP_LOADING_DATA' });
-    }
-  };
-
-  const handleLinkChat = async (chatId: number) => {
-    dispatchAsync({ type: 'START_LOADING_LINK' });
-    try {
-      await api.linkChatToEntity(entity.id, chatId);
-      toast.success('Чат привязан к контакту');
-      dispatchModal({ type: 'CLOSE_MODAL' });
+      await api.updateEntityStatus(entity.id, newStatus);
+      toast.success(`Статус изменён: ${STATUS_LABELS[newStatus]}`);
       fetchEntity(entity.id);
-    } catch (e) {
-      toast.error('Не удалось привязать чат');
-    } finally {
-      dispatchAsync({ type: 'STOP_LOADING_LINK' });
-    }
-  };
-
-  const handleLinkCall = async (callId: number) => {
-    dispatchAsync({ type: 'START_LOADING_LINK' });
-    try {
-      await api.linkCallToEntity(callId, entity.id);
-      toast.success('Звонок привязан к контакту');
-      dispatchModal({ type: 'CLOSE_MODAL' });
-      fetchEntity(entity.id);
-    } catch (e) {
-      toast.error('Не удалось привязать звонок');
-    } finally {
-      dispatchAsync({ type: 'STOP_LOADING_LINK' });
-    }
-  };
-
-
-  const formatDuration = (seconds?: number) => {
-    if (!seconds) return '—';
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const handleDownloadReport = async (format: string) => {
-    if (asyncState.downloadingReport) return;
-
-    dispatchAsync({ type: 'START_DOWNLOAD', format });
-    try {
-      const blob = await api.downloadEntityReport(entity.id, 'full_analysis', format);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `report_${entity.name}_${entity.id}.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success('Отчёт скачан');
     } catch {
-      toast.error('Ошибка скачивания');
+      toast.error('Ошибка смены статуса');
     } finally {
-      dispatchAsync({ type: 'STOP_DOWNLOAD' });
+      setStatusUpdating(false);
+      setShowStatusDropdown(false);
     }
   };
+
+
+  // Extra data fields
+  const summary = getExtraData('summary');
+  const location = getExtraData('location');
+  const experienceYears = getExtraDataNumber('experience_years');
+  const dateOfBirth = getExtraData('date_of_birth');
+  const gender = getExtraData('gender');
+  const character = getExtraData('character');
+
+  const salary = (entity.expected_salary_min || entity.expected_salary_max)
+    ? formatSalary(entity.expected_salary_min, entity.expected_salary_max, entity.expected_salary_currency)
+    : null;
+
+  // Info rows: label → value
+  const infoRows: { label: string; value: string; href?: string }[] = [];
+  if (salary) infoRows.push({ label: 'Зарплата', value: salary });
+  const phones = entity.phones?.length ? entity.phones : entity.phone ? [entity.phone] : [];
+  if (phones.length) infoRows.push({ label: 'Телефон', value: phones.join(', '), href: `tel:${phones[0]}` });
+  const emails = entity.emails?.length ? entity.emails : entity.email ? [entity.email] : [];
+  if (emails.length) infoRows.push({ label: 'Эл. почта', value: emails.join(', '), href: `mailto:${emails[0]}` });
+  if (entity.telegram_usernames?.length) infoRows.push({ label: 'Telegram', value: entity.telegram_usernames.map(u => `@${u}`).join(', '), href: `https://t.me/${entity.telegram_usernames[0]}` });
+  if (location) infoRows.push({ label: 'Город', value: location });
+  if (entity.company) infoRows.push({ label: 'Компания', value: entity.company });
+  if (entity.position) infoRows.push({ label: 'Должность', value: entity.position });
+  if (dateOfBirth) infoRows.push({ label: 'Дата рождения', value: dateOfBirth });
+  if (gender) infoRows.push({ label: 'Пол', value: gender });
+  if (experienceYears) infoRows.push({ label: 'Опыт', value: `${experienceYears} лет` });
+
+  const tabs = [
+    { id: 'calls', label: `Звонки (${entity.calls?.length || 0})` },
+    ...(entity.type === 'candidate' ? [{ id: 'vacancies', label: 'Вакансии' }] : []),
+    { id: 'files', label: 'Файлы' },
+    { id: 'red_flags', label: 'Red Flags' },
+    { id: 'prometheus', label: 'Prometheus' },
+    { id: 'history', label: 'История' },
+  ];
 
   return (
-    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 overflow-x-hidden">
-      {/* Duplicate Warning - only for candidates */}
+    <div className="p-4 sm:p-6 space-y-5 overflow-x-hidden">
+      {/* Duplicate Warning */}
       {entity.type === 'candidate' && (
         <DuplicateWarning
           entityId={entity.id}
@@ -350,802 +204,292 @@ export default function ContactDetail({ entity, showAIInOverview = true }: Conta
         />
       )}
 
-      {/* Contact Info Card */}
-      <div className="rounded-xl p-4 sm:p-6 border border-white/[0.06] bg-white/[0.02]">
-        <div className="flex items-start gap-4 sm:gap-5">
-          {/* Large avatar with initials */}
-          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-cyan-500/40 to-purple-500/40 flex items-center justify-center flex-shrink-0 border border-white/[0.08]">
-            <span className="text-xl sm:text-2xl font-bold text-white/90 select-none">
-              {entity.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-            </span>
-          </div>
-
+      {/* ===== TOP CARD: Name + Photo + Info rows ===== */}
+      <div className="rounded-xl p-5 sm:p-6 border border-white/[0.06] bg-white/[0.02]">
+        <div className="flex gap-5">
+          {/* Left: name + info */}
           <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-1">
-              <h2 className="text-lg sm:text-2xl font-bold text-white truncate max-w-full">{entity.name}</h2>
-              <span className={clsx('text-[11px] sm:text-xs px-2 py-0.5 rounded-md font-medium flex-shrink-0 whitespace-nowrap', STATUS_COLORS[entity.status])}>
-                {STATUS_LABELS[entity.status]}
-              </span>
+            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-4 leading-tight">{entity.name}</h2>
+
+            {/* Info rows — simple label: value */}
+            <div className="space-y-2">
+              {infoRows.map(row => (
+                <div key={row.label} className="flex items-baseline gap-3 text-sm">
+                  <span className="text-white/40 w-28 flex-shrink-0">{row.label}</span>
+                  {row.href ? (
+                    <a href={row.href} target="_blank" rel="noopener noreferrer" className="text-white hover:text-cyan-400 transition-colors truncate">
+                      {row.value}
+                    </a>
+                  ) : (
+                    <span className="text-white truncate">{row.value}</span>
+                  )}
+                </div>
+              ))}
             </div>
-
-            {/* Position & Company subtitle */}
-            {(entity.position || entity.company) && (
-              <p className="text-sm text-white/50 mb-3 truncate">
-                {entity.position}{entity.position && entity.company && ' \u00B7 '}{entity.company}
-              </p>
-            )}
-
-            {/* Transferred entity indicator */}
-            {entity.is_transferred && (
-              <div className="mb-3 p-2.5 bg-orange-500/10 border border-orange-500/20 rounded-lg">
-                <div className="flex items-center gap-2 text-orange-300">
-                  <ArrowRightLeft size={14} className="flex-shrink-0" />
-                  <span className="text-xs font-medium">
-                    Передан → {entity.transferred_to_name || 'другому пользователю'}
-                  </span>
-                </div>
-                {entity.transferred_at && (
-                  <p className="text-[11px] text-orange-300/60 mt-1 ml-5">
-                    {formatDate(entity.transferred_at, 'long')} &middot; Только для просмотра
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Compact inline contact info */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-white/50 mt-2">
-              {/* Telegram */}
-              {entity.telegram_usernames && entity.telegram_usernames.length > 0 && (
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <AtSign size={14} className="flex-shrink-0 text-white/30" />
-                  {entity.telegram_usernames.map((username, idx) => (
-                    <a
-                      key={idx}
-                      href={`https://t.me/${username}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:text-cyan-400 transition-colors"
-                    >
-                      @{username}{idx < entity.telegram_usernames!.length - 1 && ','}
-                    </a>
-                  ))}
-                </div>
-              )}
-              {/* Email */}
-              {(entity.emails && entity.emails.length > 0) ? (
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <Mail size={14} className="flex-shrink-0 text-white/30" />
-                  {entity.emails.map((email, idx) => (
-                    <a
-                      key={idx}
-                      href={`mailto:${email}`}
-                      className="hover:text-cyan-400 transition-colors truncate"
-                    >
-                      {email}{idx < entity.emails!.length - 1 && ','}
-                    </a>
-                  ))}
-                </div>
-              ) : entity.email && (
-                <a
-                  href={`mailto:${entity.email}`}
-                  className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors min-w-0"
-                >
-                  <Mail size={14} className="flex-shrink-0 text-white/30" />
-                  <span className="truncate">{entity.email}</span>
-                </a>
-              )}
-              {/* Phone */}
-              {(entity.phones && entity.phones.length > 0) ? (
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <Phone size={14} className="flex-shrink-0 text-white/30" />
-                  {entity.phones.map((phone, idx) => (
-                    <a
-                      key={idx}
-                      href={`tel:${phone}`}
-                      className="hover:text-cyan-400 transition-colors"
-                    >
-                      {phone}{idx < entity.phones!.length - 1 && ','}
-                    </a>
-                  ))}
-                </div>
-              ) : entity.phone && (
-                <a
-                  href={`tel:${entity.phone}`}
-                  className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors min-w-0"
-                >
-                  <Phone size={14} className="flex-shrink-0 text-white/30" />
-                  <span className="truncate">{entity.phone}</span>
-                </a>
-              )}
-              {/* Salary */}
-              {entity.type === 'candidate' && (entity.expected_salary_min || entity.expected_salary_max) && (
-                <span className="text-green-400 text-sm">
-                  {formatSalary(entity.expected_salary_min, entity.expected_salary_max, entity.expected_salary_currency)}
-                </span>
-              )}
-            </div>
-
-            {/* Owner & Department - subtle row */}
-            {(entity.owner_name || entity.department_name) && (
-              <div className="flex items-center gap-3 text-[11px] text-white/30 mt-2">
-                {entity.owner_name && (
-                  <span className="flex items-center gap-1">
-                    <User size={12} />
-                    {entity.owner_name}
-                  </span>
-                )}
-                {entity.department_name && (
-                  <span className="flex items-center gap-1">
-                    <Building2 size={12} />
-                    {entity.department_name}
-                  </span>
-                )}
-              </div>
-            )}
 
             {/* Tags */}
-            {entity.tags && entity.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-3">
-                {entity.tags.map((tag, idx) => (
-                  <span
-                    key={idx}
-                    className="px-2 py-0.5 bg-white/[0.06] text-white/50 text-[11px] rounded-md"
-                  >
-                    {tag}
-                  </span>
+            {entity.tags?.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-4">
+                {entity.tags.map((tag, i) => (
+                  <span key={i} className="px-2 py-0.5 bg-white/[0.06] text-white/50 text-[11px] rounded-md">{tag}</span>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* Right: photo */}
+          <div className="flex-shrink-0">
+            {photoUrl ? (
+              <img
+                src={photoUrl}
+                alt={entity.name}
+                className="w-24 h-28 sm:w-28 sm:h-32 rounded-xl object-cover border border-white/[0.08]"
+              />
+            ) : (
+              <div className="w-24 h-28 sm:w-28 sm:h-32 rounded-xl bg-gradient-to-br from-cyan-500/30 to-purple-500/30 border border-white/[0.08] flex items-center justify-center">
+                <span className="text-2xl sm:text-3xl font-bold text-white/60 select-none">
+                  {entity.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                </span>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-0 border-b border-white/[0.06] overflow-x-auto">
-        {[
-          { id: 'overview', label: 'Обзор' },
-          { id: 'chats', label: `Чаты (${entity.chats?.length || 0})`, shortLabel: `Чаты` },
-          { id: 'calls', label: `Звонки (${entity.calls?.length || 0})`, shortLabel: `Звонки` },
-          { id: 'vacancies', label: 'Вакансии', icon: Briefcase, onlyForCandidates: true },
-          { id: 'files', label: 'Файлы', icon: FolderOpen },
-          { id: 'criteria', label: 'Критерии', icon: Target },
-          { id: 'reports', label: 'Отчёты', icon: Download },
-          { id: 'red-flags', label: 'Red Flags', icon: AlertTriangle, onlyForCandidates: true },
-          { id: 'prometheus', label: 'Prometheus', icon: Flame },
-          { id: 'history', label: 'История' }
-        ]
-        .filter((tab) => {
-          if ('onlyForCandidates' in tab && tab.onlyForCandidates) {
-            return entity.type === 'candidate';
-          }
-          return true;
-        })
-        .map((tab) => {
-          const Icon = 'icon' in tab ? tab.icon : null;
-          const shortLabel = 'shortLabel' in tab ? tab.shortLabel : tab.label;
-          return (
+      {/* ===== STATUS BLOCK with "Сменить этап" ===== */}
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+        <div className="px-5 py-4 flex items-center justify-between">
+          <div>
+            <span className={clsx(
+              'text-lg font-semibold px-3 py-1 rounded-lg inline-block',
+              STATUS_COLORS[entity.status]
+            )}>
+              {STATUS_LABELS[entity.status]}
+            </span>
+            {entity.department_name && (
+              <p className="text-sm text-white/40 mt-1.5">{entity.department_name}</p>
+            )}
+          </div>
+
+          {/* Сменить этап */}
+          <div className="relative">
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as typeof activeTab)}
-              className={clsx(
-                'px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-1.5 border-b-2 -mb-px',
-                activeTab === tab.id
-                  ? 'border-cyan-400 text-cyan-400'
-                  : 'border-transparent text-white/40 hover:text-white/70'
-              )}
+              onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+              disabled={statusUpdating}
+              className="px-4 py-2 bg-green-500 hover:bg-green-400 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
             >
-              {Icon && <Icon size={14} className="flex-shrink-0" />}
-              <span className={clsx(Icon && 'hidden sm:inline', 'sm:hidden')}>{shortLabel}</span>
-              <span className="hidden sm:inline">{tab.label}</span>
+              {statusUpdating ? 'Сохранение...' : 'Сменить этап'}
             </button>
-          );
-        })}
+            {showStatusDropdown && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowStatusDropdown(false)} />
+                <div className="absolute right-0 top-full mt-1 z-50 w-48 bg-gray-900 border border-white/10 rounded-xl shadow-xl overflow-hidden">
+                  {CANDIDATE_STATUSES.map(st => (
+                    <button
+                      key={st}
+                      onClick={() => handleStatusChange(st)}
+                      className={clsx(
+                        'w-full text-left px-4 py-2.5 text-sm hover:bg-white/[0.06] transition-colors',
+                        entity.status === st ? 'text-cyan-400 bg-white/[0.04]' : 'text-white/70'
+                      )}
+                    >
+                      {STATUS_LABELS[st]}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Transferred notice */}
+        {entity.is_transferred && (
+          <div className="px-5 pb-3">
+            <div className="p-2.5 bg-orange-500/10 border border-orange-500/20 rounded-lg text-xs text-orange-300 flex items-center gap-2">
+              <ArrowRightLeft size={14} />
+              Передан → {entity.transferred_to_name || 'другому пользователю'}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ===== DESCRIPTION / CHARACTER ===== */}
+      {(summary || character) && (
+        <div className="rounded-xl p-5 border border-white/[0.06] bg-white/[0.02] space-y-3">
+          {summary && (
+            <div>
+              <h3 className="text-sm font-medium text-white/50 mb-1">Описание</h3>
+              <p className="text-sm text-white/80 whitespace-pre-wrap leading-relaxed">{summary}</p>
+            </div>
+          )}
+          {character && (
+            <div>
+              <h3 className="text-sm font-medium text-white/50 mb-1">Характер</h3>
+              <p className="text-sm text-white/80 whitespace-pre-wrap leading-relaxed">{character}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===== RESUME SCREENSHOTS (CV inline) ===== */}
+      {entity.type === 'candidate' && (
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+          <div className="px-5 py-3 border-b border-white/[0.06] flex items-center justify-between">
+            <h3 className="text-sm font-medium text-white/60">Резюме</h3>
+          </div>
+          <div className="p-4">
+            {resumeImagesLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-white/30" />
+              </div>
+            ) : resumeImages.length > 0 ? (
+              <div className="space-y-4">
+                {resumeImages.map(img => (
+                  <div key={img.id} className="rounded-lg overflow-hidden border border-white/[0.06]">
+                    <img
+                      src={img.url}
+                      alt={img.name}
+                      className="w-full h-auto"
+                      loading="lazy"
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-white/30 text-sm">
+                <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p>Нет скриншотов резюме</p>
+                <p className="text-xs mt-1 text-white/20">Загрузите скриншот резюме (JPG, PNG) во вкладке «Файлы»</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== TABS ===== */}
+      <div className="flex gap-0 border-b border-white/[0.06] overflow-x-auto">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as typeof activeTab)}
+            className={clsx(
+              'px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap border-b-2 -mb-px',
+              activeTab === tab.id
+                ? 'border-cyan-400 text-cyan-400'
+                : 'border-transparent text-white/40 hover:text-white/70'
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* Tab Content */}
       <div className="space-y-4">
-        {activeTab === 'overview' && (
-          <>
-            {/* AI Assistant - only show if showAIInOverview is true */}
-            {showAIInOverview && <EntityAI entity={entity} />}
-
-            {/* AI Profile Status - only for candidates */}
-            {entity.type === 'candidate' && (
-              <div className="rounded-xl p-4 border border-white/[0.06] bg-white/[0.02] mt-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={clsx(
-                      "p-2 rounded-lg",
-                      profileLoading ? "bg-white/10" : aiProfile ? "bg-green-500/20" : "bg-yellow-500/20"
-                    )}>
-                      {profileLoading ? (
-                        <Loader2 size={18} className="text-white/50 animate-spin" />
-                      ) : (
-                        <Brain size={18} className={aiProfile ? "text-green-400" : "text-yellow-400"} />
-                      )}
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-medium text-white">AI Профиль</h4>
-                      {profileLoading ? (
-                        <p className="text-xs text-white/50">Загрузка...</p>
-                      ) : aiProfile ? (
-                        <p className="text-xs text-white/50">
-                          Обновлён {formatDate(aiProfile.generated_at, 'short')}
-                          {aiProfile.context_sources && (
-                            <span className="ml-1">
-                              {' '}&bull; {aiProfile.context_sources.files_count} файлов, {aiProfile.context_sources.chats_count} чатов, {aiProfile.context_sources.calls_count} звонков
-                            </span>
-                          )}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-yellow-400/80">Профиль не создан</p>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleGenerateProfile}
-                    disabled={generatingProfile || profileLoading}
-                    className={clsx(
-                      "flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors disabled:opacity-50",
-                      aiProfile
-                        ? "bg-white/10 text-white/80 hover:bg-white/20"
-                        : "bg-green-500/20 text-green-400 hover:bg-green-500/30"
-                    )}
-                  >
-                    {generatingProfile ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <RefreshCw size={14} />
-                    )}
-                    {aiProfile ? "Обновить" : "Создать"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <div className={clsx("grid grid-cols-1 2xl:grid-cols-2 gap-4 items-start", showAIInOverview && "mt-6")}>
-            {/* Recent Chats */}
-            <div className="rounded-xl p-4 h-fit border border-white/[0.06] bg-white/[0.02]">
-              <div className="flex items-center justify-between gap-2 mb-4">
-                <h3 className="text-base font-semibold text-white flex items-center gap-2 min-w-0">
-                  <MessageSquare size={18} className="text-cyan-400 flex-shrink-0" />
-                  <span className="truncate">Последние чаты</span>
-                </h3>
-                {canEditEntity(entity) && (
-                  <button
-                    onClick={() => dispatchModal({ type: 'OPEN_MODAL', modal: 'linkChat' })}
-                    className="flex items-center gap-1 px-2 py-1 text-xs bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors flex-shrink-0 whitespace-nowrap"
-                  >
-                    <Link2 size={12} />
-                    Привязать
-                  </button>
-                )}
-              </div>
-              {entity.chats && entity.chats.length > 0 ? (
-                <div className="space-y-2">
-                  {entity.chats.slice(0, 3).map((chat) => (
-                    <div
-                      key={chat.id}
-                      onClick={() => navigate(`/chats/${chat.id}`)}
-                      className="p-3 bg-white/[0.03] rounded-lg cursor-pointer hover:bg-white/[0.06] transition-colors flex items-center justify-between gap-2"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-white font-medium truncate">{chat.title}</p>
-                        <p className="text-xs text-white/40 truncate">{formatDate(chat.created_at, 'long')}</p>
-                      </div>
-                      <ChevronRight size={16} className="text-white/40 flex-shrink-0" />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <EmptyChats onLink={canEditEntity(entity) ? () => dispatchModal({ type: 'OPEN_MODAL', modal: 'linkChat' }) : undefined} />
-              )}
-            </div>
-
-            {/* Recent Calls */}
-            <div className="rounded-xl p-4 h-fit border border-white/[0.06] bg-white/[0.02]">
-              <div className="flex items-center justify-between gap-2 mb-4">
-                <h3 className="text-base font-semibold text-white flex items-center gap-2 min-w-0">
-                  <Phone size={18} className="text-green-400 flex-shrink-0" />
-                  <span className="truncate">Последние звонки</span>
-                </h3>
-                {canEditEntity(entity) && (
-                  <button
-                    onClick={() => dispatchModal({ type: 'OPEN_MODAL', modal: 'linkCall' })}
-                    className="flex items-center gap-1 px-2 py-1 text-xs bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors flex-shrink-0 whitespace-nowrap"
-                  >
-                    <Link2 size={12} />
-                    Привязать
-                  </button>
-                )}
-              </div>
-              {entity.calls && entity.calls.length > 0 ? (
-                <div className="space-y-2">
-                  {entity.calls.slice(0, 3).map((call) => (
-                    <div
-                      key={call.id}
-                      onClick={() => navigate(`/calls/${call.id}`)}
-                      className="p-3 bg-white/[0.03] rounded-lg cursor-pointer hover:bg-white/[0.06] transition-colors"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className={clsx('text-xs px-2 py-0.5 rounded-full', CALL_STATUS_COLORS[call.status])}>
-                          {CALL_STATUS_LABELS[call.status]}
-                        </span>
-                        <span className="text-xs text-white/40">
-                          {formatDuration(call.duration_seconds)}
-                        </span>
-                      </div>
-                      <p className="text-xs text-white/40">{formatDate(call.created_at, 'long')}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <EmptyCalls onLink={canEditEntity(entity) ? () => dispatchModal({ type: 'OPEN_MODAL', modal: 'linkCall' }) : undefined} />
-              )}
-            </div>
-
-            {/* Recommended Vacancies - for all candidates (filtered by user's accessible vacancies on backend) */}
-            {entity.type === 'candidate' && (
-              <div className="rounded-xl p-4 xl:col-span-2 h-fit border border-white/[0.06] bg-white/[0.02]">
-                <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-                  <Target size={18} className="text-purple-400" />
-                  Подходящие вакансии
-                </h3>
-                <RecommendedVacancies
-                  entityId={entity.id}
-                  entityName={entity.name}
-                  onApply={() => setVacanciesKey(prev => prev + 1)}
-                />
-              </div>
-            )}
-
-            {/* Similar Candidates - only for candidates */}
-            {entity.type === 'candidate' && (
-              <div className="rounded-xl p-4 xl:col-span-2 h-fit border border-white/[0.06] bg-white/[0.02]">
-                <SimilarCandidates
-                  entityId={entity.id}
-                  entityName={entity.name}
-                />
-              </div>
-            )}
-
-            {/* Transfer History */}
-            <div className="rounded-xl p-4 xl:col-span-2 h-fit border border-white/[0.06] bg-white/[0.02]">
-              <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-                <ArrowRightLeft size={18} className="text-purple-400" />
-                История передач
-              </h3>
-              {entity.transfers && entity.transfers.length > 0 ? (
-                <div className="space-y-2">
-                  {entity.transfers.slice(0, 5).map((transfer) => (
-                    <div key={transfer.id} className="p-3 bg-white/[0.03] rounded-lg">
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-white/60">{transfer.from_user_name || 'Неизвестно'}</span>
-                        <ArrowRightLeft size={14} className="text-white/40" />
-                        <span className="text-white">{transfer.to_user_name || 'Неизвестно'}</span>
-                      </div>
-                      {transfer.comment && (
-                        <p className="text-xs text-white/40 mt-1">{transfer.comment}</p>
-                      )}
-                      <p className="text-xs text-white/30 mt-1">{formatDate(transfer.created_at, 'long')}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-white/40 text-sm">Нет истории передач</p>
-              )}
-            </div>
-          </div>
-          </>
-        )}
-
-        {activeTab === 'chats' && (
-          <div className="space-y-2">
-            {entity.chats && entity.chats.length > 0 ? (
-              entity.chats.map((chat) => (
-                <div
-                  key={chat.id}
-                  onClick={() => navigate(`/chats/${chat.id}`)}
-                  className="p-4 bg-white/[0.03] rounded-xl cursor-pointer hover:bg-white/[0.06] transition-colors flex items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="p-2 bg-cyan-500/20 rounded-lg flex-shrink-0">
-                      <MessageSquare size={20} className="text-cyan-400" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-white font-medium truncate">{chat.title}</p>
-                      <p className="text-sm text-white/40 truncate">
-                        {chat.chat_type} &bull; {formatDate(chat.created_at, 'long')}
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight size={20} className="text-white/40 flex-shrink-0" />
-                </div>
-              ))
-            ) : (
-              <EmptyChats onLink={canEditEntity(entity) ? () => dispatchModal({ type: 'OPEN_MODAL', modal: 'linkChat' }) : undefined} />
-            )}
-          </div>
-        )}
-
         {activeTab === 'calls' && (
-          <div className="space-y-2">
-            {entity.calls && entity.calls.length > 0 ? (
-              entity.calls.map((call) => (
-                <div
-                  key={call.id}
-                  onClick={() => navigate(`/calls/${call.id}`)}
-                  className="p-4 bg-white/[0.03] rounded-xl cursor-pointer hover:bg-white/[0.06] transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <div className="p-2 bg-green-500/20 rounded-lg flex-shrink-0">
-                        <Phone size={20} className="text-green-400" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-white font-medium truncate">
-                          Звонок {call.source_type.toUpperCase()}
-                        </p>
-                        <p className="text-sm text-white/40 truncate">{formatDate(call.created_at, 'long')}</p>
-                      </div>
+          <div className="rounded-xl p-4 border border-white/[0.06] bg-white/[0.02]">
+            <h3 className="font-medium mb-3">Звонки</h3>
+            {entity.calls?.length > 0 ? (
+              <div className="space-y-2">
+                {entity.calls.map(call => (
+                  <button
+                    key={call.id}
+                    onClick={() => navigate(`/calls/${call.id}`)}
+                    className="w-full text-left p-3 rounded-lg hover:bg-white/[0.04] border border-white/[0.06] flex items-center justify-between"
+                  >
+                    <div>
+                      <span className="text-sm text-white/80 truncate">{call.summary || 'Звонок'}</span>
+                      <span className="block text-xs text-white/30 mt-0.5">{formatDate(call.created_at, 'short')}</span>
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <span className={clsx('text-xs px-2 py-0.5 rounded-full whitespace-nowrap', CALL_STATUS_COLORS[call.status])}>
-                        {CALL_STATUS_LABELS[call.status]}
-                      </span>
-                      <p className="text-sm text-white/60 mt-1">
-                        {formatDuration(call.duration_seconds)}
-                      </p>
-                    </div>
-                  </div>
-                  {call.summary && (
-                    <p className="text-sm text-white/60 line-clamp-2 mt-2">{call.summary}</p>
-                  )}
-                </div>
-              ))
+                    <ChevronRight size={16} className="text-white/30 flex-shrink-0" />
+                  </button>
+                ))}
+              </div>
             ) : (
-              <EmptyCalls onLink={canEditEntity(entity) ? () => dispatchModal({ type: 'OPEN_MODAL', modal: 'linkCall' }) : undefined} />
+              <EmptyCalls />
             )}
           </div>
         )}
 
-        {activeTab === 'vacancies' && canAccessFeature('candidate_database') && (
-          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                <Briefcase size={18} className="text-blue-400" />
-                Вакансии
+        {activeTab === 'vacancies' && entity.type === 'candidate' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium flex items-center gap-2">
+                <Briefcase size={16} className="text-cyan-400" />
+                Вакансии кандидата
               </h3>
-              {entity.type === 'candidate' && canEditEntity(entity) && (
-                <FeatureGatedButton
-                  feature="candidate_database"
-                  onClick={() => dispatchModal({ type: 'OPEN_MODAL', modal: 'addToVacancy' })}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors disabled:bg-blue-600/50 disabled:hover:bg-blue-600/50"
-                  disabledTooltip="You don't have access to this feature"
-                >
-                  <Plus size={16} />
-                  Добавить в вакансию
-                </FeatureGatedButton>
-              )}
+              <FeatureGatedButton
+                feature="candidate_database"
+                onClick={() => setShowAddToVacancyModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-xs transition-colors"
+              >
+                <Plus size={14} /> Добавить в вакансию
+              </FeatureGatedButton>
             </div>
-            <EntityVacancies key={vacanciesKey} entityId={entity.id} />
+            <EntityVacancies
+              key={vacanciesKey}
+              entityId={entity.id}
+            />
           </div>
         )}
 
         {activeTab === 'files' && (
-          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-            <h3 className="text-base font-semibold text-white flex items-center gap-2 mb-4">
-              <FolderOpen size={18} className="text-green-400" />
-              Файлы
-            </h3>
-            <EntityFiles entityId={entity.id} canEdit={canEditEntity(entity)} />
-          </div>
+          <EntityFiles entityId={entity.id} />
         )}
 
-        {activeTab === 'history' && (
-          <div className="space-y-6">
-            {/* Interaction Timeline */}
-            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-              <InteractionTimeline
-                entityId={entity.id}
-                chats={entity.chats?.map(chat => ({
-                  id: chat.id,
-                  title: chat.title || 'Чат'
-                }))}
-                calls={entity.calls?.map(call => ({
-                  id: call.id,
-                  title: 'Звонок',
-                  duration_seconds: call.duration_seconds,
-                  created_at: call.created_at,
-                  summary: call.summary
-                }))}
-                files={entity.files?.map(file => ({
-                  id: file.id,
-                  file_name: file.file_name,
-                  file_type: file.file_type,
-                  created_at: file.created_at
-                }))}
-                applications={entityApplications?.map(app => ({
-                  id: app.id,
-                  vacancy_title: app.vacancy_title || 'Вакансия',
-                  stage: app.stage,
-                  applied_at: app.applied_at,
-                  updated_at: app.updated_at
-                }))}
-              />
-            </div>
-
-            {/* Transfers */}
-            {entity.transfers && entity.transfers.length > 0 && (
-              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-                <h4 className="text-sm font-medium text-white/60 mb-3 flex items-center gap-2">
-                  <ArrowRightLeft size={16} className="text-purple-400" />
-                  Передачи между сотрудниками
-                </h4>
-                <div className="space-y-2">
-                  {entity.transfers.map((transfer) => (
-                    <div key={transfer.id} className="p-3 bg-white/[0.03] rounded-lg flex items-start gap-3">
-                      <div className="p-2 bg-purple-500/20 rounded-lg">
-                        <ArrowRightLeft size={16} className="text-purple-400" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 text-sm">
-                          <span className="text-white/60">{transfer.from_user_name}</span>
-                          <span className="text-white/30">→</span>
-                          <span className="text-white">{transfer.to_user_name}</span>
-                        </div>
-                        {transfer.comment && (
-                          <p className="text-xs text-white/50 mt-1">{transfer.comment}</p>
-                        )}
-                        <p className="text-xs text-white/30 mt-1">{formatDate(transfer.created_at, 'long')}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Analyses */}
-            {entity.analyses && entity.analyses.length > 0 && (
-              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-                <h4 className="text-sm font-medium text-white/60 mb-3 flex items-center gap-2">
-                  <FileText size={16} className="text-cyan-400" />
-                  AI Анализы
-                </h4>
-                <div className="space-y-2">
-                  {entity.analyses.map((analysis) => (
-                    <div key={analysis.id} className="p-3 bg-white/[0.03] rounded-lg flex items-start gap-3">
-                      <div className="p-2 bg-cyan-500/20 rounded-lg">
-                        <FileText size={16} className="text-cyan-400" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm text-white font-medium">
-                          {analysis.report_type || 'Анализ'}
-                        </p>
-                        {analysis.result && (
-                          <p className="text-xs text-white/50 mt-1 line-clamp-2">{analysis.result}</p>
-                        )}
-                        <p className="text-xs text-white/30 mt-1">{formatDate(analysis.created_at, 'long')}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'criteria' && (
-          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-            <CriteriaPanelEntity entityId={entity.id} entityType={entity.type} />
-          </div>
-        )}
-
-        {activeTab === 'reports' && (
-          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-            <div className="space-y-4">
-              <div className="bg-white/[0.03] rounded-xl p-4">
-                <h3 className="font-semibold mb-3">Создать отчёт</h3>
-                <p className="text-sm text-dark-400 mb-4">
-                  Скачайте полный аналитический отчёт по этому контакту
-                </p>
-                {asyncState.downloadingReport && (
-                  <div className="flex items-center gap-2 mb-4 p-3 rounded-lg bg-accent-500/10 text-accent-400">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span className="text-sm">Генерация отчёта... Это может занять до минуты</span>
-                  </div>
-                )}
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => handleDownloadReport('pdf')}
-                    disabled={!!asyncState.downloadingReport}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50 disabled:cursor-wait transition-colors"
-                  >
-                    {asyncState.downloadingReport === 'pdf' ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Download className="w-4 h-4" />
-                    )}
-                    PDF
-                  </button>
-                  <button
-                    onClick={() => handleDownloadReport('docx')}
-                    disabled={!!asyncState.downloadingReport}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 disabled:opacity-50 disabled:cursor-wait transition-colors"
-                  >
-                    {asyncState.downloadingReport === 'docx' ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Download className="w-4 h-4" />
-                    )}
-                    DOCX
-                  </button>
-                  <button
-                    onClick={() => handleDownloadReport('markdown')}
-                    disabled={!!asyncState.downloadingReport}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-wait transition-colors"
-                  >
-                    {asyncState.downloadingReport === 'markdown' ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Download className="w-4 h-4" />
-                    )}
-                    Markdown
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+        {activeTab === 'red_flags' && (
+          <RedFlagsPanel entityId={entity.id} />
         )}
 
         {activeTab === 'prometheus' && (
           <PrometheusDetailedReview entityId={entity.id} />
         )}
 
-        {activeTab === 'red-flags' && entity.type === 'candidate' && (
-          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-            <div className="flex items-center gap-2 mb-4">
-              <AlertTriangle size={18} className="text-red-400" />
-              <h3 className="text-base font-semibold text-white">
-                Анализ Red Flags
-              </h3>
+        {activeTab === 'history' && (
+          <div className="rounded-xl p-4 border border-white/[0.06] bg-white/[0.02]">
+            <h3 className="font-medium mb-3">История</h3>
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center gap-2 text-white/40">
+                <Clock size={14} />
+                <span>Создан: {formatDate(entity.created_at, 'long')}</span>
+              </div>
+              <div className="flex items-center gap-2 text-white/40">
+                <Clock size={14} />
+                <span>Обновлён: {formatDate(entity.updated_at, 'long')}</span>
+              </div>
+              {entity.owner_name && (
+                <div className="flex items-center gap-2 text-white/40">
+                  <User size={14} />
+                  <span>Ответственный: {entity.owner_name}</span>
+                </div>
+              )}
+              {entity.transfers?.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <h4 className="text-xs text-white/30 uppercase tracking-wide">Передачи</h4>
+                  {entity.transfers.map(t => (
+                    <div key={t.id} className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04] text-xs text-white/50">
+                      {t.from_user_name} → {t.to_user_name}
+                      {t.comment && <span className="block text-white/30 mt-1">{t.comment}</span>}
+                      <span className="block text-white/20 mt-1">{formatDate(t.created_at, 'short')}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <p className="text-sm text-white/60 mb-4">
-              Автоматическая проверка кандидата на потенциальные тревожные сигналы с использованием AI-анализа.
-            </p>
-            <RedFlagsPanel entityId={entity.id} />
           </div>
         )}
       </div>
 
-      {/* Link Chat Modal */}
-      {modalState.activeModal === 'linkChat' && (
-        <div
-          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-          onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
-        >
-          <div
-            className="rounded-xl p-6 w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col border border-white/[0.06] bg-dark-900"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4 flex-shrink-0">
-              <h3 className="text-lg font-semibold text-white">Привязать чат</h3>
-              <button
-                onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
-                className="p-1 rounded-lg hover:bg-white/10"
-              >
-                <X size={20} className="text-white/60" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-2 max-h-[60vh]">
-              {asyncState.loadingData ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
-                </div>
-              ) : modalState.unlinkedChats.length === 0 ? (
-                <div className="text-center py-8 text-white/40">
-                  <MessageSquare className="mx-auto mb-2" size={40} />
-                  <p>Нет доступных чатов для привязки</p>
-                  <p className="text-sm mt-1">Все чаты уже привязаны к контактам</p>
-                </div>
-              ) : (
-                modalState.unlinkedChats.map((chat) => (
-                  <button
-                    key={chat.id}
-                    onClick={() => handleLinkChat(chat.id)}
-                    disabled={asyncState.loadingLink}
-                    className="w-full p-3 bg-white/[0.03] rounded-lg hover:bg-white/[0.06] transition-colors text-left flex items-center justify-between gap-3 disabled:opacity-50"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-white font-medium truncate">{chat.title}</p>
-                      <p className="text-xs text-white/40 truncate">{chat.chat_type} &bull; {formatDate(chat.created_at, 'long')}</p>
-                    </div>
-                    {asyncState.loadingLink ? (
-                      <Loader2 size={16} className="text-cyan-400 animate-spin flex-shrink-0" />
-                    ) : (
-                      <Link2 size={16} className="text-cyan-400 flex-shrink-0" />
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Link Call Modal */}
-      {modalState.activeModal === 'linkCall' && (
-        <div
-          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-          onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
-        >
-          <div
-            className="rounded-xl p-6 w-full max-w-md max-w-[calc(100%-2rem)] max-h-[90vh] overflow-hidden flex flex-col border border-white/[0.06] bg-dark-900"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4 flex-shrink-0">
-              <h3 className="text-lg font-semibold text-white">Привязать звонок</h3>
-              <button
-                onClick={() => dispatchModal({ type: 'CLOSE_MODAL' })}
-                className="p-1 rounded-lg hover:bg-white/10"
-              >
-                <X size={20} className="text-white/60" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-2 max-h-[60vh]">
-              {asyncState.loadingData ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 text-green-400 animate-spin" />
-                </div>
-              ) : modalState.unlinkedCalls.length === 0 ? (
-                <div className="text-center py-8 text-white/40">
-                  <Phone className="mx-auto mb-2" size={40} />
-                  <p>Нет доступных звонков для привязки</p>
-                  <p className="text-sm mt-1">Все звонки уже привязаны к контактам</p>
-                </div>
-              ) : (
-                modalState.unlinkedCalls.map((call) => (
-                  <button
-                    key={call.id}
-                    onClick={() => handleLinkCall(call.id)}
-                    disabled={asyncState.loadingLink}
-                    className="w-full p-3 bg-white/[0.03] rounded-lg hover:bg-white/[0.06] transition-colors text-left flex items-center justify-between gap-3 disabled:opacity-50"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-white font-medium truncate">
-                        Звонок {call.source_type?.toUpperCase() || 'N/A'}
-                      </p>
-                      <p className="text-xs text-white/40 truncate">
-                        {formatDuration(call.duration_seconds)} &bull; {formatDate(call.created_at, 'long')}
-                      </p>
-                      <span className={clsx('text-xs px-2 py-0.5 rounded-full mt-1 inline-block whitespace-nowrap', CALL_STATUS_COLORS[call.status])}>
-                        {CALL_STATUS_LABELS[call.status]}
-                      </span>
-                    </div>
-                    {asyncState.loadingLink ? (
-                      <Loader2 size={16} className="text-green-400 animate-spin flex-shrink-0" />
-                    ) : (
-                      <Link2 size={16} className="text-green-400 flex-shrink-0" />
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Add to Vacancy Modal */}
-      {modalState.activeModal === 'addToVacancy' && (
+      {showAddToVacancyModal && (
         <AddToVacancyModal
           entityId={entity.id}
           entityName={entity.name}
-          onClose={() => dispatchModal({ type: 'CLOSE_MODAL' })}
+          onClose={() => setShowAddToVacancyModal(false)}
           onSuccess={() => {
-            dispatchModal({ type: 'CLOSE_MODAL' });
-            setVacanciesKey(prev => prev + 1);
+            setShowAddToVacancyModal(false);
+            setVacanciesKey(k => k + 1);
+            toast.success('Кандидат добавлен в вакансию');
           }}
         />
       )}
