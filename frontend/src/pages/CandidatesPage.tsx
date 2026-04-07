@@ -14,7 +14,6 @@ import {
   Clock,
   ExternalLink,
   Eye,
-  Sparkles,
   User
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -40,7 +39,6 @@ import VacancyDetailModal from '@/components/vacancies/VacancyDetailModal';
 import AddCandidateModal from '@/components/vacancies/AddCandidateModal';
 import ApplicationDetailModal from '@/components/vacancies/ApplicationDetailModal';
 import { ConfirmDialog, ErrorMessage, Skeleton } from '@/components/ui';
-import { OnboardingTooltip } from '@/components/onboarding';
 import { CandidatesDatabase } from '@/components/vacancies';
 
 // View modes
@@ -520,9 +518,52 @@ export default function CandidatesPage() {
     );
   };
 
+  // If no vacancy selected — show clean candidates database (F-05)
+  if (!selectedVacancyId) {
+    return (
+      <div className="h-full w-full flex flex-col overflow-hidden">
+        <CandidatesDatabase
+          vacancies={vacancies}
+          onRefreshVacancies={fetchVacancies}
+        />
+
+        {/* Modals that may be needed */}
+        {showCreateCandidateModal && (
+          <ContactForm
+            prefillData={prefillData || undefined}
+            defaultType="candidate"
+            onClose={() => {
+              setShowCreateCandidateModal(false);
+              setPrefillData(null);
+            }}
+            onSuccess={() => {
+              setShowCreateCandidateModal(false);
+              setPrefillData(null);
+              toast.success('Кандидат создан');
+            }}
+          />
+        )}
+
+        {showParserModal && (
+          <ParserModal
+            type="resume"
+            onClose={() => setShowParserModal(false)}
+            onParsed={(data) => handleParsedResume(data as ParsedResume)}
+            onJobStarted={() => { setShowParserModal(false); }}
+            onAttachedToEntity={(entityId) => {
+              setShowParserModal(false);
+              toast.success('Резюме прикреплено к существующему кандидату');
+              navigate(`/contacts/${entityId}`);
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="h-full w-full max-w-full flex overflow-hidden">
-      {/* Vacancy Sidebar */}
+      {/* Vacancy Sidebar — only shown when a vacancy is selected */}
       <div className={clsx(
         'flex flex-col border-r border-white/[0.06] bg-white/[0.02] transition-all duration-300',
         sidebarCollapsed ? 'w-16' : 'w-72'
@@ -549,51 +590,19 @@ export default function CandidatesPage() {
         {/* Sidebar Content */}
         {!sidebarCollapsed && (
           <>
-            {/* Add Vacancy Buttons */}
-            <div className="p-3 border-b border-white/10 space-y-2">
-              <button
-                onClick={() => {
-                  setVacancyPrefillData(null);
-                  setShowCreateVacancyModal(true);
-                }}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Новая вакансия
-              </button>
-              <button
-                onClick={() => setShowImportVacancyModal(true)}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-lg text-sm"
-              >
-                <Sparkles className="w-4 h-4 text-purple-400" />
-                Импорт из URL/файла
-              </button>
-            </div>
-
             {/* Vacancies List */}
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
-              {/* All Candidates Database Card - Always on top */}
+              {/* Back to database */}
               <button
                 onClick={() => setSelectedVacancyId(null)}
-                className={clsx(
-                  'w-full text-left p-3 rounded-lg transition-all duration-200',
-                  selectedVacancyId === null
-                    ? 'bg-purple-500/20 border border-purple-500/50'
-                    : 'border border-white/[0.06] bg-white/[0.02]'
-                )}
+                className="w-full text-left p-3 rounded-lg border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] transition-colors"
               >
                 <div className="flex items-center gap-2">
-                  <Users className="w-5 h-5 text-purple-400" />
-                  <div className="flex-1 min-w-0">
-                    <h4 className={clsx('font-medium text-sm', selectedVacancyId === null && 'text-purple-300')}>
-                      База кандидатов
-                    </h4>
-                    <p className="text-xs text-white/40">Все кандидаты без привязки к вакансии</p>
-                  </div>
+                  <Users className="w-4 h-4 text-purple-400" />
+                  <span className="text-sm text-white/60">База кандидатов</span>
                 </div>
               </button>
 
-              {/* Divider */}
               <div className="border-t border-white/10 my-2" />
 
               {vacanciesLoading && vacancies.length === 0 ? (
@@ -606,12 +615,6 @@ export default function CandidatesPage() {
                 <div className="text-center py-8 text-white/40">
                   <Briefcase className="w-10 h-10 mx-auto mb-2 opacity-50" />
                   <p className="text-sm">Нет открытых вакансий</p>
-                  <button
-                    onClick={() => setShowCreateVacancyModal(true)}
-                    className="mt-2 text-cyan-400 text-sm hover:underline"
-                  >
-                    Создать вакансию
-                  </button>
                 </div>
               ) : (
                 openVacancies.map(vacancy => renderVacancyItem(vacancy))
@@ -623,15 +626,9 @@ export default function CandidatesPage() {
         {/* Collapsed state icons */}
         {sidebarCollapsed && (
           <div className="flex-1 flex flex-col items-center py-3 space-y-2">
-            {/* All Candidates Database Icon */}
             <button
               onClick={() => setSelectedVacancyId(null)}
-              className={clsx(
-                'w-10 h-10 rounded-lg flex items-center justify-center transition-colors',
-                selectedVacancyId === null
-                  ? 'bg-purple-500/20 text-purple-300'
-                  : 'border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] text-white/60'
-              )}
+              className="w-10 h-10 rounded-lg flex items-center justify-center border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] text-white/60"
               title="База кандидатов"
             >
               <Users className="w-5 h-5" />
@@ -639,13 +636,6 @@ export default function CandidatesPage() {
 
             <div className="w-6 border-t border-white/10" />
 
-            <button
-              onClick={() => setShowCreateVacancyModal(true)}
-              className="p-2 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-lg"
-              title="Новая вакансия"
-            >
-              <Plus className="w-5 h-5 text-cyan-400" />
-            </button>
             {openVacancies.slice(0, 5).map(vacancy => (
               <button
                 key={vacancy.id}
@@ -671,129 +661,97 @@ export default function CandidatesPage() {
         <div className="p-4 border-b border-white/10">
           <div className="flex items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-              <OnboardingTooltip
-                id="candidates-page"
-                content="Управляйте кандидатами по вакансиям, перетаскивайте между этапами"
-                position="bottom"
-              >
-                <h1 className="text-lg font-bold flex items-center gap-2 min-w-0 overflow-hidden">
-                  <UserCheck className="w-5 h-5 text-cyan-400 flex-shrink-0" />
-                  <span className="truncate">{currentVacancy ? currentVacancy.title : 'База кандидатов'}</span>
-                </h1>
-              </OnboardingTooltip>
-              {currentVacancy && (
-                <span className="text-xs text-white/40 whitespace-nowrap flex-shrink-0">
-                  {kanbanBoard?.total_count || 0} канд.
-                </span>
-              )}
+              <h1 className="text-lg font-bold flex items-center gap-2 min-w-0 overflow-hidden">
+                <UserCheck className="w-5 h-5 text-cyan-400 flex-shrink-0" />
+                <span className="truncate">{currentVacancy?.title || 'Вакансия'}</span>
+              </h1>
+              <span className="text-xs text-white/40 whitespace-nowrap flex-shrink-0">
+                {kanbanBoard?.total_count || 0} канд.
+              </span>
             </div>
             <div className="flex items-center gap-1.5 flex-shrink-0">
-              {/* Navigation to vacancies page */}
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-white/[0.04] rounded-lg p-1">
+                <button
+                  onClick={() => setViewMode('kanban')}
+                  className={clsx(
+                    'p-1.5 rounded transition-colors',
+                    viewMode === 'kanban' ? 'bg-cyan-600 text-white' : 'text-white/60 hover:text-white'
+                  )}
+                  title="Kanban"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={clsx(
+                    'p-1.5 rounded transition-colors',
+                    viewMode === 'list' ? 'bg-cyan-600 text-white' : 'text-white/60 hover:text-white'
+                  )}
+                  title="Список"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+              </div>
+
               <button
-                onClick={() => navigate('/vacancies')}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg text-xs transition-colors"
-                title="Перейти к вакансиям"
+                onClick={() => setShowParserModal(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-lg text-xs"
+                title="Загрузить резюме"
               >
-                <Briefcase className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">К вакансиям</span>
+                <Upload className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Резюме</span>
               </button>
-              {/* View Mode Toggle - only when vacancy selected */}
-              {currentVacancy && (
-                <div className="flex items-center bg-white/[0.04] rounded-lg p-1">
-                  <button
-                    onClick={() => setViewMode('kanban')}
-                    className={clsx(
-                      'p-1.5 rounded transition-colors',
-                      viewMode === 'kanban' ? 'bg-cyan-600 text-white' : 'text-white/60 hover:text-white'
-                    )}
-                    title="Kanban"
-                  >
-                    <LayoutGrid className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setViewMode('list')}
-                    className={clsx(
-                      'p-1.5 rounded transition-colors',
-                      viewMode === 'list' ? 'bg-cyan-600 text-white' : 'text-white/60 hover:text-white'
-                    )}
-                    title="Список"
-                  >
-                    <List className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
 
-              {currentVacancy && (
-                <>
-                  <button
-                    onClick={() => setShowParserModal(true)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-lg text-xs"
-                    title="Загрузить резюме"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    <span className="hidden md:inline">Загрузить резюме</span>
-                  </button>
-
-                  <button
-                    onClick={() => setShowAddToVacancyModal(true)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-xs transition-colors"
-                    title="Добавить кандидата"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span className="hidden md:inline">Добавить кандидата</span>
-                  </button>
-                </>
-              )}
+              <button
+                onClick={() => setShowAddToVacancyModal(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-xs transition-colors"
+                title="Добавить кандидата"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Добавить</span>
+              </button>
             </div>
           </div>
 
-          {/* Stage Tabs - only when vacancy selected */}
-          {currentVacancy && (
-            <div className="flex items-center gap-1 overflow-x-auto pb-1">
+          {/* Stage Tabs */}
+          <div className="flex items-center gap-1 overflow-x-auto pb-1">
+            <button
+              onClick={() => setSelectedStage(ALL_STAGES_TAB)}
+              className={clsx(
+                'px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors',
+                selectedStage === ALL_STAGES_TAB
+                  ? 'bg-cyan-600 text-white'
+                  : 'border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] text-white/60 hover:text-white'
+              )}
+            >
+              Все ({stageCounts.all || 0})
+            </button>
+            {PIPELINE_STAGES.map(stage => (
               <button
-                onClick={() => setSelectedStage(ALL_STAGES_TAB)}
+                key={stage}
+                onClick={() => {
+                  setSelectedStage(stage);
+                  if (viewMode === 'kanban') {
+                    scrollToStage(stage);
+                  }
+                }}
                 className={clsx(
                   'px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors',
-                  selectedStage === ALL_STAGES_TAB
-                    ? 'bg-cyan-600 text-white'
+                  selectedStage === stage
+                    ? APPLICATION_STAGE_COLORS[stage]
                     : 'border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] text-white/60 hover:text-white'
                 )}
               >
-                Все ({stageCounts.all || 0})
+                {APPLICATION_STAGE_LABELS[stage]} ({stageCounts[stage] || 0})
               </button>
-              {PIPELINE_STAGES.map(stage => (
-                <button
-                  key={stage}
-                  onClick={() => {
-                    setSelectedStage(stage);
-                    // In kanban mode, also scroll to the column
-                    if (viewMode === 'kanban') {
-                      scrollToStage(stage);
-                    }
-                  }}
-                  className={clsx(
-                    'px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors',
-                    selectedStage === stage
-                      ? APPLICATION_STAGE_COLORS[stage]
-                      : 'border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] text-white/60 hover:text-white'
-                  )}
-                >
-                  {APPLICATION_STAGE_LABELS[stage]} ({stageCounts[stage] || 0})
-                </button>
-              ))}
-            </div>
-          )}
+            ))}
+          </div>
         </div>
 
         {/* Content Area */}
         <div className="flex-1 overflow-hidden">
-          {!currentVacancy ? (
-            // No vacancy selected - show all candidates database
-            <CandidatesDatabase
-              vacancies={vacancies}
-              onRefreshVacancies={fetchVacancies}
-            />
-          ) : isKanbanLoading ? (
+          {isKanbanLoading ? (
             // Loading
             <div className="h-full flex items-center justify-center">
               <div className="animate-spin w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full" />
