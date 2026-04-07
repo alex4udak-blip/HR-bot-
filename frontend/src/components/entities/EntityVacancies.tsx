@@ -28,7 +28,7 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
         setApplications(data);
       } catch (err) {
         console.error('Failed to load entity vacancies:', err);
-        setError('Не удалось загрузить вакансии');
+        setApplications([]);
       } finally {
         setLoading(false);
       }
