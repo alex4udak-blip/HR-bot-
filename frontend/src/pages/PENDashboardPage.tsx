@@ -113,6 +113,9 @@ export default function PENDashboardPage() {
   });
   const [periodTo, setPeriodTo] = useState(() => formatDate(new Date()));
 
+  // --- Recruiter filter ---
+  const [selectedRecruiterId, setSelectedRecruiterId] = useState<number | null>(null);
+
   // --- Data ---
   const [metrics, setMetrics] = useState<PENMetricsResponse | null>(null);
   const [recruiters, setRecruiters] = useState<RecruiterMetrics[]>([]);
@@ -146,11 +149,15 @@ export default function PENDashboardPage() {
     try {
       setIsLoading(true);
       setError(null);
-      const params = { period_from: periodFrom, period_to: periodTo };
+      const metricsParams: Record<string, any> = { period_from: periodFrom, period_to: periodTo };
+      if (selectedRecruiterId) {
+        metricsParams.recruiter_id = selectedRecruiterId;
+      }
+      const periodParams = { period_from: periodFrom, period_to: periodTo };
 
       const [metricsRes, recruitersRes] = await Promise.all([
-        api.get<PENMetricsResponse>('/pen/metrics', { params }),
-        api.get<RecruiterMetrics[]>('/pen/recruiters', { params }),
+        api.get<PENMetricsResponse>('/pen/metrics', { params: metricsParams }),
+        api.get<RecruiterMetrics[]>('/pen/recruiters', { params: periodParams }),
       ]);
 
       setMetrics(metricsRes.data);
@@ -161,7 +168,7 @@ export default function PENDashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [periodFrom, periodTo]);
+  }, [periodFrom, periodTo, selectedRecruiterId]);
 
   const loadSalarySheet = useCallback(async () => {
     try {
@@ -298,8 +305,8 @@ export default function PENDashboardPage() {
           <h1 className="text-xl font-semibold text-white">PEN Dashboard</h1>
         </div>
 
-        {/* Period filter */}
-        <div className="flex items-center gap-3">
+        {/* Filters */}
+        <div className="flex items-center gap-3 flex-wrap">
           <label className="text-sm text-dark-300">Период:</label>
           <input
             type="date"
@@ -314,6 +321,20 @@ export default function PENDashboardPage() {
             onChange={(e) => setPeriodTo(e.target.value)}
             className="px-3 py-1.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:border-accent-500"
           />
+          <div className="w-px h-6 bg-dark-600" />
+          <label className="text-sm text-dark-300">Рекрутер:</label>
+          <select
+            value={selectedRecruiterId ?? ''}
+            onChange={(e) => setSelectedRecruiterId(e.target.value ? Number(e.target.value) : null)}
+            className="px-3 py-1.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:border-accent-500 min-w-[160px]"
+          >
+            <option value="">Все рекрутеры</option>
+            {recruiters.map((r) => (
+              <option key={r.recruiter_id} value={r.recruiter_id}>
+                {r.recruiter_name}
+              </option>
+            ))}
+          </select>
           <button
             onClick={loadMetrics}
             className="px-4 py-1.5 bg-accent-500 text-white rounded-lg text-sm hover:bg-accent-600 transition-colors"
@@ -455,9 +476,19 @@ export default function PENDashboardPage() {
                 {sortedRecruiters.map((r) => (
                   <tr
                     key={r.recruiter_id}
-                    className="border-b border-dark-700/50 hover:bg-white/[0.02] transition-colors"
+                    onClick={() => {
+                      setSelectedRecruiterId(selectedRecruiterId === r.recruiter_id ? null : r.recruiter_id);
+                    }}
+                    className={`border-b border-dark-700/50 hover:bg-white/[0.04] transition-colors cursor-pointer ${
+                      selectedRecruiterId === r.recruiter_id ? 'bg-accent-500/10 border-accent-500/30' : ''
+                    }`}
                   >
-                    <td className="py-2.5 px-3 text-white font-medium">{r.recruiter_name}</td>
+                    <td className="py-2.5 px-3 text-white font-medium">
+                      {r.recruiter_name}
+                      {selectedRecruiterId === r.recruiter_id && (
+                        <span className="ml-2 text-xs text-accent-400">&#x2713; выбран</span>
+                      )}
+                    </td>
                     <td className="py-2.5 px-3 text-dark-200">{r.started_practice}</td>
                     <td className="py-2.5 px-3 text-dark-200">{r.entered_department}</td>
                     <td className="py-2.5 px-3 text-dark-200">{r.passed_probation}</td>
