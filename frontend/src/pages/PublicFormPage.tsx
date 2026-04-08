@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { getPublicForm, submitPublicForm } from '@/services/api/forms';
+import { getPublicForm, submitPublicForm, submitPublicFormWithFiles } from '@/services/api/forms';
 import type { PublicFormData, FormField } from '@/services/api/forms';
 
 /**
@@ -16,6 +16,7 @@ export default function PublicFormPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [fileUploads, setFileUploads] = useState<Record<string, File>>({});
 
   useEffect(() => {
     if (!slug) return;
@@ -69,7 +70,12 @@ export default function PublicFormPage() {
 
     setSubmitting(true);
     try {
-      await submitPublicForm(slug, values);
+      const files = Object.values(fileUploads);
+      if (files.length > 0) {
+        await submitPublicFormWithFiles(slug, values, files);
+      } else {
+        await submitPublicForm(slug, values);
+      }
       setSubmitted(true);
     } catch (err: unknown) {
       const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -158,6 +164,18 @@ export default function PublicFormPage() {
               field={field}
               value={values[field.id]}
               onChange={val => updateValue(field.id, val)}
+              onFileChange={field.type === 'file' ? (file: File | null) => {
+                setFileUploads(prev => {
+                  const next = { ...prev };
+                  if (file) {
+                    next[field.id] = file;
+                  } else {
+                    delete next[field.id];
+                  }
+                  return next;
+                });
+              } : undefined}
+              selectedFile={fileUploads[field.id] || null}
               error={validationErrors[field.id]}
             />
           ))}
@@ -187,11 +205,15 @@ function FormFieldRenderer({
   field,
   value,
   onChange,
+  onFileChange,
+  selectedFile,
   error,
 }: {
   field: FormField;
   value: unknown;
   onChange: (val: unknown) => void;
+  onFileChange?: (file: File | null) => void;
+  selectedFile?: File | null;
   error?: string;
 }) {
   const inputClasses = `w-full px-4 py-2.5 border rounded-xl text-gray-900 placeholder-gray-400 outline-none transition-colors focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 ${
@@ -304,24 +326,51 @@ function FormFieldRenderer({
 
       {field.type === 'file' && (
         <div className="mt-1">
-          <label className="flex items-center justify-center w-full px-4 py-6 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors">
-            <div className="text-center">
-              <svg className="w-8 h-8 text-gray-400 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          {selectedFile ? (
+            <div className="flex items-center gap-3 px-4 py-3 border border-gray-300 rounded-xl bg-gray-50">
+              <svg className="w-6 h-6 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <span className="text-sm text-gray-500">
-                {value ? String(value) : 'Нажмите для выбора файла'}
-              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-gray-900 truncate">{selectedFile.name}</p>
+                <p className="text-xs text-gray-500">{(selectedFile.size / 1024 / 1024).toFixed(1)} МБ</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onChange('');
+                  onFileChange?.(null);
+                }}
+                className="text-gray-400 hover:text-red-500 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
-            <input
-              type="file"
-              className="hidden"
-              onChange={e => {
-                const file = e.target.files?.[0];
-                if (file) onChange(file.name);
-              }}
-            />
-          </label>
+          ) : (
+            <label className="flex items-center justify-center w-full px-4 py-6 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors">
+              <div className="text-center">
+                <svg className="w-8 h-8 text-gray-400 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <span className="text-sm text-gray-500">Нажмите для выбора файла</span>
+                <span className="block text-xs text-gray-400 mt-1">PDF, DOC, DOCX, JPG, PNG — до 10 МБ</span>
+              </div>
+              <input
+                type="file"
+                className="hidden"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    onChange(file.name);
+                    onFileChange?.(file);
+                  }
+                }}
+              />
+            </label>
+          )}
         </div>
       )}
 

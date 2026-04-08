@@ -117,3 +117,19 @@ export const submitPublicForm = async (
   const { data } = await api.post(`/forms/public/${slug}/submit`, { data: formData });
   return data;
 };
+
+export const submitPublicFormWithFiles = async (
+  slug: string,
+  formData: Record<string, unknown>,
+  files: File[]
+): Promise<{ message: string; entity_id?: number; files_saved?: number }> => {
+  const body = new FormData();
+  body.append('data', JSON.stringify(formData));
+  for (const file of files) {
+    body.append('files', file);
+  }
+  const { data } = await api.post(`/forms/public/${slug}/submit-with-files`, body, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+};
