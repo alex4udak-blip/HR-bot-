@@ -436,6 +436,10 @@ def _ensure_critical_columns():
         for table, column, col_type in [
             ("vacancies", "custom_stages", "JSONB"),
             ("vacancies", "kanban_card_fields", "JSONB"),
+            ("vacancy_applications", "interview_summary", "TEXT"),
+            ("vacancy_applications", "compatibility_score", "JSONB"),
+            ("vacancy_applications", "created_by", "INTEGER"),
+            ("vacancy_applications", "stage_order", "INTEGER DEFAULT 0"),
         ]:
             cur.execute(
                 "SELECT 1 FROM information_schema.columns "
