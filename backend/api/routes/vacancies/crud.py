@@ -187,8 +187,8 @@ async def list_vacancies(
             updated_at=vacancy.updated_at,
             applications_count=total_apps,
             stage_counts=stage_counts,
-            custom_stages=vacancy.custom_stages,
-            kanban_card_fields=vacancy.kanban_card_fields
+            custom_stages=getattr(vacancy, 'custom_stages', None),
+            kanban_card_fields=getattr(vacancy, 'kanban_card_fields', None)
         ))
 
     return responses
@@ -203,7 +203,8 @@ async def create_vacancy(
     """Create a new vacancy."""
     org = await get_user_org(current_user, db)
 
-    vacancy = Vacancy(
+    # Build vacancy kwargs — custom_stages/kanban_card_fields are optional (migration may not be applied yet)
+    vacancy_kwargs = dict(
         org_id=org.id if org else None,
         title=data.title,
         description=data.description,
@@ -225,9 +226,12 @@ async def create_vacancy(
         closes_at=data.closes_at,
         created_by=current_user.id,
         published_at=datetime.utcnow() if data.status == VacancyStatus.open else None,
-        custom_stages=data.custom_stages,
-        kanban_card_fields=data.kanban_card_fields
     )
+    if hasattr(Vacancy, 'custom_stages'):
+        vacancy_kwargs['custom_stages'] = data.custom_stages
+    if hasattr(Vacancy, 'kanban_card_fields'):
+        vacancy_kwargs['kanban_card_fields'] = data.kanban_card_fields
+    vacancy = Vacancy(**vacancy_kwargs)
 
     db.add(vacancy)
     await db.commit()

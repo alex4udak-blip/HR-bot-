@@ -7,7 +7,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = 'add_funnel_customization'
-down_revision = 'add_vacancy_sharing'
+down_revision = 'b5e2a1d3c908'
 branch_labels = None
 depends_on = None
 
