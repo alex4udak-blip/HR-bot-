@@ -132,6 +132,7 @@ async def get_kanban_board(
         stage_total = sum(stage_total_counts.get(s, 0) for s in query_stages)
 
         app_responses = []
+        now = datetime.utcnow()
         for app in stage_apps:
             entity = entities_map.get(app.entity_id)
             app_responses.append(ApplicationResponse(
@@ -149,11 +150,12 @@ async def get_kanban_board(
                 rating=app.rating,
                 notes=app.notes,
                 rejection_reason=app.rejection_reason,
+                interview_summary=app.interview_summary,
                 source=app.source,
                 next_interview_at=app.next_interview_at,
-                applied_at=app.applied_at,
-                last_stage_change_at=app.last_stage_change_at,
-                updated_at=app.updated_at
+                applied_at=app.applied_at or now,
+                last_stage_change_at=app.last_stage_change_at or app.applied_at or now,
+                updated_at=app.updated_at or now
             ))
 
         columns.append(KanbanColumn(
