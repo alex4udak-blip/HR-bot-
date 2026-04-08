@@ -427,26 +427,25 @@ def run_alembic_migrations_sync():
 
 def _ensure_critical_columns():
     """Ensure critical columns exist in the database, even if alembic migration failed."""
-    from api.config import settings
+    import psycopg2
     try:
-        from sqlalchemy import create_engine, text
-        sync_url = settings.database_url
-        if "+asyncpg" in sync_url:
-            sync_url = sync_url.replace("+asyncpg", "")
-        engine = create_engine(sync_url)
-        with engine.connect() as conn:
-            for table, column, col_type in [
-                ("vacancies", "custom_stages", "JSONB"),
-                ("vacancies", "kanban_card_fields", "JSONB"),
-            ]:
-                result = conn.execute(text(
-                    f"SELECT 1 FROM information_schema.columns "
-                    f"WHERE table_name='{table}' AND column_name='{column}'"
-                ))
-                if not result.fetchone():
-                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
-                    logger.info(f"Safety net: added {column} column to {table}")
-            conn.commit()
-        engine.dispose()
+        db_url = get_sync_database_url()
+        conn = psycopg2.connect(db_url)
+        conn.autocommit = True
+        cur = conn.cursor()
+        for table, column, col_type in [
+            ("vacancies", "custom_stages", "JSONB"),
+            ("vacancies", "kanban_card_fields", "JSONB"),
+        ]:
+            cur.execute(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name=%s AND column_name=%s",
+                (table, column)
+            )
+            if not cur.fetchone():
+                cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+                logger.info(f"Safety net: added {column} column to {table}")
+        cur.close()
+        conn.close()
     except Exception as e:
         logger.warning(f"Safety net column check failed: {e}")
