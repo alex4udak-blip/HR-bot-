@@ -102,7 +102,7 @@ export default function CandidateDatabasePage() {
       if (vacancyId) params.vacancy_id = vacancyId;
       if (stageFilter) params.stage = stageFilter;
 
-      const res = await deduplicatedGet('/api/candidate-database', { params });
+      const res = await deduplicatedGet('/candidate-database', { params });
       const data = res.data as any;
       setCandidates(data.items);
       setTotal(data.total);
@@ -122,7 +122,7 @@ export default function CandidateDatabasePage() {
   const scanDuplicates = async () => {
     setDupLoading(true);
     try {
-      const res = await api.post('/api/candidate-database/find-duplicates');
+      const res = await api.post('/candidate-database/find-duplicates');
       setDuplicateGroups(res.data.groups);
       setDupTotal(res.data.total_groups);
       setDupScanned(true);
@@ -142,7 +142,7 @@ export default function CandidateDatabasePage() {
   const mergeCandidates = async (sourceId: number, targetId: number) => {
     setMergingPair({ source: sourceId, target: targetId });
     try {
-      await api.post(`/api/candidate-database/merge?source_id=${sourceId}&target_id=${targetId}`);
+      await api.post(`/candidate-database/merge?source_id=${sourceId}&target_id=${targetId}`);
       toast.success('Кандидаты объединены');
       // Refresh duplicates
       setDuplicateGroups(prev => prev.filter(g =>
