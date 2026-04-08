@@ -629,3 +629,18 @@ export type {
   BulkActionPayload,
   BulkActionResult,
 } from './candidates';
+
+// Workspaces
+export {
+  getWorkspaces,
+  getWorkspace,
+  getWorkspaceCandidates,
+} from './workspaces';
+
+export type {
+  WorkspaceSummary,
+  WorkspaceDetail,
+  WorkspaceVacancy,
+  WorkspaceCandidate,
+  WorkspaceCandidatesResponse,
+} from './workspaces';
