@@ -273,6 +273,17 @@ async def check_vacancy_access(
 
 # === Pydantic Schemas ===
 
+class StageColumnSchema(BaseModel):
+    key: str
+    label: str
+    visible: bool
+    maps_to: Optional[str] = None
+
+
+class CustomStagesSchema(BaseModel):
+    columns: List[StageColumnSchema]
+
+
 class VacancyCreate(BaseModel):
     title: str
     description: Optional[str] = None
@@ -292,7 +303,7 @@ class VacancyCreate(BaseModel):
     department_id: Optional[int] = None
     hiring_manager_id: Optional[int] = None
     closes_at: Optional[datetime] = None
-    custom_stages: Optional[dict] = None
+    custom_stages: Optional[CustomStagesSchema] = None
     kanban_card_fields: Optional[List[str]] = None
 
     @field_validator("title")
@@ -379,7 +390,7 @@ class VacancyUpdate(BaseModel):
     department_id: Optional[int] = None
     hiring_manager_id: Optional[int] = None
     closes_at: Optional[datetime] = None
-    custom_stages: Optional[dict] = None
+    custom_stages: Optional[CustomStagesSchema] = None
     kanban_card_fields: Optional[List[str]] = None
 
     @field_validator("title")

@@ -186,7 +186,9 @@ async def list_vacancies(
             created_at=vacancy.created_at,
             updated_at=vacancy.updated_at,
             applications_count=total_apps,
-            stage_counts=stage_counts
+            stage_counts=stage_counts,
+            custom_stages=vacancy.custom_stages,
+            kanban_card_fields=vacancy.kanban_card_fields
         ))
 
     return responses
@@ -222,7 +224,9 @@ async def create_vacancy(
         hiring_manager_id=data.hiring_manager_id,
         closes_at=data.closes_at,
         created_by=current_user.id,
-        published_at=datetime.utcnow() if data.status == VacancyStatus.open else None
+        published_at=datetime.utcnow() if data.status == VacancyStatus.open else None,
+        custom_stages=data.custom_stages,
+        kanban_card_fields=data.kanban_card_fields
     )
 
     db.add(vacancy)
@@ -257,7 +261,9 @@ async def create_vacancy(
         created_at=vacancy.created_at,
         updated_at=vacancy.updated_at,
         applications_count=0,
-        stage_counts={}
+        stage_counts={},
+        custom_stages=vacancy.custom_stages,
+        kanban_card_fields=vacancy.kanban_card_fields
     )
 
 
@@ -346,7 +352,9 @@ async def get_vacancy(
         created_at=vacancy.created_at,
         updated_at=vacancy.updated_at,
         applications_count=total_apps,
-        stage_counts=stage_counts
+        stage_counts=stage_counts,
+        custom_stages=vacancy.custom_stages,
+        kanban_card_fields=vacancy.kanban_card_fields
     )
 
 

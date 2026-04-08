@@ -46,8 +46,9 @@ async def get_kanban_board(
     if not await can_access_vacancy(vacancy, current_user, org, db):
         raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
-    # HR Pipeline по ТЗ (DB enum values → display titles)
-    stage_config = [
+    # Derive stage_config from vacancy.custom_stages when present,
+    # falling back to the default HR pipeline.
+    default_stage_config = [
         (ApplicationStage.applied, "Новый", [ApplicationStage.applied]),
         (ApplicationStage.screening, "Отбор", [ApplicationStage.screening]),
         (ApplicationStage.phone_screen, "Собеседование назначено", [ApplicationStage.phone_screen]),
@@ -57,6 +58,27 @@ async def get_kanban_board(
         (ApplicationStage.hired, "Вышел на работу", [ApplicationStage.hired]),
         (ApplicationStage.rejected, "Отказ", [ApplicationStage.rejected]),
     ]
+
+    custom_columns = (vacancy.custom_stages or {}).get("columns") if vacancy.custom_stages else None
+    if custom_columns and isinstance(custom_columns, list) and len(custom_columns) > 0:
+        stage_config = []
+        seen = set()
+        for col in custom_columns:
+            if not col.get("visible", True):
+                continue
+            enum_key = col.get("maps_to") or col.get("key")
+            if not enum_key or enum_key in seen:
+                continue
+            # Validate that enum_key is a real ApplicationStage value
+            try:
+                stage_enum = ApplicationStage(enum_key)
+            except ValueError:
+                logger.warning(f"Unknown custom stage key '{enum_key}' in vacancy {vacancy_id}, skipping")
+                continue
+            seen.add(enum_key)
+            stage_config.append((stage_enum, col.get("label", enum_key), [stage_enum]))
+    else:
+        stage_config = default_stage_config
 
     # Build base filter conditions
     base_filters = [VacancyApplication.vacancy_id == vacancy_id]

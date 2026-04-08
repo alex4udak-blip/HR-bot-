@@ -102,7 +102,7 @@ function getStagesConfig(vacancy: Vacancy): {
   labels: Record<string, string>;
 } {
   const custom = vacancy.custom_stages?.columns;
-  if (!custom || custom.length === 0) {
+  if (!Array.isArray(custom) || custom.length === 0) {
     return {
       stages: DEFAULT_VISIBLE_STAGES,
       labels: APPLICATION_STAGE_LABELS,
@@ -110,10 +110,14 @@ function getStagesConfig(vacancy: Vacancy): {
   }
   const stages: ApplicationStage[] = [];
   const labels: Record<string, string> = { ...APPLICATION_STAGE_LABELS };
+  const seen = new Set<string>();
   for (const col of custom) {
     if (!col.visible) continue;
     // For virtual stages (maps_to), use the underlying enum value for data
     const enumKey = (col.maps_to || col.key) as ApplicationStage;
+    // Skip duplicate enum keys — keep the label from the first occurrence
+    if (seen.has(enumKey)) continue;
+    seen.add(enumKey);
     stages.push(enumKey);
     labels[enumKey] = col.label;
   }

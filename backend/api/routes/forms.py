@@ -251,12 +251,21 @@ async def get_form(
     )
     submissions_count = count_result.scalar() or 0
 
+    # Get vacancy_ids from junction table
+    fv_result = await db.execute(
+        select(FormVacancy.vacancy_id).where(FormVacancy.form_id == form.id)
+    )
+    vacancy_ids = [row[0] for row in fv_result.all()]
+    if not vacancy_ids and form.vacancy_id:
+        vacancy_ids = [form.vacancy_id]
+
     return {
         "id": form.id,
         "title": form.title,
         "description": form.description,
         "slug": form.slug,
         "vacancy_id": form.vacancy_id,
+        "vacancy_ids": vacancy_ids,
         "is_active": form.is_active,
         "fields": form.fields or [],
         "submissions_count": submissions_count,
