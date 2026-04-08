@@ -229,6 +229,14 @@ export default function PENDashboardPage() {
       toast.error('Заполните все обязательные поля');
       return;
     }
+    if (!bonusForm.direction) {
+      toast.error('Выберите направление');
+      return;
+    }
+    if (!bonusForm.stage) {
+      toast.error('Выберите этап');
+      return;
+    }
     try {
       setSubmittingBonus(true);
       await api.post('/pen/bonus', bonusForm);

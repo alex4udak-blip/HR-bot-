@@ -165,10 +165,14 @@ export interface KanbanBoardResponse {
 export const getCandidatesKanban = async (params?: {
   q?: string;
   recruiter_id?: number;
+  date_from?: string;
+  date_to?: string;
 }): Promise<KanbanBoardResponse> => {
   const searchParams: Record<string, string> = {};
   if (params?.q) searchParams.q = params.q;
   if (params?.recruiter_id) searchParams.recruiter_id = String(params.recruiter_id);
+  if (params?.date_from) searchParams.date_from = params.date_from;
+  if (params?.date_to) searchParams.date_to = params.date_to;
   const { data } = await deduplicatedGet<KanbanBoardResponse>('/candidates/kanban', {
     params: searchParams,
   });

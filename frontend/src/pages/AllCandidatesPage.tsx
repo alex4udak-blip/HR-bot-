@@ -130,6 +130,8 @@ export default function AllCandidatesPage() {
   const [searchText, setSearchText] = useState('');
   const debouncedSearch = useDebounce(searchText, 400);
   const [recruiterId, setRecruiterId] = useState<number | undefined>(undefined);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
   // Drag state
@@ -149,6 +151,8 @@ export default function AllCandidatesPage() {
       const data = await getCandidatesKanban({
         q: debouncedSearch || undefined,
         recruiter_id: recruiterId,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
       });
       setBoard(data);
     } catch (err) {
@@ -156,7 +160,7 @@ export default function AllCandidatesPage() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, recruiterId]);
+  }, [debouncedSearch, recruiterId, dateFrom, dateTo]);
 
   useEffect(() => {
     fetchBoard();
@@ -289,7 +293,7 @@ export default function AllCandidatesPage() {
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <div className="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
+              <div className="flex items-center gap-3 mt-3 pt-3 border-t border-white/5 flex-wrap">
                 <select
                   value={recruiterId || ''}
                   onChange={(e) => setRecruiterId(e.target.value ? Number(e.target.value) : undefined)}
@@ -300,6 +304,39 @@ export default function AllCandidatesPage() {
                     <option key={r.id} value={r.id}>{r.name}</option>
                   ))}
                 </select>
+
+                {/* Date from */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-white/40">Дата от</label>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white/80 focus:border-cyan-500/50 focus:outline-none"
+                  />
+                </div>
+
+                {/* Date to */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-white/40">Дата до</label>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white/80 focus:border-cyan-500/50 focus:outline-none"
+                  />
+                </div>
+
+                {/* Clear filters */}
+                {(recruiterId || dateFrom || dateTo) && (
+                  <button
+                    onClick={() => { setRecruiterId(undefined); setDateFrom(''); setDateTo(''); }}
+                    className="flex items-center gap-1 px-2 py-1.5 text-xs text-white/40 hover:text-white/70 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    Сбросить
+                  </button>
+                )}
               </div>
             </motion.div>
           )}

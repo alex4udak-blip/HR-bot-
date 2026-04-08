@@ -52,6 +52,8 @@ export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVac
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedSource, setSelectedSource] = useState<string>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showParserModal, setShowParserModal] = useState(false);
   const [prefillData, setPrefillData] = useState<Partial<Entity> | null>(null);
@@ -106,8 +108,18 @@ export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVac
       });
     }
 
+    // Filter by date range
+    if (dateFrom) {
+      const from = new Date(dateFrom);
+      result = result.filter(c => new Date(c.created_at) >= from);
+    }
+    if (dateTo) {
+      const to = new Date(dateTo + 'T23:59:59');
+      result = result.filter(c => new Date(c.created_at) <= to);
+    }
+
     return result;
-  }, [entities, searchQuery, selectedStage, selectedSource]);
+  }, [entities, searchQuery, selectedStage, selectedSource, dateFrom, dateTo]);
 
   // Stage counts
   const stageCounts = useMemo(() => {
@@ -247,9 +259,32 @@ export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVac
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
-            {(selectedSource !== 'all') && (
+
+            {/* Date from */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-white/40">Дата от</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white/80 focus:border-purple-500/50 focus:outline-none"
+              />
+            </div>
+
+            {/* Date to */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-white/40">Дата до</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white/80 focus:border-purple-500/50 focus:outline-none"
+              />
+            </div>
+
+            {(selectedSource !== 'all' || dateFrom || dateTo) && (
               <button
-                onClick={() => { setSelectedSource('all'); }}
+                onClick={() => { setSelectedSource('all'); setDateFrom(''); setDateTo(''); }}
                 className="text-xs text-white/40 hover:text-white"
               >
                 Сбросить фильтры

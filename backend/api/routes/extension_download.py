@@ -3,8 +3,11 @@
 import io
 import zipfile
 from pathlib import Path
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+
+from ..models.database import User
+from ..services.auth import get_current_user
 
 router = APIRouter()
 
@@ -16,7 +19,9 @@ if not EXTENSION_DIR.exists():
 
 
 @router.get("/download")
-async def download_extension():
+async def download_extension(
+    current_user: User = Depends(get_current_user),
+):
     """Package chrome-extension/ folder into a ZIP and return it."""
     if not EXTENSION_DIR.exists():
         from fastapi import HTTPException
