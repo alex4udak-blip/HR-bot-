@@ -12,7 +12,7 @@ import {
   Shield,
   UserCog,
   Briefcase,
-  UserCheck,
+
   GraduationCap,
   HelpCircle,
   FileSpreadsheet,

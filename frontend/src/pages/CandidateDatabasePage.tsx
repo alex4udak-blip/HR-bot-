@@ -2,12 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Database,
   Search,
-  Users,
   Copy,
-  ChevronDown,
   AlertTriangle,
   Check,
-  X,
   Loader2,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -105,7 +102,8 @@ export default function CandidateDatabasePage() {
       if (vacancyId) params.vacancy_id = vacancyId;
       if (stageFilter) params.stage = stageFilter;
 
-      const data = await deduplicatedGet('/api/candidate-database', { params });
+      const res = await deduplicatedGet('/api/candidate-database', { params });
+      const data = res.data as any;
       setCandidates(data.items);
       setTotal(data.total);
       if (data.filters) setFilters(data.filters);

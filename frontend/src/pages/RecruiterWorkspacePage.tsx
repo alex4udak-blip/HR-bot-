@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -7,9 +7,6 @@ import {
   UserCheck,
   Search,
   ChevronRight,
-  LayoutGrid,
-  List,
-  Filter,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuthStore } from '@/stores/authStore';

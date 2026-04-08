@@ -1,4 +1,4 @@
-import api, { deduplicatedGet } from './client';
+import { deduplicatedGet } from './client';
 
 // --- Types ---
 
@@ -53,11 +53,13 @@ export interface WorkspaceCandidatesResponse {
 // --- API functions ---
 
 export async function getWorkspaces(): Promise<WorkspaceSummary[]> {
-  return deduplicatedGet('/api/workspaces');
+  const res = await deduplicatedGet<WorkspaceSummary[]>('/api/workspaces');
+  return res.data;
 }
 
 export async function getWorkspace(recruiterId: number): Promise<WorkspaceDetail> {
-  return deduplicatedGet(`/api/workspaces/${recruiterId}`);
+  const res = await deduplicatedGet<WorkspaceDetail>(`/api/workspaces/${recruiterId}`);
+  return res.data;
 }
 
 export async function getWorkspaceCandidates(
@@ -70,5 +72,6 @@ export async function getWorkspaceCandidates(
     limit?: number;
   }
 ): Promise<WorkspaceCandidatesResponse> {
-  return deduplicatedGet(`/api/workspaces/${recruiterId}/candidates`, { params });
+  const res = await deduplicatedGet<WorkspaceCandidatesResponse>(`/api/workspaces/${recruiterId}/candidates`, { params });
+  return res.data;
 }
