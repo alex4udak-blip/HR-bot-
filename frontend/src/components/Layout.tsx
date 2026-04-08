@@ -32,10 +32,12 @@ import {
   TrendingUp,
   Puzzle,
   Upload,
+  ChevronDown,
   type LucideIcon
 } from 'lucide-react';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+import { useVacancyStore } from '@/stores/vacancyStore';
 import { useOnboardingTour } from '@/hooks/useOnboardingTour';
 import * as notificationsApi from '@/services/api/notifications';
 import type { Notification as AppNotification } from '@/services/api/notifications';
@@ -131,6 +133,16 @@ export default function Layout() {
   }, [user?.org_role]);
   const navigate = useNavigate();
   const { startTour, resetTour, hasCompletedTour } = useOnboardingTour();
+
+  // Sidebar: expandable "Мои воронки" with vacancy list
+  const { vacancies, fetchVacancies } = useVacancyStore();
+  const [expandedFunnels, setExpandedFunnels] = useState(false);
+
+  useEffect(() => {
+    if (activeBlock === 'hr') {
+      fetchVacancies();
+    }
+  }, [activeBlock, fetchVacancies]);
 
   // Notifications state
   const [unreadCount, setUnreadCount] = useState(0);
@@ -368,25 +380,84 @@ export default function Layout() {
             .map((section) => (
               <div key={section.id}>
                 <div className="space-y-0.5">
-                  {section.items.map((item) => (
-                    <NavLink
-                      key={item.path}
-                      to={item.path}
-                      end={item.path.includes('?')}
-                      data-tour={pathToTourAttribute[item.path]}
-                      className={({ isActive }) =>
-                        clsx(
-                          'flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all duration-200 text-sm',
-                          isActive
-                            ? clsx(BLOCK_ACCENT[activeBlock])
-                            : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
-                        )
-                      }
-                    >
-                      <item.icon className="w-4 h-4 flex-shrink-0" />
-                      <span className="font-medium truncate">{item.label}</span>
-                    </NavLink>
-                  ))}
+                  {section.items.map((item) => {
+                    // "Мои воронки" — expandable with vacancy sub-list
+                    if (item.path === '/my-funnels') {
+                      const myVacancies = vacancies.filter(v => v.status === 'open' || v.status === 'paused').slice(0, 10);
+                      return (
+                        <div key={item.path}>
+                          <div className="flex items-center">
+                            <NavLink
+                              to={item.path}
+                              className={({ isActive }) =>
+                                clsx(
+                                  'flex-1 flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all duration-200 text-sm',
+                                  isActive
+                                    ? clsx(BLOCK_ACCENT[activeBlock])
+                                    : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
+                                )
+                              }
+                            >
+                              <item.icon className="w-4 h-4 flex-shrink-0" />
+                              <span className="font-medium truncate">{item.label}</span>
+                            </NavLink>
+                            {myVacancies.length > 0 && (
+                              <button
+                                onClick={() => setExpandedFunnels(!expandedFunnels)}
+                                className="p-1.5 rounded-lg text-white/30 hover:text-white/60 hover:bg-white/5 transition-all"
+                              >
+                                <ChevronDown className={clsx('w-3.5 h-3.5 transition-transform', expandedFunnels && 'rotate-180')} />
+                              </button>
+                            )}
+                          </div>
+                          {expandedFunnels && myVacancies.length > 0 && (
+                            <div className="ml-4 pl-3 border-l border-white/5 mt-0.5 space-y-0.5">
+                              {myVacancies.map(v => (
+                                <NavLink
+                                  key={v.id}
+                                  to={`/vacancies/${v.id}`}
+                                  className={({ isActive }) =>
+                                    clsx(
+                                      'flex items-center gap-2 py-1.5 px-2 rounded-md text-xs transition-all',
+                                      isActive
+                                        ? 'text-blue-400 bg-blue-500/10'
+                                        : 'text-white/40 hover:text-white/60 hover:bg-white/[0.03]'
+                                    )
+                                  }
+                                >
+                                  <span className={clsx(
+                                    'w-1.5 h-1.5 rounded-full flex-shrink-0',
+                                    v.status === 'open' ? 'bg-green-400' : 'bg-yellow-400'
+                                  )} />
+                                  <span className="truncate">{v.title}</span>
+                                </NavLink>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <NavLink
+                        key={item.path}
+                        to={item.path}
+                        end={item.path.includes('?')}
+                        data-tour={pathToTourAttribute[item.path]}
+                        className={({ isActive }) =>
+                          clsx(
+                            'flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all duration-200 text-sm',
+                            isActive
+                              ? clsx(BLOCK_ACCENT[activeBlock])
+                              : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
+                          )
+                        }
+                      >
+                        <item.icon className="w-4 h-4 flex-shrink-0" />
+                        <span className="font-medium truncate">{item.label}</span>
+                      </NavLink>
+                    );
+                  })}
                 </div>
               </div>
             ))}

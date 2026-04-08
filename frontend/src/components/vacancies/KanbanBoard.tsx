@@ -12,7 +12,8 @@ import {
   Users,
   GripVertical,
   Filter,
-  X
+  X,
+  Settings
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -21,8 +22,11 @@ import type { Vacancy, VacancyApplication, ApplicationStage, CompatibilityScore 
 import { APPLICATION_STAGE_LABELS, APPLICATION_STAGE_COLORS } from '@/types';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { updateApplication, calculateCompatibilityScore, getAssignableUsers } from '@/services/api';
+import { updateVacancy } from '@/services/api/vacancies';
 import type { AssignableUser } from '@/services/api/vacancies';
 import AddCandidateModal from './AddCandidateModal';
+import StagesConfigModal from './StagesConfigModal';
+import type { StageColumn } from './StagesConfigModal';
 import ApplicationDetailModal from './ApplicationDetailModal';
 import InterviewSummaryModal from './InterviewSummaryModal';
 import type { InterviewSummaryData } from './InterviewSummaryModal';
@@ -80,8 +84,8 @@ function dragReducer(state: DragState, action: DragAction): DragState {
   }
 }
 
-// HR Pipeline по ТЗ (DB enum → display label)
-const VISIBLE_STAGES: ApplicationStage[] = [
+// HR Pipeline по ТЗ (DB enum → display label) — default when no custom_stages
+const DEFAULT_VISIBLE_STAGES: ApplicationStage[] = [
   'applied',      // Новый
   'screening',    // Отбор
   'phone_screen', // Собеседование назначено
@@ -92,10 +96,38 @@ const VISIBLE_STAGES: ApplicationStage[] = [
   'rejected'      // Отказ
 ];
 
+/** Derive visible stages and labels from vacancy.custom_stages or defaults */
+function getStagesConfig(vacancy: Vacancy): {
+  stages: ApplicationStage[];
+  labels: Record<string, string>;
+} {
+  const custom = vacancy.custom_stages?.columns;
+  if (!custom || custom.length === 0) {
+    return {
+      stages: DEFAULT_VISIBLE_STAGES,
+      labels: APPLICATION_STAGE_LABELS,
+    };
+  }
+  const stages: ApplicationStage[] = [];
+  const labels: Record<string, string> = { ...APPLICATION_STAGE_LABELS };
+  for (const col of custom) {
+    if (!col.visible) continue;
+    // For virtual stages (maps_to), use the underlying enum value for data
+    const enumKey = (col.maps_to || col.key) as ApplicationStage;
+    stages.push(enumKey);
+    labels[enumKey] = col.label;
+  }
+  return { stages, labels };
+}
+
 export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   const navigate = useNavigate();
   const [showAddCandidate, setShowAddCandidate] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<VacancyApplication | null>(null);
+  const [showStagesConfig, setShowStagesConfig] = useState(false);
+
+  // Derive stages from custom config or defaults
+  const { stages: VISIBLE_STAGES, labels: stageLabels } = getStagesConfig(vacancy);
 
   // Filter state
   const [showFilters, setShowFilters] = useState(false);
@@ -150,6 +182,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
     kanbanBoard,
     isKanbanLoading,
     error,
+    fetchVacancy,
     fetchKanbanBoard,
     setKanbanFilters,
     moveApplication,
@@ -275,7 +308,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
         } else {
           try {
             await moveApplication(currentApp.id, currentTarget.stage);
-            toast.success(`Кандидат перемещён в "${APPLICATION_STAGE_LABELS[currentTarget.stage]}"`);
+            toast.success(`Кандидат перемещён в "${stageLabels[currentTarget.stage]}"`);
           } catch {
             toast.error('Ошибка при перемещении кандидата');
           }
@@ -546,6 +579,13 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setShowStagesConfig(true)}
+              className="p-1.5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white/60 transition-colors"
+              title="Настройка этапов воронки"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+            <button
               onClick={() => setShowFilters(!showFilters)}
               className={clsx(
                 'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs sm:text-sm transition-colors',
@@ -682,7 +722,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                   APPLICATION_STAGE_COLORS[stage]
                 )}>
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm sm:text-base">{APPLICATION_STAGE_LABELS[stage]}</span>
+                    <span className="font-medium text-sm sm:text-base">{stageLabels[stage]}</span>
                     <span className="text-xs px-2 py-0.5 bg-black/20 rounded-full">
                       {apps.length}
                     </span>
@@ -855,7 +895,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                                       setMovingApps(prev => new Set(prev).add(app.id));
                                       try {
                                         await moveApplication(app.id, nextStage);
-                                        toast.success(`→ ${APPLICATION_STAGE_LABELS[nextStage]}`);
+                                        toast.success(`→ ${stageLabels[nextStage]}`);
                                       } catch {
                                         toast.error('Ошибка при смене этапа');
                                       } finally {
@@ -870,7 +910,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                                       "p-1 hover:bg-white/10 rounded-lg text-white/30 hover:text-blue-400 transition-all active:scale-90",
                                       movingApps.has(app.id) && "opacity-50 cursor-not-allowed"
                                     )}
-                                    title={`В "${APPLICATION_STAGE_LABELS[nextStage]}"`}
+                                    title={`В "${stageLabels[nextStage]}"`}
                                   >
                                     <span className="text-sm font-bold">{movingApps.has(app.id) ? '...' : '→'}</span>
                                   </button>
@@ -957,10 +997,23 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
               rating: data.rating || application.rating,
             });
             await moveApplication(application.id, targetStage);
-            toast.success(`Кандидат перемещён в "${APPLICATION_STAGE_LABELS[targetStage]}"`);
+            toast.success(`Кандидат перемещён в "${stageLabels[targetStage]}"`);
             setPendingMove(null);
           }}
           onCancel={() => setPendingMove(null)}
+        />
+      )}
+
+      {/* Stages Config Modal */}
+      {showStagesConfig && (
+        <StagesConfigModal
+          columns={vacancy.custom_stages?.columns ?? null}
+          onSave={async (columns: StageColumn[]) => {
+            await updateVacancy(vacancy.id, { custom_stages: { columns } });
+            // Re-fetch vacancy to pick up new stages config
+            await fetchVacancy(vacancy.id);
+          }}
+          onClose={() => setShowStagesConfig(false)}
         />
       )}
 

@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from ..database import get_db
 from ..models.database import (
-    FormTemplate, FormSubmission,
+    FormTemplate, FormSubmission, FormVacancy,
     Entity, EntityType, EntityStatus,
     EntityFile, EntityFileType,
     Vacancy, VacancyApplication, ApplicationStage,
@@ -43,7 +43,7 @@ router = APIRouter()
 
 class FormFieldSchema(BaseModel):
     id: str
-    type: str  # text, email, phone, textarea, select, multiselect, radio, file
+    type: str  # text, email, phone, textarea, select, multiselect, radio, file, url
     label: str
     required: bool = False
     placeholder: Optional[str] = None
@@ -53,7 +53,8 @@ class FormFieldSchema(BaseModel):
 class FormCreateSchema(BaseModel):
     title: str
     description: Optional[str] = None
-    vacancy_id: Optional[int] = None
+    vacancy_id: Optional[int] = None  # legacy single vacancy
+    vacancy_ids: Optional[List[int]] = None  # multiple vacancies
     fields: List[FormFieldSchema] = []
     is_active: bool = True
 
@@ -61,7 +62,8 @@ class FormCreateSchema(BaseModel):
 class FormUpdateSchema(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
-    vacancy_id: Optional[int] = None
+    vacancy_id: Optional[int] = None  # legacy single vacancy
+    vacancy_ids: Optional[List[int]] = None  # multiple vacancies
     fields: Optional[List[FormFieldSchema]] = None
     is_active: Optional[bool] = None
 
@@ -136,6 +138,7 @@ async def list_forms(
     # Get submission counts
     form_ids = [f.id for f in forms]
     counts = {}
+    fv_map = {}  # form_id -> [vacancy_ids]
     if form_ids:
         count_result = await db.execute(
             select(FormSubmission.form_id, func.count(FormSubmission.id))
@@ -144,6 +147,14 @@ async def list_forms(
         )
         counts = dict(count_result.all())
 
+        # Get vacancy_ids for each form via junction table
+        fv_result = await db.execute(
+            select(FormVacancy.form_id, FormVacancy.vacancy_id)
+            .where(FormVacancy.form_id.in_(form_ids))
+        )
+        for fid, vid in fv_result.all():
+            fv_map.setdefault(fid, []).append(vid)
+
     return [
         {
             "id": f.id,
@@ -151,6 +162,7 @@ async def list_forms(
             "description": f.description,
             "slug": f.slug,
             "vacancy_id": f.vacancy_id,
+            "vacancy_ids": fv_map.get(f.id, [f.vacancy_id] if f.vacancy_id else []),
             "is_active": f.is_active,
             "fields": f.fields or [],
             "submissions_count": counts.get(f.id, 0),
@@ -176,9 +188,12 @@ async def create_form(
 
     slug = generate_slug(body.title)
 
+    # Resolve vacancy_ids from both legacy and new fields
+    vacancy_ids = body.vacancy_ids or ([body.vacancy_id] if body.vacancy_id else [])
+
     form = FormTemplate(
         org_id=org.id,
-        vacancy_id=body.vacancy_id,
+        vacancy_id=vacancy_ids[0] if vacancy_ids else None,  # legacy compat
         created_by=current_user.id,
         title=body.title,
         description=body.description,
@@ -187,6 +202,12 @@ async def create_form(
         fields=[f.model_dump() for f in body.fields],
     )
     db.add(form)
+    await db.flush()
+
+    # Create many-to-many links
+    for vid in vacancy_ids:
+        db.add(FormVacancy(form_id=form.id, vacancy_id=vid))
+
     await db.commit()
     await db.refresh(form)
 
@@ -196,6 +217,7 @@ async def create_form(
         "description": form.description,
         "slug": form.slug,
         "vacancy_id": form.vacancy_id,
+        "vacancy_ids": vacancy_ids,
         "is_active": form.is_active,
         "fields": form.fields or [],
         "submissions_count": 0,
@@ -267,15 +289,37 @@ async def update_form(
         form.title = body.title
     if body.description is not None:
         form.description = body.description
-    if body.vacancy_id is not None:
-        form.vacancy_id = body.vacancy_id
     if body.fields is not None:
         form.fields = [f.model_dump() for f in body.fields]
     if body.is_active is not None:
         form.is_active = body.is_active
 
+    # Handle multi-vacancy update
+    vacancy_ids = None
+    if body.vacancy_ids is not None:
+        vacancy_ids = body.vacancy_ids
+    elif body.vacancy_id is not None:
+        vacancy_ids = [body.vacancy_id] if body.vacancy_id else []
+
+    if vacancy_ids is not None:
+        form.vacancy_id = vacancy_ids[0] if vacancy_ids else None  # legacy compat
+        # Replace junction table entries
+        await db.execute(
+            select(FormVacancy).where(FormVacancy.form_id == form.id)
+        )
+        from sqlalchemy import delete
+        await db.execute(delete(FormVacancy).where(FormVacancy.form_id == form.id))
+        for vid in vacancy_ids:
+            db.add(FormVacancy(form_id=form.id, vacancy_id=vid))
+
     await db.commit()
     await db.refresh(form)
+
+    # Get current vacancy_ids
+    fv_result = await db.execute(
+        select(FormVacancy.vacancy_id).where(FormVacancy.form_id == form.id)
+    )
+    current_vacancy_ids = [row[0] for row in fv_result.all()]
 
     count_result = await db.execute(
         select(func.count(FormSubmission.id)).where(FormSubmission.form_id == form.id)
@@ -288,6 +332,7 @@ async def update_form(
         "description": form.description,
         "slug": form.slug,
         "vacancy_id": form.vacancy_id,
+        "vacancy_ids": current_vacancy_ids,
         "is_active": form.is_active,
         "fields": form.fields or [],
         "submissions_count": submissions_count,
@@ -478,15 +523,22 @@ async def submit_public_form(
     )
     db.add(submission)
 
-    # If form has vacancy_id, create VacancyApplication
-    vacancy = None
-    if form.vacancy_id:
-        # Check vacancy exists
+    # Get all linked vacancies (via junction table, fallback to legacy vacancy_id)
+    fv_result = await db.execute(
+        select(FormVacancy.vacancy_id).where(FormVacancy.form_id == form.id)
+    )
+    linked_vacancy_ids = [row[0] for row in fv_result.all()]
+    if not linked_vacancy_ids and form.vacancy_id:
+        linked_vacancy_ids = [form.vacancy_id]
+
+    # Create VacancyApplication for each linked vacancy
+    linked_vacancies = []
+    if linked_vacancy_ids:
         vac_result = await db.execute(
-            select(Vacancy).where(Vacancy.id == form.vacancy_id)
+            select(Vacancy).where(Vacancy.id.in_(linked_vacancy_ids))
         )
-        vacancy = vac_result.scalar_one_or_none()
-        if vacancy:
+        linked_vacancies = list(vac_result.scalars().all())
+        for vacancy in linked_vacancies:
             application = VacancyApplication(
                 vacancy_id=vacancy.id,
                 entity_id=entity.id,
@@ -499,10 +551,9 @@ async def submit_public_form(
     await db.commit()
 
     # --- Notification: new candidate from public form ---
-    if form.vacancy_id and vacancy:
+    for vacancy in linked_vacancies:
         try:
             from ..services.hr_notifications import notify_new_candidate
-            # For public forms, use the form creator as the "added_by" user
             creator_result = await db.execute(
                 select(User).where(User.id == form.created_by)
             )
@@ -672,14 +723,22 @@ async def submit_public_form_with_files(
                 except Exception:
                     logger.exception(f"PDF→image conversion failed for {fpath}")
 
-    # Create VacancyApplication if form has vacancy_id
-    vacancy = None
-    if form.vacancy_id:
+    # Get all linked vacancies (via junction table, fallback to legacy vacancy_id)
+    fv_result = await db.execute(
+        select(FormVacancy.vacancy_id).where(FormVacancy.form_id == form.id)
+    )
+    linked_vacancy_ids = [row[0] for row in fv_result.all()]
+    if not linked_vacancy_ids and form.vacancy_id:
+        linked_vacancy_ids = [form.vacancy_id]
+
+    # Create VacancyApplication for each linked vacancy
+    linked_vacancies = []
+    if linked_vacancy_ids:
         vac_result = await db.execute(
-            select(Vacancy).where(Vacancy.id == form.vacancy_id)
+            select(Vacancy).where(Vacancy.id.in_(linked_vacancy_ids))
         )
-        vacancy = vac_result.scalar_one_or_none()
-        if vacancy:
+        linked_vacancies = list(vac_result.scalars().all())
+        for vacancy in linked_vacancies:
             application = VacancyApplication(
                 vacancy_id=vacancy.id,
                 entity_id=entity.id,
@@ -692,7 +751,7 @@ async def submit_public_form_with_files(
     await db.commit()
 
     # Notification
-    if form.vacancy_id and vacancy:
+    for vacancy in linked_vacancies:
         try:
             from ..services.hr_notifications import notify_new_candidate
             creator_result = await db.execute(

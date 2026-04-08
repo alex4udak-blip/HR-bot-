@@ -9,7 +9,7 @@ import api from './client';
 
 export interface FormField {
   id: string;
-  type: 'text' | 'email' | 'phone' | 'textarea' | 'select' | 'multiselect' | 'radio' | 'file';
+  type: 'text' | 'email' | 'phone' | 'textarea' | 'select' | 'multiselect' | 'radio' | 'file' | 'url';
   label: string;
   required: boolean;
   placeholder?: string;
@@ -22,6 +22,7 @@ export interface FormTemplate {
   description: string | null;
   slug: string;
   vacancy_id: number | null;
+  vacancy_ids: number[];
   is_active: boolean;
   fields: FormField[];
   submissions_count: number;
@@ -56,6 +57,7 @@ export interface FormCreateData {
   title: string;
   description?: string;
   vacancy_id?: number | null;
+  vacancy_ids?: number[];
   fields: FormField[];
   is_active?: boolean;
 }
@@ -64,6 +66,7 @@ export interface FormUpdateData {
   title?: string;
   description?: string;
   vacancy_id?: number | null;
+  vacancy_ids?: number[];
   fields?: FormField[];
   is_active?: boolean;
 }

@@ -292,6 +292,8 @@ class VacancyCreate(BaseModel):
     department_id: Optional[int] = None
     hiring_manager_id: Optional[int] = None
     closes_at: Optional[datetime] = None
+    custom_stages: Optional[dict] = None
+    kanban_card_fields: Optional[List[str]] = None
 
     @field_validator("title")
     @classmethod
@@ -377,6 +379,8 @@ class VacancyUpdate(BaseModel):
     department_id: Optional[int] = None
     hiring_manager_id: Optional[int] = None
     closes_at: Optional[datetime] = None
+    custom_stages: Optional[dict] = None
+    kanban_card_fields: Optional[List[str]] = None
 
     @field_validator("title")
     @classmethod
@@ -475,6 +479,9 @@ class VacancyResponse(BaseModel):
     applications_count: int = 0
     # Stage counts for quick overview
     stage_counts: dict = {}
+    # Funnel customization
+    custom_stages: Optional[dict] = None
+    kanban_card_fields: Optional[List[str]] = None
 
     class Config:
         from_attributes = True

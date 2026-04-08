@@ -47,6 +47,7 @@ const FIELD_TYPES: { type: FormField['type']; label: string; icon: React.Element
   { type: 'multiselect', label: 'Множественный выбор', icon: CheckSquare },
   { type: 'radio', label: 'Радио-кнопки', icon: CircleDot },
   { type: 'file', label: 'Файл', icon: Upload },
+  { type: 'url', label: 'Ссылка (URL)', icon: ExternalLink },
 ];
 
 const TYPE_LABELS: Record<string, string> = {
@@ -58,6 +59,7 @@ const TYPE_LABELS: Record<string, string> = {
   multiselect: 'Множественный выбор',
   radio: 'Радио-кнопки',
   file: 'Файл',
+  url: 'Ссылка (URL)',
 };
 
 let fieldCounter = 0;
@@ -220,6 +222,15 @@ function FormEditView({ formId }: { formId: number }) {
   const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
   const [showSubmissions, setShowSubmissions] = useState(false);
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [selectedVacancyIds, setSelectedVacancyIds] = useState<number[]>([]);
+  const [vacancies, setVacancies] = useState<{ id: number; title: string }[]>([]);
+
+  useEffect(() => {
+    // Load vacancies for multi-select
+    import('@/services/api').then(api => {
+      api.getVacancies().then((vacs: { id: number; title: string }[]) => setVacancies(vacs));
+    });
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -230,6 +241,7 @@ function FormEditView({ formId }: { formId: number }) {
         setDescription(data.description || '');
         setIsActive(data.is_active);
         setFields(data.fields || []);
+        setSelectedVacancyIds(data.vacancy_ids || (data.vacancy_id ? [data.vacancy_id] : []));
       } catch {
         toast.error('Форма не найдена');
         navigate('/form-builder');
@@ -251,6 +263,7 @@ function FormEditView({ formId }: { formId: number }) {
         description: description.trim() || undefined,
         fields,
         is_active: isActive,
+        vacancy_ids: selectedVacancyIds,
       });
       setForm(updated);
       toast.success('Форма сохранена');
@@ -378,6 +391,38 @@ function FormEditView({ formId }: { formId: number }) {
           className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-lg text-sm text-dark-300 placeholder-dark-500 outline-none focus:border-dark-600"
           placeholder="Описание формы (необязательно)"
         />
+      </div>
+
+      {/* Linked vacancies (multi-select) */}
+      <div className="mb-4">
+        <label className="block text-sm text-dark-400 mb-1.5">Привязанные воронки</label>
+        <div className="flex flex-wrap gap-2">
+          {vacancies.map(v => {
+            const selected = selectedVacancyIds.includes(v.id);
+            return (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => {
+                  setSelectedVacancyIds(prev =>
+                    selected ? prev.filter(id => id !== v.id) : [...prev, v.id]
+                  );
+                }}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm border transition-colors',
+                  selected
+                    ? 'bg-accent-500/20 border-accent-500/50 text-accent-400'
+                    : 'bg-dark-800 border-dark-700 text-dark-400 hover:border-dark-600'
+                )}
+              >
+                {v.title}
+              </button>
+            );
+          })}
+          {vacancies.length === 0 && (
+            <span className="text-dark-500 text-sm">Нет доступных вакансий</span>
+          )}
+        </div>
       </div>
 
       {/* Add field buttons */}

@@ -860,6 +860,10 @@ class Vacancy(Base):
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
+    # Funnel customization
+    custom_stages = Column(JSON, nullable=True)  # Custom stage labels/order per funnel
+    kanban_card_fields = Column(JSON, nullable=True)  # Which fields to show on kanban cards
+
     # Vector embedding for similarity search (OpenAI text-embedding-3-small: 1536 dimensions)
     # Note: embedding column is added via migration if pgvector is available
     embedding_updated_at = Column(DateTime, nullable=True)
@@ -1459,6 +1463,23 @@ class FormSubmission(Base):
 
     form = relationship("FormTemplate", back_populates="submissions")
     entity = relationship("Entity")
+
+
+class FormVacancy(Base):
+    """Many-to-many: one form can be linked to multiple vacancies"""
+    __tablename__ = "form_vacancy"
+
+    id = Column(Integer, primary_key=True)
+    form_id = Column(Integer, ForeignKey("form_templates.id", ondelete="CASCADE"), nullable=False, index=True)
+    vacancy_id = Column(Integer, ForeignKey("vacancies.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('form_id', 'vacancy_id', name='uq_form_vacancy'),
+    )
+
+    form = relationship("FormTemplate")
+    vacancy = relationship("Vacancy")
 
 
 # ============================================================

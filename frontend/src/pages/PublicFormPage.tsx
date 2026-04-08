@@ -324,6 +324,16 @@ function FormFieldRenderer({
         </div>
       )}
 
+      {field.type === 'url' && (
+        <input
+          type="url"
+          value={String(value || '')}
+          onChange={e => onChange(e.target.value)}
+          placeholder={field.placeholder || 'https://...'}
+          className={inputClasses}
+        />
+      )}
+
       {field.type === 'file' && (
         <div className="mt-1">
           {selectedFile ? (

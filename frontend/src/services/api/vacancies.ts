@@ -58,6 +58,10 @@ export interface VacancyUpdate {
   department_id?: number;
   hiring_manager_id?: number;
   closes_at?: string;
+  custom_stages?: {
+    columns: Array<{ key: string; label: string; visible: boolean; maps_to?: string }>;
+  } | null;
+  kanban_card_fields?: string[] | null;
 }
 
 export interface ApplicationCreate {

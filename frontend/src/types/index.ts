@@ -588,6 +588,11 @@ export interface Vacancy {
   applications_count: number;
   stage_counts: Record<string, number>;
   source_url?: string;
+  // Funnel customization
+  custom_stages?: {
+    columns: Array<{ key: string; label: string; visible: boolean; maps_to?: string }>;
+  } | null;
+  kanban_card_fields?: string[] | null;
 }
 
 export interface VacancyApplication {
