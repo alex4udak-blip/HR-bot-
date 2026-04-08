@@ -125,19 +125,19 @@ export default function StagesConfigModal({ columns, onSave, onClose }: StagesCo
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="relative w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+        className="relative w-full max-w-lg bg-white dark:bg-[#1a1a2e] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-          <h2 className="text-lg font-semibold">Настройка этапов воронки</h2>
-          <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg transition-colors">
-            <X className="w-5 h-5 text-white/60" />
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-white/10">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Настройка этапов воронки</h2>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-colors">
+            <X className="w-5 h-5 text-gray-400 dark:text-white/60" />
           </button>
         </div>
 
         {/* Body */}
         <div className="px-6 py-4 max-h-[60vh] overflow-y-auto space-y-2">
-          <p className="text-xs text-white/40 mb-3">
+          <p className="text-xs text-gray-400 dark:text-white/40 mb-3">
             Переименовывайте этапы, скрывайте ненужные или добавьте виртуальные. Перетаскивайте для изменения порядка.
           </p>
 
@@ -155,18 +155,18 @@ export default function StagesConfigModal({ columns, onSave, onClose }: StagesCo
                 onDragEnd={handleDragEnd}
                 className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all ${
                   stage.visible
-                    ? 'border-white/10 bg-white/5'
-                    : 'border-white/5 bg-white/[0.02] opacity-60'
+                    ? 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5'
+                    : 'border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-white/[0.02] opacity-60'
                 } ${dragIndex === index ? 'border-blue-500/50 shadow-lg' : ''}`}
               >
-                <GripVertical className="w-4 h-4 text-white/20 cursor-grab flex-shrink-0" />
+                <GripVertical className="w-4 h-4 text-gray-300 dark:text-white/20 cursor-grab flex-shrink-0" />
 
                 {/* Label input */}
                 <input
                   type="text"
                   value={stage.label}
                   onChange={e => handleLabelChange(index, e.target.value)}
-                  className="flex-1 bg-transparent border-none outline-none text-sm text-white/90 placeholder-white/30 min-w-0"
+                  className="flex-1 bg-transparent border-none outline-none text-sm text-gray-900 dark:text-white/90 placeholder-gray-300 dark:placeholder-white/30 min-w-0"
                   placeholder="Название этапа"
                 />
 
@@ -175,7 +175,7 @@ export default function StagesConfigModal({ columns, onSave, onClose }: StagesCo
                   <select
                     value={stage.maps_to}
                     onChange={e => handleMapsToChange(index, e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-white/60 max-w-[120px]"
+                    className="bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1 text-xs text-gray-600 dark:text-white/60 max-w-[120px]"
                     title="Маппинг на реальный этап"
                   >
                     {ENUM_VALUES.map(v => (
@@ -191,8 +191,8 @@ export default function StagesConfigModal({ columns, onSave, onClose }: StagesCo
                   title={stage.visible ? 'Скрыть этап' : 'Показать этап'}
                 >
                   {stage.visible
-                    ? <Eye className="w-4 h-4 text-white/40" />
-                    : <EyeOff className="w-4 h-4 text-white/20" />
+                    ? <Eye className="w-4 h-4 text-gray-400 dark:text-white/40" />
+                    : <EyeOff className="w-4 h-4 text-gray-300 dark:text-white/20" />
                   }
                 </button>
 
@@ -213,7 +213,7 @@ export default function StagesConfigModal({ columns, onSave, onClose }: StagesCo
           {/* Add virtual stage */}
           <button
             onClick={addVirtualStage}
-            className="w-full flex items-center justify-center gap-2 p-2.5 border border-dashed border-white/10 rounded-xl text-white/40 hover:text-white/60 hover:border-white/20 transition-colors text-sm"
+            className="w-full flex items-center justify-center gap-2 p-2.5 border border-dashed border-gray-300 dark:border-white/10 rounded-xl text-gray-400 dark:text-white/40 hover:text-gray-600 dark:hover:text-white/60 hover:border-gray-400 dark:hover:border-white/20 transition-colors text-sm"
           >
             <Plus className="w-4 h-4" />
             Добавить виртуальный этап
@@ -221,17 +221,17 @@ export default function StagesConfigModal({ columns, onSave, onClose }: StagesCo
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-white/10">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-white/10">
           <button
             onClick={handleReset}
-            className="text-sm text-white/40 hover:text-white/60 transition-colors"
+            className="text-sm text-gray-400 dark:text-white/40 hover:text-gray-600 dark:hover:text-white/60 transition-colors"
           >
             Сбросить к умолчанию
           </button>
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm text-white/60 hover:text-white transition-colors"
+              className="px-4 py-2 text-sm text-gray-500 dark:text-white/60 hover:text-gray-700 dark:hover:text-white transition-colors"
             >
               Отмена
             </button>
