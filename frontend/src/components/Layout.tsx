@@ -20,7 +20,6 @@ import {
   ListTodo,
   Cloud,
   GitBranch,
-  ClipboardList,
   FileText,
   FileSignature,
   Bell,

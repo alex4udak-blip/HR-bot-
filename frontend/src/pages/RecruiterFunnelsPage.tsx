@@ -13,14 +13,16 @@ import {
   Loader2,
   FolderOpen,
   Menu,
+  Settings,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication } from '@/services/api';
+import { getUsers, getApplications, updateApplication, updateVacancy } from '@/services/api';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
-import { VacancyStatusBadge } from '@/components/vacancies';
+import { VacancyStatusBadge, StagesConfigModal } from '@/components/vacancies';
+import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 
 // ==================== Constants ====================
 
@@ -97,6 +99,7 @@ export default function RecruiterFunnelsPage() {
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
   const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set());
+  const [showStagesConfig, setShowStagesConfig] = useState(false);
 
   // Load data
   useEffect(() => {
@@ -209,10 +212,28 @@ export default function RecruiterFunnelsPage() {
     );
   }, [candidates, candidateSearch]);
 
+  // Derive stages config from custom_stages or fallback to defaults
+  const stagesConfig = useMemo((): { keys: string[]; labels: Record<string, string>; keyToEnum: Record<string, string> } => {
+    const cols = selectedVacancy?.custom_stages?.columns as StageColumn[] | undefined;
+    if (cols && cols.length > 0) {
+      const visible = cols.filter(c => c.visible);
+      return {
+        keys: visible.map(c => c.maps_to || c.key),
+        labels: Object.fromEntries(visible.map(c => [c.maps_to || c.key, c.label])),
+        keyToEnum: Object.fromEntries(visible.map(c => [c.maps_to || c.key, c.maps_to || c.key])),
+      };
+    }
+    return {
+      keys: [...STAGE_ORDER],
+      labels: { ...STAGE_LABELS },
+      keyToEnum: Object.fromEntries(STAGE_ORDER.map(s => [s, s])),
+    };
+  }, [selectedVacancy]);
+
   // Group candidates by stage
   const groupedByStage = useMemo(() => {
     const map = new Map<string, VacancyApplication[]>();
-    for (const stage of STAGE_ORDER) map.set(stage, []);
+    for (const stage of stagesConfig.keys) map.set(stage, []);
     for (const c of filteredCandidates) {
       const arr = map.get(c.stage);
       if (arr) arr.push(c);
@@ -226,7 +247,7 @@ export default function RecruiterFunnelsPage() {
       if (items.length > 0) result.push([stage, items]);
     }
     return result;
-  }, [filteredCandidates]);
+  }, [filteredCandidates, stagesConfig]);
 
   // Handlers
   const toggleGroup = (userId: number) => {
@@ -272,13 +293,20 @@ export default function RecruiterFunnelsPage() {
       setCandidates((prev) =>
         prev.map((c) => c.id === applicationId ? { ...c, stage: newStage } : c)
       );
-      toast.success(`Статус изменён → ${STAGE_LABELS[newStage] || newStage}`);
+      toast.success(`Статус изменён → ${stagesConfig.labels[newStage] || STAGE_LABELS[newStage] || newStage}`);
       // Refresh vacancy store for updated counts
       fetchVacancies();
     } catch {
       toast.error('Ошибка смены статуса');
     }
-  }, [fetchVacancies]);
+  }, [fetchVacancies, stagesConfig]);
+
+  // Save custom stages for selected vacancy
+  const handleSaveStages = useCallback(async (columns: StageColumn[]) => {
+    if (!selectedVacancyId) return;
+    await updateVacancy(selectedVacancyId, { custom_stages: { columns } });
+    fetchVacancies(); // refresh to pick up new custom_stages
+  }, [selectedVacancyId, fetchVacancies]);
 
   const formatDate = (iso?: string | null) => {
     if (!iso) return '';
@@ -535,6 +563,13 @@ export default function RecruiterFunnelsPage() {
                 <span className="text-xs text-dark-500 ml-1 sm:ml-2 flex-shrink-0">
                   {candidates.length}
                 </span>
+                <button
+                  onClick={() => setShowStagesConfig(true)}
+                  className="p-1 ml-1 rounded hover:bg-white/[0.08] transition-colors flex-shrink-0"
+                  title="Настроить этапы воронки"
+                >
+                  <Settings className="w-3.5 h-3.5 text-dark-400 hover:text-dark-200" />
+                </button>
               </div>
 
               {/* View tabs + search */}
@@ -608,7 +643,7 @@ export default function RecruiterFunnelsPage() {
                             )}
                             <span className={clsx('w-2 h-2 rounded-full', colors.dot)} />
                             <span className={clsx('text-sm font-semibold uppercase', colors.text)}>
-                              {STAGE_LABELS[stage] || stage}
+                              {stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage}
                             </span>
                             <span className={clsx('text-xs ml-1', colors.text)}>
                               {items.length}
@@ -646,6 +681,7 @@ export default function RecruiterFunnelsPage() {
                                       <StageDropdown
                                         currentStage={c.stage as ApplicationStage}
                                         onChangeStage={(newStage) => handleStageChange(c.id, newStage)}
+                                        customLabels={stagesConfig.labels}
                                       />
                                     </div>
                                   </div>
@@ -654,6 +690,7 @@ export default function RecruiterFunnelsPage() {
                                     <StageDropdown
                                       currentStage={c.stage as ApplicationStage}
                                       onChangeStage={(newStage) => handleStageChange(c.id, newStage)}
+                                      customLabels={stagesConfig.labels}
                                     />
                                   </div>
                                   {/* Date */}
@@ -711,7 +748,7 @@ export default function RecruiterFunnelsPage() {
                           <div className={clsx('flex items-center gap-2 px-3 py-2.5 border-b border-white/[0.06]', colors.bg)}>
                             <span className={clsx('w-2 h-2 rounded-full', colors.dot)} />
                             <span className={clsx('text-sm font-semibold', colors.text)}>
-                              {STAGE_LABELS[stage] || stage}
+                              {stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage}
                             </span>
                             <span className={clsx('text-xs ml-auto opacity-70', colors.text)}>
                               {items.length}
@@ -772,6 +809,15 @@ export default function RecruiterFunnelsPage() {
           onClose={() => setShowCreateModal(false)}
           onCreated={handleFunnelCreated}
           createVacancy={createVacancy}
+        />
+      )}
+
+      {/* Stages Config Modal */}
+      {showStagesConfig && selectedVacancy && (
+        <StagesConfigModal
+          columns={(selectedVacancy.custom_stages?.columns as StageColumn[]) ?? null}
+          onSave={handleSaveStages}
+          onClose={() => setShowStagesConfig(false)}
         />
       )}
     </div>
@@ -870,9 +916,11 @@ function CreateFunnelModal({
 function StageDropdown({
   currentStage,
   onChangeStage,
+  customLabels,
 }: {
   currentStage: ApplicationStage;
   onChangeStage: (stage: ApplicationStage) => void;
+  customLabels?: Record<string, string>;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -901,7 +949,7 @@ function StageDropdown({
           colors.badge,
         )}
       >
-        {STAGE_LABELS[currentStage] || currentStage}
+        {customLabels?.[currentStage] || STAGE_LABELS[currentStage] || currentStage}
       </button>
 
       {open && (
@@ -927,7 +975,7 @@ function StageDropdown({
                 )}
               >
                 <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', sc.dot)} />
-                <span className="flex-1">{STAGE_LABELS[stage] || stage}</span>
+                <span className="flex-1">{customLabels?.[stage] || STAGE_LABELS[stage] || stage}</span>
                 {isCurrent && (
                   <span className="text-[10px] text-dark-500">текущий</span>
                 )}
