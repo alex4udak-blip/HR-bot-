@@ -11,10 +11,7 @@ import {
   Clock,
   Users,
   ChevronLeft,
-  Edit,
-  Trash2,
   LayoutGrid,
-  List,
   Upload,
   Filter,
   X,
@@ -35,7 +32,6 @@ import { getDepartments } from '@/services/api';
 import type { Department, ParsedVacancy } from '@/services/api';
 import {
   VacancyForm,
-  VacancyDetail,
   KanbanBoard,
   StatusListView,
   VacancyCardSkeleton,
@@ -108,7 +104,7 @@ export default function VacanciesPage() {
   const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
   const [departmentFilter, setDepartmentFilter] = useState<number | 'all'>('all');
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'status_list'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'status_list'>('status_list');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingVacancy, setEditingVacancy] = useState<Vacancy | null>(null);
   const [showParserModal, setShowParserModal] = useState(false);
@@ -415,31 +411,11 @@ export default function VacanciesPage() {
             <h1 className="text-xl font-semibold">{currentVacancy.title}</h1>
             <VacancyStatusBadge status={currentVacancy.status} size="sm" />
           </div>
-          {/* Navigation to candidates page */}
-          <button
-            onClick={() => navigate('/candidates')}
-            className="flex items-center gap-2 px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg text-sm transition-colors"
-            title="Перейти к базе кандидатов"
-          >
-            <Users className="w-4 h-4" />
-            К кандидатам
-          </button>
-          <div className="flex items-center gap-2">
-            {/* View mode toggle group */}
+          <div className="flex items-center gap-1.5">
+            {/* View mode toggle */}
             <div className="flex items-center gap-0.5 bg-white/[0.03] rounded-lg p-0.5 border border-white/[0.06]">
               <button
-                onClick={() => setViewMode('list')}
-                className={clsx(
-                  'p-1.5 rounded-md transition-colors',
-                  viewMode === 'list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-white/70'
-                )}
-                title="Детали вакансии"
-              >
-                <List className="w-4 h-4" />
-              </button>
-              <button
                 onClick={() => setViewMode('status_list')}
-                data-tour="status-list-toggle"
                 className={clsx(
                   'p-1.5 rounded-md transition-colors',
                   viewMode === 'status_list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-white/70'
@@ -460,30 +436,14 @@ export default function VacanciesPage() {
                 <LayoutGrid className="w-4 h-4" />
               </button>
             </div>
-            <button
-              onClick={() => setEditingVacancy(currentVacancy)}
-              className="p-2 glass-button rounded-lg"
-              title="Редактировать"
-            >
-              <Edit className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => handleDeleteClick(currentVacancy)}
-              className="p-2 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors"
-              title="Удалить"
-            >
-              <Trash2 className="w-5 h-5" />
-            </button>
           </div>
         </div>
 
         <div className="flex-1 overflow-hidden">
           {viewMode === 'kanban' ? (
             <KanbanBoard vacancy={currentVacancy} />
-          ) : viewMode === 'status_list' ? (
-            <StatusListView vacancy={currentVacancy} />
           ) : (
-            <VacancyDetail vacancy={currentVacancy} />
+            <StatusListView vacancy={currentVacancy} />
           )}
         </div>
 
