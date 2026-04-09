@@ -12,6 +12,7 @@ import {
   X,
   Loader2,
   FolderOpen,
+  Menu,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -85,6 +86,7 @@ export default function RecruiterFunnelsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [mobileSidebar, setMobileSidebar] = useState(false);
   const [usersMap, setUsersMap] = useState<Record<number, string>>({});
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
 
@@ -240,6 +242,7 @@ export default function RecruiterFunnelsPage() {
     setSearchParams({ v: String(vacancyId) });
     setCandidateSearch('');
     setCollapsedStages(new Set());
+    setMobileSidebar(false);
   };
 
   const deselectVacancy = () => {
@@ -289,21 +292,44 @@ export default function RecruiterFunnelsPage() {
   // ==================== Render ====================
 
   return (
-    <div className="h-full flex overflow-hidden">
+    <div className="h-full flex overflow-hidden relative">
+      {/* Mobile sidebar overlay */}
+      {mobileSidebar && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          onClick={() => setMobileSidebar(false)}
+        />
+      )}
+
       {/* ========== LEFT SIDEBAR: Recruiter tree ========== */}
-      <aside className="w-[260px] flex-shrink-0 border-r border-white/[0.06] bg-white/[0.01] flex flex-col overflow-hidden">
+      <aside className={clsx(
+        'flex-shrink-0 border-r border-white/[0.06] bg-dark-900/95 backdrop-blur-xl flex flex-col overflow-hidden z-50 transition-transform duration-200',
+        // Desktop: always visible
+        'lg:relative lg:translate-x-0 lg:w-[260px]',
+        // Mobile: slide-in overlay
+        'fixed inset-y-0 left-0 w-[280px]',
+        mobileSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
+      )}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
           <span className="text-xs font-semibold text-dark-400 uppercase tracking-wider">
             {isHrAdmin ? 'Рекрутеры' : 'Мои воронки'}
           </span>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="p-1 hover:bg-white/[0.06] rounded transition-colors"
-            title="Новая воронка"
-          >
-            <Plus className="w-3.5 h-3.5 text-dark-400" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="p-1 hover:bg-white/[0.06] rounded transition-colors"
+              title="Новая воронка"
+            >
+              <Plus className="w-3.5 h-3.5 text-dark-400" />
+            </button>
+            <button
+              onClick={() => setMobileSidebar(false)}
+              className="lg:hidden p-1 hover:bg-white/[0.06] rounded transition-colors"
+            >
+              <X className="w-3.5 h-3.5 text-dark-400" />
+            </button>
+          </div>
         </div>
 
         {/* Search */}
@@ -421,7 +447,14 @@ export default function RecruiterFunnelsPage() {
           <div className="flex-1 flex flex-col overflow-y-auto p-4 lg:p-6">
             {/* Header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-              <div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setMobileSidebar(true)}
+                  className="lg:hidden p-2 -ml-1 rounded-lg hover:bg-white/[0.06] transition-colors"
+                >
+                  <Menu className="w-5 h-5 text-dark-300" />
+                </button>
+                <div>
                 <h1 className="text-xl lg:text-2xl font-bold text-dark-50">
                   {isHrAdmin ? 'Воронки рекрутеров' : 'Мои воронки'}
                 </h1>
@@ -429,6 +462,7 @@ export default function RecruiterFunnelsPage() {
                   {filteredVacancies.length} воронок
                   {isHrAdmin && ` у ${recruiterGroups.length} рекрутеров`}
                 </p>
+                </div>
               </div>
               <button
                 onClick={() => setShowCreateModal(true)}
@@ -467,62 +501,74 @@ export default function RecruiterFunnelsPage() {
           /* Vacancy selected — show candidates */
           <>
             {/* Top bar: breadcrumb + view tabs */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] bg-white/[0.01] flex-shrink-0">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-5 py-2 sm:py-3 gap-2 border-b border-white/[0.06] bg-white/[0.01] flex-shrink-0">
               {/* Breadcrumb */}
               <div className="flex items-center gap-1.5 text-sm min-w-0">
                 <button
+                  onClick={() => setMobileSidebar(true)}
+                  className="lg:hidden p-1.5 -ml-1 rounded-lg hover:bg-white/[0.06] transition-colors flex-shrink-0"
+                >
+                  <Menu className="w-4 h-4 text-dark-400" />
+                </button>
+                <button
                   onClick={deselectVacancy}
-                  className="text-dark-500 hover:text-dark-300 transition-colors"
+                  className="text-dark-500 hover:text-dark-300 transition-colors hidden sm:inline"
                 >
                   HR отдел
                 </button>
                 {isHrAdmin && selectedRecruiterName && (
                   <>
-                    <ChevronRight className="w-3.5 h-3.5 text-dark-600 flex-shrink-0" />
-                    <span className="text-dark-400 truncate max-w-[180px]">{selectedRecruiterName}</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-dark-600 flex-shrink-0 hidden sm:block" />
+                    <span className="text-dark-400 truncate max-w-[120px] lg:max-w-[180px] hidden sm:inline">{selectedRecruiterName}</span>
                   </>
                 )}
-                <ChevronRight className="w-3.5 h-3.5 text-dark-600 flex-shrink-0" />
-                <span className="text-dark-200 font-medium truncate max-w-[250px]">
+                <ChevronRight className="w-3.5 h-3.5 text-dark-600 flex-shrink-0 hidden sm:block" />
+                <button
+                  onClick={deselectVacancy}
+                  className="sm:hidden text-dark-500 hover:text-dark-300 transition-colors text-xs"
+                >
+                  ← Назад
+                </button>
+                <span className="text-dark-200 font-medium truncate max-w-[180px] sm:max-w-[250px]">
                   {selectedVacancy.title}
                 </span>
-                <span className="text-xs text-dark-500 ml-2">
-                  {candidates.length} кандидатов
+                <span className="text-xs text-dark-500 ml-1 sm:ml-2 flex-shrink-0">
+                  {candidates.length}
                 </span>
               </div>
 
               {/* View tabs + search */}
-              <div className="flex items-center gap-3 flex-shrink-0">
-                <div className="relative">
+              <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+                <div className="relative flex-1 sm:flex-none">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dark-500" />
                   <input
                     type="text"
                     placeholder="Поиск..."
                     value={candidateSearch}
                     onChange={(e) => setCandidateSearch(e.target.value)}
-                    className="w-44 pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
+                    className="w-full sm:w-44 pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
                   />
                 </div>
                 <div className="flex items-center bg-white/[0.03] rounded-lg border border-white/[0.06] p-0.5">
                   <button
                     onClick={() => setView('list')}
                     className={clsx(
-                      'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                      'flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded-md text-xs font-medium transition-colors',
                       view === 'list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200',
                     )}
                   >
                     <LayoutList className="w-3.5 h-3.5" />
-                    Список
+                    <span className="hidden sm:inline">Список</span>
                   </button>
                   <button
                     onClick={() => setView('board')}
                     className={clsx(
-                      'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                      'flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded-md text-xs font-medium transition-colors',
                       view === 'board' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200',
                     )}
                   >
                     <Columns3 className="w-3.5 h-3.5" />
-                    Доска
+                    <span className="hidden sm:inline">Доска</span>
                   </button>
                 </div>
               </div>
@@ -536,7 +582,7 @@ export default function RecruiterFunnelsPage() {
                 </div>
               ) : view === 'list' ? (
                 /* ===== LIST VIEW: grouped by stage ===== */
-                <div className="px-5 py-3 space-y-1">
+                <div className="px-3 sm:px-5 py-3 space-y-1">
                   {groupedByStage.length === 0 ? (
                     <div className="text-center py-16 text-dark-500 text-sm">
                       {candidateSearch ? 'Ничего не найдено' : 'Нет кандидатов в этой воронке'}
@@ -572,8 +618,8 @@ export default function RecruiterFunnelsPage() {
                           {/* Candidate rows */}
                           {!collapsed && (
                             <div className="mt-0.5">
-                              {/* Column headers */}
-                              <div className="grid grid-cols-[1fr_140px_100px_140px_100px] gap-2 px-3 py-1.5 text-[11px] text-dark-500 font-medium uppercase tracking-wide">
+                              {/* Column headers — hidden on mobile, show on md+ */}
+                              <div className="hidden md:grid grid-cols-[1fr_140px_100px_140px_100px] gap-2 px-3 py-1.5 text-[11px] text-dark-500 font-medium uppercase tracking-wide">
                                 <span>Имя</span>
                                 <span>Статус</span>
                                 <span>Дата</span>
@@ -585,9 +631,9 @@ export default function RecruiterFunnelsPage() {
                                 <div
                                   key={c.id}
                                   onClick={() => navigate(`/contacts/${c.entity_id}`)}
-                                  className="grid grid-cols-[1fr_140px_100px_140px_100px] gap-2 px-3 py-2 hover:bg-white/[0.03] rounded-lg cursor-pointer transition-colors border-b border-white/[0.03] last:border-b-0 group"
+                                  className="flex flex-col md:grid md:grid-cols-[1fr_140px_100px_140px_100px] gap-1 md:gap-2 px-3 py-2.5 md:py-2 hover:bg-white/[0.03] rounded-lg cursor-pointer transition-colors border-b border-white/[0.03] last:border-b-0 group"
                                 >
-                                  {/* Name */}
+                                  {/* Row 1 on mobile: Name + Stage */}
                                   <div className="flex items-center gap-2 min-w-0">
                                     <div className="w-6 h-6 rounded-full bg-accent-500/10 flex items-center justify-center text-[10px] text-accent-400 font-medium flex-shrink-0">
                                       {(c.entity_name || '?').charAt(0).toUpperCase()}
@@ -595,24 +641,37 @@ export default function RecruiterFunnelsPage() {
                                     <span className="text-sm text-dark-100 truncate group-hover:text-accent-400 transition-colors">
                                       {c.entity_name || 'Без имени'}
                                     </span>
+                                    {/* Stage badge inline on mobile */}
+                                    <div className="md:hidden ml-auto flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                      <StageDropdown
+                                        currentStage={c.stage as ApplicationStage}
+                                        onChangeStage={(newStage) => handleStageChange(c.id, newStage)}
+                                      />
+                                    </div>
                                   </div>
-                                  {/* Status badge — clickable */}
-                                  <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+                                  {/* Status badge — desktop only (separate column) */}
+                                  <div className="hidden md:flex items-center" onClick={(e) => e.stopPropagation()}>
                                     <StageDropdown
                                       currentStage={c.stage as ApplicationStage}
                                       onChangeStage={(newStage) => handleStageChange(c.id, newStage)}
                                     />
                                   </div>
                                   {/* Date */}
-                                  <span className="text-xs text-dark-400 flex items-center">
+                                  <span className="text-xs text-dark-400 flex items-center hidden md:flex">
                                     {formatDate(c.applied_at)}
                                   </span>
-                                  {/* Telegram */}
-                                  <span className="text-xs text-dark-400 truncate flex items-center">
+                                  {/* Row 2 on mobile: meta info */}
+                                  <div className="flex items-center gap-3 md:hidden pl-8 text-xs text-dark-400">
+                                    {c.applied_at && <span>{formatDate(c.applied_at)}</span>}
+                                    {c.entity_telegram && <span>@{c.entity_telegram}</span>}
+                                    {c.source && <span>{c.source}</span>}
+                                  </div>
+                                  {/* Telegram — desktop only */}
+                                  <span className="text-xs text-dark-400 truncate items-center hidden md:flex">
                                     {c.entity_telegram ? `@${c.entity_telegram}` : ''}
                                   </span>
-                                  {/* Source */}
-                                  <span className="text-xs text-dark-400 truncate flex items-center">
+                                  {/* Source — desktop only */}
+                                  <span className="text-xs text-dark-400 truncate items-center hidden md:flex">
                                     {c.source || ''}
                                   </span>
                                 </div>
@@ -635,7 +694,7 @@ export default function RecruiterFunnelsPage() {
                 </div>
               ) : (
                 /* ===== BOARD VIEW (kanban) ===== */
-                <div className="flex gap-3 px-5 py-3 overflow-x-auto h-full">
+                <div className="flex gap-2 sm:gap-3 px-3 sm:px-5 py-3 overflow-x-auto h-full">
                   {groupedByStage.length === 0 ? (
                     <div className="flex-1 flex items-center justify-center text-dark-500 text-sm">
                       {candidateSearch ? 'Ничего не найдено' : 'Нет кандидатов в этой воронке'}
@@ -646,7 +705,7 @@ export default function RecruiterFunnelsPage() {
                       return (
                         <div
                           key={stage}
-                          className="w-[280px] flex-shrink-0 flex flex-col bg-white/[0.02] rounded-xl border border-white/[0.06] overflow-hidden"
+                          className="w-[240px] sm:w-[280px] flex-shrink-0 flex flex-col bg-white/[0.02] rounded-xl border border-white/[0.06] overflow-hidden"
                         >
                           {/* Column header */}
                           <div className={clsx('flex items-center gap-2 px-3 py-2.5 border-b border-white/[0.06]', colors.bg)}>
