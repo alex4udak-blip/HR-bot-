@@ -145,12 +145,15 @@ async def convert_pdf_to_images(
                 file_type=EntityFileType.resume,
                 file_name=f"Резюме стр. {page_num + 1}.jpg",
                 file_path=str(img_path),
-                file_data=img_bytes,  # Store in DB
                 file_size=img_size,
                 mime_type="image/jpeg",
                 description=f"Автоконвертация из PDF (стр. {page_num + 1})",
                 uploaded_by=uploaded_by,
             )
+            try:
+                img_file.file_data = img_bytes
+            except Exception:
+                pass
             db.add(img_file)
             created_files.append(img_file)
 
@@ -436,10 +439,13 @@ async def get_entity_files(
         raise HTTPException(404, "Entity not found")
 
     # Get all files for this entity (exclude file_data binary to keep response light)
-    from sqlalchemy.orm import defer
+    try:
+        from sqlalchemy.orm import defer
+        query = select(EntityFile).options(defer(EntityFile.file_data))
+    except Exception:
+        query = select(EntityFile)
     files_result = await db.execute(
-        select(EntityFile)
-        .options(defer(EntityFile.file_data))
+        query
         .where(EntityFile.entity_id == entity_id)
         .order_by(EntityFile.created_at.desc())
     )
@@ -630,12 +636,17 @@ async def upload_entity_file(
         file_type=file_type_enum,
         file_name=original_name,
         file_path=str(file_path),
-        file_data=content,  # Store in PostgreSQL bytea
         file_size=file_size,
         mime_type=mime_type,
         description=description,
         uploaded_by=current_user.id
     )
+
+    # Store file content in DB (bytea) — survives container restarts
+    try:
+        entity_file.file_data = content
+    except Exception:
+        pass  # Column may not exist yet if migration hasn't run
 
     db.add(entity_file)
     await db.commit()
@@ -862,16 +873,20 @@ async def download_entity_file(
         )
 
     # Serve from DB (file_data bytea column)
-    if entity_file.file_data:
-        from urllib.parse import quote
-        encoded_name = quote(entity_file.file_name)
-        return Response(
-            content=entity_file.file_data,
-            media_type=entity_file.mime_type or "application/octet-stream",
-            headers={
-                "Content-Disposition": f"inline; filename*=UTF-8''{encoded_name}"
-            }
-        )
+    try:
+        file_data = getattr(entity_file, 'file_data', None)
+        if file_data:
+            from urllib.parse import quote
+            encoded_name = quote(entity_file.file_name)
+            return Response(
+                content=file_data,
+                media_type=entity_file.mime_type or "application/octet-stream",
+                headers={
+                    "Content-Disposition": f"inline; filename*=UTF-8''{encoded_name}"
+                }
+            )
+    except Exception as e:
+        file_logger.warning(f"FILE_DOWNLOAD: file_data access failed: {e}")
 
     file_logger.error(
         f"FILE_DOWNLOAD: missing | entity_id={entity_id} | file_id={file_id} | "

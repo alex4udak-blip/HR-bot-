@@ -45,7 +45,18 @@ async def ensure_shadow_columns():
             print('Adding shadow_owner_id column...')
             await conn.execute(text('ALTER TABLE users ADD COLUMN shadow_owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL'))
 
-        print('Shadow user columns verified')
+        # Check and add file_data column to entity_files (bytea for DB file storage)
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'entity_files' AND column_name = 'file_data')\"
+        ))
+        if not result.scalar():
+            print('Adding file_data column to entity_files...')
+            await conn.execute(text('ALTER TABLE entity_files ADD COLUMN file_data BYTEA'))
+
+        # Make file_path nullable (no longer required with DB storage)
+        await conn.execute(text('ALTER TABLE entity_files ALTER COLUMN file_path DROP NOT NULL'))
+
+        print('All columns verified')
     await engine.dispose()
 
 asyncio.run(ensure_shadow_columns())
