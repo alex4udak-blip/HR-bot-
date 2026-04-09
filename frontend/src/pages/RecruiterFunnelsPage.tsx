@@ -14,6 +14,7 @@ import {
   FolderOpen,
   Menu,
   Settings,
+  Trash2,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -61,6 +62,41 @@ const STAGE_COLORS: Record<string, { bg: string; text: string; dot: string; badg
   hired:        { bg: 'bg-green-500/10',   text: 'text-green-400',   dot: 'bg-green-400',   badge: 'bg-green-500/15 text-green-400' },
   rejected:     { bg: 'bg-red-500/10',     text: 'text-red-400',     dot: 'bg-red-400',     badge: 'bg-red-500/15 text-red-400' },
   withdrawn:    { bg: 'bg-gray-500/10',    text: 'text-gray-400',    dot: 'bg-gray-400',    badge: 'bg-gray-500/15 text-gray-400' },
+  // Extra colors for custom stages
+  pink:         { bg: 'bg-pink-500/10',    text: 'text-pink-400',    dot: 'bg-pink-400',    badge: 'bg-pink-500/15 text-pink-400' },
+  teal:         { bg: 'bg-teal-500/10',    text: 'text-teal-400',    dot: 'bg-teal-400',    badge: 'bg-teal-500/15 text-teal-400' },
+  amber:        { bg: 'bg-amber-500/10',   text: 'text-amber-400',   dot: 'bg-amber-400',   badge: 'bg-amber-500/15 text-amber-400' },
+  lime:         { bg: 'bg-lime-500/10',    text: 'text-lime-400',    dot: 'bg-lime-400',    badge: 'bg-lime-500/15 text-lime-400' },
+  rose:         { bg: 'bg-rose-500/10',    text: 'text-rose-400',    dot: 'bg-rose-400',    badge: 'bg-rose-500/15 text-rose-400' },
+  violet:       { bg: 'bg-violet-500/10',  text: 'text-violet-400',  dot: 'bg-violet-400',  badge: 'bg-violet-500/15 text-violet-400' },
+  sky:          { bg: 'bg-sky-500/10',     text: 'text-sky-400',     dot: 'bg-sky-400',     badge: 'bg-sky-500/15 text-sky-400' },
+};
+
+// Color palette for picker
+const COLOR_PALETTE = [
+  { key: 'blue',    dot: 'bg-blue-400' },
+  { key: 'cyan',    dot: 'bg-cyan-400' },
+  { key: 'teal',    dot: 'bg-teal-400' },
+  { key: 'green',   dot: 'bg-green-400' },
+  { key: 'lime',    dot: 'bg-lime-400' },
+  { key: 'yellow',  dot: 'bg-yellow-400' },
+  { key: 'amber',   dot: 'bg-amber-400' },
+  { key: 'orange',  dot: 'bg-orange-400' },
+  { key: 'red',     dot: 'bg-red-400' },
+  { key: 'rose',    dot: 'bg-rose-400' },
+  { key: 'pink',    dot: 'bg-pink-400' },
+  { key: 'purple',  dot: 'bg-purple-400' },
+  { key: 'violet',  dot: 'bg-violet-400' },
+  { key: 'indigo',  dot: 'bg-indigo-400' },
+  { key: 'sky',     dot: 'bg-sky-400' },
+  { key: 'gray',    dot: 'bg-gray-400' },
+];
+
+// Map color key to STAGE_COLORS key (some overlap with enum names)
+const colorToStageColor = (colorKey?: string, enumVal?: string): string => {
+  if (colorKey && STAGE_COLORS[colorKey]) return colorKey;
+  if (enumVal && STAGE_COLORS[enumVal]) return enumVal;
+  return 'screening'; // fallback cyan
 };
 
 const fallbackColor = { bg: 'bg-dark-400/10', text: 'text-dark-300', dot: 'bg-dark-400', badge: 'bg-dark-400/15 text-dark-300' };
@@ -220,6 +256,8 @@ export default function RecruiterFunnelsPage() {
     labels: Record<string, string>;
     keyToEnum: Record<string, string>;   // column key → real enum value
     enumToKeys: Record<string, string[]>; // real enum → column keys that accept it
+    colorKeys: Record<string, string>;   // column key → color key for STAGE_COLORS
+    isVirtual: Record<string, boolean>;  // column key → has maps_to (can be deleted)
   } => {
     const cols = selectedVacancy?.custom_stages?.columns as StageColumn[] | undefined;
     if (cols && cols.length > 0) {
@@ -235,6 +273,8 @@ export default function RecruiterFunnelsPage() {
         labels: Object.fromEntries(visible.map(c => [c.key, c.label])),
         keyToEnum: Object.fromEntries(visible.map(c => [c.key, c.maps_to || c.key])),
         enumToKeys,
+        colorKeys: Object.fromEntries(visible.map(c => [c.key, colorToStageColor(c.color, c.maps_to || c.key)])),
+        isVirtual: Object.fromEntries(visible.map(c => [c.key, !!c.maps_to])),
       };
     }
     const enumToKeys: Record<string, string[]> = {};
@@ -244,6 +284,8 @@ export default function RecruiterFunnelsPage() {
       labels: { ...STAGE_LABELS },
       keyToEnum: Object.fromEntries(STAGE_ORDER.map(s => [s, s])),
       enumToKeys,
+      colorKeys: Object.fromEntries(STAGE_ORDER.map(s => [s, s])),
+      isVirtual: Object.fromEntries(STAGE_ORDER.map(s => [s, false])),
     };
   }, [selectedVacancy]);
 
@@ -371,6 +413,39 @@ export default function RecruiterFunnelsPage() {
       toast.error('Ошибка добавления');
     }
   }, [selectedVacancyId, getCurrentColumns, fetchVacancies]);
+
+  // Change stage color
+  const handleStageColorChange = useCallback(async (stageKey: string, newColor: string) => {
+    if (!selectedVacancyId) return;
+    const columns = getCurrentColumns().map(c =>
+      c.key === stageKey ? { ...c, color: newColor } : c
+    );
+    try {
+      await updateVacancy(selectedVacancyId, { custom_stages: { columns } });
+      fetchVacancies();
+    } catch {
+      toast.error('Ошибка сохранения');
+    }
+  }, [selectedVacancyId, getCurrentColumns, fetchVacancies]);
+
+  // Delete virtual stage
+  const handleStageDelete = useCallback(async (stageKey: string) => {
+    if (!selectedVacancyId) return;
+    const columns = getCurrentColumns().filter(c => c.key !== stageKey);
+    if (columns.length < 2) {
+      toast.error('Минимум 2 этапа');
+      return;
+    }
+    try {
+      await updateVacancy(selectedVacancyId, { custom_stages: { columns } });
+      fetchVacancies();
+      toast.success('Этап удалён');
+    } catch {
+      toast.error('Ошибка удаления');
+    }
+  }, [selectedVacancyId, getCurrentColumns, fetchVacancies]);
+
+  const [colorPickerStage, setColorPickerStage] = useState<string | null>(null);
 
   const formatDate = (iso?: string | null) => {
     if (!iso) return '';
@@ -681,15 +756,16 @@ export default function RecruiterFunnelsPage() {
                     </div>
                   ) : (
                     groupedByStage.map(([stage, items]) => {
-                      const enumVal = stagesConfig.keyToEnum[stage] || stage;
-                      const colors = STAGE_COLORS[enumVal] || STAGE_COLORS[stage] || fallbackColor;
+                      const ck = stagesConfig.colorKeys[stage] || stagesConfig.keyToEnum[stage] || stage;
+                      const colors = STAGE_COLORS[ck] || fallbackColor;
                       const collapsed = collapsedStages.has(stage);
+                      const isVirtual = stagesConfig.isVirtual[stage];
                       return (
                         <div key={stage} className="mb-1">
                           {/* Stage group header — inline editable */}
                           <div
                             className={clsx(
-                              'w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors group/stage',
+                              'w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors group/stage relative',
                               colors.bg,
                             )}
                           >
@@ -700,7 +776,30 @@ export default function RecruiterFunnelsPage() {
                                 <ChevronDown className={clsx('w-4 h-4', colors.text)} />
                               )}
                             </button>
-                            <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', colors.dot)} />
+                            {/* Color dot — click to open color picker */}
+                            <button
+                              onClick={() => setColorPickerStage(colorPickerStage === stage ? null : stage)}
+                              className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0 ring-2 ring-transparent hover:ring-white/20 transition-all cursor-pointer', colors.dot)}
+                              title="Изменить цвет"
+                            />
+                            {/* Color picker dropdown */}
+                            {colorPickerStage === stage && (
+                              <div className="absolute top-full left-8 mt-1 z-50 p-2 bg-dark-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl">
+                                <div className="grid grid-cols-8 gap-1.5">
+                                  {COLOR_PALETTE.map(c => (
+                                    <button
+                                      key={c.key}
+                                      onClick={() => {
+                                        handleStageColorChange(stage, c.key);
+                                        setColorPickerStage(null);
+                                      }}
+                                      className={clsx('w-5 h-5 rounded-full transition-transform hover:scale-125', c.dot)}
+                                      title={c.key}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             {editingStage === stage ? (
                               <input
                                 autoFocus
@@ -731,17 +830,27 @@ export default function RecruiterFunnelsPage() {
                             <span className={clsx('text-xs ml-1', colors.text)}>
                               {items.length}
                             </span>
-                            {/* Edit icon — click to rename */}
+                            {/* Rename icon */}
                             <button
                               onClick={() => {
                                 setEditingStage(stage);
                                 setEditingLabel(stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage);
                               }}
                               className="p-1 rounded hover:bg-white/[0.1] transition-colors opacity-0 group-hover/stage:opacity-100"
-                              title="Переименовать этап"
+                              title="Переименовать"
                             >
                               <Settings className="w-3 h-3 text-dark-400" />
                             </button>
+                            {/* Delete — only virtual stages */}
+                            {isVirtual && (
+                              <button
+                                onClick={() => handleStageDelete(stage)}
+                                className="p-1 rounded hover:bg-red-500/20 transition-colors opacity-0 group-hover/stage:opacity-100"
+                                title="Удалить этап"
+                              >
+                                <Trash2 className="w-3 h-3 text-red-400/60 hover:text-red-400" />
+                              </button>
+                            )}
                           </div>
 
                           {/* Candidate rows */}

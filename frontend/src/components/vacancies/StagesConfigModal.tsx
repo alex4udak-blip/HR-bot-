@@ -10,6 +10,7 @@ export interface StageColumn {
   label: string;
   visible: boolean;
   maps_to?: string; // underlying enum value for virtual stages
+  color?: string;   // color key from STAGE_COLORS palette
 }
 
 // Default stages derived from the hardcoded pipeline
