@@ -2,7 +2,7 @@
 File upload/download operations for entities.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, File, Form, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
@@ -126,19 +126,26 @@ async def convert_pdf_to_images(
             mat = fitz.Matrix(zoom, zoom)
             pix = page.get_pixmap(matrix=mat)
 
-            # Save as JPEG
+            # Convert to JPEG bytes
+            img_bytes = pix.tobytes(output="jpeg")
+            img_size = len(img_bytes)
+
+            # Also save to disk (optional, for backward compat)
             img_name = f"cv_page_{page_num + 1}_{uuid.uuid4().hex[:8]}.jpg"
             img_path = entity_files_dir / img_name
-            pix.save(str(img_path), output="jpeg")
-            img_size = img_path.stat().st_size
+            try:
+                img_path.write_bytes(img_bytes)
+            except Exception:
+                pass  # Disk save is optional, DB is primary
 
-            # Create DB record
+            # Create DB record with file content
             img_file = EntityFile(
                 entity_id=entity_id,
                 org_id=org_id,
                 file_type=EntityFileType.resume,
                 file_name=f"Резюме стр. {page_num + 1}.jpg",
                 file_path=str(img_path),
+                file_data=img_bytes,  # Store in DB
                 file_size=img_size,
                 mime_type="image/jpeg",
                 description=f"Автоконвертация из PDF (стр. {page_num + 1})",
@@ -428,9 +435,11 @@ async def get_entity_files(
     if not has_access:
         raise HTTPException(404, "Entity not found")
 
-    # Get all files for this entity
+    # Get all files for this entity (exclude file_data binary to keep response light)
+    from sqlalchemy.orm import defer
     files_result = await db.execute(
         select(EntityFile)
+        .options(defer(EntityFile.file_data))
         .where(EntityFile.entity_id == entity_id)
         .order_by(EntityFile.created_at.desc())
     )
@@ -614,13 +623,14 @@ async def upload_entity_file(
     # Use validated MIME type
     mime_type = content_type
 
-    # Create database record
+    # Create database record (store file content in DB for persistence across deploys)
     entity_file = EntityFile(
         entity_id=entity_id,
         org_id=org.id,
         file_type=file_type_enum,
         file_name=original_name,
         file_path=str(file_path),
+        file_data=content,  # Store in PostgreSQL bytea
         file_size=file_size,
         mime_type=mime_type,
         description=description,
@@ -833,30 +843,41 @@ async def download_entity_file(
         )
         raise HTTPException(404, "File not found")
 
-    # Check if file exists on disk
-    file_path = Path(entity_file.file_path)
-    if not file_path.exists():
-        file_logger.error(
-            f"FILE_DOWNLOAD: missing_on_disk | entity_id={entity_id} | file_id={file_id} | "
-            f"file_name='{entity_file.file_name}' | path={entity_file.file_path} | "
-            f"user_id={current_user.id}"
-        )
-        raise HTTPException(404, "File not found on disk")
+    # Try disk first, then fall back to DB
+    file_path = Path(entity_file.file_path) if entity_file.file_path else None
+    disk_exists = file_path and file_path.exists()
 
-    # Log successful download
     file_logger.info(
         f"FILE_DOWNLOAD: success | entity_id={entity_id} | file_id={file_id} | "
         f"file_name='{entity_file.file_name}' | size={entity_file.file_size} bytes | "
-        f"mime_type={entity_file.mime_type} | user_id={current_user.id} | "
-        f"user_name='{current_user.name}' | org_id={org.id}"
+        f"mime_type={entity_file.mime_type} | source={'disk' if disk_exists else 'db'} | "
+        f"user_id={current_user.id} | user_name='{current_user.name}' | org_id={org.id}"
     )
 
-    # Return file
-    return FileResponse(
-        path=file_path,
-        filename=entity_file.file_name,
-        media_type=entity_file.mime_type or "application/octet-stream"
+    if disk_exists:
+        return FileResponse(
+            path=file_path,
+            filename=entity_file.file_name,
+            media_type=entity_file.mime_type or "application/octet-stream"
+        )
+
+    # Serve from DB (file_data bytea column)
+    if entity_file.file_data:
+        from urllib.parse import quote
+        encoded_name = quote(entity_file.file_name)
+        return Response(
+            content=entity_file.file_data,
+            media_type=entity_file.mime_type or "application/octet-stream",
+            headers={
+                "Content-Disposition": f"inline; filename*=UTF-8''{encoded_name}"
+            }
+        )
+
+    file_logger.error(
+        f"FILE_DOWNLOAD: missing | entity_id={entity_id} | file_id={file_id} | "
+        f"file_name='{entity_file.file_name}' | no disk file, no DB data"
     )
+    raise HTTPException(404, "File not found")
 
 
 @router.post("/{entity_id}/files/cleanup")

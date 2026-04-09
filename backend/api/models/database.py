@@ -2,7 +2,7 @@ from datetime import datetime, time
 from typing import Optional
 from sqlalchemy import (
     BigInteger, Boolean, Column, DateTime, Enum as SQLEnum,
-    ForeignKey, Index, Integer, String, Text, JSON, Time, func, text, UniqueConstraint
+    ForeignKey, Index, Integer, LargeBinary, String, Text, JSON, Time, func, text, UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 import enum
@@ -994,7 +994,8 @@ class EntityFile(Base):
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     file_type = Column(SQLEnum(EntityFileType), default=EntityFileType.other)
     file_name = Column(String(255), nullable=False)
-    file_path = Column(String(512), nullable=False)
+    file_path = Column(String(512), nullable=True)  # Legacy disk path (optional now)
+    file_data = Column(LargeBinary, nullable=True)  # File content stored in DB (bytea)
     file_size = Column(Integer, nullable=True)  # Size in bytes
     mime_type = Column(String(100), nullable=True)
     description = Column(String(500), nullable=True)
