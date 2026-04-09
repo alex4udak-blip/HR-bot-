@@ -288,7 +288,7 @@ export default function Layout() {
       hrItems.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
       hrItems.push({ path: '/candidate-database', icon: Database, label: 'База кандидатов' });
       hrItems.push({ path: '/interns', icon: GraduationCap, label: 'Практиканты' });
-      hrItems.push({ path: '/practice-list', icon: ClipboardList, label: 'Лист практики' });
+      // hrItems.push({ path: '/practice-list', icon: ClipboardList, label: 'Лист практики' });
       hrItems.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
       hrItems.push({ path: '/extension', icon: Puzzle, label: 'Волшебная кнопка' });
       // HR Admin — только admin/owner/superadmin (НЕ hr рекрутер)
