@@ -119,7 +119,7 @@ export default function StatusListView({ vacancy }: StatusListViewProps) {
   };
 
   const handleCandidateClick = (app: VacancyApplication) => {
-    navigate(`/candidates/${app.entity_id}`);
+    navigate(`/contacts/${app.entity_id}`);
   };
 
   const handleSaveStages = async (cols: Array<{ key: string; label: string; visible: boolean; maps_to?: string }>) => {
