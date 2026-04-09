@@ -22,7 +22,7 @@ from api.limiter import limiter
 from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser, search, scoring, currency, parse_jobs, interns
 from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees, documents, magic_button, pen
 from api.routes import candidate_search, extension_download, prometheus_invite, csv_import
-from api.routes import candidate_database
+from api.routes import candidate_database, recruiter_workspaces
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
@@ -571,6 +571,14 @@ except Exception as e:
 app.include_router(extension_download.router, prefix="/api/extension", tags=["extension"])
 app.include_router(prometheus_invite.router, prefix="/api/prometheus", tags=["prometheus"])
 app.include_router(candidate_database.router, prefix="/api/candidate-database", tags=["candidate-database"])
+
+logger.info("=== REGISTERING RECRUITER WORKSPACES ROUTER ===")
+try:
+    app.include_router(recruiter_workspaces.router, prefix="/api/recruiter-workspaces", tags=["recruiter-workspaces"])
+    logger.info("Recruiter workspaces router registered successfully at /api/recruiter-workspaces")
+except Exception as e:
+    logger.error(f"FAILED to register recruiter workspaces router: {e}")
+    raise
 
 
 @app.get("/health")

@@ -35,9 +35,10 @@ class WorkspaceSummary(BaseModel):
     recruiter_id: int
     name: str
     email: str
+    org_role: str
     vacancy_count: int
     candidate_count: int
-    active_count: int  # candidates in active stages (not rejected/hired)
+    active_applications: int  # applications in active stages (not rejected/hired/withdrawn)
 
     class Config:
         from_attributes = True
@@ -162,6 +163,12 @@ async def list_workspaces(
     else:
         recruiters = [current_user]
 
+    # Build a map of recruiter_id -> org_role
+    role_map = {}
+    for recruiter in recruiters:
+        role = await _get_user_org_role(recruiter.id, org.id, db)
+        role_map[recruiter.id] = role.value if role else "member"
+
     workspaces = []
     for recruiter in recruiters:
         # Count vacancies created by this recruiter
@@ -169,12 +176,11 @@ async def list_workspaces(
             select(func.count(Vacancy.id)).where(
                 Vacancy.created_by == recruiter.id,
                 Vacancy.org_id == org.id,
-                Vacancy.status.in_([VacancyStatus.open, VacancyStatus.paused]),
             )
         )
         vacancy_count = vac_count_q.scalar() or 0
 
-        # Count all candidates in this recruiter's vacancies
+        # Count unique candidates in this recruiter's vacancies
         cand_count_q = await db.execute(
             select(func.count(func.distinct(VacancyApplication.entity_id)))
             .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
@@ -182,9 +188,9 @@ async def list_workspaces(
         )
         candidate_count = cand_count_q.scalar() or 0
 
-        # Count active candidates (not rejected/hired)
+        # Count active applications (not rejected/hired/withdrawn)
         active_q = await db.execute(
-            select(func.count(func.distinct(VacancyApplication.entity_id)))
+            select(func.count(VacancyApplication.id))
             .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
             .where(
                 Vacancy.created_by == recruiter.id,
@@ -192,15 +198,16 @@ async def list_workspaces(
                 VacancyApplication.stage.in_(ACTIVE_STAGES),
             )
         )
-        active_count = active_q.scalar() or 0
+        active_applications = active_q.scalar() or 0
 
         workspaces.append(WorkspaceSummary(
             recruiter_id=recruiter.id,
             name=recruiter.name or recruiter.email,
             email=recruiter.email,
+            org_role=role_map.get(recruiter.id, "member"),
             vacancy_count=vacancy_count,
             candidate_count=candidate_count,
-            active_count=active_count,
+            active_applications=active_applications,
         ))
 
     return workspaces

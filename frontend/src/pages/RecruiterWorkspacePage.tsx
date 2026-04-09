@@ -1,417 +1,572 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import {
-  ArrowLeft,
-  Briefcase,
-  Users,
-  UserCheck,
-  Search,
-  ChevronRight,
-} from 'lucide-react';
-import clsx from 'clsx';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import {
-  getWorkspaces,
-  getWorkspace,
-  getWorkspaceCandidates,
-} from '@/services/api/workspaces';
-import type {
-  WorkspaceSummary,
-  WorkspaceDetail,
-  WorkspaceCandidate,
-} from '@/services/api/workspaces';
+  ChevronDown, ChevronRight, Briefcase, Plus,
+  Search, LayoutList, Columns3, FolderOpen,
+} from 'lucide-react';
+import clsx from 'clsx';
+import * as workspacesApi from '@/services/api/workspaces';
 
-// Stage color map
-const STAGE_COLORS: Record<string, string> = {
-  applied: 'bg-blue-500/15 text-blue-400',
-  screening: 'bg-cyan-500/15 text-cyan-400',
-  phone_screen: 'bg-purple-500/15 text-purple-400',
-  interview: 'bg-indigo-500/15 text-indigo-400',
-  assessment: 'bg-amber-500/15 text-amber-400',
-  offer: 'bg-emerald-500/15 text-emerald-400',
-  hired: 'bg-green-500/15 text-green-400',
-  rejected: 'bg-red-500/15 text-red-400',
+// --------------- constants ---------------
+
+const STAGE_ORDER = [
+  'applied', 'screening', 'phone_screen', 'interview',
+  'assessment', 'offer', 'hired', 'rejected', 'withdrawn',
+] as const;
+
+const STAGE_LABELS: Record<string, string> = {
+  applied: 'Новый',
+  screening: 'Отбор',
+  phone_screen: 'Собеседование назначено',
+  interview: 'Собеседование пройдено',
+  assessment: 'Практика',
+  offer: 'Оффер',
+  hired: 'Вышел на работу',
+  rejected: 'Отказ',
+  withdrawn: 'Отозван',
 };
 
-const VACANCY_STATUS_COLORS: Record<string, string> = {
-  open: 'bg-green-500/15 text-green-400',
-  paused: 'bg-amber-500/15 text-amber-400',
-  closed: 'bg-red-500/15 text-red-400',
-  draft: 'bg-dark-400/15 text-dark-300',
+const STAGE_COLORS: Record<string, { bg: string; text: string; dot: string; badge: string }> = {
+  applied:      { bg: 'bg-blue-500/10',   text: 'text-blue-400',    dot: 'bg-blue-400',    badge: 'bg-blue-500/15 text-blue-400' },
+  screening:    { bg: 'bg-cyan-500/10',    text: 'text-cyan-400',    dot: 'bg-cyan-400',    badge: 'bg-cyan-500/15 text-cyan-400' },
+  phone_screen: { bg: 'bg-purple-500/10',  text: 'text-purple-400',  dot: 'bg-purple-400',  badge: 'bg-purple-500/15 text-purple-400' },
+  interview:    { bg: 'bg-indigo-500/10',  text: 'text-indigo-400',  dot: 'bg-indigo-400',  badge: 'bg-indigo-500/15 text-indigo-400' },
+  assessment:   { bg: 'bg-orange-500/10',  text: 'text-orange-400',  dot: 'bg-orange-400',  badge: 'bg-orange-500/15 text-orange-400' },
+  offer:        { bg: 'bg-yellow-500/10',  text: 'text-yellow-400',  dot: 'bg-yellow-400',  badge: 'bg-yellow-500/15 text-yellow-400' },
+  hired:        { bg: 'bg-green-500/10',   text: 'text-green-400',   dot: 'bg-green-400',   badge: 'bg-green-500/15 text-green-400' },
+  rejected:     { bg: 'bg-red-500/10',     text: 'text-red-400',     dot: 'bg-red-400',     badge: 'bg-red-500/15 text-red-400' },
+  withdrawn:    { bg: 'bg-gray-500/10',    text: 'text-gray-400',    dot: 'bg-gray-400',    badge: 'bg-gray-500/15 text-gray-400' },
 };
 
-const VACANCY_STATUS_LABELS: Record<string, string> = {
-  open: 'Открыта',
-  paused: 'На паузе',
-  closed: 'Закрыта',
-  draft: 'Черновик',
-};
+const fallbackColor = { bg: 'bg-dark-400/10', text: 'text-dark-300', dot: 'bg-dark-400', badge: 'bg-dark-400/15 text-dark-300' };
+
+// --------------- types ---------------
+
+interface SidebarVacancy {
+  id: number;
+  title: string;
+  status: string;
+  candidate_count: number;
+}
+
+interface SidebarSpace {
+  recruiterId: number;
+  name: string;
+  email: string;
+  vacancies: SidebarVacancy[];
+  expanded: boolean;
+}
+
+interface CandidateRow {
+  id: number;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  telegram?: string | null;
+  stage: string;
+  stage_label: string;
+  applied_at?: string | null;
+  source?: string | null;
+  vacancy_title: string;
+  vacancy_id: number;
+}
+
+// --------------- component ---------------
 
 export default function RecruiterWorkspacePage() {
   const navigate = useNavigate();
-  const { recruiterId } = useParams<{ recruiterId?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuthStore();
 
   const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
 
-  // State
-  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
-  const [workspace, setWorkspace] = useState<WorkspaceDetail | null>(null);
-  const [candidates, setCandidates] = useState<WorkspaceCandidate[]>([]);
-  const [candidatesTotal, setCandidatesTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'vacancies' | 'candidates'>('vacancies');
-  const [search, setSearch] = useState('');
-  const [stageFilter, setStageFilter] = useState<string>('');
-  const [vacancyFilter, setVacancyFilter] = useState<number | undefined>();
-  const [page, setPage] = useState(0);
+  // sidebar state
+  const [spaces, setSpaces] = useState<SidebarSpace[]>([]);
+  const [sidebarLoading, setSidebarLoading] = useState(true);
 
-  // Determine which recruiter to show
-  const effectiveRecruiterId = recruiterId ? parseInt(recruiterId) : (isAdmin ? null : user?.id);
+  // selected funnel
+  const selectedVacancyId = searchParams.get('v') ? Number(searchParams.get('v')) : null;
+  const selectedRecruiterId = searchParams.get('r') ? Number(searchParams.get('r')) : null;
 
-  // Load workspaces list (for admin) or direct workspace (for recruiter)
+  // main content
+  const [candidates, setCandidates] = useState<CandidateRow[]>([]);
+  const [contentLoading, setContentLoading] = useState(false);
+  const [view, setView] = useState<'list' | 'board'>('list');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set());
+
+  // --------------- sidebar data ---------------
+
   useEffect(() => {
-    setLoading(true);
-    if (effectiveRecruiterId) {
-      // Load specific workspace
-      getWorkspace(effectiveRecruiterId)
-        .then(setWorkspace)
-        .catch(() => {})
-        .finally(() => setLoading(false));
-    } else {
-      // Load all workspaces (admin view)
-      getWorkspaces()
-        .then(setWorkspaces)
-        .catch(() => {})
-        .finally(() => setLoading(false));
+    loadSidebar();
+  }, []);
+
+  const loadSidebar = useCallback(async () => {
+    setSidebarLoading(true);
+    try {
+      const summaries = await workspacesApi.getWorkspaces();
+      const spacesData: SidebarSpace[] = [];
+
+      for (const ws of summaries) {
+        const detail = await workspacesApi.getWorkspace(ws.recruiter_id);
+        spacesData.push({
+          recruiterId: ws.recruiter_id,
+          name: ws.name,
+          email: ws.email,
+          vacancies: detail.vacancies.map((v) => ({
+            id: v.id,
+            title: v.title,
+            status: v.status,
+            candidate_count: v.candidate_count,
+          })),
+          // auto-expand for non-admin (single space) or first space for admin
+          expanded: !isAdmin || spacesData.length === 0,
+        });
+      }
+
+      // For non-admin: auto-expand their only space
+      if (!isAdmin && spacesData.length === 1) {
+        spacesData[0].expanded = true;
+      }
+
+      setSpaces(spacesData);
+
+      // auto-select first vacancy if nothing selected
+      if (!selectedVacancyId && spacesData.length > 0) {
+        const firstSpace = spacesData.find((s) => s.vacancies.length > 0);
+        if (firstSpace) {
+          firstSpace.expanded = true;
+          const v = firstSpace.vacancies[0];
+          setSearchParams({ r: String(firstSpace.recruiterId), v: String(v.id) });
+        }
+      }
+    } catch {
+      // silent
+    } finally {
+      setSidebarLoading(false);
     }
-  }, [effectiveRecruiterId]);
+  }, [isAdmin]);
 
-  // Load candidates when on candidates tab
+  // --------------- load candidates for selected vacancy ---------------
+
   useEffect(() => {
-    if (!effectiveRecruiterId || tab !== 'candidates') return;
-    getWorkspaceCandidates(effectiveRecruiterId, {
-      search: search || undefined,
-      stage: stageFilter || undefined,
-      vacancy_id: vacancyFilter,
-      skip: page * 50,
-      limit: 50,
-    })
-      .then((res) => {
-        setCandidates(res.items);
-        setCandidatesTotal(res.total);
-      })
-      .catch(() => {});
-  }, [effectiveRecruiterId, tab, search, stageFilter, vacancyFilter, page]);
+    if (!selectedVacancyId || !selectedRecruiterId) {
+      setCandidates([]);
+      return;
+    }
+    loadCandidates(selectedRecruiterId, selectedVacancyId);
+  }, [selectedVacancyId, selectedRecruiterId]);
 
-  // --- Admin: Workspaces List View ---
-  if (!effectiveRecruiterId) {
-    return (
-      <div className="h-full flex flex-col gap-4 p-4 lg:p-6">
-        <div>
-          <h1 className="text-xl lg:text-2xl font-bold text-dark-100">Пространства рекрутеров</h1>
-          <p className="text-sm text-dark-400 mt-0.5">
-            {workspaces.length} рекрутеров
-          </p>
-        </div>
+  const loadCandidates = useCallback(async (recruiterId: number, vacancyId: number) => {
+    setContentLoading(true);
+    try {
+      const res = await workspacesApi.getWorkspaceCandidates(recruiterId, {
+        vacancy_id: vacancyId,
+        limit: 200,
+      });
+      setCandidates(res.items);
+    } catch {
+      setCandidates([]);
+    } finally {
+      setContentLoading(false);
+    }
+  }, []);
 
-        {loading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="w-8 h-8 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : workspaces.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-dark-400">
-            <Users className="w-12 h-12 mb-3 opacity-40" />
-            <p>Нет рекрутеров в организации</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {workspaces.map((ws) => (
-              <button
-                key={ws.recruiter_id}
-                onClick={() => navigate(`/workspaces/${ws.recruiter_id}`)}
-                className="glass-card rounded-xl p-5 text-left hover:border-accent-500/30 transition-all group"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-accent-500/15 flex items-center justify-center text-accent-400 font-medium">
-                      {ws.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="font-medium text-dark-100">{ws.name}</div>
-                      <div className="text-xs text-dark-400">{ws.email}</div>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-dark-500 group-hover:text-accent-400 transition-colors" />
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-dark-100">{ws.vacancy_count}</div>
-                    <div className="text-[10px] text-dark-400">Воронок</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-dark-100">{ws.candidate_count}</div>
-                    <div className="text-[10px] text-dark-400">Кандидатов</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-accent-400">{ws.active_count}</div>
-                    <div className="text-[10px] text-dark-400">Активных</div>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+  // --------------- derived data ---------------
+
+  const selectedSpace = useMemo(
+    () => spaces.find((s) => s.recruiterId === selectedRecruiterId),
+    [spaces, selectedRecruiterId],
+  );
+
+  const selectedVacancy = useMemo(
+    () => selectedSpace?.vacancies.find((v) => v.id === selectedVacancyId),
+    [selectedSpace, selectedVacancyId],
+  );
+
+  const filteredCandidates = useMemo(() => {
+    if (!searchQuery.trim()) return candidates;
+    const q = searchQuery.toLowerCase();
+    return candidates.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.email?.toLowerCase().includes(q) ||
+        c.phone?.includes(q) ||
+        c.telegram?.toLowerCase().includes(q),
     );
-  }
+  }, [candidates, searchQuery]);
 
-  // --- Workspace Detail View ---
-  if (loading) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  const groupedByStage = useMemo(() => {
+    const map = new Map<string, CandidateRow[]>();
+    for (const stage of STAGE_ORDER) map.set(stage, []);
+    for (const c of filteredCandidates) {
+      const arr = map.get(c.stage);
+      if (arr) arr.push(c);
+      else {
+        if (!map.has(c.stage)) map.set(c.stage, []);
+        map.get(c.stage)!.push(c);
+      }
+    }
+    // remove empty stages
+    const result: [string, CandidateRow[]][] = [];
+    for (const [stage, items] of map) {
+      if (items.length > 0) result.push([stage, items]);
+    }
+    return result;
+  }, [filteredCandidates]);
 
-  if (!workspace) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center text-dark-400">
-        <Users className="w-12 h-12 mb-3 opacity-40" />
-        <p>Пространство не найдено</p>
-      </div>
+  // --------------- handlers ---------------
+
+  const toggleSpace = (recruiterId: number) => {
+    setSpaces((prev) =>
+      prev.map((s) =>
+        s.recruiterId === recruiterId ? { ...s, expanded: !s.expanded } : s,
+      ),
     );
-  }
+  };
+
+  const selectVacancy = (recruiterId: number, vacancyId: number) => {
+    setSearchParams({ r: String(recruiterId), v: String(vacancyId) });
+    setSearchQuery('');
+    setCollapsedStages(new Set());
+  };
+
+  const toggleStage = (stage: string) => {
+    setCollapsedStages((prev) => {
+      const next = new Set(prev);
+      if (next.has(stage)) next.delete(stage);
+      else next.add(stage);
+      return next;
+    });
+  };
+
+  const formatDate = (iso?: string | null) => {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    } catch {
+      return '';
+    }
+  };
+
+  // --------------- render ---------------
 
   return (
-    <div className="h-full flex flex-col gap-4 p-4 lg:p-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        {isAdmin && (
-          <button
-            onClick={() => navigate('/workspaces')}
-            className="p-2 hover:bg-white/5 rounded-lg transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-dark-300" />
+    <div className="h-full flex overflow-hidden">
+      {/* ========== LEFT SIDEBAR ========== */}
+      <aside className="w-[260px] flex-shrink-0 border-r border-white/[0.06] bg-white/[0.01] flex flex-col overflow-hidden">
+        {/* Sidebar header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+          <span className="text-xs font-semibold text-dark-400 uppercase tracking-wider">Spaces</span>
+          <button className="p-1 hover:bg-white/[0.06] rounded transition-colors" title="Добавить">
+            <Plus className="w-3.5 h-3.5 text-dark-400" />
           </button>
-        )}
-        <div className="flex-1">
-          <h1 className="text-xl lg:text-2xl font-bold text-dark-100">
-            {isAdmin ? `Пространство: ${workspace.name}` : 'Моё пространство'}
-          </h1>
-          <p className="text-sm text-dark-400 mt-0.5">{workspace.email}</p>
         </div>
-      </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="glass-card rounded-xl p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-blue-500/15 flex items-center justify-center">
-            <Briefcase className="w-5 h-5 text-blue-400" />
-          </div>
-          <div>
-            <div className="text-xl font-bold text-dark-100">{workspace.vacancies.length}</div>
-            <div className="text-xs text-dark-400">Воронок</div>
-          </div>
-        </div>
-        <div className="glass-card rounded-xl p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-purple-500/15 flex items-center justify-center">
-            <Users className="w-5 h-5 text-purple-400" />
-          </div>
-          <div>
-            <div className="text-xl font-bold text-dark-100">{workspace.total_candidates}</div>
-            <div className="text-xs text-dark-400">Всего кандидатов</div>
-          </div>
-        </div>
-        <div className="glass-card rounded-xl p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-emerald-500/15 flex items-center justify-center">
-            <UserCheck className="w-5 h-5 text-emerald-400" />
-          </div>
-          <div>
-            <div className="text-xl font-bold text-emerald-400">{workspace.active_candidates}</div>
-            <div className="text-xs text-dark-400">Активных</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center gap-1 bg-white/[0.02] rounded-lg p-1 border border-white/[0.06] w-fit">
-        <button
-          onClick={() => setTab('vacancies')}
-          className={clsx(
-            'px-4 py-2 text-sm font-medium rounded-md transition-colors',
-            tab === 'vacancies' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200'
-          )}
-        >
-          Воронки ({workspace.vacancies.length})
-        </button>
-        <button
-          onClick={() => setTab('candidates')}
-          className={clsx(
-            'px-4 py-2 text-sm font-medium rounded-md transition-colors',
-            tab === 'candidates' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200'
-          )}
-        >
-          Кандидаты ({workspace.total_candidates})
-        </button>
-      </div>
-
-      {/* Tab Content */}
-      {tab === 'vacancies' ? (
-        <div className="flex-1 overflow-y-auto space-y-2">
-          {workspace.vacancies.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-dark-400">
-              <Briefcase className="w-10 h-10 mb-3 opacity-40" />
-              <p>Нет воронок</p>
+        {/* Sidebar tree */}
+        <div className="flex-1 overflow-y-auto py-1">
+          {sidebarLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-5 h-5 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : spaces.length === 0 ? (
+            <div className="px-4 py-8 text-center text-dark-500 text-xs">
+              Нет рекрутеров
             </div>
           ) : (
-            workspace.vacancies.map((v) => (
-              <button
-                key={v.id}
-                onClick={() => navigate(`/vacancies/${v.id}`)}
-                className="w-full glass-card rounded-xl p-4 flex items-center justify-between hover:border-accent-500/30 transition-all group text-left"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <Briefcase className="w-5 h-5 text-dark-400 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-medium text-dark-100 truncate">{v.title}</div>
-                    {v.department_name && (
-                      <div className="text-xs text-dark-400 mt-0.5">{v.department_name}</div>
+            spaces.map((space) => (
+              <div key={space.recruiterId}>
+                {/* Space (folder) header */}
+                <button
+                  onClick={() => toggleSpace(space.recruiterId)}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-white/[0.04] transition-colors group"
+                >
+                  {space.expanded ? (
+                    <ChevronDown className="w-3.5 h-3.5 text-dark-500 flex-shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-3.5 h-3.5 text-dark-500 flex-shrink-0" />
+                  )}
+                  <FolderOpen className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                  <span className="text-sm text-dark-200 truncate flex-1 text-left font-medium">
+                    {space.name}
+                  </span>
+                  <span className="text-[10px] text-dark-500 flex-shrink-0">
+                    {space.vacancies.length}
+                  </span>
+                </button>
+
+                {/* Vacancy list inside space */}
+                {space.expanded && (
+                  <div className="ml-3">
+                    {space.vacancies.length === 0 ? (
+                      <div className="px-6 py-2 text-xs text-dark-500">Нет воронок</div>
+                    ) : (
+                      space.vacancies.map((v) => {
+                        const isSelected = selectedVacancyId === v.id && selectedRecruiterId === space.recruiterId;
+                        return (
+                          <button
+                            key={v.id}
+                            onClick={() => selectVacancy(space.recruiterId, v.id)}
+                            className={clsx(
+                              'w-full flex items-center gap-2 pl-6 pr-3 py-1.5 text-left transition-colors',
+                              isSelected
+                                ? 'bg-accent-500/10 text-accent-400'
+                                : 'hover:bg-white/[0.04] text-dark-300',
+                            )}
+                          >
+                            <Briefcase className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />
+                            <span className="text-sm truncate flex-1">{v.title}</span>
+                            <span className={clsx(
+                              'text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0',
+                              isSelected ? 'bg-accent-500/20 text-accent-400' : 'bg-white/[0.06] text-dark-400',
+                            )}>
+                              {v.candidate_count}
+                            </span>
+                          </button>
+                        );
+                      })
                     )}
                   </div>
-                </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  <span className={clsx(
-                    'px-2.5 py-1 rounded-full text-xs font-medium',
-                    VACANCY_STATUS_COLORS[v.status] || 'bg-dark-400/15 text-dark-300'
-                  )}>
-                    {VACANCY_STATUS_LABELS[v.status] || v.status}
-                  </span>
-                  <div className="text-sm text-dark-300">
-                    <Users className="w-4 h-4 inline mr-1" />
-                    {v.candidate_count}
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-dark-500 group-hover:text-accent-400 transition-colors" />
-                </div>
-              </button>
+                )}
+              </div>
             ))
           )}
         </div>
-      ) : (
-        <div className="flex-1 flex flex-col gap-3 overflow-hidden">
-          {/* Candidates search + filters */}
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-400" />
-              <input
-                type="text"
-                placeholder="Поиск по ФИО, email, телефону..."
-                value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-                className="w-full pl-10 pr-4 py-2 bg-white/[0.02] border border-white/[0.06] rounded-lg text-sm text-dark-100 placeholder-dark-400 focus:outline-none focus:border-accent-500/50"
-              />
-            </div>
-            {workspace.vacancies.length > 0 && (
-              <select
-                value={vacancyFilter || ''}
-                onChange={(e) => { setVacancyFilter(e.target.value ? parseInt(e.target.value) : undefined); setPage(0); }}
-                className="bg-white/[0.02] border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-dark-200 max-w-[200px]"
-              >
-                <option value="">Все воронки</option>
-                {workspace.vacancies.map((v) => (
-                  <option key={v.id} value={v.id}>{v.title}</option>
-                ))}
-              </select>
-            )}
-            <select
-              value={stageFilter}
-              onChange={(e) => { setStageFilter(e.target.value); setPage(0); }}
-              className="bg-white/[0.02] border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-dark-200"
-            >
-              <option value="">Все этапы</option>
-              <option value="applied">Новый</option>
-              <option value="screening">Отбор</option>
-              <option value="phone_screen">Собеседование назначено</option>
-              <option value="interview">Собеседование пройдено</option>
-              <option value="assessment">Практика</option>
-              <option value="offer">Оффер</option>
-              <option value="hired">Вышел на работу</option>
-              <option value="rejected">Отказ</option>
-            </select>
-          </div>
+      </aside>
 
-          {/* Candidates table */}
-          <div className="flex-1 overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-dark-900/90 backdrop-blur-sm">
-                <tr className="border-b border-white/[0.06]">
-                  <th className="text-left py-2.5 px-3 text-dark-400 font-medium">ФИО</th>
-                  <th className="text-left py-2.5 px-3 text-dark-400 font-medium">Телефон</th>
-                  <th className="text-left py-2.5 px-3 text-dark-400 font-medium">Email</th>
-                  <th className="text-left py-2.5 px-3 text-dark-400 font-medium">Telegram</th>
-                  <th className="text-left py-2.5 px-3 text-dark-400 font-medium">Воронка</th>
-                  <th className="text-left py-2.5 px-3 text-dark-400 font-medium">Этап</th>
-                </tr>
-              </thead>
-              <tbody>
-                {candidates.map((c, i) => (
-                  <tr
-                    key={`${c.id}-${c.vacancy_id}-${i}`}
-                    className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
+      {/* ========== MAIN CONTENT ========== */}
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {!selectedVacancy ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-dark-500">
+            <Briefcase className="w-12 h-12 mb-3 opacity-30" />
+            <p className="text-sm">Выберите воронку в меню слева</p>
+          </div>
+        ) : (
+          <>
+            {/* Top bar: breadcrumb + view tabs */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] bg-white/[0.01]">
+              {/* Breadcrumb */}
+              <div className="flex items-center gap-1.5 text-sm min-w-0">
+                <span className="text-dark-500">HR отдел</span>
+                <ChevronRight className="w-3.5 h-3.5 text-dark-600 flex-shrink-0" />
+                <span className="text-dark-400 truncate max-w-[180px]">
+                  {selectedSpace?.name}
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 text-dark-600 flex-shrink-0" />
+                <span className="text-dark-200 font-medium truncate max-w-[200px]">
+                  {selectedVacancy.title}
+                </span>
+              </div>
+
+              {/* View tabs + search */}
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dark-500" />
+                  <input
+                    type="text"
+                    placeholder="Поиск..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-44 pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
+                  />
+                </div>
+                <div className="flex items-center bg-white/[0.03] rounded-lg border border-white/[0.06] p-0.5">
+                  <button
+                    onClick={() => setView('list')}
+                    className={clsx(
+                      'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                      view === 'list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200',
+                    )}
                   >
-                    <td className="py-2.5 px-3 text-dark-100 font-medium">{c.name}</td>
-                    <td className="py-2.5 px-3 text-dark-300">{c.phone || '—'}</td>
-                    <td className="py-2.5 px-3 text-dark-300">{c.email || '—'}</td>
-                    <td className="py-2.5 px-3 text-dark-300">{c.telegram ? `@${c.telegram}` : '—'}</td>
-                    <td className="py-2.5 px-3 text-dark-300 max-w-[180px] truncate">{c.vacancy_title}</td>
-                    <td className="py-2.5 px-3">
-                      <span className={clsx(
-                        'px-2 py-0.5 rounded-full text-xs font-medium',
-                        STAGE_COLORS[c.stage] || 'bg-dark-400/15 text-dark-300'
-                      )}>
-                        {c.stage_label}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-                {candidates.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="text-center py-8 text-dark-400">
-                      Нет кандидатов
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          {candidatesTotal > 50 && (
-            <div className="flex items-center justify-between py-2">
-              <span className="text-xs text-dark-400">
-                {page * 50 + 1}–{Math.min((page + 1) * 50, candidatesTotal)} из {candidatesTotal}
-              </span>
-              <div className="flex gap-2">
-                <button
-                  disabled={page === 0}
-                  onClick={() => setPage(p => p - 1)}
-                  className="px-3 py-1 text-xs rounded-lg glass-button disabled:opacity-30 text-dark-300"
-                >
-                  Назад
-                </button>
-                <button
-                  disabled={(page + 1) * 50 >= candidatesTotal}
-                  onClick={() => setPage(p => p + 1)}
-                  className="px-3 py-1 text-xs rounded-lg glass-button disabled:opacity-30 text-dark-300"
-                >
-                  Вперёд
-                </button>
+                    <LayoutList className="w-3.5 h-3.5" />
+                    Список
+                  </button>
+                  <button
+                    onClick={() => setView('board')}
+                    className={clsx(
+                      'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                      view === 'board' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200',
+                    )}
+                  >
+                    <Columns3 className="w-3.5 h-3.5" />
+                    Доска
+                  </button>
+                </div>
               </div>
             </div>
-          )}
-        </div>
-      )}
+
+            {/* Content area */}
+            <div className="flex-1 overflow-y-auto">
+              {contentLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : view === 'list' ? (
+                /* ===== LIST VIEW: grouped by stage ===== */
+                <div className="px-5 py-3 space-y-1">
+                  {groupedByStage.length === 0 ? (
+                    <div className="text-center py-16 text-dark-500 text-sm">
+                      {searchQuery ? 'Ничего не найдено' : 'Нет кандидатов в этой воронке'}
+                    </div>
+                  ) : (
+                    groupedByStage.map(([stage, items]) => {
+                      const colors = STAGE_COLORS[stage] || fallbackColor;
+                      const collapsed = collapsedStages.has(stage);
+                      return (
+                        <div key={stage} className="mb-1">
+                          {/* Stage group header */}
+                          <button
+                            onClick={() => toggleStage(stage)}
+                            className={clsx(
+                              'w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors',
+                              colors.bg,
+                            )}
+                          >
+                            {collapsed ? (
+                              <ChevronRight className={clsx('w-4 h-4', colors.text)} />
+                            ) : (
+                              <ChevronDown className={clsx('w-4 h-4', colors.text)} />
+                            )}
+                            <span className={clsx('w-2 h-2 rounded-full', colors.dot)} />
+                            <span className={clsx('text-sm font-semibold', colors.text)}>
+                              {STAGE_LABELS[stage] || stage}
+                            </span>
+                            <span className={clsx('text-xs ml-1 opacity-70', colors.text)}>
+                              ({items.length})
+                            </span>
+                          </button>
+
+                          {/* Candidate rows */}
+                          {!collapsed && (
+                            <div className="mt-0.5">
+                              {/* Column headers */}
+                              <div className="grid grid-cols-[1fr_120px_100px_140px_120px] gap-2 px-3 py-1.5 text-[11px] text-dark-500 font-medium uppercase tracking-wide">
+                                <span>Имя</span>
+                                <span>Статус</span>
+                                <span>Дата</span>
+                                <span>Telegram</span>
+                                <span>Источник</span>
+                              </div>
+
+                              {items.map((c) => (
+                                <div
+                                  key={`${c.id}-${c.vacancy_id}`}
+                                  onClick={() => navigate(`/contacts/${c.id}`)}
+                                  className="grid grid-cols-[1fr_120px_100px_140px_120px] gap-2 px-3 py-2 hover:bg-white/[0.03] rounded-lg cursor-pointer transition-colors border-b border-white/[0.03] last:border-b-0 group"
+                                >
+                                  {/* Name */}
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div className="w-6 h-6 rounded-full bg-accent-500/10 flex items-center justify-center text-[10px] text-accent-400 font-medium flex-shrink-0">
+                                      {c.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <span className="text-sm text-dark-100 truncate group-hover:text-accent-400 transition-colors">
+                                      {c.name}
+                                    </span>
+                                  </div>
+                                  {/* Status badge */}
+                                  <div className="flex items-center">
+                                    <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', colors.badge)}>
+                                      {c.stage_label}
+                                    </span>
+                                  </div>
+                                  {/* Date */}
+                                  <span className="text-xs text-dark-400 flex items-center">
+                                    {formatDate(c.applied_at)}
+                                  </span>
+                                  {/* Telegram */}
+                                  <span className="text-xs text-dark-400 truncate flex items-center">
+                                    {c.telegram ? `@${c.telegram}` : ''}
+                                  </span>
+                                  {/* Source */}
+                                  <span className="text-xs text-dark-400 truncate flex items-center">
+                                    {c.source || ''}
+                                  </span>
+                                </div>
+                              ))}
+
+                              {/* Add candidate row */}
+                              <button className="flex items-center gap-2 px-3 py-2 text-xs text-dark-500 hover:text-dark-300 transition-colors w-full">
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Добавить кандидата</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              ) : (
+                /* ===== BOARD VIEW (kanban-style columns) ===== */
+                <div className="flex gap-3 px-5 py-3 overflow-x-auto h-full">
+                  {groupedByStage.length === 0 ? (
+                    <div className="flex-1 flex items-center justify-center text-dark-500 text-sm">
+                      {searchQuery ? 'Ничего не найдено' : 'Нет кандидатов в этой воронке'}
+                    </div>
+                  ) : (
+                    groupedByStage.map(([stage, items]) => {
+                      const colors = STAGE_COLORS[stage] || fallbackColor;
+                      return (
+                        <div
+                          key={stage}
+                          className="w-[280px] flex-shrink-0 flex flex-col bg-white/[0.02] rounded-xl border border-white/[0.06] overflow-hidden"
+                        >
+                          {/* Column header */}
+                          <div className={clsx('flex items-center gap-2 px-3 py-2.5 border-b border-white/[0.06]', colors.bg)}>
+                            <span className={clsx('w-2 h-2 rounded-full', colors.dot)} />
+                            <span className={clsx('text-sm font-semibold', colors.text)}>
+                              {STAGE_LABELS[stage] || stage}
+                            </span>
+                            <span className={clsx('text-xs ml-auto opacity-70', colors.text)}>
+                              {items.length}
+                            </span>
+                          </div>
+
+                          {/* Cards */}
+                          <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                            {items.map((c) => (
+                              <div
+                                key={`${c.id}-${c.vacancy_id}`}
+                                onClick={() => navigate(`/contacts/${c.id}`)}
+                                className="glass-card rounded-lg p-3 cursor-pointer hover:border-accent-500/30 transition-all group"
+                              >
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className="w-6 h-6 rounded-full bg-accent-500/10 flex items-center justify-center text-[10px] text-accent-400 font-medium flex-shrink-0">
+                                    {c.name.charAt(0).toUpperCase()}
+                                  </div>
+                                  <span className="text-sm text-dark-100 truncate group-hover:text-accent-400 transition-colors font-medium">
+                                    {c.name}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-[11px] text-dark-400">
+                                  {c.telegram && <span>@{c.telegram}</span>}
+                                  {c.source && <span className="ml-auto">{c.source}</span>}
+                                </div>
+                                {c.applied_at && (
+                                  <div className="text-[10px] text-dark-500 mt-1.5">
+                                    {formatDate(c.applied_at)}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Add candidate button */}
+                          <button className="flex items-center gap-1.5 px-3 py-2 text-xs text-dark-500 hover:text-dark-300 hover:bg-white/[0.03] transition-colors border-t border-white/[0.06]">
+                            <Plus className="w-3.5 h-3.5" />
+                            Добавить
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </main>
     </div>
   );
 }
