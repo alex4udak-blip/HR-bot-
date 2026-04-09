@@ -214,38 +214,58 @@ export default function RecruiterFunnelsPage() {
   }, [candidates, candidateSearch]);
 
   // Derive stages config from custom_stages or fallback to defaults
-  const stagesConfig = useMemo((): { keys: string[]; labels: Record<string, string>; keyToEnum: Record<string, string> } => {
+  // Each column has a unique `key` and optional `maps_to` (the real DB enum value)
+  const stagesConfig = useMemo((): {
+    keys: string[];
+    labels: Record<string, string>;
+    keyToEnum: Record<string, string>;   // column key → real enum value
+    enumToKeys: Record<string, string[]>; // real enum → column keys that accept it
+  } => {
     const cols = selectedVacancy?.custom_stages?.columns as StageColumn[] | undefined;
     if (cols && cols.length > 0) {
       const visible = cols.filter(c => c.visible);
+      const enumToKeys: Record<string, string[]> = {};
+      for (const c of visible) {
+        const enumVal = c.maps_to || c.key;
+        if (!enumToKeys[enumVal]) enumToKeys[enumVal] = [];
+        enumToKeys[enumVal].push(c.key);
+      }
       return {
-        keys: visible.map(c => c.maps_to || c.key),
-        labels: Object.fromEntries(visible.map(c => [c.maps_to || c.key, c.label])),
-        keyToEnum: Object.fromEntries(visible.map(c => [c.maps_to || c.key, c.maps_to || c.key])),
+        keys: visible.map(c => c.key),
+        labels: Object.fromEntries(visible.map(c => [c.key, c.label])),
+        keyToEnum: Object.fromEntries(visible.map(c => [c.key, c.maps_to || c.key])),
+        enumToKeys,
       };
     }
+    const enumToKeys: Record<string, string[]> = {};
+    for (const s of STAGE_ORDER) enumToKeys[s] = [s];
     return {
       keys: [...STAGE_ORDER],
       labels: { ...STAGE_LABELS },
       keyToEnum: Object.fromEntries(STAGE_ORDER.map(s => [s, s])),
+      enumToKeys,
     };
   }, [selectedVacancy]);
 
-  // Group candidates by stage
+  // Group candidates by stage columns (handles virtual stages via maps_to)
   const groupedByStage = useMemo(() => {
     const map = new Map<string, VacancyApplication[]>();
-    for (const stage of stagesConfig.keys) map.set(stage, []);
+    for (const key of stagesConfig.keys) map.set(key, []);
     for (const c of filteredCandidates) {
-      const arr = map.get(c.stage);
-      if (arr) arr.push(c);
-      else {
+      // Find which column(s) this candidate's stage maps to
+      const targetKeys = stagesConfig.enumToKeys[c.stage];
+      if (targetKeys && targetKeys.length > 0) {
+        // Put in first matching column
+        map.get(targetKeys[0])!.push(c);
+      } else {
+        // Unknown stage — show in its own group
         if (!map.has(c.stage)) map.set(c.stage, []);
         map.get(c.stage)!.push(c);
       }
     }
     const result: [string, VacancyApplication[]][] = [];
-    for (const [stage, items] of map) {
-      if (items.length > 0) result.push([stage, items]);
+    for (const [key, items] of map) {
+      result.push([key, items]);
     }
     return result;
   }, [filteredCandidates, stagesConfig]);
@@ -311,9 +331,12 @@ export default function RecruiterFunnelsPage() {
 
   // Inline rename stage
   const handleStageRename = useCallback(async (stageKey: string, newLabel: string) => {
-    if (!selectedVacancyId || !newLabel.trim()) return;
+    if (!selectedVacancyId || !newLabel.trim()) {
+      setEditingStage(null);
+      return;
+    }
     const columns = getCurrentColumns().map(c =>
-      (c.maps_to || c.key) === stageKey ? { ...c, label: newLabel.trim() } : c
+      c.key === stageKey ? { ...c, label: newLabel.trim() } : c
     );
     try {
       await updateVacancy(selectedVacancyId, { custom_stages: { columns } });
@@ -325,7 +348,7 @@ export default function RecruiterFunnelsPage() {
     setEditingStage(null);
   }, [selectedVacancyId, getCurrentColumns, fetchVacancies]);
 
-  // Add new virtual stage
+  // Add new virtual stage — immediately show inline editor
   const handleAddStage = useCallback(async () => {
     if (!selectedVacancyId) return;
     const columns = getCurrentColumns();
@@ -340,8 +363,10 @@ export default function RecruiterFunnelsPage() {
     }
     try {
       await updateVacancy(selectedVacancyId, { custom_stages: { columns } });
-      fetchVacancies();
-      toast.success('Этап добавлен');
+      await fetchVacancies();
+      // Activate inline editing on the new stage
+      setEditingStage(key);
+      setEditingLabel('Новый этап');
     } catch {
       toast.error('Ошибка добавления');
     }
@@ -656,7 +681,8 @@ export default function RecruiterFunnelsPage() {
                     </div>
                   ) : (
                     groupedByStage.map(([stage, items]) => {
-                      const colors = STAGE_COLORS[stage] || fallbackColor;
+                      const enumVal = stagesConfig.keyToEnum[stage] || stage;
+                      const colors = STAGE_COLORS[enumVal] || STAGE_COLORS[stage] || fallbackColor;
                       const collapsed = collapsedStages.has(stage);
                       return (
                         <div key={stage} className="mb-1">
@@ -817,7 +843,8 @@ export default function RecruiterFunnelsPage() {
                     </div>
                   ) : (
                     groupedByStage.map(([stage, items]) => {
-                      const colors = STAGE_COLORS[stage] || fallbackColor;
+                      const enumVal2 = stagesConfig.keyToEnum[stage] || stage;
+                      const colors = STAGE_COLORS[enumVal2] || STAGE_COLORS[stage] || fallbackColor;
                       return (
                         <div
                           key={stage}
