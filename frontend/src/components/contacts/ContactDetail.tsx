@@ -179,18 +179,38 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
     }
   }, [entity.id, entity.extra_data, fetchEntity]);
 
+  // Entity files loaded via dedicated API (entity.files is NOT populated by backend)
+  const [entityFiles, setEntityFiles] = useState<api.EntityFile[]>([]);
+  const [entityFilesVersion, setEntityFilesVersion] = useState(0);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadFiles = async () => {
+      try {
+        const files = await api.getEntityFiles(entity.id);
+        if (mounted) setEntityFiles(files);
+      } catch { /* ignore */ }
+    };
+    loadFiles();
+    return () => { mounted = false; };
+  }, [entity.id, entityFilesVersion]);
+
+  // Callback for EntityFiles component to trigger refresh of photo/resume previews
+  const handleFilesChanged = useCallback(() => {
+    setEntityFilesVersion(v => v + 1);
+  }, []);
+
   // Load photo from entity files
   useEffect(() => {
     let mounted = true;
     const loadPhoto = async () => {
-      const files = entity.files || [];
-      const photoFile = files.find(f =>
+      const photoFile = entityFiles.find(f =>
         (f.file_type === 'portfolio' || f.file_type === 'other') &&
         f.mime_type?.startsWith('image/') &&
         !f.file_name.toLowerCase().includes('резюме') &&
         !f.file_name.toLowerCase().includes('resume') &&
         !f.file_name.toLowerCase().includes('cv')
-      ) || files.find(f =>
+      ) || entityFiles.find(f =>
         f.mime_type?.startsWith('image/') &&
         (f.file_name.toLowerCase().includes('фото') ||
          f.file_name.toLowerCase().includes('photo') ||
@@ -208,7 +228,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
       mounted = false;
       if (photoUrl) URL.revokeObjectURL(photoUrl);
     };
-  }, [entity.id, entity.files]);
+  }, [entity.id, entityFiles]);
 
   // Load resume files as inline images
   useEffect(() => {
@@ -217,8 +237,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
 
     const loadResumeImages = async () => {
       try {
-        const files = entity.files || [];
-        const resumeFiles = files.filter(f =>
+        const resumeFiles = entityFiles.filter(f =>
           f.file_type === 'resume' &&
           (f.mime_type?.startsWith('image/') ||
            f.file_name.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i))
@@ -250,7 +269,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
       mounted = false;
       resumeImages.forEach(img => URL.revokeObjectURL(img.url));
     };
-  }, [entity.id, entity.files]);
+  }, [entity.id, entityFiles]);
 
   // Helpers
   const getExtraData = (key: string): string => {
@@ -576,7 +595,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
         )}
 
         {activeTab === 'files' && (
-          <EntityFiles entityId={entity.id} onFilesChanged={() => fetchEntity(entity.id)} />
+          <EntityFiles entityId={entity.id} onFilesChanged={handleFilesChanged} />
         )}
 
         {activeTab === 'red_flags' && (
