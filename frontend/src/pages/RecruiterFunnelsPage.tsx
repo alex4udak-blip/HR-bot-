@@ -21,7 +21,7 @@ import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import { getUsers, getApplications, updateApplication, updateVacancy } from '@/services/api';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
-import { VacancyStatusBadge, StagesConfigModal } from '@/components/vacancies';
+import { VacancyStatusBadge } from '@/components/vacancies';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 
 // ==================== Constants ====================
@@ -99,7 +99,8 @@ export default function RecruiterFunnelsPage() {
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
   const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set());
-  const [showStagesConfig, setShowStagesConfig] = useState(false);
+  const [editingStage, setEditingStage] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState('');
 
   // Load data
   useEffect(() => {
@@ -301,12 +302,50 @@ export default function RecruiterFunnelsPage() {
     }
   }, [fetchVacancies, stagesConfig]);
 
-  // Save custom stages for selected vacancy
-  const handleSaveStages = useCallback(async (columns: StageColumn[]) => {
+  // Build current columns array from vacancy or defaults
+  const getCurrentColumns = useCallback((): StageColumn[] => {
+    const cols = selectedVacancy?.custom_stages?.columns as StageColumn[] | undefined;
+    if (cols && cols.length > 0) return cols;
+    return STAGE_ORDER.map(key => ({ key, label: STAGE_LABELS[key] || key, visible: true }));
+  }, [selectedVacancy]);
+
+  // Inline rename stage
+  const handleStageRename = useCallback(async (stageKey: string, newLabel: string) => {
+    if (!selectedVacancyId || !newLabel.trim()) return;
+    const columns = getCurrentColumns().map(c =>
+      (c.maps_to || c.key) === stageKey ? { ...c, label: newLabel.trim() } : c
+    );
+    try {
+      await updateVacancy(selectedVacancyId, { custom_stages: { columns } });
+      fetchVacancies();
+      toast.success('Этап переименован');
+    } catch {
+      toast.error('Ошибка сохранения');
+    }
+    setEditingStage(null);
+  }, [selectedVacancyId, getCurrentColumns, fetchVacancies]);
+
+  // Add new virtual stage
+  const handleAddStage = useCallback(async () => {
     if (!selectedVacancyId) return;
-    await updateVacancy(selectedVacancyId, { custom_stages: { columns } });
-    fetchVacancies(); // refresh to pick up new custom_stages
-  }, [selectedVacancyId, fetchVacancies]);
+    const columns = getCurrentColumns();
+    const key = `custom_${Date.now()}`;
+    // Insert before rejected/withdrawn
+    const rejIdx = columns.findIndex(c => (c.maps_to || c.key) === 'rejected');
+    const newCol: StageColumn = { key, label: 'Новый этап', visible: true, maps_to: 'screening' };
+    if (rejIdx >= 0) {
+      columns.splice(rejIdx, 0, newCol);
+    } else {
+      columns.push(newCol);
+    }
+    try {
+      await updateVacancy(selectedVacancyId, { custom_stages: { columns } });
+      fetchVacancies();
+      toast.success('Этап добавлен');
+    } catch {
+      toast.error('Ошибка добавления');
+    }
+  }, [selectedVacancyId, getCurrentColumns, fetchVacancies]);
 
   const formatDate = (iso?: string | null) => {
     if (!iso) return '';
@@ -621,33 +660,61 @@ export default function RecruiterFunnelsPage() {
                       const collapsed = collapsedStages.has(stage);
                       return (
                         <div key={stage} className="mb-1">
-                          {/* Stage group header */}
+                          {/* Stage group header — inline editable */}
                           <div
                             className={clsx(
                               'w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors group/stage',
                               colors.bg,
                             )}
                           >
-                            <button onClick={() => toggleStage(stage)} className="flex items-center gap-2 flex-1 min-w-0">
+                            <button onClick={() => toggleStage(stage)} className="flex-shrink-0">
                               {collapsed ? (
                                 <ChevronRight className={clsx('w-4 h-4', colors.text)} />
                               ) : (
                                 <ChevronDown className={clsx('w-4 h-4', colors.text)} />
                               )}
-                              <span className={clsx('w-2 h-2 rounded-full', colors.dot)} />
-                              <span className={clsx('text-sm font-semibold uppercase', colors.text)}>
+                            </button>
+                            <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', colors.dot)} />
+                            {editingStage === stage ? (
+                              <input
+                                autoFocus
+                                value={editingLabel}
+                                onChange={(e) => setEditingLabel(e.target.value)}
+                                onBlur={() => handleStageRename(stage, editingLabel)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleStageRename(stage, editingLabel);
+                                  if (e.key === 'Escape') setEditingStage(null);
+                                }}
+                                className={clsx(
+                                  'bg-transparent border-b-2 border-current outline-none text-sm font-semibold uppercase px-1 py-0',
+                                  colors.text,
+                                )}
+                              />
+                            ) : (
+                              <span
+                                onDoubleClick={() => {
+                                  setEditingStage(stage);
+                                  setEditingLabel(stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage);
+                                }}
+                                className={clsx('text-sm font-semibold uppercase cursor-text', colors.text)}
+                                title="Дважды кликните для переименования"
+                              >
                                 {stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage}
                               </span>
-                              <span className={clsx('text-xs ml-1', colors.text)}>
-                                {items.length}
-                              </span>
-                            </button>
+                            )}
+                            <span className={clsx('text-xs ml-1', colors.text)}>
+                              {items.length}
+                            </span>
+                            {/* Edit icon — click to rename */}
                             <button
-                              onClick={() => setShowStagesConfig(true)}
+                              onClick={() => {
+                                setEditingStage(stage);
+                                setEditingLabel(stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage);
+                              }}
                               className="p-1 rounded hover:bg-white/[0.1] transition-colors opacity-0 group-hover/stage:opacity-100"
-                              title="Настроить этапы"
+                              title="Переименовать этап"
                             >
-                              <Settings className="w-3.5 h-3.5 text-dark-400" />
+                              <Settings className="w-3 h-3 text-dark-400" />
                             </button>
                           </div>
 
@@ -728,6 +795,17 @@ export default function RecruiterFunnelsPage() {
                         </div>
                       );
                     })
+                  )}
+
+                  {/* Add stage button */}
+                  {groupedByStage.length > 0 && (
+                    <button
+                      onClick={handleAddStage}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2.5 mt-2 border border-dashed border-white/[0.1] rounded-lg text-dark-400 hover:text-dark-200 hover:border-white/[0.2] transition-colors text-sm"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Добавить этап
+                    </button>
                   )}
                 </div>
               ) : (
@@ -813,14 +891,6 @@ export default function RecruiterFunnelsPage() {
         />
       )}
 
-      {/* Stages Config Modal */}
-      {showStagesConfig && selectedVacancy && (
-        <StagesConfigModal
-          columns={(selectedVacancy.custom_stages?.columns as StageColumn[]) ?? null}
-          onSave={handleSaveStages}
-          onClose={() => setShowStagesConfig(false)}
-        />
-      )}
     </div>
   );
 }
