@@ -504,9 +504,9 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
                 <Loader2 className="w-6 h-6 animate-spin text-white/30" />
               </div>
             ) : resumeImages.length > 0 ? (
-              <div className="space-y-4">
+              <div className="space-y-4 flex flex-col items-center">
                 {resumeImages.map(img => (
-                  <div key={img.id} className="rounded-lg overflow-hidden border border-white/[0.06]">
+                  <div key={img.id} className="rounded-lg overflow-hidden border border-white/[0.06] max-w-[700px] w-full">
                     <img
                       src={img.url}
                       alt={img.name}
