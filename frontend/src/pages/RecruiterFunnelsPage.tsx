@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus,
@@ -17,8 +17,8 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications } from '@/services/api';
-import type { Vacancy, VacancyStatus, VacancyApplication } from '@/types';
+import { getUsers, getApplications, updateApplication } from '@/services/api';
+import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
 import { VacancyStatusBadge } from '@/components/vacancies';
 
 // ==================== Constants ====================
@@ -260,6 +260,22 @@ export default function RecruiterFunnelsPage() {
     setShowCreateModal(false);
     selectVacancy(vacancy.id);
   };
+
+  // Change candidate stage
+  const handleStageChange = useCallback(async (applicationId: number, newStage: ApplicationStage) => {
+    try {
+      await updateApplication(applicationId, { stage: newStage });
+      // Update local state immediately
+      setCandidates((prev) =>
+        prev.map((c) => c.id === applicationId ? { ...c, stage: newStage } : c)
+      );
+      toast.success(`Статус изменён → ${STAGE_LABELS[newStage] || newStage}`);
+      // Refresh vacancy store for updated counts
+      fetchVacancies();
+    } catch {
+      toast.error('Ошибка смены статуса');
+    }
+  }, [fetchVacancies]);
 
   const formatDate = (iso?: string | null) => {
     if (!iso) return '';
@@ -580,11 +596,12 @@ export default function RecruiterFunnelsPage() {
                                       {c.entity_name || 'Без имени'}
                                     </span>
                                   </div>
-                                  {/* Status badge */}
-                                  <div className="flex items-center">
-                                    <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', colors.badge)}>
-                                      {STAGE_LABELS[c.stage] || c.stage}
-                                    </span>
+                                  {/* Status badge — clickable */}
+                                  <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+                                    <StageDropdown
+                                      currentStage={c.stage as ApplicationStage}
+                                      onChangeStage={(newStage) => handleStageChange(c.id, newStage)}
+                                    />
                                   </div>
                                   {/* Date */}
                                   <span className="text-xs text-dark-400 flex items-center">
@@ -783,6 +800,83 @@ function CreateFunnelModal({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+/* ===================== Funnel Card ===================== */
+
+/* ===================== Stage Dropdown ===================== */
+
+function StageDropdown({
+  currentStage,
+  onChangeStage,
+}: {
+  currentStage: ApplicationStage;
+  onChangeStage: (stage: ApplicationStage) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const colors = STAGE_COLORS[currentStage] || fallbackColor;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className={clsx(
+          'text-xs px-2.5 py-1 rounded-full font-medium cursor-pointer transition-all',
+          'hover:ring-2 hover:ring-white/10',
+          colors.badge,
+        )}
+      >
+        {STAGE_LABELS[currentStage] || currentStage}
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 w-56 py-1 bg-dark-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+          <div className="px-3 py-1.5 text-[10px] text-dark-500 uppercase tracking-wider font-semibold">
+            Перенести в
+          </div>
+          {STAGE_ORDER.map((stage) => {
+            const sc = STAGE_COLORS[stage] || fallbackColor;
+            const isCurrent = stage === currentStage;
+            return (
+              <button
+                key={stage}
+                onClick={() => {
+                  if (!isCurrent) onChangeStage(stage as ApplicationStage);
+                  setOpen(false);
+                }}
+                className={clsx(
+                  'w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors text-sm',
+                  isCurrent
+                    ? 'bg-white/[0.06] text-dark-200'
+                    : 'hover:bg-white/[0.04] text-dark-300 hover:text-dark-100',
+                )}
+              >
+                <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', sc.dot)} />
+                <span className="flex-1">{STAGE_LABELS[stage] || stage}</span>
+                {isCurrent && (
+                  <span className="text-[10px] text-dark-500">текущий</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
