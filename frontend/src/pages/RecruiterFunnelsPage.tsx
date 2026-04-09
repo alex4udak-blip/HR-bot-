@@ -563,13 +563,6 @@ export default function RecruiterFunnelsPage() {
                 <span className="text-xs text-dark-500 ml-1 sm:ml-2 flex-shrink-0">
                   {candidates.length}
                 </span>
-                <button
-                  onClick={() => setShowStagesConfig(true)}
-                  className="p-1 ml-1 rounded hover:bg-white/[0.08] transition-colors flex-shrink-0"
-                  title="Настроить этапы воронки"
-                >
-                  <Settings className="w-3.5 h-3.5 text-dark-400 hover:text-dark-200" />
-                </button>
               </div>
 
               {/* View tabs + search */}
@@ -629,26 +622,34 @@ export default function RecruiterFunnelsPage() {
                       return (
                         <div key={stage} className="mb-1">
                           {/* Stage group header */}
-                          <button
-                            onClick={() => toggleStage(stage)}
+                          <div
                             className={clsx(
-                              'w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors',
+                              'w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors group/stage',
                               colors.bg,
                             )}
                           >
-                            {collapsed ? (
-                              <ChevronRight className={clsx('w-4 h-4', colors.text)} />
-                            ) : (
-                              <ChevronDown className={clsx('w-4 h-4', colors.text)} />
-                            )}
-                            <span className={clsx('w-2 h-2 rounded-full', colors.dot)} />
-                            <span className={clsx('text-sm font-semibold uppercase', colors.text)}>
-                              {stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage}
-                            </span>
-                            <span className={clsx('text-xs ml-1', colors.text)}>
-                              {items.length}
-                            </span>
-                          </button>
+                            <button onClick={() => toggleStage(stage)} className="flex items-center gap-2 flex-1 min-w-0">
+                              {collapsed ? (
+                                <ChevronRight className={clsx('w-4 h-4', colors.text)} />
+                              ) : (
+                                <ChevronDown className={clsx('w-4 h-4', colors.text)} />
+                              )}
+                              <span className={clsx('w-2 h-2 rounded-full', colors.dot)} />
+                              <span className={clsx('text-sm font-semibold uppercase', colors.text)}>
+                                {stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage}
+                              </span>
+                              <span className={clsx('text-xs ml-1', colors.text)}>
+                                {items.length}
+                              </span>
+                            </button>
+                            <button
+                              onClick={() => setShowStagesConfig(true)}
+                              className="p-1 rounded hover:bg-white/[0.1] transition-colors opacity-0 group-hover/stage:opacity-100"
+                              title="Настроить этапы"
+                            >
+                              <Settings className="w-3.5 h-3.5 text-dark-400" />
+                            </button>
+                          </div>
 
                           {/* Candidate rows */}
                           {!collapsed && (
