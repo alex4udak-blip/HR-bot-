@@ -8,8 +8,11 @@ import {
   Search,
   LayoutGrid,
   List,
+  X,
+  Loader2,
 } from 'lucide-react';
 import clsx from 'clsx';
+import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import { getUsers } from '@/services/api';
@@ -33,65 +36,50 @@ interface RecruiterGroup {
 
 export default function RecruiterFunnelsPage() {
   const navigate = useNavigate();
-  const { vacancies, isLoading, fetchVacancies } = useVacancyStore();
+  const { vacancies, isLoading, fetchVacancies, createVacancy } = useVacancyStore();
   const { user } = useAuthStore();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [usersMap, setUsersMap] = useState<Record<number, string>>({});
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const isHrAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
 
-  // Load vacancies on mount
   useEffect(() => {
     fetchVacancies();
   }, [fetchVacancies]);
 
-  // Load users map for superadmin grouping
   useEffect(() => {
     if (isHrAdmin) {
       getUsers().then((users) => {
         const map: Record<number, string> = {};
-        users.forEach((u) => {
-          map[u.id] = u.name;
-        });
+        users.forEach((u) => { map[u.id] = u.name; });
         setUsersMap(map);
       }).catch(() => {});
     }
   }, [isHrAdmin]);
 
-  // Filter vacancies: my own for recruiters, all for superadmin
   const filteredVacancies = useMemo(() => {
     let result = vacancies;
-
-    // Regular recruiters see only their own
     if (!isHrAdmin && user) {
       result = result.filter((v) => v.created_by === user.id);
     }
-
-    // Status filter
     if (statusFilter !== 'all') {
       result = result.filter((v) => v.status === statusFilter);
     }
-
-    // Search
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(
-        (v) =>
-          v.title.toLowerCase().includes(q) ||
-          v.department_name?.toLowerCase().includes(q)
+        (v) => v.title.toLowerCase().includes(q) || v.department_name?.toLowerCase().includes(q)
       );
     }
-
     return result;
   }, [vacancies, user, isHrAdmin, statusFilter, search]);
 
-  // Group by recruiter for superadmin
   const recruiterGroups = useMemo((): RecruiterGroup[] => {
     if (!isHrAdmin) return [];
-
     const groups: Record<number, RecruiterGroup> = {};
     filteredVacancies.forEach((v) => {
       const uid = v.created_by ?? 0;
@@ -104,16 +92,16 @@ export default function RecruiterFunnelsPage() {
       }
       groups[uid].vacancies.push(v);
     });
-
     return Object.values(groups).sort((a, b) => a.userName.localeCompare(b.userName));
   }, [filteredVacancies, isHrAdmin, usersMap]);
 
-  const handleCreateFunnel = () => {
-    navigate('/vacancies?new=1');
-  };
-
   const handleOpenFunnel = (vacancyId: number) => {
     navigate(`/vacancies/${vacancyId}`);
+  };
+
+  const handleFunnelCreated = (vacancy: Vacancy) => {
+    setShowCreateModal(false);
+    navigate(`/vacancies/${vacancy.id}`);
   };
 
   return (
@@ -121,7 +109,7 @@ export default function RecruiterFunnelsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl lg:text-2xl font-bold text-white">
+          <h1 className="text-xl lg:text-2xl font-bold text-dark-50">
             {isHrAdmin ? 'Воронки рекрутеров' : 'Мои воронки'}
           </h1>
           <p className="text-sm text-dark-400 mt-0.5">
@@ -131,7 +119,7 @@ export default function RecruiterFunnelsPage() {
           </p>
         </div>
         <button
-          onClick={handleCreateFunnel}
+          onClick={() => setShowCreateModal(true)}
           className="flex items-center gap-2 px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -141,7 +129,6 @@ export default function RecruiterFunnelsPage() {
 
       {/* Filters bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-        {/* Search */}
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-400" />
           <input
@@ -149,12 +136,10 @@ export default function RecruiterFunnelsPage() {
             placeholder="Поиск по названию..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-white/[0.02] border border-white/[0.06] rounded-lg text-sm text-white placeholder-dark-400 focus:outline-none focus:border-accent-500/50"
+            className="w-full pl-10 pr-4 py-2 glass-light border border-white/[0.06] rounded-lg text-sm text-dark-100 placeholder-dark-400 focus:outline-none focus:border-accent-500/50"
           />
         </div>
-
-        {/* Status tabs */}
-        <div className="flex items-center gap-1 bg-white/[0.02] rounded-lg p-1 border border-white/[0.06]">
+        <div className="flex items-center gap-1 glass-light rounded-lg p-1 border border-white/[0.06]">
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.id}
@@ -163,21 +148,19 @@ export default function RecruiterFunnelsPage() {
                 'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
                 statusFilter === f.id
                   ? 'bg-accent-500/15 text-accent-400'
-                  : 'text-dark-400 hover:text-white/70'
+                  : 'text-dark-400 hover:text-dark-200'
               )}
             >
               {f.label}
             </button>
           ))}
         </div>
-
-        {/* View mode toggle */}
-        <div className="flex items-center gap-1 bg-white/[0.02] rounded-lg p-1 border border-white/[0.06]">
+        <div className="flex items-center gap-1 glass-light rounded-lg p-1 border border-white/[0.06]">
           <button
             onClick={() => setViewMode('grid')}
             className={clsx(
               'p-1.5 rounded-md transition-colors',
-              viewMode === 'grid' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-white/70'
+              viewMode === 'grid' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200'
             )}
           >
             <LayoutGrid className="w-4 h-4" />
@@ -186,7 +169,7 @@ export default function RecruiterFunnelsPage() {
             onClick={() => setViewMode('list')}
             className={clsx(
               'p-1.5 rounded-md transition-colors',
-              viewMode === 'list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-white/70'
+              viewMode === 'list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200'
             )}
           >
             <List className="w-4 h-4" />
@@ -204,13 +187,11 @@ export default function RecruiterFunnelsPage() {
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <Briefcase className="w-10 h-10 text-dark-500" />
             <div className="text-center">
-              <p className="text-white font-medium">Пока нет воронок</p>
-              <p className="text-dark-400 text-sm mt-1">
-                Создайте первую воронку для начала работы
-              </p>
+              <p className="text-dark-100 font-medium">Пока нет воронок</p>
+              <p className="text-dark-400 text-sm mt-1">Создайте первую воронку для начала работы</p>
             </div>
             <button
-              onClick={handleCreateFunnel}
+              onClick={() => setShowCreateModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors"
             >
               <Plus className="w-4 h-4" />
@@ -218,16 +199,13 @@ export default function RecruiterFunnelsPage() {
             </button>
           </div>
         ) : isHrAdmin ? (
-          /* Superadmin: grouped by recruiter */
           <div className="space-y-6">
             {recruiterGroups.map((group) => (
               <div key={group.userId}>
                 <div className="flex items-center gap-2 mb-3">
                   <Users className="w-4 h-4 text-emerald-400" />
-                  <h2 className="text-sm font-semibold text-white">{group.userName}</h2>
-                  <span className="text-xs text-dark-400">
-                    {group.vacancies.length} воронок
-                  </span>
+                  <h2 className="text-sm font-semibold text-dark-100">{group.userName}</h2>
+                  <span className="text-xs text-dark-400">{group.vacancies.length} воронок</span>
                 </div>
                 {viewMode === 'grid' ? (
                   <FunnelGrid vacancies={group.vacancies} onOpen={handleOpenFunnel} />
@@ -242,6 +220,100 @@ export default function RecruiterFunnelsPage() {
         ) : (
           <FunnelList vacancies={filteredVacancies} onOpen={handleOpenFunnel} />
         )}
+      </div>
+
+      {/* Create Funnel Modal */}
+      {showCreateModal && (
+        <CreateFunnelModal
+          onClose={() => setShowCreateModal(false)}
+          onCreated={handleFunnelCreated}
+          createVacancy={createVacancy}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ===================== Create Funnel Modal ===================== */
+
+function CreateFunnelModal({
+  onClose,
+  onCreated,
+  createVacancy,
+}: {
+  onClose: () => void;
+  onCreated: (vacancy: Vacancy) => void;
+  createVacancy: (data: { title: string; status: VacancyStatus }) => Promise<Vacancy>;
+}) {
+  const [title, setTitle] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (title.trim().length < 3) {
+      toast.error('Название минимум 3 символа');
+      return;
+    }
+    setSaving(true);
+    try {
+      const vacancy = await createVacancy({
+        title: title.trim(),
+        status: 'open' as VacancyStatus,
+      });
+      toast.success('Воронка создана');
+      onCreated(vacancy);
+    } catch {
+      toast.error('Ошибка создания воронки');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative glass rounded-2xl border border-white/10 shadow-2xl w-full max-w-md p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-semibold text-dark-50">Новая воронка</h2>
+          <button onClick={onClose} className="p-1 rounded hover:bg-white/10 text-dark-400 hover:text-dark-100 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="mb-5">
+            <label className="block text-sm font-medium text-dark-200 mb-2">
+              Название воронки <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="text"
+              autoFocus
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Например: Frontend React Developer"
+              className="w-full px-4 py-2.5 glass-light border border-white/[0.08] rounded-lg text-sm text-dark-100 placeholder-dark-400 focus:outline-none focus:border-accent-500/50"
+            />
+            <p className="mt-1.5 text-xs text-dark-400">
+              Стадии воронки можно настроить после создания через ⚙️
+            </p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-dark-300 hover:text-dark-100 transition-colors"
+            >
+              Отмена
+            </button>
+            <button
+              type="submit"
+              disabled={saving || title.trim().length < 3}
+              className="flex items-center gap-2 px-5 py-2 bg-accent-500 hover:bg-accent-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              Создать
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -278,28 +350,24 @@ function FunnelCard({ vacancy, onClick }: { vacancy: Vacancy; onClick: () => voi
   return (
     <div
       onClick={onClick}
-      className="p-3 rounded-lg border border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12] hover:bg-white/[0.04] cursor-pointer transition-colors group"
+      className="p-3 rounded-lg border border-white/[0.06] glass-light hover:border-white/[0.12] cursor-pointer transition-colors group"
     >
       <div className="flex items-start justify-between mb-2">
-        <h3 className="text-sm font-medium text-white group-hover:text-accent-400 transition-colors line-clamp-2">
+        <h3 className="text-sm font-medium text-dark-100 group-hover:text-accent-400 transition-colors line-clamp-2">
           {vacancy.title}
         </h3>
         <ChevronRight className="w-4 h-4 text-dark-500 group-hover:text-accent-400 transition-colors shrink-0 mt-0.5" />
       </div>
-
       <div className="flex items-center gap-2 mb-2">
         <VacancyStatusBadge status={vacancy.status} />
         {vacancy.department_name && (
           <span className="text-xs text-dark-400 truncate">{vacancy.department_name}</span>
         )}
       </div>
-
       <div className="flex items-center gap-1.5 text-xs text-dark-400 mb-2">
         <Users className="w-3.5 h-3.5" />
         <span>{count} кандидатов</span>
       </div>
-
-      {/* Mini stage bar */}
       {total > 0 && (
         <div className="flex gap-0.5 h-1 rounded-full overflow-hidden bg-white/[0.04]">
           {mainStages.map((stage) => {
@@ -337,25 +405,21 @@ function FunnelRow({ vacancy, onClick }: { vacancy: Vacancy; onClick: () => void
   return (
     <div
       onClick={onClick}
-      className="flex items-center gap-4 px-3 py-2.5 rounded-lg border border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12] hover:bg-white/[0.04] cursor-pointer transition-colors group"
+      className="flex items-center gap-4 px-3 py-2.5 rounded-lg border border-white/[0.06] glass-light hover:border-white/[0.12] cursor-pointer transition-colors group"
     >
       <div className="flex-1 min-w-0">
-        <h3 className="text-sm font-medium text-white group-hover:text-accent-400 transition-colors truncate">
+        <h3 className="text-sm font-medium text-dark-100 group-hover:text-accent-400 transition-colors truncate">
           {vacancy.title}
         </h3>
         {vacancy.department_name && (
           <p className="text-xs text-dark-400 truncate mt-0.5">{vacancy.department_name}</p>
         )}
       </div>
-
       <VacancyStatusBadge status={vacancy.status} />
-
       <div className="flex items-center gap-1.5 text-xs text-dark-400 w-28 shrink-0">
         <Users className="w-3.5 h-3.5" />
         <span>{count} кандидатов</span>
       </div>
-
-      {/* Stage counts inline */}
       <div className="hidden lg:flex items-center gap-1.5 shrink-0">
         {(['applied', 'screening', 'phone_screen', 'offer', 'hired'] as const).map((stage) => {
           const c = stageCounts[stage] || 0;
@@ -377,7 +441,6 @@ function FunnelRow({ vacancy, onClick }: { vacancy: Vacancy; onClick: () => void
           );
         })}
       </div>
-
       <ChevronRight className="w-4 h-4 text-dark-500 group-hover:text-accent-400 transition-colors shrink-0" />
     </div>
   );
