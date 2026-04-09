@@ -284,7 +284,6 @@ export default function Layout() {
       const hrItems: { path: string; icon: LucideIcon; label: string }[] = [];
       // Базовый HR — видят все HR роли (hr + admin + owner + superadmin)
       hrItems.push({ path: '/all-candidates', icon: Users, label: 'Все кандидаты' });
-      hrItems.push({ path: '/workspaces', icon: FolderKanban, label: 'Пространства' });
       hrItems.push({ path: '/my-funnels', icon: GitBranch, label: 'Мои воронки' });
       hrItems.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
       hrItems.push({ path: '/candidate-database', icon: Database, label: 'База кандидатов' });

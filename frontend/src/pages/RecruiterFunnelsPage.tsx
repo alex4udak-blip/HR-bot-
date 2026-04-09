@@ -1,25 +1,28 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus,
   Briefcase,
   Users,
   ChevronRight,
+  ChevronDown,
   Search,
-  LayoutGrid,
-  List,
+  LayoutList,
+  Columns3,
   X,
   Loader2,
+  FolderOpen,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers } from '@/services/api';
-import type { Vacancy, VacancyStatus } from '@/types';
+import { getUsers, getApplications } from '@/services/api';
+import type { Vacancy, VacancyStatus, VacancyApplication } from '@/types';
 import { VacancyStatusBadge } from '@/components/vacancies';
 
-// Status filter options
+// ==================== Constants ====================
+
 const STATUS_FILTERS: { id: VacancyStatus | 'all'; label: string }[] = [
   { id: 'all', label: 'Все' },
   { id: 'open', label: 'Открытые' },
@@ -28,25 +31,72 @@ const STATUS_FILTERS: { id: VacancyStatus | 'all'; label: string }[] = [
   { id: 'draft', label: 'Черновики' },
 ];
 
+const STAGE_ORDER = [
+  'applied', 'screening', 'phone_screen', 'interview',
+  'assessment', 'offer', 'hired', 'rejected', 'withdrawn',
+] as const;
+
+const STAGE_LABELS: Record<string, string> = {
+  applied: 'Новая заявка',
+  screening: 'Отбор',
+  phone_screen: 'Собеседование назначено',
+  interview: 'Собеседование пройдено',
+  assessment: 'Практика',
+  offer: 'Оффер',
+  hired: 'Вышел на работу',
+  rejected: 'Отказ',
+  withdrawn: 'Отозван',
+};
+
+const STAGE_COLORS: Record<string, { bg: string; text: string; dot: string; badge: string }> = {
+  applied:      { bg: 'bg-blue-500/10',   text: 'text-blue-400',    dot: 'bg-blue-400',    badge: 'bg-blue-500/15 text-blue-400' },
+  screening:    { bg: 'bg-cyan-500/10',    text: 'text-cyan-400',    dot: 'bg-cyan-400',    badge: 'bg-cyan-500/15 text-cyan-400' },
+  phone_screen: { bg: 'bg-purple-500/10',  text: 'text-purple-400',  dot: 'bg-purple-400',  badge: 'bg-purple-500/15 text-purple-400' },
+  interview:    { bg: 'bg-indigo-500/10',  text: 'text-indigo-400',  dot: 'bg-indigo-400',  badge: 'bg-indigo-500/15 text-indigo-400' },
+  assessment:   { bg: 'bg-orange-500/10',  text: 'text-orange-400',  dot: 'bg-orange-400',  badge: 'bg-orange-500/15 text-orange-400' },
+  offer:        { bg: 'bg-yellow-500/10',  text: 'text-yellow-400',  dot: 'bg-yellow-400',  badge: 'bg-yellow-500/15 text-yellow-400' },
+  hired:        { bg: 'bg-green-500/10',   text: 'text-green-400',   dot: 'bg-green-400',   badge: 'bg-green-500/15 text-green-400' },
+  rejected:     { bg: 'bg-red-500/10',     text: 'text-red-400',     dot: 'bg-red-400',     badge: 'bg-red-500/15 text-red-400' },
+  withdrawn:    { bg: 'bg-gray-500/10',    text: 'text-gray-400',    dot: 'bg-gray-400',    badge: 'bg-gray-500/15 text-gray-400' },
+};
+
+const fallbackColor = { bg: 'bg-dark-400/10', text: 'text-dark-300', dot: 'bg-dark-400', badge: 'bg-dark-400/15 text-dark-300' };
+
+// ==================== Types ====================
+
 interface RecruiterGroup {
   userId: number;
   userName: string;
   vacancies: Vacancy[];
+  expanded: boolean;
 }
+
+// ==================== Main Component ====================
 
 export default function RecruiterFunnelsPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { vacancies, isLoading, fetchVacancies, createVacancy } = useVacancyStore();
   const { user } = useAuthStore();
 
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [usersMap, setUsersMap] = useState<Record<number, string>>({});
-  const [showCreateModal, setShowCreateModal] = useState(false);
-
   const isHrAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
 
+  // UI state
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [usersMap, setUsersMap] = useState<Record<number, string>>({});
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+
+  // ClickUp view: selected vacancy + candidates
+  const selectedVacancyId = searchParams.get('v') ? Number(searchParams.get('v')) : null;
+  const [view, setView] = useState<'funnels' | 'list' | 'board'>('funnels');
+  const [candidates, setCandidates] = useState<VacancyApplication[]>([]);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [candidateSearch, setCandidateSearch] = useState('');
+  const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set());
+
+  // Load data
   useEffect(() => {
     fetchVacancies();
   }, [fetchVacancies]);
@@ -61,6 +111,7 @@ export default function RecruiterFunnelsPage() {
     }
   }, [isHrAdmin]);
 
+  // Filter vacancies
   const filteredVacancies = useMemo(() => {
     let result = vacancies;
     if (!isHrAdmin && user) {
@@ -78,149 +129,566 @@ export default function RecruiterFunnelsPage() {
     return result;
   }, [vacancies, user, isHrAdmin, statusFilter, search]);
 
+  // Group by recruiter (for admin) or single group (for hr)
   const recruiterGroups = useMemo((): RecruiterGroup[] => {
-    if (!isHrAdmin) return [];
     const groups: Record<number, RecruiterGroup> = {};
-    filteredVacancies.forEach((v) => {
+    const vacs = filteredVacancies;
+    vacs.forEach((v) => {
       const uid = v.created_by ?? 0;
       if (!groups[uid]) {
         groups[uid] = {
           userId: uid,
-          userName: v.created_by_name || usersMap[uid] || 'Без автора',
+          userName: v.created_by_name || usersMap[uid] || (uid === user?.id ? (user?.name || 'Мои') : 'Без автора'),
           vacancies: [],
+          expanded: expandedGroups.has(uid),
         };
       }
       groups[uid].vacancies.push(v);
     });
-    return Object.values(groups).sort((a, b) => a.userName.localeCompare(b.userName));
-  }, [filteredVacancies, isHrAdmin, usersMap]);
+    const result = Object.values(groups).sort((a, b) => a.userName.localeCompare(b.userName));
 
-  const handleOpenFunnel = (vacancyId: number) => {
-    navigate(`/vacancies/${vacancyId}`);
+    // Auto-expand first group or single group
+    if (result.length === 1 || (!isHrAdmin && result.length > 0)) {
+      result.forEach(g => g.expanded = true);
+    } else if (expandedGroups.size === 0 && result.length > 0) {
+      // First load: expand first group
+      result[0].expanded = true;
+      setExpandedGroups(new Set([result[0].userId]));
+    } else {
+      result.forEach(g => { g.expanded = expandedGroups.has(g.userId); });
+    }
+    return result;
+  }, [filteredVacancies, isHrAdmin, usersMap, expandedGroups, user]);
+
+  // Selected vacancy
+  const selectedVacancy = useMemo(
+    () => vacancies.find((v) => v.id === selectedVacancyId),
+    [vacancies, selectedVacancyId],
+  );
+
+  const selectedRecruiterName = useMemo(() => {
+    if (!selectedVacancy) return '';
+    const uid = selectedVacancy.created_by ?? 0;
+    return selectedVacancy.created_by_name || usersMap[uid] || '';
+  }, [selectedVacancy, usersMap]);
+
+  // Load candidates when vacancy selected
+  useEffect(() => {
+    if (!selectedVacancyId) {
+      setCandidates([]);
+      if (view !== 'funnels') setView('funnels');
+      return;
+    }
+    loadCandidates(selectedVacancyId);
+    if (view === 'funnels') setView('list');
+  }, [selectedVacancyId]);
+
+  const loadCandidates = useCallback(async (vacancyId: number) => {
+    setCandidatesLoading(true);
+    try {
+      const apps = await getApplications(vacancyId);
+      setCandidates(apps);
+    } catch {
+      setCandidates([]);
+    } finally {
+      setCandidatesLoading(false);
+    }
+  }, []);
+
+  // Filter candidates by search
+  const filteredCandidates = useMemo(() => {
+    if (!candidateSearch.trim()) return candidates;
+    const q = candidateSearch.toLowerCase();
+    return candidates.filter(
+      (c) =>
+        c.entity_name?.toLowerCase().includes(q) ||
+        c.entity_email?.toLowerCase().includes(q) ||
+        c.entity_phone?.includes(q),
+    );
+  }, [candidates, candidateSearch]);
+
+  // Group candidates by stage
+  const groupedByStage = useMemo(() => {
+    const map = new Map<string, VacancyApplication[]>();
+    for (const stage of STAGE_ORDER) map.set(stage, []);
+    for (const c of filteredCandidates) {
+      const arr = map.get(c.stage);
+      if (arr) arr.push(c);
+      else {
+        if (!map.has(c.stage)) map.set(c.stage, []);
+        map.get(c.stage)!.push(c);
+      }
+    }
+    const result: [string, VacancyApplication[]][] = [];
+    for (const [stage, items] of map) {
+      if (items.length > 0) result.push([stage, items]);
+    }
+    return result;
+  }, [filteredCandidates]);
+
+  // Handlers
+  const toggleGroup = (userId: number) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  };
+
+  const selectVacancy = (vacancyId: number) => {
+    setSearchParams({ v: String(vacancyId) });
+    setCandidateSearch('');
+    setCollapsedStages(new Set());
+  };
+
+  const deselectVacancy = () => {
+    setSearchParams({});
+    setView('funnels');
+  };
+
+  const toggleStage = (stage: string) => {
+    setCollapsedStages((prev) => {
+      const next = new Set(prev);
+      if (next.has(stage)) next.delete(stage);
+      else next.add(stage);
+      return next;
+    });
   };
 
   const handleFunnelCreated = (vacancy: Vacancy) => {
     setShowCreateModal(false);
-    navigate(`/vacancies/${vacancy.id}`);
+    selectVacancy(vacancy.id);
   };
 
-  return (
-    <div className="h-full flex flex-col gap-4 p-4 lg:p-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl lg:text-2xl font-bold text-dark-50">
-            {isHrAdmin ? 'Воронки рекрутеров' : 'Мои воронки'}
-          </h1>
-          <p className="text-sm text-dark-400 mt-0.5">
-            {isHrAdmin
-              ? `${filteredVacancies.length} воронок у ${recruiterGroups.length} рекрутеров`
-              : `${filteredVacancies.length} воронок`}
-          </p>
-        </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Новая воронка
-        </button>
-      </div>
+  const formatDate = (iso?: string | null) => {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    } catch {
+      return '';
+    }
+  };
 
-      {/* Filters bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-400" />
-          <input
-            type="text"
-            placeholder="Поиск по названию..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 glass-light border border-white/[0.06] rounded-lg text-sm text-dark-100 placeholder-dark-400 focus:outline-none focus:border-accent-500/50"
-          />
+  // ==================== Render ====================
+
+  return (
+    <div className="h-full flex overflow-hidden">
+      {/* ========== LEFT SIDEBAR: Recruiter tree ========== */}
+      <aside className="w-[260px] flex-shrink-0 border-r border-white/[0.06] bg-white/[0.01] flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+          <span className="text-xs font-semibold text-dark-400 uppercase tracking-wider">
+            {isHrAdmin ? 'Рекрутеры' : 'Мои воронки'}
+          </span>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="p-1 hover:bg-white/[0.06] rounded transition-colors"
+            title="Новая воронка"
+          >
+            <Plus className="w-3.5 h-3.5 text-dark-400" />
+          </button>
         </div>
-        <div className="flex items-center gap-1 glass-light rounded-lg p-1 border border-white/[0.06]">
+
+        {/* Search */}
+        <div className="px-3 py-2 border-b border-white/[0.04]">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dark-500" />
+            <input
+              type="text"
+              placeholder="Поиск воронок..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
+            />
+          </div>
+        </div>
+
+        {/* Status filter pills */}
+        <div className="px-3 py-2 border-b border-white/[0.04] flex flex-wrap gap-1">
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.id}
               onClick={() => setStatusFilter(f.id)}
               className={clsx(
-                'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                'px-2 py-0.5 text-[10px] font-medium rounded-full transition-colors',
                 statusFilter === f.id
                   ? 'bg-accent-500/15 text-accent-400'
-                  : 'text-dark-400 hover:text-dark-200'
+                  : 'text-dark-500 hover:text-dark-300 hover:bg-white/[0.04]'
               )}
             >
               {f.label}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1 glass-light rounded-lg p-1 border border-white/[0.06]">
-          <button
-            onClick={() => setViewMode('grid')}
-            className={clsx(
-              'p-1.5 rounded-md transition-colors',
-              viewMode === 'grid' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200'
-            )}
-          >
-            <LayoutGrid className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setViewMode('list')}
-            className={clsx(
-              'p-1.5 rounded-md transition-colors',
-              viewMode === 'list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200'
-            )}
-          >
-            <List className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-8 h-8 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : filteredVacancies.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <Briefcase className="w-10 h-10 text-dark-500" />
-            <div className="text-center">
-              <p className="text-dark-100 font-medium">Пока нет воронок</p>
-              <p className="text-dark-400 text-sm mt-1">Создайте первую воронку для начала работы</p>
+        {/* Tree */}
+        <div className="flex-1 overflow-y-auto py-1">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-5 h-5 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
             </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Создать воронку
-            </button>
-          </div>
-        ) : isHrAdmin ? (
-          <div className="space-y-6">
-            {recruiterGroups.map((group) => (
+          ) : recruiterGroups.length === 0 ? (
+            <div className="px-4 py-8 text-center text-dark-500 text-xs">
+              {search ? 'Ничего не найдено' : 'Нет воронок'}
+            </div>
+          ) : (
+            recruiterGroups.map((group) => (
               <div key={group.userId}>
-                <div className="flex items-center gap-2 mb-3">
-                  <Users className="w-4 h-4 text-emerald-400" />
-                  <h2 className="text-sm font-semibold text-dark-100">{group.userName}</h2>
-                  <span className="text-xs text-dark-400">{group.vacancies.length} воронок</span>
-                </div>
-                {viewMode === 'grid' ? (
-                  <FunnelGrid vacancies={group.vacancies} onOpen={handleOpenFunnel} />
-                ) : (
-                  <FunnelList vacancies={group.vacancies} onOpen={handleOpenFunnel} />
+                {/* Recruiter folder header */}
+                {isHrAdmin && (
+                  <button
+                    onClick={() => toggleGroup(group.userId)}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.04] transition-colors group"
+                  >
+                    {group.expanded ? (
+                      <ChevronDown className="w-3.5 h-3.5 text-dark-500 flex-shrink-0" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 text-dark-500 flex-shrink-0" />
+                    )}
+                    <FolderOpen className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                    <span className="text-sm text-dark-200 truncate flex-1 text-left font-medium">
+                      {group.userName}
+                    </span>
+                    <span className="text-[10px] text-dark-500 flex-shrink-0">
+                      {group.vacancies.length}
+                    </span>
+                  </button>
+                )}
+
+                {/* Vacancy list */}
+                {(group.expanded || !isHrAdmin) && (
+                  <div className={isHrAdmin ? 'ml-3' : ''}>
+                    {group.vacancies.map((v) => {
+                      const isSelected = selectedVacancyId === v.id;
+                      const count = v.applications_count ?? 0;
+                      return (
+                        <button
+                          key={v.id}
+                          onClick={() => selectVacancy(v.id)}
+                          className={clsx(
+                            'w-full flex items-center gap-2 pr-3 py-1.5 text-left transition-colors',
+                            isHrAdmin ? 'pl-6' : 'pl-3',
+                            isSelected
+                              ? 'bg-accent-500/10 text-accent-400'
+                              : 'hover:bg-white/[0.04] text-dark-300',
+                          )}
+                        >
+                          <span className={clsx(
+                            'w-1.5 h-1.5 rounded-full flex-shrink-0',
+                            v.status === 'open' ? 'bg-green-400' :
+                            v.status === 'paused' ? 'bg-yellow-400' :
+                            v.status === 'closed' ? 'bg-red-400' : 'bg-dark-500'
+                          )} />
+                          <span className="text-sm truncate flex-1">{v.title}</span>
+                          <span className={clsx(
+                            'text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0',
+                            isSelected ? 'bg-accent-500/20 text-accent-400' : 'bg-white/[0.06] text-dark-400',
+                          )}>
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
-            ))}
+            ))
+          )}
+        </div>
+      </aside>
+
+      {/* ========== MAIN CONTENT ========== */}
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {/* No vacancy selected — show funnels overview */}
+        {!selectedVacancy ? (
+          <div className="flex-1 flex flex-col overflow-y-auto p-4 lg:p-6">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <h1 className="text-xl lg:text-2xl font-bold text-dark-50">
+                  {isHrAdmin ? 'Воронки рекрутеров' : 'Мои воронки'}
+                </h1>
+                <p className="text-sm text-dark-400 mt-0.5">
+                  {filteredVacancies.length} воронок
+                  {isHrAdmin && ` у ${recruiterGroups.length} рекрутеров`}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Новая воронка
+              </button>
+            </div>
+
+            {/* Funnels grid */}
+            {filteredVacancies.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 gap-4">
+                <Briefcase className="w-10 h-10 text-dark-500" />
+                <div className="text-center">
+                  <p className="text-dark-100 font-medium">Пока нет воронок</p>
+                  <p className="text-dark-400 text-sm mt-1">Создайте первую воронку для начала работы</p>
+                </div>
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Создать воронку
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {filteredVacancies.map((v) => (
+                  <FunnelCard key={v.id} vacancy={v} onClick={() => selectVacancy(v.id)} />
+                ))}
+              </div>
+            )}
           </div>
-        ) : viewMode === 'grid' ? (
-          <FunnelGrid vacancies={filteredVacancies} onOpen={handleOpenFunnel} />
         ) : (
-          <FunnelList vacancies={filteredVacancies} onOpen={handleOpenFunnel} />
+          /* Vacancy selected — show candidates */
+          <>
+            {/* Top bar: breadcrumb + view tabs */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] bg-white/[0.01] flex-shrink-0">
+              {/* Breadcrumb */}
+              <div className="flex items-center gap-1.5 text-sm min-w-0">
+                <button
+                  onClick={deselectVacancy}
+                  className="text-dark-500 hover:text-dark-300 transition-colors"
+                >
+                  HR отдел
+                </button>
+                {isHrAdmin && selectedRecruiterName && (
+                  <>
+                    <ChevronRight className="w-3.5 h-3.5 text-dark-600 flex-shrink-0" />
+                    <span className="text-dark-400 truncate max-w-[180px]">{selectedRecruiterName}</span>
+                  </>
+                )}
+                <ChevronRight className="w-3.5 h-3.5 text-dark-600 flex-shrink-0" />
+                <span className="text-dark-200 font-medium truncate max-w-[250px]">
+                  {selectedVacancy.title}
+                </span>
+                <span className="text-xs text-dark-500 ml-2">
+                  {candidates.length} кандидатов
+                </span>
+              </div>
+
+              {/* View tabs + search */}
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dark-500" />
+                  <input
+                    type="text"
+                    placeholder="Поиск..."
+                    value={candidateSearch}
+                    onChange={(e) => setCandidateSearch(e.target.value)}
+                    className="w-44 pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
+                  />
+                </div>
+                <div className="flex items-center bg-white/[0.03] rounded-lg border border-white/[0.06] p-0.5">
+                  <button
+                    onClick={() => setView('list')}
+                    className={clsx(
+                      'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                      view === 'list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200',
+                    )}
+                  >
+                    <LayoutList className="w-3.5 h-3.5" />
+                    Список
+                  </button>
+                  <button
+                    onClick={() => setView('board')}
+                    className={clsx(
+                      'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                      view === 'board' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200',
+                    )}
+                  >
+                    <Columns3 className="w-3.5 h-3.5" />
+                    Доска
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Content area */}
+            <div className="flex-1 overflow-y-auto">
+              {candidatesLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : view === 'list' ? (
+                /* ===== LIST VIEW: grouped by stage ===== */
+                <div className="px-5 py-3 space-y-1">
+                  {groupedByStage.length === 0 ? (
+                    <div className="text-center py-16 text-dark-500 text-sm">
+                      {candidateSearch ? 'Ничего не найдено' : 'Нет кандидатов в этой воронке'}
+                    </div>
+                  ) : (
+                    groupedByStage.map(([stage, items]) => {
+                      const colors = STAGE_COLORS[stage] || fallbackColor;
+                      const collapsed = collapsedStages.has(stage);
+                      return (
+                        <div key={stage} className="mb-1">
+                          {/* Stage group header */}
+                          <button
+                            onClick={() => toggleStage(stage)}
+                            className={clsx(
+                              'w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors',
+                              colors.bg,
+                            )}
+                          >
+                            {collapsed ? (
+                              <ChevronRight className={clsx('w-4 h-4', colors.text)} />
+                            ) : (
+                              <ChevronDown className={clsx('w-4 h-4', colors.text)} />
+                            )}
+                            <span className={clsx('w-2 h-2 rounded-full', colors.dot)} />
+                            <span className={clsx('text-sm font-semibold uppercase', colors.text)}>
+                              {STAGE_LABELS[stage] || stage}
+                            </span>
+                            <span className={clsx('text-xs ml-1', colors.text)}>
+                              {items.length}
+                            </span>
+                          </button>
+
+                          {/* Candidate rows */}
+                          {!collapsed && (
+                            <div className="mt-0.5">
+                              {/* Column headers */}
+                              <div className="grid grid-cols-[1fr_140px_100px_140px_100px] gap-2 px-3 py-1.5 text-[11px] text-dark-500 font-medium uppercase tracking-wide">
+                                <span>Имя</span>
+                                <span>Статус</span>
+                                <span>Дата</span>
+                                <span>Telegram</span>
+                                <span>Источник</span>
+                              </div>
+
+                              {items.map((c) => (
+                                <div
+                                  key={c.id}
+                                  onClick={() => navigate(`/contacts/${c.entity_id}`)}
+                                  className="grid grid-cols-[1fr_140px_100px_140px_100px] gap-2 px-3 py-2 hover:bg-white/[0.03] rounded-lg cursor-pointer transition-colors border-b border-white/[0.03] last:border-b-0 group"
+                                >
+                                  {/* Name */}
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div className="w-6 h-6 rounded-full bg-accent-500/10 flex items-center justify-center text-[10px] text-accent-400 font-medium flex-shrink-0">
+                                      {(c.entity_name || '?').charAt(0).toUpperCase()}
+                                    </div>
+                                    <span className="text-sm text-dark-100 truncate group-hover:text-accent-400 transition-colors">
+                                      {c.entity_name || 'Без имени'}
+                                    </span>
+                                  </div>
+                                  {/* Status badge */}
+                                  <div className="flex items-center">
+                                    <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', colors.badge)}>
+                                      {STAGE_LABELS[c.stage] || c.stage}
+                                    </span>
+                                  </div>
+                                  {/* Date */}
+                                  <span className="text-xs text-dark-400 flex items-center">
+                                    {formatDate(c.applied_at)}
+                                  </span>
+                                  {/* Telegram */}
+                                  <span className="text-xs text-dark-400 truncate flex items-center">
+                                    {c.entity_telegram ? `@${c.entity_telegram}` : ''}
+                                  </span>
+                                  {/* Source */}
+                                  <span className="text-xs text-dark-400 truncate flex items-center">
+                                    {c.source || ''}
+                                  </span>
+                                </div>
+                              ))}
+
+                              {/* Add candidate button */}
+                              <button
+                                onClick={() => navigate(`/candidates?new=1&vacancy=${selectedVacancyId}`)}
+                                className="flex items-center gap-2 px-3 py-2 text-xs text-dark-500 hover:text-dark-300 transition-colors w-full"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Добавить кандидата</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              ) : (
+                /* ===== BOARD VIEW (kanban) ===== */
+                <div className="flex gap-3 px-5 py-3 overflow-x-auto h-full">
+                  {groupedByStage.length === 0 ? (
+                    <div className="flex-1 flex items-center justify-center text-dark-500 text-sm">
+                      {candidateSearch ? 'Ничего не найдено' : 'Нет кандидатов в этой воронке'}
+                    </div>
+                  ) : (
+                    groupedByStage.map(([stage, items]) => {
+                      const colors = STAGE_COLORS[stage] || fallbackColor;
+                      return (
+                        <div
+                          key={stage}
+                          className="w-[280px] flex-shrink-0 flex flex-col bg-white/[0.02] rounded-xl border border-white/[0.06] overflow-hidden"
+                        >
+                          {/* Column header */}
+                          <div className={clsx('flex items-center gap-2 px-3 py-2.5 border-b border-white/[0.06]', colors.bg)}>
+                            <span className={clsx('w-2 h-2 rounded-full', colors.dot)} />
+                            <span className={clsx('text-sm font-semibold', colors.text)}>
+                              {STAGE_LABELS[stage] || stage}
+                            </span>
+                            <span className={clsx('text-xs ml-auto opacity-70', colors.text)}>
+                              {items.length}
+                            </span>
+                          </div>
+
+                          {/* Cards */}
+                          <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                            {items.map((c) => (
+                              <div
+                                key={c.id}
+                                onClick={() => navigate(`/contacts/${c.entity_id}`)}
+                                className="rounded-lg p-3 cursor-pointer border border-white/[0.06] hover:border-accent-500/30 bg-white/[0.02] transition-all group"
+                              >
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <div className="w-6 h-6 rounded-full bg-accent-500/10 flex items-center justify-center text-[10px] text-accent-400 font-medium flex-shrink-0">
+                                    {(c.entity_name || '?').charAt(0).toUpperCase()}
+                                  </div>
+                                  <span className="text-sm text-dark-100 truncate group-hover:text-accent-400 transition-colors font-medium">
+                                    {c.entity_name || 'Без имени'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-[11px] text-dark-400">
+                                  {c.entity_telegram && <span>@{c.entity_telegram}</span>}
+                                  {c.source && <span className="ml-auto">{c.source}</span>}
+                                </div>
+                                {c.applied_at && (
+                                  <div className="text-[10px] text-dark-500 mt-1">
+                                    {formatDate(c.applied_at)}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Add button */}
+                          <button
+                            onClick={() => navigate(`/candidates?new=1&vacancy=${selectedVacancyId}`)}
+                            className="flex items-center gap-1.5 px-3 py-2 text-xs text-dark-500 hover:text-dark-300 hover:bg-white/[0.03] transition-colors border-t border-white/[0.06]"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Добавить
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          </>
         )}
-      </div>
+      </main>
 
       {/* Create Funnel Modal */}
       {showCreateModal && (
@@ -319,27 +787,7 @@ function CreateFunnelModal({
   );
 }
 
-/* ===================== Subcomponents ===================== */
-
-function FunnelGrid({ vacancies, onOpen }: { vacancies: Vacancy[]; onOpen: (id: number) => void }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-      {vacancies.map((v) => (
-        <FunnelCard key={v.id} vacancy={v} onClick={() => onOpen(v.id)} />
-      ))}
-    </div>
-  );
-}
-
-function FunnelList({ vacancies, onOpen }: { vacancies: Vacancy[]; onOpen: (id: number) => void }) {
-  return (
-    <div className="space-y-1.5">
-      {vacancies.map((v) => (
-        <FunnelRow key={v.id} vacancy={v} onClick={() => onOpen(v.id)} />
-      ))}
-    </div>
-  );
-}
+/* ===================== Funnel Card ===================== */
 
 function FunnelCard({ vacancy, onClick }: { vacancy: Vacancy; onClick: () => void }) {
   const count = vacancy.applications_count ?? 0;
@@ -394,54 +842,6 @@ function FunnelCard({ vacancy, onClick }: { vacancy: Vacancy; onClick: () => voi
           })}
         </div>
       )}
-    </div>
-  );
-}
-
-function FunnelRow({ vacancy, onClick }: { vacancy: Vacancy; onClick: () => void }) {
-  const count = vacancy.applications_count ?? 0;
-  const stageCounts = vacancy.stage_counts ?? {};
-
-  return (
-    <div
-      onClick={onClick}
-      className="flex items-center gap-4 px-3 py-2.5 rounded-lg border border-white/[0.06] glass-light hover:border-white/[0.12] cursor-pointer transition-colors group"
-    >
-      <div className="flex-1 min-w-0">
-        <h3 className="text-sm font-medium text-dark-100 group-hover:text-accent-400 transition-colors truncate">
-          {vacancy.title}
-        </h3>
-        {vacancy.department_name && (
-          <p className="text-xs text-dark-400 truncate mt-0.5">{vacancy.department_name}</p>
-        )}
-      </div>
-      <VacancyStatusBadge status={vacancy.status} />
-      <div className="flex items-center gap-1.5 text-xs text-dark-400 w-28 shrink-0">
-        <Users className="w-3.5 h-3.5" />
-        <span>{count} кандидатов</span>
-      </div>
-      <div className="hidden lg:flex items-center gap-1.5 shrink-0">
-        {(['applied', 'screening', 'phone_screen', 'offer', 'hired'] as const).map((stage) => {
-          const c = stageCounts[stage] || 0;
-          if (c === 0) return null;
-          return (
-            <span
-              key={stage}
-              className={clsx(
-                'px-1.5 py-0.5 text-[10px] font-medium rounded',
-                stage === 'applied' && 'bg-blue-500/10 text-blue-400',
-                stage === 'screening' && 'bg-cyan-500/10 text-cyan-400',
-                stage === 'phone_screen' && 'bg-purple-500/10 text-purple-400',
-                stage === 'offer' && 'bg-yellow-500/10 text-yellow-400',
-                stage === 'hired' && 'bg-green-500/10 text-green-400',
-              )}
-            >
-              {c}
-            </span>
-          );
-        })}
-      </div>
-      <ChevronRight className="w-4 h-4 text-dark-500 group-hover:text-accent-400 transition-colors shrink-0" />
     </div>
   );
 }
