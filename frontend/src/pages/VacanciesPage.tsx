@@ -21,7 +21,8 @@ import {
   Check,
   ChevronDown,
   Calendar,
-  Database
+  Database,
+  ListTree
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -36,6 +37,7 @@ import {
   VacancyForm,
   VacancyDetail,
   KanbanBoard,
+  StatusListView,
   VacancyCardSkeleton,
   VacancyStatusBadge,
   CandidatesDatabase,
@@ -106,7 +108,7 @@ export default function VacanciesPage() {
   const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
   const [departmentFilter, setDepartmentFilter] = useState<number | 'all'>('all');
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'status_list'>('list');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingVacancy, setEditingVacancy] = useState<Vacancy | null>(null);
   const [showParserModal, setShowParserModal] = useState(false);
@@ -423,17 +425,41 @@ export default function VacanciesPage() {
             К кандидатам
           </button>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setViewMode(viewMode === 'list' ? 'kanban' : 'list')}
-              data-tour="kanban-toggle"
-              className={clsx(
-                'p-2 rounded-lg transition-colors',
-                viewMode === 'kanban' ? 'bg-blue-500/20 text-blue-300' : 'glass-button'
-              )}
-              title={viewMode === 'kanban' ? 'Показать детали' : 'Показать Kanban'}
-            >
-              {viewMode === 'kanban' ? <List className="w-5 h-5" /> : <LayoutGrid className="w-5 h-5" />}
-            </button>
+            {/* View mode toggle group */}
+            <div className="flex items-center gap-0.5 bg-white/[0.03] rounded-lg p-0.5 border border-white/[0.06]">
+              <button
+                onClick={() => setViewMode('list')}
+                className={clsx(
+                  'p-1.5 rounded-md transition-colors',
+                  viewMode === 'list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-white/70'
+                )}
+                title="Детали вакансии"
+              >
+                <List className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('status_list')}
+                data-tour="status-list-toggle"
+                className={clsx(
+                  'p-1.5 rounded-md transition-colors',
+                  viewMode === 'status_list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-white/70'
+                )}
+                title="Список по статусам"
+              >
+                <ListTree className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('kanban')}
+                data-tour="kanban-toggle"
+                className={clsx(
+                  'p-1.5 rounded-md transition-colors',
+                  viewMode === 'kanban' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-white/70'
+                )}
+                title="Kanban доска"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+            </div>
             <button
               onClick={() => setEditingVacancy(currentVacancy)}
               className="p-2 glass-button rounded-lg"
@@ -454,6 +480,8 @@ export default function VacanciesPage() {
         <div className="flex-1 overflow-hidden">
           {viewMode === 'kanban' ? (
             <KanbanBoard vacancy={currentVacancy} />
+          ) : viewMode === 'status_list' ? (
+            <StatusListView vacancy={currentVacancy} />
           ) : (
             <VacancyDetail vacancy={currentVacancy} />
           )}

@@ -604,6 +604,7 @@ export interface VacancyApplication {
   entity_type?: EntityType;
   entity_email?: string;
   entity_phone?: string;
+  entity_telegram?: string;
   entity_position?: string;
   stage: ApplicationStage;
   stage_order: number;

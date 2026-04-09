@@ -526,6 +526,7 @@ class ApplicationResponse(BaseModel):
     entity_type: Optional[EntityType] = None
     entity_email: Optional[str] = None
     entity_phone: Optional[str] = None
+    entity_telegram: Optional[str] = None
     entity_position: Optional[str] = None
     stage: ApplicationStage
     stage_order: int = 0
