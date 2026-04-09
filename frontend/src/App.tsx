@@ -77,7 +77,6 @@ const TeamPage = lazyWithRetry(() => import('@/pages/TeamPage'));
 const DeptManagerPage = lazyWithRetry(() => import('@/pages/DeptManagerPage'));
 const AllCandidatesPage = lazyWithRetry(() => import('@/pages/AllCandidatesPage'));
 const RecruiterFunnelsPage = lazyWithRetry(() => import('@/pages/RecruiterFunnelsPage'));
-const RecruiterWorkspacePage = lazyWithRetry(() => import('@/pages/RecruiterWorkspacePage'));
 const CandidateDatabasePage = lazyWithRetry(() => import('@/pages/CandidateDatabasePage'));
 const PracticeListPage = lazyWithRetry(() => import('@/pages/PracticeListPage'));
 const FormBuilderPage = lazyWithRetry(() => import('@/pages/FormBuilderPage'));
@@ -195,9 +194,7 @@ export default function App() {
           <Route path="calls" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><CallsPage /></RoleRoute></Suspense>} />
           <Route path="calls/:callId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><CallsPage /></RoleRoute></Suspense>} />
           <Route path="my-funnels" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><RecruiterFunnelsPage /></RoleRoute></Suspense>} />
-          <Route path="workspaces" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><RecruiterWorkspacePage /></RoleRoute></Suspense>} />
-          <Route path="workspaces/:recruiterId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><RecruiterWorkspacePage /></RoleRoute></Suspense>} />
-          <Route path="interns" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><InternsPage /></RoleRoute></Suspense>} />
+<Route path="interns" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><InternsPage /></RoleRoute></Suspense>} />
           <Route path="interns/:internId/stats" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><InternStatsPage /></RoleRoute></Suspense>} />
           <Route path="practice-list" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><PracticeListPage /></RoleRoute></Suspense>} />
           <Route path="form-builder" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><FormBuilderPage /></RoleRoute></Suspense>} />

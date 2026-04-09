@@ -244,7 +244,7 @@ export default function Layout() {
     const path = location.pathname;
     if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path === '/dashboard' || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager') || path.startsWith('/chats')) {
       setActiveBlock('projects');
-    } else if (['/all-candidates', '/my-funnels', '/workspaces', '/candidate-database', '/form-builder', '/practice-list', '/document-templates', '/employees', '/my-profile', '/vacancies', '/candidates', '/interns', '/analytics', '/pen', '/calls', '/extension', '/exports', '/import'].some(p => path.startsWith(p))) {
+    } else if (['/all-candidates', '/my-funnels', '/candidate-database', '/form-builder', '/practice-list', '/document-templates', '/employees', '/my-profile', '/vacancies', '/candidates', '/interns', '/analytics', '/pen', '/calls', '/extension', '/exports', '/import'].some(p => path.startsWith(p))) {
       setActiveBlock('hr');
     } else if (['/users', '/departments', '/settings', '/admin', '/trash'].some(p => path.startsWith(p))) {
       setActiveBlock('admin');
@@ -285,7 +285,6 @@ export default function Layout() {
       // Базовый HR — видят все HR роли (hr + admin + owner + superadmin)
       hrItems.push({ path: '/all-candidates', icon: Users, label: 'Все кандидаты' });
       hrItems.push({ path: '/my-funnels', icon: GitBranch, label: 'Мои воронки' });
-      hrItems.push({ path: '/workspaces', icon: FolderKanban, label: isHrAdmin ? 'Все пространства' : 'Моё пространство' });
       hrItems.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
       hrItems.push({ path: '/candidate-database', icon: Database, label: 'База кандидатов' });
       hrItems.push({ path: '/interns', icon: GraduationCap, label: 'Практиканты' });

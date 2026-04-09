@@ -41,7 +41,7 @@ export default function RecruiterFunnelsPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [usersMap, setUsersMap] = useState<Record<number, string>>({});
 
-  const isSuperAdmin = user?.role === 'superadmin' || user?.org_role === 'owner';
+  const isHrAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
 
   // Load vacancies on mount
   useEffect(() => {
@@ -50,7 +50,7 @@ export default function RecruiterFunnelsPage() {
 
   // Load users map for superadmin grouping
   useEffect(() => {
-    if (isSuperAdmin) {
+    if (isHrAdmin) {
       getUsers().then((users) => {
         const map: Record<number, string> = {};
         users.forEach((u) => {
@@ -59,14 +59,14 @@ export default function RecruiterFunnelsPage() {
         setUsersMap(map);
       }).catch(() => {});
     }
-  }, [isSuperAdmin]);
+  }, [isHrAdmin]);
 
   // Filter vacancies: my own for recruiters, all for superadmin
   const filteredVacancies = useMemo(() => {
     let result = vacancies;
 
     // Regular recruiters see only their own
-    if (!isSuperAdmin && user) {
+    if (!isHrAdmin && user) {
       result = result.filter((v) => v.created_by === user.id);
     }
 
@@ -86,11 +86,11 @@ export default function RecruiterFunnelsPage() {
     }
 
     return result;
-  }, [vacancies, user, isSuperAdmin, statusFilter, search]);
+  }, [vacancies, user, isHrAdmin, statusFilter, search]);
 
   // Group by recruiter for superadmin
   const recruiterGroups = useMemo((): RecruiterGroup[] => {
-    if (!isSuperAdmin) return [];
+    if (!isHrAdmin) return [];
 
     const groups: Record<number, RecruiterGroup> = {};
     filteredVacancies.forEach((v) => {
@@ -106,7 +106,7 @@ export default function RecruiterFunnelsPage() {
     });
 
     return Object.values(groups).sort((a, b) => a.userName.localeCompare(b.userName));
-  }, [filteredVacancies, isSuperAdmin, usersMap]);
+  }, [filteredVacancies, isHrAdmin, usersMap]);
 
   const handleCreateFunnel = () => {
     navigate('/vacancies?new=1');
@@ -122,10 +122,10 @@ export default function RecruiterFunnelsPage() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl lg:text-2xl font-bold text-white">
-            {isSuperAdmin ? 'Воронки рекрутеров' : 'Мои воронки'}
+            {isHrAdmin ? 'Воронки рекрутеров' : 'Мои воронки'}
           </h1>
           <p className="text-sm text-dark-400 mt-0.5">
-            {isSuperAdmin
+            {isHrAdmin
               ? `${filteredVacancies.length} воронок у ${recruiterGroups.length} рекрутеров`
               : `${filteredVacancies.length} воронок`}
           </p>
@@ -217,7 +217,7 @@ export default function RecruiterFunnelsPage() {
               Создать воронку
             </button>
           </div>
-        ) : isSuperAdmin ? (
+        ) : isHrAdmin ? (
           /* Superadmin: grouped by recruiter */
           <div className="space-y-6">
             {recruiterGroups.map((group) => (
