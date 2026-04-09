@@ -22,6 +22,7 @@ import type { EntityFile } from '@/services/api';
 interface EntityFilesProps {
   entityId: number;
   canEdit?: boolean;
+  onFilesChanged?: () => void;
 }
 
 // File type options with Russian labels
@@ -61,7 +62,7 @@ const formatFileSize = (bytes: number): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
-export default function EntityFiles({ entityId, canEdit = true }: EntityFilesProps) {
+export default function EntityFiles({ entityId, canEdit = true, onFilesChanged }: EntityFilesProps) {
   const [files, setFiles] = useState<EntityFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -118,6 +119,7 @@ export default function EntityFiles({ entityId, canEdit = true }: EntityFilesPro
       setDescription('');
       setFileType('resume');
       loadFiles();
+      onFilesChanged?.();
     } catch (err: any) {
       toast.error(getErrorDetail(err, 'Ошибка при загрузке файла'));
     } finally {
@@ -133,6 +135,7 @@ export default function EntityFiles({ entityId, canEdit = true }: EntityFilesPro
       await deleteEntityFile(entityId, fileId);
       toast.success('Файл удалён');
       setFiles(files.filter(f => f.id !== fileId));
+      onFilesChanged?.();
     } catch (err: any) {
       toast.error(getErrorDetail(err, 'Ошибка при удалении файла'));
     }

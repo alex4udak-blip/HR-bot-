@@ -576,7 +576,7 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
         )}
 
         {activeTab === 'files' && (
-          <EntityFiles entityId={entity.id} />
+          <EntityFiles entityId={entity.id} onFilesChanged={() => fetchEntity(entity.id)} />
         )}
 
         {activeTab === 'red_flags' && (
