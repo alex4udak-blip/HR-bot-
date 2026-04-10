@@ -1846,7 +1846,12 @@ async def collect_group_message(message: types.Message):
                 await process_external_links_in_message(content, org_id, owner_id, chat.id)
 
             # Auto-detect status reports OR create tasks from planning messages
-            if content_type == "text" and content:
+            # Only if auto_tasks_enabled is ON for this chat (off by default)
+            chat_auto_tasks = getattr(chat, 'auto_tasks_enabled', False)
+            if chat_auto_tasks is None:
+                chat_auto_tasks = False
+
+            if content_type == "text" and content and chat_auto_tasks:
                 # 1. Check for status report first (takes priority over task trigger)
                 is_status = False
                 try:
@@ -1866,11 +1871,8 @@ async def collect_group_message(message: types.Message):
                 except Exception as e:
                     logger.error(f"Status report error: {e}")
 
-                # 2. If not a status report, try task trigger (if enabled for this chat)
-                chat_auto_tasks = getattr(chat, 'auto_tasks_enabled', True)
-                if chat_auto_tasks is None:
-                    chat_auto_tasks = True
-                if not is_status and chat_auto_tasks:
+                # 2. If not a status report, try task trigger
+                if not is_status:
                     try:
                         created_tasks = await create_tasks_from_message(
                             db=session,
@@ -2302,17 +2304,19 @@ async def cmd_autotasks(message: types.Message):
                 chat.auto_tasks_enabled = True
                 await session.commit()
                 await message.answer(
-                    "🟢 Авто-задачи <b>включены</b> для этого чата.\n"
-                    "Бот будет автоматически создавать задачи из планов.\n\n"
+                    "🟢 Авто-задачи <b>включены</b> для этого чата.\n\n"
+                    "Бот будет:\n"
+                    "  • Создавать задачи из планов\n"
+                    "  • Определять % готовности проектов\n\n"
                     "Выключить: <code>/autotasks off</code>",
                     parse_mode="HTML",
                 )
                 return
 
         # Show current status
-        enabled = getattr(chat, 'auto_tasks_enabled', True)
+        enabled = getattr(chat, 'auto_tasks_enabled', False)
         if enabled is None:
-            enabled = True
+            enabled = False
         status = "🟢 включены" if enabled else "🔴 выключены"
         await message.answer(
             f"Авто-задачи: {status}\n\n"

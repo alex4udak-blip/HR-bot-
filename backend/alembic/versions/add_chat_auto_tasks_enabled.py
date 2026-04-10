@@ -1,4 +1,4 @@
-"""Add auto_tasks_enabled to chats
+"""Add auto_tasks_enabled to chats (default false)
 
 Revision ID: add_chat_auto_tasks
 """
@@ -12,12 +12,14 @@ depends_on = None
 
 
 def upgrade():
-    # Idempotent: check if column exists
     conn = op.get_bind()
     inspector = sa.inspect(conn)
     columns = [c['name'] for c in inspector.get_columns('chats')]
     if 'auto_tasks_enabled' not in columns:
-        op.add_column('chats', sa.Column('auto_tasks_enabled', sa.Boolean(), server_default='true', nullable=True))
+        op.add_column('chats', sa.Column('auto_tasks_enabled', sa.Boolean(), server_default='false', nullable=True))
+    else:
+        # Set all existing chats to false (off by default)
+        op.execute("UPDATE chats SET auto_tasks_enabled = false")
 
 
 def downgrade():
