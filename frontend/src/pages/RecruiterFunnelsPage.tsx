@@ -15,6 +15,8 @@ import {
   Menu,
   Settings,
   Trash2,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -125,6 +127,7 @@ export default function RecruiterFunnelsPage() {
   const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [mobileSidebar, setMobileSidebar] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [usersMap, setUsersMap] = useState<Record<number, string>>({});
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
 
@@ -470,9 +473,11 @@ export default function RecruiterFunnelsPage() {
 
       {/* ========== LEFT SIDEBAR: Recruiter tree ========== */}
       <aside className={clsx(
-        'flex-shrink-0 border-r border-white/[0.06] bg-dark-900/95 backdrop-blur-xl flex flex-col overflow-hidden z-50 transition-transform duration-200',
-        // Desktop: always visible
-        'lg:relative lg:translate-x-0 lg:w-[260px]',
+        'flex-shrink-0 border-r border-white/[0.06] bg-dark-900/95 backdrop-blur-xl flex flex-col overflow-hidden z-50 transition-all duration-200',
+        // Desktop: collapsible
+        sidebarCollapsed
+          ? 'lg:relative lg:translate-x-0 lg:w-0 lg:border-r-0 lg:overflow-hidden'
+          : 'lg:relative lg:translate-x-0 lg:w-[260px]',
         // Mobile: slide-in overlay
         'fixed inset-y-0 left-0 w-[280px]',
         mobileSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
@@ -489,6 +494,13 @@ export default function RecruiterFunnelsPage() {
               title="Новая воронка"
             >
               <Plus className="w-3.5 h-3.5 text-dark-400" />
+            </button>
+            <button
+              onClick={() => setSidebarCollapsed(true)}
+              className="hidden lg:block p-1 hover:bg-white/[0.06] rounded transition-colors"
+              title="Свернуть панель"
+            >
+              <PanelLeftClose className="w-3.5 h-3.5 text-dark-400" />
             </button>
             <button
               onClick={() => setMobileSidebar(false)}
@@ -606,6 +618,17 @@ export default function RecruiterFunnelsPage() {
           )}
         </div>
       </aside>
+
+      {/* Expand sidebar button (visible when collapsed) */}
+      {sidebarCollapsed && (
+        <button
+          onClick={() => setSidebarCollapsed(false)}
+          className="hidden lg:flex items-center justify-center w-6 flex-shrink-0 border-r border-white/[0.06] bg-dark-900/50 hover:bg-dark-800/80 transition-colors group"
+          title="Развернуть панель"
+        >
+          <PanelLeftOpen className="w-4 h-4 text-dark-500 group-hover:text-dark-300 transition-colors" />
+        </button>
+      )}
 
       {/* ========== MAIN CONTENT ========== */}
       <main className="flex-1 flex flex-col overflow-hidden">
