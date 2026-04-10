@@ -2147,13 +2147,29 @@ async def cmd_meets(message: types.Message):
                 "📅 <b>Рассылка митов</b>\n\n"
                 "Формат:\n"
                 "<code>/meets\n"
-                "Название чата - 13:00\n"
-                "Название чата 2 - 13:30\n"
-                "Название чата 3 - 14:00</code>\n\n"
+                "Чат Кирилл - 13:00\n"
+                "Чат Мария - 13:30\n"
+                "Чат Дизайн - 14:00</code>\n\n"
+                "<b>Со ссылкой (одна на всех):</b>\n"
+                "<code>/meets\n"
+                "https://meet.google.com/xxx\n"
+                "Кирилл - 13:00\n"
+                "Мария - 13:30</code>\n\n"
+                "<b>С разными ссылками:</b>\n"
+                "<code>/meets\n"
+                "Кирилл - 13:00 https://meet.google.com/aaa\n"
+                "Мария - 13:30 https://meet.google.com/bbb</code>\n\n"
                 "Бот найдёт чаты по названию и отправит каждому время мита.",
                 parse_mode="HTML",
             )
             return
+
+        # Check if first data line is a global link
+        global_link = None
+        url_pattern = re.compile(r'^https?://\S+$')
+        if data_lines and url_pattern.match(data_lines[0]):
+            global_link = data_lines[0]
+            data_lines = data_lines[1:]
 
         # Load all active chats (from user's org or all if superadmin)
         chat_query = select(Chat).where(Chat.is_active == True)
@@ -2170,18 +2186,19 @@ async def cmd_meets(message: types.Message):
                 chat_lookup[name] = c
 
         # Parse each line and match chats
-        schedule: list[tuple[Chat, str, str]] = []  # (chat, time_str, original_name)
+        schedule: list[tuple[Chat, str, str, str | None]] = []  # (chat, time_str, original_name, link)
         not_found: list[str] = []
 
         for line in data_lines:
-            # Try to parse "chat name - time" or "chat name — time"
-            match = re.match(r'^(.+?)\s*[-–—]\s*(\d{1,2}[:.]\d{2})\s*$', line)
+            # Try to parse "chat name - time [link]" or "chat name — time [link]"
+            match = re.match(r'^(.+?)\s*[-–—]\s*(\d{1,2}[:.]\d{2})\s*(https?://\S+)?\s*$', line)
             if not match:
                 not_found.append(f"❓ Не понял строку: <code>{line}</code>")
                 continue
 
             chat_name = match.group(1).strip()
             time_str = match.group(2).replace('.', ':')
+            line_link = match.group(3)  # per-line link or None
             chat_name_lower = chat_name.lower()
 
             # Exact match first
@@ -2195,7 +2212,8 @@ async def cmd_meets(message: types.Message):
                         break
 
             if found_chat:
-                schedule.append((found_chat, time_str, chat_name))
+                link = line_link or global_link  # per-line link takes priority
+                schedule.append((found_chat, time_str, chat_name, link))
             else:
                 not_found.append(f"❌ Чат не найден: <b>{chat_name}</b>")
 
@@ -2211,12 +2229,12 @@ async def cmd_meets(message: types.Message):
         sent = []
         failed = []
 
-        for chat_obj, time_str, original_name in schedule:
+        for chat_obj, time_str, original_name, meet_link in schedule:
             try:
-                meeting_text = (
-                    f"📅 <b>Мит сегодня в {time_str}</b>\n\n"
-                    f"Пожалуйста, будьте готовы к назначенному времени."
-                )
+                meeting_text = f"📅 <b>Мит сегодня в {time_str}</b>"
+                if meet_link:
+                    meeting_text += f'\n\n🔗 <a href="{meet_link}">Подключиться</a>'
+                meeting_text += "\n\nПожалуйста, будьте готовы к назначенному времени."
                 await bot_instance.send_message(
                     chat_id=chat_obj.telegram_chat_id,
                     text=meeting_text,
