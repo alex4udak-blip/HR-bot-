@@ -143,13 +143,14 @@ async def update_projects_from_status(
     message_text: str,
     user_name: str,
     telegram_user_id: int | None,
+    chat_id: int | None = None,
 ) -> list[dict]:
     """Parse status report and update project progress in the database.
 
     Returns a list of dicts describing which projects were updated, or an
     empty list if the message is not a status report or nothing matched.
     """
-    from ..models.database import Project, User, OrgMember
+    from ..models.database import Project, User, OrgMember, Chat
 
     if not is_status_report(message_text):
         return []
@@ -166,20 +167,26 @@ async def update_projects_from_status(
         result = await db.execute(select(User).where(User.name.ilike(f"%{user_name}%")))
         user = result.scalar_one_or_none()
 
-    if not user:
-        logger.warning(f"Status report: user not found — {user_name} (tg_id={telegram_user_id})")
-        return []
+    # Find org — from user or from chat
+    org_id = None
+    if user:
+        org_result = await db.execute(select(OrgMember.org_id).where(OrgMember.user_id == user.id).limit(1))
+        org_id = org_result.scalar_one_or_none()
 
-    # Find user's organisation
-    org_result = await db.execute(select(OrgMember).where(OrgMember.user_id == user.id))
-    org_member = org_result.scalar_one_or_none()
-    if not org_member:
-        logger.warning(f"Status report: no org membership for user {user_name}")
+    # Fallback: get org from the chat
+    if not org_id and chat_id:
+        chat_result = await db.execute(select(Chat).where(Chat.telegram_chat_id == chat_id))
+        chat_obj = chat_result.scalar_one_or_none()
+        if chat_obj and chat_obj.org_id:
+            org_id = chat_obj.org_id
+
+    if not org_id:
+        logger.warning(f"Status report: no org found for {user_name} (tg_id={telegram_user_id})")
         return []
 
     # Get all projects in the organisation
     projects_result = await db.execute(
-        select(Project).where(Project.org_id == org_member.org_id)
+        select(Project).where(Project.org_id == org_id)
     )
     all_projects = list(projects_result.scalars().all())
 

@@ -1851,6 +1851,8 @@ async def collect_group_message(message: types.Message):
             if chat_auto_tasks is None:
                 chat_auto_tasks = False
 
+            logger.info(f"📩 Message from {message.from_user.full_name} (id={message.from_user.id}) in chat {message.chat.id}: auto_tasks={chat_auto_tasks}, content_type={content_type}, content_len={len(content)}")
+
             if content_type == "text" and content and chat_auto_tasks:
                 # 1. Check for status report first (takes priority over task trigger)
                 is_status = False
@@ -1860,6 +1862,7 @@ async def collect_group_message(message: types.Message):
                         message_text=content,
                         user_name=message.from_user.full_name,
                         telegram_user_id=message.from_user.id,
+                        chat_id=message.chat.id,
                     )
                     if status_updates:
                         is_status = True
