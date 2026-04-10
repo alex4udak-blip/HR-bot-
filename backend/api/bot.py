@@ -1866,8 +1866,11 @@ async def collect_group_message(message: types.Message):
                 except Exception as e:
                     logger.error(f"Status report error: {e}")
 
-                # 2. If not a status report, try task trigger
-                if not is_status:
+                # 2. If not a status report, try task trigger (if enabled for this chat)
+                chat_auto_tasks = getattr(chat, 'auto_tasks_enabled', True)
+                if chat_auto_tasks is None:
+                    chat_auto_tasks = True
+                if not is_status and chat_auto_tasks:
                     try:
                         created_tasks = await create_tasks_from_message(
                             db=session,
@@ -2256,6 +2259,67 @@ async def cmd_meets(message: types.Message):
 
         report += f"Итого: {len(sent)} из {len(schedule)} отправлено"
         await message.answer(report, parse_mode="HTML")
+
+
+@dp.message(Command("autotasks"))
+async def cmd_autotasks(message: types.Message):
+    """Toggle automatic task creation for this chat.
+
+    Usage in group chat:
+        /autotasks       — show current status
+        /autotasks on    — enable auto-tasks
+        /autotasks off   — disable auto-tasks
+    """
+    if message.chat.type not in ("group", "supergroup"):
+        await message.answer("Эта команда работает только в группах.")
+        return
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(Chat).where(Chat.telegram_chat_id == message.chat.id)
+        )
+        chat = result.scalar_one_or_none()
+
+        if not chat:
+            await message.answer("Чат не зарегистрирован в системе.")
+            return
+
+        # Parse argument
+        args = (message.text or "").split()
+        if len(args) > 1:
+            arg = args[1].lower()
+            if arg in ("off", "0", "выкл", "нет"):
+                chat.auto_tasks_enabled = False
+                await session.commit()
+                await message.answer(
+                    "🔴 Авто-задачи <b>выключены</b> для этого чата.\n"
+                    "Бот больше не будет создавать задачи из сообщений.\n\n"
+                    "Включить: <code>/autotasks on</code>",
+                    parse_mode="HTML",
+                )
+                return
+            elif arg in ("on", "1", "вкл", "да"):
+                chat.auto_tasks_enabled = True
+                await session.commit()
+                await message.answer(
+                    "🟢 Авто-задачи <b>включены</b> для этого чата.\n"
+                    "Бот будет автоматически создавать задачи из планов.\n\n"
+                    "Выключить: <code>/autotasks off</code>",
+                    parse_mode="HTML",
+                )
+                return
+
+        # Show current status
+        enabled = getattr(chat, 'auto_tasks_enabled', True)
+        if enabled is None:
+            enabled = True
+        status = "🟢 включены" if enabled else "🔴 выключены"
+        await message.answer(
+            f"Авто-задачи: {status}\n\n"
+            "<code>/autotasks on</code> — включить\n"
+            "<code>/autotasks off</code> — выключить",
+            parse_mode="HTML",
+        )
 
 
 async def start_bot():
