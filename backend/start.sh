@@ -56,6 +56,14 @@ async def ensure_shadow_columns():
         # Make file_path nullable (no longer required with DB storage)
         await conn.execute(text('ALTER TABLE entity_files ALTER COLUMN file_path DROP NOT NULL'))
 
+        # Check and add auto_tasks_enabled column to chats
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chats' AND column_name = 'auto_tasks_enabled')\"
+        ))
+        if not result.scalar():
+            print('Adding auto_tasks_enabled column to chats...')
+            await conn.execute(text('ALTER TABLE chats ADD COLUMN auto_tasks_enabled BOOLEAN DEFAULT false'))
+
         print('All columns verified')
     await engine.dispose()
 

@@ -2286,55 +2286,59 @@ async def cmd_autotasks(message: types.Message):
         await message.answer("Эта команда работает только в группах.")
         return
 
-    async with async_session() as session:
-        result = await session.execute(
-            select(Chat).where(Chat.telegram_chat_id == message.chat.id)
-        )
-        chat = result.scalar_one_or_none()
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(Chat).where(Chat.telegram_chat_id == message.chat.id)
+            )
+            chat = result.scalar_one_or_none()
 
-        if not chat:
-            await message.answer("Чат не зарегистрирован в системе.")
-            return
-
-        # Parse argument
-        args = (message.text or "").split()
-        if len(args) > 1:
-            arg = args[1].lower()
-            if arg in ("off", "0", "выкл", "нет"):
-                chat.auto_tasks_enabled = False
-                await session.commit()
-                await message.answer(
-                    "🔴 Смарт-функции <b>выключены</b> для этого чата.\n"
-                    "Бот не будет создавать задачи, определять статусы и отправлять миты.\n\n"
-                    "Включить: <code>/autotasks on</code>",
-                    parse_mode="HTML",
-                )
-                return
-            elif arg in ("on", "1", "вкл", "да"):
-                chat.auto_tasks_enabled = True
-                await session.commit()
-                await message.answer(
-                    "🟢 Смарт-функции <b>включены</b> для этого чата.\n\n"
-                    "Бот будет:\n"
-                    "  • Создавать задачи из планов\n"
-                    "  • Определять % готовности проектов\n"
-                    "  • Принимать рассылку митов (/meets)\n\n"
-                    "Выключить: <code>/autotasks off</code>",
-                    parse_mode="HTML",
-                )
+            if not chat:
+                await message.answer("Чат не зарегистрирован в системе.")
                 return
 
-        # Show current status
-        enabled = getattr(chat, 'auto_tasks_enabled', False)
-        if enabled is None:
-            enabled = False
-        status = "🟢 включены" if enabled else "🔴 выключены"
-        await message.answer(
-            f"Авто-задачи: {status}\n\n"
-            "<code>/autotasks on</code> — включить\n"
-            "<code>/autotasks off</code> — выключить",
-            parse_mode="HTML",
-        )
+            # Parse argument
+            args = (message.text or "").split()
+            if len(args) > 1:
+                arg = args[1].lower()
+                if arg in ("off", "0", "выкл", "нет"):
+                    chat.auto_tasks_enabled = False
+                    await session.commit()
+                    await message.answer(
+                        "🔴 Смарт-функции <b>выключены</b> для этого чата.\n"
+                        "Бот не будет создавать задачи, определять статусы и отправлять миты.\n\n"
+                        "Включить: <code>/autotasks on</code>",
+                        parse_mode="HTML",
+                    )
+                    return
+                elif arg in ("on", "1", "вкл", "да"):
+                    chat.auto_tasks_enabled = True
+                    await session.commit()
+                    await message.answer(
+                        "🟢 Смарт-функции <b>включены</b> для этого чата.\n\n"
+                        "Бот будет:\n"
+                        "  • Создавать задачи из планов\n"
+                        "  • Определять % готовности проектов\n"
+                        "  • Принимать рассылку митов (/meets)\n\n"
+                        "Выключить: <code>/autotasks off</code>",
+                        parse_mode="HTML",
+                    )
+                    return
+
+            # Show current status
+            enabled = getattr(chat, 'auto_tasks_enabled', False)
+            if enabled is None:
+                enabled = False
+            status = "🟢 включены" if enabled else "🔴 выключены"
+            await message.answer(
+                f"Авто-задачи: {status}\n\n"
+                "<code>/autotasks on</code> — включить\n"
+                "<code>/autotasks off</code> — выключить",
+                parse_mode="HTML",
+            )
+    except Exception as e:
+        logger.error(f"Error in /autotasks command: {e}")
+        await message.answer(f"⚠️ Ошибка: {e}")
 
 
 async def start_bot():
