@@ -1626,9 +1626,9 @@ async def cb_change_priority(callback: CallbackQuery):
 # ─── End of inline button menu ───────────────────────────────────────
 
 
-@dp.message(F.chat.type.in_({"group", "supergroup"}))
+@dp.message(F.chat.type.in_({"group", "supergroup"}), lambda msg: not (msg.text and msg.text.startswith("/")))
 async def collect_group_message(message: types.Message):
-    """Silently collect all messages from groups."""
+    """Silently collect all messages from groups. Skips commands so they reach their handlers."""
     # Skip messages without user info (system messages, channel posts, etc.)
     if not message.from_user:
         logger.debug(f"Skipping message without from_user in chat {message.chat.id}")
