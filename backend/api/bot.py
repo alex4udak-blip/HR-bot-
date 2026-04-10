@@ -2234,7 +2234,15 @@ async def cmd_meets(message: types.Message):
         sent = []
         failed = []
 
+        skipped = []
+
         for chat_obj, time_str, original_name, meet_link in schedule:
+            # Check if chat has smart features enabled
+            chat_enabled = getattr(chat_obj, 'auto_tasks_enabled', False)
+            if not chat_enabled:
+                skipped.append(f"⏭ {original_name} → выключен (/autotasks off)")
+                continue
+
             try:
                 meeting_text = f"📅 <b>Мит сегодня в {time_str}</b>"
                 if meet_link:
@@ -2254,6 +2262,8 @@ async def cmd_meets(message: types.Message):
         report = "📅 <b>Рассылка митов</b>\n\n"
         if sent:
             report += "<b>Отправлено:</b>\n" + "\n".join(sent) + "\n\n"
+        if skipped:
+            report += "<b>Пропущено (включите /autotasks on):</b>\n" + "\n".join(skipped) + "\n\n"
         if failed:
             report += "<b>Ошибки:</b>\n" + "\n".join(failed) + "\n\n"
         if not_found:
@@ -2294,8 +2304,8 @@ async def cmd_autotasks(message: types.Message):
                 chat.auto_tasks_enabled = False
                 await session.commit()
                 await message.answer(
-                    "🔴 Авто-задачи <b>выключены</b> для этого чата.\n"
-                    "Бот больше не будет создавать задачи из сообщений.\n\n"
+                    "🔴 Смарт-функции <b>выключены</b> для этого чата.\n"
+                    "Бот не будет создавать задачи, определять статусы и отправлять миты.\n\n"
                     "Включить: <code>/autotasks on</code>",
                     parse_mode="HTML",
                 )
@@ -2304,10 +2314,11 @@ async def cmd_autotasks(message: types.Message):
                 chat.auto_tasks_enabled = True
                 await session.commit()
                 await message.answer(
-                    "🟢 Авто-задачи <b>включены</b> для этого чата.\n\n"
+                    "🟢 Смарт-функции <b>включены</b> для этого чата.\n\n"
                     "Бот будет:\n"
                     "  • Создавать задачи из планов\n"
-                    "  • Определять % готовности проектов\n\n"
+                    "  • Определять % готовности проектов\n"
+                    "  • Принимать рассылку митов (/meets)\n\n"
                     "Выключить: <code>/autotasks off</code>",
                     parse_mode="HTML",
                 )
