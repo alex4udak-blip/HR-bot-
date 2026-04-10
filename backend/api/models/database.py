@@ -110,6 +110,24 @@ class ProjectRole(str, enum.Enum):
     observer = "observer"        # Наблюдатель
 
 
+class TimeOffType(str, enum.Enum):
+    vacation = "vacation"
+    day_off = "day_off"
+    sick_leave = "sick_leave"
+    other = "other"
+
+
+class TimeOffStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
+class BlockerStatus(str, enum.Enum):
+    open = "open"
+    resolved = "resolved"
+
+
 class ApplicationStage(str, enum.Enum):
     """Pipeline stage for candidate application
 
@@ -1636,3 +1654,48 @@ class StageTransition(Base):
     application = relationship("VacancyApplication")
     entity = relationship("Entity")
     changed_by_user = relationship("User", foreign_keys=[changed_by])
+
+
+# ============================================================
+# TIME OFF & BLOCKERS
+# ============================================================
+
+class TimeOffRequest(Base):
+    __tablename__ = "time_off_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    type = Column(SQLEnum(TimeOffType), default=TimeOffType.vacation)
+    status = Column(SQLEnum(TimeOffStatus), default=TimeOffStatus.pending)
+    date_from = Column(DateTime, nullable=False)
+    date_to = Column(DateTime, nullable=False)
+    reason = Column(Text, nullable=True)
+    reviewed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    reject_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        Index('ix_timeoff_org_status', 'org_id', 'status'),
+        Index('ix_timeoff_user_status', 'user_id', 'status'),
+    )
+
+
+class Blocker(Base):
+    __tablename__ = "blockers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)
+    description = Column(Text, nullable=False)
+    status = Column(SQLEnum(BlockerStatus), default=BlockerStatus.open)
+    resolved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    resolve_comment = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        Index('ix_blocker_org_status', 'org_id', 'status'),
+    )

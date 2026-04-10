@@ -87,6 +87,8 @@ const EmployeePortalPage = lazyWithRetry(() => import('@/pages/EmployeePortalPag
 const PENDashboardPage = lazyWithRetry(() => import('@/pages/PENDashboardPage'));
 const ExtensionPage = lazyWithRetry(() => import('@/pages/ExtensionPage'));
 const CsvImportPage = lazyWithRetry(() => import('@/pages/CsvImportPage'));
+const TimeOffPage = lazyWithRetry(() => import('@/pages/TimeOffPage'));
+const BlockersPage = lazyWithRetry(() => import('@/pages/BlockersPage'));
 
 // Loading fallback component for Suspense
 function PageLoader() {
@@ -182,6 +184,8 @@ export default function App() {
           <Route path="chats" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
           <Route path="chats/:chatId" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
           <Route path="team" element={<Suspense fallback={<PageLoader />}><TeamPage /></Suspense>} />
+          <Route path="timeoff" element={<Suspense fallback={<PageLoader />}><TimeOffPage /></Suspense>} />
+          <Route path="blockers" element={<Suspense fallback={<PageLoader />}><BlockersPage /></Suspense>} />
           <Route path="my-profile" element={<Suspense fallback={<PageLoader />}><EmployeePortalPage /></Suspense>} />
 
           {/* HR routes — superadmin, owner, admin, hr (recruiter like Мария) */}

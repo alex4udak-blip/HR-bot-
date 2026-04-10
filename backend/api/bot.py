@@ -1626,6 +1626,269 @@ async def cb_change_priority(callback: CallbackQuery):
 # ─── End of inline button menu ───────────────────────────────────────
 
 
+# ─── Notification utility ────────────────────────────────────────────
+
+async def send_telegram_notification(user_id: int, text: str, parse_mode: str = "HTML"):
+    """Send a Telegram message to a user by their DB user_id."""
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = result.scalar_one_or_none()
+            if user and user.telegram_id:
+                bot_instance = get_bot()
+                await bot_instance.send_message(
+                    chat_id=user.telegram_id,
+                    text=text,
+                    parse_mode=parse_mode,
+                )
+                return True
+    except Exception as e:
+        logger.error(f"Failed to send telegram notification to user {user_id}: {e}")
+    return False
+
+
+# ── Russian month names for date parsing ─────────────────────────────
+MONTH_NAMES_RU = {
+    'января': 1, 'янв': 1, 'февраля': 2, 'фев': 2, 'марта': 3, 'мар': 3,
+    'апреля': 4, 'апр': 4, 'мая': 5, 'июня': 6, 'июн': 6,
+    'июля': 7, 'июл': 7, 'августа': 8, 'авг': 8, 'сентября': 9, 'сен': 9,
+    'октября': 10, 'окт': 10, 'ноября': 11, 'ноя': 11, 'декабря': 12, 'дек': 12,
+}
+
+
+def parse_date_range(text: str) -> tuple[datetime | None, datetime | None, str]:
+    """Parse Russian date range from text.
+
+    Supports:
+    - "15-20 апреля" -> (Apr 15, Apr 20)
+    - "15 апреля - 20 мая" -> (Apr 15, May 20)
+    - "15.04-20.04" -> (Apr 15, Apr 20)
+    - "15.04.2026-20.04.2026" -> (Apr 15, Apr 20)
+
+    Returns (date_from, date_to, remaining_text)
+    """
+    text = text.strip()
+    year = datetime.now().year
+
+    # Pattern 1: "15-20 апреля" or "15 - 20 апреля"
+    m = re.match(r'(\d{1,2})\s*[-–—]\s*(\d{1,2})\s+(\w+)(.*)', text)
+    if m:
+        day1, day2, month_str, rest = m.groups()
+        month_str_lower = month_str.lower()
+        month = MONTH_NAMES_RU.get(month_str_lower)
+        if month:
+            try:
+                d1 = datetime(year, month, int(day1))
+                d2 = datetime(year, month, int(day2))
+                return d1, d2, rest.strip()
+            except ValueError:
+                pass
+
+    # Pattern 2: "15 апреля - 20 мая"
+    m = re.match(r'(\d{1,2})\s+(\w+)\s*[-–—]\s*(\d{1,2})\s+(\w+)(.*)', text)
+    if m:
+        day1, month1_str, day2, month2_str, rest = m.groups()
+        m1 = MONTH_NAMES_RU.get(month1_str.lower())
+        m2 = MONTH_NAMES_RU.get(month2_str.lower())
+        if m1 and m2:
+            try:
+                d1 = datetime(year, m1, int(day1))
+                d2 = datetime(year, m2, int(day2))
+                return d1, d2, rest.strip()
+            except ValueError:
+                pass
+
+    # Pattern 3: "15.04-20.04" or "15.04.2026-20.04.2026"
+    m = re.match(r'(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\s*[-–—]\s*(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?(.*)', text)
+    if m:
+        d1, m1, y1, d2, m2, y2, rest = m.groups()
+        try:
+            date1 = datetime(int(y1) if y1 else year, int(m1), int(d1))
+            date2 = datetime(int(y2) if y2 else year, int(m2), int(d2))
+            return date1, date2, (rest or '').strip()
+        except ValueError:
+            pass
+
+    return None, None, text
+
+
+@dp.message(Command("timeoff"))
+async def cmd_timeoff(message: types.Message):
+    """Request time off / vacation.
+
+    Usage:
+        /timeoff 15-20 апреля отпуск
+        /timeoff 15 апреля - 20 мая
+        /timeoff 15.04-20.04 больничный
+    """
+    try:
+        async with async_session() as session:
+            user = await find_user_by_telegram_id(session, message.from_user.id)
+            if not user:
+                await message.answer("Вы не зарегистрированы в системе. Используйте /bind <email>")
+                return
+
+            org_result = await session.execute(
+                select(OrgMember.org_id).where(OrgMember.user_id == user.id).limit(1)
+            )
+            org_id = org_result.scalar_one_or_none()
+            if not org_id:
+                await message.answer("Вы не состоите в организации.")
+                return
+
+            # Parse the text after /timeoff
+            text = (message.text or "").strip()
+            # Remove the command itself
+            parts = text.split(None, 1)
+            if len(parts) < 2:
+                await message.answer(
+                    "📅 <b>Заявка на отпуск/отгул</b>\n\n"
+                    "Формат:\n"
+                    "<code>/timeoff 15-20 апреля</code>\n"
+                    "<code>/timeoff 15 апреля - 20 мая отпуск</code>\n"
+                    "<code>/timeoff 15.04-20.04 больничный</code>\n\n"
+                    "Типы: отпуск, отгул, больничный",
+                    parse_mode="HTML",
+                )
+                return
+
+            date_text = parts[1]
+            date_from, date_to, remaining = parse_date_range(date_text)
+
+            if not date_from or not date_to:
+                await message.answer(
+                    "❌ Не удалось распознать даты.\n\n"
+                    "Примеры:\n"
+                    "<code>/timeoff 15-20 апреля</code>\n"
+                    "<code>/timeoff 15.04-20.04</code>",
+                    parse_mode="HTML",
+                )
+                return
+
+            # Determine type from remaining text
+            remaining_lower = remaining.lower()
+            if 'больнич' in remaining_lower:
+                timeoff_type = 'sick_leave'
+                type_label = 'Больничный'
+            elif 'отгул' in remaining_lower:
+                timeoff_type = 'day_off'
+                type_label = 'Отгул'
+            else:
+                timeoff_type = 'vacation'
+                type_label = 'Отпуск'
+
+            # Import and create
+            from .models.database import TimeOffRequest
+
+            request = TimeOffRequest(
+                org_id=org_id,
+                user_id=user.id,
+                type=timeoff_type,
+                status='pending',
+                date_from=date_from,
+                date_to=date_to,
+                reason=remaining if remaining else None,
+            )
+            session.add(request)
+            await session.commit()
+
+            # Format dates nicely
+            months_ru = ['', 'янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
+            d1_str = f"{date_from.day} {months_ru[date_from.month]}"
+            d2_str = f"{date_to.day} {months_ru[date_to.month]}"
+
+            days = (date_to - date_from).days + 1
+
+            await message.answer(
+                f"✅ <b>Заявка создана</b>\n\n"
+                f"📅 {type_label}: {d1_str} — {d2_str} ({days} дн.)\n"
+                f"⏳ Статус: ожидает одобрения\n\n"
+                f"Менеджер получит уведомление.",
+                parse_mode="HTML",
+            )
+    except Exception as e:
+        logger.error(f"Error in /timeoff: {e}")
+        await message.answer(f"⚠️ Ошибка: {e}")
+
+
+@dp.message(Command("blocker"))
+async def cmd_blocker(message: types.Message):
+    """Report a blocker.
+
+    Usage:
+        /blocker жду API от бэкенда
+        /blocker не могу задеплоить, CI падает
+    """
+    try:
+        async with async_session() as session:
+            user = await find_user_by_telegram_id(session, message.from_user.id)
+
+            # Allow unregistered users too — try to get org from chat
+            org_id = None
+            user_id = None
+
+            if user:
+                user_id = user.id
+                org_result = await session.execute(
+                    select(OrgMember.org_id).where(OrgMember.user_id == user.id).limit(1)
+                )
+                org_id = org_result.scalar_one_or_none()
+
+            if not org_id and message.chat.type in ("group", "supergroup"):
+                chat_result = await session.execute(
+                    select(Chat).where(Chat.telegram_chat_id == message.chat.id)
+                )
+                chat_obj = chat_result.scalar_one_or_none()
+                if chat_obj:
+                    org_id = chat_obj.org_id
+                    if not user_id and chat_obj.owner_id:
+                        user_id = chat_obj.owner_id
+
+            if not org_id or not user_id:
+                await message.answer("Не удалось определить организацию. Используйте /bind <email>")
+                return
+
+            # Parse description
+            text = (message.text or "").strip()
+            parts = text.split(None, 1)
+            if len(parts) < 2 or not parts[1].strip():
+                await message.answer(
+                    "🚧 <b>Создать блокер</b>\n\n"
+                    "Формат:\n"
+                    "<code>/blocker жду API от бэкенда</code>\n"
+                    "<code>/blocker не могу задеплоить, CI падает</code>",
+                    parse_mode="HTML",
+                )
+                return
+
+            description = parts[1].strip()
+
+            from .models.database import Blocker
+
+            blocker = Blocker(
+                org_id=org_id,
+                user_id=user_id,
+                description=description,
+                status='open',
+            )
+            session.add(blocker)
+            await session.commit()
+
+            sender_name = message.from_user.full_name
+            await message.answer(
+                f"🚧 <b>Блокер создан</b>\n\n"
+                f"👤 {sender_name}\n"
+                f"📝 {description}\n\n"
+                f"Менеджер увидит блокер на дашборде.",
+                parse_mode="HTML",
+            )
+    except Exception as e:
+        logger.error(f"Error in /blocker: {e}")
+        await message.answer(f"⚠️ Ошибка: {e}")
+
+
 @dp.message(F.chat.type.in_({"group", "supergroup"}), lambda msg: not (msg.text and msg.text.startswith("/")))
 async def collect_group_message(message: types.Message):
     """Silently collect all messages from groups. Skips commands so they reach their handlers."""

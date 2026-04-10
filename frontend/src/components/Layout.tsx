@@ -33,6 +33,8 @@ import {
   Upload,
   ChevronDown,
   Database,
+  Calendar,
+  AlertTriangle,
   type LucideIcon
 } from 'lucide-react';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
@@ -241,7 +243,7 @@ export default function Layout() {
   // Auto-switch active block based on current URL
   useEffect(() => {
     const path = location.pathname;
-    if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path === '/dashboard' || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager') || path.startsWith('/chats')) {
+    if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path === '/dashboard' || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager') || path.startsWith('/chats') || path.startsWith('/timeoff') || path.startsWith('/blockers')) {
       setActiveBlock('projects');
     } else if (['/all-candidates', '/workspaces', '/my-funnels', '/candidate-database', '/form-builder', '/practice-list', '/document-templates', '/employees', '/my-profile', '/vacancies', '/candidates', '/interns', '/analytics', '/pen', '/calls', '/extension', '/exports', '/import'].some(p => path.startsWith(p))) {
       setActiveBlock('hr');
@@ -269,6 +271,8 @@ export default function Layout() {
         { path: '/all-tasks', icon: ListTodo, label: 'Все задачи' },
         { path: '/chats', icon: MessageSquare, label: 'Чаты' },
         { path: '/team', icon: Users, label: 'Команда' },
+        { path: '/timeoff', icon: Calendar, label: 'Отпуска' },
+        { path: '/blockers', icon: AlertTriangle, label: 'Блокеры' },
         { path: '/dept-manager', icon: Building2, label: 'Отделы' },
         { path: '/saturn', icon: Cloud, label: 'Saturn' },
         { path: '/dashboard', icon: LayoutDashboard, label: 'Дашборд' },

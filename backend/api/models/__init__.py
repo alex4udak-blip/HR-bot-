@@ -1,7 +1,9 @@
 from .database import (
     Base, User, Chat, Message, CriteriaPreset,
     ChatCriteria, AIConversation, AnalysisHistory,
-    ParseJob, ParseJobStatus
+    ParseJob, ParseJobStatus,
+    TimeOffRequest, TimeOffType, TimeOffStatus,
+    Blocker, BlockerStatus,
 )
 from .schemas import *
 

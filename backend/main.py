@@ -23,6 +23,7 @@ from api.routes import auth, users, chats, messages, criteria, ai, stats, entiti
 from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees, documents, magic_button, pen
 from api.routes import candidate_search, extension_download, prometheus_invite, csv_import
 from api.routes import candidate_database, recruiter_workspaces
+from api.routes import timeoff, blockers
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
@@ -578,6 +579,22 @@ try:
     logger.info("Recruiter workspaces router registered successfully at /api/recruiter-workspaces")
 except Exception as e:
     logger.error(f"FAILED to register recruiter workspaces router: {e}")
+    raise
+
+logger.info("=== REGISTERING TIMEOFF ROUTER ===")
+try:
+    app.include_router(timeoff.router, prefix="/api/timeoff", tags=["timeoff"])
+    logger.info("Timeoff router registered successfully at /api/timeoff")
+except Exception as e:
+    logger.error(f"FAILED to register timeoff router: {e}")
+    raise
+
+logger.info("=== REGISTERING BLOCKERS ROUTER ===")
+try:
+    app.include_router(blockers.router, prefix="/api/blockers", tags=["blockers"])
+    logger.info("Blockers router registered successfully at /api/blockers")
+except Exception as e:
+    logger.error(f"FAILED to register blockers router: {e}")
     raise
 
 

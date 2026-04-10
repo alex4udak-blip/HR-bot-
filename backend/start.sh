@@ -64,6 +64,56 @@ async def ensure_shadow_columns():
             print('Adding auto_tasks_enabled column to chats...')
             await conn.execute(text('ALTER TABLE chats ADD COLUMN auto_tasks_enabled BOOLEAN DEFAULT false'))
 
+        # Check and create time_off_requests table
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'time_off_requests')\"
+        ))
+        if not result.scalar():
+            print('Creating time_off_requests table...')
+            await conn.execute(text(\"DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'timeofftype') THEN CREATE TYPE timeofftype AS ENUM ('vacation', 'day_off', 'sick_leave', 'other'); END IF; END \$\$\"))
+            await conn.execute(text(\"DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'timeoffstatus') THEN CREATE TYPE timeoffstatus AS ENUM ('pending', 'approved', 'rejected'); END IF; END \$\$\"))
+            await conn.execute(text('''
+                CREATE TABLE time_off_requests (
+                    id SERIAL PRIMARY KEY,
+                    org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    type timeofftype DEFAULT 'vacation',
+                    status timeoffstatus DEFAULT 'pending',
+                    date_from TIMESTAMP NOT NULL,
+                    date_to TIMESTAMP NOT NULL,
+                    reason TEXT,
+                    reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    reviewed_at TIMESTAMP,
+                    reject_reason TEXT,
+                    created_at TIMESTAMP DEFAULT now()
+                )
+            '''))
+            await conn.execute(text('CREATE INDEX ix_timeoff_org_status ON time_off_requests (org_id, status)'))
+            await conn.execute(text('CREATE INDEX ix_timeoff_user_status ON time_off_requests (user_id, status)'))
+
+        # Check and create blockers table
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'blockers')\"
+        ))
+        if not result.scalar():
+            print('Creating blockers table...')
+            await conn.execute(text(\"DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'blockerstatus') THEN CREATE TYPE blockerstatus AS ENUM ('open', 'resolved'); END IF; END \$\$\"))
+            await conn.execute(text('''
+                CREATE TABLE blockers (
+                    id SERIAL PRIMARY KEY,
+                    org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+                    description TEXT NOT NULL,
+                    status blockerstatus DEFAULT 'open',
+                    resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    resolved_at TIMESTAMP,
+                    resolve_comment TEXT,
+                    created_at TIMESTAMP DEFAULT now()
+                )
+            '''))
+            await conn.execute(text('CREATE INDEX ix_blocker_org_status ON blockers (org_id, status)'))
+
         print('All columns verified')
     await engine.dispose()
 
