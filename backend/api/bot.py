@@ -2234,15 +2234,7 @@ async def cmd_meets(message: types.Message):
         sent = []
         failed = []
 
-        skipped = []
-
         for chat_obj, time_str, original_name, meet_link in schedule:
-            # Check if chat has smart features enabled
-            chat_enabled = getattr(chat_obj, 'auto_tasks_enabled', False)
-            if not chat_enabled:
-                skipped.append(f"⏭ {original_name} → выключен (/autotasks off)")
-                continue
-
             try:
                 meeting_text = f"📅 <b>Мит сегодня в {time_str}</b>"
                 if meet_link:
@@ -2262,8 +2254,6 @@ async def cmd_meets(message: types.Message):
         report = "📅 <b>Рассылка митов</b>\n\n"
         if sent:
             report += "<b>Отправлено:</b>\n" + "\n".join(sent) + "\n\n"
-        if skipped:
-            report += "<b>Пропущено (включите /autotasks on):</b>\n" + "\n".join(skipped) + "\n\n"
         if failed:
             report += "<b>Ошибки:</b>\n" + "\n".join(failed) + "\n\n"
         if not_found:
@@ -2275,67 +2265,152 @@ async def cmd_meets(message: types.Message):
 
 @dp.message(Command("autotasks"))
 async def cmd_autotasks(message: types.Message):
-    """Toggle automatic task creation for this chat.
+    """Manage which chats have smart features enabled.
 
-    Usage in group chat:
-        /autotasks       — show current status
-        /autotasks on    — enable auto-tasks
-        /autotasks off   — disable auto-tasks
+    Usage (in private chat with bot):
+        /autotasks                — show all chats and their status
+        /autotasks on             — enable listed chats (multiline)
+        Кирилл
+        Мария
+        /autotasks off            — disable listed chats
+        Кирилл
+        /autotasks all on         — enable ALL chats
+        /autotasks all off        — disable ALL chats
     """
-    if message.chat.type not in ("group", "supergroup"):
-        await message.answer("Эта команда работает только в группах.")
-        return
-
     try:
         async with async_session() as session:
-            result = await session.execute(
-                select(Chat).where(Chat.telegram_chat_id == message.chat.id)
-            )
-            chat = result.scalar_one_or_none()
+            user = await find_user_by_telegram_id(session, message.from_user.id)
 
-            if not chat:
-                await message.answer("Чат не зарегистрирован в системе.")
+            # Load all active chats
+            chat_query = select(Chat).where(Chat.is_active == True)
+            if hasattr(Chat, 'deleted_at'):
+                chat_query = chat_query.where(Chat.deleted_at == None)
+            result = await session.execute(chat_query)
+            all_chats = result.scalars().all()
+
+            if not all_chats:
+                await message.answer("Нет зарегистрированных чатов.")
                 return
 
-            # Parse argument
-            args = (message.text or "").split()
-            if len(args) > 1:
-                arg = args[1].lower()
-                if arg in ("off", "0", "выкл", "нет"):
-                    chat.auto_tasks_enabled = False
-                    await session.commit()
-                    await message.answer(
-                        "🔴 Смарт-функции <b>выключены</b> для этого чата.\n"
-                        "Бот не будет создавать задачи, определять статусы и отправлять миты.\n\n"
-                        "Включить: <code>/autotasks on</code>",
-                        parse_mode="HTML",
-                    )
-                    return
-                elif arg in ("on", "1", "вкл", "да"):
-                    chat.auto_tasks_enabled = True
-                    await session.commit()
-                    await message.answer(
-                        "🟢 Смарт-функции <b>включены</b> для этого чата.\n\n"
-                        "Бот будет:\n"
-                        "  • Создавать задачи из планов\n"
-                        "  • Определять % готовности проектов\n"
-                        "  • Принимать рассылку митов (/meets)\n\n"
-                        "Выключить: <code>/autotasks off</code>",
-                        parse_mode="HTML",
-                    )
-                    return
+            # Parse the message
+            text = message.text or ""
+            lines = text.split("\n")
+            first_line = lines[0].strip()
+            data_lines = [l.strip() for l in lines[1:] if l.strip()]
 
-            # Show current status
-            enabled = getattr(chat, 'auto_tasks_enabled', False)
-            if enabled is None:
-                enabled = False
-            status = "🟢 включены" if enabled else "🔴 выключены"
-            await message.answer(
-                f"Авто-задачи: {status}\n\n"
-                "<code>/autotasks on</code> — включить\n"
-                "<code>/autotasks off</code> — выключить",
-                parse_mode="HTML",
+            # Extract mode from first line: /autotasks [on|off|all on|all off]
+            parts = first_line.split()
+            mode = None  # None = show status
+            all_mode = False
+
+            if len(parts) >= 3 and parts[1].lower() == "all":
+                all_mode = True
+                mode = parts[2].lower()
+            elif len(parts) >= 2:
+                mode = parts[1].lower()
+
+            # Normalize mode
+            if mode in ("on", "1", "вкл", "да"):
+                mode = "on"
+            elif mode in ("off", "0", "выкл", "нет"):
+                mode = "off"
+            else:
+                mode = None
+
+            # /autotasks all on/off — bulk toggle ALL chats
+            if all_mode and mode:
+                enabled = mode == "on"
+                count = 0
+                for c in all_chats:
+                    c.auto_tasks_enabled = enabled
+                    count += 1
+                await session.commit()
+                status_emoji = "🟢" if enabled else "🔴"
+                status_text = "включены" if enabled else "выключены"
+                await message.answer(
+                    f"{status_emoji} Смарт-функции <b>{status_text}</b> для всех {count} чатов.",
+                    parse_mode="HTML",
+                )
+                return
+
+            # /autotasks on/off + list of chat names
+            if mode and data_lines:
+                enabled = mode == "on"
+
+                # Build lookup: lowercase name → chat
+                chat_lookup: dict[str, Chat] = {}
+                for c in all_chats:
+                    name = (c.custom_name or c.title or "").lower().strip()
+                    if name:
+                        chat_lookup[name] = c
+
+                toggled = []
+                not_found = []
+
+                for line in data_lines:
+                    chat_name = line.strip()
+                    chat_name_lower = chat_name.lower()
+
+                    # Exact match first
+                    found_chat = chat_lookup.get(chat_name_lower)
+
+                    # Fuzzy: substring match
+                    if not found_chat:
+                        for name, c in chat_lookup.items():
+                            if chat_name_lower in name or name in chat_name_lower:
+                                found_chat = c
+                                break
+
+                    if found_chat:
+                        found_chat.auto_tasks_enabled = enabled
+                        display_name = found_chat.custom_name or found_chat.title or "?"
+                        toggled.append(f"{'🟢' if enabled else '🔴'} {display_name}")
+                    else:
+                        not_found.append(f"❓ {chat_name}")
+
+                await session.commit()
+
+                status_text = "включены" if enabled else "выключены"
+                report = f"⚙️ <b>Смарт-функции {status_text}:</b>\n\n"
+                if toggled:
+                    report += "\n".join(toggled) + "\n\n"
+                if not_found:
+                    report += "<b>Не найдено:</b>\n" + "\n".join(not_found) + "\n\n"
+
+                await message.answer(report, parse_mode="HTML")
+                return
+
+            # No mode or no chat names → show status of all chats
+            on_chats = []
+            off_chats = []
+            for c in all_chats:
+                name = c.custom_name or c.title or f"ID:{c.telegram_chat_id}"
+                enabled = getattr(c, 'auto_tasks_enabled', False)
+                if enabled is None:
+                    enabled = False
+                if enabled:
+                    on_chats.append(f"🟢 {name}")
+                else:
+                    off_chats.append(f"🔴 {name}")
+
+            report = "⚙️ <b>Смарт-функции (автозадачи, статусы, миты)</b>\n\n"
+            if on_chats:
+                report += "<b>Включены:</b>\n" + "\n".join(on_chats) + "\n\n"
+            if off_chats:
+                report += "<b>Выключены:</b>\n" + "\n".join(off_chats) + "\n\n"
+
+            report += (
+                "<b>Управление:</b>\n"
+                "<code>/autotasks on\n"
+                "Кирилл\n"
+                "Мария</code>\n\n"
+                "<code>/autotasks off\n"
+                "Кирилл</code>\n\n"
+                "<code>/autotasks all on</code> — включить всем\n"
+                "<code>/autotasks all off</code> — выключить всем"
             )
+            await message.answer(report, parse_mode="HTML")
+
     except Exception as e:
         logger.error(f"Error in /autotasks command: {e}")
         await message.answer(f"⚠️ Ошибка: {e}")
