@@ -2113,6 +2113,133 @@ async def cmd_settype(message: types.Message):
         )
 
 
+@dp.message(Command("meets"))
+async def cmd_meets(message: types.Message):
+    """Broadcast meeting times to chats.
+
+    Usage (in private chat with bot):
+        /meets
+        Чат с Кириллом - 13:00
+        Чат с Марией - 13:30
+        Дизайн общий - 14:00
+
+    Bot will fuzzy-match chat names and send personalized meeting notifications.
+    """
+    if message.chat.type != "private":
+        await message.answer("Эта команда работает только в личных сообщениях с ботом.")
+        return
+
+    async with async_session() as session:
+        user = await find_user_by_telegram_id(session, message.from_user.id)
+        if not user:
+            await message.answer("Сначала привяжите аккаунт: /bind <email>")
+            return
+
+        # Parse the message: remove /meets command, get lines
+        text = message.text or ""
+        # Remove the command itself
+        lines = text.split("\n")
+        data_lines = [l.strip() for l in lines[1:] if l.strip()]  # skip first line (/meets)
+
+        # Also handle single-line: /meets\ndata
+        if not data_lines and len(lines) == 1:
+            await message.answer(
+                "📅 <b>Рассылка митов</b>\n\n"
+                "Формат:\n"
+                "<code>/meets\n"
+                "Название чата - 13:00\n"
+                "Название чата 2 - 13:30\n"
+                "Название чата 3 - 14:00</code>\n\n"
+                "Бот найдёт чаты по названию и отправит каждому время мита.",
+                parse_mode="HTML",
+            )
+            return
+
+        # Load all active chats (from user's org or all if superadmin)
+        chat_query = select(Chat).where(Chat.is_active == True)
+        if hasattr(Chat, 'deleted_at'):
+            chat_query = chat_query.where(Chat.deleted_at == None)
+        result = await session.execute(chat_query)
+        all_chats = result.scalars().all()
+
+        # Build lookup: lowercase name → chat
+        chat_lookup: dict[str, Chat] = {}
+        for c in all_chats:
+            name = (c.custom_name or c.title or "").lower().strip()
+            if name:
+                chat_lookup[name] = c
+
+        # Parse each line and match chats
+        schedule: list[tuple[Chat, str, str]] = []  # (chat, time_str, original_name)
+        not_found: list[str] = []
+
+        for line in data_lines:
+            # Try to parse "chat name - time" or "chat name — time"
+            match = re.match(r'^(.+?)\s*[-–—]\s*(\d{1,2}[:.]\d{2})\s*$', line)
+            if not match:
+                not_found.append(f"❓ Не понял строку: <code>{line}</code>")
+                continue
+
+            chat_name = match.group(1).strip()
+            time_str = match.group(2).replace('.', ':')
+            chat_name_lower = chat_name.lower()
+
+            # Exact match first
+            found_chat = chat_lookup.get(chat_name_lower)
+
+            # Fuzzy: substring match
+            if not found_chat:
+                for name, c in chat_lookup.items():
+                    if chat_name_lower in name or name in chat_name_lower:
+                        found_chat = c
+                        break
+
+            if found_chat:
+                schedule.append((found_chat, time_str, chat_name))
+            else:
+                not_found.append(f"❌ Чат не найден: <b>{chat_name}</b>")
+
+        if not schedule and not_found:
+            await message.answer(
+                "Не удалось найти чаты:\n\n" + "\n".join(not_found),
+                parse_mode="HTML",
+            )
+            return
+
+        # Send meeting notifications
+        bot_instance = get_bot()
+        sent = []
+        failed = []
+
+        for chat_obj, time_str, original_name in schedule:
+            try:
+                meeting_text = (
+                    f"📅 <b>Мит сегодня в {time_str}</b>\n\n"
+                    f"Пожалуйста, будьте готовы к назначенному времени."
+                )
+                await bot_instance.send_message(
+                    chat_id=chat_obj.telegram_chat_id,
+                    text=meeting_text,
+                    parse_mode="HTML",
+                )
+                sent.append(f"✅ {original_name} → {time_str}")
+            except Exception as e:
+                logger.error(f"Failed to send meet to chat {chat_obj.telegram_chat_id}: {e}")
+                failed.append(f"❌ {original_name} — ошибка отправки")
+
+        # Report back
+        report = "📅 <b>Рассылка митов</b>\n\n"
+        if sent:
+            report += "<b>Отправлено:</b>\n" + "\n".join(sent) + "\n\n"
+        if failed:
+            report += "<b>Ошибки:</b>\n" + "\n".join(failed) + "\n\n"
+        if not_found:
+            report += "<b>Не найдено:</b>\n" + "\n".join(not_found) + "\n\n"
+
+        report += f"Итого: {len(sent)} из {len(schedule)} отправлено"
+        await message.answer(report, parse_mode="HTML")
+
+
 async def start_bot():
     """Start the bot polling."""
     try:
