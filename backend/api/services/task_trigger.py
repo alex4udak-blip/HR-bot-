@@ -273,7 +273,7 @@ async def parse_message_to_tasks(text: str, user_name: str, existing_tasks: list
   "priority": 0-3 (0=низкий, 1=нормальный, 2=высокий, 3=критический),
   "estimated_hours": число или null,
   "is_duplicate": true/false (есть ли похожая в существующих),
-  "assignee_name": "имя человека если указано в тексте (например 'на Клима' или 'для Миши')" или null,
+  "assignee_name": "имя человека если указано в тексте, ОБЯЗАТЕЛЬНО В ИМЕНИТЕЛЬНОМ ПАДЕЖЕ (например 'Диме нужно' → 'Дима', 'для Миши' → 'Миша', 'на Клима' → 'Клим')" или null,
   "project_hint": "название проекта если указано (например 'по проекту Platform')" или null,
   "deadline_hint": "когда дедлайн если указано (сегодня/завтра/дата)" или "сегодня"
 }}
@@ -284,7 +284,8 @@ async def parse_message_to_tasks(text: str, user_name: str, existing_tasks: list
 - ИГНОРИРУЙ шутки, мемы, разговоры не по работе
 - Если в тексте нет ни одной рабочей задачи — верни пустой массив []
 - Если написано "задача:" или "ставлю задачу" — это прямая постановка, приоритет выше (2)
-- Если указан конкретный человек — он assignee, иначе автор сообщения
+- Если указан конкретный человек — он assignee (имя в именительном падеже!), иначе автор сообщения
+- "Диме надо сделать X" → assignee = "Дима", а НЕ автор сообщения
 - Если указан проект — запомни его в project_hint
 - Дедлайн по умолчанию — сегодня, если не указано иное
 
@@ -347,22 +348,42 @@ async def create_tasks_from_message(
         )
         user = result.scalar_one_or_none()
 
+    # Find org — either from user or from the chat
+    org_id = None
+    if user:
+        org_result = await db.execute(
+            select(OrgMember.org_id).where(OrgMember.user_id == user.id).limit(1)
+        )
+        org_id = org_result.scalar_one_or_none()
+
+    # If user not found or user has no org — try to get org from the chat
+    if not org_id and chat_id:
+        chat_result = await db.execute(
+            select(Chat).where(Chat.telegram_chat_id == chat_id)
+        )
+        chat_obj = chat_result.scalar_one_or_none()
+        if chat_obj and chat_obj.org_id:
+            org_id = chat_obj.org_id
+            # Also try to find a fallback user (chat owner) for created_by
+            if not user and chat_obj.owner_id:
+                owner_result = await db.execute(
+                    select(User).where(User.id == chat_obj.owner_id)
+                )
+                user = owner_result.scalar_one_or_none()
+                if user:
+                    logger.info(f"Using chat owner {user.name} as fallback for unregistered sender {user_name}")
+
     if not user:
-        logger.warning(f"User not found: {user_name} (tg_id={telegram_user_id})")
+        logger.warning(f"User not found and no fallback: {user_name} (tg_id={telegram_user_id})")
         return []
 
-    # Find user's org first
-    org_result = await db.execute(
-        select(OrgMember).where(OrgMember.user_id == user.id)
-    )
-    org_member = org_result.scalar_one_or_none()
-    if not org_member:
-        logger.warning(f"User {user_name} not in any organization")
+    if not org_id:
+        logger.warning(f"No organization found for user {user_name}")
         return []
 
     # Get ALL org projects (for project_hint matching from text)
     all_projects_result = await db.execute(
-        select(Project).where(Project.org_id == org_member.org_id)
+        select(Project).where(Project.org_id == org_id)
     )
     all_projects = list(all_projects_result.scalars().all())
 
@@ -396,12 +417,6 @@ async def create_tasks_from_message(
     if not projects:
         logger.warning(f"No active projects for user {user_name}")
         return []
-
-    # all_projects already loaded above — reuse
-    _all_projects_result = await db.execute(
-        select(Project).where(Project.org_id == org_member.org_id)
-    )
-    all_projects = list(all_projects_result.scalars().all())
 
     # Use first active project as default
     project = projects[0]
@@ -451,15 +466,60 @@ async def create_tasks_from_message(
                     target_project = p
                     break
 
-        # Resolve assignee from hint
+        # Resolve assignee from hint — search by name, then by chat title
         assignee_id = user.id
         assignee_display = user_name
         assignee_hint = task_data.get("assignee_name")
         if assignee_hint:
+            hint_lower = assignee_hint.lower()
+            # 1. Direct search by User.name
             assignee_result = await db.execute(
                 select(User).where(User.name.ilike(f"%{assignee_hint}%"))
             )
             found_user = assignee_result.scalar_one_or_none()
+
+            # 2. If not found, search by chat title (chats named like "RND - Дима (Разработчик)")
+            if not found_user:
+                chat_search = await db.execute(
+                    select(Chat).where(
+                        Chat.is_active == True,
+                        (Chat.custom_name.ilike(f"%{assignee_hint}%")) | (Chat.title.ilike(f"%{assignee_hint}%"))
+                    )
+                )
+                matched_chat = chat_search.scalar_one_or_none()
+                if matched_chat and matched_chat.entity_id:
+                    # Chat is linked to an entity — find user via entity
+                    from ..models.database import Entity
+                    entity_result = await db.execute(
+                        select(User).where(User.name.ilike(f"%{assignee_hint}%"))
+                    )
+                    # Try finding user by the chat's owner
+                    if matched_chat.owner_id:
+                        owner_result = await db.execute(
+                            select(User).where(User.id == matched_chat.owner_id)
+                        )
+                        found_user = owner_result.scalar_one_or_none()
+
+            # 3. If still not found, try searching org members by first name
+            if not found_user:
+                all_members_result = await db.execute(
+                    select(User)
+                    .join(OrgMember, OrgMember.user_id == User.id)
+                    .where(OrgMember.org_id == org_id)
+                )
+                all_members = all_members_result.scalars().all()
+                for m in all_members:
+                    # Match first name: "Дима" in "Дмитрий Иванов" — check first name similarity
+                    member_name_lower = (m.name or "").lower()
+                    member_first = member_name_lower.split()[0] if member_name_lower else ""
+                    if hint_lower in member_name_lower or member_name_lower in hint_lower:
+                        found_user = m
+                        break
+                    # Common Russian diminutives
+                    if hint_lower.startswith(member_first[:3]) and len(member_first) >= 3:
+                        found_user = m
+                        break
+
             if found_user:
                 assignee_id = found_user.id
                 assignee_display = found_user.name
