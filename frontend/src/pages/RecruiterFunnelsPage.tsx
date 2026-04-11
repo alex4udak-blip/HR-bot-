@@ -359,7 +359,11 @@ export default function RecruiterFunnelsPage() {
       .finally(() => setFilesLoading(false));
   }, [selectedCandidate?.entity_id]);
 
-  // Resume: original PDF + page images (JPEG renders from backend)
+  // Resume: original document (PDF or DOC/DOCX) + page images (JPEG renders from backend)
+  const resumeOriginal = useMemo(
+    () => entityFiles.find(f => f.file_type === 'resume' && f.mime_type !== 'image/jpeg') || null,
+    [entityFiles],
+  );
   const resumePdf = useMemo(
     () => entityFiles.find(f => f.file_type === 'resume' && f.mime_type === 'application/pdf') || null,
     [entityFiles],
@@ -375,7 +379,7 @@ export default function RecruiterFunnelsPage() {
       }),
     [entityFiles],
   );
-  const hasResume = resumePdf !== null || resumePages.length > 0;
+  const hasResume = resumeOriginal !== null || resumePages.length > 0;
 
   // Load blob URLs for resume page images
   useEffect(() => {
@@ -1131,9 +1135,9 @@ export default function RecruiterFunnelsPage() {
                                   {/* Action bar */}
                                   <div className="flex items-center justify-between px-5 py-2.5 border-b border-white/[0.06] flex-shrink-0">
                                     <div className="flex items-center gap-3">
-                                      {resumePdf && (
+                                      {resumeOriginal && (
                                         <a
-                                          href={`/api/entities/${resumePdf.entity_id}/files/${resumePdf.id}/download`}
+                                          href={`/api/entities/${resumeOriginal.entity_id}/files/${resumeOriginal.id}/download`}
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] text-xs text-dark-300 hover:bg-white/[0.04] transition-colors"
@@ -1168,16 +1172,16 @@ export default function RecruiterFunnelsPage() {
                                   </div>
 
                                   {/* Resume file name */}
-                                  {resumePdf && (
+                                  {resumeOriginal && (
                                     <div className="px-5 py-2 border-b border-white/[0.04] flex-shrink-0">
                                       <a
-                                        href={`/api/entities/${resumePdf.entity_id}/files/${resumePdf.id}/download`}
+                                        href={`/api/entities/${resumeOriginal.entity_id}/files/${resumeOriginal.id}/download`}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="inline-flex items-center gap-1.5 text-xs text-dark-400 hover:text-accent-400 transition-colors"
                                       >
                                         <Briefcase className="w-3 h-3" />
-                                        {resumePdf.file_name}
+                                        {resumeOriginal.file_name}
                                       </a>
                                     </div>
                                   )}
@@ -1196,7 +1200,7 @@ export default function RecruiterFunnelsPage() {
                                           <Loader2 className="w-6 h-6 text-dark-500 animate-spin" />
                                         </div>
                                       )
-                                    ) : resumeImageError && resumePdf ? (
+                                    ) : resumeImageError ? (
                                       <div className="flex flex-col items-center gap-4 py-16 text-center">
                                         <FileText className="w-12 h-12 text-dark-600" />
                                         <p className="text-sm text-dark-400">Страницы резюме не загружены</p>
