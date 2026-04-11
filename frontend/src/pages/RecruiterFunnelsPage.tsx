@@ -22,6 +22,8 @@ import {
   ThumbsUp,
   Paperclip,
   XCircle,
+  Copy,
+  Check,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -96,6 +98,28 @@ interface RecruiterGroup {
   userName: string;
   vacancies: Vacancy[];
   expanded: boolean;
+}
+
+// ==================== Copy Button Helper ====================
+
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(value).then(() => {
+      toast.success('Скопировано');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      className="p-0.5 rounded text-dark-600 hover:text-dark-300 transition-colors opacity-0 group-hover:opacity-100"
+      title="Копировать"
+    >
+      {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+    </button>
+  );
 }
 
 // ==================== Main Component ====================
@@ -1136,30 +1160,70 @@ export default function RecruiterFunnelsPage() {
                                 ) : candidateHistory.length === 0 ? (
                                   <div className="text-sm text-dark-600">Нет записей</div>
                                 ) : (
-                                  <div className="space-y-3">
-                                    {candidateHistory.map((entry: any, i: number) => (
-                                      <div key={i} className="flex gap-3 text-sm">
-                                        <div className="w-2 h-2 rounded-full bg-accent-500/50 mt-1.5 flex-shrink-0" />
-                                        <div>
-                                          <div className="text-dark-400">
-                                            {entry.from_stage && (
-                                              <>
-                                                <span className="text-dark-500">{stagesConfig.labels[entry.from_stage] || STAGE_LABELS[entry.from_stage] || entry.from_stage}</span>
-                                                <span className="mx-1">&rarr;</span>
-                                              </>
-                                            )}
-                                            <span className="text-dark-300">{stagesConfig.labels[entry.to_stage] || STAGE_LABELS[entry.to_stage] || entry.to_stage}</span>
+                                  <div className="relative pl-6 border-l border-white/[0.08]">
+                                    {candidateHistory.map((entry: any, i: number) => {
+                                      const toColorKey = colorToStageColor(
+                                        stagesConfig.colorKeys[entry.to_stage],
+                                        stagesConfig.keyToEnum[entry.to_stage] || entry.to_stage,
+                                      );
+                                      const toColors = STAGE_COLORS[toColorKey] || fallbackColor;
+                                      const fromColorKey = entry.from_stage
+                                        ? colorToStageColor(
+                                            stagesConfig.colorKeys[entry.from_stage],
+                                            stagesConfig.keyToEnum[entry.from_stage] || entry.from_stage,
+                                          )
+                                        : null;
+                                      const fromColors = fromColorKey ? (STAGE_COLORS[fromColorKey] || fallbackColor) : null;
+
+                                      return (
+                                        <div key={i} className="relative pb-5 last:pb-0">
+                                          {/* Timeline dot */}
+                                          <div className={clsx(
+                                            'absolute -left-[25px] w-3 h-3 rounded-full border-2 border-dark-800',
+                                            toColors.dot,
+                                          )} />
+
+                                          {/* Date */}
+                                          <div className="text-xs text-dark-600 mb-1">
+                                            {entry.created_at && new Date(entry.created_at).toLocaleString('ru', {
+                                              day: 'numeric', month: 'short', year: 'numeric',
+                                              hour: '2-digit', minute: '2-digit',
+                                            })}
                                           </div>
-                                          {entry.comment && (
-                                            <div className="text-dark-500 mt-0.5">{entry.comment}</div>
+
+                                          {/* Stage change badges */}
+                                          {entry.from_stage ? (
+                                            <div className="flex items-center gap-1.5 flex-wrap text-xs mb-1">
+                                              <span className={clsx('px-2 py-0.5 rounded-full', fromColors?.badge)}>
+                                                {stagesConfig.labels[entry.from_stage] || STAGE_LABELS[entry.from_stage] || entry.from_stage}
+                                              </span>
+                                              <span className="text-dark-600">&rarr;</span>
+                                              <span className={clsx('px-2 py-0.5 rounded-full', toColors.badge)}>
+                                                {stagesConfig.labels[entry.to_stage] || STAGE_LABELS[entry.to_stage] || entry.to_stage}
+                                              </span>
+                                            </div>
+                                          ) : (
+                                            <div className="text-sm text-dark-300 mb-1">
+                                              <span className={clsx('inline-block px-2 py-0.5 rounded-full text-xs', toColors.badge)}>
+                                                {stagesConfig.labels[entry.to_stage] || STAGE_LABELS[entry.to_stage] || entry.to_stage}
+                                              </span>
+                                            </div>
                                           )}
-                                          <div className="text-dark-600 text-xs mt-0.5">
-                                            {entry.changed_by && <span>{entry.changed_by} &middot; </span>}
-                                            {entry.created_at && new Date(entry.created_at).toLocaleString('ru')}
-                                          </div>
+
+                                          {/* Comment */}
+                                          {entry.comment && (
+                                            <div className="text-sm text-dark-400 mt-1 whitespace-pre-wrap pl-0.5">
+                                              {entry.comment}
+                                            </div>
+                                          )}
+
+                                          {/* Changed by */}
+                                          {entry.changed_by && (
+                                            <div className="text-xs text-dark-600 mt-1">{entry.changed_by}</div>
+                                          )}
                                         </div>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 )}
                               </div>
