@@ -150,6 +150,12 @@ export default function RecruiterFunnelsPage() {
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
 
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkMoving, setBulkMoving] = useState(false);
+  const [bulkStageDropdownOpen, setBulkStageDropdownOpen] = useState(false);
+  const bulkStageRef = useRef<HTMLDivElement>(null);
+
   // View mode: 'detail' (Huntflow-style) or 'list' (ClickUp-style grouped by stage)
   const [viewMode, setViewMode] = useState<'detail' | 'list'>('detail');
 
@@ -261,6 +267,7 @@ export default function RecruiterFunnelsPage() {
     setCandidateHistory([]);
     setDetailTab('info');
     setCurrentResumePage(0);
+    setSelectedIds(new Set());
   }, [selectedVacancyId]);
 
   const loadCandidates = useCallback(async (vacancyId: number) => {
@@ -577,6 +584,57 @@ export default function RecruiterFunnelsPage() {
       toast.error('Ошибка смены статуса');
     }
   }, [fetchVacancies, stagesConfig]);
+
+  // Toggle checkbox selection for a candidate
+  const toggleCandidateSelection = useCallback((candidateId: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(candidateId)) next.delete(candidateId);
+      else next.add(candidateId);
+      return next;
+    });
+  }, []);
+
+  // Bulk move selected candidates to a stage
+  const handleBulkMove = useCallback(async (stage: ApplicationStage) => {
+    if (selectedIds.size === 0) return;
+    setBulkMoving(true);
+    setBulkStageDropdownOpen(false);
+    try {
+      const ids = Array.from(selectedIds);
+      const updated = await bulkMoveApplications(ids, stage);
+      const updatedMap = new Map(updated.map(a => [a.id, a]));
+      setCandidates(prev =>
+        prev.map(c => updatedMap.has(c.id) ? { ...c, stage } : c)
+      );
+      setSelectedIds(new Set());
+      toast.success(`${ids.length} кандидатов перемещено`);
+      fetchVacancies();
+    } catch {
+      toast.error('Ошибка массового перемещения');
+    } finally {
+      setBulkMoving(false);
+    }
+  }, [selectedIds, fetchVacancies]);
+
+  // Bulk reject
+  const handleBulkReject = useCallback(() => {
+    handleBulkMove('rejected' as ApplicationStage);
+  }, [handleBulkMove]);
+
+  // Close bulk stage dropdown on outside click
+  useEffect(() => {
+    if (!bulkStageDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (bulkStageRef.current && !bulkStageRef.current.contains(e.target as Node)) {
+        setBulkStageDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [bulkStageDropdownOpen]);
+
+  const anySelected = selectedIds.size > 0;
 
   // Close "add to vacancy" dropdown on outside click
   useEffect(() => {
@@ -1047,7 +1105,8 @@ export default function RecruiterFunnelsPage() {
                 {/* Master-Detail split */}
                 <div className="flex-1 flex overflow-hidden">
                   {/* Left: candidate list */}
-                  <div className="w-[350px] flex-shrink-0 border-r border-white/[0.06] overflow-y-auto">
+                  <div className="w-[350px] flex-shrink-0 border-r border-white/[0.06] overflow-hidden flex flex-col relative">
+                    <div className={clsx('flex-1 overflow-y-auto', anySelected && 'pb-14')}>
                     {tabFilteredCandidates.length === 0 ? (
                       <div className="flex items-center justify-center h-40 text-dark-500 text-sm">
                         Нет кандидатов
@@ -1055,18 +1114,35 @@ export default function RecruiterFunnelsPage() {
                     ) : (
                       tabFilteredCandidates.map(candidate => {
                         const isSelected = candidate.id === selectedCandidateId;
+                        const isChecked = selectedIds.has(candidate.id);
                         const initials = (candidate.entity_name || '?')[0].toUpperCase();
                         return (
                           <div
                             key={candidate.id}
                             onClick={() => { setSelectedCandidateId(candidate.id); setDetailTab('info'); }}
                             className={clsx(
-                              'flex items-start gap-3 px-4 py-3 cursor-pointer border-b border-white/[0.04] transition-colors',
-                              isSelected
+                              'flex items-start gap-2 px-3 py-3 cursor-pointer border-b border-white/[0.04] transition-colors group/card',
+                              isChecked
                                 ? 'bg-accent-500/10 border-l-2 border-l-accent-500'
-                                : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'
+                                : isSelected
+                                  ? 'bg-accent-500/10 border-l-2 border-l-accent-500'
+                                  : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'
                             )}
                           >
+                            {/* Checkbox */}
+                            <div
+                              onClick={(e) => { e.stopPropagation(); toggleCandidateSelection(candidate.id); }}
+                              className={clsx(
+                                'flex items-center justify-center w-4 h-4 mt-2.5 flex-shrink-0 cursor-pointer transition-opacity',
+                                anySelected ? 'opacity-100' : 'opacity-0 group-hover/card:opacity-100'
+                              )}
+                            >
+                              {isChecked ? (
+                                <CheckSquare className="w-4 h-4 text-accent-400" />
+                              ) : (
+                                <Square className="w-4 h-4 text-dark-500 hover:text-dark-300" />
+                              )}
+                            </div>
                             <div className="w-9 h-9 rounded-full bg-accent-500/20 flex items-center justify-center text-accent-400 text-sm font-medium flex-shrink-0">
                               {initials}
                             </div>
@@ -1089,6 +1165,64 @@ export default function RecruiterFunnelsPage() {
                           </div>
                         );
                       })
+                    )}
+                    </div>
+
+                    {/* Bulk actions floating bar */}
+                    {anySelected && (
+                      <div className="absolute bottom-0 left-0 right-0 p-3 bg-dark-800 border-t border-white/[0.08] flex items-center justify-between">
+                        <span className="text-xs text-dark-300 font-medium">
+                          Выбрано: {selectedIds.size}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {/* Move dropdown */}
+                          <div className="relative" ref={bulkStageRef}>
+                            <button
+                              onClick={() => setBulkStageDropdownOpen(!bulkStageDropdownOpen)}
+                              disabled={bulkMoving}
+                              className="px-2.5 py-1 text-xs font-medium rounded-lg bg-accent-500/15 text-accent-400 hover:bg-accent-500/25 transition-colors disabled:opacity-50"
+                            >
+                              {bulkMoving ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : null}
+                              Переместить
+                            </button>
+                            {bulkStageDropdownOpen && (
+                              <div className="absolute bottom-full left-0 mb-1 z-50 w-56 py-1 bg-dark-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+                                <div className="px-3 py-1.5 text-[10px] text-dark-500 uppercase tracking-wider font-semibold">
+                                  Перенести в
+                                </div>
+                                {STAGE_ORDER.map((stage) => {
+                                  const sc = STAGE_COLORS[stage] || fallbackColor;
+                                  return (
+                                    <button
+                                      key={stage}
+                                      onClick={() => handleBulkMove(stage as ApplicationStage)}
+                                      className="w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors text-sm hover:bg-white/[0.04] text-dark-300 hover:text-dark-100"
+                                    >
+                                      <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', sc.dot)} />
+                                      <span className="flex-1">{stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                          {/* Reject */}
+                          <button
+                            onClick={handleBulkReject}
+                            disabled={bulkMoving}
+                            className="px-2.5 py-1 text-xs font-medium rounded-lg bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors disabled:opacity-50"
+                          >
+                            Отказать
+                          </button>
+                          {/* Deselect */}
+                          <button
+                            onClick={() => setSelectedIds(new Set())}
+                            className="px-2.5 py-1 text-xs font-medium rounded-lg text-dark-400 hover:bg-white/[0.06] transition-colors"
+                          >
+                            Снять
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
 
