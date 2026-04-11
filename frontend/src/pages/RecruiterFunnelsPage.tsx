@@ -13,12 +13,16 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  LayoutList,
+  Columns3,
+  FileText,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, getApplicationHistory } from '@/services/api';
+import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles } from '@/services/api';
+import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
 import { VacancyStatusBadge } from '@/components/vacancies';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
@@ -113,11 +117,17 @@ export default function RecruiterFunnelsPage() {
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
 
+  // View mode: 'detail' (Huntflow-style) or 'list' (ClickUp-style grouped by stage)
+  const [viewMode, setViewMode] = useState<'detail' | 'list'>('detail');
+
   // Master-detail state
   const [selectedTab, setSelectedTab] = useState<string>('all');
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
   const [candidateHistory, setCandidateHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [detailTab, setDetailTab] = useState<'info' | 'resume'>('info');
+  const [entityFiles, setEntityFiles] = useState<EntityFile[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
 
   // Load data
   useEffect(() => {
@@ -205,6 +215,7 @@ export default function RecruiterFunnelsPage() {
     setSelectedCandidateId(null);
     setSelectedTab('all');
     setCandidateHistory([]);
+    setDetailTab('info');
   }, [selectedVacancyId]);
 
   const loadCandidates = useCallback(async (vacancyId: number) => {
@@ -329,6 +340,25 @@ export default function RecruiterFunnelsPage() {
       .catch(() => setCandidateHistory([]))
       .finally(() => setHistoryLoading(false));
   }, [selectedCandidateId]);
+
+  // Load entity files (resumes) when candidate selected
+  useEffect(() => {
+    if (!selectedCandidate?.entity_id) {
+      setEntityFiles([]);
+      return;
+    }
+    setFilesLoading(true);
+    getEntityFiles(selectedCandidate.entity_id)
+      .then(files => setEntityFiles(files))
+      .catch(() => setEntityFiles([]))
+      .finally(() => setFilesLoading(false));
+  }, [selectedCandidate?.entity_id]);
+
+  // Resume files (PDFs only) for iframe display
+  const resumeFiles = useMemo(
+    () => entityFiles.filter(f => f.file_type === 'resume' && f.mime_type === 'application/pdf'),
+    [entityFiles],
+  );
 
   // Auto-select first candidate when tab changes
   useEffect(() => {
@@ -646,7 +676,7 @@ export default function RecruiterFunnelsPage() {
                 </span>
               </div>
 
-              {/* Search */}
+              {/* Search + View toggle */}
               <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
                 <div className="relative flex-1 sm:flex-none">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dark-500" />
@@ -658,6 +688,30 @@ export default function RecruiterFunnelsPage() {
                     className="w-full sm:w-44 pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
                   />
                 </div>
+                <div className="hidden sm:flex items-center bg-white/[0.03] rounded-lg border border-white/[0.06] p-0.5">
+                  <button
+                    onClick={() => setViewMode('detail')}
+                    className={clsx(
+                      'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+                      viewMode === 'detail' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200',
+                    )}
+                    title="Детали"
+                  >
+                    <Columns3 className="w-3.5 h-3.5" />
+                    <span className="hidden lg:inline">Детали</span>
+                  </button>
+                  <button
+                    onClick={() => setViewMode('list')}
+                    className={clsx(
+                      'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+                      viewMode === 'list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200',
+                    )}
+                    title="Список"
+                  >
+                    <LayoutList className="w-3.5 h-3.5" />
+                    <span className="hidden lg:inline">Список</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -665,7 +719,84 @@ export default function RecruiterFunnelsPage() {
               <div className="flex items-center justify-center py-16 flex-1">
                 <div className="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
               </div>
+            ) : viewMode === 'list' ? (
+              /* ===== LIST VIEW: grouped by stage (ClickUp-style) ===== */
+              <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-3 space-y-1">
+                {groupedByStage.length === 0 ? (
+                  <div className="text-center py-16 text-dark-500 text-sm">
+                    {candidateSearch ? 'Ничего не найдено' : 'Нет кандидатов в этой воронке'}
+                  </div>
+                ) : (
+                  groupedByStage.map(([stage, items]) => {
+                    const ck = stagesConfig.colorKeys[stage] || stagesConfig.keyToEnum[stage] || stage;
+                    const colors = STAGE_COLORS[ck] || fallbackColor;
+                    return (
+                      <div key={stage} className="mb-1">
+                        {/* Stage group header */}
+                        <div className={clsx('w-full flex items-center gap-2 px-3 py-2 rounded-lg', colors.bg)}>
+                          <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', colors.dot)} />
+                          <span className={clsx('text-sm font-semibold uppercase', colors.text)}>
+                            {stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage}
+                          </span>
+                          <span className={clsx('text-xs ml-1', colors.text)}>{items.length}</span>
+                        </div>
+                        {/* Candidate rows */}
+                        <div className="mt-0.5">
+                          <div className="hidden md:grid grid-cols-[1fr_140px_100px_140px_100px] gap-2 px-3 py-1.5 text-[11px] text-dark-500 font-medium uppercase tracking-wide">
+                            <span>Имя</span><span>Статус</span><span>Дата</span><span>Telegram</span><span>Источник</span>
+                          </div>
+                          {items.map((c) => (
+                            <div
+                              key={c.id}
+                              onClick={() => navigate(`/contacts/${c.entity_id}`)}
+                              className="flex flex-col md:grid md:grid-cols-[1fr_140px_100px_140px_100px] gap-1 md:gap-2 px-3 py-2.5 md:py-2 hover:bg-white/[0.03] rounded-lg cursor-pointer transition-colors border-b border-white/[0.03] last:border-b-0 group"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="w-6 h-6 rounded-full bg-accent-500/10 flex items-center justify-center text-[10px] text-accent-400 font-medium flex-shrink-0">
+                                  {(c.entity_name || '?').charAt(0).toUpperCase()}
+                                </div>
+                                <span className="text-sm text-dark-100 truncate group-hover:text-accent-400 transition-colors">
+                                  {c.entity_name || 'Без имени'}
+                                </span>
+                                <div className="md:hidden ml-auto flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                  <StageDropdown
+                                    currentStage={c.stage as ApplicationStage}
+                                    onChangeStage={(newStage) => handleStageChange(c.id, newStage)}
+                                    customLabels={stagesConfig.labels}
+                                  />
+                                </div>
+                              </div>
+                              <div className="hidden md:flex items-center" onClick={(e) => e.stopPropagation()}>
+                                <StageDropdown
+                                  currentStage={c.stage as ApplicationStage}
+                                  onChangeStage={(newStage) => handleStageChange(c.id, newStage)}
+                                  customLabels={stagesConfig.labels}
+                                />
+                              </div>
+                              <span className="text-xs text-dark-400 items-center hidden md:flex">
+                                {c.applied_at ? new Date(c.applied_at).toLocaleDateString('ru') : ''}
+                              </span>
+                              <div className="flex items-center gap-3 md:hidden pl-8 text-xs text-dark-400">
+                                {c.applied_at && <span>{new Date(c.applied_at).toLocaleDateString('ru')}</span>}
+                                {c.entity_telegram && <span>@{c.entity_telegram}</span>}
+                                {c.source && <span>{c.source}</span>}
+                              </div>
+                              <span className="text-xs text-dark-400 truncate items-center hidden md:flex">
+                                {c.entity_telegram ? `@${c.entity_telegram}` : ''}
+                              </span>
+                              <span className="text-xs text-dark-400 truncate items-center hidden md:flex">
+                                {c.source || ''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             ) : (
+              /* ===== DETAIL VIEW: Huntflow-style master-detail ===== */
               <>
                 {/* Stage tabs */}
                 <div className="flex items-center gap-1 px-4 py-2 border-b border-white/[0.06] overflow-x-auto no-scrollbar flex-shrink-0">
@@ -714,7 +845,7 @@ export default function RecruiterFunnelsPage() {
                         return (
                           <div
                             key={candidate.id}
-                            onClick={() => setSelectedCandidateId(candidate.id)}
+                            onClick={() => { setSelectedCandidateId(candidate.id); setDetailTab('info'); }}
                             className={clsx(
                               'flex items-start gap-3 px-4 py-3 cursor-pointer border-b border-white/[0.04] transition-colors',
                               isSelected
@@ -748,132 +879,220 @@ export default function RecruiterFunnelsPage() {
                   </div>
 
                   {/* Right: detail panel */}
-                  <div className="flex-1 overflow-y-auto">
+                  <div className="flex-1 flex flex-col overflow-hidden">
                     {selectedCandidate ? (
-                      <div className="p-5 max-w-3xl">
-                        {/* Action buttons */}
-                        <div className="flex items-center gap-3 mb-6">
-                          {selectedCandidate.entity_id && (
-                            <button
-                              onClick={() => navigate(`/contacts/${selectedCandidate.entity_id}`)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04]"
-                            >
-                              <Users className="w-4 h-4" /> Открыть профиль
-                            </button>
-                          )}
+                      <>
+                        {/* Detail tabs: Личные заметки / Резюме */}
+                        <div className="flex items-center border-b border-white/[0.06] px-5 flex-shrink-0">
+                          <button
+                            onClick={() => setDetailTab('info')}
+                            className={clsx(
+                              'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+                              detailTab === 'info'
+                                ? 'border-accent-500 text-dark-100'
+                                : 'border-transparent text-dark-400 hover:text-dark-200'
+                            )}
+                          >
+                            Личные заметки
+                          </button>
+                          <button
+                            onClick={() => setDetailTab('resume')}
+                            className={clsx(
+                              'px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5',
+                              detailTab === 'resume'
+                                ? 'border-accent-500 text-dark-100'
+                                : 'border-transparent text-dark-400 hover:text-dark-200'
+                            )}
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            Резюме
+                            {resumeFiles.length > 0 && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-500/15 text-accent-400 ml-1">
+                                {resumeFiles.length}
+                              </span>
+                            )}
+                          </button>
                         </div>
 
-                        {/* Name & info */}
-                        <h2 className="text-2xl font-semibold text-dark-100 mb-1">
-                          {selectedCandidate.entity_name || 'Без имени'}
-                        </h2>
-                        {selectedCandidate.entity_position && (
-                          <p className="text-dark-400 mb-4">{selectedCandidate.entity_position}</p>
-                        )}
-
-                        {/* Contact info */}
-                        <div className="space-y-2 mb-6 text-sm">
-                          {selectedCandidate.entity_phone && (
-                            <div className="flex items-center gap-3">
-                              <span className="text-dark-500 w-24">Телефон</span>
-                              <span className="text-dark-200">{selectedCandidate.entity_phone}</span>
-                            </div>
-                          )}
-                          {selectedCandidate.entity_email && (
-                            <div className="flex items-center gap-3">
-                              <span className="text-dark-500 w-24">Email</span>
-                              <span className="text-dark-200">{selectedCandidate.entity_email}</span>
-                            </div>
-                          )}
-                          {selectedCandidate.entity_telegram && (
-                            <div className="flex items-center gap-3">
-                              <span className="text-dark-500 w-24">Telegram</span>
-                              <span className="text-dark-200">@{selectedCandidate.entity_telegram}</span>
-                            </div>
-                          )}
-                          {selectedCandidate.source && (
-                            <div className="flex items-center gap-3">
-                              <span className="text-dark-500 w-24">Источник</span>
-                              <span className="text-dark-200">{selectedCandidate.source}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Current stage */}
-                        <div className="mb-6 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="text-xs text-dark-500 mb-1">Текущий этап</div>
-                              <div className="text-sm font-medium text-dark-200">
-                                {stagesConfig.labels[
-                                  (stagesConfig.enumToKeys[selectedCandidate.stage] || [])[0] || selectedCandidate.stage
-                                ] || selectedCandidate.stage}
+                        {/* Tab content */}
+                        <div className="flex-1 overflow-y-auto">
+                          {detailTab === 'info' ? (
+                            <div className="p-5 max-w-3xl">
+                              {/* Action buttons */}
+                              <div className="flex items-center gap-3 mb-6">
+                                {selectedCandidate.entity_id && (
+                                  <button
+                                    onClick={() => navigate(`/contacts/${selectedCandidate.entity_id}`)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04]"
+                                  >
+                                    <Users className="w-4 h-4" /> Открыть профиль
+                                  </button>
+                                )}
                               </div>
-                            </div>
-                            <StageDropdown
-                              currentStage={selectedCandidate.stage as ApplicationStage}
-                              onChangeStage={(newStage) => handleStageChange(selectedCandidate.id, newStage)}
-                              customLabels={stagesConfig.labels}
-                            />
-                          </div>
-                        </div>
 
-                        {/* Compatibility score if available */}
-                        {selectedCandidate.compatibility_score != null && (
-                          <div className="mb-6 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
-                            <div className="text-xs text-dark-500 mb-1">Совместимость</div>
-                            <div className="text-lg font-semibold text-accent-400">{selectedCandidate.compatibility_score.overall_score}%</div>
-                          </div>
-                        )}
+                              {/* Name & info */}
+                              <h2 className="text-2xl font-semibold text-dark-100 mb-1">
+                                {selectedCandidate.entity_name || 'Без имени'}
+                              </h2>
+                              {selectedCandidate.entity_position && (
+                                <p className="text-dark-400 mb-4">{selectedCandidate.entity_position}</p>
+                              )}
 
-                        {/* Notes */}
-                        {selectedCandidate.notes && (
-                          <div className="mb-6">
-                            <div className="text-xs text-dark-500 mb-2">Заметки</div>
-                            <div className="text-sm text-dark-300 whitespace-pre-wrap p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
-                              {selectedCandidate.notes}
-                            </div>
-                          </div>
-                        )}
+                              {/* Contact info */}
+                              <div className="space-y-2 mb-6 text-sm">
+                                {selectedCandidate.entity_phone && (
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-dark-500 w-24">Телефон</span>
+                                    <span className="text-dark-200">{selectedCandidate.entity_phone}</span>
+                                  </div>
+                                )}
+                                {selectedCandidate.entity_email && (
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-dark-500 w-24">Email</span>
+                                    <span className="text-dark-200">{selectedCandidate.entity_email}</span>
+                                  </div>
+                                )}
+                                {selectedCandidate.entity_telegram && (
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-dark-500 w-24">Telegram</span>
+                                    <span className="text-dark-200">@{selectedCandidate.entity_telegram}</span>
+                                  </div>
+                                )}
+                                {selectedCandidate.source && (
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-dark-500 w-24">Источник</span>
+                                    <span className="text-dark-200">{selectedCandidate.source}</span>
+                                  </div>
+                                )}
+                              </div>
 
-                        {/* History timeline */}
-                        <div className="mt-6">
-                          <div className="text-xs text-dark-500 mb-3 uppercase tracking-wider">История</div>
-                          {historyLoading ? (
-                            <div className="flex items-center gap-2 text-dark-500 text-sm">
-                              <Loader2 className="w-4 h-4 animate-spin" /> Загрузка...
-                            </div>
-                          ) : candidateHistory.length === 0 ? (
-                            <div className="text-sm text-dark-600">Нет записей</div>
-                          ) : (
-                            <div className="space-y-3">
-                              {candidateHistory.map((entry: any, i: number) => (
-                                <div key={i} className="flex gap-3 text-sm">
-                                  <div className="w-2 h-2 rounded-full bg-accent-500/50 mt-1.5 flex-shrink-0" />
+                              {/* Current stage */}
+                              <div className="mb-6 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
+                                <div className="flex items-center justify-between">
                                   <div>
-                                    <div className="text-dark-400">
-                                      {entry.from_stage && (
-                                        <>
-                                          <span className="text-dark-500">{stagesConfig.labels[entry.from_stage] || STAGE_LABELS[entry.from_stage] || entry.from_stage}</span>
-                                          <span className="mx-1">&rarr;</span>
-                                        </>
-                                      )}
-                                      <span className="text-dark-300">{stagesConfig.labels[entry.to_stage] || STAGE_LABELS[entry.to_stage] || entry.to_stage}</span>
-                                    </div>
-                                    {entry.comment && (
-                                      <div className="text-dark-500 mt-0.5">{entry.comment}</div>
-                                    )}
-                                    <div className="text-dark-600 text-xs mt-0.5">
-                                      {entry.changed_by && <span>{entry.changed_by} &middot; </span>}
-                                      {entry.created_at && new Date(entry.created_at).toLocaleString('ru')}
+                                    <div className="text-xs text-dark-500 mb-1">Текущий этап</div>
+                                    <div className="text-sm font-medium text-dark-200">
+                                      {stagesConfig.labels[
+                                        (stagesConfig.enumToKeys[selectedCandidate.stage] || [])[0] || selectedCandidate.stage
+                                      ] || selectedCandidate.stage}
                                     </div>
                                   </div>
+                                  <StageDropdown
+                                    currentStage={selectedCandidate.stage as ApplicationStage}
+                                    onChangeStage={(newStage) => handleStageChange(selectedCandidate.id, newStage)}
+                                    customLabels={stagesConfig.labels}
+                                  />
                                 </div>
-                              ))}
+                              </div>
+
+                              {/* Compatibility score */}
+                              {selectedCandidate.compatibility_score != null && (
+                                <div className="mb-6 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
+                                  <div className="text-xs text-dark-500 mb-1">Совместимость</div>
+                                  <div className="text-lg font-semibold text-accent-400">{selectedCandidate.compatibility_score.overall_score}%</div>
+                                </div>
+                              )}
+
+                              {/* Notes */}
+                              {selectedCandidate.notes && (
+                                <div className="mb-6">
+                                  <div className="text-xs text-dark-500 mb-2">Заметки</div>
+                                  <div className="text-sm text-dark-300 whitespace-pre-wrap p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                                    {selectedCandidate.notes}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* History timeline */}
+                              <div className="mt-6">
+                                <div className="text-xs text-dark-500 mb-3 uppercase tracking-wider">История</div>
+                                {historyLoading ? (
+                                  <div className="flex items-center gap-2 text-dark-500 text-sm">
+                                    <Loader2 className="w-4 h-4 animate-spin" /> Загрузка...
+                                  </div>
+                                ) : candidateHistory.length === 0 ? (
+                                  <div className="text-sm text-dark-600">Нет записей</div>
+                                ) : (
+                                  <div className="space-y-3">
+                                    {candidateHistory.map((entry: any, i: number) => (
+                                      <div key={i} className="flex gap-3 text-sm">
+                                        <div className="w-2 h-2 rounded-full bg-accent-500/50 mt-1.5 flex-shrink-0" />
+                                        <div>
+                                          <div className="text-dark-400">
+                                            {entry.from_stage && (
+                                              <>
+                                                <span className="text-dark-500">{stagesConfig.labels[entry.from_stage] || STAGE_LABELS[entry.from_stage] || entry.from_stage}</span>
+                                                <span className="mx-1">&rarr;</span>
+                                              </>
+                                            )}
+                                            <span className="text-dark-300">{stagesConfig.labels[entry.to_stage] || STAGE_LABELS[entry.to_stage] || entry.to_stage}</span>
+                                          </div>
+                                          {entry.comment && (
+                                            <div className="text-dark-500 mt-0.5">{entry.comment}</div>
+                                          )}
+                                          <div className="text-dark-600 text-xs mt-0.5">
+                                            {entry.changed_by && <span>{entry.changed_by} &middot; </span>}
+                                            {entry.created_at && new Date(entry.created_at).toLocaleString('ru')}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            /* Resume tab */
+                            <div className="flex-1 flex flex-col h-full">
+                              {filesLoading ? (
+                                <div className="flex items-center justify-center py-16">
+                                  <Loader2 className="w-6 h-6 animate-spin text-accent-500" />
+                                </div>
+                              ) : resumeFiles.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-16 text-center">
+                                  <FileText className="w-12 h-12 text-dark-600 mb-3" />
+                                  <p className="text-sm text-dark-400">Нет загруженных резюме</p>
+                                  <p className="text-xs text-dark-500 mt-1">
+                                    Загрузите PDF-резюме в профиле кандидата
+                                  </p>
+                                  {selectedCandidate.entity_id && (
+                                    <button
+                                      onClick={() => navigate(`/contacts/${selectedCandidate.entity_id}`)}
+                                      className="mt-3 flex items-center gap-1.5 px-3 py-1.5 text-xs text-accent-400 hover:bg-accent-500/10 rounded-lg transition-colors"
+                                    >
+                                      <Users className="w-3.5 h-3.5" />
+                                      Открыть профиль
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="flex-1 flex flex-col p-4 gap-3">
+                                  {resumeFiles.map(file => (
+                                    <div key={file.id} className="flex-1 flex flex-col min-h-0">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <span className="text-xs text-dark-400 truncate">{file.file_name}</span>
+                                        <a
+                                          href={`/api/entities/${file.entity_id}/files/${file.id}/download`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-xs text-accent-400 hover:text-accent-300 transition-colors"
+                                        >
+                                          Скачать
+                                        </a>
+                                      </div>
+                                      <iframe
+                                        src={`/api/entities/${file.entity_id}/files/${file.id}/download`}
+                                        className="flex-1 w-full rounded-lg border border-white/[0.06] bg-white min-h-[600px]"
+                                        title={file.file_name}
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
-                      </div>
+                      </>
                     ) : (
                       <div className="flex-1 flex items-center justify-center h-full text-dark-500">
                         <div className="text-center">
