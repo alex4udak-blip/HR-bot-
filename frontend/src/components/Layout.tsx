@@ -6,20 +6,30 @@ import {
   LogOut,
   Menu,
   X,
+  Phone,
   Building2,
   Shield,
   UserCog,
   Briefcase,
+  GraduationCap,
   HelpCircle,
+  FileSpreadsheet,
   FolderKanban,
   ListTodo,
   GitBranch,
+  FileText,
+  FileSignature,
   Bell,
   Check,
+  BarChart3,
   Plus,
   User,
   UserPlus,
+  TrendingUp,
+  Puzzle,
+  Upload,
   ChevronDown,
+  Database,
   Calendar,
   AlertTriangle,
   type LucideIcon
@@ -264,12 +274,27 @@ export default function Layout() {
     // HR block — superadmin, owner, admin (HR Admin = Настя), hr (рекрутер = Мария)
     // member (обычные сотрудники) НЕ видят HR блок
     const isHrRole = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin' || user?.org_role === 'hr';
+    const isHrAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
     if (isHrRole) {
       const hrItems: { path: string; icon: LucideIcon; label: string }[] = [];
-      // Основные HR инструменты
+      // Базовые HR — видят все HR роли
       hrItems.push({ path: '/all-candidates', icon: Users, label: 'Все кандидаты' });
       hrItems.push({ path: '/my-funnels', icon: GitBranch, label: 'Мои воронки' });
       hrItems.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
+      // Расширенные — только admin/owner/superadmin
+      if (isHrAdmin) {
+        hrItems.push({ path: '/candidate-database', icon: Database, label: 'База кандидатов' });
+        hrItems.push({ path: '/interns', icon: GraduationCap, label: 'Практиканты' });
+        hrItems.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
+        hrItems.push({ path: '/extension', icon: Puzzle, label: 'Волшебная кнопка' });
+        hrItems.push({ path: '/analytics', icon: BarChart3, label: 'HR Аналитика' });
+        hrItems.push({ path: '/pen', icon: TrendingUp, label: 'ПЭН (бонусы)' });
+        hrItems.push({ path: '/form-builder', icon: FileText, label: 'Конструктор форм' });
+        hrItems.push({ path: '/document-templates', icon: FileSignature, label: 'Шаблоны документов' });
+        hrItems.push({ path: '/employees', icon: UserCog, label: 'Сотрудники' });
+        hrItems.push({ path: '/exports', icon: FileSpreadsheet, label: 'Экспорт CSV' });
+        hrItems.push({ path: '/import', icon: Upload, label: 'Импорт CSV' });
+      }
 
       sections.push({
         id: 'hr',
