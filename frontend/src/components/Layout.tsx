@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
+  MessageSquare,
   Settings,
   LogOut,
   Menu,
@@ -16,6 +17,7 @@ import {
   FileSpreadsheet,
   FolderKanban,
   ListTodo,
+  Cloud,
   GitBranch,
   FileText,
   FileSignature,
@@ -264,10 +266,15 @@ export default function Layout() {
       id: 'projects',
       label: 'Проекты',
       items: [
+        { path: '/dashboard', icon: LayoutDashboard, label: 'Дашборд' },
         { path: '/projects', icon: FolderKanban, label: 'Все проекты' },
         { path: '/all-tasks', icon: ListTodo, label: 'Все задачи' },
+        { path: '/chats', icon: MessageSquare, label: 'Чаты' },
+        { path: '/team', icon: Users, label: 'Команда' },
         { path: '/timeoff', icon: Calendar, label: 'Отпуска' },
         { path: '/blockers', icon: AlertTriangle, label: 'Блокеры' },
+        { path: '/dept-manager', icon: Building2, label: 'Отделы' },
+        { path: '/saturn', icon: Cloud, label: 'Saturn' },
       ],
     });
 
