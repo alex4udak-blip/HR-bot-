@@ -24,12 +24,14 @@ import {
   XCircle,
   Copy,
   Check,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile } from '@/services/api';
+import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications } from '@/services/api';
 import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
 import { VacancyStatusBadge } from '@/components/vacancies';
@@ -1036,21 +1038,30 @@ export default function RecruiterFunnelsPage() {
                               {/* Contact info */}
                               <div className="space-y-2 mb-6 text-sm">
                                 {selectedCandidate.entity_phone && (
-                                  <div className="flex items-center gap-3">
+                                  <div className="group flex items-center gap-3">
                                     <span className="text-dark-500 w-24">Телефон</span>
-                                    <span className="text-dark-200">{selectedCandidate.entity_phone}</span>
+                                    <a href={`tel:${selectedCandidate.entity_phone}`} className="text-dark-200 hover:text-white transition-colors">
+                                      {selectedCandidate.entity_phone}
+                                    </a>
+                                    <CopyButton value={selectedCandidate.entity_phone} />
                                   </div>
                                 )}
                                 {selectedCandidate.entity_email && (
-                                  <div className="flex items-center gap-3">
+                                  <div className="group flex items-center gap-3">
                                     <span className="text-dark-500 w-24">Email</span>
-                                    <span className="text-dark-200">{selectedCandidate.entity_email}</span>
+                                    <a href={`mailto:${selectedCandidate.entity_email}`} className="text-dark-200 hover:text-white transition-colors">
+                                      {selectedCandidate.entity_email}
+                                    </a>
+                                    <CopyButton value={selectedCandidate.entity_email} />
                                   </div>
                                 )}
                                 {selectedCandidate.entity_telegram && (
-                                  <div className="flex items-center gap-3">
+                                  <div className="group flex items-center gap-3">
                                     <span className="text-dark-500 w-24">Telegram</span>
-                                    <span className="text-dark-200">@{selectedCandidate.entity_telegram}</span>
+                                    <a href={`https://t.me/${selectedCandidate.entity_telegram}`} target="_blank" rel="noopener noreferrer" className="text-dark-200 hover:text-white transition-colors">
+                                      @{selectedCandidate.entity_telegram}
+                                    </a>
+                                    <CopyButton value={`@${selectedCandidate.entity_telegram}`} />
                                   </div>
                                 )}
                                 {selectedCandidate.source && (
