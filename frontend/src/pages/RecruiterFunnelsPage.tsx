@@ -27,18 +27,32 @@ import {
   CheckSquare,
   Square,
   Printer,
+  Tag,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, createApplication } from '@/services/api';
+import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
+import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
 import { VacancyStatusBadge } from '@/components/vacancies';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 
 // ==================== Constants ====================
+
+const TAG_PALETTE = [
+  { color: '#ef4444', label: 'Красный' },
+  { color: '#3b82f6', label: 'Синий' },
+  { color: '#22c55e', label: 'Зелёный' },
+  { color: '#eab308', label: 'Жёлтый' },
+  { color: '#a855f7', label: 'Фиолетовый' },
+  { color: '#f97316', label: 'Оранжевый' },
+  { color: '#ec4899', label: 'Розовый' },
+  { color: '#06b6d4', label: 'Голубой' },
+];
 
 const STATUS_FILTERS: { id: VacancyStatus | 'all'; label: string }[] = [
   { id: 'all', label: 'Все' },
@@ -173,6 +187,15 @@ export default function RecruiterFunnelsPage() {
   const [resumeImageError, setResumeImageError] = useState(false);
   const [resumeTextMode, setResumeTextMode] = useState(false);
   const [entityExtraData, setEntityExtraData] = useState<Record<string, unknown> | null>(null);
+
+  // Tags state
+  const [orgTags, setOrgTags] = useState<TagType[]>([]);
+  const [entityTags, setEntityTags] = useState<TagType[]>([]);
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [newTagColor, setNewTagColor] = useState(TAG_PALETTE[0].color);
+  const [creatingTag, setCreatingTag] = useState(false);
+  const tagDropdownRef = useRef<HTMLDivElement>(null);
 
   // "Add to vacancy" dropdown state
   const [showAddToVacancy, setShowAddToVacancy] = useState(false);
@@ -536,6 +559,72 @@ export default function RecruiterFunnelsPage() {
     }
     return parts.length > 0 ? parts.join('\n') : null;
   }, [entityExtraData]);
+
+  // Load org tags once
+  useEffect(() => {
+    getTags().then(setOrgTags).catch(() => setOrgTags([]));
+  }, []);
+
+  // Load entity tags when candidate selected
+  useEffect(() => {
+    if (!selectedCandidate?.entity_id) { setEntityTags([]); return; }
+    getEntityTags(selectedCandidate.entity_id)
+      .then(setEntityTags)
+      .catch(() => setEntityTags([]));
+  }, [selectedCandidate?.entity_id]);
+
+  // Close tag dropdown on outside click
+  useEffect(() => {
+    if (!showTagDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (tagDropdownRef.current && !tagDropdownRef.current.contains(e.target as Node)) {
+        setShowTagDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showTagDropdown]);
+
+  // Tag handlers
+  const handleAddTag = useCallback(async (tagId: number) => {
+    if (!selectedCandidate?.entity_id) return;
+    try {
+      await addTagToEntity(selectedCandidate.entity_id, tagId);
+      const tag = orgTags.find(t => t.id === tagId);
+      if (tag) setEntityTags(prev => [...prev, tag]);
+    } catch {
+      toast.error('Ошибка добавления метки');
+    }
+  }, [selectedCandidate?.entity_id, orgTags]);
+
+  const handleRemoveTag = useCallback(async (tagId: number) => {
+    if (!selectedCandidate?.entity_id) return;
+    try {
+      await removeTagFromEntity(selectedCandidate.entity_id, tagId);
+      setEntityTags(prev => prev.filter(t => t.id !== tagId));
+    } catch {
+      toast.error('Ошибка удаления метки');
+    }
+  }, [selectedCandidate?.entity_id]);
+
+  const handleCreateTag = useCallback(async () => {
+    if (!newTagName.trim()) return;
+    setCreatingTag(true);
+    try {
+      const tag = await createTag({ name: newTagName.trim(), color: newTagColor });
+      setOrgTags(prev => [...prev, tag]);
+      setNewTagName('');
+      // Auto-add to current entity
+      if (selectedCandidate?.entity_id) {
+        await addTagToEntity(selectedCandidate.entity_id, tag.id);
+        setEntityTags(prev => [...prev, tag]);
+      }
+    } catch {
+      toast.error('Ошибка создания метки');
+    } finally {
+      setCreatingTag(false);
+    }
+  }, [newTagName, newTagColor, selectedCandidate?.entity_id]);
 
   // Auto-select first candidate when tab changes
   useEffect(() => {
