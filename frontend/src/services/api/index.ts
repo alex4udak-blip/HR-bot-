@@ -668,3 +668,18 @@ export type {
   WorkspaceCandidate,
   WorkspaceCandidatesResponse,
 } from './workspaces';
+
+// Tags
+export {
+  getTags,
+  createTag,
+  deleteTag,
+  getEntityTags,
+  addTagToEntity,
+  removeTagFromEntity,
+} from './tags';
+
+export type {
+  Tag,
+  TagCreate,
+} from './tags';

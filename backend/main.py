@@ -23,7 +23,7 @@ from api.routes import auth, users, chats, messages, criteria, ai, stats, entiti
 from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees, documents, magic_button, pen
 from api.routes import candidate_search, extension_download, prometheus_invite, csv_import
 from api.routes import candidate_database, recruiter_workspaces
-from api.routes import timeoff, blockers
+from api.routes import timeoff, blockers, tags
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
@@ -595,6 +595,14 @@ try:
     logger.info("Blockers router registered successfully at /api/blockers")
 except Exception as e:
     logger.error(f"FAILED to register blockers router: {e}")
+    raise
+
+logger.info("=== REGISTERING TAGS ROUTER ===")
+try:
+    app.include_router(tags.router, prefix="/api/tags", tags=["tags"])
+    logger.info("Tags router registered successfully at /api/tags")
+except Exception as e:
+    logger.error(f"FAILED to register tags router: {e}")
     raise
 
 

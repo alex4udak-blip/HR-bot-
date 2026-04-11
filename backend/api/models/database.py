@@ -534,6 +534,7 @@ class Entity(Base):
     ai_analyses = relationship("EntityAnalysis", back_populates="entity", cascade="all, delete-orphan")
     criteria = relationship("EntityCriteria", back_populates="entity", uselist=False, cascade="all, delete-orphan")
     files = relationship("EntityFile", back_populates="entity", cascade="all, delete-orphan")
+    tag_objects = relationship("EntityTag", secondary="entity_tags", back_populates="entities")
 
     # Expected salary for candidates
     expected_salary_min = Column(Integer, nullable=True)
@@ -1699,3 +1700,34 @@ class Blocker(Base):
     __table_args__ = (
         Index('ix_blocker_org_status', 'org_id', 'status'),
     )
+
+
+# ==================== Tags / Labels ====================
+
+# Many-to-many association table: Entity <-> EntityTag
+entity_tag_association = Base.metadata.tables.get("entity_tags") or \
+    type(Base).__table_cls__(
+        "entity_tags",
+        Base.metadata,
+        Column("entity_id", Integer, ForeignKey("entities.id", ondelete="CASCADE"), primary_key=True),
+        Column("tag_id", Integer, ForeignKey("entity_tags_catalog.id", ondelete="CASCADE"), primary_key=True),
+    )
+
+
+class EntityTag(Base):
+    """Tag/label that can be attached to entities (candidates, clients, etc.)"""
+    __tablename__ = "entity_tags_catalog"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    color = Column(String(20), nullable=False, default="#3b82f6")
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('org_id', 'name', name='uq_entity_tag_org_name'),
+        Index('ix_entity_tag_org', 'org_id'),
+    )
+
+    entities = relationship("Entity", secondary="entity_tags", back_populates="tag_objects")

@@ -114,6 +114,39 @@ async def ensure_shadow_columns():
             '''))
             await conn.execute(text('CREATE INDEX ix_blocker_org_status ON blockers (org_id, status)'))
 
+        # Check and create entity_tags_catalog table
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'entity_tags_catalog')\"
+        ))
+        if not result.scalar():
+            print('Creating entity_tags_catalog table...')
+            await conn.execute(text('''
+                CREATE TABLE entity_tags_catalog (
+                    id SERIAL PRIMARY KEY,
+                    org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    name VARCHAR(100) NOT NULL,
+                    color VARCHAR(20) NOT NULL DEFAULT '#3b82f6',
+                    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    created_at TIMESTAMP DEFAULT now(),
+                    CONSTRAINT uq_entity_tag_org_name UNIQUE (org_id, name)
+                )
+            '''))
+            await conn.execute(text('CREATE INDEX ix_entity_tag_org ON entity_tags_catalog (org_id)'))
+
+        # Check and create entity_tags association table
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'entity_tags')\"
+        ))
+        if not result.scalar():
+            print('Creating entity_tags association table...')
+            await conn.execute(text('''
+                CREATE TABLE entity_tags (
+                    entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                    tag_id INTEGER NOT NULL REFERENCES entity_tags_catalog(id) ON DELETE CASCADE,
+                    PRIMARY KEY (entity_id, tag_id)
+                )
+            '''))
+
         print('All columns verified')
     await engine.dispose()
 
