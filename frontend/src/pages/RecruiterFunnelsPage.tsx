@@ -128,6 +128,7 @@ export default function RecruiterFunnelsPage() {
   const [detailTab, setDetailTab] = useState<'info' | 'resume'>('info');
   const [entityFiles, setEntityFiles] = useState<EntityFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
+  const [currentResumePage, setCurrentResumePage] = useState(0);
 
   // Load data
   useEffect(() => {
@@ -216,6 +217,7 @@ export default function RecruiterFunnelsPage() {
     setSelectedTab('all');
     setCandidateHistory([]);
     setDetailTab('info');
+    setCurrentResumePage(0);
   }, [selectedVacancyId]);
 
   const loadCandidates = useCallback(async (vacancyId: number) => {
@@ -354,11 +356,23 @@ export default function RecruiterFunnelsPage() {
       .finally(() => setFilesLoading(false));
   }, [selectedCandidate?.entity_id]);
 
-  // Resume files (PDFs only) for iframe display
-  const resumeFiles = useMemo(
-    () => entityFiles.filter(f => f.file_type === 'resume' && f.mime_type === 'application/pdf'),
+  // Resume: original PDF + page images (JPEG renders from backend)
+  const resumePdf = useMemo(
+    () => entityFiles.find(f => f.file_type === 'resume' && f.mime_type === 'application/pdf') || null,
     [entityFiles],
   );
+  const resumePages = useMemo(
+    () => entityFiles
+      .filter(f => f.file_type === 'resume' && f.mime_type === 'image/jpeg')
+      .sort((a, b) => {
+        // Sort by page number extracted from file_name "Резюме стр. N.jpg"
+        const numA = parseInt(a.file_name.match(/(\d+)/)?.[1] || '0');
+        const numB = parseInt(b.file_name.match(/(\d+)/)?.[1] || '0');
+        return numA - numB;
+      }),
+    [entityFiles],
+  );
+  const hasResume = resumePdf !== null || resumePages.length > 0;
 
   // Auto-select first candidate when tab changes
   useEffect(() => {
@@ -906,9 +920,9 @@ export default function RecruiterFunnelsPage() {
                           >
                             <FileText className="w-3.5 h-3.5" />
                             Резюме
-                            {resumeFiles.length > 0 && (
+                            {hasResume && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-500/15 text-accent-400 ml-1">
-                                {resumeFiles.length}
+                                {resumePages.length || 1}
                               </span>
                             )}
                           </button>
@@ -1042,13 +1056,13 @@ export default function RecruiterFunnelsPage() {
                               </div>
                             </div>
                           ) : (
-                            /* Resume tab */
+                            /* Resume tab — Huntflow-style page viewer */
                             <div className="flex-1 flex flex-col h-full">
                               {filesLoading ? (
                                 <div className="flex items-center justify-center py-16">
                                   <Loader2 className="w-6 h-6 animate-spin text-accent-500" />
                                 </div>
-                              ) : resumeFiles.length === 0 ? (
+                              ) : !hasResume ? (
                                 <div className="flex flex-col items-center justify-center py-16 text-center">
                                   <FileText className="w-12 h-12 text-dark-600 mb-3" />
                                   <p className="text-sm text-dark-400">Нет загруженных резюме</p>
@@ -1066,27 +1080,77 @@ export default function RecruiterFunnelsPage() {
                                   )}
                                 </div>
                               ) : (
-                                <div className="flex-1 flex flex-col p-4 gap-3">
-                                  {resumeFiles.map(file => (
-                                    <div key={file.id} className="flex-1 flex flex-col min-h-0">
-                                      <div className="flex items-center justify-between mb-2">
-                                        <span className="text-xs text-dark-400 truncate">{file.file_name}</span>
+                                <div className="flex-1 flex flex-col">
+                                  {/* Action bar */}
+                                  <div className="flex items-center justify-between px-5 py-2.5 border-b border-white/[0.06] flex-shrink-0">
+                                    <div className="flex items-center gap-3">
+                                      {resumePdf && (
                                         <a
-                                          href={`/api/entities/${file.entity_id}/files/${file.id}/download`}
+                                          href={`/api/entities/${resumePdf.entity_id}/files/${resumePdf.id}/download`}
                                           target="_blank"
                                           rel="noopener noreferrer"
-                                          className="text-xs text-accent-400 hover:text-accent-300 transition-colors"
+                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] text-xs text-dark-300 hover:bg-white/[0.04] transition-colors"
                                         >
+                                          <FileText className="w-3.5 h-3.5" />
                                           Скачать
                                         </a>
-                                      </div>
-                                      <iframe
-                                        src={`/api/entities/${file.entity_id}/files/${file.id}/download`}
-                                        className="flex-1 w-full rounded-lg border border-white/[0.06] bg-white min-h-[600px]"
-                                        title={file.file_name}
-                                      />
+                                      )}
                                     </div>
-                                  ))}
+                                    {/* Page indicator */}
+                                    {resumePages.length > 1 && (
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          onClick={() => setCurrentResumePage(p => Math.max(0, p - 1))}
+                                          disabled={currentResumePage === 0}
+                                          className="p-1 rounded hover:bg-white/[0.06] disabled:opacity-30 transition-colors"
+                                        >
+                                          <ChevronRight className="w-4 h-4 text-dark-400 rotate-180" />
+                                        </button>
+                                        <span className="text-xs text-dark-400">
+                                          Страница {currentResumePage + 1}/{resumePages.length}
+                                        </span>
+                                        <button
+                                          onClick={() => setCurrentResumePage(p => Math.min(resumePages.length - 1, p + 1))}
+                                          disabled={currentResumePage >= resumePages.length - 1}
+                                          className="p-1 rounded hover:bg-white/[0.06] disabled:opacity-30 transition-colors"
+                                        >
+                                          <ChevronRight className="w-4 h-4 text-dark-400" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Resume file name */}
+                                  {resumePdf && (
+                                    <div className="px-5 py-2 border-b border-white/[0.04] flex-shrink-0">
+                                      <a
+                                        href={`/api/entities/${resumePdf.entity_id}/files/${resumePdf.id}/download`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1.5 text-xs text-dark-400 hover:text-accent-400 transition-colors"
+                                      >
+                                        <Briefcase className="w-3 h-3" />
+                                        {resumePdf.file_name}
+                                      </a>
+                                    </div>
+                                  )}
+
+                                  {/* Page image or PDF fallback */}
+                                  <div className="flex-1 overflow-y-auto flex justify-center p-4 bg-dark-900/50">
+                                    {resumePages.length > 0 ? (
+                                      <img
+                                        src={`/api/entities/${resumePages[currentResumePage].entity_id}/files/${resumePages[currentResumePage].id}/download`}
+                                        alt={`Резюме стр. ${currentResumePage + 1}`}
+                                        className="max-w-full h-auto rounded-lg shadow-2xl border border-white/[0.06]"
+                                      />
+                                    ) : resumePdf ? (
+                                      <iframe
+                                        src={`/api/entities/${resumePdf.entity_id}/files/${resumePdf.id}/download`}
+                                        className="w-full h-full rounded-lg border border-white/[0.06] bg-white min-h-[600px]"
+                                        title={resumePdf.file_name}
+                                      />
+                                    ) : null}
+                                  </div>
                                 </div>
                               )}
                             </div>
