@@ -2,7 +2,7 @@ from datetime import datetime, time
 from typing import Optional
 from sqlalchemy import (
     BigInteger, Boolean, Column, DateTime, Enum as SQLEnum,
-    ForeignKey, Index, Integer, LargeBinary, String, Text, JSON, Time, func, text, UniqueConstraint
+    ForeignKey, Index, Integer, LargeBinary, String, Table, Text, JSON, Time, func, text, UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 import enum
@@ -1705,13 +1705,13 @@ class Blocker(Base):
 # ==================== Tags / Labels ====================
 
 # Many-to-many association table: Entity <-> EntityTag
-entity_tag_association = Base.metadata.tables.get("entity_tags") or \
-    type(Base).__table_cls__(
-        "entity_tags",
-        Base.metadata,
-        Column("entity_id", Integer, ForeignKey("entities.id", ondelete="CASCADE"), primary_key=True),
-        Column("tag_id", Integer, ForeignKey("entity_tags_catalog.id", ondelete="CASCADE"), primary_key=True),
-    )
+entity_tag_association = Table(
+    "entity_tags",
+    Base.metadata,
+    Column("entity_id", Integer, ForeignKey("entities.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("entity_tags_catalog.id", ondelete="CASCADE"), primary_key=True),
+    extend_existing=True,
+)
 
 
 class EntityTag(Base):
