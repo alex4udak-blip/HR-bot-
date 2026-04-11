@@ -1526,6 +1526,22 @@ export default function RecruiterFunnelsPage() {
                                           Скачать
                                         </a>
                                       )}
+                                      <button
+                                        onClick={() => setResumeTextMode(v => !v)}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-colors ${resumeTextMode ? 'border-accent-500/30 text-accent-400 bg-accent-500/10' : 'border-white/[0.08] text-dark-300 hover:bg-white/[0.04]'}`}
+                                      >
+                                        <FileText className="w-3.5 h-3.5" />
+                                        Текст
+                                      </button>
+                                      {Object.keys(resumePageUrls).length > 0 && (
+                                        <button
+                                          onClick={handlePrintResume}
+                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] text-xs text-dark-300 hover:bg-white/[0.04] transition-colors"
+                                        >
+                                          <Printer className="w-3.5 h-3.5" />
+                                          Печать
+                                        </button>
+                                      )}
                                     </div>
                                     {/* Page indicator */}
                                     {resumePages.length > 1 && (
