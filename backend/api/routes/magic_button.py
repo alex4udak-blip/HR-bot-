@@ -179,6 +179,7 @@ async def _do_magic_parse(data, db, current_user):
             vacancy_id=data.vacancy_id,
             entity_id=entity.id,
             stage=ApplicationStage.applied,
+            source=data.source,
         )
         db.add(app)
 
