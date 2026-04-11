@@ -242,9 +242,9 @@ export default function Layout() {
   // Auto-switch active block based on current URL
   useEffect(() => {
     const path = location.pathname;
-    if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path === '/dashboard' || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager') || path.startsWith('/chats') || path.startsWith('/timeoff') || path.startsWith('/blockers')) {
+    if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager') || path.startsWith('/chats') || path.startsWith('/timeoff') || path.startsWith('/blockers')) {
       setActiveBlock('projects');
-    } else if (['/all-candidates', '/workspaces', '/my-funnels', '/candidate-database', '/form-builder', '/practice-list', '/document-templates', '/employees', '/my-profile', '/vacancies', '/candidates', '/interns', '/analytics', '/pen', '/calls', '/extension', '/exports', '/import'].some(p => path.startsWith(p))) {
+    } else if (['/dashboard', '/all-candidates', '/workspaces', '/my-funnels', '/candidate-database', '/form-builder', '/practice-list', '/document-templates', '/employees', '/my-profile', '/vacancies', '/candidates', '/interns', '/analytics', '/pen', '/calls', '/extension', '/exports', '/import'].some(p => path.startsWith(p))) {
       setActiveBlock('hr');
     } else if (['/users', '/departments', '/settings', '/admin', '/trash'].some(p => path.startsWith(p))) {
       setActiveBlock('admin');
@@ -266,7 +266,6 @@ export default function Layout() {
       id: 'projects',
       label: 'Проекты',
       items: [
-        { path: '/dashboard', icon: LayoutDashboard, label: 'Дашборд' },
         { path: '/projects', icon: FolderKanban, label: 'Все проекты' },
         { path: '/all-tasks', icon: ListTodo, label: 'Все задачи' },
         { path: '/chats', icon: MessageSquare, label: 'Чаты' },
@@ -285,6 +284,7 @@ export default function Layout() {
     if (isHrRole) {
       const hrItems: { path: string; icon: LucideIcon; label: string }[] = [];
       // Базовые HR — видят все HR роли
+      hrItems.push({ path: '/dashboard', icon: LayoutDashboard, label: 'Дашборд' });
       hrItems.push({ path: '/all-candidates', icon: Users, label: 'Все кандидаты' });
       hrItems.push({ path: '/my-funnels', icon: GitBranch, label: 'Мои воронки' });
       hrItems.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
