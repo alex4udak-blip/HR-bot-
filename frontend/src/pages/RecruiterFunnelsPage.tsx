@@ -32,7 +32,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity } from '@/services/api';
+import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, createApplication } from '@/services/api';
 import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
 import { VacancyStatusBadge } from '@/components/vacancies';
@@ -165,6 +165,8 @@ export default function RecruiterFunnelsPage() {
   const [reconverting, setReconverting] = useState(false);
   const [resumePageUrls, setResumePageUrls] = useState<Record<number, string>>({});
   const [resumeImageError, setResumeImageError] = useState(false);
+  const [resumeTextMode, setResumeTextMode] = useState(false);
+  const [entityExtraData, setEntityExtraData] = useState<Record<string, unknown> | null>(null);
 
   // "Add to vacancy" dropdown state
   const [showAddToVacancy, setShowAddToVacancy] = useState(false);
@@ -397,6 +399,16 @@ export default function RecruiterFunnelsPage() {
       .finally(() => setFilesLoading(false));
   }, [selectedCandidate?.entity_id]);
 
+  // Load entity extra_data for resume text view
+  useEffect(() => {
+    setResumeTextMode(false);
+    setEntityExtraData(null);
+    if (!selectedCandidate?.entity_id) return;
+    getEntity(selectedCandidate.entity_id)
+      .then(entity => setEntityExtraData(entity.extra_data || null))
+      .catch(() => setEntityExtraData(null));
+  }, [selectedCandidate?.entity_id]);
+
   // Resume: original document (PDF or DOC/DOCX) + page images (JPEG renders from backend)
   const resumeOriginal = useMemo(
     () => entityFiles.find(f => f.file_type === 'resume' && f.mime_type !== 'image/jpeg') || null,
@@ -463,6 +475,61 @@ export default function RecruiterFunnelsPage() {
     }
   };
 
+  // Print resume handler
+  const handlePrintResume = useCallback(() => {
+    const urls = Object.values(resumePageUrls).filter(Boolean);
+    if (urls.length === 0) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    const imagesHtml = urls.map(url =>
+      `<img src="${url}" style="max-width:100%;page-break-after:always;display:block;margin:0 auto;" />`
+    ).join('');
+    printWindow.document.write(`<!DOCTYPE html><html><head><title>\u0420\u0435\u0437\u044e\u043c\u0435</title><style>@media print{body{margin:0}img{page-break-after:always}}</style></head><body>${imagesHtml}</body></html>`);
+    printWindow.document.close();
+    printWindow.onload = () => { printWindow.print(); };
+  }, [resumePageUrls]);
+
+  // Build resume text from entity extra_data
+  const resumeTextContent = useMemo(() => {
+    if (!entityExtraData) return null;
+    const parts: string[] = [];
+    if (entityExtraData.summary) {
+      parts.push(String(entityExtraData.summary));
+    }
+    if (Array.isArray(entityExtraData.skills) && entityExtraData.skills.length > 0) {
+      parts.push('\n--- \u041d\u0430\u0432\u044b\u043a\u0438 ---');
+      parts.push((entityExtraData.skills as string[]).join(', '));
+    }
+    if (Array.isArray(entityExtraData.experience) && entityExtraData.experience.length > 0) {
+      parts.push('\n--- \u041e\u043f\u044b\u0442 \u0440\u0430\u0431\u043e\u0442\u044b ---');
+      for (const exp of entityExtraData.experience as Array<Record<string, string>>) {
+        const line = [exp.position, exp.company, exp.start_date && exp.end_date ? `${exp.start_date} \u2014 ${exp.end_date}` : exp.start_date || exp.end_date].filter(Boolean).join(' | ');
+        if (line) parts.push(line);
+        if (exp.description) parts.push(exp.description);
+        parts.push('');
+      }
+    }
+    if (Array.isArray(entityExtraData.education) && entityExtraData.education.length > 0) {
+      parts.push('\n--- \u041e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u043d\u0438\u0435 ---');
+      for (const edu of entityExtraData.education as Array<Record<string, string>>) {
+        const line = [edu.degree, edu.field, edu.institution, edu.year].filter(Boolean).join(' | ');
+        if (line) parts.push(line);
+      }
+    }
+    if (Array.isArray(entityExtraData.languages) && entityExtraData.languages.length > 0) {
+      parts.push('\n--- \u042f\u0437\u044b\u043a\u0438 ---');
+      parts.push((entityExtraData.languages as string[]).join(', '));
+    }
+    if (entityExtraData.location) {
+      parts.push('\n--- \u041c\u0435\u0441\u0442\u043e\u043f\u043e\u043b\u043e\u0436\u0435\u043d\u0438\u0435 ---');
+      parts.push(String(entityExtraData.location));
+    }
+    if (entityExtraData.experience_years) {
+      parts.push(`\n\u041e\u043f\u044b\u0442: ${entityExtraData.experience_years} \u043b\u0435\u0442`);
+    }
+    return parts.length > 0 ? parts.join('\n') : null;
+  }, [entityExtraData]);
+
   // Auto-select first candidate when tab changes
   useEffect(() => {
     if (tabFilteredCandidates.length > 0 && !selectedCandidateId) {
@@ -510,6 +577,50 @@ export default function RecruiterFunnelsPage() {
       toast.error('Ошибка смены статуса');
     }
   }, [fetchVacancies, stagesConfig]);
+
+  // Close "add to vacancy" dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (addToVacancyRef.current && !addToVacancyRef.current.contains(e.target as Node)) {
+        setShowAddToVacancy(false);
+      }
+    };
+    if (showAddToVacancy) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showAddToVacancy]);
+
+  // Get vacancies available for adding a candidate (exclude current vacancy, show only open ones)
+  const availableVacanciesForCandidate = useMemo(() => {
+    if (!selectedCandidate?.entity_id) return [];
+    return vacancies.filter(v =>
+      v.id !== selectedVacancyId &&
+      v.status === 'open'
+    );
+  }, [vacancies, selectedVacancyId, selectedCandidate?.entity_id]);
+
+  // Handle adding candidate to another vacancy
+  const handleAddToVacancy = useCallback(async (targetVacancyId: number) => {
+    if (!selectedCandidate?.entity_id) return;
+    setAddingToVacancy(true);
+    try {
+      await createApplication(targetVacancyId, {
+        vacancy_id: targetVacancyId,
+        entity_id: selectedCandidate.entity_id,
+        source: 'manual_add',
+      });
+      const targetVacancy = vacancies.find(v => v.id === targetVacancyId);
+      toast.success(`Кандидат добавлен в «${targetVacancy?.title || targetVacancyId}»`);
+      setShowAddToVacancy(false);
+      fetchVacancies();
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || 'Ошибка добавления на вакансию';
+      toast.error(detail);
+    } finally {
+      setAddingToVacancy(false);
+    }
+  }, [selectedCandidate?.entity_id, vacancies, fetchVacancies]);
 
   // ==================== Render ====================
 
@@ -1113,6 +1224,101 @@ export default function RecruiterFunnelsPage() {
                                 )}
                               </div>
 
+                              
+                              {/* Tags / Metki */}
+                              <div className="mb-6">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Tag className="w-3.5 h-3.5 text-dark-500" />
+                                  <span className="text-xs font-medium text-dark-500 uppercase tracking-wider">Метки</span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {entityTags.map(tag => (
+                                    <span
+                                      key={tag.id}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                                      style={{
+                                        backgroundColor: tag.color + '20',
+                                        color: tag.color,
+                                        border: `1px solid ${tag.color}40`,
+                                      }}
+                                    >
+                                      {tag.name}
+                                      <button
+                                        onClick={() => handleRemoveTag(tag.id)}
+                                        className="ml-0.5 hover:opacity-70 transition-opacity"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    </span>
+                                  ))}
+                                  <div className="relative" ref={tagDropdownRef}>
+                                    <button
+                                      onClick={() => setShowTagDropdown(!showTagDropdown)}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-dark-400 border border-dashed border-white/[0.1] hover:border-white/[0.2] hover:text-dark-300 transition-colors"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                    </button>
+                                    {showTagDropdown && (
+                                      <div className="absolute left-0 top-full mt-1 z-50 w-56 bg-dark-800 border border-white/[0.1] rounded-lg shadow-xl overflow-hidden">
+                                        <div className="max-h-48 overflow-y-auto">
+                                          {orgTags
+                                            .filter(t => !entityTags.find(et => et.id === t.id))
+                                            .map(tag => (
+                                              <button
+                                                key={tag.id}
+                                                onClick={() => { handleAddTag(tag.id); setShowTagDropdown(false); }}
+                                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-dark-200 hover:bg-white/[0.04] transition-colors text-left"
+                                              >
+                                                <span
+                                                  className="w-3 h-3 rounded-full flex-shrink-0"
+                                                  style={{ backgroundColor: tag.color }}
+                                                />
+                                                {tag.name}
+                                              </button>
+                                            ))}
+                                          {orgTags.filter(t => !entityTags.find(et => et.id === t.id)).length === 0 && (
+                                            <div className="px-3 py-2 text-xs text-dark-500">Нет доступных меток</div>
+                                          )}
+                                        </div>
+                                        <div className="border-t border-white/[0.06] p-2">
+                                          <div className="flex items-center gap-1.5 mb-1.5">
+                                            {TAG_PALETTE.map(p => (
+                                              <button
+                                                key={p.color}
+                                                onClick={() => setNewTagColor(p.color)}
+                                                className="w-4 h-4 rounded-full transition-transform"
+                                                style={{
+                                                  backgroundColor: p.color,
+                                                  transform: newTagColor === p.color ? 'scale(1.3)' : 'scale(1)',
+                                                  boxShadow: newTagColor === p.color ? `0 0 0 2px ${p.color}60` : 'none',
+                                                }}
+                                              />
+                                            ))}
+                                          </div>
+                                          <div className="flex items-center gap-1">
+                                            <input
+                                              type="text"
+                                              value={newTagName}
+                                              onChange={e => setNewTagName(e.target.value)}
+                                              onKeyDown={e => { if (e.key === 'Enter') handleCreateTag(); }}
+                                              placeholder="Новая метка..."
+                                              className="flex-1 px-2 py-1 text-xs bg-dark-700 border border-white/[0.1] rounded text-dark-200 placeholder:text-dark-500 focus:outline-none focus:border-white/[0.2]"
+                                            />
+                                            <button
+                                              onClick={handleCreateTag}
+                                              disabled={creatingTag || !newTagName.trim()}
+                                              className="px-2 py-1 text-xs rounded bg-white/[0.06] text-dark-300 hover:bg-white/[0.1] disabled:opacity-40 transition-colors"
+                                            >
+                                              {creatingTag ? <Loader2 className="w-3 h-3 animate-spin" /> : '+'}
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
                               {/* Quick action buttons */}
                               <div className="flex items-center gap-1 mb-6 pb-5 border-b border-white/[0.06]">
                                 <button
@@ -1360,9 +1566,23 @@ export default function RecruiterFunnelsPage() {
                                     </div>
                                   )}
 
-                                  {/* Page image or PDF fallback */}
+                                  {/* Page image / text view / PDF fallback */}
                                   <div className="flex-1 overflow-y-auto flex justify-center p-4 bg-dark-900/50">
-                                    {resumePages.length > 0 && !resumeImageError ? (
+                                    {resumeTextMode ? (
+                                      <div className="w-full max-w-3xl">
+                                        {resumeTextContent ? (
+                                          <pre className="whitespace-pre-wrap font-mono text-sm text-dark-200 leading-relaxed p-6 bg-dark-800/80 rounded-lg border border-white/[0.06]">
+                                            {resumeTextContent}
+                                          </pre>
+                                        ) : (
+                                          <div className="flex flex-col items-center gap-3 py-16 text-center">
+                                            <FileText className="w-10 h-10 text-dark-600" />
+                                            <p className="text-sm text-dark-400">Текстовая версия недоступна</p>
+                                            <p className="text-xs text-dark-500">Данные резюме не были распарсены</p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : resumePages.length > 0 && !resumeImageError ? (
                                       resumePageUrls[currentResumePage] ? (
                                         <img
                                           src={resumePageUrls[currentResumePage]}

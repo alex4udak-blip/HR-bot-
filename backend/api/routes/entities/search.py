@@ -430,25 +430,17 @@ async def apply_entity_to_vacancy(
     if not vacancy:
         raise HTTPException(404, "Vacancy not found")
 
-    # Check if entity is already in ANY active vacancy
-    existing_any_vacancy = await db.execute(
-        select(VacancyApplication)
-        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
-        .where(
+    # Check if candidate already has an application for THIS vacancy (prevent duplicates)
+    existing_same_vacancy = await db.execute(
+        select(VacancyApplication).where(
             VacancyApplication.entity_id == entity_id,
-            Vacancy.status != VacancyStatus.closed
+            VacancyApplication.vacancy_id == data.vacancy_id
         )
     )
-    existing_app = existing_any_vacancy.scalar()
-    if existing_app:
-        # Get vacancy title for better error message
-        existing_vacancy_result = await db.execute(
-            select(Vacancy.title).where(Vacancy.id == existing_app.vacancy_id)
-        )
-        existing_vacancy_title = existing_vacancy_result.scalar() or "another vacancy"
+    if existing_same_vacancy.scalar():
         raise HTTPException(
             status_code=400,
-            detail=f"Candidate is already in vacancy \"{existing_vacancy_title}\". Remove them first."
+            detail="Candidate is already applied to this vacancy"
         )
 
     # Get max stage_order for the 'applied' stage

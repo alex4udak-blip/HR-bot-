@@ -129,25 +129,17 @@ async def create_application(
             detail="Cannot add candidate from different organization"
         )
 
-    # Check if candidate is already in ANY active vacancy (one candidate = max one vacancy)
-    existing_any_vacancy = await db.execute(
-        select(VacancyApplication)
-        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
-        .where(
+    # Check if candidate already has an application for THIS vacancy (prevent duplicates)
+    existing_same_vacancy = await db.execute(
+        select(VacancyApplication).where(
             VacancyApplication.entity_id == data.entity_id,
-            Vacancy.status != VacancyStatus.closed  # Only active vacancies
+            VacancyApplication.vacancy_id == vacancy_id
         )
     )
-    existing_app = existing_any_vacancy.scalar()
-    if existing_app:
-        # Get vacancy title for better error message
-        existing_vacancy_result = await db.execute(
-            select(Vacancy.title).where(Vacancy.id == existing_app.vacancy_id)
-        )
-        existing_vacancy_title = existing_vacancy_result.scalar() or "другую вакансию"
+    if existing_same_vacancy.scalar():
         raise HTTPException(
             status_code=400,
-            detail=f"Кандидат уже добавлен в вакансию \"{existing_vacancy_title}\". Сначала удалите его оттуда."
+            detail="Кандидат уже добавлен в эту вакансию"
         )
 
     # Use candidate's current Entity.status as initial stage (converted via STATUS_SYNC_MAP)
