@@ -16,6 +16,12 @@ import {
   LayoutList,
   Columns3,
   FileText,
+  Mail,
+  Calendar,
+  MessageSquare,
+  ThumbsUp,
+  Paperclip,
+  XCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -1029,6 +1035,58 @@ export default function RecruiterFunnelsPage() {
                                     <span className="text-dark-200">{selectedCandidate.source}</span>
                                   </div>
                                 )}
+                              </div>
+
+                              {/* Quick action buttons */}
+                              <div className="flex items-center gap-1 mb-6 pb-5 border-b border-white/[0.06]">
+                                <button
+                                  onClick={() => {
+                                    if (selectedCandidate.entity_email) {
+                                      window.open(`mailto:${selectedCandidate.entity_email}`);
+                                    } else {
+                                      toast.error('Email кандидата не указан');
+                                    }
+                                  }}
+                                  className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-dark-400 hover:text-dark-200"
+                                >
+                                  <Mail className="w-4 h-4" />
+                                  <span className="text-[10px]">Письмо</span>
+                                </button>
+                                <button
+                                  onClick={() => toast('Скоро будет доступно', { icon: '📅' })}
+                                  className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-dark-400 hover:text-dark-200"
+                                >
+                                  <Calendar className="w-4 h-4" />
+                                  <span className="text-[10px]">Интервью</span>
+                                </button>
+                                <button
+                                  onClick={() => toast('Скоро будет доступно', { icon: '💬' })}
+                                  className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-dark-400 hover:text-dark-200"
+                                >
+                                  <MessageSquare className="w-4 h-4" />
+                                  <span className="text-[10px]">Комментарий</span>
+                                </button>
+                                <button
+                                  onClick={() => toast('Скоро будет доступно', { icon: '👍' })}
+                                  className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-dark-400 hover:text-dark-200"
+                                >
+                                  <ThumbsUp className="w-4 h-4" />
+                                  <span className="text-[10px]">Оффер</span>
+                                </button>
+                                <button
+                                  onClick={() => toast('Скоро будет доступно', { icon: '📎' })}
+                                  className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-dark-400 hover:text-dark-200"
+                                >
+                                  <Paperclip className="w-4 h-4" />
+                                  <span className="text-[10px]">Файл</span>
+                                </button>
+                                <button
+                                  onClick={() => handleStageChange(selectedCandidate.id, 'rejected' as ApplicationStage)}
+                                  className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-dark-400 hover:text-red-400"
+                                >
+                                  <XCircle className="w-4 h-4" />
+                                  <span className="text-[10px]">Отказ</span>
+                                </button>
                               </div>
 
                               {/* Current stage */}
