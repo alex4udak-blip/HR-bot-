@@ -149,11 +149,8 @@ async def convert_pdf_to_images(
                 mime_type="image/jpeg",
                 description=f"Автоконвертация из PDF (стр. {page_num + 1})",
                 uploaded_by=uploaded_by,
+                file_data=img_bytes,
             )
-            try:
-                img_file.file_data = img_bytes
-            except Exception:
-                pass
             db.add(img_file)
             created_files.append(img_file)
 
@@ -643,10 +640,7 @@ async def upload_entity_file(
     )
 
     # Store file content in DB (bytea) — survives container restarts
-    try:
-        entity_file.file_data = content
-    except Exception:
-        pass  # Column may not exist yet if migration hasn't run
+    entity_file.file_data = content
 
     db.add(entity_file)
     await db.commit()
@@ -893,6 +887,136 @@ async def download_entity_file(
         f"file_name='{entity_file.file_name}' | no disk file, no DB data"
     )
     raise HTTPException(404, "File not found")
+
+
+@router.post("/{entity_id}/files/reconvert-resume")
+async def reconvert_resume_images(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Re-generate page images from the original resume PDF stored in DB.
+    Useful when file_data was not saved for page images (legacy bug).
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=AccessLevel.edit)
+    if not has_access:
+        raise HTTPException(403, "No edit permission")
+
+    # Find original resume PDF/DOC with file_data
+    resume_result = await db.execute(
+        select(EntityFile).where(
+            EntityFile.entity_id == entity_id,
+            EntityFile.file_type == EntityFileType.resume,
+            EntityFile.mime_type.in_(['application/pdf', 'application/msword',
+                                      'application/vnd.openxmlformats-officedocument.wordprocessingml.document']),
+        )
+    )
+    originals = resume_result.scalars().all()
+
+    if not originals:
+        raise HTTPException(404, "No resume PDF/DOC found for this entity")
+
+    # Find one with file_data
+    source_file = None
+    for f in originals:
+        if f.file_data:
+            source_file = f
+            break
+
+    if not source_file:
+        raise HTTPException(404, "Original resume has no stored data (file_data is empty)")
+
+    # Delete old page images (the broken ones with NULL file_data)
+    old_pages = await db.execute(
+        select(EntityFile).where(
+            EntityFile.entity_id == entity_id,
+            EntityFile.file_type == EntityFileType.resume,
+            EntityFile.mime_type == "image/jpeg",
+        )
+    )
+    for old_page in old_pages.scalars().all():
+        await db.delete(old_page)
+    await db.flush()
+
+    # Convert PDF to images from DB data
+    pdf_bytes = source_file.file_data
+
+    # If it's a DOC/DOCX, we need the PDF — check if there's a converted PDF
+    if source_file.mime_type != 'application/pdf':
+        # Try to find a PDF version
+        pdf_result = await db.execute(
+            select(EntityFile).where(
+                EntityFile.entity_id == entity_id,
+                EntityFile.file_type == EntityFileType.resume,
+                EntityFile.mime_type == 'application/pdf',
+            )
+        )
+        pdf_file = pdf_result.scalar_one_or_none()
+        if pdf_file and pdf_file.file_data:
+            pdf_bytes = pdf_file.file_data
+        else:
+            raise HTTPException(400, "Cannot reconvert: original is DOC/DOCX and no PDF version with data exists")
+
+    created_files = []
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        entity_files_dir = ENTITY_FILES_DIR / str(entity_id)
+        entity_files_dir.mkdir(parents=True, exist_ok=True)
+
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            zoom = PDF_RENDER_DPI / 72
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat)
+            img_bytes = pix.tobytes(output="jpeg")
+
+            img_name = f"cv_page_{page_num + 1}_{uuid.uuid4().hex[:8]}.jpg"
+            img_path = entity_files_dir / img_name
+            try:
+                img_path.write_bytes(img_bytes)
+            except Exception:
+                pass
+
+            img_file = EntityFile(
+                entity_id=entity_id,
+                org_id=org.id,
+                file_type=EntityFileType.resume,
+                file_name=f"Резюме стр. {page_num + 1}.jpg",
+                file_path=str(img_path),
+                file_size=len(img_bytes),
+                mime_type="image/jpeg",
+                description=f"Автоконвертация из PDF (стр. {page_num + 1})",
+                uploaded_by=current_user.id,
+                file_data=img_bytes,
+            )
+            db.add(img_file)
+            created_files.append(img_file)
+
+        doc.close()
+        await db.commit()
+
+    except Exception as e:
+        file_logger.error(f"RECONVERT failed for entity {entity_id}: {e}")
+        raise HTTPException(500, f"Reconversion failed: {str(e)}")
+
+    return {
+        "success": True,
+        "pages_created": len(created_files),
+        "entity_id": entity_id,
+    }
 
 
 @router.post("/{entity_id}/files/cleanup")

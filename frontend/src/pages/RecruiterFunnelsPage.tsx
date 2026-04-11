@@ -21,7 +21,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles } from '@/services/api';
+import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile } from '@/services/api';
 import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
 import { VacancyStatusBadge } from '@/components/vacancies';
@@ -129,6 +129,9 @@ export default function RecruiterFunnelsPage() {
   const [entityFiles, setEntityFiles] = useState<EntityFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const [currentResumePage, setCurrentResumePage] = useState(0);
+  const [reconverting, setReconverting] = useState(false);
+  const [resumePageUrls, setResumePageUrls] = useState<Record<number, string>>({});
+  const [resumeImageError, setResumeImageError] = useState(false);
 
   // Load data
   useEffect(() => {
@@ -373,6 +376,50 @@ export default function RecruiterFunnelsPage() {
     [entityFiles],
   );
   const hasResume = resumePdf !== null || resumePages.length > 0;
+
+  // Load blob URLs for resume page images
+  useEffect(() => {
+    // Cleanup old URLs
+    Object.values(resumePageUrls).forEach(url => URL.revokeObjectURL(url));
+    setResumePageUrls({});
+    setResumeImageError(false);
+    setCurrentResumePage(0);
+
+    if (resumePages.length === 0) return;
+
+    resumePages.forEach((page, idx) => {
+      downloadEntityFile(page.entity_id, page.id)
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          setResumePageUrls(prev => ({ ...prev, [idx]: url }));
+        })
+        .catch(() => {
+          setResumeImageError(true);
+        });
+    });
+
+    return () => {
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      Object.values(resumePageUrls).forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [resumePages]);
+
+  // Reconvert handler
+  const handleReconvert = async () => {
+    if (!selectedCandidate?.entity_id) return;
+    setReconverting(true);
+    try {
+      const result = await reconvertResume(selectedCandidate.entity_id);
+      toast.success(`Пересоздано ${result.pages_created} стр.`);
+      // Reload files
+      const files = await getEntityFiles(selectedCandidate.entity_id);
+      setEntityFiles(files);
+    } catch {
+      toast.error('Не удалось пересоздать страницы');
+    } finally {
+      setReconverting(false);
+    }
+  };
 
   // Auto-select first candidate when tab changes
   useEffect(() => {
@@ -1137,12 +1184,36 @@ export default function RecruiterFunnelsPage() {
 
                                   {/* Page image or PDF fallback */}
                                   <div className="flex-1 overflow-y-auto flex justify-center p-4 bg-dark-900/50">
-                                    {resumePages.length > 0 ? (
-                                      <img
-                                        src={`/api/entities/${resumePages[currentResumePage].entity_id}/files/${resumePages[currentResumePage].id}/download`}
-                                        alt={`Резюме стр. ${currentResumePage + 1}`}
-                                        className="max-w-full h-auto rounded-lg shadow-2xl border border-white/[0.06]"
-                                      />
+                                    {resumePages.length > 0 && !resumeImageError ? (
+                                      resumePageUrls[currentResumePage] ? (
+                                        <img
+                                          src={resumePageUrls[currentResumePage]}
+                                          alt={`Резюме стр. ${currentResumePage + 1}`}
+                                          className="max-w-full h-auto rounded-lg shadow-2xl border border-white/[0.06]"
+                                        />
+                                      ) : (
+                                        <div className="flex items-center justify-center py-20">
+                                          <Loader2 className="w-6 h-6 text-dark-500 animate-spin" />
+                                        </div>
+                                      )
+                                    ) : resumeImageError && resumePdf ? (
+                                      <div className="flex flex-col items-center gap-4 py-16 text-center">
+                                        <FileText className="w-12 h-12 text-dark-600" />
+                                        <p className="text-sm text-dark-400">Страницы резюме не загружены</p>
+                                        <p className="text-xs text-dark-500">Файлы изображений отсутствуют в базе</p>
+                                        <button
+                                          onClick={handleReconvert}
+                                          disabled={reconverting}
+                                          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 transition-colors text-sm font-medium disabled:opacity-50"
+                                        >
+                                          {reconverting ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                          ) : (
+                                            <FileText className="w-4 h-4" />
+                                          )}
+                                          {reconverting ? 'Пересоздание...' : 'Пересоздать из PDF'}
+                                        </button>
+                                      </div>
                                     ) : resumePdf ? (
                                       <iframe
                                         src={`/api/entities/${resumePdf.entity_id}/files/${resumePdf.id}/download`}

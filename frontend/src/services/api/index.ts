@@ -160,6 +160,7 @@ export {
   uploadEntityFile,
   deleteEntityFile,
   downloadEntityFile,
+  reconvertResume,
   // Parser
   parseResumeFromUrl,
   parseResumeFromFile,

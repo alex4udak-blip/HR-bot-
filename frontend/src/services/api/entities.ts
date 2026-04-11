@@ -546,6 +546,11 @@ export const deleteEntityFile = async (entityId: number, fileId: number): Promis
   await debouncedMutation<void>('delete', `/entities/${entityId}/files/${fileId}`);
 };
 
+export const reconvertResume = async (entityId: number): Promise<{ success: boolean; pages_created: number }> => {
+  const { data } = await api.post(`/entities/${entityId}/files/reconvert-resume`);
+  return data;
+};
+
 export const downloadEntityFile = async (entityId: number, fileId: number): Promise<Blob> => {
   const response = await fetch(`/api/entities/${entityId}/files/${fileId}/download`, {
     credentials: 'include'
