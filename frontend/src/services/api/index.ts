@@ -630,6 +630,29 @@ export type {
   BulkActionResult,
 } from './candidates';
 
+// TimeOff
+export {
+  getTimeOffRequests,
+  getTimeOffCalendar,
+  approveTimeOff,
+  rejectTimeOff,
+} from './timeoff';
+
+export type {
+  TimeOffRequest,
+  TimeOffCalendarEntry,
+} from './timeoff';
+
+// Blockers
+export {
+  getBlockers,
+  resolveBlocker,
+} from './blockers';
+
+export type {
+  Blocker,
+} from './blockers';
+
 // Workspaces
 export {
   getWorkspaces,

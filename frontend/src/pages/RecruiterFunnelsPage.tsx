@@ -7,14 +7,10 @@ import {
   ChevronRight,
   ChevronDown,
   Search,
-  LayoutList,
-  Columns3,
   X,
   Loader2,
   FolderOpen,
   Menu,
-  Settings,
-  Trash2,
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react';
@@ -22,7 +18,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, updateVacancy } from '@/services/api';
+import { getUsers, getApplications, updateApplication, getApplicationHistory } from '@/services/api';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
 import { VacancyStatusBadge } from '@/components/vacancies';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
@@ -74,26 +70,6 @@ const STAGE_COLORS: Record<string, { bg: string; text: string; dot: string; badg
   sky:          { bg: 'bg-sky-500/10',     text: 'text-sky-400',     dot: 'bg-sky-400',     badge: 'bg-sky-500/15 text-sky-400' },
 };
 
-// Color palette for picker
-const COLOR_PALETTE = [
-  { key: 'blue',    dot: 'bg-blue-400' },
-  { key: 'cyan',    dot: 'bg-cyan-400' },
-  { key: 'teal',    dot: 'bg-teal-400' },
-  { key: 'green',   dot: 'bg-green-400' },
-  { key: 'lime',    dot: 'bg-lime-400' },
-  { key: 'yellow',  dot: 'bg-yellow-400' },
-  { key: 'amber',   dot: 'bg-amber-400' },
-  { key: 'orange',  dot: 'bg-orange-400' },
-  { key: 'red',     dot: 'bg-red-400' },
-  { key: 'rose',    dot: 'bg-rose-400' },
-  { key: 'pink',    dot: 'bg-pink-400' },
-  { key: 'purple',  dot: 'bg-purple-400' },
-  { key: 'violet',  dot: 'bg-violet-400' },
-  { key: 'indigo',  dot: 'bg-indigo-400' },
-  { key: 'sky',     dot: 'bg-sky-400' },
-  { key: 'gray',    dot: 'bg-gray-400' },
-];
-
 // Map color key to STAGE_COLORS key (some overlap with enum names)
 const colorToStageColor = (colorKey?: string, enumVal?: string): string => {
   if (colorKey && STAGE_COLORS[colorKey]) return colorKey;
@@ -133,13 +109,15 @@ export default function RecruiterFunnelsPage() {
 
   // ClickUp view: selected vacancy + candidates
   const selectedVacancyId = searchParams.get('v') ? Number(searchParams.get('v')) : null;
-  const [view, setView] = useState<'funnels' | 'list' | 'board'>('funnels');
   const [candidates, setCandidates] = useState<VacancyApplication[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
-  const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set());
-  const [editingStage, setEditingStage] = useState<string | null>(null);
-  const [editingLabel, setEditingLabel] = useState('');
+
+  // Master-detail state
+  const [selectedTab, setSelectedTab] = useState<string>('all');
+  const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
+  const [candidateHistory, setCandidateHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // Load data
   useEffect(() => {
@@ -221,11 +199,12 @@ export default function RecruiterFunnelsPage() {
   useEffect(() => {
     if (!selectedVacancyId) {
       setCandidates([]);
-      if (view !== 'funnels') setView('funnels');
       return;
     }
     loadCandidates(selectedVacancyId);
-    if (view === 'funnels') setView('list');
+    setSelectedCandidateId(null);
+    setSelectedTab('all');
+    setCandidateHistory([]);
   }, [selectedVacancyId]);
 
   const loadCandidates = useCallback(async (vacancyId: number) => {
@@ -315,6 +294,49 @@ export default function RecruiterFunnelsPage() {
     return result;
   }, [filteredCandidates, stagesConfig]);
 
+  // Derive grouped as a Record for quick count lookup by key
+  const groupedByStageMap = useMemo(() => {
+    const map: Record<string, VacancyApplication[]> = {};
+    for (const [key, items] of groupedByStage) {
+      map[key] = items;
+    }
+    return map;
+  }, [groupedByStage]);
+
+  // Master-detail derived data
+  const selectedCandidate = useMemo(
+    () => candidates.find(c => c.id === selectedCandidateId) || null,
+    [candidates, selectedCandidateId],
+  );
+
+  const tabFilteredCandidates = useMemo(() => {
+    if (selectedTab === 'all') return filteredCandidates;
+    return filteredCandidates.filter(c => {
+      const candidateStageKeys = stagesConfig.enumToKeys[c.stage] || [];
+      return candidateStageKeys.includes(selectedTab);
+    });
+  }, [filteredCandidates, selectedTab, stagesConfig]);
+
+  // Load history when candidate selected
+  useEffect(() => {
+    if (!selectedCandidateId) {
+      setCandidateHistory([]);
+      return;
+    }
+    setHistoryLoading(true);
+    getApplicationHistory(selectedCandidateId)
+      .then(data => setCandidateHistory(Array.isArray(data) ? data : []))
+      .catch(() => setCandidateHistory([]))
+      .finally(() => setHistoryLoading(false));
+  }, [selectedCandidateId]);
+
+  // Auto-select first candidate when tab changes
+  useEffect(() => {
+    if (tabFilteredCandidates.length > 0 && !selectedCandidateId) {
+      setSelectedCandidateId(tabFilteredCandidates[0].id);
+    }
+  }, [tabFilteredCandidates]);
+
   // Handlers
   const toggleGroup = (userId: number) => {
     setExpandedGroups((prev) => {
@@ -328,22 +350,11 @@ export default function RecruiterFunnelsPage() {
   const selectVacancy = (vacancyId: number) => {
     setSearchParams({ v: String(vacancyId) });
     setCandidateSearch('');
-    setCollapsedStages(new Set());
     setMobileSidebar(false);
   };
 
   const deselectVacancy = () => {
     setSearchParams({});
-    setView('funnels');
-  };
-
-  const toggleStage = (stage: string) => {
-    setCollapsedStages((prev) => {
-      const next = new Set(prev);
-      if (next.has(stage)) next.delete(stage);
-      else next.add(stage);
-      return next;
-    });
   };
 
   const handleFunnelCreated = (vacancy: Vacancy) => {
@@ -366,98 +377,6 @@ export default function RecruiterFunnelsPage() {
       toast.error('Ошибка смены статуса');
     }
   }, [fetchVacancies, stagesConfig]);
-
-  // Build current columns array from vacancy or defaults
-  const getCurrentColumns = useCallback((): StageColumn[] => {
-    const cols = selectedVacancy?.custom_stages?.columns as StageColumn[] | undefined;
-    if (cols && cols.length > 0) return cols;
-    return STAGE_ORDER.map(key => ({ key, label: STAGE_LABELS[key] || key, visible: true }));
-  }, [selectedVacancy]);
-
-  // Inline rename stage
-  const handleStageRename = useCallback(async (stageKey: string, newLabel: string) => {
-    if (!selectedVacancyId || !newLabel.trim()) {
-      setEditingStage(null);
-      return;
-    }
-    const columns = getCurrentColumns().map(c =>
-      c.key === stageKey ? { ...c, label: newLabel.trim() } : c
-    );
-    try {
-      await updateVacancy(selectedVacancyId, { custom_stages: { columns } });
-      fetchVacancies();
-      toast.success('Этап переименован');
-    } catch {
-      toast.error('Ошибка сохранения');
-    }
-    setEditingStage(null);
-  }, [selectedVacancyId, getCurrentColumns, fetchVacancies]);
-
-  // Add new virtual stage — immediately show inline editor
-  const handleAddStage = useCallback(async () => {
-    if (!selectedVacancyId) return;
-    const columns = getCurrentColumns();
-    const key = `custom_${Date.now()}`;
-    // Insert before rejected/withdrawn
-    const rejIdx = columns.findIndex(c => (c.maps_to || c.key) === 'rejected');
-    const newCol: StageColumn = { key, label: 'Новый этап', visible: true, maps_to: 'screening' };
-    if (rejIdx >= 0) {
-      columns.splice(rejIdx, 0, newCol);
-    } else {
-      columns.push(newCol);
-    }
-    try {
-      await updateVacancy(selectedVacancyId, { custom_stages: { columns } });
-      await fetchVacancies();
-      // Activate inline editing on the new stage
-      setEditingStage(key);
-      setEditingLabel('Новый этап');
-    } catch {
-      toast.error('Ошибка добавления');
-    }
-  }, [selectedVacancyId, getCurrentColumns, fetchVacancies]);
-
-  // Change stage color
-  const handleStageColorChange = useCallback(async (stageKey: string, newColor: string) => {
-    if (!selectedVacancyId) return;
-    const columns = getCurrentColumns().map(c =>
-      c.key === stageKey ? { ...c, color: newColor } : c
-    );
-    try {
-      await updateVacancy(selectedVacancyId, { custom_stages: { columns } });
-      fetchVacancies();
-    } catch {
-      toast.error('Ошибка сохранения');
-    }
-  }, [selectedVacancyId, getCurrentColumns, fetchVacancies]);
-
-  // Delete virtual stage
-  const handleStageDelete = useCallback(async (stageKey: string) => {
-    if (!selectedVacancyId) return;
-    const columns = getCurrentColumns().filter(c => c.key !== stageKey);
-    if (columns.length < 2) {
-      toast.error('Минимум 2 этапа');
-      return;
-    }
-    try {
-      await updateVacancy(selectedVacancyId, { custom_stages: { columns } });
-      fetchVacancies();
-      toast.success('Этап удалён');
-    } catch {
-      toast.error('Ошибка удаления');
-    }
-  }, [selectedVacancyId, getCurrentColumns, fetchVacancies]);
-
-  const [colorPickerStage, setColorPickerStage] = useState<string | null>(null);
-
-  const formatDate = (iso?: string | null) => {
-    if (!iso) return '';
-    try {
-      return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
-    } catch {
-      return '';
-    }
-  };
 
   // ==================== Render ====================
 
@@ -688,9 +607,9 @@ export default function RecruiterFunnelsPage() {
             )}
           </div>
         ) : (
-          /* Vacancy selected — show candidates */
-          <>
-            {/* Top bar: breadcrumb + view tabs */}
+          /* Vacancy selected — show candidates (Huntflow-style master-detail) */
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Top bar: breadcrumb + search */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-5 py-2 sm:py-3 gap-2 border-b border-white/[0.06] bg-white/[0.01] flex-shrink-0">
               {/* Breadcrumb */}
               <div className="flex items-center gap-1.5 text-sm min-w-0">
@@ -727,7 +646,7 @@ export default function RecruiterFunnelsPage() {
                 </span>
               </div>
 
-              {/* View tabs + search */}
+              {/* Search */}
               <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
                 <div className="relative flex-1 sm:flex-none">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dark-500" />
@@ -739,305 +658,235 @@ export default function RecruiterFunnelsPage() {
                     className="w-full sm:w-44 pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
                   />
                 </div>
-                <div className="flex items-center bg-white/[0.03] rounded-lg border border-white/[0.06] p-0.5">
-                  <button
-                    onClick={() => setView('list')}
-                    className={clsx(
-                      'flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded-md text-xs font-medium transition-colors',
-                      view === 'list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200',
-                    )}
-                  >
-                    <LayoutList className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Список</span>
-                  </button>
-                  <button
-                    onClick={() => setView('board')}
-                    className={clsx(
-                      'flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded-md text-xs font-medium transition-colors',
-                      view === 'board' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200',
-                    )}
-                  >
-                    <Columns3 className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Доска</span>
-                  </button>
-                </div>
               </div>
             </div>
 
-            {/* Content area */}
-            <div className="flex-1 overflow-y-auto">
-              {candidatesLoading ? (
-                <div className="flex items-center justify-center py-16">
-                  <div className="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+            {candidatesLoading ? (
+              <div className="flex items-center justify-center py-16 flex-1">
+                <div className="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <>
+                {/* Stage tabs */}
+                <div className="flex items-center gap-1 px-4 py-2 border-b border-white/[0.06] overflow-x-auto no-scrollbar flex-shrink-0">
+                  <button
+                    onClick={() => { setSelectedTab('all'); setSelectedCandidateId(null); }}
+                    className={clsx(
+                      'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+                      selectedTab === 'all'
+                        ? 'bg-accent-500 text-white'
+                        : 'text-dark-400 hover:bg-white/[0.06]'
+                    )}
+                  >
+                    Все <span className="ml-1 text-xs opacity-70">{filteredCandidates.length}</span>
+                  </button>
+                  {stagesConfig.keys.map(key => {
+                    const count = groupedByStageMap[key]?.length || 0;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => { setSelectedTab(key); setSelectedCandidateId(null); }}
+                        className={clsx(
+                          'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+                          selectedTab === key
+                            ? 'bg-accent-500 text-white'
+                            : 'text-dark-400 hover:bg-white/[0.06]'
+                        )}
+                      >
+                        {stagesConfig.labels[key]} <span className="ml-1 text-xs opacity-70">{count}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-              ) : view === 'list' ? (
-                /* ===== LIST VIEW: grouped by stage ===== */
-                <div className="px-3 sm:px-5 py-3 space-y-1">
-                  {groupedByStage.length === 0 ? (
-                    <div className="text-center py-16 text-dark-500 text-sm">
-                      {candidateSearch ? 'Ничего не найдено' : 'Нет кандидатов в этой воронке'}
-                    </div>
-                  ) : (
-                    groupedByStage.map(([stage, items]) => {
-                      const ck = stagesConfig.colorKeys[stage] || stagesConfig.keyToEnum[stage] || stage;
-                      const colors = STAGE_COLORS[ck] || fallbackColor;
-                      const collapsed = collapsedStages.has(stage);
-                      const isVirtual = stagesConfig.isVirtual[stage];
-                      return (
-                        <div key={stage} className="mb-1">
-                          {/* Stage group header — inline editable */}
+
+                {/* Master-Detail split */}
+                <div className="flex-1 flex overflow-hidden">
+                  {/* Left: candidate list */}
+                  <div className="w-[350px] flex-shrink-0 border-r border-white/[0.06] overflow-y-auto">
+                    {tabFilteredCandidates.length === 0 ? (
+                      <div className="flex items-center justify-center h-40 text-dark-500 text-sm">
+                        Нет кандидатов
+                      </div>
+                    ) : (
+                      tabFilteredCandidates.map(candidate => {
+                        const isSelected = candidate.id === selectedCandidateId;
+                        const initials = (candidate.entity_name || '?')[0].toUpperCase();
+                        return (
                           <div
+                            key={candidate.id}
+                            onClick={() => setSelectedCandidateId(candidate.id)}
                             className={clsx(
-                              'w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors group/stage relative',
-                              colors.bg,
+                              'flex items-start gap-3 px-4 py-3 cursor-pointer border-b border-white/[0.04] transition-colors',
+                              isSelected
+                                ? 'bg-accent-500/10 border-l-2 border-l-accent-500'
+                                : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'
                             )}
                           >
-                            <button onClick={() => toggleStage(stage)} className="flex-shrink-0">
-                              {collapsed ? (
-                                <ChevronRight className={clsx('w-4 h-4', colors.text)} />
-                              ) : (
-                                <ChevronDown className={clsx('w-4 h-4', colors.text)} />
+                            <div className="w-9 h-9 rounded-full bg-accent-500/20 flex items-center justify-center text-accent-400 text-sm font-medium flex-shrink-0">
+                              {initials}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-dark-100 truncate">
+                                {candidate.entity_name || 'Без имени'}
+                              </div>
+                              {candidate.entity_position && (
+                                <div className="text-xs text-dark-500 truncate mt-0.5">
+                                  {candidate.entity_position}
+                                </div>
                               )}
-                            </button>
-                            {/* Color dot — click to open color picker */}
-                            <button
-                              onClick={() => setColorPickerStage(colorPickerStage === stage ? null : stage)}
-                              className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0 ring-2 ring-transparent hover:ring-white/20 transition-all cursor-pointer', colors.dot)}
-                              title="Изменить цвет"
-                            />
-                            {/* Color picker dropdown */}
-                            {colorPickerStage === stage && (
-                              <div className="absolute top-full left-8 mt-1 z-50 p-2 bg-dark-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl">
-                                <div className="grid grid-cols-8 gap-1.5">
-                                  {COLOR_PALETTE.map(c => (
-                                    <button
-                                      key={c.key}
-                                      onClick={() => {
-                                        handleStageColorChange(stage, c.key);
-                                        setColorPickerStage(null);
-                                      }}
-                                      className={clsx('w-5 h-5 rounded-full transition-transform hover:scale-125', c.dot)}
-                                      title={c.key}
-                                    />
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {editingStage === stage ? (
-                              <input
-                                autoFocus
-                                value={editingLabel}
-                                onChange={(e) => setEditingLabel(e.target.value)}
-                                onBlur={() => handleStageRename(stage, editingLabel)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') handleStageRename(stage, editingLabel);
-                                  if (e.key === 'Escape') setEditingStage(null);
-                                }}
-                                className={clsx(
-                                  'bg-transparent border-b-2 border-current outline-none text-sm font-semibold uppercase px-1 py-0',
-                                  colors.text,
+                              <div className="text-xs text-dark-600 mt-0.5">
+                                {candidate.source || ''}
+                                {candidate.applied_at && (
+                                  <span className="ml-1">{new Date(candidate.applied_at).toLocaleDateString('ru')}</span>
                                 )}
-                              />
-                            ) : (
-                              <span
-                                onDoubleClick={() => {
-                                  setEditingStage(stage);
-                                  setEditingLabel(stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage);
-                                }}
-                                className={clsx('text-sm font-semibold uppercase cursor-text', colors.text)}
-                                title="Дважды кликните для переименования"
-                              >
-                                {stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage}
-                              </span>
-                            )}
-                            <span className={clsx('text-xs ml-1', colors.text)}>
-                              {items.length}
-                            </span>
-                            {/* Rename icon */}
-                            <button
-                              onClick={() => {
-                                setEditingStage(stage);
-                                setEditingLabel(stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage);
-                              }}
-                              className="p-1 rounded hover:bg-white/[0.1] transition-colors opacity-0 group-hover/stage:opacity-100"
-                              title="Переименовать"
-                            >
-                              <Settings className="w-3 h-3 text-dark-400" />
-                            </button>
-                            {/* Delete — only virtual stages */}
-                            {isVirtual && (
-                              <button
-                                onClick={() => handleStageDelete(stage)}
-                                className="p-1 rounded hover:bg-red-500/20 transition-colors opacity-0 group-hover/stage:opacity-100"
-                                title="Удалить этап"
-                              >
-                                <Trash2 className="w-3 h-3 text-red-400/60 hover:text-red-400" />
-                              </button>
-                            )}
-                          </div>
-
-                          {/* Candidate rows */}
-                          {!collapsed && (
-                            <div className="mt-0.5">
-                              {/* Column headers — hidden on mobile, show on md+ */}
-                              <div className="hidden md:grid grid-cols-[1fr_140px_100px_140px_100px] gap-2 px-3 py-1.5 text-[11px] text-dark-500 font-medium uppercase tracking-wide">
-                                <span>Имя</span>
-                                <span>Статус</span>
-                                <span>Дата</span>
-                                <span>Telegram</span>
-                                <span>Источник</span>
                               </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
 
-                              {items.map((c) => (
-                                <div
-                                  key={c.id}
-                                  onClick={() => navigate(`/contacts/${c.entity_id}`)}
-                                  className="flex flex-col md:grid md:grid-cols-[1fr_140px_100px_140px_100px] gap-1 md:gap-2 px-3 py-2.5 md:py-2 hover:bg-white/[0.03] rounded-lg cursor-pointer transition-colors border-b border-white/[0.03] last:border-b-0 group"
-                                >
-                                  {/* Row 1 on mobile: Name + Stage */}
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <div className="w-6 h-6 rounded-full bg-accent-500/10 flex items-center justify-center text-[10px] text-accent-400 font-medium flex-shrink-0">
-                                      {(c.entity_name || '?').charAt(0).toUpperCase()}
-                                    </div>
-                                    <span className="text-sm text-dark-100 truncate group-hover:text-accent-400 transition-colors">
-                                      {c.entity_name || 'Без имени'}
-                                    </span>
-                                    {/* Stage badge inline on mobile */}
-                                    <div className="md:hidden ml-auto flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                      <StageDropdown
-                                        currentStage={c.stage as ApplicationStage}
-                                        onChangeStage={(newStage) => handleStageChange(c.id, newStage)}
-                                        customLabels={stagesConfig.labels}
-                                      />
-                                    </div>
-                                  </div>
-                                  {/* Status badge — desktop only (separate column) */}
-                                  <div className="hidden md:flex items-center" onClick={(e) => e.stopPropagation()}>
-                                    <StageDropdown
-                                      currentStage={c.stage as ApplicationStage}
-                                      onChangeStage={(newStage) => handleStageChange(c.id, newStage)}
-                                      customLabels={stagesConfig.labels}
-                                    />
-                                  </div>
-                                  {/* Date */}
-                                  <span className="text-xs text-dark-400 flex items-center hidden md:flex">
-                                    {formatDate(c.applied_at)}
-                                  </span>
-                                  {/* Row 2 on mobile: meta info */}
-                                  <div className="flex items-center gap-3 md:hidden pl-8 text-xs text-dark-400">
-                                    {c.applied_at && <span>{formatDate(c.applied_at)}</span>}
-                                    {c.entity_telegram && <span>@{c.entity_telegram}</span>}
-                                    {c.source && <span>{c.source}</span>}
-                                  </div>
-                                  {/* Telegram — desktop only */}
-                                  <span className="text-xs text-dark-400 truncate items-center hidden md:flex">
-                                    {c.entity_telegram ? `@${c.entity_telegram}` : ''}
-                                  </span>
-                                  {/* Source — desktop only */}
-                                  <span className="text-xs text-dark-400 truncate items-center hidden md:flex">
-                                    {c.source || ''}
-                                  </span>
-                                </div>
-                              ))}
+                  {/* Right: detail panel */}
+                  <div className="flex-1 overflow-y-auto">
+                    {selectedCandidate ? (
+                      <div className="p-5 max-w-3xl">
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-3 mb-6">
+                          {selectedCandidate.entity_id && (
+                            <button
+                              onClick={() => navigate(`/contacts/${selectedCandidate.entity_id}`)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04]"
+                            >
+                              <Users className="w-4 h-4" /> Открыть профиль
+                            </button>
+                          )}
+                        </div>
 
-                              {/* Add candidate button */}
-                              <button
-                                onClick={() => navigate(`/candidates?new=1&vacancy=${selectedVacancyId}`)}
-                                className="flex items-center gap-2 px-3 py-2 text-xs text-dark-500 hover:text-dark-300 transition-colors w-full"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>Добавить кандидата</span>
-                              </button>
+                        {/* Name & info */}
+                        <h2 className="text-2xl font-semibold text-dark-100 mb-1">
+                          {selectedCandidate.entity_name || 'Без имени'}
+                        </h2>
+                        {selectedCandidate.entity_position && (
+                          <p className="text-dark-400 mb-4">{selectedCandidate.entity_position}</p>
+                        )}
+
+                        {/* Contact info */}
+                        <div className="space-y-2 mb-6 text-sm">
+                          {selectedCandidate.entity_phone && (
+                            <div className="flex items-center gap-3">
+                              <span className="text-dark-500 w-24">Телефон</span>
+                              <span className="text-dark-200">{selectedCandidate.entity_phone}</span>
+                            </div>
+                          )}
+                          {selectedCandidate.entity_email && (
+                            <div className="flex items-center gap-3">
+                              <span className="text-dark-500 w-24">Email</span>
+                              <span className="text-dark-200">{selectedCandidate.entity_email}</span>
+                            </div>
+                          )}
+                          {selectedCandidate.entity_telegram && (
+                            <div className="flex items-center gap-3">
+                              <span className="text-dark-500 w-24">Telegram</span>
+                              <span className="text-dark-200">@{selectedCandidate.entity_telegram}</span>
+                            </div>
+                          )}
+                          {selectedCandidate.source && (
+                            <div className="flex items-center gap-3">
+                              <span className="text-dark-500 w-24">Источник</span>
+                              <span className="text-dark-200">{selectedCandidate.source}</span>
                             </div>
                           )}
                         </div>
-                      );
-                    })
-                  )}
 
-                  {/* Add stage button */}
-                  {groupedByStage.length > 0 && (
-                    <button
-                      onClick={handleAddStage}
-                      className="w-full flex items-center justify-center gap-2 px-3 py-2.5 mt-2 border border-dashed border-white/[0.1] rounded-lg text-dark-400 hover:text-dark-200 hover:border-white/[0.2] transition-colors text-sm"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Добавить этап
-                    </button>
-                  )}
-                </div>
-              ) : (
-                /* ===== BOARD VIEW (kanban) ===== */
-                <div className="flex gap-2 sm:gap-3 px-3 sm:px-5 py-3 overflow-x-auto h-full">
-                  {groupedByStage.length === 0 ? (
-                    <div className="flex-1 flex items-center justify-center text-dark-500 text-sm">
-                      {candidateSearch ? 'Ничего не найдено' : 'Нет кандидатов в этой воронке'}
-                    </div>
-                  ) : (
-                    groupedByStage.map(([stage, items]) => {
-                      const enumVal2 = stagesConfig.keyToEnum[stage] || stage;
-                      const colors = STAGE_COLORS[enumVal2] || STAGE_COLORS[stage] || fallbackColor;
-                      return (
-                        <div
-                          key={stage}
-                          className="w-[240px] sm:w-[280px] flex-shrink-0 flex flex-col bg-white/[0.02] rounded-xl border border-white/[0.06] overflow-hidden"
-                        >
-                          {/* Column header */}
-                          <div className={clsx('flex items-center gap-2 px-3 py-2.5 border-b border-white/[0.06]', colors.bg)}>
-                            <span className={clsx('w-2 h-2 rounded-full', colors.dot)} />
-                            <span className={clsx('text-sm font-semibold', colors.text)}>
-                              {stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage}
-                            </span>
-                            <span className={clsx('text-xs ml-auto opacity-70', colors.text)}>
-                              {items.length}
-                            </span>
-                          </div>
-
-                          {/* Cards */}
-                          <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                            {items.map((c) => (
-                              <div
-                                key={c.id}
-                                onClick={() => navigate(`/contacts/${c.entity_id}`)}
-                                className="rounded-lg p-3 cursor-pointer border border-white/[0.06] hover:border-accent-500/30 bg-white/[0.02] transition-all group"
-                              >
-                                <div className="flex items-center gap-2 mb-1.5">
-                                  <div className="w-6 h-6 rounded-full bg-accent-500/10 flex items-center justify-center text-[10px] text-accent-400 font-medium flex-shrink-0">
-                                    {(c.entity_name || '?').charAt(0).toUpperCase()}
-                                  </div>
-                                  <span className="text-sm text-dark-100 truncate group-hover:text-accent-400 transition-colors font-medium">
-                                    {c.entity_name || 'Без имени'}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2 text-[11px] text-dark-400">
-                                  {c.entity_telegram && <span>@{c.entity_telegram}</span>}
-                                  {c.source && <span className="ml-auto">{c.source}</span>}
-                                </div>
-                                {c.applied_at && (
-                                  <div className="text-[10px] text-dark-500 mt-1">
-                                    {formatDate(c.applied_at)}
-                                  </div>
-                                )}
+                        {/* Current stage */}
+                        <div className="mb-6 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-xs text-dark-500 mb-1">Текущий этап</div>
+                              <div className="text-sm font-medium text-dark-200">
+                                {stagesConfig.labels[
+                                  (stagesConfig.enumToKeys[selectedCandidate.stage] || [])[0] || selectedCandidate.stage
+                                ] || selectedCandidate.stage}
                               </div>
-                            ))}
+                            </div>
+                            <StageDropdown
+                              currentStage={selectedCandidate.stage as ApplicationStage}
+                              onChangeStage={(newStage) => handleStageChange(selectedCandidate.id, newStage)}
+                              customLabels={stagesConfig.labels}
+                            />
                           </div>
-
-                          {/* Add button */}
-                          <button
-                            onClick={() => navigate(`/candidates?new=1&vacancy=${selectedVacancyId}`)}
-                            className="flex items-center gap-1.5 px-3 py-2 text-xs text-dark-500 hover:text-dark-300 hover:bg-white/[0.03] transition-colors border-t border-white/[0.06]"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            Добавить
-                          </button>
                         </div>
-                      );
-                    })
-                  )}
+
+                        {/* Compatibility score if available */}
+                        {selectedCandidate.compatibility_score != null && (
+                          <div className="mb-6 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
+                            <div className="text-xs text-dark-500 mb-1">Совместимость</div>
+                            <div className="text-lg font-semibold text-accent-400">{selectedCandidate.compatibility_score.overall_score}%</div>
+                          </div>
+                        )}
+
+                        {/* Notes */}
+                        {selectedCandidate.notes && (
+                          <div className="mb-6">
+                            <div className="text-xs text-dark-500 mb-2">Заметки</div>
+                            <div className="text-sm text-dark-300 whitespace-pre-wrap p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                              {selectedCandidate.notes}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* History timeline */}
+                        <div className="mt-6">
+                          <div className="text-xs text-dark-500 mb-3 uppercase tracking-wider">История</div>
+                          {historyLoading ? (
+                            <div className="flex items-center gap-2 text-dark-500 text-sm">
+                              <Loader2 className="w-4 h-4 animate-spin" /> Загрузка...
+                            </div>
+                          ) : candidateHistory.length === 0 ? (
+                            <div className="text-sm text-dark-600">Нет записей</div>
+                          ) : (
+                            <div className="space-y-3">
+                              {candidateHistory.map((entry: any, i: number) => (
+                                <div key={i} className="flex gap-3 text-sm">
+                                  <div className="w-2 h-2 rounded-full bg-accent-500/50 mt-1.5 flex-shrink-0" />
+                                  <div>
+                                    <div className="text-dark-400">
+                                      {entry.from_stage && (
+                                        <>
+                                          <span className="text-dark-500">{stagesConfig.labels[entry.from_stage] || STAGE_LABELS[entry.from_stage] || entry.from_stage}</span>
+                                          <span className="mx-1">&rarr;</span>
+                                        </>
+                                      )}
+                                      <span className="text-dark-300">{stagesConfig.labels[entry.to_stage] || STAGE_LABELS[entry.to_stage] || entry.to_stage}</span>
+                                    </div>
+                                    {entry.comment && (
+                                      <div className="text-dark-500 mt-0.5">{entry.comment}</div>
+                                    )}
+                                    <div className="text-dark-600 text-xs mt-0.5">
+                                      {entry.changed_by && <span>{entry.changed_by} &middot; </span>}
+                                      {entry.created_at && new Date(entry.created_at).toLocaleString('ru')}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center h-full text-dark-500">
+                        <div className="text-center">
+                          <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                          <p className="text-sm">Выберите кандидата из списка</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-          </>
+              </>
+            )}
+          </div>
         )}
       </main>
 
