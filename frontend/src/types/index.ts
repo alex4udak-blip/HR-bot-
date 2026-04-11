@@ -606,6 +606,7 @@ export interface VacancyApplication {
   entity_phone?: string;
   entity_telegram?: string;
   entity_position?: string;
+  entity_company?: string;
   stage: ApplicationStage;
   stage_order: number;
   rating?: number;

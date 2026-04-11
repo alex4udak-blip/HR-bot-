@@ -533,6 +533,7 @@ class ApplicationResponse(BaseModel):
     entity_email: Optional[str] = None
     entity_phone: Optional[str] = None
     entity_position: Optional[str] = None
+    entity_company: Optional[str] = None
     stage: ApplicationStage
     stage_order: int = 0
     rating: Optional[int] = None
@@ -1079,6 +1080,7 @@ async def list_applications(
             entity_email=entity.email if entity else None,
             entity_phone=entity.phone if entity else None,
             entity_position=entity.position if entity else None,
+            entity_company=entity.company if entity else None,
             stage=app.stage,
             stage_order=app.stage_order or 0,
             rating=app.rating,
@@ -1138,25 +1140,17 @@ async def create_application(
             detail="Cannot add candidate from different organization"
         )
 
-    # Check if candidate is already in ANY active vacancy (one candidate = max one vacancy)
-    existing_any_vacancy = await db.execute(
-        select(VacancyApplication)
-        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
-        .where(
+    # Check if candidate already has an application for THIS vacancy (prevent duplicates)
+    existing_same_vacancy = await db.execute(
+        select(VacancyApplication).where(
             VacancyApplication.entity_id == data.entity_id,
-            Vacancy.status != VacancyStatus.closed  # Only active vacancies
+            VacancyApplication.vacancy_id == vacancy_id
         )
     )
-    existing_app = existing_any_vacancy.scalar()
-    if existing_app:
-        # Get vacancy title for better error message
-        existing_vacancy_result = await db.execute(
-            select(Vacancy.title).where(Vacancy.id == existing_app.vacancy_id)
-        )
-        existing_vacancy_title = existing_vacancy_result.scalar() or "другую вакансию"
+    if existing_same_vacancy.scalar():
         raise HTTPException(
             status_code=400,
-            detail=f"Кандидат уже добавлен в вакансию \"{existing_vacancy_title}\". Сначала удалите его оттуда."
+            detail="Кандидат уже добавлен в эту вакансию"
         )
 
     # Use candidate's current Entity.status as initial stage (converted via STATUS_SYNC_MAP)
@@ -1214,6 +1208,7 @@ async def create_application(
         entity_email=entity.email,
         entity_phone=entity.phone,
         entity_position=entity.position,
+        entity_company=entity.company,
         stage=application.stage,
         stage_order=application.stage_order or 0,
         rating=application.rating,
@@ -1322,6 +1317,7 @@ async def update_application(
         entity_email=entity.email if entity else None,
         entity_phone=entity.phone if entity else None,
         entity_position=entity.position if entity else None,
+        entity_company=entity.company if entity else None,
         stage=application.stage,
         stage_order=application.stage_order or 0,
         rating=application.rating,
@@ -1475,6 +1471,7 @@ async def get_kanban_board(
                 entity_email=entity.email if entity else None,
                 entity_phone=entity.phone if entity else None,
                 entity_position=entity.position if entity else None,
+            entity_company=entity.company if entity else None,
                 stage=app.stage,
                 stage_order=app.stage_order or 0,
                 rating=app.rating,
@@ -1591,6 +1588,7 @@ async def get_kanban_column(
             entity_email=entity.email if entity else None,
             entity_phone=entity.phone if entity else None,
             entity_position=entity.position if entity else None,
+            entity_company=entity.company if entity else None,
             stage=app.stage,
             stage_order=app.stage_order or 0,
             rating=app.rating,
@@ -1759,6 +1757,7 @@ async def bulk_move_applications(
             entity_email=entity.email if entity else None,
             entity_phone=entity.phone if entity else None,
             entity_position=entity.position if entity else None,
+            entity_company=entity.company if entity else None,
             stage=app.stage,
             stage_order=app.stage_order or 0,
             rating=app.rating,

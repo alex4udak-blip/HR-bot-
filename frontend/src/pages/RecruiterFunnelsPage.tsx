@@ -26,12 +26,13 @@ import {
   Check,
   CheckSquare,
   Square,
+  Printer,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications } from '@/services/api';
+import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity } from '@/services/api';
 import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
 import { VacancyStatusBadge } from '@/components/vacancies';
@@ -164,6 +165,11 @@ export default function RecruiterFunnelsPage() {
   const [reconverting, setReconverting] = useState(false);
   const [resumePageUrls, setResumePageUrls] = useState<Record<number, string>>({});
   const [resumeImageError, setResumeImageError] = useState(false);
+
+  // "Add to vacancy" dropdown state
+  const [showAddToVacancy, setShowAddToVacancy] = useState(false);
+  const [addingToVacancy, setAddingToVacancy] = useState(false);
+  const addToVacancyRef = useRef<HTMLDivElement>(null);
 
   // Load data
   useEffect(() => {
@@ -1024,6 +1030,41 @@ export default function RecruiterFunnelsPage() {
                                   >
                                     <Users className="w-4 h-4" /> Открыть профиль
                                   </button>
+                                )}
+                                {selectedCandidate.entity_id && (
+                                  <div className="relative" ref={addToVacancyRef}>
+                                    <button
+                                      onClick={() => setShowAddToVacancy(!showAddToVacancy)}
+                                      disabled={addingToVacancy}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] disabled:opacity-50"
+                                    >
+                                      {addingToVacancy ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                      ) : (
+                                        <Plus className="w-4 h-4" />
+                                      )}
+                                      На вакансию
+                                    </button>
+                                    {showAddToVacancy && (
+                                      <div className="absolute top-full left-0 mt-1 w-72 max-h-64 overflow-y-auto z-50 bg-dark-800 border border-white/[0.1] rounded-xl shadow-xl">
+                                        {availableVacanciesForCandidate.length === 0 ? (
+                                          <div className="px-4 py-3 text-sm text-dark-400">Нет доступных вакансий</div>
+                                        ) : (
+                                          availableVacanciesForCandidate.map((v) => (
+                                            <button
+                                              key={v.id}
+                                              onClick={() => handleAddToVacancy(v.id)}
+                                              disabled={addingToVacancy}
+                                              className="w-full text-left px-4 py-2.5 text-sm text-dark-200 hover:bg-white/[0.06] transition-colors flex items-center gap-2 disabled:opacity-50"
+                                            >
+                                              <Briefcase className="w-3.5 h-3.5 text-dark-400 flex-shrink-0" />
+                                              <span className="truncate">{v.title}</span>
+                                            </button>
+                                          ))
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
                                 )}
                               </div>
 
