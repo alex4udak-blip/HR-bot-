@@ -148,6 +148,20 @@ async def ensure_shadow_columns():
             '''))
 
         print('All columns verified')
+
+    # ALTER TYPE ADD VALUE cannot run inside a transaction — use raw connection
+    from sqlalchemy.pool import NullPool
+    raw_engine = create_async_engine(db_url, poolclass=NullPool, isolation_level='AUTOCOMMIT')
+    async with raw_engine.connect() as raw_conn:
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'hr' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'orgrole'))\"
+        ))
+        if not result.scalar():
+            print('Adding hr value to orgrole enum...')
+            await raw_conn.execute(text(\"ALTER TYPE orgrole ADD VALUE 'hr'\"))
+            print('Added hr to orgrole enum')
+    await raw_engine.dispose()
+
     await engine.dispose()
 
 asyncio.run(ensure_shadow_columns())
