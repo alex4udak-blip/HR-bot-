@@ -683,25 +683,30 @@ async def get_candidates_kanban(
                     VacancyApplication.entity_id,
                     Vacancy.title,
                     VacancyApplication.rejection_reason,
-                ).join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
+                ).select_from(VacancyApplication)
+                .join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
                 .where(VacancyApplication.entity_id.in_(entity_ids))
             )
             for row in va_result.all():
-                vacancy_map[row.entity_id] = row.title
-                if row.rejection_reason:
+                if row.entity_id not in vacancy_map:
+                    vacancy_map[row.entity_id] = row.title
+                if row.rejection_reason and row.entity_id not in rejection_map:
                     rejection_map[row.entity_id] = row.rejection_reason
-        except Exception:
-            pass  # non-critical — proceed without vacancy info
+        except Exception as exc:
+            logger.warning(f"Vacancy map query failed (non-critical): {exc}")
 
     # Group by status
     grouped: dict[str, list] = {s: [] for s in KANBAN_STATUSES}
     for e in entities:
-        status_val = e.status.value if hasattr(e.status, "value") else str(e.status)
-        if status_val in grouped:
+        try:
+            status_val = e.status.value if hasattr(e.status, "value") else str(e.status)
+            if status_val not in grouped:
+                continue
             tg = e.telegram_usernames[0] if e.telegram_usernames else None
             source_val = None
-            if e.extra_data and isinstance(e.extra_data, dict):
-                source_val = e.extra_data.get("source")
+            ed = e.extra_data if isinstance(e.extra_data, dict) else {}
+            if ed:
+                source_val = ed.get("source")
 
             grouped[status_val].append(KanbanCard(
                 id=e.id,
@@ -714,15 +719,17 @@ async def get_candidates_kanban(
                 recruiter_name=recruiter_map.get(e.created_by),
                 created_at=e.created_at,
                 tags=e.tags or [],
-                photo_url=None,  # TODO: add photo support
-                company=e.company,
-                city=e.extra_data.get("city") if e.extra_data and isinstance(e.extra_data, dict) else None,
-                age=e.extra_data.get("age") if e.extra_data and isinstance(e.extra_data, dict) else None,
-                salary=e.extra_data.get("salary") if e.extra_data and isinstance(e.extra_data, dict) else None,
-                total_experience=e.extra_data.get("total_experience") if e.extra_data and isinstance(e.extra_data, dict) else None,
+                photo_url=None,
+                company=getattr(e, 'company', None),
+                city=ed.get("city"),
+                age=ed.get("age"),
+                salary=ed.get("salary"),
+                total_experience=ed.get("total_experience"),
                 vacancy_name=vacancy_map.get(e.id),
                 rejection_reason=rejection_map.get(e.id),
             ))
+        except Exception as exc:
+            logger.warning(f"Skipping entity {e.id} in kanban: {exc}")
 
     columns = []
     total = 0
