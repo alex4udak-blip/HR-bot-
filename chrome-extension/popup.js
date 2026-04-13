@@ -118,6 +118,14 @@ function showParsedData() {
   if (parsedData.email) details.push('Email: ' + parsedData.email);
   if (parsedData.phone) details.push('Tel: ' + parsedData.phone);
   if (parsedData.telegram) details.push('TG: ' + parsedData.telegram);
+  if (parsedData.city) details.push('Город: ' + parsedData.city);
+  if (parsedData.age) details.push('Возраст: ' + parsedData.age);
+  if (parsedData.salary) details.push('ЗП: ' + parsedData.salary);
+  if (parsedData.total_experience) details.push('Опыт: ' + parsedData.total_experience);
+  if (parsedData.experience_summary) {
+    const lines = parsedData.experience_summary.split('\n').slice(0, 3);
+    details.push('Последние места: ' + lines.join('; '));
+  }
   document.getElementById('parsedDetails').innerHTML = details.join('<br>');
   document.getElementById('parsedSource').textContent = parsedData.source;
 
@@ -298,6 +306,13 @@ document.getElementById('addBtn').addEventListener('click', async () => {
       source: parsedData.source,
       vacancy_id: vacancyId ? parseInt(vacancyId) : null,
       comment: comment || null,
+      city: parsedData.city || null,
+      age: parsedData.age || null,
+      birthday: parsedData.birthday || null,
+      gender: parsedData.gender || null,
+      salary: parsedData.salary || null,
+      experience_summary: parsedData.experience_summary || null,
+      total_experience: parsedData.total_experience || null,
     });
 
     if (resp.success) {

@@ -21,6 +21,15 @@ class MagicButtonData(BaseModel):
     source_url: str
     source: str  # "hh.ru", "linkedin.com", "career.habr.com"
 
+    # Extra parsed fields
+    city: Optional[str] = None
+    age: Optional[str] = None
+    birthday: Optional[str] = None
+    gender: Optional[str] = None
+    salary: Optional[str] = None
+    experience_summary: Optional[str] = None
+    total_experience: Optional[str] = None
+
     # Recruiter's choice
     vacancy_id: Optional[int] = None  # which funnel to add to
     comment: Optional[str] = None
@@ -153,6 +162,29 @@ async def _do_magic_parse(data, db, current_user):
 
     # Create entity (even if duplicate — per TZ "can still add again")
     tg_list = [data.telegram.lower().lstrip('@')] if data.telegram else []
+
+    # Build extra_data with all parsed fields
+    extra = {
+        "source": data.source,
+        "source_url": data.source_url,
+        "magic_button": True,
+        "comment": data.comment,
+    }
+    if data.city:
+        extra["city"] = data.city
+    if data.age:
+        extra["age"] = data.age
+    if data.birthday:
+        extra["birth_date"] = data.birthday
+    if data.gender:
+        extra["gender"] = data.gender
+    if data.salary:
+        extra["salary"] = data.salary
+    if data.experience_summary:
+        extra["experience_summary"] = data.experience_summary
+    if data.total_experience:
+        extra["total_experience"] = data.total_experience
+
     entity = Entity(
         org_id=org.id,
         type=EntityType.candidate,
@@ -162,12 +194,7 @@ async def _do_magic_parse(data, db, current_user):
         phone=data.phone,
         position=data.position,
         telegram_usernames=tg_list,
-        extra_data={
-            "source": data.source,
-            "source_url": data.source_url,
-            "magic_button": True,
-            "comment": data.comment,
-        },
+        extra_data=extra,
         created_by=current_user.id,
     )
     db.add(entity)
