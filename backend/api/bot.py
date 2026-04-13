@@ -2117,8 +2117,8 @@ async def collect_group_message(message: types.Message):
             logger.info(f"📩 Message from {message.from_user.full_name} (id={message.from_user.id}) in chat {message.chat.id}: auto_tasks={chat_auto_tasks}, content_type={content_type}, content_len={len(content)}")
 
             if content_type == "text" and content and chat_auto_tasks:
-                from ..services.task_trigger import should_trigger
-                trigger_match = should_trigger(content)
+                from ..services.task_trigger import should_trigger_ai
+                trigger_match = await should_trigger_ai(content)
                 logger.info(f"🔍 Auto-tasks check: trigger_match={trigger_match}, text={content[:80]}...")
 
                 # 1. Check for status report first (takes priority over task trigger)

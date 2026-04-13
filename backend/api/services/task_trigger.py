@@ -169,8 +169,50 @@ TRIGGER_REGEX = re.compile('|'.join(TRIGGER_PATTERNS), re.IGNORECASE)
 
 
 def should_trigger(text: str) -> bool:
-    """Check if message contains trigger words."""
+    """Check if message contains trigger words (fast regex pre-filter)."""
     return bool(TRIGGER_REGEX.search(text))
+
+
+async def should_trigger_ai(text: str) -> bool:
+    """Use Claude Haiku to determine if a message contains tasks/plans.
+
+    Falls back to regex if AI is unavailable.
+    """
+    if len(text.strip()) < 10:
+        return False
+
+    # Fast regex check first — if it matches, no need for AI
+    if should_trigger(text):
+        logger.info(f"🔍 Regex trigger matched, skipping AI check")
+        return True
+
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return False
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+
+        response = client.messages.create(
+            model="claude-haiku-4-20250414",
+            max_tokens=10,
+            messages=[{"role": "user", "content": f"""Это сообщение из рабочего чата. Содержит ли оно план работ, задачи на день, или постановку задач кому-то?
+
+Сообщение:
+{text}
+
+Ответь ТОЛЬКО одним словом: ДА или НЕТ"""}],
+        )
+
+        answer = response.content[0].text.strip().upper()
+        result = answer.startswith("ДА") or answer == "YES"
+        logger.info(f"🤖 AI trigger check: '{answer}' -> {result} for: {text[:60]}...")
+        return result
+    except Exception as e:
+        logger.error(f"AI trigger check failed: {e}")
+        # Fallback to regex
+        return False
 
 
 def _extract_project_hint(text: str) -> Optional[str]:
@@ -472,8 +514,9 @@ async def create_tasks_from_message(
         Project, ProjectTask, ProjectMember, ProjectStatus, ProjectRole, User, Chat, OrgMember,
     )
 
-    if not should_trigger(message_text):
-        logger.info(f"⏭️ No trigger match for {user_name}: {message_text[:80]}...")
+    is_task = await should_trigger_ai(message_text)
+    if not is_task:
+        logger.info(f"⏭️ No trigger (regex+AI) for {user_name}: {message_text[:80]}...")
         return []
 
     logger.info(f"✅ Task trigger activated for {user_name}: {message_text[:100]}...")
