@@ -105,7 +105,7 @@ export const DEFAULT_TOUR_STEPS: TourStep[] = [
     title: 'База кандидатов',
     content: 'Здесь хранятся все ваши кандидаты. Вы можете фильтровать, искать и управлять статусами кандидатов.',
     placement: 'right',
-    route: '/candidates',
+    route: '/all-candidates',
     spotlightPadding: 8,
   },
   {
@@ -114,7 +114,7 @@ export const DEFAULT_TOUR_STEPS: TourStep[] = [
     title: 'Загрузить резюме',
     content: 'Нажмите сюда, чтобы загрузить резюме кандидата. Система автоматически распознает данные из PDF, DOC или текста.',
     placement: 'bottom',
-    route: '/candidates',
+    route: '/all-candidates',
     spotlightPadding: 8,
   },
   {
@@ -123,7 +123,7 @@ export const DEFAULT_TOUR_STEPS: TourStep[] = [
     title: 'Умный поиск',
     content: 'Используйте поиск для быстрого нахождения кандидатов по имени, навыкам, email или телефону.',
     placement: 'bottom',
-    route: '/candidates',
+    route: '/all-candidates',
     spotlightPadding: 8,
   },
   {
@@ -132,7 +132,7 @@ export const DEFAULT_TOUR_STEPS: TourStep[] = [
     title: 'Карточка кандидата',
     content: 'Кликните на кандидата, чтобы открыть его подробную карточку с контактами, историей и AI-анализом.',
     placement: 'right',
-    route: '/candidates',
+    route: '/all-candidates',
     spotlightPadding: 4,
   },
   {
@@ -141,7 +141,7 @@ export const DEFAULT_TOUR_STEPS: TourStep[] = [
     title: 'Фильтры кандидатов',
     content: 'Используйте фильтры для быстрого поиска по статусу, зарплате, дате добавления и навыкам кандидатов.',
     placement: 'bottom',
-    route: '/candidates',
+    route: '/all-candidates',
     spotlightPadding: 8,
   },
   {

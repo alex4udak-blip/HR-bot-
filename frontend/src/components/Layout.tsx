@@ -31,7 +31,6 @@ import {
   Puzzle,
   Upload,
   ChevronDown,
-  Database,
   Calendar,
   AlertTriangle,
   ClipboardList,
@@ -52,7 +51,7 @@ import clsx from 'clsx';
 
 // Map paths to data-tour attributes
 const pathToTourAttribute: Record<string, string> = {
-  '/candidates': 'candidates-link',
+  '/all-candidates': 'candidates-link',
   '/contacts': 'contacts-link',
   '/chats': 'chats-link',
   '/dashboard': 'dashboard-link',
@@ -92,7 +91,7 @@ function FABButton({ navigate }: { navigate: (path: string) => void }) {
             Добавить вакансию
           </button>
           <button
-            onClick={() => { navigate('/candidates?new=1'); setOpen(false); }}
+            onClick={() => { navigate('/all-candidates'); setOpen(false); }}
             className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors whitespace-nowrap"
           >
             <UserPlus className="w-4 h-4" />
@@ -245,7 +244,7 @@ export default function Layout() {
     const path = location.pathname;
     if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager') || path.startsWith('/chats') || path.startsWith('/timeoff') || path.startsWith('/blockers')) {
       setActiveBlock('projects');
-    } else if (['/dashboard', '/all-candidates', '/workspaces', '/my-funnels', '/candidate-database', '/form-builder', '/practice-list', '/document-templates', '/employees', '/my-profile', '/vacancies', '/candidates', '/interns', '/analytics', '/hr-reports', '/pen', '/calls', '/extension', '/exports', '/import'].some(p => path.startsWith(p))) {
+    } else if (['/dashboard', '/all-candidates', '/workspaces', '/my-funnels', '/form-builder', '/practice-list', '/document-templates', '/employees', '/my-profile', '/vacancies', '/interns', '/analytics', '/hr-reports', '/pen', '/calls', '/extension', '/exports', '/import'].some(p => path.startsWith(p))) {
       setActiveBlock('hr');
     } else if (['/users', '/departments', '/settings', '/admin', '/trash'].some(p => path.startsWith(p))) {
       setActiveBlock('admin');
@@ -291,7 +290,6 @@ export default function Layout() {
       hrItems.push({ path: '/vacancies', icon: GitBranch, label: 'Заявки' });
       // Расширенные — только admin/owner/superadmin
       if (isHrAdmin) {
-        hrItems.push({ path: '/candidate-database', icon: Database, label: 'База кандидатов' });
         hrItems.push({ path: '/interns', icon: GraduationCap, label: 'Практиканты' });
         hrItems.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
         hrItems.push({ path: '/extension', icon: Puzzle, label: 'Волшебная кнопка' });

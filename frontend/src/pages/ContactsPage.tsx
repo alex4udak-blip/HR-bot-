@@ -754,7 +754,7 @@ export default function ContactsPage() {
               {/* Back to candidates button for candidate entities */}
               {currentEntity.type === 'candidate' && (
                 <button
-                  onClick={() => navigate('/candidates')}
+                  onClick={() => navigate('/all-candidates')}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg text-sm transition-colors flex-shrink-0"
                   title="Перейти к базе кандидатов"
                 >

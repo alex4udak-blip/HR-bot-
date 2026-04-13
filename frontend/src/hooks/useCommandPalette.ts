@@ -82,7 +82,7 @@ export function clearCommandHistory(): void {
  * Static pages available in the app
  */
 const PAGES: PageItem[] = [
-  { id: 'page-candidates', title: 'База кандидатов', path: '/candidates', icon: 'UserCheck', keywords: ['кандидаты', 'база', 'соискатели', 'candidates'] },
+  { id: 'page-candidates', title: 'Все кандидаты', path: '/all-candidates', icon: 'UserCheck', keywords: ['кандидаты', 'база', 'соискатели', 'candidates'] },
   { id: 'page-vacancies', title: 'Вакансии', path: '/vacancies', icon: 'Briefcase', keywords: ['вакансии', 'должности', 'vacancies', 'jobs'] },
   { id: 'page-dashboard', title: 'Главная', path: '/dashboard', icon: 'LayoutDashboard', keywords: ['главная', 'дашборд', 'dashboard', 'home'] },
   { id: 'page-chats', title: 'Чаты', path: '/chats', icon: 'MessageSquare', keywords: ['чаты', 'сообщения', 'переписка', 'chats'] },
@@ -242,7 +242,7 @@ export function useCommandPalette(options: {
       icon: 'UserPlus',
       keywords: ['создать', 'добавить', 'кандидат', 'новый', 'create', 'add', 'candidate'],
       action: () => {
-        navigate('/candidates?action=create');
+        navigate('/all-candidates');
         close();
       }
     },
@@ -264,7 +264,7 @@ export function useCommandPalette(options: {
       icon: 'Upload',
       keywords: ['загрузить', 'импорт', 'резюме', 'файл', 'upload', 'import', 'resume', 'cv'],
       action: () => {
-        navigate('/candidates?action=upload');
+        navigate('/all-candidates');
         close();
       }
     },
@@ -345,7 +345,7 @@ export function useCommandPalette(options: {
         subtitle: [candidate.position, candidate.email, candidate.phone].filter(Boolean).join(' | '),
         icon: 'UserCheck',
         action: () => {
-          navigate(`/candidates/${candidate.id}`);
+          navigate(`/contacts/${candidate.id}`);
           close();
           saveToHistory(searchQuery);
         }

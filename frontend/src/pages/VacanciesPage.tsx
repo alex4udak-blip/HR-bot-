@@ -502,7 +502,7 @@ export default function VacanciesPage() {
           <div className="flex items-center gap-2">
             {/* Navigation to candidates page */}
             <button
-              onClick={() => navigate('/candidates')}
+              onClick={() => navigate('/all-candidates')}
               className="flex items-center gap-2 px-3 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg text-sm transition-colors"
               title="Перейти к базе кандидатов"
             >
