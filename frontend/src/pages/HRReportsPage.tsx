@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   BarChart3, Clock, Users, Filter, ChevronDown, Printer,
-  FileDown, UserCheck, XCircle, ArrowRight, Briefcase,
+  FileDown, UserCheck, XCircle, ArrowRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
