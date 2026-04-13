@@ -145,6 +145,13 @@ export interface KanbanCard {
   created_at: string;
   tags: string[];
   photo_url?: string;
+  company?: string;
+  city?: string;
+  age?: string;
+  salary?: string;
+  total_experience?: string;
+  vacancy_name?: string;
+  rejection_reason?: string;
 }
 
 export interface KanbanColumn {

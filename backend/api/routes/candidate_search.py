@@ -594,6 +594,13 @@ class KanbanCard(BaseModel):
     created_at: datetime
     tags: list = []
     photo_url: Optional[str] = None
+    company: Optional[str] = None
+    city: Optional[str] = None
+    age: Optional[str] = None
+    salary: Optional[str] = None
+    total_experience: Optional[str] = None
+    vacancy_name: Optional[str] = None
+    rejection_reason: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -665,6 +672,25 @@ async def get_candidates_kanban(
         )
         recruiter_map = {row.id: row.name for row in r.all()}
 
+    # Get vacancy names and rejection reasons for entities
+    entity_ids = [e.id for e in entities]
+    vacancy_map = {}
+    rejection_map = {}
+    if entity_ids:
+        from api.models.database import Vacancy, VacancyApplication
+        va_result = await db.execute(
+            select(
+                VacancyApplication.entity_id,
+                Vacancy.title,
+                VacancyApplication.rejection_reason,
+            ).join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
+            .where(VacancyApplication.entity_id.in_(entity_ids))
+        )
+        for row in va_result.all():
+            vacancy_map[row.entity_id] = row.title
+            if row.rejection_reason:
+                rejection_map[row.entity_id] = row.rejection_reason
+
     # Group by status
     grouped: dict[str, list] = {s: [] for s in KANBAN_STATUSES}
     for e in entities:
@@ -687,6 +713,13 @@ async def get_candidates_kanban(
                 created_at=e.created_at,
                 tags=e.tags or [],
                 photo_url=None,  # TODO: add photo support
+                company=e.company,
+                city=e.extra_data.get("city") if e.extra_data and isinstance(e.extra_data, dict) else None,
+                age=e.extra_data.get("age") if e.extra_data and isinstance(e.extra_data, dict) else None,
+                salary=e.extra_data.get("salary") if e.extra_data and isinstance(e.extra_data, dict) else None,
+                total_experience=e.extra_data.get("total_experience") if e.extra_data and isinstance(e.extra_data, dict) else None,
+                vacancy_name=vacancy_map.get(e.id),
+                rejection_reason=rejection_map.get(e.id),
             ))
 
     columns = []
