@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { Vacancy, VacancyApplication, ApplicationStage, KanbanColumn } from '@/types';
-import { APPLICATION_STAGE_LABELS, APPLICATION_STAGE_COLORS } from '@/types';
+import { APPLICATION_STAGE_LABELS } from '@/types';
 import { getKanbanBoard } from '@/services/api';
 import StagesConfigModal from './StagesConfigModal';
 import { useVacancyStore } from '@/stores/vacancyStore';
@@ -45,17 +45,17 @@ function getStagesConfig(vacancy: Vacancy): {
   return { stages, labels };
 }
 
-// Stage badge colors (darker, ClickUp-style)
+// Stage badge colors — Huntflow-style vivid
 const STAGE_BG_COLORS: Record<string, string> = {
-  applied: 'bg-blue-600',
-  screening: 'bg-cyan-600',
-  phone_screen: 'bg-purple-600',
-  interview: 'bg-indigo-600',
-  assessment: 'bg-orange-600',
-  offer: 'bg-yellow-600',
-  hired: 'bg-green-600',
-  rejected: 'bg-red-600',
-  withdrawn: 'bg-gray-600',
+  applied: 'bg-emerald-500',
+  screening: 'bg-cyan-500',
+  phone_screen: 'bg-violet-500',
+  interview: 'bg-amber-500',
+  assessment: 'bg-orange-500',
+  offer: 'bg-yellow-500',
+  hired: 'bg-green-500',
+  rejected: 'bg-red-500',
+  withdrawn: 'bg-gray-500',
 };
 
 interface StatusListViewProps {
@@ -216,10 +216,11 @@ export default function StatusListView({ vacancy }: StatusListViewProps) {
                       </div>
                       <div className="w-28 text-center">
                         <span className={clsx(
-                          'inline-block px-2 py-0.5 rounded text-[10px] font-semibold uppercase',
-                          APPLICATION_STAGE_COLORS[app.stage]
+                          'inline-block px-2 py-0.5 rounded text-[10px] font-semibold uppercase truncate max-w-[110px]',
+                          STAGE_BG_COLORS[app.stage] || 'bg-gray-500',
+                          'text-white'
                         )}>
-                          {(labels[app.stage] || APPLICATION_STAGE_LABELS[app.stage] || app.stage).substring(0, 6)}...
+                          {(labels[app.stage] || APPLICATION_STAGE_LABELS[app.stage] || app.stage).substring(0, 8)}...
                         </span>
                       </div>
                       <div className="w-28 text-center text-xs text-dark-300">

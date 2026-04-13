@@ -395,47 +395,48 @@ export default function VacanciesPage() {
     setSearchParams(newParams, { replace: true });
   };
 
-  // Detail view
+  // Detail view — Huntflow style
   if (currentVacancy && vacancyId) {
     return (
       <div className="h-full w-full max-w-full flex flex-col overflow-hidden">
-        <div className="flex items-center gap-4 p-4 border-b border-white/10">
-          <button
-            onClick={handleBack}
-            className="p-2 glass-button rounded-lg"
-            title="К списку вакансий"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-xl font-semibold">{currentVacancy.title}</h1>
-            <VacancyStatusBadge status={currentVacancy.status} size="sm" />
-          </div>
-          <div className="flex items-center gap-1.5">
-            {/* View mode toggle */}
-            <div className="flex items-center gap-0.5 bg-white/[0.03] rounded-lg p-0.5 border border-white/[0.06]">
-              <button
-                onClick={() => setViewMode('status_list')}
-                className={clsx(
-                  'p-1.5 rounded-md transition-colors',
-                  viewMode === 'status_list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-white/70'
-                )}
-                title="Список по статусам"
-              >
-                <ListTree className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('kanban')}
-                data-tour="kanban-toggle"
-                className={clsx(
-                  'p-1.5 rounded-md transition-colors',
-                  viewMode === 'kanban' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-white/70'
-                )}
-                title="Kanban доска"
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
+        {/* Huntflow-style header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] bg-white/[0.02]">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleBack}
+              className="p-1.5 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[0.06] transition-colors"
+              title="К списку вакансий"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="text-lg font-semibold text-white/90">{currentVacancy.title}</h1>
+              <VacancyStatusBadge status={currentVacancy.status} size="sm" />
             </div>
+          </div>
+          {/* View mode toggle */}
+          <div className="flex items-center gap-0.5 bg-white/[0.04] rounded-lg p-0.5 border border-white/[0.06]">
+            <button
+              onClick={() => setViewMode('status_list')}
+              className={clsx(
+                'p-1.5 rounded-md transition-colors',
+                viewMode === 'status_list' ? 'bg-white/[0.1] text-white' : 'text-dark-400 hover:text-white/70'
+              )}
+              title="Список по статусам"
+            >
+              <ListTree className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('kanban')}
+              data-tour="kanban-toggle"
+              className={clsx(
+                'p-1.5 rounded-md transition-colors',
+                viewMode === 'kanban' ? 'bg-white/[0.1] text-white' : 'text-dark-400 hover:text-white/70'
+              )}
+              title="Kanban доска"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
