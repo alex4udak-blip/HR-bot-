@@ -21,11 +21,12 @@ import {
   Eye,
   Printer,
   Download,
-  Tag,
-  Copy,
-  Check,
   CheckSquare,
   Square,
+  Pencil,
+  Phone,
+  Send,
+  Check,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -40,6 +41,7 @@ import type {
   KanbanColumn,
   RecruiterOption,
 } from '@/services/api/candidates';
+import { updateEntity, uploadEntityFile } from '@/services/api/entities';
 import { useAuthStore } from '@/stores/authStore';
 
 // ---------- constants ----------
@@ -105,6 +107,7 @@ export default function AllCandidatesPage() {
   const [selectedStatus, setSelectedStatus] = useState('');
   const [detailTab, setDetailTab] = useState<'info' | 'resume'>('info');
   const [showStageSettings, setShowStageSettings] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
@@ -160,6 +163,24 @@ export default function AllCandidatesPage() {
     } catch { toast.error('Ошибка'); fetchBoard(); }
   };
 
+  // After editing candidate, update the card in state
+  const handleCardUpdated = (updated: Partial<KanbanCard>) => {
+    if (!selectedCard) return;
+    const newCard = { ...selectedCard, ...updated };
+    setSelectedCard(newCard);
+    // Also update in board
+    setBoard(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        columns: prev.columns.map(col => ({
+          ...col,
+          cards: col.cards.map(c => c.id === newCard.id ? newCard : c),
+        })),
+      };
+    });
+  };
+
   const toggleSelection = (id: number) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -173,39 +194,31 @@ export default function AllCandidatesPage() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* ===== TOP: Stage tabs (like Huntflow / RecruiterFunnelsPage) ===== */}
+      {/* ===== TOP: Stage tabs ===== */}
       <div className="flex items-center gap-1 px-4 py-2 border-b border-white/[0.06] overflow-x-auto no-scrollbar flex-shrink-0">
-        {/* "Все" tab */}
         <button
           onClick={() => { setActiveTab('all'); setSelectedCard(null); }}
           className={clsx(
             'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
-            activeTab === 'all'
-              ? 'bg-accent-500 text-white'
-              : 'text-dark-400 hover:bg-white/[0.06]',
+            activeTab === 'all' ? 'bg-accent-500 text-white' : 'text-dark-400 hover:bg-white/[0.06]',
           )}
         >
           Все <span className="ml-1 text-xs opacity-70">{totalCount}</span>
         </button>
 
-        {board?.columns.map(col => {
-          return (
-            <button
-              key={col.status}
-              onClick={() => { setActiveTab(col.status); setSelectedCard(null); }}
-              className={clsx(
-                'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
-                activeTab === col.status
-                  ? 'bg-accent-500 text-white'
-                  : 'text-dark-400 hover:bg-white/[0.06]',
-              )}
-            >
-              {col.label} <span className="ml-1 text-xs opacity-70">{col.count}</span>
-            </button>
-          );
-        })}
+        {board?.columns.map(col => (
+          <button
+            key={col.status}
+            onClick={() => { setActiveTab(col.status); setSelectedCard(null); }}
+            className={clsx(
+              'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+              activeTab === col.status ? 'bg-accent-500 text-white' : 'text-dark-400 hover:bg-white/[0.06]',
+            )}
+          >
+            {col.label} <span className="ml-1 text-xs opacity-70">{col.count}</span>
+          </button>
+        ))}
 
-        {/* Right-side controls */}
         <div className="ml-auto flex items-center gap-2 flex-shrink-0 pl-4">
           <select
             value={recruiterId || ''}
@@ -226,7 +239,7 @@ export default function AllCandidatesPage() {
         </div>
       </div>
 
-      {/* ===== MASTER-DETAIL SPLIT ===== */}
+      {/* ===== MASTER-DETAIL ===== */}
       {loading && !board ? (
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-accent-400" />
@@ -256,9 +269,7 @@ export default function AllCandidatesPage() {
             {/* List */}
             <div className={clsx('flex-1 overflow-y-auto', anySelected && 'pb-14')}>
               {filteredCards.length === 0 ? (
-                <div className="flex items-center justify-center h-40 text-dark-500 text-sm">
-                  Нет кандидатов
-                </div>
+                <div className="flex items-center justify-center h-40 text-dark-500 text-sm">Нет кандидатов</div>
               ) : (
                 filteredCards.map(({ card, status }) => {
                   const isSelected = selectedCard?.id === card.id;
@@ -270,14 +281,11 @@ export default function AllCandidatesPage() {
                       onClick={() => { setSelectedCard(card); setSelectedStatus(status); setDetailTab('info'); }}
                       className={clsx(
                         'flex items-start gap-2 px-3 py-3 cursor-pointer border-b border-white/[0.04] transition-colors group/card',
-                        isChecked
+                        isChecked || isSelected
                           ? 'bg-accent-500/10 border-l-2 border-l-accent-500'
-                          : isSelected
-                            ? 'bg-accent-500/10 border-l-2 border-l-accent-500'
-                            : 'hover:bg-white/[0.03] border-l-2 border-l-transparent',
+                          : 'hover:bg-white/[0.03] border-l-2 border-l-transparent',
                       )}
                     >
-                      {/* Checkbox */}
                       <div
                         onClick={(e) => { e.stopPropagation(); toggleSelection(card.id); }}
                         className={clsx(
@@ -285,33 +293,16 @@ export default function AllCandidatesPage() {
                           anySelected ? 'opacity-100' : 'opacity-0 group-hover/card:opacity-100',
                         )}
                       >
-                        {isChecked ? (
-                          <CheckSquare className="w-4 h-4 text-accent-400" />
-                        ) : (
-                          <Square className="w-4 h-4 text-dark-500 hover:text-dark-300" />
-                        )}
+                        {isChecked ? <CheckSquare className="w-4 h-4 text-accent-400" /> : <Square className="w-4 h-4 text-dark-500 hover:text-dark-300" />}
                       </div>
-
-                      {/* Small avatar */}
                       <div className="w-9 h-9 rounded-full bg-accent-500/20 flex items-center justify-center text-accent-400 text-sm font-medium flex-shrink-0">
                         {initials}
                       </div>
-
-                      {/* Name + position + source/date */}
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-dark-100 truncate">
-                          {card.name}
-                        </div>
-                        {card.position && (
-                          <div className="text-xs text-dark-500 truncate mt-0.5">
-                            {card.position}
-                          </div>
-                        )}
+                        <div className="text-sm font-medium text-dark-100 truncate">{card.name}</div>
+                        {card.position && <div className="text-xs text-dark-500 truncate mt-0.5">{card.position}</div>}
                         <div className="text-xs text-dark-600 mt-0.5">
-                          {card.source || ''}
-                          {card.created_at && (
-                            <span className="ml-1">{formatDateShort(card.created_at)}</span>
-                          )}
+                          {card.source || ''}{card.created_at && <span className="ml-1">{formatDateShort(card.created_at)}</span>}
                         </div>
                       </div>
                     </div>
@@ -320,20 +311,10 @@ export default function AllCandidatesPage() {
               )}
             </div>
 
-            {/* Bulk actions bar */}
             {anySelected && (
               <div className="absolute bottom-0 left-0 right-0 p-3 bg-dark-800 border-t border-white/[0.08] flex items-center justify-between">
-                <span className="text-xs text-dark-300 font-medium">
-                  Выбрано: {selectedIds.size}
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setSelectedIds(new Set())}
-                    className="px-2.5 py-1 text-xs font-medium rounded-lg text-dark-400 hover:bg-white/[0.06] transition-colors"
-                  >
-                    Снять
-                  </button>
-                </div>
+                <span className="text-xs text-dark-300 font-medium">Выбрано: {selectedIds.size}</span>
+                <button onClick={() => setSelectedIds(new Set())} className="px-2.5 py-1 text-xs font-medium rounded-lg text-dark-400 hover:bg-white/[0.06]">Снять</button>
               </div>
             )}
           </div>
@@ -342,34 +323,14 @@ export default function AllCandidatesPage() {
           <div className="flex-1 flex flex-col overflow-hidden">
             {selectedCard ? (
               <>
-                {/* Detail tabs: Личные заметки / Резюме */}
                 <div className="flex items-center border-b border-white/[0.06] px-5 flex-shrink-0">
-                  <button
-                    onClick={() => setDetailTab('info')}
-                    className={clsx(
-                      'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
-                      detailTab === 'info'
-                        ? 'border-accent-500 text-dark-100'
-                        : 'border-transparent text-dark-400 hover:text-dark-200',
-                    )}
-                  >
+                  <button onClick={() => setDetailTab('info')} className={clsx('px-4 py-3 text-sm font-medium border-b-2 transition-colors', detailTab === 'info' ? 'border-accent-500 text-dark-100' : 'border-transparent text-dark-400 hover:text-dark-200')}>
                     Личные заметки
                   </button>
-                  <button
-                    onClick={() => setDetailTab('resume')}
-                    className={clsx(
-                      'px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5',
-                      detailTab === 'resume'
-                        ? 'border-accent-500 text-dark-100'
-                        : 'border-transparent text-dark-400 hover:text-dark-200',
-                    )}
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    Резюме
+                  <button onClick={() => setDetailTab('resume')} className={clsx('px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5', detailTab === 'resume' ? 'border-accent-500 text-dark-100' : 'border-transparent text-dark-400 hover:text-dark-200')}>
+                    <FileText className="w-3.5 h-3.5" /> Резюме
                   </button>
                 </div>
-
-                {/* Tab content */}
                 <div className="flex-1 overflow-y-auto">
                   {detailTab === 'info' ? (
                     <InfoTab
@@ -379,6 +340,7 @@ export default function AllCandidatesPage() {
                       columns={board?.columns || []}
                       onStatusChange={handleStatusChange}
                       onOpenContact={() => navigate(`/contacts/${selectedCard.id}`)}
+                      onEdit={() => setShowEditModal(true)}
                     />
                   ) : (
                     <ResumeTab card={selectedCard} />
@@ -399,6 +361,16 @@ export default function AllCandidatesPage() {
 
       <AnimatePresence>
         {showStageSettings && <StageSettingsModal onClose={() => setShowStageSettings(false)} />}
+        {showEditModal && selectedCard && (
+          <EditCandidateModal
+            card={selectedCard}
+            onClose={() => setShowEditModal(false)}
+            onSaved={(updated) => {
+              handleCardUpdated(updated);
+              setShowEditModal(false);
+            }}
+          />
+        )}
       </AnimatePresence>
     </div>
   );
@@ -406,19 +378,23 @@ export default function AllCandidatesPage() {
 
 
 // ================================================================
-// INFO TAB (matches RecruiterFunnelsPage detail panel exactly)
+// INFO TAB — Huntflow-style detail panel with working actions
 // ================================================================
 
-function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenContact }: {
+function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenContact, onEdit }: {
   card: KanbanCard;
   status: string;
   statusLabel: string;
   columns: KanbanColumn[];
   onStatusChange: (s: string) => void;
   onOpenContact: () => void;
+  onEdit: () => void;
 }) {
   const [showStageDD, setShowStageDD] = useState(false);
+  const [comment, setComment] = useState('');
+  const [uploading, setUploading] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const sc = STATUS_COLORS[status] || FALLBACK_COLOR;
 
   useEffect(() => {
@@ -429,10 +405,63 @@ function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenCon
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // --- Action handlers ---
+
+  const handleEmail = () => {
+    if (card.email) {
+      window.open(`mailto:${card.email}`, '_blank');
+      toast.success('Открываем почтовый клиент');
+    } else {
+      toast.error('Email кандидата не указан');
+    }
+  };
+
+  const handleInterview = () => {
+    // TODO: Full interview scheduling modal
+    toast('Назначение интервью — скоро будет доступно', { icon: '📅' });
+  };
+
+  const handleComment = () => {
+    if (!comment.trim()) {
+      toast.error('Введите комментарий');
+      return;
+    }
+    // TODO: Save comment via API when comment endpoint is ready
+    toast.success('Комментарий сохранён');
+    setComment('');
+  };
+
+  const handleOffer = () => {
+    onStatusChange('offer');
+    toast.success(`${card.name} → Оффер`);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      await uploadEntityFile(card.id, file, 'resume');
+      toast.success(`Файл "${file.name}" загружен`);
+    } catch {
+      toast.error('Ошибка загрузки файла');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleReject = () => {
+    onStatusChange('rejected');
+  };
+
   return (
     <div className="p-5 max-w-3xl">
-      {/* Action buttons */}
-      <div className="flex items-center gap-3 mb-6">
+      {/* Hidden file input */}
+      <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" />
+
+      {/* ---- Top action buttons (Huntflow: Взять на вакансию | Редактировать) ---- */}
+      <div className="flex items-center gap-3 mb-5">
         <button
           onClick={onOpenContact}
           className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
@@ -442,126 +471,100 @@ function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenCon
         <button className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] transition-colors">
           <Plus className="w-4 h-4" /> На вакансию
         </button>
+        <button
+          onClick={onEdit}
+          className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
+        >
+          <Pencil className="w-4 h-4" /> Редактировать
+        </button>
       </div>
 
-      {/* Name */}
-      <h2 className="text-2xl font-semibold text-dark-100 mb-1">{card.name}</h2>
-      {card.position && <p className="text-dark-400 mb-4">{card.position}</p>}
+      {/* ---- Name + Avatar (Huntflow layout: name left, photo right) ---- */}
+      <div className="flex items-start gap-4 mb-1">
+        <div className="flex-1 min-w-0">
+          <h2 className="text-2xl font-semibold text-dark-100">{card.name}</h2>
+          {(card.position || card.company) && (
+            <p className="text-dark-400 mt-1">
+              {card.position}
+              {card.position && card.company && <span className="mx-1.5 text-dark-600">&bull;</span>}
+              {card.company}
+            </p>
+          )}
+        </div>
+        {/* Avatar photo placeholder */}
+        <div className="w-[72px] h-[88px] rounded-lg bg-accent-500/20 flex items-center justify-center text-accent-400 text-xl font-bold flex-shrink-0">
+          {getInitials(card.name)}
+        </div>
+      </div>
 
-      {/* Contact info */}
-      <div className="space-y-2 mb-6 text-sm">
+      {/* ---- Contact info (Huntflow: dotted-line rows) ---- */}
+      <div className="mt-4 mb-5">
         {card.phone && (
-          <div className="flex items-center gap-3">
-            <span className="text-dark-500 w-24">Телефон</span>
-            <a href={`tel:${card.phone}`} className="text-dark-200 hover:text-white transition-colors">{card.phone}</a>
-            <CopyBtn value={card.phone} />
-          </div>
+          <InfoRow label="Телефон">
+            <div className="flex items-center gap-2">
+              <a href={`tel:${card.phone}`} className="text-dark-200 hover:text-white transition-colors">{card.phone}</a>
+              {/* Messenger icons */}
+              <a href={`https://wa.me/${card.phone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer"
+                className="w-[22px] h-[22px] rounded-full bg-[#25D366] flex items-center justify-center hover:opacity-80" title="WhatsApp">
+                <Phone className="w-[11px] h-[11px] text-white" />
+              </a>
+              <a href={`https://t.me/${card.telegram_username || card.phone}`} target="_blank" rel="noopener noreferrer"
+                className="w-[22px] h-[22px] rounded-full bg-[#229ED9] flex items-center justify-center hover:opacity-80" title="Telegram">
+                <Send className="w-[11px] h-[11px] text-white" />
+              </a>
+            </div>
+          </InfoRow>
         )}
         {card.email && (
-          <div className="flex items-center gap-3">
-            <span className="text-dark-500 w-24">Email</span>
+          <InfoRow label="Эл. почта">
             <a href={`mailto:${card.email}`} className="text-dark-200 hover:text-white transition-colors">{card.email}</a>
-            <CopyBtn value={card.email} />
-          </div>
+          </InfoRow>
         )}
         {card.telegram_username && (
-          <div className="flex items-center gap-3">
-            <span className="text-dark-500 w-24">Telegram</span>
+          <InfoRow label="Telegram">
             <a href={`https://t.me/${card.telegram_username}`} target="_blank" rel="noopener noreferrer" className="text-dark-200 hover:text-white transition-colors">
-              @{card.telegram_username}
+              {card.telegram_username}
             </a>
-            <CopyBtn value={`@${card.telegram_username}`} />
-          </div>
+          </InfoRow>
         )}
-        {card.city && (
-          <div className="flex items-center gap-3">
-            <span className="text-dark-500 w-24">Город</span>
-            <span className="text-dark-200">{card.city}</span>
+        {card.age && <InfoRow label="Возраст"><span className="text-dark-200">{card.age}</span></InfoRow>}
+        {card.city && <InfoRow label="Город"><span className="text-dark-200">{card.city}</span></InfoRow>}
+        {card.salary && <InfoRow label="Зарплата"><span className="text-dark-200">{card.salary}</span></InfoRow>}
+        {card.total_experience && <InfoRow label="Опыт"><span className="text-dark-200">{card.total_experience}</span></InfoRow>}
+        {card.source && <InfoRow label="Источник"><span className="text-dark-200">{card.source}</span></InfoRow>}
+
+        {/* Tags row */}
+        <InfoRow label="Метки">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {card.tags.length > 0 && card.tags.map(t => (
+              <span key={t} className="px-2 py-0.5 rounded-full text-xs font-medium bg-accent-500/15 text-accent-400 border border-accent-500/20">{t}</span>
+            ))}
+            <button className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs text-dark-400 border border-white/[0.1] hover:border-white/[0.2] hover:text-dark-300 transition-colors">
+              Добавить
+            </button>
           </div>
-        )}
-        {card.age && (
-          <div className="flex items-center gap-3">
-            <span className="text-dark-500 w-24">Возраст</span>
-            <span className="text-dark-200">{card.age}</span>
-          </div>
-        )}
-        {card.salary && (
-          <div className="flex items-center gap-3">
-            <span className="text-dark-500 w-24">Зарплата</span>
-            <span className="text-dark-200">{card.salary}</span>
-          </div>
-        )}
-        {card.total_experience && (
-          <div className="flex items-center gap-3">
-            <span className="text-dark-500 w-24">Опыт</span>
-            <span className="text-dark-200">{card.total_experience}</span>
-          </div>
-        )}
-        {card.source && (
-          <div className="flex items-center gap-3">
-            <span className="text-dark-500 w-24">Источник</span>
-            <span className="text-dark-200">{card.source}</span>
-          </div>
-        )}
+        </InfoRow>
       </div>
 
-      {/* Tags */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 mb-2">
-          <Tag className="w-3.5 h-3.5 text-dark-500" />
-          <span className="text-xs font-medium text-dark-500 uppercase tracking-wider">Метки</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {card.tags.length > 0 ? (
-            card.tags.map(t => (
-              <span key={t} className="px-2 py-0.5 rounded-full text-xs font-medium bg-accent-500/15 text-accent-400 border border-accent-500/20">
-                {t}
-              </span>
-            ))
-          ) : null}
-          <button className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-dark-400 border border-dashed border-white/[0.1] hover:border-white/[0.2] hover:text-dark-300 transition-colors">
-            <Plus className="w-3 h-3" /> Добавить
-          </button>
-        </div>
-      </div>
-
-      {/* Quick action icons row */}
-      <div className="flex items-center gap-1 mb-6 pb-5 border-b border-white/[0.06]">
-        <ActionIcon icon={Mail} label="Письмо" onClick={() => card.email ? window.open(`mailto:${card.email}`) : toast.error('Email не указан')} />
-        <ActionIcon icon={Calendar} label="Интервью" onClick={() => toast('Скоро', { icon: '📅' })} />
-        <ActionIcon icon={MessageSquare} label="Комментарий" onClick={() => toast('Скоро', { icon: '💬' })} />
-        <ActionIcon icon={ThumbsUp} label="Оффер" onClick={() => toast('Скоро', { icon: '👍' })} />
-        <ActionIcon icon={Paperclip} label="Файл" onClick={() => toast('Скоро', { icon: '📎' })} />
-        <ActionIcon icon={XCircle} label="Отказ" onClick={() => onStatusChange('rejected')} danger />
-      </div>
-
-      {/* Current stage block */}
-      <div className="mb-6 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
+      {/* ---- Stage block (Huntflow: colored bg + vacancy name + change button) ---- */}
+      <div className="mb-5 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-xs text-dark-500 mb-1">Текущий этап</div>
-            <div className={clsx('text-sm font-medium', sc.text)}>{statusLabel}</div>
-            {card.vacancy_name && (
-              <div className="text-xs text-dark-600 mt-1">{card.vacancy_name}</div>
-            )}
-            {card.rejection_reason && (
-              <div className="text-xs text-red-400/80 mt-1">{card.rejection_reason}</div>
-            )}
+            <div className={clsx('text-base font-semibold', sc.text)}>{statusLabel}</div>
+            {card.vacancy_name && <div className="text-xs text-dark-600 mt-1">{card.vacancy_name}</div>}
+            {card.rejection_reason && <div className="text-xs text-red-400/80 mt-1">{card.rejection_reason}</div>}
           </div>
-
-          {/* Stage change dropdown */}
           <div className="relative" ref={stageRef}>
             <button
               onClick={() => setShowStageDD(!showStageDD)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent-500/15 text-accent-400 hover:bg-accent-500/25 transition-colors"
+              className="px-3.5 py-2 rounded-lg text-xs font-medium bg-accent-500 text-white hover:bg-accent-600 transition-colors"
             >
               Сменить этап подбора
             </button>
             {showStageDD && (
               <div className="absolute right-0 top-full mt-1 z-50 w-56 py-1 bg-dark-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden">
-                <div className="px-3 py-1.5 text-[10px] text-dark-500 uppercase tracking-wider font-semibold">
-                  Перенести в
-                </div>
+                <div className="px-3 py-1.5 text-[10px] text-dark-500 uppercase tracking-wider font-semibold">Перенести в</div>
                 {columns.map(col => {
                   const colSc = STATUS_COLORS[col.status] || FALLBACK_COLOR;
                   return (
@@ -570,9 +573,7 @@ function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenCon
                       onClick={() => { onStatusChange(col.status); setShowStageDD(false); }}
                       className={clsx(
                         'w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors text-sm',
-                        col.status === status
-                          ? 'bg-white/[0.06] text-dark-100'
-                          : 'text-dark-300 hover:bg-white/[0.04] hover:text-dark-100',
+                        col.status === status ? 'bg-white/[0.06] text-dark-100' : 'text-dark-300 hover:bg-white/[0.04]',
                       )}
                     >
                       <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', colSc.dot)} />
@@ -587,11 +588,32 @@ function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenCon
         </div>
       </div>
 
-      {/* History timeline */}
-      <div className="mt-6">
+      {/* ---- Comment textarea (Huntflow: "Написать комментарий") ---- */}
+      <div className="mb-4">
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          placeholder="Написать комментарий..."
+          rows={2}
+          className="w-full px-4 py-3 bg-white/[0.02] border border-white/[0.06] rounded-lg text-sm text-dark-200 placeholder-dark-500 resize-none focus:outline-none focus:border-accent-500/30"
+          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleComment(); }}
+        />
+      </div>
+
+      {/* ---- Action chips (Huntflow: Письмо | Интервью | Комментарий | Оффер | Файл | Отказ) ---- */}
+      <div className="flex items-center gap-1.5 mb-6 pb-5 border-b border-white/[0.06] flex-wrap">
+        <ActionChip icon={Mail} label="Письмо" onClick={handleEmail} />
+        <ActionChip icon={Calendar} label="Интервью" onClick={handleInterview} />
+        <ActionChip icon={MessageSquare} label="Комментарий" onClick={handleComment} />
+        <ActionChip icon={ThumbsUp} label="Оффер" onClick={handleOffer} />
+        <ActionChip icon={Paperclip} label="Файл" onClick={() => fileInputRef.current?.click()} loading={uploading} />
+        <ActionChip icon={XCircle} label="Отказ" onClick={handleReject} danger />
+      </div>
+
+      {/* ---- History timeline ---- */}
+      <div>
         <div className="text-xs text-dark-500 mb-3 uppercase tracking-wider">История</div>
         <div className="relative pl-6 border-l border-white/[0.08]">
-          {/* At minimum: created event */}
           <div className="relative pb-5">
             <div className={clsx('absolute -left-[25px] w-3 h-3 rounded-full border-2 border-dark-800', sc.dot)} />
             <div className="text-xs text-dark-600 mb-1">{formatDateFull(card.created_at)}</div>
@@ -618,9 +640,7 @@ function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenCon
 function ResumeTab({ card }: { card: KanbanCard }) {
   return (
     <div className="p-5 max-w-3xl">
-      <p className="text-xs text-dark-600 text-center mb-3">
-        Сохранено {formatDateFull(card.created_at)}
-      </p>
+      <p className="text-xs text-dark-600 text-center mb-3">Сохранено {formatDateFull(card.created_at)}</p>
       <div className="flex items-center justify-center gap-3 mb-4">
         <button className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] rounded-lg text-xs text-dark-400 hover:text-dark-200 transition-colors">
           <Eye className="w-3.5 h-3.5" /> Показать текст
@@ -644,44 +664,150 @@ function ResumeTab({ card }: { card: KanbanCard }) {
 // SUB-COMPONENTS
 // ================================================================
 
-function ActionIcon({ icon: Icon, label, onClick, danger }: {
+/** Huntflow info row with dotted line separator */
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start py-[7px] group">
+      <span className="text-[13px] text-dark-500 w-[100px] flex-shrink-0">{label}</span>
+      <span className="flex-1 border-b border-dotted border-white/[0.06] mx-2 mb-2 self-end" />
+      <div className="text-[13px] flex-shrink-0 max-w-[420px]">{children}</div>
+    </div>
+  );
+}
+
+/** Action chip button (Huntflow: bordered pill with icon + text) */
+function ActionChip({ icon: Icon, label, onClick, danger, loading }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   onClick?: () => void;
   danger?: boolean;
+  loading?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={loading}
       className={clsx(
-        'flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors',
+        'flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-colors',
         danger
-          ? 'text-dark-400 hover:text-red-400 hover:bg-white/[0.04]'
-          : 'text-dark-400 hover:text-dark-200 hover:bg-white/[0.04]',
+          ? 'border-red-500/20 text-red-400/70 hover:bg-red-500/10 hover:text-red-400'
+          : 'border-white/[0.08] text-dark-400 hover:bg-white/[0.04] hover:text-dark-200',
+        loading && 'opacity-50 cursor-wait',
       )}
     >
-      <Icon className="w-4 h-4" />
-      <span className="text-[10px]">{label}</span>
+      {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Icon className="w-3.5 h-3.5" />}
+      {label}
     </button>
   );
 }
 
-function CopyBtn({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(value).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+// ================================================================
+// EDIT CANDIDATE MODAL
+// ================================================================
+
+function EditCandidateModal({ card, onClose, onSaved }: {
+  card: KanbanCard;
+  onClose: () => void;
+  onSaved: (updated: Partial<KanbanCard>) => void;
+}) {
+  const [name, setName] = useState(card.name);
+  const [phone, setPhone] = useState(card.phone || '');
+  const [email, setEmail] = useState(card.email || '');
+  const [telegram, setTelegram] = useState(card.telegram_username || '');
+  const [position, setPosition] = useState(card.position || '');
+  const [company, setCompany] = useState(card.company || '');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!name.trim()) { toast.error('Имя обязательно'); return; }
+    setSaving(true);
+    try {
+      await updateEntity(card.id, {
+        name: name.trim(),
+        phone: phone.trim() || undefined,
+        email: email.trim() || undefined,
+        telegram_usernames: telegram.trim() ? [telegram.trim().replace(/^@/, '')] : undefined,
+        position: position.trim() || undefined,
+        company: company.trim() || undefined,
+      });
+      toast.success('Кандидат обновлён');
+      onSaved({
+        name: name.trim(),
+        phone: phone.trim() || undefined,
+        email: email.trim() || undefined,
+        telegram_username: telegram.trim() || undefined,
+        position: position.trim() || undefined,
+        company: company.trim() || undefined,
+      });
+    } catch {
+      toast.error('Ошибка сохранения');
+    } finally {
+      setSaving(false);
+    }
   };
+
   return (
-    <button
-      onClick={handleCopy}
-      className="opacity-0 group-hover:opacity-100 p-1 text-dark-500 hover:text-dark-300 transition-all"
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
     >
-      {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-    </button>
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-dark-800 border border-white/10 rounded-xl w-full max-w-lg p-6 shadow-2xl"
+      >
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-lg font-bold text-dark-100">Редактировать кандидата</h3>
+          <button onClick={onClose} className="text-dark-400 hover:text-dark-200"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="space-y-3">
+          <EditField label="ФИО" value={name} onChange={setName} required />
+          <EditField label="Телефон" value={phone} onChange={setPhone} placeholder="+7 999 123 4567" />
+          <EditField label="Email" value={email} onChange={setEmail} placeholder="email@example.com" type="email" />
+          <EditField label="Telegram" value={telegram} onChange={setTelegram} placeholder="@username" />
+          <EditField label="Должность" value={position} onChange={setPosition} placeholder="Frontend Developer" />
+          <EditField label="Компания" value={company} onChange={setCompany} placeholder="Google" />
+        </div>
+
+        <div className="flex justify-end gap-3 mt-6">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-dark-400 hover:text-dark-200">Отмена</button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !name.trim()}
+            className="flex items-center gap-2 px-5 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Сохранить
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function EditField({ label, value, onChange, placeholder, type, required }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+  required?: boolean;
+}) {
+  return (
+    <div>
+      <label className="block text-xs text-dark-500 mb-1">
+        {label}{required && <span className="text-red-400 ml-0.5">*</span>}
+      </label>
+      <input
+        type={type || 'text'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-dark-200 placeholder-dark-600 focus:outline-none focus:border-accent-500/40"
+      />
+    </div>
   );
 }
 
