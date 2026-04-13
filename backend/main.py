@@ -792,6 +792,65 @@ async def playwright_health_check():
     return result
 
 
+@app.get("/health/autotasks")
+async def autotasks_debug():
+    """Debug auto-tasks: show chats with auto_tasks, recent messages, trigger status."""
+    from datetime import datetime, timedelta
+    from api.database import AsyncSessionLocal
+    from api.models.database import Chat, Message
+    from api.services.task_trigger import should_trigger
+    from sqlalchemy import select, func, desc
+
+    try:
+        async with AsyncSessionLocal() as session:
+            # Get all auto_tasks chats
+            result = await session.execute(
+                select(Chat).where(Chat.auto_tasks_enabled == True, Chat.is_active == True)
+            )
+            chats = list(result.scalars().all())
+
+            chat_info = []
+            for chat in chats:
+                # Get last 5 messages from this chat
+                msg_result = await session.execute(
+                    select(Message)
+                    .where(Message.chat_id == chat.id)
+                    .order_by(desc(Message.timestamp))
+                    .limit(5)
+                )
+                messages = list(msg_result.scalars().all())
+
+                msg_info = []
+                for m in messages:
+                    text = (m.content or "")[:80]
+                    msg_info.append({
+                        "id": m.id,
+                        "sender": m.sender_name,
+                        "text": text,
+                        "regex_trigger": should_trigger(text) if text else False,
+                        "time": m.timestamp.isoformat() if m.timestamp else None,
+                    })
+
+                chat_info.append({
+                    "id": chat.id,
+                    "title": chat.custom_name or chat.title,
+                    "telegram_chat_id": chat.telegram_chat_id,
+                    "auto_tasks": chat.auto_tasks_enabled,
+                    "org_id": chat.org_id,
+                    "owner_id": chat.owner_id,
+                    "last_standup_at": chat.last_standup_at.isoformat() if getattr(chat, 'last_standup_at', None) else None,
+                    "last_activity": chat.last_activity.isoformat() if chat.last_activity else None,
+                    "recent_messages": msg_info,
+                })
+
+            return {
+                "auto_tasks_chats": len(chats),
+                "chats": chat_info,
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # Serve static files (frontend)
 if STATIC_DIR.exists():
     assets_dir = STATIC_DIR / "assets"
