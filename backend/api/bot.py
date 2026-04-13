@@ -25,6 +25,16 @@ from .services.task_trigger import create_tasks_from_message, update_projects_fr
 logger = logging.getLogger("hr-analyzer.bot")
 logger.setLevel(logging.INFO)
 
+# In-memory debug log for auto-tasks (readable via /health/autotasks-log)
+from collections import deque
+_autotasks_debug_log = deque(maxlen=50)
+
+def _dbg(msg: str):
+    """Add a debug message to the in-memory auto-tasks log."""
+    from datetime import datetime
+    _autotasks_debug_log.append(f"[{datetime.utcnow().strftime('%H:%M:%S')}] {msg}")
+    logger.info(f"[AUTOTASK-DBG] {msg}")
+
 # Bot is initialized lazily to avoid crashes on invalid/missing token
 bot: Bot | None = None
 dp = Dispatcher()
@@ -2107,6 +2117,8 @@ async def collect_group_message(message: types.Message):
                 chat_auto_tasks = False
             chat_db_id = chat.id
 
+            _dbg(f"MSG from {message.from_user.full_name} in '{chat.title}': auto_tasks={chat_auto_tasks}, type={content_type}, len={len(content)}")
+
             session.add(db_message)
             await session.commit()
 
@@ -2114,12 +2126,15 @@ async def collect_group_message(message: types.Message):
             if content_type == "text" and content and org_id:
                 await process_external_links_in_message(content, org_id, owner_id, chat_db_id)
 
-            logger.info(f"📩 Message from {message.from_user.full_name} (id={message.from_user.id}) in chat {message.chat.id}: auto_tasks={chat_auto_tasks}, content_type={content_type}, content_len={len(content)}")
-
             if content_type == "text" and content and chat_auto_tasks:
+                _dbg(f"Auto-tasks ON, checking trigger...")
                 from ..services.task_trigger import should_trigger_ai
-                trigger_match = await should_trigger_ai(content)
-                logger.info(f"🔍 Auto-tasks check: trigger_match={trigger_match}, text={content[:80]}...")
+                try:
+                    trigger_match = await should_trigger_ai(content)
+                    _dbg(f"Trigger result: {trigger_match}")
+                except Exception as e:
+                    _dbg(f"Trigger ERROR: {type(e).__name__}: {e}")
+                    trigger_match = False
 
                 # 1. Check for status report first (takes priority over task trigger)
                 is_status = False
@@ -2152,7 +2167,7 @@ async def collect_group_message(message: types.Message):
                             chat_id=message.chat.id,
                             telegram_username=message.from_user.username,
                         )
-                        logger.info(f"📋 Task trigger result: {len(created_tasks)} tasks created for {message.from_user.full_name}")
+                        _dbg(f"Tasks created: {len(created_tasks)} for {message.from_user.full_name}")
                         if created_tasks:
                             # Mark this chat as having received a standup today
                             from datetime import datetime as dt
@@ -2167,9 +2182,13 @@ async def collect_group_message(message: types.Message):
                                 lines.append(f"  \u2022 {t['task_key']} \"{t['title']}\" \u2192 {t['assignee']}")
                             await message.reply("\n".join(lines))
                     except Exception as e:
+                        _dbg(f"Task trigger ERROR: {type(e).__name__}: {e}")
                         logger.error(f"Task trigger error: {e}", exc_info=True)
+            elif content_type == "text" and content and not chat_auto_tasks:
+                _dbg(f"SKIP: auto_tasks={chat_auto_tasks} for chat '{message.chat.title}'")
 
     except Exception as e:
+        _dbg(f"OUTER ERROR: {type(e).__name__}: {e}")
         logger.error(f"❌ Error collecting message: {type(e).__name__}: {e}")
 
 

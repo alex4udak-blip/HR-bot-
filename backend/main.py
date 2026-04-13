@@ -792,6 +792,13 @@ async def playwright_health_check():
     return result
 
 
+@app.get("/health/autotasks-log")
+async def autotasks_log():
+    """Read the in-memory auto-tasks debug log."""
+    from api.bot import _autotasks_debug_log
+    return {"log": list(_autotasks_debug_log), "count": len(_autotasks_debug_log)}
+
+
 @app.get("/health/autotasks-test")
 async def autotasks_test_pipeline():
     """Test the full auto-tasks pipeline with a sample message to see where it fails."""
