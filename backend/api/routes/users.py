@@ -317,6 +317,9 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_superadmin)
 ):
+    import logging
+    logger = logging.getLogger(__name__)
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -324,7 +327,7 @@ async def update_user(
 
     # Map role string to enum if role is being updated
     new_role = None
-    if data.role:
+    if data.role is not None:
         new_role = map_role_string_to_user_role(data.role)
 
         # Validate department_id for ADMIN and SUB_ADMIN (legacy system roles)
@@ -350,7 +353,7 @@ async def update_user(
         user.email = data.email
     if data.name:
         user.name = data.name
-    if new_role:
+    if new_role is not None:
         user.role = new_role
     if data.telegram_id is not None:
         user.telegram_id = data.telegram_id
@@ -383,21 +386,26 @@ async def update_user(
             )
             db.add(dept_member)
 
-    # Update org role if provided
+    # Determine org role to set
+    target_org_role = None
     if data.org_role:
         try:
-            new_org_role = OrgRole(data.org_role)
+            target_org_role = OrgRole(data.org_role)
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid org_role: {data.org_role}")
+    elif new_role is not None and not data.org_role:
+        # Auto-sync org_role when system role changes but org_role not explicitly set
+        target_org_role = map_user_role_to_org_role(new_role)
 
-        # Find user's org membership
+    # Update org role if needed
+    if target_org_role is not None:
         org_member_result = await db.execute(
             select(OrgMember).where(OrgMember.user_id == user_id)
         )
         org_member = org_member_result.scalar_one_or_none()
 
         if org_member:
-            org_member.role = new_org_role
+            org_member.role = target_org_role
         else:
             # If no membership exists, try to find an org and create one
             from ..models.database import Organization
@@ -407,12 +415,26 @@ async def update_user(
                 new_member = OrgMember(
                     org_id=org.id,
                     user_id=user_id,
-                    role=new_org_role
+                    role=target_org_role
                 )
                 db.add(new_member)
 
-    await db.commit()
-    await db.refresh(user)
+    # Also sync department role when system role changes
+    if new_role is not None and not data.department_id:
+        dept_member_result = await db.execute(
+            select(DepartmentMember).where(DepartmentMember.user_id == user_id)
+        )
+        existing_dept_member = dept_member_result.scalar_one_or_none()
+        if existing_dept_member:
+            existing_dept_member.role = map_user_role_to_dept_role(new_role)
+
+    try:
+        await db.commit()
+        await db.refresh(user)
+    except Exception as e:
+        logger.error(f"Failed to update user {user_id}: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=f"Failed to update user: {str(e)}")
 
     # Get chat count
     count_result = await db.execute(
@@ -420,8 +442,37 @@ async def update_user(
     )
     chats_count = count_result.scalar() or 0
 
+    # Get org role and department info for response
+    org_role_value = None
+    org_member_result = await db.execute(
+        select(OrgMember).where(OrgMember.user_id == user_id)
+    )
+    org_member = org_member_result.scalar_one_or_none()
+    if org_member:
+        org_role_value = org_member.role.value if org_member.role else None
+
+    dept_id = None
+    dept_name = None
+    dept_role_value = None
+    dept_member_result = await db.execute(
+        select(DepartmentMember).where(DepartmentMember.user_id == user_id)
+    )
+    dept_member = dept_member_result.scalar_one_or_none()
+    if dept_member:
+        dept_id = dept_member.department_id
+        dept_role_value = dept_member.role.value if dept_member.role else None
+        from ..models.database import Department
+        dept_result = await db.execute(select(Department).where(Department.id == dept_member.department_id))
+        dept = dept_result.scalar_one_or_none()
+        if dept:
+            dept_name = dept.name
+
     return UserResponse(
         id=user.id, email=user.email, name=user.name, role=user.role.value,
+        org_role=org_role_value,
+        department_id=dept_id,
+        department_name=dept_name,
+        department_role=dept_role_value,
         telegram_id=user.telegram_id, telegram_username=user.telegram_username,
         additional_emails=user.additional_emails or [],
         additional_telegram_usernames=user.additional_telegram_usernames or [],

@@ -32,7 +32,7 @@ export type { DateFormatType } from './date';
  * which crashes React if rendered directly (React error #31).
  */
 export function getErrorDetail(error: unknown, fallback: string): string {
-  const err = error as { response?: { data?: { detail?: unknown } } };
+  const err = error as { response?: { data?: { detail?: unknown; error?: string; message?: string } }; message?: string };
   const detail = err?.response?.data?.detail;
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail) && detail.length > 0) {
@@ -40,6 +40,12 @@ export function getErrorDetail(error: unknown, fallback: string): string {
     if (typeof first === 'object' && first !== null && 'msg' in first) {
       return String(first.msg);
     }
+    // Pydantic v2 format
+    if (typeof first === 'string') return first;
   }
+  // Fallback to other error formats
+  if (typeof err?.response?.data?.error === 'string') return err.response.data.error;
+  if (typeof err?.response?.data?.message === 'string') return err.response.data.message;
+  if (typeof err?.message === 'string' && err.message !== 'Request failed with status code 500') return err.message;
   return fallback;
 }

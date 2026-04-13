@@ -93,7 +93,7 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     name: Optional[str] = None
-    role: Optional[UserRole] = None  # Use enum for proper validation
+    role: Optional[str] = None  # Accept string, validate in route (superadmin, admin, sub_admin, member)
     org_role: Optional[str] = None  # OrgRole: owner, admin, hr, member
     telegram_id: Optional[int] = None
     telegram_username: Optional[str] = None
