@@ -8,7 +8,7 @@ import os
 import logging
 import json
 from datetime import datetime
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("hr-analyzer.task_trigger")
@@ -443,7 +443,7 @@ async def create_tasks_from_message(
         # If not found by telegram_id, auto-bind for future lookups
         if not user and telegram_username:
             result = await db.execute(
-                select(User).where(User.telegram_username == telegram_username)
+                select(User).where(func.lower(User.telegram_username) == telegram_username.lower())
             )
             user = result.scalar_one_or_none()
             if user and not user.telegram_id:
