@@ -285,10 +285,10 @@ export default function Layout() {
     if (isHrRole) {
       const hrItems: { path: string; icon: LucideIcon; label: string }[] = [];
       // Базовые HR — видят все HR роли
-      hrItems.push({ path: '/dashboard', icon: LayoutDashboard, label: 'Дашборд' });
       hrItems.push({ path: '/all-candidates', icon: Users, label: 'Все кандидаты' });
-      hrItems.push({ path: '/my-funnels', icon: GitBranch, label: 'Мои воронки' });
-      hrItems.push({ path: '/vacancies', icon: Briefcase, label: 'Вакансии' });
+      hrItems.push({ path: '/dashboard', icon: BarChart3, label: 'Аналитика' });
+      hrItems.push({ path: '/my-funnels', icon: Briefcase, label: 'Мои вакансии' });
+      hrItems.push({ path: '/vacancies', icon: GitBranch, label: 'Заявки' });
       // Расширенные — только admin/owner/superadmin
       if (isHrAdmin) {
         hrItems.push({ path: '/candidate-database', icon: Database, label: 'База кандидатов' });
