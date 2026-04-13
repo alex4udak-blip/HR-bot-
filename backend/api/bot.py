@@ -2101,18 +2101,18 @@ async def collect_group_message(message: types.Message):
                 file_name=file_name,
                 timestamp=message.date.replace(tzinfo=None),
             )
+            # Read auto_tasks flag BEFORE commit (SQLAlchemy expires attrs after commit in async)
+            chat_auto_tasks = getattr(chat, 'auto_tasks_enabled', False)
+            if chat_auto_tasks is None:
+                chat_auto_tasks = False
+            chat_db_id = chat.id
+
             session.add(db_message)
             await session.commit()
 
             # Auto-detect and process external links (Fireflies, Google Docs/Sheets/Forms)
             if content_type == "text" and content and org_id:
-                await process_external_links_in_message(content, org_id, owner_id, chat.id)
-
-            # Auto-detect status reports OR create tasks from planning messages
-            # Only if auto_tasks_enabled is ON for this chat (off by default)
-            chat_auto_tasks = getattr(chat, 'auto_tasks_enabled', False)
-            if chat_auto_tasks is None:
-                chat_auto_tasks = False
+                await process_external_links_in_message(content, org_id, owner_id, chat_db_id)
 
             logger.info(f"📩 Message from {message.from_user.full_name} (id={message.from_user.id}) in chat {message.chat.id}: auto_tasks={chat_auto_tasks}, content_type={content_type}, content_len={len(content)}")
 
@@ -2156,7 +2156,10 @@ async def collect_group_message(message: types.Message):
                         if created_tasks:
                             # Mark this chat as having received a standup today
                             from datetime import datetime as dt
-                            chat.last_standup_at = dt.utcnow()
+                            from sqlalchemy import update
+                            await session.execute(
+                                update(Chat).where(Chat.id == chat_db_id).values(last_standup_at=dt.utcnow())
+                            )
                             await session.commit()
 
                             lines = ["\u2705 Задачи созданы из плана:"]
