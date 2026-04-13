@@ -51,9 +51,20 @@
     ]);
 
     // --- Contact info (new hh.ru selectors) ---
-    // Email - direct selector
-    const emailEl = document.querySelector('[data-qa="resume-contact-email"] span');
-    if (emailEl) data.email = emailEl.textContent.trim();
+    // Email - may have multiple elements with same data-qa, find the one with actual email text
+    const emailEls = document.querySelectorAll('[data-qa="resume-contact-email"]');
+    emailEls.forEach(el => {
+      const text = el.textContent.trim();
+      if (text.includes('@') && !data.email) data.email = text;
+    });
+    // Also check nested spans
+    if (!data.email) {
+      const emailSpans = document.querySelectorAll('[data-qa="resume-contact-email"] span');
+      emailSpans.forEach(el => {
+        const text = el.textContent.trim();
+        if (text.includes('@') && !data.email) data.email = text;
+      });
+    }
 
     // Phone - direct selector
     const phoneEl = document.querySelector('[data-qa="resume-contact-phone"]');
@@ -100,14 +111,22 @@
     }
 
     // --- Personal info ---
-    // Age
-    data.age = getText('[data-qa="resume-personal-age"]');
+    // Age - take only the first <span> inside (contains "34 года"), not the whole block
+    const ageEl = document.querySelector('[data-qa="resume-personal-age"] > span');
+    if (ageEl) data.age = ageEl.textContent.trim();
 
-    // Birthday
-    data.birthday = getText('[data-qa="resume-personal-birthday"]');
+    // Birthday - direct child span
+    const bdEl = document.querySelector('[data-qa="resume-personal-birthday"] > span');
+    if (bdEl) data.birthday = bdEl.textContent.trim();
+    else data.birthday = getText('[data-qa="resume-personal-birthday"]');
 
-    // Gender
-    data.gender = getText('[data-qa="resume-personal-gender"]');
+    // Gender - take only own text, not nested children
+    const genderEl = document.querySelector('[data-qa="resume-personal-gender"]');
+    if (genderEl) {
+      // Get only the direct text node (e.g. "Мужчина"), not nested age/birthday
+      const firstText = genderEl.childNodes[0];
+      data.gender = firstText ? firstText.textContent.trim().replace(/,\s*$/, '') : '';
+    }
 
     // City / Address
     data.city = getText('[data-qa="resume-personal-address"]');
