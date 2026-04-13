@@ -213,6 +213,76 @@ async def employee_reminders_task():
         await asyncio.sleep(86400)
 
 
+async def standup_reminder_task():
+    """Send daily reminders at 11:30 MSK to chats with auto_tasks_enabled that had no standup today."""
+    from datetime import datetime, timedelta, timezone
+    from api.database import AsyncSessionLocal
+    from api.models.database import Chat
+    from sqlalchemy import select, or_
+
+    MSK = timezone(timedelta(hours=3))
+
+    # Wait for bot to start
+    await asyncio.sleep(60)
+
+    while True:
+        try:
+            now_msk = datetime.now(MSK)
+            # Calculate seconds until next 11:30 MSK
+            target = now_msk.replace(hour=11, minute=30, second=0, microsecond=0)
+            if now_msk >= target:
+                target += timedelta(days=1)
+            wait_seconds = (target - now_msk).total_seconds()
+            logger.info(f"Standup reminder: next check in {wait_seconds:.0f}s (at {target.strftime('%H:%M %Z')})")
+            await asyncio.sleep(wait_seconds)
+
+            # It's 11:30 MSK — check which chats need a reminder
+            today_start_utc = datetime.now(MSK).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(
+                timezone.utc
+            ).replace(tzinfo=None)
+
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(Chat).where(
+                        Chat.auto_tasks_enabled == True,
+                        Chat.is_active == True,
+                        or_(Chat.deleted_at == None, Chat.deleted_at.is_(None)),
+                        Chat.telegram_chat_id != None,
+                        # No standup today: either never had one, or last one was before today
+                        or_(
+                            Chat.last_standup_at == None,
+                            Chat.last_standup_at < today_start_utc,
+                        ),
+                    )
+                )
+                chats_to_remind = list(result.scalars().all())
+
+                if chats_to_remind:
+                    from api.bot import get_bot
+                    bot = get_bot()
+                    sent = 0
+                    for chat in chats_to_remind:
+                        try:
+                            await bot.send_message(
+                                chat.telegram_chat_id,
+                                "👋 Привет! Что сегодня собираешься делать?\n\n"
+                                "💡 Напиши план на день — я автоматически создам задачи.",
+                            )
+                            sent += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to send standup reminder to chat {chat.telegram_chat_id}: {e}")
+                    logger.info(f"Standup reminders sent: {sent}/{len(chats_to_remind)} chats")
+                else:
+                    logger.info("Standup reminder: all chats already have standups today")
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Standup reminder task error: {e}")
+            # On error, wait 1 hour before retry
+            await asyncio.sleep(3600)
+
+
 async def check_playwright_status():
     """Check Playwright status at startup and log the result."""
     import os
@@ -311,6 +381,10 @@ async def lifespan(app: FastAPI):
     employee_reminders_bg_task = asyncio.create_task(employee_reminders_task())
     logger.info("Employee reminders task started (daily)")
 
+    # Start standup reminder task (daily at 11:30 MSK)
+    standup_reminder_bg_task = asyncio.create_task(standup_reminder_task())
+    logger.info("Standup reminder task started (daily at 11:30 MSK)")
+
     # Log all registered routes for debugging
     logger.info("=== REGISTERED API ROUTES ===")
     vacancy_routes = []
@@ -336,6 +410,8 @@ async def lifespan(app: FastAPI):
         saturn_sync_task.cancel()
     if employee_reminders_bg_task:
         employee_reminders_bg_task.cancel()
+    if standup_reminder_bg_task:
+        standup_reminder_bg_task.cancel()
 
     # Close Redis connection
     try:

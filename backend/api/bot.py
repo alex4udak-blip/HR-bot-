@@ -2154,6 +2154,11 @@ async def collect_group_message(message: types.Message):
                         )
                         logger.info(f"📋 Task trigger result: {len(created_tasks)} tasks created for {message.from_user.full_name}")
                         if created_tasks:
+                            # Mark this chat as having received a standup today
+                            from datetime import datetime as dt
+                            chat.last_standup_at = dt.utcnow()
+                            await session.commit()
+
                             lines = ["\u2705 Задачи созданы из плана:"]
                             for t in created_tasks:
                                 lines.append(f"  \u2022 {t['task_key']} \"{t['title']}\" \u2192 {t['assignee']}")

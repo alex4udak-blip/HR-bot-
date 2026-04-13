@@ -368,6 +368,7 @@ class Chat(Base):
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True, index=True)
     is_active = Column(Boolean, default=True)
     auto_tasks_enabled = Column(Boolean, default=False, server_default="false")  # Auto-create tasks & status detection (off by default)
+    last_standup_at = Column(DateTime, nullable=True)  # Last time auto-tasks created tasks from this chat
     created_at = Column(DateTime, default=func.now())
     last_activity = Column(DateTime, default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime, nullable=True, index=True)  # Soft delete timestamp

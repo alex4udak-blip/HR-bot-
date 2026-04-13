@@ -64,6 +64,14 @@ async def ensure_shadow_columns():
             print('Adding auto_tasks_enabled column to chats...')
             await conn.execute(text('ALTER TABLE chats ADD COLUMN auto_tasks_enabled BOOLEAN DEFAULT false'))
 
+        # Check and add last_standup_at column to chats
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chats' AND column_name = 'last_standup_at')\"
+        ))
+        if not result.scalar():
+            print('Adding last_standup_at column to chats...')
+            await conn.execute(text('ALTER TABLE chats ADD COLUMN last_standup_at TIMESTAMP'))
+
         # Check and create time_off_requests table
         result = await conn.execute(text(
             \"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'time_off_requests')\"
