@@ -7,6 +7,7 @@ import re
 import os
 import logging
 import json
+from typing import Optional
 from datetime import datetime
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -141,8 +142,8 @@ TRIGGER_PATTERNS = [
     r'good morning', r'гуд морнинг',
 
     # ── Нумерованные/маркированные списки (стендап-паттерн) ─────────
-    r'(?m)^\s*1[\.\)]\s*.+\n\s*2[\.\)]\s*',   # "1. ... \n 2. ..." — numbered list
-    r'(?m)^\s*[-•]\s*.+\n\s*[-•]\s*',          # "- ...\n- ..." — bullet list
+    r'1[\.\)]\s*.+\n\s*2[\.\)]',               # "1. ... \n 2. ..." — numbered list
+    r'[-•]\s*.+\n\s*[-•]\s',                    # "- ...\n- ..." — bullet list
 
     # ── План на день ─────────────────────────────────────────────────
     r'план на день',                            # "План на день для FB Analitic"
@@ -172,7 +173,7 @@ def should_trigger(text: str) -> bool:
     return bool(TRIGGER_REGEX.search(text))
 
 
-def _extract_project_hint(text: str) -> str | None:
+def _extract_project_hint(text: str) -> Optional[str]:
     """Try to extract a project name from the message.
 
     Heuristics:
@@ -288,8 +289,8 @@ async def update_projects_from_status(
     db: AsyncSession,
     message_text: str,
     user_name: str,
-    telegram_user_id: int | None,
-    chat_id: int | None = None,
+    telegram_user_id: Optional[int],
+    chat_id: Optional[int] = None,
 ) -> list[dict]:
     """Parse status report and update project progress in the database.
 
@@ -462,9 +463,9 @@ async def create_tasks_from_message(
     db: AsyncSession,
     message_text: str,
     user_name: str,
-    telegram_user_id: int | None,
-    chat_id: int | None,
-    telegram_username: str | None = None,
+    telegram_user_id: Optional[int],
+    chat_id: Optional[int],
+    telegram_username: Optional[str] = None,
 ) -> list[dict]:
     """Full pipeline: detect trigger -> parse -> create tasks -> return results."""
     from ..models.database import (
