@@ -674,22 +674,24 @@ async def get_candidates_kanban(
 
     # Get vacancy names and rejection reasons for entities
     entity_ids = [e.id for e in entities]
-    vacancy_map = {}
-    rejection_map = {}
+    vacancy_map: dict = {}
+    rejection_map: dict = {}
     if entity_ids:
-        from api.models.database import Vacancy, VacancyApplication
-        va_result = await db.execute(
-            select(
-                VacancyApplication.entity_id,
-                Vacancy.title,
-                VacancyApplication.rejection_reason,
-            ).join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
-            .where(VacancyApplication.entity_id.in_(entity_ids))
-        )
-        for row in va_result.all():
-            vacancy_map[row.entity_id] = row.title
-            if row.rejection_reason:
-                rejection_map[row.entity_id] = row.rejection_reason
+        try:
+            va_result = await db.execute(
+                select(
+                    VacancyApplication.entity_id,
+                    Vacancy.title,
+                    VacancyApplication.rejection_reason,
+                ).join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
+                .where(VacancyApplication.entity_id.in_(entity_ids))
+            )
+            for row in va_result.all():
+                vacancy_map[row.entity_id] = row.title
+                if row.rejection_reason:
+                    rejection_map[row.entity_id] = row.rejection_reason
+        except Exception:
+            pass  # non-critical — proceed without vacancy info
 
     # Group by status
     grouped: dict[str, list] = {s: [] for s in KANBAN_STATUSES}

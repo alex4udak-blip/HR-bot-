@@ -4,24 +4,25 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
   Loader2,
-  Clock,
   X,
   RefreshCw,
   Phone,
   Mail,
-  MapPin,
-  Briefcase,
-  Calendar,
-  Tag,
-  MessageCircle,
-  ChevronRight,
+  ChevronDown,
   Settings2,
   Save,
   GripVertical,
   Send,
   User2,
-  DollarSign,
-  ExternalLink,
+  Pencil,
+  Plus,
+  CalendarDays,
+  MessageSquare,
+  ClipboardList,
+  Paperclip,
+  Gift,
+  MoreHorizontal,
+  PhoneCall,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -41,9 +42,9 @@ import { useAuthStore } from '@/stores/authStore';
 // ---------- constants ----------
 
 const AVATAR_COLORS: string[] = [
-  'bg-blue-500', 'bg-cyan-500', 'bg-purple-500', 'bg-indigo-500',
-  'bg-orange-500', 'bg-emerald-500', 'bg-pink-500', 'bg-teal-500',
-  'bg-rose-500', 'bg-amber-500', 'bg-violet-500', 'bg-lime-500',
+  '#6366f1', '#8b5cf6', '#06b6d4', '#0ea5e9', '#f59e0b',
+  '#10b981', '#ec4899', '#14b8a6', '#f43f5e', '#a855f7',
+  '#3b82f6', '#84cc16',
 ];
 
 const STATUS_COLORS: Record<string, string> = {
@@ -57,26 +58,6 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: '#ef4444',
 };
 
-const STATUS_BG: Record<string, string> = {
-  new: 'bg-blue-500/10 text-blue-400',
-  screening: 'bg-cyan-500/10 text-cyan-400',
-  practice: 'bg-purple-500/10 text-purple-400',
-  tech_practice: 'bg-indigo-500/10 text-indigo-400',
-  is_interview: 'bg-orange-500/10 text-orange-400',
-  offer: 'bg-yellow-500/10 text-yellow-400',
-  hired: 'bg-green-500/10 text-green-400',
-  rejected: 'bg-red-500/10 text-red-400',
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  hh: 'hh.ru',
-  'hh.ru': 'hh.ru',
-  linkedin: 'LinkedIn',
-  telegram: 'Telegram',
-  web: 'Web',
-  referral: 'Реферал',
-};
-
 // ---------- helpers ----------
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -88,26 +69,15 @@ function useDebounce<T>(value: T, delay: number): T {
   return debounced;
 }
 
-function timeAgo(dateStr: string): string {
-  const d = new Date(dateStr);
-  const now = new Date();
-  const diff = now.getTime() - d.getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}м`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}ч`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}д`;
-  const months = Math.floor(days / 30);
-  return `${months}мес`;
-}
-
 function formatDateTime(dateStr: string): string {
   const d = new Date(dateStr);
-  return d.toLocaleDateString('ru-RU', {
-    day: 'numeric', month: 'long', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
+  const day = d.getDate();
+  const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  const month = months[d.getMonth()];
+  const year = d.getFullYear();
+  const hours = String(d.getHours()).padStart(2, '0');
+  const mins = String(d.getMinutes()).padStart(2, '0');
+  return `${day} ${month} ${year}, ${hours}:${mins}`;
 }
 
 function getInitials(name: string): string {
@@ -131,20 +101,15 @@ export default function AllCandidatesPage() {
   const [loading, setLoading] = useState(true);
   const [recruiters, setRecruiters] = useState<RecruiterOption[]>([]);
 
-  // Filters
   const [searchText, setSearchText] = useState('');
   const debouncedSearch = useDebounce(searchText, 400);
-  const [activeTab, setActiveTab] = useState('all'); // 'all' or status name
+  const [activeTab, setActiveTab] = useState('all');
   const [recruiterId, setRecruiterId] = useState<number | undefined>(undefined);
 
-  // Selected candidate
   const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string>('');
-
-  // Stage settings modal (admin only)
   const [showStageSettings, setShowStageSettings] = useState(false);
-
-  // Comment
+  const [showStageDropdown, setShowStageDropdown] = useState(false);
   const [comment, setComment] = useState('');
 
   const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
@@ -162,7 +127,7 @@ export default function AllCandidatesPage() {
       });
       setBoard(data);
     } catch {
-      console.error('Failed to load kanban');
+      // ignore
     } finally {
       setLoading(false);
     }
@@ -170,23 +135,21 @@ export default function AllCandidatesPage() {
 
   useEffect(() => { fetchBoard(); }, [fetchBoard]);
 
-  // Get filtered candidates for current tab
-  const getFilteredCards = useCallback((): { card: KanbanCard; status: string }[] => {
+  // Filtered candidates for current tab
+  const filteredCards = (() => {
     if (!board) return [];
-    const items: { card: KanbanCard; status: string }[] = [];
+    const items: { card: KanbanCard; status: string; label: string }[] = [];
     for (const col of board.columns) {
       if (activeTab === 'all' || col.status === activeTab) {
         for (const card of col.cards) {
-          items.push({ card, status: col.status });
+          items.push({ card, status: col.status, label: col.label });
         }
       }
     }
     return items;
-  }, [board, activeTab]);
+  })();
 
-  const filteredCards = getFilteredCards();
-
-  // Auto-select first candidate when list changes
+  // Auto-select first candidate
   useEffect(() => {
     if (filteredCards.length > 0 && !selectedCard) {
       setSelectedCard(filteredCards[0].card);
@@ -194,32 +157,29 @@ export default function AllCandidatesPage() {
     }
   }, [filteredCards.length]);
 
-  // Handle status change
   const handleStatusChange = async (newStatus: string) => {
     if (!selectedCard || newStatus === selectedStatus) return;
     const oldStatus = selectedStatus;
     const cardName = selectedCard.name;
 
-    // Optimistic update
     setBoard(prev => {
       if (!prev) return prev;
-      const newColumns = prev.columns.map(col => {
-        if (col.status === oldStatus) {
-          return { ...col, cards: col.cards.filter(c => c.id !== selectedCard.id), count: col.count - 1 };
-        }
-        if (col.status === newStatus) {
-          return { ...col, cards: [selectedCard, ...col.cards], count: col.count + 1 };
-        }
-        return col;
-      });
-      return { ...prev, columns: newColumns };
+      return {
+        ...prev,
+        columns: prev.columns.map(col => {
+          if (col.status === oldStatus) return { ...col, cards: col.cards.filter(c => c.id !== selectedCard.id), count: col.count - 1 };
+          if (col.status === newStatus) return { ...col, cards: [selectedCard, ...col.cards], count: col.count + 1 };
+          return col;
+        }),
+      };
     });
     setSelectedStatus(newStatus);
+    setShowStageDropdown(false);
 
     try {
       await changeCandidateStatus(selectedCard.id, newStatus);
       const label = board?.columns.find(c => c.status === newStatus)?.label || newStatus;
-      toast.success(`${cardName} -> ${label}`);
+      toast.success(`${cardName} \u2192 ${label}`);
     } catch {
       toast.error('Ошибка перемещения');
       fetchBoard();
@@ -229,135 +189,169 @@ export default function AllCandidatesPage() {
   const totalCount = board?.total || 0;
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* ===== TOP TABS (like Huntflow) ===== */}
-      <div className="flex-shrink-0 border-b border-white/5">
-        {/* Search + filters row */}
-        <div className="px-4 lg:px-6 py-3 flex items-center gap-3">
-          {/* Search */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-            <input
-              type="text"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              placeholder="Поиск по имени, email, телефону..."
-              className="w-full pl-9 pr-8 py-2 glass-light rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
-            />
-            {searchText && (
-              <button onClick={() => setSearchText('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60">
-                <X className="w-3.5 h-3.5" />
+    <div className="h-full flex flex-col overflow-hidden bg-[#0d1117]">
+      {/* ====== TOP TAB BAR (Huntflow style) ====== */}
+      <div className="flex-shrink-0 bg-[#161b22] border-b border-[#21262d]">
+        <div className="flex items-center h-12 px-2 overflow-x-auto scrollbar-none">
+          {/* Search icon */}
+          <button className="p-2 text-white/30 hover:text-white/60 flex-shrink-0">
+            <Search className="w-4 h-4" />
+          </button>
+
+          {/* Tabs */}
+          <div className="flex items-center gap-0 ml-2">
+            {/* "Все" tab */}
+            <button
+              onClick={() => { setActiveTab('all'); setSelectedCard(null); }}
+              className={clsx(
+                'relative flex items-center gap-2 px-4 h-12 text-sm font-medium transition-colors whitespace-nowrap',
+                activeTab === 'all' ? 'text-[#58a6ff]' : 'text-[#8b949e] hover:text-[#c9d1d9]',
+              )}
+            >
+              Все
+              <span className={clsx(
+                'text-xs px-2 py-0.5 rounded-full font-semibold',
+                activeTab === 'all' ? 'bg-[#1f6feb] text-white' : 'bg-[#21262d] text-[#8b949e]'
+              )}>
+                {totalCount}
+              </span>
+              {activeTab === 'all' && <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-[#58a6ff] rounded-full" />}
+            </button>
+
+            {board?.columns.map(col => (
+              <button
+                key={col.status}
+                onClick={() => { setActiveTab(col.status); setSelectedCard(null); }}
+                className={clsx(
+                  'relative flex items-center gap-2 px-4 h-12 text-sm font-medium transition-colors whitespace-nowrap',
+                  activeTab === col.status ? 'text-[#c9d1d9]' : 'text-[#8b949e] hover:text-[#c9d1d9]',
+                )}
+              >
+                {col.label}
+                {col.count > 0 && (
+                  <span className={clsx(
+                    'text-xs px-1.5 py-0.5 rounded-full font-medium',
+                    activeTab === col.status ? 'bg-[#21262d] text-[#c9d1d9]' : 'text-[#8b949e]',
+                  )}>
+                    {col.count}
+                  </span>
+                )}
+                {activeTab === col.status && (
+                  <span
+                    className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full"
+                    style={{ backgroundColor: STATUS_COLORS[col.status] }}
+                  />
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Right side: settings */}
+          <div className="ml-auto flex items-center gap-1 flex-shrink-0">
+            {/* Recruiter filter */}
+            <select
+              value={recruiterId || ''}
+              onChange={(e) => setRecruiterId(e.target.value ? Number(e.target.value) : undefined)}
+              className="px-2 py-1 bg-[#21262d] border border-[#30363d] rounded-md text-xs text-[#c9d1d9] focus:outline-none"
+            >
+              <option value="">Все рекрутеры</option>
+              {recruiters.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+
+            <button onClick={fetchBoard} disabled={loading} className="p-1.5 text-[#8b949e] hover:text-[#c9d1d9]">
+              <RefreshCw className={clsx('w-4 h-4', loading && 'animate-spin')} />
+            </button>
+
+            {isAdmin && (
+              <button onClick={() => setShowStageSettings(true)} className="p-1.5 text-[#8b949e] hover:text-[#f0883e]" title="Настроить этапы">
+                <Settings2 className="w-4 h-4" />
               </button>
             )}
           </div>
-
-          {/* Recruiter filter */}
-          <select
-            value={recruiterId || ''}
-            onChange={(e) => setRecruiterId(e.target.value ? Number(e.target.value) : undefined)}
-            className="px-3 py-2 glass-light rounded-xl text-sm text-white/80 min-w-[150px]"
-          >
-            <option value="">Все рекрутеры</option>
-            {recruiters.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-
-          {/* Refresh */}
-          <button onClick={fetchBoard} disabled={loading} className="p-2 glass-light rounded-xl text-white/50 hover:text-white/80 transition-colors">
-            <RefreshCw className={clsx('w-4 h-4', loading && 'animate-spin')} />
-          </button>
-
-          {/* Admin: stage settings */}
-          {isAdmin && (
-            <button
-              onClick={() => setShowStageSettings(true)}
-              className="p-2 glass-light rounded-xl text-white/50 hover:text-amber-400 transition-colors"
-              title="Настроить этапы"
-            >
-              <Settings2 className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Tabs row */}
-        <div className="px-4 lg:px-6 flex items-center gap-1 overflow-x-auto pb-0">
-          {/* "Все" tab */}
-          <button
-            onClick={() => { setActiveTab('all'); setSelectedCard(null); }}
-            className={clsx(
-              'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap',
-              activeTab === 'all'
-                ? 'border-cyan-400 text-cyan-400'
-                : 'border-transparent text-white/40 hover:text-white/60'
-            )}
-          >
-            Все
-            <span className={clsx(
-              'text-xs px-1.5 py-0.5 rounded-md font-semibold',
-              activeTab === 'all' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-white/5 text-white/30'
-            )}>
-              {totalCount}
-            </span>
-          </button>
-
-          {board?.columns.map(col => (
-            <button
-              key={col.status}
-              onClick={() => { setActiveTab(col.status); setSelectedCard(null); }}
-              className={clsx(
-                'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap',
-                activeTab === col.status
-                  ? 'text-white/90'
-                  : 'border-transparent text-white/40 hover:text-white/60'
-              )}
-              style={activeTab === col.status ? { borderBottomColor: STATUS_COLORS[col.status] || '#06b6d4' } : {}}
-            >
-              {col.label}
-              <span className={clsx(
-                'text-xs px-1.5 py-0.5 rounded-md font-semibold',
-                activeTab === col.status ? STATUS_BG[col.status] : 'bg-white/5 text-white/30'
-              )}>
-                {col.count}
-              </span>
-            </button>
-          ))}
         </div>
       </div>
 
-      {/* ===== MAIN CONTENT: List + Detail ===== */}
+      {/* ====== MAIN: List + Detail ====== */}
       {loading && !board ? (
         <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
+          <Loader2 className="w-8 h-8 animate-spin text-[#58a6ff]" />
         </div>
       ) : (
         <div className="flex-1 flex overflow-hidden">
-          {/* LEFT: Candidate List */}
-          <div className="w-[380px] lg:w-[420px] flex-shrink-0 border-r border-white/5 overflow-y-auto">
+          {/* ====== LEFT: Candidate List ====== */}
+          <div className="w-[340px] lg:w-[380px] flex-shrink-0 border-r border-[#21262d] bg-[#0d1117] overflow-y-auto">
+            {/* Search in list */}
+            <div className="sticky top-0 z-10 bg-[#0d1117] p-3 border-b border-[#21262d]">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#484f58]" />
+                <input
+                  type="text"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="Поиск кандидатов..."
+                  className="w-full pl-9 pr-8 py-2 bg-[#161b22] border border-[#30363d] rounded-lg text-sm text-[#c9d1d9] placeholder-[#484f58] focus:outline-none focus:border-[#58a6ff]"
+                />
+                {searchText && (
+                  <button onClick={() => setSearchText('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#484f58] hover:text-[#8b949e]">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
             {filteredCards.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-white/20">
+              <div className="flex flex-col items-center justify-center py-20 text-[#484f58]">
                 <User2 className="w-10 h-10 mb-3" />
                 <p className="text-sm">Кандидатов не найдено</p>
               </div>
             ) : (
-              filteredCards.map(({ card, status }) => (
-                <CandidateListItem
-                  key={card.id}
-                  card={card}
-                  status={status}
-                  isSelected={selectedCard?.id === card.id}
-                  statusLabel={board?.columns.find(c => c.status === status)?.label || status}
-                  onClick={() => {
-                    setSelectedCard(card);
-                    setSelectedStatus(status);
-                  }}
-                />
-              ))
+              filteredCards.map(({ card, status }) => {
+                const isSelected = selectedCard?.id === card.id;
+                const initials = getInitials(card.name);
+                const color = getAvatarColor(card.name);
+
+                return (
+                  <div
+                    key={card.id}
+                    onClick={() => { setSelectedCard(card); setSelectedStatus(status); }}
+                    className={clsx(
+                      'flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors border-b border-[#21262d]/50',
+                      isSelected ? 'bg-[#161b22]' : 'hover:bg-[#161b22]/50',
+                    )}
+                  >
+                    {/* Avatar circle */}
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold text-white"
+                      style={{ backgroundColor: color }}
+                    >
+                      {initials}
+                    </div>
+
+                    {/* Name + position + company */}
+                    <div className="flex-1 min-w-0">
+                      <p className={clsx(
+                        'text-sm font-semibold truncate',
+                        isSelected ? 'text-[#c9d1d9]' : 'text-[#c9d1d9]',
+                      )}>
+                        {card.name}
+                      </p>
+                      {card.position && (
+                        <p className="text-xs text-[#8b949e] truncate">{card.position}</p>
+                      )}
+                      {card.company && (
+                        <p className="text-xs text-[#484f58] truncate">{card.company}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
 
-          {/* RIGHT: Candidate Detail */}
-          <div className="flex-1 overflow-y-auto">
+          {/* ====== RIGHT: Candidate Detail (Huntflow style) ====== */}
+          <div className="flex-1 overflow-y-auto bg-[#0d1117]">
             {selectedCard ? (
-              <CandidateDetail
+              <HuntflowDetail
                 card={selectedCard}
                 status={selectedStatus}
                 statusLabel={board?.columns.find(c => c.status === selectedStatus)?.label || selectedStatus}
@@ -365,10 +359,12 @@ export default function AllCandidatesPage() {
                 comment={comment}
                 setComment={setComment}
                 onStatusChange={handleStatusChange}
+                showStageDropdown={showStageDropdown}
+                setShowStageDropdown={setShowStageDropdown}
                 onOpenContact={() => navigate(`/contacts/${selectedCard.id}`)}
               />
             ) : (
-              <div className="flex items-center justify-center h-full text-white/20">
+              <div className="flex items-center justify-center h-full text-[#484f58]">
                 <div className="text-center">
                   <User2 className="w-12 h-12 mx-auto mb-3 opacity-30" />
                   <p className="text-sm">Выберите кандидата</p>
@@ -379,95 +375,20 @@ export default function AllCandidatesPage() {
         </div>
       )}
 
-      {/* Stage Settings Modal (admin only) */}
+      {/* Stage Settings Modal */}
       <AnimatePresence>
-        {showStageSettings && (
-          <StageSettingsModal onClose={() => setShowStageSettings(false)} />
-        )}
+        {showStageSettings && <StageSettingsModal onClose={() => setShowStageSettings(false)} />}
       </AnimatePresence>
     </div>
   );
 }
 
 
-// ---------- Candidate List Item ----------
+// ================================================================
+// HUNTFLOW-STYLE DETAIL PANEL
+// ================================================================
 
-function CandidateListItem({
-  card,
-  status,
-  isSelected,
-  statusLabel,
-  onClick,
-}: {
-  card: KanbanCard;
-  status: string;
-  isSelected: boolean;
-  statusLabel: string;
-  onClick: () => void;
-}) {
-  const initials = getInitials(card.name);
-  const avatarColor = getAvatarColor(card.name);
-
-  return (
-    <div
-      onClick={onClick}
-      className={clsx(
-        'flex items-start gap-3 px-4 py-3.5 cursor-pointer transition-all border-b border-white/[0.03]',
-        isSelected
-          ? 'bg-cyan-500/[0.08] border-l-2 border-l-cyan-400'
-          : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'
-      )}
-    >
-      {/* Avatar */}
-      <div className={clsx(
-        'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold text-white',
-        avatarColor,
-      )}>
-        {initials}
-      </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-sm text-white/90 truncate">{card.name}</span>
-        </div>
-        {card.position && (
-          <p className="text-xs text-white/40 truncate mt-0.5">{card.position}</p>
-        )}
-        {card.company && (
-          <p className="text-xs text-white/30 truncate">{card.company}</p>
-        )}
-        <div className="flex items-center gap-2 mt-1.5">
-          {/* Status badge */}
-          <span className={clsx('text-[10px] px-1.5 py-0.5 rounded font-medium', STATUS_BG[status])}>
-            {statusLabel}
-          </span>
-          {card.source && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-white/30">
-              {SOURCE_LABELS[card.source] || card.source}
-            </span>
-          )}
-          {card.vacancy_name && (
-            <span className="text-[10px] text-white/25 truncate max-w-[120px]">
-              {card.vacancy_name}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Time */}
-      <div className="flex-shrink-0 flex items-center gap-1 text-[10px] text-white/20 mt-1">
-        <Clock className="w-3 h-3" />
-        {timeAgo(card.created_at)}
-      </div>
-    </div>
-  );
-}
-
-
-// ---------- Candidate Detail Panel ----------
-
-function CandidateDetail({
+function HuntflowDetail({
   card,
   status,
   statusLabel,
@@ -475,6 +396,8 @@ function CandidateDetail({
   comment,
   setComment,
   onStatusChange,
+  showStageDropdown,
+  setShowStageDropdown,
   onOpenContact,
 }: {
   card: KanbanCard;
@@ -483,200 +406,310 @@ function CandidateDetail({
   columns: KanbanColumn[];
   comment: string;
   setComment: (v: string) => void;
-  onStatusChange: (newStatus: string) => void;
+  onStatusChange: (s: string) => void;
+  showStageDropdown: boolean;
+  setShowStageDropdown: (v: boolean) => void;
   onOpenContact: () => void;
 }) {
   const initials = getInitials(card.name);
-  const avatarColor = getAvatarColor(card.name);
+  const color = getAvatarColor(card.name);
 
   return (
-    <div className="p-6 max-w-3xl">
-      {/* Action buttons */}
-      <div className="flex items-center gap-2 mb-6">
-        <button
-          onClick={onOpenContact}
-          className="flex items-center gap-2 px-4 py-2 glass-light rounded-xl text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-        >
-          <ExternalLink className="w-4 h-4" />
-          Открыть карточку
+    <div className="max-w-[780px] mx-auto">
+      {/* ---- Top action buttons (like Huntflow) ---- */}
+      <div className="flex items-center gap-2 px-6 py-4 border-b border-[#21262d]">
+        <button className="flex items-center gap-1.5 px-3 py-1.5 border border-[#30363d] rounded-lg text-sm text-[#c9d1d9] hover:bg-[#21262d] transition-colors">
+          <Plus className="w-4 h-4" />
+          Взять на вакансию
         </button>
-        <button className="flex items-center gap-2 px-4 py-2 glass-light rounded-xl text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors">
+        <button className="flex items-center gap-1.5 px-3 py-1.5 border border-[#30363d] rounded-lg text-sm text-[#c9d1d9] hover:bg-[#21262d] transition-colors">
           <Send className="w-4 h-4" />
           Отправить
         </button>
+        <button
+          onClick={onOpenContact}
+          className="flex items-center gap-1.5 px-3 py-1.5 border border-[#30363d] rounded-lg text-sm text-[#c9d1d9] hover:bg-[#21262d] transition-colors"
+        >
+          <Pencil className="w-4 h-4" />
+          Редактировать
+        </button>
       </div>
 
-      {/* Name + Avatar */}
-      <div className="flex items-start gap-5 mb-6">
-        <div className="flex-1">
-          <h2 className="text-2xl font-bold text-white/95">{card.name}</h2>
+      {/* ---- Candidate Header ---- */}
+      <div className="px-6 pt-6 pb-4 flex items-start gap-5">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-[22px] font-bold text-[#e6edf3] leading-tight">{card.name}</h1>
           {(card.position || card.company) && (
-            <p className="text-sm text-white/50 mt-1">
+            <p className="text-sm text-[#8b949e] mt-1.5">
               {card.position}
-              {card.position && card.company && ' \u00b7 '}
-              {card.company}
+              {card.position && card.company && (
+                <span className="mx-2 text-[#30363d]">&middot;</span>
+              )}
+              {card.company && <span>{card.company}</span>}
             </p>
           )}
         </div>
-        <div className={clsx(
-          'w-16 h-16 rounded-2xl flex items-center justify-center text-xl font-bold text-white flex-shrink-0',
-          avatarColor,
-        )}>
+
+        {/* Avatar (large, like Huntflow photo) */}
+        <div
+          className="w-[80px] h-[80px] rounded-xl flex items-center justify-center text-2xl font-bold text-white flex-shrink-0"
+          style={{ backgroundColor: color }}
+        >
           {initials}
         </div>
       </div>
 
-      {/* Info table */}
-      <div className="space-y-3 mb-6">
-        {card.phone && (
-          <InfoRow icon={Phone} label="Телефон">
-            <a href={`tel:${card.phone}`} className="text-cyan-400 hover:underline">{card.phone}</a>
-          </InfoRow>
-        )}
-        {card.email && (
-          <InfoRow icon={Mail} label="Эл. почта">
-            <a href={`mailto:${card.email}`} className="text-cyan-400 hover:underline">{card.email}</a>
-          </InfoRow>
-        )}
-        {card.telegram_username && (
-          <InfoRow icon={MessageCircle} label="Telegram">
-            <a href={`https://t.me/${card.telegram_username}`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">
-              @{card.telegram_username}
-            </a>
-          </InfoRow>
-        )}
-        {card.city && (
-          <InfoRow icon={MapPin} label="Город">
-            <span className="text-white/70">{card.city}</span>
-          </InfoRow>
-        )}
-        {card.age && (
-          <InfoRow icon={Calendar} label="Возраст">
-            <span className="text-white/70">{card.age}</span>
-          </InfoRow>
-        )}
-        {card.salary && (
-          <InfoRow icon={DollarSign} label="Зарплата">
-            <span className="text-white/70">{card.salary}</span>
-          </InfoRow>
-        )}
-        {card.total_experience && (
-          <InfoRow icon={Briefcase} label="Опыт">
-            <span className="text-white/70">{card.total_experience}</span>
-          </InfoRow>
-        )}
-        {card.recruiter_name && (
-          <InfoRow icon={User2} label="Рекрутер">
-            <span className="text-white/70">{card.recruiter_name}</span>
-          </InfoRow>
-        )}
-        {card.tags.length > 0 && (
-          <InfoRow icon={Tag} label="Метки">
-            <div className="flex flex-wrap gap-1.5">
-              {card.tags.map(tag => (
-                <span key={tag} className="text-xs px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-400/70">
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </InfoRow>
-        )}
+      {/* ---- Info Table (dotted lines like Huntflow) ---- */}
+      <div className="px-6 pb-6">
+        <table className="w-full">
+          <tbody>
+            {card.phone && (
+              <InfoTableRow label="Телефон">
+                <div className="flex items-center gap-2">
+                  <a href={`tel:${card.phone}`} className="text-[#c9d1d9] hover:text-[#58a6ff]">{card.phone}</a>
+                  {/* Messenger icons like Huntflow */}
+                  <div className="flex items-center gap-1">
+                    <span className="w-5 h-5 rounded-full bg-[#25D366] flex items-center justify-center" title="WhatsApp">
+                      <Phone className="w-3 h-3 text-white" />
+                    </span>
+                    <span className="w-5 h-5 rounded-full bg-[#0088cc] flex items-center justify-center" title="Telegram">
+                      <Send className="w-3 h-3 text-white" />
+                    </span>
+                  </div>
+                </div>
+              </InfoTableRow>
+            )}
+            {card.email && (
+              <InfoTableRow label="Эл. почта">
+                <a href={`mailto:${card.email}`} className="text-[#c9d1d9] hover:text-[#58a6ff]">{card.email}</a>
+              </InfoTableRow>
+            )}
+            {card.telegram_username && (
+              <InfoTableRow label="Telegram">
+                <a href={`https://t.me/${card.telegram_username}`} target="_blank" rel="noopener noreferrer" className="text-[#58a6ff] hover:underline">
+                  {card.telegram_username}
+                </a>
+              </InfoTableRow>
+            )}
+            {card.age && (
+              <InfoTableRow label="Возраст">
+                <span className="text-[#c9d1d9]">{card.age}</span>
+              </InfoTableRow>
+            )}
+            {card.city && (
+              <InfoTableRow label="Город">
+                <span className="text-[#c9d1d9]">{card.city}</span>
+              </InfoTableRow>
+            )}
+            {card.salary && (
+              <InfoTableRow label="Зарплата">
+                <span className="text-[#c9d1d9]">{card.salary}</span>
+              </InfoTableRow>
+            )}
+            {card.total_experience && (
+              <InfoTableRow label="Опыт">
+                <span className="text-[#c9d1d9]">{card.total_experience}</span>
+              </InfoTableRow>
+            )}
+            {card.recruiter_name && (
+              <InfoTableRow label="Рекрутер">
+                <span className="text-[#c9d1d9]">{card.recruiter_name}</span>
+              </InfoTableRow>
+            )}
+            <InfoTableRow label="Метки">
+              {card.tags.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {card.tags.map(tag => (
+                    <span key={tag} className="text-xs px-2 py-0.5 rounded bg-[#1f6feb]/20 text-[#58a6ff]">{tag}</span>
+                  ))}
+                  <button className="text-xs text-[#58a6ff] hover:underline">Добавить</button>
+                </div>
+              ) : (
+                <button className="text-sm text-[#58a6ff] hover:underline">Добавить</button>
+              )}
+            </InfoTableRow>
+          </tbody>
+        </table>
       </div>
 
-      {/* Stage card (like Huntflow) */}
-      <div className={clsx(
-        'rounded-xl border p-5 mb-6',
-        status === 'rejected' ? 'border-red-500/20 bg-red-500/5' : 'border-white/10 bg-white/[0.02]'
-      )}>
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span
-                className="w-2.5 h-2.5 rounded-full"
-                style={{ backgroundColor: STATUS_COLORS[status] || '#06b6d4' }}
-              />
-              <span className="font-semibold text-white/90">{statusLabel}</span>
+      {/* ---- Stage Card (Huntflow exact style) ---- */}
+      <div className="px-6 pb-4">
+        <div
+          className="rounded-xl p-5 relative"
+          style={{
+            backgroundColor: status === 'rejected'
+              ? 'rgba(248,81,73,0.08)'
+              : status === 'hired'
+                ? 'rgba(63,185,80,0.08)'
+                : 'rgba(56,139,253,0.06)',
+            border: `1px solid ${status === 'rejected' ? 'rgba(248,81,73,0.2)' : status === 'hired' ? 'rgba(63,185,80,0.2)' : 'rgba(56,139,253,0.15)'}`,
+          }}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <p className="text-base font-semibold" style={{ color: STATUS_COLORS[status] || '#58a6ff' }}>
+                {statusLabel}
+                {card.rejection_reason && (
+                  <span className="font-normal text-[#f85149]">. {card.rejection_reason}</span>
+                )}
+              </p>
+              {card.vacancy_name && (
+                <p className="text-sm text-[#8b949e] mt-1">{card.vacancy_name}</p>
+              )}
             </div>
-            {card.vacancy_name && (
-              <p className="text-sm text-white/40 mt-1 ml-[18px]">{card.vacancy_name}</p>
-            )}
-            {card.rejection_reason && (
-              <p className="text-sm text-red-400/70 mt-1 ml-[18px]">{card.rejection_reason}</p>
-            )}
-          </div>
 
-          {/* Change stage dropdown */}
-          <div className="relative">
-            <select
-              value={status}
-              onChange={(e) => onStatusChange(e.target.value)}
-              className="appearance-none px-4 py-2 rounded-xl text-sm font-medium cursor-pointer transition-colors bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 pr-8"
-              style={{ borderColor: STATUS_COLORS[status] || '#06b6d4' }}
-            >
-              {columns.map(col => (
-                <option key={col.status} value={col.status}>{col.label}</option>
-              ))}
-            </select>
-            <ChevronRight className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 rotate-90 pointer-events-none" />
+            {/* Stage change button (like Huntflow "Сменить этап подбора") */}
+            <div className="relative flex-shrink-0">
+              <button
+                onClick={() => setShowStageDropdown(!showStageDropdown)}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium text-white transition-colors"
+                style={{ backgroundColor: STATUS_COLORS[status] || '#388bfd' }}
+              >
+                Сменить этап подбора
+              </button>
+
+              {/* Dropdown */}
+              {showStageDropdown && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowStageDropdown(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-[#161b22] border border-[#30363d] rounded-xl shadow-xl overflow-hidden">
+                    {columns.map(col => (
+                      <button
+                        key={col.status}
+                        onClick={() => onStatusChange(col.status)}
+                        className={clsx(
+                          'w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors',
+                          col.status === status
+                            ? 'bg-[#1f6feb]/10 text-[#58a6ff]'
+                            : 'text-[#c9d1d9] hover:bg-[#21262d]'
+                        )}
+                      >
+                        <span
+                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: STATUS_COLORS[col.status] }}
+                        />
+                        {col.label}
+                        {col.status === status && <span className="ml-auto text-[#58a6ff]">✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
-
-        {/* Date */}
-        <p className="text-xs text-white/25 mt-3 ml-[18px]">
-          Добавлен: {formatDateTime(card.created_at)}
-        </p>
       </div>
 
-      {/* Comment section */}
-      <div className="mb-6">
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          placeholder="Написать комментарий..."
-          rows={3}
-          className="w-full px-4 py-3 glass-light rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500/50 placeholder:text-white/20"
-        />
-      </div>
+      {/* ---- Comment Input ---- */}
+      <div className="px-6 pb-4">
+        <div className="border border-[#30363d] rounded-xl overflow-hidden bg-[#0d1117]">
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Написать комментарий..."
+            rows={2}
+            className="w-full px-4 py-3 bg-transparent text-sm text-[#c9d1d9] placeholder-[#484f58] resize-none focus:outline-none"
+          />
 
-      {/* Source info */}
-      {card.source && (
-        <div className="text-xs text-white/20 flex items-center gap-2">
-          <span>Источник:</span>
-          <span className="text-white/40">{SOURCE_LABELS[card.source] || card.source}</span>
+          {/* Action chips (Huntflow style: Письмо, Интервью, СМС...) */}
+          <div className="flex items-center gap-1.5 px-3 py-2.5 border-t border-[#21262d] flex-wrap">
+            <ActionChip icon={Mail} label="Письмо" />
+            <ActionChip icon={CalendarDays} label="Интервью" />
+            <ActionChip icon={MessageSquare} label="СМС" />
+            <ActionChip icon={PhoneCall} label="Обратная связь" />
+            <ActionChip icon={ClipboardList} label="Анкета" />
+            <ActionChip icon={Gift} label="Оффер" />
+            <ActionChip icon={Paperclip} label="Файл" />
+          </div>
         </div>
-      )}
+      </div>
+
+      {/* ---- Actions History ---- */}
+      <div className="px-6 pb-6">
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-sm text-[#c9d1d9] font-medium">Действия:</span>
+          <button className="flex items-center gap-1 text-sm text-[#8b949e] hover:text-[#c9d1d9]">
+            Все <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Timeline entry */}
+        <div className="space-y-4">
+          <TimelineEntry
+            date={formatDateTime(card.created_at)}
+            text={`Кандидат добавлен (${statusLabel})`}
+            status={status}
+          />
+          {card.source && (
+            <TimelineEntry
+              date={formatDateTime(card.created_at)}
+              text={`Источник: ${card.source}`}
+              status="info"
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
 
-// ---------- Info Row ----------
+// ---- Info Table Row (with dotted separator like Huntflow) ----
 
-function InfoRow({
-  icon: Icon,
-  label,
-  children,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  children: React.ReactNode;
-}) {
+function InfoTableRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-3">
-      <div className="w-28 flex-shrink-0 flex items-center gap-2 text-white/30">
-        <Icon className="w-4 h-4" />
-        <span className="text-xs">{label}</span>
+    <tr className="border-b border-dotted border-[#21262d]">
+      <td className="py-2.5 pr-4 text-sm text-[#8b949e] whitespace-nowrap align-top w-[120px]">{label}</td>
+      <td className="py-2.5 text-sm align-top">{children}</td>
+    </tr>
+  );
+}
+
+
+// ---- Action Chip (Письмо, Интервью...) ----
+
+function ActionChip({ icon: Icon, label }: { icon: React.ComponentType<{ className?: string }>; label: string }) {
+  return (
+    <button className="flex items-center gap-1.5 px-3 py-1.5 border border-[#30363d] rounded-lg text-xs text-[#8b949e] hover:text-[#c9d1d9] hover:border-[#484f58] transition-colors">
+      <Icon className="w-3.5 h-3.5" />
+      {label}
+    </button>
+  );
+}
+
+
+// ---- Timeline Entry ----
+
+function TimelineEntry({ date, text, status }: { date: string; text: string; status: string }) {
+  return (
+    <div className="flex items-start gap-3 relative">
+      <div className="flex flex-col items-center">
+        <div
+          className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+          style={{ backgroundColor: STATUS_COLORS[status] || '#484f58' }}
+        />
+        <div className="w-px flex-1 bg-[#21262d] mt-1" />
       </div>
-      <div className="flex-1 text-sm">{children}</div>
+      <div className="flex-1 pb-2">
+        <div className="flex items-center gap-2 text-xs text-[#484f58]">
+          <span>Я</span>
+          <span>{date}</span>
+          <button className="ml-auto text-[#484f58] hover:text-[#8b949e]">
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-sm text-[#c9d1d9] mt-1">{text}</p>
+      </div>
     </div>
   );
 }
 
 
-// ---------- Stage Settings Modal (admin only) ----------
+// ================================================================
+// STAGE SETTINGS MODAL (admin only)
+// ================================================================
 
 function StageSettingsModal({ onClose }: { onClose: () => void }) {
-  // Default stages — admin can reorder / rename
   const [stages, setStages] = useState([
     { key: 'new', label: 'Новый', color: '#3b82f6' },
     { key: 'screening', label: 'Скрининг', color: '#06b6d4' },
@@ -697,7 +730,6 @@ function StageSettingsModal({ onClose }: { onClose: () => void }) {
   };
 
   const handleSave = () => {
-    // TODO: Save to backend when API is ready
     toast.success('Настройки этапов сохранены');
     onClose();
   };
@@ -707,7 +739,7 @@ function StageSettingsModal({ onClose }: { onClose: () => void }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={onClose}
     >
       <motion.div
@@ -715,50 +747,47 @@ function StageSettingsModal({ onClose }: { onClose: () => void }) {
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-dark-900 border border-white/10 rounded-2xl w-full max-w-lg p-6 shadow-2xl"
+        className="bg-[#161b22] border border-[#30363d] rounded-2xl w-full max-w-lg p-6 shadow-2xl"
       >
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-bold text-white/90">Настройка этапов</h3>
-          <button onClick={onClose} className="text-white/30 hover:text-white/60">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-lg font-bold text-[#e6edf3]">Настройка этапов</h3>
+          <button onClick={onClose} className="text-[#484f58] hover:text-[#8b949e]">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <p className="text-xs text-white/30 mb-4">
+        <p className="text-xs text-[#484f58] mb-4">
           Настройте названия и цвета этапов воронки. Изменения применятся для всей организации.
         </p>
 
-        <div className="space-y-2 mb-6">
+        <div className="space-y-1.5 mb-6">
           {stages.map((stage, idx) => (
-            <div key={stage.key} className="flex items-center gap-3 p-2.5 glass-light rounded-xl">
-              <GripVertical className="w-4 h-4 text-white/15 flex-shrink-0 cursor-grab" />
+            <div key={stage.key} className="flex items-center gap-3 p-2.5 bg-[#0d1117] rounded-lg border border-[#21262d]">
+              <GripVertical className="w-4 h-4 text-[#30363d] flex-shrink-0 cursor-grab" />
               <input
                 type="color"
                 value={stage.color}
                 onChange={(e) => handleColorChange(idx, e.target.value)}
-                className="w-7 h-7 rounded-lg border-0 cursor-pointer bg-transparent flex-shrink-0"
+                className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent flex-shrink-0"
               />
               <input
                 type="text"
                 value={stage.label}
                 onChange={(e) => handleLabelChange(idx, e.target.value)}
-                className="flex-1 bg-transparent text-sm text-white/80 focus:outline-none"
+                className="flex-1 bg-transparent text-sm text-[#c9d1d9] focus:outline-none"
               />
-              <span className="text-[10px] text-white/15 font-mono flex-shrink-0">{stage.key}</span>
+              <span className="text-[10px] text-[#30363d] font-mono flex-shrink-0">{stage.key}</span>
             </div>
           ))}
         </div>
 
         <div className="flex items-center justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-white/50 hover:text-white/80 transition-colors"
-          >
+          <button onClick={onClose} className="px-4 py-2 text-sm text-[#8b949e] hover:text-[#c9d1d9] transition-colors">
             Отмена
           </button>
           <button
             onClick={handleSave}
-            className="flex items-center gap-2 px-5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-xl transition-colors"
+            className="flex items-center gap-2 px-5 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-sm font-medium rounded-lg transition-colors"
           >
             <Save className="w-4 h-4" />
             Сохранить
