@@ -126,6 +126,13 @@ function showParsedData() {
     const lines = parsedData.experience_summary.split('\n').slice(0, 3);
     details.push('Последние места: ' + lines.join('; '));
   }
+  if (parsedData.skills && parsedData.skills.length > 0) {
+    details.push('Навыки: ' + parsedData.skills.slice(0, 5).join(', ') +
+      (parsedData.skills.length > 5 ? ` (+${parsedData.skills.length - 5})` : ''));
+  }
+  if (parsedData.languages && parsedData.languages.length > 0) {
+    details.push('Языки: ' + parsedData.languages.join(', '));
+  }
   document.getElementById('parsedDetails').innerHTML = details.join('<br>');
   document.getElementById('parsedSource').textContent = parsedData.source;
 
@@ -313,6 +320,9 @@ document.getElementById('addBtn').addEventListener('click', async () => {
       salary: parsedData.salary || null,
       experience_summary: parsedData.experience_summary || null,
       total_experience: parsedData.total_experience || null,
+      experience_descriptions: parsedData.experience_descriptions || null,
+      skills: parsedData.skills || null,
+      languages: parsedData.languages || null,
     });
 
     if (resp.success) {

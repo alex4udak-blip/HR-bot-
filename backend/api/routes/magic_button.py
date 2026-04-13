@@ -29,6 +29,9 @@ class MagicButtonData(BaseModel):
     salary: Optional[str] = None
     experience_summary: Optional[str] = None
     total_experience: Optional[str] = None
+    experience_descriptions: Optional[list] = None
+    skills: Optional[list] = None
+    languages: Optional[list] = None
 
     # Recruiter's choice
     vacancy_id: Optional[int] = None  # which funnel to add to
@@ -184,6 +187,12 @@ async def _do_magic_parse(data, db, current_user):
         extra["experience_summary"] = data.experience_summary
     if data.total_experience:
         extra["total_experience"] = data.total_experience
+    if data.experience_descriptions:
+        extra["experience_descriptions"] = data.experience_descriptions
+    if data.skills:
+        extra["skills"] = data.skills
+    if data.languages:
+        extra["languages"] = data.languages
 
     entity = Entity(
         org_id=org.id,

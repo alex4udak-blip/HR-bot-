@@ -156,9 +156,50 @@
     // --- Total experience ---
     const expTitle = getText('[data-qa="resume-experience-block-title"] [data-qa="title"]');
     if (expTitle) {
-      // e.g. "Опыт работы 12 лет 5 месяцев"
-      data.total_experience = expTitle.replace('Опыт работы', '').trim();
+      // e.g. "Опыт работы 12 лет 5 месяцев" or "Опыт работы: 14 лет 1 месяц"
+      data.total_experience = expTitle.replace(/Опыт работы:?\s*/, '').trim();
     }
+
+    // --- Experience descriptions (achievements at each job) ---
+    const expDescEls = document.querySelectorAll('[data-qa="resume-block-experience-description"]');
+    const expDescriptions = [];
+    expDescEls.forEach((el, i) => {
+      if (i < 3) { // first 3 jobs
+        const text = el.textContent.trim();
+        if (text) expDescriptions.push(text.substring(0, 500));
+      }
+    });
+    data.experience_descriptions = expDescriptions;
+
+    // --- Skills ---
+    const skillsSection = document.querySelector('[data-qa="skills-table"]');
+    if (skillsSection) {
+      // Skills are in <span> tags inside magritte-card within skills-table
+      const card = skillsSection.querySelector('[class*="magritte-card"]');
+      if (card) {
+        const skillSpans = card.querySelectorAll('span');
+        const skills = [];
+        skillSpans.forEach(span => {
+          const text = span.textContent.trim();
+          // Filter: real skills are short-ish text, not UI labels
+          if (text && text.length >= 2 && text.length <= 80
+              && !span.querySelector('span') // leaf nodes only
+              && !text.includes('Свернуть') && !text.includes('Развернуть')) {
+            skills.push(text);
+          }
+        });
+        data.skills = [...new Set(skills)]; // deduplicate
+      }
+    }
+
+    // --- Languages ---
+    const langEls = document.querySelectorAll('[data-qa="resume-block-language-item"]');
+    const languages = [];
+    langEls.forEach(el => {
+      const text = el.textContent.trim();
+      if (text) languages.push(text);
+    });
+    data.languages = languages;
 
     return data;
   }
