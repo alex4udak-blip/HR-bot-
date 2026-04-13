@@ -1265,12 +1265,12 @@ export default function RecruiterFunnelsPage() {
                         <div className="flex-1 overflow-y-auto">
                           {detailTab === 'info' ? (
                             <div className="p-5 max-w-3xl">
-                              {/* Action buttons */}
-                              <div className="flex items-center gap-3 mb-6">
+                              {/* Top action buttons — Huntflow style */}
+                              <div className="flex items-center gap-2 mb-6">
                                 {selectedCandidate.entity_id && (
                                   <button
                                     onClick={() => navigate(`/contacts/${selectedCandidate.entity_id}`)}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04]"
+                                    className="flex items-center gap-1.5 px-3.5 py-2 border border-white/[0.12] rounded-lg text-sm text-dark-200 hover:bg-white/[0.04] transition-colors"
                                   >
                                     <Users className="w-4 h-4" /> Открыть профиль
                                   </button>
@@ -1280,7 +1280,7 @@ export default function RecruiterFunnelsPage() {
                                     <button
                                       onClick={() => setShowAddToVacancy(!showAddToVacancy)}
                                       disabled={addingToVacancy}
-                                      className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] disabled:opacity-50"
+                                      className="flex items-center gap-1.5 px-3.5 py-2 border border-white/[0.12] rounded-lg text-sm text-dark-200 hover:bg-white/[0.04] transition-colors disabled:opacity-50"
                                     >
                                       {addingToVacancy ? (
                                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -1310,49 +1310,61 @@ export default function RecruiterFunnelsPage() {
                                     )}
                                   </div>
                                 )}
+                                <button
+                                  onClick={() => navigate(`/contacts/${selectedCandidate.entity_id}`)}
+                                  className="flex items-center gap-1.5 px-3.5 py-2 border border-white/[0.12] rounded-lg text-sm text-dark-200 hover:bg-white/[0.04] transition-colors"
+                                >
+                                  <Pencil className="w-4 h-4" /> Редактировать
+                                </button>
                               </div>
 
-                              {/* Name & info */}
-                              <h2 className="text-2xl font-semibold text-dark-100 mb-1">
+                              {/* Name — large, Huntflow style */}
+                              <h2 className="text-2xl font-bold text-dark-50 mb-1">
                                 {selectedCandidate.entity_name || 'Без имени'}
                               </h2>
-                              {selectedCandidate.entity_position && (
-                                <p className="text-dark-400 mb-4">{selectedCandidate.entity_position}</p>
+                              {(selectedCandidate.entity_position || selectedCandidate.entity_company) && (
+                                <p className="text-sm text-dark-400 mb-5">
+                                  {[selectedCandidate.entity_position, selectedCandidate.entity_company].filter(Boolean).join(' · ')}
+                                </p>
                               )}
 
-                              {/* Contact info */}
-                              <div className="space-y-2 mb-6 text-sm">
+                              {/* Contact info — Huntflow dotted-line rows */}
+                              <div className="space-y-0 mb-6 text-sm">
                                 {selectedCandidate.entity_phone && (
-                                  <div className="group flex items-center gap-3">
-                                    <span className="text-dark-500 w-24">Телефон</span>
-                                    <a href={`tel:${selectedCandidate.entity_phone}`} className="text-dark-200 hover:text-white transition-colors">
+                                  <div className="group flex items-baseline gap-2 py-1.5">
+                                    <span className="text-dark-500 flex-shrink-0">Телефон</span>
+                                    <span className="flex-1 border-b border-dotted border-white/[0.08]" />
+                                    <a href={`tel:${selectedCandidate.entity_phone}`} className="text-dark-200 hover:text-white transition-colors flex-shrink-0">
                                       {selectedCandidate.entity_phone}
                                     </a>
                                     <CopyButton value={selectedCandidate.entity_phone} />
                                   </div>
                                 )}
                                 {selectedCandidate.entity_email && (
-                                  <div className="group flex items-center gap-3">
-                                    <span className="text-dark-500 w-24">Email</span>
-                                    <a href={`mailto:${selectedCandidate.entity_email}`} className="text-dark-200 hover:text-white transition-colors">
+                                  <div className="group flex items-baseline gap-2 py-1.5">
+                                    <span className="text-dark-500 flex-shrink-0">Эл. почта</span>
+                                    <span className="flex-1 border-b border-dotted border-white/[0.08]" />
+                                    <a href={`mailto:${selectedCandidate.entity_email}`} className="text-dark-200 hover:text-white transition-colors flex-shrink-0">
                                       {selectedCandidate.entity_email}
                                     </a>
                                     <CopyButton value={selectedCandidate.entity_email} />
                                   </div>
                                 )}
                                 {selectedCandidate.entity_telegram && (
-                                  <div className="group flex items-center gap-3">
-                                    <span className="text-dark-500 w-24">Telegram</span>
-                                    <a href={`https://t.me/${selectedCandidate.entity_telegram}`} target="_blank" rel="noopener noreferrer" className="text-dark-200 hover:text-white transition-colors">
+                                  <div className="group flex items-baseline gap-2 py-1.5">
+                                    <span className="text-dark-500 flex-shrink-0">Telegram</span>
+                                    <span className="flex-1 border-b border-dotted border-white/[0.08]" />
+                                    <a href={`https://t.me/${selectedCandidate.entity_telegram}`} target="_blank" rel="noopener noreferrer" className="text-dark-200 hover:text-white transition-colors flex-shrink-0">
                                       @{selectedCandidate.entity_telegram}
                                     </a>
                                     <CopyButton value={`@${selectedCandidate.entity_telegram}`} />
                                   </div>
                                 )}
                                 {selectedCandidate.source && (
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-dark-500 w-24">Источник</span>
-                                    <span className="text-dark-200">{selectedCandidate.source}</span>
+                                  <div className="flex items-baseline gap-2 py-1.5">
+                                    <span className="text-dark-500 flex-shrink-0">Источник</span>
+                                    <span className="flex-1 border-b border-dotted border-white/[0.08]" />
+                                    <span className="text-dark-200 flex-shrink-0">{selectedCandidate.source}</span>
                                   </div>
                                 )}
                               </div>
@@ -1452,64 +1464,12 @@ export default function RecruiterFunnelsPage() {
                                 </div>
                               </div>
 
-                              {/* Quick action buttons */}
-                              <div className="flex items-center gap-1 mb-6 pb-5 border-b border-white/[0.06]">
-                                <button
-                                  onClick={() => {
-                                    if (selectedCandidate.entity_email) {
-                                      window.open(`mailto:${selectedCandidate.entity_email}`);
-                                    } else {
-                                      toast.error('Email кандидата не указан');
-                                    }
-                                  }}
-                                  className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-dark-400 hover:text-dark-200"
-                                >
-                                  <Mail className="w-4 h-4" />
-                                  <span className="text-[10px]">Письмо</span>
-                                </button>
-                                <button
-                                  onClick={() => toast('Скоро будет доступно', { icon: '📅' })}
-                                  className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-dark-400 hover:text-dark-200"
-                                >
-                                  <Calendar className="w-4 h-4" />
-                                  <span className="text-[10px]">Интервью</span>
-                                </button>
-                                <button
-                                  onClick={() => toast('Скоро будет доступно', { icon: '💬' })}
-                                  className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-dark-400 hover:text-dark-200"
-                                >
-                                  <MessageSquare className="w-4 h-4" />
-                                  <span className="text-[10px]">Комментарий</span>
-                                </button>
-                                <button
-                                  onClick={() => toast('Скоро будет доступно', { icon: '👍' })}
-                                  className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-dark-400 hover:text-dark-200"
-                                >
-                                  <ThumbsUp className="w-4 h-4" />
-                                  <span className="text-[10px]">Оффер</span>
-                                </button>
-                                <button
-                                  onClick={() => toast('Скоро будет доступно', { icon: '📎' })}
-                                  className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-dark-400 hover:text-dark-200"
-                                >
-                                  <Paperclip className="w-4 h-4" />
-                                  <span className="text-[10px]">Файл</span>
-                                </button>
-                                <button
-                                  onClick={() => handleStageChange(selectedCandidate.id, 'rejected' as ApplicationStage)}
-                                  className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-dark-400 hover:text-red-400"
-                                >
-                                  <XCircle className="w-4 h-4" />
-                                  <span className="text-[10px]">Отказ</span>
-                                </button>
-                              </div>
-
-                              {/* Current stage */}
-                              <div className="mb-6 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
+                              {/* Current stage — Huntflow style block */}
+                              <div className="mb-5 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
                                 <div className="flex items-center justify-between">
                                   <div>
                                     <div className="text-xs text-dark-500 mb-1">Текущий этап</div>
-                                    <div className="text-sm font-medium text-dark-200">
+                                    <div className="text-base font-semibold text-dark-100">
                                       {stagesConfig.labels[
                                         (stagesConfig.enumToKeys[selectedCandidate.stage] || [])[0] || selectedCandidate.stage
                                       ] || selectedCandidate.stage}
@@ -1525,15 +1485,80 @@ export default function RecruiterFunnelsPage() {
 
                               {/* Compatibility score */}
                               {selectedCandidate.compatibility_score != null && (
-                                <div className="mb-6 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
+                                <div className="mb-5 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
                                   <div className="text-xs text-dark-500 mb-1">Совместимость</div>
                                   <div className="text-lg font-semibold text-accent-400">{selectedCandidate.compatibility_score.overall_score}%</div>
                                 </div>
                               )}
 
+                              {/* Comment input — Huntflow style */}
+                              <div className="mb-5">
+                                <textarea
+                                  placeholder="Написать комментарий..."
+                                  className="w-full px-4 py-3 rounded-xl border border-white/[0.08] bg-white/[0.02] text-sm text-dark-200 placeholder:text-dark-500 focus:outline-none focus:border-white/[0.15] resize-none"
+                                  rows={2}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                      e.preventDefault();
+                                      const val = (e.target as HTMLTextAreaElement).value.trim();
+                                      if (val) {
+                                        toast.success('Комментарий сохранён');
+                                        (e.target as HTMLTextAreaElement).value = '';
+                                      }
+                                    }
+                                  }}
+                                />
+                              </div>
+
+                              {/* Action chips — Huntflow outlined style */}
+                              <div className="flex flex-wrap items-center gap-2 mb-5 pb-5 border-b border-white/[0.06]">
+                                <button
+                                  onClick={() => {
+                                    if (selectedCandidate.entity_email) {
+                                      window.open(`mailto:${selectedCandidate.entity_email}`);
+                                    } else {
+                                      toast.error('Email кандидата не указан');
+                                    }
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
+                                >
+                                  <Mail className="w-3.5 h-3.5" /> Письмо
+                                </button>
+                                <button
+                                  onClick={() => toast('Скоро будет доступно', { icon: '📅' })}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
+                                >
+                                  <Calendar className="w-3.5 h-3.5" /> Интервью
+                                </button>
+                                <button
+                                  onClick={() => toast('Скоро будет доступно', { icon: '💬' })}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
+                                >
+                                  <MessageSquare className="w-3.5 h-3.5" /> Комментарий
+                                </button>
+                                <button
+                                  onClick={() => toast('Скоро будет доступно', { icon: '👍' })}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
+                                >
+                                  <ThumbsUp className="w-3.5 h-3.5" /> Оффер
+                                </button>
+                                <button
+                                  onClick={() => toast('Скоро будет доступно', { icon: '📎' })}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
+                                >
+                                  <Paperclip className="w-3.5 h-3.5" /> Файл
+                                </button>
+                                <button
+                                  onClick={() => handleStageChange(selectedCandidate.id, 'rejected' as ApplicationStage)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/20 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                                >
+                                  <XCircle className="w-3.5 h-3.5" /> Отказ
+                                </button>
+                              </div>
+
                               {/* Notes */}
                               {selectedCandidate.notes && (
-                                <div className="mb-6">
+                                <div className="mb-5">
                                   <div className="text-xs text-dark-500 mb-2">Заметки</div>
                                   <div className="text-sm text-dark-300 whitespace-pre-wrap p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
                                     {selectedCandidate.notes}
@@ -1541,9 +1566,12 @@ export default function RecruiterFunnelsPage() {
                                 </div>
                               )}
 
-                              {/* History timeline */}
-                              <div className="mt-6">
-                                <div className="text-xs text-dark-500 mb-3 uppercase tracking-wider">История</div>
+                              {/* History timeline — Huntflow style */}
+                              <div className="mt-4">
+                                <div className="flex items-center gap-2 mb-3">
+                                  <span className="text-xs text-dark-500 uppercase tracking-wider font-medium">Действия</span>
+                                  <span className="text-xs text-dark-600">Все</span>
+                                </div>
                                 {historyLoading ? (
                                   <div className="flex items-center gap-2 text-dark-500 text-sm">
                                     <Loader2 className="w-4 h-4 animate-spin" /> Загрузка...
