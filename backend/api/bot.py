@@ -2692,6 +2692,67 @@ async def cmd_autotasks(message: types.Message):
         await message.answer(f"⚠️ Ошибка: {e}")
 
 
+@dp.message(Command("remind"))
+async def cmd_remind(message: types.Message):
+    """Manually send standup reminders to chats that had no tasks today.
+
+    Usage: /remind — sends reminders to all auto_tasks chats with no standup today.
+    """
+    from datetime import datetime as dt, timezone, timedelta
+    from sqlalchemy import or_
+
+    try:
+        async with async_session() as session:
+            MSK = timezone(timedelta(hours=3))
+            today_start_utc = dt.now(MSK).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(
+                timezone.utc
+            ).replace(tzinfo=None)
+
+            result = await session.execute(
+                select(Chat).where(
+                    Chat.auto_tasks_enabled == True,
+                    Chat.is_active == True,
+                    or_(Chat.deleted_at == None, Chat.deleted_at.is_(None)),
+                    Chat.telegram_chat_id != None,
+                    or_(
+                        Chat.last_standup_at == None,
+                        Chat.last_standup_at < today_start_utc,
+                    ),
+                )
+            )
+            chats_to_remind = list(result.scalars().all())
+
+            if not chats_to_remind:
+                await message.answer("✅ Все чаты уже отчитались сегодня!")
+                return
+
+            bot_instance = get_bot()
+            sent = 0
+            failed = 0
+            chat_names = []
+
+            for chat in chats_to_remind:
+                try:
+                    await bot_instance.send_message(
+                        chat.telegram_chat_id,
+                        "👋 Привет! Что сегодня собираешься делать?\n\n"
+                        "💡 Напиши план на день — я автоматически создам задачи.",
+                    )
+                    sent += 1
+                    chat_names.append(f"✅ {chat.custom_name or chat.title}")
+                except Exception as e:
+                    failed += 1
+                    chat_names.append(f"❌ {chat.custom_name or chat.title}: {e}")
+
+            report = f"📢 <b>Напоминания отправлены: {sent}/{len(chats_to_remind)}</b>\n\n"
+            report += "\n".join(chat_names)
+            await message.answer(report, parse_mode="HTML")
+
+    except Exception as e:
+        logger.error(f"Error in /remind command: {e}")
+        await message.answer(f"⚠️ Ошибка: {e}")
+
+
 async def start_bot():
     """Start the bot polling."""
     try:
