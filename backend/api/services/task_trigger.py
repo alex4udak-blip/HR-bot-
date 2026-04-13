@@ -140,6 +140,17 @@ TRIGGER_PATTERNS = [
     r'доброе утро.*план', r'доброе утро.*работ',
     r'good morning', r'гуд морнинг',
 
+    # ── Нумерованные/маркированные списки (стендап-паттерн) ─────────
+    r'(?m)^\s*1[\.\)]\s*.+\n\s*2[\.\)]\s*',   # "1. ... \n 2. ..." — numbered list
+    r'(?m)^\s*[-•]\s*.+\n\s*[-•]\s*',          # "- ...\n- ..." — bullet list
+
+    # ── План на день ─────────────────────────────────────────────────
+    r'план на день',                            # "План на день для FB Analitic"
+    r'план работ',
+    r'тестирование\s', r'исправление\s',       # noun forms of actions
+    r'разработка\s', r'настройка\s', r'интеграция\s',
+    r'рефакторинг\s', r'оптимизация\s',
+
     # ── Английские триггеры ───────────────────────────────────────
     r'i will', r"i'll",
     r'need to', r'have to', r'got to', r'gotta',
@@ -159,6 +170,39 @@ TRIGGER_REGEX = re.compile('|'.join(TRIGGER_PATTERNS), re.IGNORECASE)
 def should_trigger(text: str) -> bool:
     """Check if message contains trigger words."""
     return bool(TRIGGER_REGEX.search(text))
+
+
+def _extract_project_hint(text: str) -> str | None:
+    """Try to extract a project name from the message.
+
+    Heuristics:
+    - First line if it's short (< 40 chars) and not a sentence (likely a project title)
+    - Text after "на проекте", "проект:", "для" etc.
+    """
+    lines = [l.strip() for l in text.strip().split('\n') if l.strip()]
+    if not lines:
+        return None
+
+    # Check first line — if short and not a numbered item, treat as project name
+    first = lines[0]
+    if len(first) < 50 and not re.match(r'^\d+[\.\)]', first) and not re.search(r'(план|сегодня|доброе|привет)', first, re.IGNORECASE):
+        # If first line is short and second line looks like a list, first line is project name
+        if len(lines) > 1 and re.match(r'^(\d+[\.\)]|[-•])', lines[1]):
+            return first
+
+    # Look for "на проекте X", "проект: X", "для X -", "План на день для X"
+    patterns = [
+        r'(?:на проекте|по проекту|проект[:\s])\s*[«"]?([A-Za-zА-Яа-яёЁ0-9_ -]+)',
+        r'для\s+([A-Za-zА-Яа-яёЁ0-9_ ]+?)(?:\s*[-–—:]|\s+тестирование|\s+разработка|\s+исправление)',
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            name = m.group(1).strip()
+            if len(name) > 2 and len(name) < 60:
+                return name
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -424,13 +468,14 @@ async def create_tasks_from_message(
 ) -> list[dict]:
     """Full pipeline: detect trigger -> parse -> create tasks -> return results."""
     from ..models.database import (
-        Project, ProjectTask, ProjectMember, User, Chat, OrgMember,
+        Project, ProjectTask, ProjectMember, ProjectStatus, ProjectRole, User, Chat, OrgMember,
     )
 
     if not should_trigger(message_text):
+        logger.info(f"⏭️ No trigger match for {user_name}: {message_text[:80]}...")
         return []
 
-    logger.info(f"Task trigger activated for user {user_name}: {message_text[:100]}...")
+    logger.info(f"✅ Task trigger activated for {user_name}: {message_text[:100]}...")
 
     # Find user by telegram_id, then telegram_username, then name
     user = None
@@ -498,18 +543,23 @@ async def create_tasks_from_message(
             logger.info(f"Using org admin {user.name} as fallback creator for unregistered sender {user_name}")
 
     if not user:
-        logger.warning(f"User not found and no fallback: {user_name} (tg_id={telegram_user_id})")
+        logger.warning(f"❌ User not found and no fallback: {user_name} (tg_id={telegram_user_id}, tg_username={telegram_username})")
         return []
 
+    logger.info(f"👤 User resolved: {user.name} (id={user.id}) for sender {user_name}")
+
     if not org_id:
-        logger.warning(f"No organization found for user {user_name}")
+        logger.warning(f"❌ No organization found for user {user_name}")
         return []
+
+    logger.info(f"🏢 Org resolved: org_id={org_id}")
 
     # Get ALL org projects (for project_hint matching from text)
     all_projects_result = await db.execute(
         select(Project).where(Project.org_id == org_id)
     )
     all_projects = list(all_projects_result.scalars().all())
+    logger.info(f"📂 Found {len(all_projects)} org projects: {[p.name for p in all_projects[:5]]}")
 
     # Find user's projects (where they are a member)
     result = await db.execute(
@@ -519,6 +569,7 @@ async def create_tasks_from_message(
         .where(Project.status == 'active')
     )
     projects = list(result.scalars().all())
+    logger.info(f"👤 User {user.name} has {len(projects)} active projects: {[p.name for p in projects[:5]]}")
 
     # ALWAYS check if text mentions a project name — prioritize it over user's first project
     text_lower = message_text.lower()
@@ -526,7 +577,7 @@ async def create_tasks_from_message(
     for p in all_projects:
         if p.name.lower() in text_lower:
             text_matched_project = p
-            logger.info(f"Matched project '{p.name}' from message text")
+            logger.info(f"🎯 Matched project '{p.name}' from message text")
             break
 
     # If text mentions a project, use it (even if user is not a member)
@@ -538,8 +589,32 @@ async def create_tasks_from_message(
             projects.remove(text_matched_project)
             projects.insert(0, text_matched_project)
 
+    # If no project found but text mentions a project-like name, try to extract and auto-create
     if not projects:
-        logger.warning(f"No active projects for user {user_name}")
+        # Try to extract project name from the message (first line or word before numbered list)
+        project_hint = _extract_project_hint(message_text)
+        if project_hint:
+            logger.info(f"🔨 Auto-creating project '{project_hint}' for org {org_id}")
+            new_project = Project(
+                org_id=org_id,
+                name=project_hint,
+                status=ProjectStatus.active,
+                created_by=user.id,
+            )
+            db.add(new_project)
+            await db.flush()
+            # Add user as member
+            db.add(ProjectMember(
+                project_id=new_project.id,
+                user_id=user.id,
+                role=ProjectRole.developer,
+            ))
+            await db.flush()
+            projects = [new_project]
+            logger.info(f"✅ Created project '{project_hint}' (id={new_project.id})")
+
+    if not projects:
+        logger.warning(f"❌ No active projects for user {user_name} and could not auto-create")
         return []
 
     # Use first active project as default
