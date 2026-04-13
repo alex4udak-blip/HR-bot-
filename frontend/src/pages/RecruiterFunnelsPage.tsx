@@ -1081,7 +1081,7 @@ export default function RecruiterFunnelsPage() {
                 <div className="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : viewMode === 'list' ? (
-              /* ===== LIST VIEW: grouped by stage (ClickUp-style) ===== */
+              /* ===== LIST VIEW: grouped by stage (Huntflow-style table) ===== */
               <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-3 space-y-1">
                 {groupedByStage.length === 0 ? (
                   <div className="text-center py-16 text-dark-500 text-sm">
@@ -1103,14 +1103,14 @@ export default function RecruiterFunnelsPage() {
                         </div>
                         {/* Candidate rows */}
                         <div className="mt-0.5">
-                          <div className="hidden md:grid grid-cols-[1fr_140px_100px_140px_100px] gap-2 px-3 py-1.5 text-[11px] text-dark-500 font-medium uppercase tracking-wide">
-                            <span>Имя</span><span>Статус</span><span>Дата</span><span>Telegram</span><span>Источник</span>
+                          <div className="hidden md:grid grid-cols-[1fr_120px_90px_130px_160px_130px_100px] gap-2 px-3 py-1.5 text-[11px] text-dark-500 font-medium uppercase tracking-wide">
+                            <span>ФИО</span><span>Статус</span><span>Дата</span><span>Telegram</span><span>Email</span><span>Телефон</span><span>Источник</span>
                           </div>
                           {items.map((c) => (
                             <div
                               key={c.id}
                               onClick={() => navigate(`/contacts/${c.entity_id}`)}
-                              className="flex flex-col md:grid md:grid-cols-[1fr_140px_100px_140px_100px] gap-1 md:gap-2 px-3 py-2.5 md:py-2 hover:bg-white/[0.03] rounded-lg cursor-pointer transition-colors border-b border-white/[0.03] last:border-b-0 group"
+                              className="flex flex-col md:grid md:grid-cols-[1fr_120px_90px_130px_160px_130px_100px] gap-1 md:gap-2 px-3 py-2.5 md:py-2 hover:bg-white/[0.03] rounded-lg cursor-pointer transition-colors border-b border-white/[0.03] last:border-b-0 group"
                             >
                               <div className="flex items-center gap-2 min-w-0">
                                 <div className="w-6 h-6 rounded-full bg-accent-500/10 flex items-center justify-center text-[10px] text-accent-400 font-medium flex-shrink-0">
@@ -1143,10 +1143,16 @@ export default function RecruiterFunnelsPage() {
                                 {c.source && <span>{c.source}</span>}
                               </div>
                               <span className="text-xs text-dark-400 truncate items-center hidden md:flex">
-                                {c.entity_telegram ? `@${c.entity_telegram}` : ''}
+                                {c.entity_telegram ? `@${c.entity_telegram}` : '—'}
                               </span>
                               <span className="text-xs text-dark-400 truncate items-center hidden md:flex">
-                                {c.source || ''}
+                                {c.entity_email || '—'}
+                              </span>
+                              <span className="text-xs text-dark-400 truncate items-center hidden md:flex">
+                                {c.entity_phone || '—'}
+                              </span>
+                              <span className="text-xs text-dark-400 truncate items-center hidden md:flex">
+                                {c.source || '—'}
                               </span>
                             </div>
                           ))}
