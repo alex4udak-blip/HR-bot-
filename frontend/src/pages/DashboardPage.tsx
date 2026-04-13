@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Clock, Users, Filter, ChevronDown, Printer,
   FileDown, XCircle, ArrowRight, UserCheck,
-  BarChart3,
+  BarChart3, CalendarRange,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -165,6 +165,8 @@ export default function DashboardPage() {
   const [activeCategory, setActiveCategory] = useState('vacancy');
   const [activeReport, setActiveReport] = useState('ttf');
   const [period, setPeriod] = useState('current');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [vacancyStatus, setVacancyStatus] = useState('open');
   const [showStatusDD, setShowStatusDD] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -180,7 +182,11 @@ export default function DashboardPage() {
   const loadReport = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params = { period, vacancy_status: vacancyStatus };
+      const params: Record<string, string> = { period, vacancy_status: vacancyStatus };
+      if (period === 'custom') {
+        if (customFrom) params.date_from = customFrom;
+        if (customTo) params.date_to = customTo;
+      }
       switch (activeReport) {
         case 'ttf': {
           const res = await api.get<TimeToFillReport>('/analytics/reports/time-to-fill', { params });
@@ -219,7 +225,7 @@ export default function DashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeReport, period, vacancyStatus]);
+  }, [activeReport, period, vacancyStatus, customFrom, customTo]);
 
   useEffect(() => {
     loadReport();
@@ -298,21 +304,53 @@ export default function DashboardPage() {
           {/* Period tabs + vacancy status */}
           <div className="flex items-center justify-between px-6 pb-3">
             {/* Period tabs */}
-            <div className="flex items-center gap-1 bg-white/[0.04] rounded-lg p-1">
-              {PERIOD_TABS.map(p => (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 bg-white/[0.04] rounded-lg p-1">
+                {PERIOD_TABS.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => setPeriod(p.id)}
+                    className={clsx(
+                      'px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors',
+                      period === p.id
+                        ? 'bg-white/[0.12] text-white shadow-sm'
+                        : 'text-white/40 hover:text-white/60',
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
                 <button
-                  key={p.id}
-                  onClick={() => setPeriod(p.id)}
+                  onClick={() => setPeriod('custom')}
                   className={clsx(
-                    'px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors',
-                    period === p.id
+                    'flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors',
+                    period === 'custom'
                       ? 'bg-white/[0.12] text-white shadow-sm'
                       : 'text-white/40 hover:text-white/60',
                   )}
                 >
-                  {p.label}
+                  <CalendarRange className="w-3.5 h-3.5" />
+                  Свой диапазон
                 </button>
-              ))}
+              </div>
+
+              {period === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={e => setCustomFrom(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.08] text-sm text-white/80 outline-none focus:border-accent-500/50"
+                  />
+                  <span className="text-white/30 text-sm">—</span>
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={e => setCustomTo(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.08] text-sm text-white/80 outline-none focus:border-accent-500/50"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Vacancy status dropdown */}

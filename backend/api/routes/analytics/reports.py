@@ -149,29 +149,50 @@ class MovementReport(BaseModel):
 
 # ========== HELPERS ==========
 
-def _get_date_filter(period: str) -> Optional[datetime]:
-    """Parse period filter into date cutoff."""
+def _get_date_filter(period: str, date_from_str: Optional[str] = None, date_to_str: Optional[str] = None):
+    """Parse period filter into (date_from, date_to) tuple.
+
+    For preset periods: returns (date_from, None).
+    For custom range: returns (date_from, date_to).
+    """
+    if period == "custom" and date_from_str:
+        try:
+            df = datetime.fromisoformat(date_from_str)
+        except ValueError:
+            df = None
+        dt = None
+        if date_to_str:
+            try:
+                dt = datetime.fromisoformat(date_to_str)
+                # Include the full end day
+                dt = dt.replace(hour=23, minute=59, second=59)
+            except ValueError:
+                pass
+        return df, dt
+
     now = datetime.utcnow()
     if period == "current":
-        return None  # All time / current situation
+        return None, None
     elif period == "month":
-        return now - timedelta(days=30)
+        return now - timedelta(days=30), None
     elif period == "quarter":
-        return now - timedelta(days=90)
+        return now - timedelta(days=90), None
     elif period == "half_year":
-        return now - timedelta(days=180)
+        return now - timedelta(days=180), None
     elif period == "year":
-        return now - timedelta(days=365)
-    return None
+        return now - timedelta(days=365), None
+    return None, None
 
 
 # ========== ENDPOINTS ==========
 
 @router.get("/time-to-fill", response_model=TimeToFillReport)
 async def get_time_to_fill(
-    period: str = Query("current", description="current|month|quarter|half_year|year"),
+    period: str = Query("current", description="current|month|quarter|half_year|year|custom"),
     recruiter_id: Optional[int] = None,
     vacancy_status: str = Query("all", description="all|open|closed"),
+    date_from: Optional[str] = Query(None, description="Custom range start (ISO date)"),
+    date_to: Optional[str] = Query(None, description="Custom range end (ISO date)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -180,7 +201,7 @@ async def get_time_to_fill(
     if not org:
         raise HTTPException(404, "Organization not found")
 
-    date_from = _get_date_filter(period)
+    date_from_dt, date_to_dt = _get_date_filter(period, date_from, date_to)
 
     # --- Closed positions (hired applications) ---
     hired_query = (
@@ -202,8 +223,10 @@ async def get_time_to_fill(
         )
     )
 
-    if date_from:
-        hired_query = hired_query.where(VacancyApplication.last_stage_change_at >= date_from)
+    if date_from_dt:
+        hired_query = hired_query.where(VacancyApplication.last_stage_change_at >= date_from_dt)
+    if date_to_dt:
+        hired_query = hired_query.where(VacancyApplication.last_stage_change_at <= date_to_dt)
     if recruiter_id:
         hired_query = hired_query.where(Vacancy.created_by == recruiter_id)
 
@@ -265,8 +288,10 @@ async def get_time_to_fill(
                     StageTransition.from_stage == stage,
                 )
             )
-            if date_from:
-                trans_q = trans_q.where(StageTransition.created_at >= date_from)
+            if date_from_dt:
+                trans_q = trans_q.where(StageTransition.created_at >= date_from_dt)
+            if date_to_dt:
+                trans_q = trans_q.where(StageTransition.created_at <= date_to_dt)
 
             result = await db.execute(trans_q)
             avg_seconds = result.scalar()
@@ -295,6 +320,8 @@ async def get_funnel_report(
     period: str = Query("current"),
     recruiter_id: Optional[int] = None,
     vacancy_status: str = Query("open"),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -303,12 +330,14 @@ async def get_funnel_report(
     if not org:
         raise HTTPException(404, "Organization not found")
 
-    date_from = _get_date_filter(period)
+    date_from_dt, date_to_dt = _get_date_filter(period, date_from, date_to)
 
     # Base filter
     base_filter = [Vacancy.org_id == org.id]
-    if date_from:
-        base_filter.append(VacancyApplication.applied_at >= date_from)
+    if date_from_dt:
+        base_filter.append(VacancyApplication.applied_at >= date_from_dt)
+    if date_to_dt:
+        base_filter.append(VacancyApplication.applied_at <= date_to_dt)
     if recruiter_id:
         base_filter.append(Vacancy.created_by == recruiter_id)
     if vacancy_status == "open":
@@ -346,8 +375,8 @@ async def get_funnel_report(
         )
         .group_by(StageTransition.from_stage)
     )
-    if date_from:
-        rej_by_stage_q = rej_by_stage_q.where(StageTransition.created_at >= date_from)
+    if date_from_dt:
+        rej_by_stage_q = rej_by_stage_q.where(StageTransition.created_at >= date_from_dt)
     rej_result = await db.execute(rej_by_stage_q)
     rej_by_stage = {row.from_stage: row.cnt for row in rej_result if row.from_stage}
 
@@ -419,6 +448,8 @@ async def get_funnel_report(
 async def get_funnel_by_recruiter(
     period: str = Query("current"),
     vacancy_status: str = Query("open"),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -430,6 +461,7 @@ async def get_funnel_by_recruiter(
     # Get summary funnel first
     summary = await get_funnel_report(
         period=period, recruiter_id=None, vacancy_status=vacancy_status,
+        date_from=date_from, date_to=date_to,
         db=db, current_user=current_user,
     )
 
@@ -447,6 +479,7 @@ async def get_funnel_by_recruiter(
     for rec in recruiters:
         rec_funnel = await get_funnel_report(
             period=period, recruiter_id=rec.id, vacancy_status=vacancy_status,
+            date_from=date_from, date_to=date_to,
             db=db, current_user=current_user,
         )
         by_recruiter.append(RecruiterFunnelItem(
@@ -468,6 +501,8 @@ async def get_rejections_report(
     period: str = Query("current"),
     recruiter_id: Optional[int] = None,
     vacancy_status: str = Query("open"),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -476,14 +511,16 @@ async def get_rejections_report(
     if not org:
         raise HTTPException(404, "Organization not found")
 
-    date_from = _get_date_filter(period)
+    date_from_dt, date_to_dt = _get_date_filter(period, date_from, date_to)
 
     base_filter = [
         Vacancy.org_id == org.id,
         VacancyApplication.stage == ApplicationStage.rejected,
     ]
-    if date_from:
-        base_filter.append(VacancyApplication.last_stage_change_at >= date_from)
+    if date_from_dt:
+        base_filter.append(VacancyApplication.last_stage_change_at >= date_from_dt)
+    if date_to_dt:
+        base_filter.append(VacancyApplication.last_stage_change_at <= date_to_dt)
     if recruiter_id:
         base_filter.append(Vacancy.created_by == recruiter_id)
 
@@ -511,8 +548,8 @@ async def get_rejections_report(
         .group_by(StageTransition.from_stage)
         .order_by(func.count(StageTransition.id).desc())
     )
-    if date_from:
-        by_stage_q = by_stage_q.where(StageTransition.created_at >= date_from)
+    if date_from_dt:
+        by_stage_q = by_stage_q.where(StageTransition.created_at >= date_from_dt)
     by_stage_result = await db.execute(by_stage_q)
 
     by_stage = []
@@ -586,6 +623,8 @@ async def get_sources_report(
     period: str = Query("current"),
     recruiter_id: Optional[int] = None,
     vacancy_status: str = Query("open"),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -594,11 +633,13 @@ async def get_sources_report(
     if not org:
         raise HTTPException(404, "Organization not found")
 
-    date_from = _get_date_filter(period)
+    date_from_dt, date_to_dt = _get_date_filter(period, date_from, date_to)
 
     base_filter = [Vacancy.org_id == org.id]
-    if date_from:
-        base_filter.append(VacancyApplication.applied_at >= date_from)
+    if date_from_dt:
+        base_filter.append(VacancyApplication.applied_at >= date_from_dt)
+    if date_to_dt:
+        base_filter.append(VacancyApplication.applied_at <= date_to_dt)
     if recruiter_id:
         base_filter.append(Vacancy.created_by == recruiter_id)
     if vacancy_status == "open":
@@ -656,6 +697,8 @@ async def get_sources_report(
 async def get_movement_report(
     period: str = Query("current"),
     recruiter_id: Optional[int] = None,
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -664,7 +707,7 @@ async def get_movement_report(
     if not org:
         raise HTTPException(404, "Organization not found")
 
-    date_from = _get_date_filter(period)
+    date_from_dt, date_to_dt = _get_date_filter(period, date_from, date_to)
 
     move_q = (
         select(
@@ -678,8 +721,10 @@ async def get_movement_report(
         .group_by(StageTransition.from_stage, StageTransition.to_stage)
         .order_by(func.count(StageTransition.id).desc())
     )
-    if date_from:
-        move_q = move_q.where(StageTransition.created_at >= date_from)
+    if date_from_dt:
+        move_q = move_q.where(StageTransition.created_at >= date_from_dt)
+    if date_to_dt:
+        move_q = move_q.where(StageTransition.created_at <= date_to_dt)
     if recruiter_id:
         move_q = move_q.where(Vacancy.created_by == recruiter_id)
 
