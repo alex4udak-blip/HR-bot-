@@ -69,6 +69,12 @@ _ACTIONS = [
     r'согласовать',
     r'спроектировать', r'проектировать',
     r'автоматизировать',
+    r'продвинуть(?:ся)?', r'продвинутся',  # "продвинуться в генерации"
+    r'выпустить', r'выпускать',             # "выпустить в пользование"
+    r'улучшить', r'улучшать', r'улучшить',
+    r'развить', r'развивать',
+    r'закрыть',                              # "закрыть таску"
+    r'доработать', r'дорабатывать',
 ]
 
 # Комбинаторные паттерны: модальное_слово .* действие
@@ -108,6 +114,11 @@ TRIGGER_PATTERNS = [
     r'подключу',
     r'внедрю',
     r'спроектирую',
+    r'продвинусь', r'продвинемся',
+    r'улучшу', r'улучшим',
+    r'выпущу', r'выпустим',
+    r'закрою', r'закроем',
+    r'доработаю', r'доработаем',
     # Формы "мы" (1-е лицо мн.ч.)
     r'добавим', r'сделаем', r'проверим', r'напишем', r'создадим',
     r'настроим', r'обновим', r'исправим', r'запустим', r'завершим',
@@ -115,13 +126,18 @@ TRIGGER_PATTERNS = [
     r'интегрируем', r'оптимизируем', r'внедрим', r'переделаем',
 
     # ── Планирование ──────────────────────────────────────────────
-    r'план на',
+    r'план на', r'в планах', r'планы на',
     r'начну делать', r'начну работать',
     r'начинаю работать', r'начинаю делать',
     r'приступаю', r'приступлю',
     r'сегодня:', r'сегодня буду', r'сегодня планирую',
+    r'сегодня надо', r'сегодня нужно',
+    r'сегодня в планах', r'сегодня хочу',
+    r'продолжаю работу', r'продолжаю работать',
+    r'продолжаю развивать', r'продолжаю делать',
     r'с утра', r'утром буду',
     r'утренний план',
+    r'доброе утро.*план', r'доброе утро.*работ',
     r'good morning', r'гуд морнинг',
 
     # ── Английские триггеры ───────────────────────────────────────
@@ -465,6 +481,21 @@ async def create_tasks_from_message(
                 user = owner_result.scalar_one_or_none()
                 if user:
                     logger.info(f"Using chat owner {user.name} as fallback for unregistered sender {user_name}")
+
+    # If user still not found, try to find ANY user in the org as creator fallback
+    if not user and org_id:
+        from ..models.database import Organization
+        # Use the first superadmin or admin as fallback creator
+        fallback_result = await db.execute(
+            select(User)
+            .join(OrgMember, OrgMember.user_id == User.id)
+            .where(OrgMember.org_id == org_id)
+            .where(User.role.in_(["superadmin", "admin"]))
+            .limit(1)
+        )
+        user = fallback_result.scalar_one_or_none()
+        if user:
+            logger.info(f"Using org admin {user.name} as fallback creator for unregistered sender {user_name}")
 
     if not user:
         logger.warning(f"User not found and no fallback: {user_name} (tg_id={telegram_user_id})")

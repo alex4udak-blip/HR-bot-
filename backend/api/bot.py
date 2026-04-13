@@ -2117,6 +2117,10 @@ async def collect_group_message(message: types.Message):
             logger.info(f"📩 Message from {message.from_user.full_name} (id={message.from_user.id}) in chat {message.chat.id}: auto_tasks={chat_auto_tasks}, content_type={content_type}, content_len={len(content)}")
 
             if content_type == "text" and content and chat_auto_tasks:
+                from ..services.task_trigger import should_trigger
+                trigger_match = should_trigger(content)
+                logger.info(f"🔍 Auto-tasks check: trigger_match={trigger_match}, text={content[:80]}...")
+
                 # 1. Check for status report first (takes priority over task trigger)
                 is_status = False
                 try:
@@ -2148,13 +2152,14 @@ async def collect_group_message(message: types.Message):
                             chat_id=message.chat.id,
                             telegram_username=message.from_user.username,
                         )
+                        logger.info(f"📋 Task trigger result: {len(created_tasks)} tasks created for {message.from_user.full_name}")
                         if created_tasks:
                             lines = ["\u2705 Задачи созданы из плана:"]
                             for t in created_tasks:
                                 lines.append(f"  \u2022 {t['task_key']} \"{t['title']}\" \u2192 {t['assignee']}")
                             await message.reply("\n".join(lines))
                     except Exception as e:
-                        logger.error(f"Task trigger error: {e}")
+                        logger.error(f"Task trigger error: {e}", exc_info=True)
 
     except Exception as e:
         logger.error(f"❌ Error collecting message: {type(e).__name__}: {e}")
