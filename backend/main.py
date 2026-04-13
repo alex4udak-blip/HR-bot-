@@ -823,9 +823,11 @@ async def autotasks_debug():
                 msg_info = []
                 for m in messages:
                     text = (m.content or "")[:80]
+                    sender = f"{m.first_name or ''} {m.last_name or ''}".strip() or m.username or str(m.telegram_user_id)
                     msg_info.append({
                         "id": m.id,
-                        "sender": m.sender_name,
+                        "sender": sender,
+                        "tg_user_id": m.telegram_user_id,
                         "text": text,
                         "regex_trigger": should_trigger(text) if text else False,
                         "time": m.timestamp.isoformat() if m.timestamp else None,
