@@ -692,7 +692,7 @@ async def health_check():
     from datetime import datetime
     from api.database import AsyncSessionLocal
 
-    health = {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    health = {"status": "healthy", "timestamp": datetime.utcnow().isoformat(), "code_version": "v13-fix-autotasks"}
 
     # Check database (informational, doesn't affect status code)
     try:
