@@ -792,6 +792,80 @@ async def playwright_health_check():
     return result
 
 
+@app.get("/health/autotasks-test")
+async def autotasks_test_pipeline():
+    """Test the full auto-tasks pipeline with a sample message to see where it fails."""
+    from api.database import AsyncSessionLocal
+    from api.models.database import User, OrgMember, Project, ProjectMember, Chat
+    from api.services.task_trigger import should_trigger, should_trigger_ai
+    from sqlalchemy import select
+
+    results = {}
+    try:
+        async with AsyncSessionLocal() as session:
+            # Step 1: Check trigger
+            test_text = "Миша сегодня сделай на проекте ZavodCamp\n1. Тест вкладок\n2. Связка блока"
+            results["1_regex_trigger"] = should_trigger(test_text)
+            try:
+                results["1b_ai_trigger"] = await should_trigger_ai(test_text)
+            except Exception as e:
+                results["1b_ai_trigger_error"] = str(e)
+
+            # Step 2: Find user by telegram_id (superadmin: 532224121)
+            tg_id = 532224121
+            result = await session.execute(select(User).where(User.telegram_id == tg_id))
+            user = result.scalar_one_or_none()
+            results["2_user_by_tg_id"] = {"found": user is not None, "name": user.name if user else None, "id": user.id if user else None}
+
+            # Step 3: Find org
+            if user:
+                org_result = await session.execute(select(OrgMember.org_id).where(OrgMember.user_id == user.id).limit(1))
+                org_id = org_result.scalar_one_or_none()
+                results["3_org_id"] = org_id
+
+                # Step 4: Find projects
+                if org_id:
+                    all_proj = await session.execute(select(Project).where(Project.org_id == org_id))
+                    projects = list(all_proj.scalars().all())
+                    results["4_org_projects"] = [{"id": p.id, "name": p.name, "status": str(p.status)} for p in projects[:20]]
+
+                    # Step 5: User's projects
+                    user_proj = await session.execute(
+                        select(Project)
+                        .join(ProjectMember, ProjectMember.project_id == Project.id)
+                        .where(ProjectMember.user_id == user.id)
+                        .where(Project.status == 'active')
+                    )
+                    user_projects = list(user_proj.scalars().all())
+                    results["5_user_projects"] = [{"id": p.id, "name": p.name} for p in user_projects]
+
+            # Step 6: Check ANTHROPIC_API_KEY
+            import os
+            api_key = os.getenv("ANTHROPIC_API_KEY", "")
+            results["6_anthropic_key"] = "set" if api_key else "NOT SET"
+            results["6_key_prefix"] = api_key[:15] + "..." if api_key else "none"
+
+            # Step 7: Full pipeline test
+            try:
+                from api.services.task_trigger import create_tasks_from_message
+                tasks = await create_tasks_from_message(
+                    db=session,
+                    message_text=test_text,
+                    user_name="Vladimir Danilkovich",
+                    telegram_user_id=tg_id,
+                    chat_id=-5166803692,  # RND - Миша chat
+                    telegram_username="architector_alex",
+                )
+                results["7_tasks_created"] = tasks
+            except Exception as e:
+                results["7_pipeline_error"] = f"{type(e).__name__}: {e}"
+
+    except Exception as e:
+        results["error"] = str(e)
+
+    return results
+
+
 @app.get("/health/autotasks")
 async def autotasks_debug():
     """Debug auto-tasks: show chats with auto_tasks, recent messages, trigger status."""
