@@ -26,6 +26,8 @@ import {
   Square,
   Printer,
   Tag,
+  Pencil,
+  Archive,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -36,7 +38,7 @@ import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag 
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
-import { VacancyStatusBadge } from '@/components/vacancies';
+import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 
 // ==================== Constants ====================
@@ -142,7 +144,7 @@ function CopyButton({ value }: { value: string }) {
 export default function RecruiterFunnelsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { vacancies, isLoading, fetchVacancies, createVacancy } = useVacancyStore();
+  const { vacancies, isLoading, fetchVacancies, createVacancy, updateVacancy } = useVacancyStore();
   const { user } = useAuthStore();
 
   const isHrAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
@@ -151,6 +153,7 @@ export default function RecruiterFunnelsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingVacancy, setEditingVacancy] = useState<Vacancy | null>(null);
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [usersMap, setUsersMap] = useState<Record<number, string>>({});
@@ -654,6 +657,17 @@ export default function RecruiterFunnelsPage() {
     selectVacancy(vacancy.id);
   };
 
+  const handleCloseVacancy = async (vacancy: Vacancy) => {
+    if (!confirm(`Закрыть вакансию "${vacancy.title}"?`)) return;
+    try {
+      await updateVacancy(vacancy.id, { status: 'closed' });
+      toast.success('Вакансия закрыта');
+      fetchVacancies();
+    } catch {
+      toast.error('Ошибка при закрытии вакансии');
+    }
+  };
+
   // Change candidate stage
   const handleStageChange = useCallback(async (applicationId: number, newStage: ApplicationStage) => {
     try {
@@ -988,7 +1002,7 @@ export default function RecruiterFunnelsPage() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {filteredVacancies.map((v) => (
-                  <FunnelCard key={v.id} vacancy={v} onClick={() => selectVacancy(v.id)} />
+                  <FunnelCard key={v.id} vacancy={v} onClick={() => selectVacancy(v.id)} onEdit={() => setEditingVacancy(v)} onClose={() => handleCloseVacancy(v)} />
                 ))}
               </div>
             )}
@@ -1786,6 +1800,15 @@ export default function RecruiterFunnelsPage() {
         />
       )}
 
+      {editingVacancy && (
+        <VacancyForm
+          key={`edit-${editingVacancy.id}`}
+          vacancy={editingVacancy}
+          onClose={() => setEditingVacancy(null)}
+          onSuccess={() => { setEditingVacancy(null); fetchVacancies(); }}
+        />
+      )}
+
     </div>
   );
 }
@@ -1956,7 +1979,7 @@ function StageDropdown({
 
 /* ===================== Funnel Card ===================== */
 
-function FunnelCard({ vacancy, onClick }: { vacancy: Vacancy; onClick: () => void }) {
+function FunnelCard({ vacancy, onClick, onEdit, onClose }: { vacancy: Vacancy; onClick: () => void; onEdit: () => void; onClose: () => void }) {
   const count = vacancy.applications_count ?? 0;
   const stageCounts = vacancy.stage_counts ?? {};
   const mainStages = ['applied', 'screening', 'phone_screen', 'interview', 'assessment', 'offer', 'hired'];
@@ -1965,10 +1988,30 @@ function FunnelCard({ vacancy, onClick }: { vacancy: Vacancy; onClick: () => voi
   return (
     <div
       onClick={onClick}
-      className="p-3 rounded-lg border border-white/[0.06] glass-light hover:border-white/[0.12] cursor-pointer transition-colors group"
+      className="p-3 rounded-lg border border-white/[0.06] glass-light hover:border-white/[0.12] cursor-pointer transition-colors group relative"
     >
+      {/* Action buttons — show on hover */}
+      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          className="p-1.5 rounded-md bg-white/[0.06] hover:bg-white/[0.12] text-dark-400 hover:text-white transition-colors"
+          title="Редактировать"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </button>
+        {vacancy.status !== 'closed' && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            className="p-1.5 rounded-md bg-white/[0.06] hover:bg-red-500/20 text-dark-400 hover:text-red-400 transition-colors"
+            title="Закрыть вакансию"
+          >
+            <Archive className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
       <div className="flex items-start justify-between mb-2">
-        <h3 className="text-sm font-medium text-dark-100 group-hover:text-accent-400 transition-colors line-clamp-2">
+        <h3 className="text-sm font-medium text-dark-100 group-hover:text-accent-400 transition-colors line-clamp-2 pr-16">
           {vacancy.title}
         </h3>
         <ChevronRight className="w-4 h-4 text-dark-500 group-hover:text-accent-400 transition-colors shrink-0 mt-0.5" />
