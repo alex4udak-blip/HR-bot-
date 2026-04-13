@@ -1,4 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+import asyncio
+import logging
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy import select, or_, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -6,8 +11,13 @@ from typing import Optional
 from datetime import datetime
 
 from ..database import get_db
-from ..models.database import Entity, EntityType, EntityStatus, User, Vacancy, VacancyApplication, ApplicationStage
+from ..models.database import (
+    Entity, EntityType, EntityStatus, EntityFile, EntityFileType,
+    User, Vacancy, VacancyApplication, ApplicationStage,
+)
 from ..services.auth import get_current_user, get_user_org
+
+logger = logging.getLogger("hr-analyzer.magic-button")
 
 router = APIRouter()
 
@@ -110,20 +120,19 @@ async def check_duplicate(
 @router.post("/parse")
 async def magic_button_parse(
     data: MagicButtonData,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Process a resume parsed by the Chrome extension."""
     import traceback
-    import logging
-    logger = logging.getLogger("hr-analyzer.magic-button")
     try:
-        return await _do_magic_parse(data, db, current_user)
+        return await _do_magic_parse(data, db, current_user, background_tasks)
     except Exception as e:
         logger.error(f"Magic button error: {e}\n{traceback.format_exc()}")
         raise HTTPException(500, detail=f"Error: {str(e)}")
 
-async def _do_magic_parse(data, db, current_user):
+async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTasks):
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(400, "User not in organization")
@@ -237,6 +246,31 @@ async def _do_magic_parse(data, db, current_user):
                 "notify_new_candidate failed (non-critical)"
             )
 
+    # --- Generate AI resume PDF + JPEG in background ---
+    entity_id = entity.id
+    org_id = org.id
+    user_id = current_user.id
+    candidate_data = {
+        "full_name": data.full_name,
+        "position": data.position,
+        "email": data.email,
+        "phone": data.phone,
+        "telegram": data.telegram,
+        "city": data.city,
+        "age": data.age,
+        "birthday": data.birthday,
+        "gender": data.gender,
+        "salary": data.salary,
+        "total_experience": data.total_experience,
+        "experience_summary": data.experience_summary,
+        "experience_descriptions": data.experience_descriptions,
+        "skills": data.skills,
+        "languages": data.languages,
+    }
+    background_tasks.add_task(
+        _generate_resume_files, entity_id, org_id, user_id, candidate_data
+    )
+
     return MagicButtonResponse(
         success=True,
         entity_id=entity.id,
@@ -244,6 +278,74 @@ async def _do_magic_parse(data, db, current_user):
         duplicate_info=duplicate_info,
         message="Кандидат добавлен" + (" (дубликат найден)" if is_duplicate else ""),
     )
+
+
+async def _generate_resume_files(
+    entity_id: int, org_id: int, user_id: int, candidate_data: dict
+):
+    """Background task: AI summary → PDF → JPEG → attach to entity."""
+    from ..database import AsyncSessionLocal
+    from ..services.resume_generator import (
+        generate_ai_summary, generate_candidate_pdf, pdf_to_jpeg,
+    )
+
+    try:
+        logger.info(f"Generating AI resume for entity {entity_id}...")
+
+        # 1. AI summary
+        markdown = await generate_ai_summary(candidate_data)
+        logger.info(f"AI summary generated for entity {entity_id}: {len(markdown)} chars")
+
+        # 2. PDF
+        candidate_name = candidate_data.get("full_name", "Кандидат")
+        pdf_bytes = generate_candidate_pdf(markdown, candidate_name)
+        logger.info(f"PDF generated for entity {entity_id}: {len(pdf_bytes)} bytes")
+
+        # 3. PDF → JPEG pages
+        jpeg_pages = pdf_to_jpeg(pdf_bytes, dpi=200)
+        logger.info(f"Converted to {len(jpeg_pages)} JPEG pages for entity {entity_id}")
+
+        # 4. Save to DB
+        async with AsyncSessionLocal() as db:
+            # Save PDF
+            pdf_file = EntityFile(
+                entity_id=entity_id,
+                org_id=org_id,
+                file_type=EntityFileType.resume,
+                file_name=f"Профиль_{candidate_name.replace(' ', '_')}.pdf",
+                file_path="",
+                file_size=len(pdf_bytes),
+                mime_type="application/pdf",
+                description="AI-сгенерированный профиль кандидата",
+                uploaded_by=user_id,
+                file_data=pdf_bytes,
+            )
+            db.add(pdf_file)
+
+            # Save JPEG pages
+            for i, jpg_bytes in enumerate(jpeg_pages):
+                jpg_file = EntityFile(
+                    entity_id=entity_id,
+                    org_id=org_id,
+                    file_type=EntityFileType.resume,
+                    file_name=f"Профиль_{candidate_name.replace(' ', '_')}_стр{i+1}.jpg",
+                    file_path="",
+                    file_size=len(jpg_bytes),
+                    mime_type="image/jpeg",
+                    description=f"AI-профиль (стр. {i+1})",
+                    uploaded_by=user_id,
+                    file_data=jpg_bytes,
+                )
+                db.add(jpg_file)
+
+            await db.commit()
+            logger.info(
+                f"Resume files saved for entity {entity_id}: "
+                f"1 PDF + {len(jpeg_pages)} JPEGs"
+            )
+
+    except Exception as e:
+        logger.error(f"Resume generation failed for entity {entity_id}: {e}", exc_info=True)
 
 @router.get("/vacancies")
 async def get_my_vacancies_for_extension(
