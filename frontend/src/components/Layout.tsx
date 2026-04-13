@@ -419,7 +419,7 @@ export default function Layout() {
                               {myVacancies.map(v => (
                                 <NavLink
                                   key={v.id}
-                                  to={`/vacancies/${v.id}`}
+                                  to={`/my-funnels?v=${v.id}`}
                                   className={({ isActive }) =>
                                     clsx(
                                       'flex items-center gap-2 py-1.5 px-2 rounded-md text-xs transition-all',

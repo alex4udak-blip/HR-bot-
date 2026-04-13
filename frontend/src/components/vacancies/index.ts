@@ -7,4 +7,3 @@ export { default as AddCandidateModal } from './AddCandidateModal';
 export { default as ApplicationDetailModal } from './ApplicationDetailModal';
 export { default as CandidatesDatabase } from './CandidatesDatabase';
 export { default as StagesConfigModal } from './StagesConfigModal';
-export { default as StatusListView } from './StatusListView';

@@ -11,15 +11,13 @@ import {
   Clock,
   Users,
   ChevronLeft,
-  LayoutGrid,
   Upload,
   Filter,
   X,
   Check,
   ChevronDown,
   Calendar,
-  Database,
-  ListTree
+  Database
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -33,7 +31,6 @@ import type { Department, ParsedVacancy } from '@/services/api';
 import {
   VacancyForm,
   KanbanBoard,
-  StatusListView,
   VacancyCardSkeleton,
   VacancyStatusBadge,
   CandidatesDatabase,
@@ -104,7 +101,6 @@ export default function VacanciesPage() {
   const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
   const [departmentFilter, setDepartmentFilter] = useState<number | 'all'>('all');
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'status_list'>('status_list');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingVacancy, setEditingVacancy] = useState<Vacancy | null>(null);
   const [showParserModal, setShowParserModal] = useState(false);
@@ -414,38 +410,10 @@ export default function VacanciesPage() {
               <VacancyStatusBadge status={currentVacancy.status} size="sm" />
             </div>
           </div>
-          {/* View mode toggle */}
-          <div className="flex items-center gap-0.5 bg-white/[0.04] rounded-lg p-0.5 border border-white/[0.06]">
-            <button
-              onClick={() => setViewMode('status_list')}
-              className={clsx(
-                'p-1.5 rounded-md transition-colors',
-                viewMode === 'status_list' ? 'bg-white/[0.1] text-white' : 'text-dark-400 hover:text-white/70'
-              )}
-              title="Список по статусам"
-            >
-              <ListTree className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode('kanban')}
-              data-tour="kanban-toggle"
-              className={clsx(
-                'p-1.5 rounded-md transition-colors',
-                viewMode === 'kanban' ? 'bg-white/[0.1] text-white' : 'text-dark-400 hover:text-white/70'
-              )}
-              title="Kanban доска"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-          </div>
         </div>
 
         <div className="flex-1 overflow-hidden">
-          {viewMode === 'kanban' ? (
-            <KanbanBoard vacancy={currentVacancy} />
-          ) : (
-            <StatusListView vacancy={currentVacancy} />
-          )}
+          <KanbanBoard vacancy={currentVacancy} />
         </div>
 
         {/* Delete confirmation dialog for detail view */}

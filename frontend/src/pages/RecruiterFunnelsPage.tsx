@@ -13,8 +13,6 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
-  LayoutList,
-  Columns3,
   FileText,
   Mail,
   Calendar,
@@ -170,8 +168,6 @@ export default function RecruiterFunnelsPage() {
   const [bulkStageDropdownOpen, setBulkStageDropdownOpen] = useState(false);
   const bulkStageRef = useRef<HTMLDivElement>(null);
 
-  // View mode: 'detail' (Huntflow-style) or 'list' (ClickUp-style grouped by stage)
-  const [viewMode, setViewMode] = useState<'detail' | 'list'>('detail');
 
   // Master-detail state
   const [selectedTab, setSelectedTab] = useState<string>('all');
@@ -1049,118 +1045,12 @@ export default function RecruiterFunnelsPage() {
                     className="w-full sm:w-44 pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
                   />
                 </div>
-                <div className="hidden sm:flex items-center bg-white/[0.03] rounded-lg border border-white/[0.06] p-0.5">
-                  <button
-                    onClick={() => setViewMode('detail')}
-                    className={clsx(
-                      'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
-                      viewMode === 'detail' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200',
-                    )}
-                    title="Детали"
-                  >
-                    <Columns3 className="w-3.5 h-3.5" />
-                    <span className="hidden lg:inline">Детали</span>
-                  </button>
-                  <button
-                    onClick={() => setViewMode('list')}
-                    className={clsx(
-                      'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
-                      viewMode === 'list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200',
-                    )}
-                    title="Список"
-                  >
-                    <LayoutList className="w-3.5 h-3.5" />
-                    <span className="hidden lg:inline">Список</span>
-                  </button>
-                </div>
               </div>
             </div>
 
             {candidatesLoading ? (
               <div className="flex items-center justify-center py-16 flex-1">
                 <div className="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : viewMode === 'list' ? (
-              /* ===== LIST VIEW: grouped by stage (Huntflow-style table) ===== */
-              <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-3 space-y-1">
-                {groupedByStage.length === 0 ? (
-                  <div className="text-center py-16 text-dark-500 text-sm">
-                    {candidateSearch ? 'Ничего не найдено' : 'Нет кандидатов в этой воронке'}
-                  </div>
-                ) : (
-                  groupedByStage.map(([stage, items]) => {
-                    const ck = stagesConfig.colorKeys[stage] || stagesConfig.keyToEnum[stage] || stage;
-                    const colors = STAGE_COLORS[ck] || fallbackColor;
-                    return (
-                      <div key={stage} className="mb-1">
-                        {/* Stage group header */}
-                        <div className={clsx('w-full flex items-center gap-2 px-3 py-2 rounded-lg', colors.bg)}>
-                          <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', colors.dot)} />
-                          <span className={clsx('text-sm font-semibold uppercase', colors.text)}>
-                            {stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage}
-                          </span>
-                          <span className={clsx('text-xs ml-1', colors.text)}>{items.length}</span>
-                        </div>
-                        {/* Candidate rows */}
-                        <div className="mt-0.5">
-                          <div className="hidden md:grid grid-cols-[1fr_120px_90px_130px_160px_130px_100px] gap-2 px-3 py-1.5 text-[11px] text-dark-500 font-medium uppercase tracking-wide">
-                            <span>ФИО</span><span>Статус</span><span>Дата</span><span>Telegram</span><span>Email</span><span>Телефон</span><span>Источник</span>
-                          </div>
-                          {items.map((c) => (
-                            <div
-                              key={c.id}
-                              onClick={() => navigate(`/contacts/${c.entity_id}`)}
-                              className="flex flex-col md:grid md:grid-cols-[1fr_120px_90px_130px_160px_130px_100px] gap-1 md:gap-2 px-3 py-2.5 md:py-2 hover:bg-white/[0.03] rounded-lg cursor-pointer transition-colors border-b border-white/[0.03] last:border-b-0 group"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="w-6 h-6 rounded-full bg-accent-500/10 flex items-center justify-center text-[10px] text-accent-400 font-medium flex-shrink-0">
-                                  {(c.entity_name || '?').charAt(0).toUpperCase()}
-                                </div>
-                                <span className="text-sm text-dark-100 truncate group-hover:text-accent-400 transition-colors">
-                                  {c.entity_name || 'Без имени'}
-                                </span>
-                                <div className="md:hidden ml-auto flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                  <StageDropdown
-                                    currentStage={c.stage as ApplicationStage}
-                                    onChangeStage={(newStage) => handleStageChange(c.id, newStage)}
-                                    customLabels={stagesConfig.labels}
-                                  />
-                                </div>
-                              </div>
-                              <div className="hidden md:flex items-center" onClick={(e) => e.stopPropagation()}>
-                                <StageDropdown
-                                  currentStage={c.stage as ApplicationStage}
-                                  onChangeStage={(newStage) => handleStageChange(c.id, newStage)}
-                                  customLabels={stagesConfig.labels}
-                                />
-                              </div>
-                              <span className="text-xs text-dark-400 items-center hidden md:flex">
-                                {c.applied_at ? new Date(c.applied_at).toLocaleDateString('ru') : ''}
-                              </span>
-                              <div className="flex items-center gap-3 md:hidden pl-8 text-xs text-dark-400">
-                                {c.applied_at && <span>{new Date(c.applied_at).toLocaleDateString('ru')}</span>}
-                                {c.entity_telegram && <span>@{c.entity_telegram}</span>}
-                                {c.source && <span>{c.source}</span>}
-                              </div>
-                              <span className="text-xs text-dark-400 truncate items-center hidden md:flex">
-                                {c.entity_telegram ? `@${c.entity_telegram}` : '—'}
-                              </span>
-                              <span className="text-xs text-dark-400 truncate items-center hidden md:flex">
-                                {c.entity_email || '—'}
-                              </span>
-                              <span className="text-xs text-dark-400 truncate items-center hidden md:flex">
-                                {c.entity_phone || '—'}
-                              </span>
-                              <span className="text-xs text-dark-400 truncate items-center hidden md:flex">
-                                {c.source || '—'}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
               </div>
             ) : (
               /* ===== DETAIL VIEW: Huntflow-style master-detail ===== */
