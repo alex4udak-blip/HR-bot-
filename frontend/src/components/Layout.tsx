@@ -34,6 +34,7 @@ import {
   Database,
   Calendar,
   AlertTriangle,
+  ClipboardList,
   type LucideIcon
 } from 'lucide-react';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
@@ -244,7 +245,7 @@ export default function Layout() {
     const path = location.pathname;
     if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager') || path.startsWith('/chats') || path.startsWith('/timeoff') || path.startsWith('/blockers')) {
       setActiveBlock('projects');
-    } else if (['/dashboard', '/all-candidates', '/workspaces', '/my-funnels', '/candidate-database', '/form-builder', '/practice-list', '/document-templates', '/employees', '/my-profile', '/vacancies', '/candidates', '/interns', '/analytics', '/pen', '/calls', '/extension', '/exports', '/import'].some(p => path.startsWith(p))) {
+    } else if (['/dashboard', '/all-candidates', '/workspaces', '/my-funnels', '/candidate-database', '/form-builder', '/practice-list', '/document-templates', '/employees', '/my-profile', '/vacancies', '/candidates', '/interns', '/analytics', '/hr-reports', '/pen', '/calls', '/extension', '/exports', '/import'].some(p => path.startsWith(p))) {
       setActiveBlock('hr');
     } else if (['/users', '/departments', '/settings', '/admin', '/trash'].some(p => path.startsWith(p))) {
       setActiveBlock('admin');
@@ -295,6 +296,7 @@ export default function Layout() {
         hrItems.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
         hrItems.push({ path: '/extension', icon: Puzzle, label: 'Волшебная кнопка' });
         hrItems.push({ path: '/analytics', icon: BarChart3, label: 'HR Аналитика' });
+        hrItems.push({ path: '/hr-reports', icon: ClipboardList, label: 'Центр отчётов' });
         hrItems.push({ path: '/pen', icon: TrendingUp, label: 'ПЭН (бонусы)' });
         hrItems.push({ path: '/form-builder', icon: FileText, label: 'Конструктор форм' });
         hrItems.push({ path: '/document-templates', icon: FileSignature, label: 'Шаблоны документов' });

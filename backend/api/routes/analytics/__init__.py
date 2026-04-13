@@ -13,6 +13,7 @@ from fastapi import APIRouter
 from .dashboard import router as dashboard_router
 from .vacancies import router as vacancies_router
 from .funnel import router as funnel_router
+from .reports import router as reports_router
 
 router = APIRouter()
 
@@ -24,3 +25,6 @@ router.include_router(vacancies_router, prefix="/vacancies", tags=["analytics-va
 
 # Funnel analytics
 router.include_router(funnel_router, prefix="/funnel", tags=["analytics-funnel"])
+
+# Huntflow-style reports center
+router.include_router(reports_router, prefix="/reports", tags=["analytics-reports"])

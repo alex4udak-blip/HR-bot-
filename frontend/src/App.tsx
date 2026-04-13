@@ -89,6 +89,7 @@ const ExtensionPage = lazyWithRetry(() => import('@/pages/ExtensionPage'));
 const CsvImportPage = lazyWithRetry(() => import('@/pages/CsvImportPage'));
 const TimeOffPage = lazyWithRetry(() => import('@/pages/TimeOffPage'));
 const BlockersPage = lazyWithRetry(() => import('@/pages/BlockersPage'));
+const HRReportsPage = lazyWithRetry(() => import('@/pages/HRReportsPage'));
 
 // Loading fallback component for Suspense
 function PageLoader() {
@@ -209,6 +210,7 @@ export default function App() {
           <Route path="email-templates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><EmailTemplatesPage /></RoleRoute></Suspense>} />
           <Route path="extension" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><ExtensionPage /></RoleRoute></Suspense>} />
           <Route path="analytics" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><AnalyticsPage /></RoleRoute></Suspense>} />
+          <Route path="hr-reports" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><HRReportsPage /></RoleRoute></Suspense>} />
           <Route path="saturn" element={<Suspense fallback={<PageLoader />}><SaturnPage /></Suspense>} />
 
           {/* HR Admin routes — superadmin, owner, admin (Настя). NOT for hr recruiter */}

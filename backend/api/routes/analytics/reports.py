@@ -1,0 +1,705 @@
+"""
+Huntflow-style HR Reports Center
+
+Reports:
+1. Time to Fill (Время закрытия позиций) — avg close time, avg delay, closed positions, avg time per stage
+2. Funnel by Recruiter (Воронка по рекрутерам) — funnel + rejections split by recruiter
+3. Rejections (Отказы) — rejection reasons by stage
+4. Sources (Источники резюме) — where candidates come from
+5. Candidate Movement (Движение кандидатов) — how many moved between stages
+"""
+
+from datetime import datetime, timedelta
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, and_, or_, case, extract, text
+from pydantic import BaseModel
+
+from ...database import get_db
+from ...models.database import (
+    User, Vacancy, VacancyStatus, VacancyApplication,
+    ApplicationStage, Entity, EntityType, StageTransition,
+)
+from ...services.auth import get_current_user, get_user_org
+from ...utils.logging import get_logger
+
+logger = get_logger("analytics-reports")
+
+router = APIRouter()
+
+# Stage ordering for funnel
+FUNNEL_STAGES = [
+    "applied", "screening", "phone_screen", "interview",
+    "assessment", "offer", "hired",
+]
+
+STAGE_LABELS = {
+    "applied": "Новые",
+    "screening": "Резюме у заказчика",
+    "phone_screen": "Интервью с HR",
+    "interview": "Интервью с заказчиком",
+    "assessment": "Принятие решения/ СБ",
+    "offer": "Выставлен оффер",
+    "hired": "Оффер принят",
+    "rejected": "Отказ",
+    "withdrawn": "Отозван",
+}
+
+
+# ========== SCHEMAS ==========
+
+class TimeToFillSummary(BaseModel):
+    avg_days_to_close: Optional[float]
+    avg_delay_days: Optional[float]
+    closed_positions: int
+    total_positions: int
+
+
+class StageTimingItem(BaseModel):
+    stage: str
+    label: str
+    avg_days: float
+
+
+class LastClosing(BaseModel):
+    candidate_name: str
+    vacancy_title: str
+    recruiter_name: Optional[str]
+    closed_date: Optional[str]
+    days_to_close: Optional[int]
+    start_date: Optional[str]
+
+
+class TimeToFillReport(BaseModel):
+    summary: TimeToFillSummary
+    stage_timings: List[StageTimingItem]
+    last_closings: List[LastClosing]
+
+
+class FunnelStageData(BaseModel):
+    stage: str
+    label: str
+    candidate_count: int
+    rejection_count: int
+
+
+class SourceBreakdown(BaseModel):
+    source: str
+    count: int
+
+
+class RejectionReasonItem(BaseModel):
+    reason: str
+    count: int
+
+
+class FunnelReport(BaseModel):
+    stages: List[FunnelStageData]
+    total_candidates: int
+    total_rejections: int
+    sources: List[SourceBreakdown]
+    rejection_reasons: List[RejectionReasonItem]
+
+
+class RecruiterFunnelItem(BaseModel):
+    recruiter_id: int
+    recruiter_name: str
+    stages: List[FunnelStageData]
+    total_candidates: int
+    total_rejections: int
+
+
+class FunnelByRecruiterReport(BaseModel):
+    summary: FunnelReport
+    by_recruiter: List[RecruiterFunnelItem]
+
+
+class RejectionsByStage(BaseModel):
+    stage: str
+    label: str
+    count: int
+    reasons: List[RejectionReasonItem]
+
+
+class RejectionsReport(BaseModel):
+    total_rejections: int
+    by_stage: List[RejectionsByStage]
+    top_reasons: List[RejectionReasonItem]
+
+
+class SourceReport(BaseModel):
+    total_candidates: int
+    sources: List[SourceBreakdown]
+    by_stage: Dict[str, List[SourceBreakdown]]
+
+
+class StageMovementItem(BaseModel):
+    from_stage: str
+    from_label: str
+    to_stage: str
+    to_label: str
+    count: int
+
+
+class MovementReport(BaseModel):
+    total_movements: int
+    movements: List[StageMovementItem]
+
+
+# ========== HELPERS ==========
+
+def _get_date_filter(period: str) -> Optional[datetime]:
+    """Parse period filter into date cutoff."""
+    now = datetime.utcnow()
+    if period == "current":
+        return None  # All time / current situation
+    elif period == "month":
+        return now - timedelta(days=30)
+    elif period == "quarter":
+        return now - timedelta(days=90)
+    elif period == "half_year":
+        return now - timedelta(days=180)
+    elif period == "year":
+        return now - timedelta(days=365)
+    return None
+
+
+# ========== ENDPOINTS ==========
+
+@router.get("/time-to-fill", response_model=TimeToFillReport)
+async def get_time_to_fill(
+    period: str = Query("current", description="current|month|quarter|half_year|year"),
+    recruiter_id: Optional[int] = None,
+    vacancy_status: str = Query("all", description="all|open|closed"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Time to Fill report — Huntflow-style 'Время закрытия позиций'."""
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    date_from = _get_date_filter(period)
+
+    # --- Closed positions (hired applications) ---
+    hired_query = (
+        select(
+            VacancyApplication.id,
+            VacancyApplication.vacancy_id,
+            VacancyApplication.entity_id,
+            VacancyApplication.applied_at,
+            VacancyApplication.last_stage_change_at,
+            Vacancy.title.label("vacancy_title"),
+            Vacancy.created_by.label("recruiter_id"),
+            Entity.name.label("candidate_name"),
+        )
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .join(Entity, VacancyApplication.entity_id == Entity.id)
+        .where(
+            Vacancy.org_id == org.id,
+            VacancyApplication.stage == ApplicationStage.hired,
+        )
+    )
+
+    if date_from:
+        hired_query = hired_query.where(VacancyApplication.last_stage_change_at >= date_from)
+    if recruiter_id:
+        hired_query = hired_query.where(Vacancy.created_by == recruiter_id)
+
+    hired_result = await db.execute(hired_query.order_by(VacancyApplication.last_stage_change_at.desc()))
+    hired_rows = hired_result.all()
+
+    # Calculate avg days to close
+    days_list = []
+    last_closings = []
+    for row in hired_rows:
+        if row.applied_at and row.last_stage_change_at:
+            days = (row.last_stage_change_at - row.applied_at).days
+            days_list.append(days)
+
+            # Get recruiter name
+            recruiter = await db.get(User, row.recruiter_id) if row.recruiter_id else None
+
+            last_closings.append(LastClosing(
+                candidate_name=row.candidate_name or "—",
+                vacancy_title=row.vacancy_title or "—",
+                recruiter_name=recruiter.name if recruiter else None,
+                closed_date=row.last_stage_change_at.strftime("%d %B %Y") if row.last_stage_change_at else None,
+                days_to_close=days,
+                start_date=row.applied_at.strftime("%d %B %Y") if row.applied_at else None,
+            ))
+
+    avg_days = round(sum(days_list) / len(days_list), 1) if days_list else None
+
+    # Total positions count
+    total_q = select(func.count(Vacancy.id)).where(Vacancy.org_id == org.id)
+    if vacancy_status == "open":
+        total_q = total_q.where(Vacancy.status == VacancyStatus.open)
+    elif vacancy_status == "closed":
+        total_q = total_q.where(Vacancy.status == VacancyStatus.closed)
+    total_result = await db.execute(total_q)
+    total_positions = total_result.scalar() or 0
+
+    # --- Average time per stage (from StageTransition) ---
+    stage_timings = []
+    for stage in FUNNEL_STAGES[:-1]:  # Exclude "hired" — it's the end
+        next_idx = FUNNEL_STAGES.index(stage) + 1
+        if next_idx < len(FUNNEL_STAGES):
+            next_stage = FUNNEL_STAGES[next_idx]
+
+            # Find transitions from this stage to next
+            trans_q = (
+                select(
+                    func.avg(
+                        extract('epoch', StageTransition.created_at) -
+                        extract('epoch', VacancyApplication.applied_at)
+                    )
+                )
+                .select_from(StageTransition)
+                .join(VacancyApplication, StageTransition.application_id == VacancyApplication.id)
+                .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+                .where(
+                    Vacancy.org_id == org.id,
+                    StageTransition.to_stage == next_stage,
+                    StageTransition.from_stage == stage,
+                )
+            )
+            if date_from:
+                trans_q = trans_q.where(StageTransition.created_at >= date_from)
+
+            result = await db.execute(trans_q)
+            avg_seconds = result.scalar()
+            avg_stage_days = round(avg_seconds / 86400, 1) if avg_seconds else 0
+
+            stage_timings.append(StageTimingItem(
+                stage=stage,
+                label=STAGE_LABELS.get(stage, stage),
+                avg_days=avg_stage_days,
+            ))
+
+    return TimeToFillReport(
+        summary=TimeToFillSummary(
+            avg_days_to_close=avg_days,
+            avg_delay_days=None,  # TODO: implement deadline comparison
+            closed_positions=len(hired_rows),
+            total_positions=total_positions,
+        ),
+        stage_timings=stage_timings,
+        last_closings=last_closings[:10],
+    )
+
+
+@router.get("/funnel", response_model=FunnelReport)
+async def get_funnel_report(
+    period: str = Query("current"),
+    recruiter_id: Optional[int] = None,
+    vacancy_status: str = Query("open"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Funnel report — Huntflow-style 'Воронка'."""
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    date_from = _get_date_filter(period)
+
+    # Base filter
+    base_filter = [Vacancy.org_id == org.id]
+    if date_from:
+        base_filter.append(VacancyApplication.applied_at >= date_from)
+    if recruiter_id:
+        base_filter.append(Vacancy.created_by == recruiter_id)
+    if vacancy_status == "open":
+        base_filter.append(Vacancy.status == VacancyStatus.open)
+    elif vacancy_status == "closed":
+        base_filter.append(Vacancy.status == VacancyStatus.closed)
+
+    # Stage counts (including rejected/withdrawn per stage)
+    stage_q = (
+        select(
+            VacancyApplication.stage,
+            func.count(VacancyApplication.id).label("cnt"),
+        )
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(*base_filter)
+        .group_by(VacancyApplication.stage)
+    )
+    stage_result = await db.execute(stage_q)
+    stage_counts = {}
+    for row in stage_result:
+        key = row.stage.value if hasattr(row.stage, 'value') else str(row.stage)
+        stage_counts[key] = row.cnt
+
+    # Rejections by stage they were on before rejection (from StageTransition)
+    rej_by_stage_q = (
+        select(
+            StageTransition.from_stage,
+            func.count(StageTransition.id).label("cnt"),
+        )
+        .join(VacancyApplication, StageTransition.application_id == VacancyApplication.id)
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(
+            Vacancy.org_id == org.id,
+            StageTransition.to_stage == "rejected",
+        )
+        .group_by(StageTransition.from_stage)
+    )
+    if date_from:
+        rej_by_stage_q = rej_by_stage_q.where(StageTransition.created_at >= date_from)
+    rej_result = await db.execute(rej_by_stage_q)
+    rej_by_stage = {row.from_stage: row.cnt for row in rej_result if row.from_stage}
+
+    # Build funnel
+    stages = []
+    total_candidates = 0
+    total_rejections = stage_counts.get("rejected", 0)
+
+    for stage in FUNNEL_STAGES:
+        count = stage_counts.get(stage, 0)
+        rej_count = rej_by_stage.get(stage, 0)
+        total_candidates += count
+        stages.append(FunnelStageData(
+            stage=stage,
+            label=STAGE_LABELS.get(stage, stage),
+            candidate_count=count,
+            rejection_count=rej_count,
+        ))
+
+    # Sources
+    source_q = (
+        select(
+            VacancyApplication.source,
+            func.count(VacancyApplication.id).label("cnt"),
+        )
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(*base_filter)
+        .where(VacancyApplication.source.isnot(None))
+        .group_by(VacancyApplication.source)
+        .order_by(func.count(VacancyApplication.id).desc())
+    )
+    source_result = await db.execute(source_q)
+    sources = [
+        SourceBreakdown(source=row.source or "Другой", count=row.cnt)
+        for row in source_result
+    ]
+
+    # Rejection reasons
+    reason_q = (
+        select(
+            VacancyApplication.rejection_reason,
+            func.count(VacancyApplication.id).label("cnt"),
+        )
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(
+            *base_filter,
+            VacancyApplication.stage == ApplicationStage.rejected,
+            VacancyApplication.rejection_reason.isnot(None),
+        )
+        .group_by(VacancyApplication.rejection_reason)
+        .order_by(func.count(VacancyApplication.id).desc())
+    )
+    reason_result = await db.execute(reason_q)
+    rejection_reasons = [
+        RejectionReasonItem(reason=row.rejection_reason or "Другая причина", count=row.cnt)
+        for row in reason_result
+    ]
+
+    return FunnelReport(
+        stages=stages,
+        total_candidates=total_candidates,
+        total_rejections=total_rejections,
+        sources=sources,
+        rejection_reasons=rejection_reasons,
+    )
+
+
+@router.get("/funnel-by-recruiter", response_model=FunnelByRecruiterReport)
+async def get_funnel_by_recruiter(
+    period: str = Query("current"),
+    vacancy_status: str = Query("open"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Funnel with recruiter breakdown — Huntflow-style 'Воронка с детализацией по рекрутерам'."""
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    # Get summary funnel first
+    summary = await get_funnel_report(
+        period=period, recruiter_id=None, vacancy_status=vacancy_status,
+        db=db, current_user=current_user,
+    )
+
+    # Get recruiter list (those who have vacancies)
+    recruiter_q = (
+        select(User.id, User.name)
+        .join(Vacancy, Vacancy.created_by == User.id)
+        .where(Vacancy.org_id == org.id)
+        .group_by(User.id, User.name)
+    )
+    recruiter_result = await db.execute(recruiter_q)
+    recruiters = recruiter_result.all()
+
+    by_recruiter = []
+    for rec in recruiters:
+        rec_funnel = await get_funnel_report(
+            period=period, recruiter_id=rec.id, vacancy_status=vacancy_status,
+            db=db, current_user=current_user,
+        )
+        by_recruiter.append(RecruiterFunnelItem(
+            recruiter_id=rec.id,
+            recruiter_name=rec.name or f"User #{rec.id}",
+            stages=rec_funnel.stages,
+            total_candidates=rec_funnel.total_candidates,
+            total_rejections=rec_funnel.total_rejections,
+        ))
+
+    return FunnelByRecruiterReport(
+        summary=summary,
+        by_recruiter=by_recruiter,
+    )
+
+
+@router.get("/rejections", response_model=RejectionsReport)
+async def get_rejections_report(
+    period: str = Query("current"),
+    recruiter_id: Optional[int] = None,
+    vacancy_status: str = Query("open"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Rejections report — Huntflow-style 'Отказы'."""
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    date_from = _get_date_filter(period)
+
+    base_filter = [
+        Vacancy.org_id == org.id,
+        VacancyApplication.stage == ApplicationStage.rejected,
+    ]
+    if date_from:
+        base_filter.append(VacancyApplication.last_stage_change_at >= date_from)
+    if recruiter_id:
+        base_filter.append(Vacancy.created_by == recruiter_id)
+
+    # Total rejections
+    total_q = (
+        select(func.count(VacancyApplication.id))
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(*base_filter)
+    )
+    total_result = await db.execute(total_q)
+    total_rejections = total_result.scalar() or 0
+
+    # Rejections by stage (from StageTransition — what stage were they on before rejection)
+    by_stage_q = (
+        select(
+            StageTransition.from_stage,
+            func.count(StageTransition.id).label("cnt"),
+        )
+        .join(VacancyApplication, StageTransition.application_id == VacancyApplication.id)
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(
+            Vacancy.org_id == org.id,
+            StageTransition.to_stage == "rejected",
+        )
+        .group_by(StageTransition.from_stage)
+        .order_by(func.count(StageTransition.id).desc())
+    )
+    if date_from:
+        by_stage_q = by_stage_q.where(StageTransition.created_at >= date_from)
+    by_stage_result = await db.execute(by_stage_q)
+
+    by_stage = []
+    for row in by_stage_result:
+        stage_key = row.from_stage or "unknown"
+        # Get rejection reasons for this stage
+        reason_q = (
+            select(
+                VacancyApplication.rejection_reason,
+                func.count(VacancyApplication.id).label("cnt"),
+            )
+            .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+            .join(
+                StageTransition,
+                and_(
+                    StageTransition.application_id == VacancyApplication.id,
+                    StageTransition.from_stage == stage_key,
+                    StageTransition.to_stage == "rejected",
+                )
+            )
+            .where(
+                Vacancy.org_id == org.id,
+                VacancyApplication.rejection_reason.isnot(None),
+            )
+            .group_by(VacancyApplication.rejection_reason)
+            .order_by(func.count(VacancyApplication.id).desc())
+        )
+        reason_result = await db.execute(reason_q)
+        reasons = [
+            RejectionReasonItem(reason=r.rejection_reason or "Другая причина", count=r.cnt)
+            for r in reason_result
+        ]
+
+        by_stage.append(RejectionsByStage(
+            stage=stage_key,
+            label=STAGE_LABELS.get(stage_key, stage_key),
+            count=row.cnt,
+            reasons=reasons,
+        ))
+
+    # Top reasons overall
+    top_reason_q = (
+        select(
+            VacancyApplication.rejection_reason,
+            func.count(VacancyApplication.id).label("cnt"),
+        )
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(
+            *base_filter,
+            VacancyApplication.rejection_reason.isnot(None),
+        )
+        .group_by(VacancyApplication.rejection_reason)
+        .order_by(func.count(VacancyApplication.id).desc())
+        .limit(10)
+    )
+    top_reason_result = await db.execute(top_reason_q)
+    top_reasons = [
+        RejectionReasonItem(reason=r.rejection_reason or "Другая причина", count=r.cnt)
+        for r in top_reason_result
+    ]
+
+    return RejectionsReport(
+        total_rejections=total_rejections,
+        by_stage=by_stage,
+        top_reasons=top_reasons,
+    )
+
+
+@router.get("/sources", response_model=SourceReport)
+async def get_sources_report(
+    period: str = Query("current"),
+    recruiter_id: Optional[int] = None,
+    vacancy_status: str = Query("open"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Resume sources report — Huntflow-style 'Источники резюме'."""
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    date_from = _get_date_filter(period)
+
+    base_filter = [Vacancy.org_id == org.id]
+    if date_from:
+        base_filter.append(VacancyApplication.applied_at >= date_from)
+    if recruiter_id:
+        base_filter.append(Vacancy.created_by == recruiter_id)
+    if vacancy_status == "open":
+        base_filter.append(Vacancy.status == VacancyStatus.open)
+
+    # Total
+    total_q = (
+        select(func.count(VacancyApplication.id))
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(*base_filter)
+    )
+    total_result = await db.execute(total_q)
+    total = total_result.scalar() or 0
+
+    # Sources overall
+    source_q = (
+        select(
+            func.coalesce(VacancyApplication.source, 'Другой').label("src"),
+            func.count(VacancyApplication.id).label("cnt"),
+        )
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(*base_filter)
+        .group_by("src")
+        .order_by(func.count(VacancyApplication.id).desc())
+    )
+    source_result = await db.execute(source_q)
+    sources = [SourceBreakdown(source=r.src, count=r.cnt) for r in source_result]
+
+    # Sources by stage
+    by_stage = {}
+    for stage in FUNNEL_STAGES:
+        stage_source_q = (
+            select(
+                func.coalesce(VacancyApplication.source, 'Другой').label("src"),
+                func.count(VacancyApplication.id).label("cnt"),
+            )
+            .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+            .where(*base_filter, VacancyApplication.stage == stage)
+            .group_by("src")
+            .order_by(func.count(VacancyApplication.id).desc())
+        )
+        stage_result = await db.execute(stage_source_q)
+        stage_sources = [SourceBreakdown(source=r.src, count=r.cnt) for r in stage_result]
+        if stage_sources:
+            by_stage[stage] = stage_sources
+
+    return SourceReport(
+        total_candidates=total,
+        sources=sources,
+        by_stage=by_stage,
+    )
+
+
+@router.get("/movement", response_model=MovementReport)
+async def get_movement_report(
+    period: str = Query("current"),
+    recruiter_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Candidate movement report — Huntflow-style 'Движение кандидатов'."""
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    date_from = _get_date_filter(period)
+
+    move_q = (
+        select(
+            StageTransition.from_stage,
+            StageTransition.to_stage,
+            func.count(StageTransition.id).label("cnt"),
+        )
+        .join(VacancyApplication, StageTransition.application_id == VacancyApplication.id)
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(Vacancy.org_id == org.id)
+        .group_by(StageTransition.from_stage, StageTransition.to_stage)
+        .order_by(func.count(StageTransition.id).desc())
+    )
+    if date_from:
+        move_q = move_q.where(StageTransition.created_at >= date_from)
+    if recruiter_id:
+        move_q = move_q.where(Vacancy.created_by == recruiter_id)
+
+    result = await db.execute(move_q)
+
+    movements = []
+    total = 0
+    for row in result:
+        from_s = row.from_stage or "new"
+        to_s = row.to_stage or "unknown"
+        movements.append(StageMovementItem(
+            from_stage=from_s,
+            from_label=STAGE_LABELS.get(from_s, from_s),
+            to_stage=to_s,
+            to_label=STAGE_LABELS.get(to_s, to_s),
+            count=row.cnt,
+        ))
+        total += row.cnt
+
+    return MovementReport(
+        total_movements=total,
+        movements=movements,
+    )
