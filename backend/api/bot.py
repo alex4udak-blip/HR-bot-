@@ -2796,6 +2796,7 @@ async def cmd_broadcast(message: types.Message):
             result = await session.execute(
                 select(Chat).where(
                     Chat.is_active == True,
+                    Chat.auto_tasks_enabled == True,
                     or_(Chat.deleted_at == None, Chat.deleted_at.is_(None)),
                     Chat.telegram_chat_id != None,
                 )
@@ -2803,11 +2804,11 @@ async def cmd_broadcast(message: types.Message):
             chats = list(result.scalars().all())
 
             if not chats:
-                await message.answer("⚠️ Нет активных чатов для рассылки.")
+                await message.answer("⚠️ Нет чатов с включёнными смарт-функциями.")
                 return
 
             await message.answer(
-                f"📤 Начинаю рассылку в {len(chats)} чатов...",
+                f"📤 Начинаю рассылку в {len(chats)} чатов (смарт-функции вкл.)...",
             )
 
             bot_instance = get_bot()
