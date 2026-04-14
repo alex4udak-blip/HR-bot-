@@ -2769,11 +2769,15 @@ async def cmd_remind(message: types.Message):
         await message.answer(f"⚠️ Ошибка: {e}")
 
 
+# Store pending broadcasts: {user_id: {"text": ..., "chat_ids": [...]}}
+_pending_broadcasts: dict[int, dict] = {}
+
+
 @dp.message(Command("broadcast"))
 async def cmd_broadcast(message: types.Message):
-    """Broadcast a message to all active chats.
+    """Broadcast a message to chats with smart features enabled.
 
-    Usage: /broadcast <text> — sends the text to all active Telegram chats.
+    Usage: /broadcast <text> — preview + confirm before sending.
     """
     text = message.text
     if text:
@@ -2784,7 +2788,8 @@ async def cmd_broadcast(message: types.Message):
             "📢 <b>Рассылка сообщений</b>\n\n"
             "Использование:\n"
             "<code>/broadcast Текст сообщения</code>\n\n"
-            "Текст будет отправлен во все активные чаты бота.",
+            "Отправляет текст в чаты с включёнными смарт-функциями.\n"
+            "Перед отправкой покажет список чатов для подтверждения.",
             parse_mode="HTML",
         )
         return
@@ -2807,35 +2812,91 @@ async def cmd_broadcast(message: types.Message):
                 await message.answer("⚠️ Нет чатов с включёнными смарт-функциями.")
                 return
 
-            await message.answer(
-                f"📤 Начинаю рассылку в {len(chats)} чатов (смарт-функции вкл.)...",
+            # Build preview with chat list
+            chat_names = [f"  • {chat.custom_name or chat.title}" for chat in chats]
+            # Truncate if too many chats
+            if len(chat_names) > 20:
+                shown = chat_names[:20]
+                shown.append(f"  ... и ещё {len(chat_names) - 20} чатов")
+            else:
+                shown = chat_names
+
+            preview = (
+                f"📢 <b>Предпросмотр рассылки</b>\n\n"
+                f"<b>Сообщение:</b>\n{text}\n\n"
+                f"<b>Получатели ({len(chats)} чатов):</b>\n"
+                + "\n".join(shown)
+                + "\n\n⚠️ Подтвердите отправку:"
             )
 
-            bot_instance = get_bot()
-            sent = 0
-            failed = 0
-            failed_names = []
+            # Save pending broadcast
+            _pending_broadcasts[message.from_user.id] = {
+                "text": text,
+                "chat_ids": [(chat.telegram_chat_id, chat.custom_name or chat.title) for chat in chats],
+            }
 
-            for chat in chats:
-                try:
-                    await bot_instance.send_message(
-                        chat.telegram_chat_id,
-                        f"📢 <b>Объявление</b>\n\n{text}",
-                        parse_mode="HTML",
-                    )
-                    sent += 1
-                except Exception as e:
-                    failed += 1
-                    failed_names.append(f"❌ {chat.custom_name or chat.title}: {e}")
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="✅ Отправить", callback_data="broadcast:confirm"),
+                    InlineKeyboardButton(text="❌ Отмена", callback_data="broadcast:cancel"),
+                ]
+            ])
 
-            report = f"📢 <b>Рассылка завершена: {sent}/{len(chats)}</b>"
-            if failed_names:
-                report += "\n\n<b>Ошибки:</b>\n" + "\n".join(failed_names)
-            await message.answer(report, parse_mode="HTML")
+            await message.answer(preview, parse_mode="HTML", reply_markup=keyboard)
 
     except Exception as e:
         logger.error(f"Error in /broadcast command: {e}")
         await message.answer(f"⚠️ Ошибка: {e}")
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("broadcast:"))
+async def on_broadcast_callback(callback: CallbackQuery):
+    """Handle broadcast confirm/cancel buttons."""
+    action = callback.data.split(":")[1]
+    user_id = callback.from_user.id
+
+    if action == "cancel":
+        _pending_broadcasts.pop(user_id, None)
+        await callback.message.edit_text("❌ Рассылка отменена.")
+        await callback.answer()
+        return
+
+    if action == "confirm":
+        pending = _pending_broadcasts.pop(user_id, None)
+        if not pending:
+            await callback.message.edit_text("⚠️ Рассылка устарела. Отправьте /broadcast заново.")
+            await callback.answer()
+            return
+
+        text = pending["text"]
+        chat_list = pending["chat_ids"]
+
+        await callback.message.edit_text(
+            f"📤 Отправляю в {len(chat_list)} чатов..."
+        )
+        await callback.answer()
+
+        bot_instance = get_bot()
+        sent = 0
+        failed = 0
+        failed_names = []
+
+        for chat_id, chat_name in chat_list:
+            try:
+                await bot_instance.send_message(
+                    chat_id,
+                    f"📢 <b>Объявление</b>\n\n{text}",
+                    parse_mode="HTML",
+                )
+                sent += 1
+            except Exception as e:
+                failed += 1
+                failed_names.append(f"❌ {chat_name}: {e}")
+
+        report = f"📢 <b>Рассылка завершена: {sent}/{len(chat_list)}</b>"
+        if failed_names:
+            report += "\n\n<b>Ошибки:</b>\n" + "\n".join(failed_names[:20])
+        await callback.message.edit_text(report, parse_mode="HTML")
 
 
 async def start_bot():
