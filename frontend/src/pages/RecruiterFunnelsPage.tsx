@@ -2018,31 +2018,32 @@ function FunnelCard({ vacancy, onClick, onEdit, onClose }: { vacancy: Vacancy; o
       onClick={onClick}
       className="p-3 rounded-lg border border-white/[0.06] glass-light hover:border-white/[0.12] cursor-pointer transition-colors group relative"
     >
-      {/* Action buttons — show on hover */}
-      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={(e) => { e.stopPropagation(); onEdit(); }}
-          className="p-1.5 rounded-md bg-white/[0.06] hover:bg-white/[0.12] text-dark-400 hover:text-white transition-colors"
-          title="Редактировать"
-        >
-          <Pencil className="w-3.5 h-3.5" />
-        </button>
-        {vacancy.status !== 'closed' && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onClose(); }}
-            className="p-1.5 rounded-md bg-white/[0.06] hover:bg-red-500/20 text-dark-400 hover:text-red-400 transition-colors"
-            title="Закрыть вакансию"
-          >
-            <Archive className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
-
       <div className="flex items-start justify-between mb-2">
-        <h3 className="text-sm font-medium text-dark-100 group-hover:text-accent-400 transition-colors line-clamp-2 pr-16">
+        <h3 className="text-sm font-medium text-dark-100 group-hover:text-accent-400 transition-colors line-clamp-2 flex-1 mr-2">
           {vacancy.title}
         </h3>
-        <ChevronRight className="w-4 h-4 text-dark-500 group-hover:text-accent-400 transition-colors shrink-0 mt-0.5" />
+        {/* Action buttons — show on hover, replacing chevron */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(); }}
+              className="p-1 rounded-md hover:bg-white/[0.1] text-dark-400 hover:text-white transition-colors"
+              title="Редактировать"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+            {vacancy.status !== 'closed' && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onClose(); }}
+                className="p-1 rounded-md hover:bg-red-500/20 text-dark-400 hover:text-red-400 transition-colors"
+                title="Закрыть вакансию"
+              >
+                <Archive className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <ChevronRight className="w-4 h-4 text-dark-500 group-hover:text-accent-400 transition-colors mt-0.5" />
+        </div>
       </div>
       <div className="flex items-center gap-2 mb-2">
         <VacancyStatusBadge status={vacancy.status} />
