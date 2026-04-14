@@ -292,13 +292,11 @@ async def update_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Workers can only update tasks assigned to them (status changes allowed)
+    # Any project member can edit/move tasks; only managers can reassign
     is_manager = await can_manage_tasks(project, current_user, org, db)
     if not is_manager:
-        if task.assignee_id != current_user.id:
-            raise HTTPException(status_code=403, detail="You can only edit tasks assigned to you")
-        # Workers can change status but not reassign
-        if data.assignee_id is not None and data.assignee_id != current_user.id:
+        # Non-managers cannot reassign tasks to other people
+        if data.assignee_id is not None and data.assignee_id != task.assignee_id:
             raise HTTPException(status_code=403, detail="You cannot reassign tasks")
 
     update_data = data.model_dump(exclude_unset=True)
