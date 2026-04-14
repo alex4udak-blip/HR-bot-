@@ -287,11 +287,11 @@ export default function Layout() {
       hrItems.push({ path: '/dashboard', icon: BarChart3, label: 'Аналитика' });
       hrItems.push({ path: '/my-funnels', icon: Briefcase, label: 'Мои вакансии' });
       hrItems.push({ path: '/vacancies', icon: GitBranch, label: 'Заявки' });
+      hrItems.push({ path: '/extension', icon: Puzzle, label: 'Волшебная кнопка' });
       // Расширенные — только admin/owner/superadmin
       if (isHrAdmin) {
         hrItems.push({ path: '/interns', icon: GraduationCap, label: 'Практиканты' });
         hrItems.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
-        hrItems.push({ path: '/extension', icon: Puzzle, label: 'Волшебная кнопка' });
         hrItems.push({ path: '/analytics', icon: BarChart3, label: 'HR Аналитика' });
         hrItems.push({ path: '/hr-reports', icon: ClipboardList, label: 'Центр отчётов' });
         hrItems.push({ path: '/pen', icon: TrendingUp, label: 'ПЭН (бонусы)' });
