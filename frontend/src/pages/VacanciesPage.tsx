@@ -17,12 +17,10 @@ import {
   Check,
   ChevronDown,
   Calendar,
-  Database
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useVacancyStore } from '@/stores/vacancyStore';
-import { useAuthStore } from '@/stores/authStore';
 import type { Vacancy, VacancyStatus } from '@/types';
 import { EMPLOYMENT_TYPES } from '@/types';
 import { formatSalary } from '@/utils';
@@ -33,7 +31,6 @@ import {
   KanbanBoard,
   VacancyCardSkeleton,
   VacancyStatusBadge,
-  CandidatesDatabase,
 } from '@/components/vacancies';
 import ParserModal from '@/components/parser/ParserModal';
 import {
@@ -44,9 +41,6 @@ import {
   ErrorMessage
 } from '@/components/ui';
 import { OnboardingTooltip } from '@/components/onboarding';
-
-// Main tabs
-type MainTab = 'vacancies' | 'database';
 
 const STATUS_FILTERS: { id: VacancyStatus | 'all'; name: string }[] = [
   { id: 'all', name: 'Все' },
@@ -83,19 +77,6 @@ export default function VacanciesPage() {
   const { vacancyId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-
-  // Check if user has access to candidate database feature
-  const { hasFeature } = useAuthStore();
-  const hasCandidateDatabase = hasFeature('candidate_database');
-
-  // Main tab state - default to 'vacancies' if user doesn't have access to database
-  const [mainTab, setMainTab] = useState<MainTab>(() => {
-    const tabParam = searchParams.get('tab');
-    if (tabParam === 'database' && hasCandidateDatabase) {
-      return 'database';
-    }
-    return 'vacancies';
-  });
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
@@ -380,17 +361,6 @@ export default function VacanciesPage() {
   };
 
   // Handle main tab change
-  const handleMainTabChange = (tab: MainTab) => {
-    setMainTab(tab);
-    const newParams = new URLSearchParams(searchParams);
-    if (tab === 'database') {
-      newParams.set('tab', 'database');
-    } else {
-      newParams.delete('tab');
-    }
-    setSearchParams(newParams, { replace: true });
-  };
-
   // Detail view — Huntflow style
   if (currentVacancy && vacancyId) {
     return (
@@ -464,39 +434,9 @@ export default function VacanciesPage() {
             >
               <h1 className="text-2xl font-bold flex items-center gap-2">
                 <Briefcase className="w-7 h-7 text-blue-400" />
-                Вакансии
+                Заявки
               </h1>
             </OnboardingTooltip>
-
-            {/* Main Tabs - Show "База" tab only if user has candidate_database feature */}
-            {hasCandidateDatabase && (
-              <div className="flex items-center bg-white/[0.03] rounded-lg p-1">
-                <button
-                  onClick={() => handleMainTabChange('vacancies')}
-                  className={clsx(
-                    'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                    mainTab === 'vacancies'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-white/60 hover:text-white'
-                  )}
-                >
-                  <Briefcase className="w-4 h-4" />
-                  Вакансии
-                </button>
-                <button
-                  onClick={() => handleMainTabChange('database')}
-                  className={clsx(
-                    'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                    mainTab === 'database'
-                      ? 'bg-purple-600 text-white'
-                      : 'text-white/60 hover:text-white'
-                  )}
-                >
-                  <Database className="w-4 h-4" />
-                  База
-                </button>
-              </div>
-            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -509,8 +449,6 @@ export default function VacanciesPage() {
               <Users className="w-4 h-4" />
               К кандидатам
             </button>
-            {mainTab === 'vacancies' && (
-              <>
                 <button
                   onClick={() => setShowParserModal(true)}
                   className="flex items-center gap-2 px-4 py-2 glass-button rounded-lg"
@@ -529,13 +467,10 @@ export default function VacanciesPage() {
                   <Plus className="w-5 h-5" />
                   Новая вакансия
                 </button>
-              </>
-            )}
           </div>
         </div>
 
-        {/* Filters - only show for vacancies tab */}
-        {mainTab === 'vacancies' && (
+        {/* Filters */}
         <div className="flex flex-wrap items-center gap-3">
           {/* Search */}
           <div className="relative flex-1 min-w-[200px] max-w-md">
@@ -709,17 +644,9 @@ export default function VacanciesPage() {
             </>
           </div>
         </div>
-        )}
       </div>
 
-      {/* Content - conditional based on mainTab */}
-      {mainTab === 'database' && hasCandidateDatabase ? (
-        <CandidatesDatabase
-          vacancies={vacancies}
-          onRefreshVacancies={fetchVacancies}
-        />
-      ) : (
-      /* Vacancies list */
+      {/* Vacancies list */}
       <div className="flex-1 overflow-auto p-3 sm:p-4">
         {error ? (
           <ErrorMessage
@@ -855,7 +782,6 @@ export default function VacanciesPage() {
           </div>
         )}
       </div>
-      )}
 
       {/* Create/Edit Modal */}
       <AnimatePresence mode="wait">
