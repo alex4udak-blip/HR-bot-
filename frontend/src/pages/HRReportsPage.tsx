@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
-  BarChart3, Clock, Users, Filter, ChevronDown, Printer,
+  BarChart3, Clock, Users, Filter, ChevronDown, Download,
   FileDown, UserCheck, XCircle, ArrowRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import * as XLSX from 'xlsx';
 import api from '@/services/api/client';
 
 // ===== TYPES =====
@@ -224,6 +225,83 @@ export default function HRReportsPage() {
   const currentPeriod = PERIOD_OPTIONS.find(p => p.id === period);
   const currentStatus = VACANCY_STATUS_OPTIONS.find(s => s.id === vacancyStatus);
 
+  const exportToExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const reportLabel = currentReport?.label || 'Отчёт';
+
+    if (report === 'ttf' && ttfData) {
+      // Summary sheet
+      const summaryRows = [
+        ['Ср. срок закрытия, дн', ttfData.summary.avg_days_to_close ?? '—'],
+        ['Ср. просрочка, дн', ttfData.summary.avg_delay_days ?? '—'],
+        ['Закрытых позиций', `${ttfData.summary.closed_positions}/${ttfData.summary.total_positions}`],
+      ];
+      const wsSummary = XLSX.utils.aoa_to_sheet([['Показатель', 'Значение'], ...summaryRows]);
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Сводка');
+
+      // Stage timings
+      const stageRows = ttfData.stage_timings.map(s => [s.label, s.avg_days || '—']);
+      const wsStages = XLSX.utils.aoa_to_sheet([['Этап', 'Ср. дней'], ...stageRows]);
+      XLSX.utils.book_append_sheet(wb, wsStages, 'Время на этапе');
+
+      // Last closings
+      const closingRows = ttfData.last_closings.map(c => [
+        c.candidate_name, c.vacancy_title, c.recruiter_name || '—',
+        c.start_date || '—', c.closed_date || '—', c.days_to_close ?? '—',
+      ]);
+      const wsClosings = XLSX.utils.aoa_to_sheet([
+        ['Кандидат', 'Вакансия', 'Рекрутер', 'Дата начала', 'Дата закрытия', 'Дней'],
+        ...closingRows,
+      ]);
+      XLSX.utils.book_append_sheet(wb, wsClosings, 'Последние закрытия');
+
+    } else if (report === 'funnel' && funnelData) {
+      const rows = funnelData.stages.map(s => [s.label, s.candidate_count, s.rejection_count]);
+      const ws = XLSX.utils.aoa_to_sheet([['Этап', 'Кандидатов', 'Отказов'], ...rows]);
+      XLSX.utils.book_append_sheet(wb, ws, 'Воронка');
+
+      if (funnelData.sources.length > 0) {
+        const srcRows = funnelData.sources.map(s => [s.source, s.count]);
+        const wsSrc = XLSX.utils.aoa_to_sheet([['Источник', 'Кол-во'], ...srcRows]);
+        XLSX.utils.book_append_sheet(wb, wsSrc, 'Источники');
+      }
+
+    } else if (report === 'funnel-recruiter' && funnelByRecruiter) {
+      for (const rec of funnelByRecruiter.by_recruiter) {
+        const rows = rec.stages.map(s => [s.label, s.candidate_count, s.rejection_count]);
+        const ws = XLSX.utils.aoa_to_sheet([['Этап', 'Кандидатов', 'Отказов'], ...rows]);
+        const sheetName = rec.recruiter_name.substring(0, 31); // Excel limit 31 chars
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      }
+
+    } else if (report === 'rejections' && rejectionsData) {
+      const reasonRows = rejectionsData.top_reasons.map(r => [r.reason, r.count]);
+      const ws = XLSX.utils.aoa_to_sheet([['Причина отказа', 'Кол-во'], ...reasonRows]);
+      XLSX.utils.book_append_sheet(wb, ws, 'Причины отказов');
+
+      const stageRows = rejectionsData.by_stage.map(s => [s.label, s.count]);
+      const wsStage = XLSX.utils.aoa_to_sheet([['Этап', 'Отказов'], ...stageRows]);
+      XLSX.utils.book_append_sheet(wb, wsStage, 'По этапам');
+
+    } else if (report === 'sources' && sourcesData) {
+      const rows = sourcesData.sources.map(s => [s.source, s.count]);
+      const ws = XLSX.utils.aoa_to_sheet([['Источник', 'Кандидатов'], ...rows]);
+      XLSX.utils.book_append_sheet(wb, ws, 'Источники');
+
+    } else if (report === 'movement' && movementData) {
+      const rows = movementData.movements.map(m => [m.from_label, m.to_label, m.count]);
+      const ws = XLSX.utils.aoa_to_sheet([['Из этапа', 'В этап', 'Кол-во'], ...rows]);
+      XLSX.utils.book_append_sheet(wb, ws, 'Движение');
+
+    } else {
+      toast.error('Нет данных для выгрузки');
+      return;
+    }
+
+    XLSX.writeFile(wb, `${reportLabel} — ${currentPeriod?.label || ''}.xlsx`);
+    toast.success('Файл выгружен');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -377,11 +455,12 @@ export default function HRReportsPage() {
                   {currentCategory?.label} &rarr; {currentReport?.label}
                 </h2>
                 <button
-                  onClick={() => window.print()}
-                  className="p-2 hover:bg-gray-100 rounded-lg"
-                  title="Печать"
+                  onClick={exportToExcel}
+                  className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded-lg text-sm text-gray-600"
+                  title="Выгрузить в Excel"
                 >
-                  <Printer className="w-5 h-5 text-gray-400" />
+                  <Download className="w-5 h-5 text-gray-400" />
+                  <span>Excel</span>
                 </button>
               </div>
 
