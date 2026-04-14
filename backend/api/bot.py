@@ -2769,6 +2769,74 @@ async def cmd_remind(message: types.Message):
         await message.answer(f"⚠️ Ошибка: {e}")
 
 
+@dp.message(Command("broadcast"))
+async def cmd_broadcast(message: types.Message):
+    """Broadcast a message to all active chats.
+
+    Usage: /broadcast <text> — sends the text to all active Telegram chats.
+    """
+    text = message.text
+    if text:
+        text = text.replace("/broadcast", "", 1).strip()
+
+    if not text:
+        await message.answer(
+            "📢 <b>Рассылка сообщений</b>\n\n"
+            "Использование:\n"
+            "<code>/broadcast Текст сообщения</code>\n\n"
+            "Текст будет отправлен во все активные чаты бота.",
+            parse_mode="HTML",
+        )
+        return
+
+    from sqlalchemy import or_
+
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(Chat).where(
+                    Chat.is_active == True,
+                    or_(Chat.deleted_at == None, Chat.deleted_at.is_(None)),
+                    Chat.telegram_chat_id != None,
+                )
+            )
+            chats = list(result.scalars().all())
+
+            if not chats:
+                await message.answer("⚠️ Нет активных чатов для рассылки.")
+                return
+
+            await message.answer(
+                f"📤 Начинаю рассылку в {len(chats)} чатов...",
+            )
+
+            bot_instance = get_bot()
+            sent = 0
+            failed = 0
+            failed_names = []
+
+            for chat in chats:
+                try:
+                    await bot_instance.send_message(
+                        chat.telegram_chat_id,
+                        f"📢 <b>Объявление</b>\n\n{text}",
+                        parse_mode="HTML",
+                    )
+                    sent += 1
+                except Exception as e:
+                    failed += 1
+                    failed_names.append(f"❌ {chat.custom_name or chat.title}: {e}")
+
+            report = f"📢 <b>Рассылка завершена: {sent}/{len(chats)}</b>"
+            if failed_names:
+                report += "\n\n<b>Ошибки:</b>\n" + "\n".join(failed_names)
+            await message.answer(report, parse_mode="HTML")
+
+    except Exception as e:
+        logger.error(f"Error in /broadcast command: {e}")
+        await message.answer(f"⚠️ Ошибка: {e}")
+
+
 async def start_bot():
     """Start the bot polling."""
     try:
