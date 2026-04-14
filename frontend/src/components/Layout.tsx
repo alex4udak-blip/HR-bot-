@@ -52,7 +52,6 @@ import clsx from 'clsx';
 // Map paths to data-tour attributes
 const pathToTourAttribute: Record<string, string> = {
   '/all-candidates': 'candidates-link',
-  '/contacts': 'contacts-link',
   '/chats': 'chats-link',
   '/dashboard': 'dashboard-link',
 };

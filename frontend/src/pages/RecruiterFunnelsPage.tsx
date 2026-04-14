@@ -1269,7 +1269,7 @@ export default function RecruiterFunnelsPage() {
                               <div className="flex items-center gap-2 mb-6">
                                 {selectedCandidate.entity_id && (
                                   <button
-                                    onClick={() => navigate(`/contacts/${selectedCandidate.entity_id}`)}
+                                    onClick={() => navigate(`/all-candidates?entity=${selectedCandidate.entity_id}`)}
                                     className="flex items-center gap-1.5 px-3.5 py-2 border border-white/[0.12] rounded-lg text-sm text-dark-200 hover:bg-white/[0.04] transition-colors"
                                   >
                                     <Users className="w-4 h-4" /> Открыть профиль
@@ -1311,7 +1311,7 @@ export default function RecruiterFunnelsPage() {
                                   </div>
                                 )}
                                 <button
-                                  onClick={() => navigate(`/contacts/${selectedCandidate.entity_id}`)}
+                                  onClick={() => navigate(`/all-candidates?entity=${selectedCandidate.entity_id}`)}
                                   className="flex items-center gap-1.5 px-3.5 py-2 border border-white/[0.12] rounded-lg text-sm text-dark-200 hover:bg-white/[0.04] transition-colors"
                                 >
                                   <Pencil className="w-4 h-4" /> Редактировать
@@ -1663,7 +1663,7 @@ export default function RecruiterFunnelsPage() {
                                   </p>
                                   {selectedCandidate.entity_id && (
                                     <button
-                                      onClick={() => navigate(`/contacts/${selectedCandidate.entity_id}`)}
+                                      onClick={() => navigate(`/all-candidates?entity=${selectedCandidate.entity_id}`)}
                                       className="mt-3 flex items-center gap-1.5 px-3 py-1.5 text-xs text-accent-400 hover:bg-accent-500/10 rounded-lg transition-colors"
                                     >
                                       <Users className="w-3.5 h-3.5" />

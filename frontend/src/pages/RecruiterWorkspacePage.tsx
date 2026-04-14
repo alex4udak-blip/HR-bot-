@@ -452,7 +452,7 @@ export default function RecruiterWorkspacePage() {
                               {items.map((c) => (
                                 <div
                                   key={`${c.id}-${c.vacancy_id}`}
-                                  onClick={() => navigate(`/contacts/${c.id}`)}
+                                  onClick={() => navigate(`/all-candidates?entity=${c.id}`)}
                                   className="grid grid-cols-[1fr_120px_100px_140px_120px] gap-2 px-3 py-2 hover:bg-white/[0.03] rounded-lg cursor-pointer transition-colors border-b border-white/[0.03] last:border-b-0 group"
                                 >
                                   {/* Name */}
@@ -528,7 +528,7 @@ export default function RecruiterWorkspacePage() {
                             {items.map((c) => (
                               <div
                                 key={`${c.id}-${c.vacancy_id}`}
-                                onClick={() => navigate(`/contacts/${c.id}`)}
+                                onClick={() => navigate(`/all-candidates?entity=${c.id}`)}
                                 className="glass-card rounded-lg p-3 cursor-pointer hover:border-accent-500/30 transition-all group"
                               >
                                 <div className="flex items-center gap-2 mb-2">

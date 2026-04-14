@@ -102,7 +102,7 @@ export default function ParseJobsPanel({ refreshTrigger, onJobComplete }: ParseJ
   };
 
   const handleNavigateToEntity = (entityId: number) => {
-    navigate(`/contacts/${entityId}`);
+    navigate(`/all-candidates?entity=${entityId}`);
   };
 
   // Filter to show only recent jobs (last 10 minutes) or active ones

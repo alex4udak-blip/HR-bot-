@@ -316,7 +316,7 @@ export default function InternsPage() {
           {hrStatus && <StatusBadge status={hrStatus} />}
           {resolvedContactId && (
             <span
-              onClick={(e) => { e.stopPropagation(); navigate(`/contacts/${resolvedContactId}`); }}
+              onClick={(e) => { e.stopPropagation(); navigate(`/all-candidates?entity=${resolvedContactId}`); }}
               className="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full whitespace-nowrap bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 cursor-pointer transition-colors"
               title="Открыть контакт"
             >

@@ -51,7 +51,7 @@ interface SmartSearchBarProps {
  * @example
  * ```tsx
  * <SmartSearchBar
- *   onResultSelect={(result) => navigate(`/contacts/${result.id}`)}
+ *   onResultSelect={(result) => navigate(`/all-candidates?entity=${result.id}`)}
  *   onResultsChange={(results) => setSearchResults(results)}
  *   placeholder="Search candidates..."
  * />

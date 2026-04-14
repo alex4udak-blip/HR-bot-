@@ -244,11 +244,11 @@ export default function ContactsPage() {
   }, [initialType]);
 
   const handleSelectEntity = (id: number) => {
-    navigate(`/contacts/${id}`);
+    navigate(`/all-candidates?entity=${id}`);
   };
 
   const handleBack = () => {
-    navigate('/contacts');
+    navigate('/all-candidates');
   };
 
   const handleDelete = async (entity: Entity) => {
@@ -258,7 +258,7 @@ export default function ContactsPage() {
       await deleteEntity(entity.id);
       toast.success('Контакт удалён');
       if (currentEntity?.id === entity.id) {
-        navigate('/contacts');
+        navigate('/all-candidates');
       }
     } catch {
       toast.error('Не удалось удалить контакт');
@@ -926,7 +926,7 @@ export default function ContactsPage() {
               setPrefillData(null);
               toast.success(editingEntity ? 'Контакт обновлён' : 'Контакт создан');
               if (!editingEntity) {
-                navigate(`/contacts/${entity.id}`);
+                navigate(`/all-candidates?entity=${entity.id}`);
               }
             }}
           />

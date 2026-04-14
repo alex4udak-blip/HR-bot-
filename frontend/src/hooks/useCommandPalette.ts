@@ -86,7 +86,7 @@ const PAGES: PageItem[] = [
   { id: 'page-vacancies', title: 'Вакансии', path: '/vacancies', icon: 'Briefcase', keywords: ['вакансии', 'должности', 'vacancies', 'jobs'] },
   { id: 'page-dashboard', title: 'Главная', path: '/dashboard', icon: 'LayoutDashboard', keywords: ['главная', 'дашборд', 'dashboard', 'home'] },
   { id: 'page-chats', title: 'Чаты', path: '/chats', icon: 'MessageSquare', keywords: ['чаты', 'сообщения', 'переписка', 'chats'] },
-  { id: 'page-contacts', title: 'Контакты', path: '/contacts', icon: 'Users', keywords: ['контакты', 'люди', 'contacts'] },
+  { id: 'page-contacts', title: 'Контакты', path: '/all-candidates', icon: 'Users', keywords: ['контакты', 'люди', 'contacts'] },
   { id: 'page-calls', title: 'Созвоны', path: '/calls', icon: 'Phone', keywords: ['созвоны', 'звонки', 'calls', 'записи'] },
   { id: 'page-settings', title: 'Настройки', path: '/settings', icon: 'Settings', keywords: ['настройки', 'параметры', 'settings'] },
   { id: 'page-trash', title: 'Корзина', path: '/trash', icon: 'Trash2', keywords: ['корзина', 'удаленные', 'trash'] },
@@ -345,7 +345,7 @@ export function useCommandPalette(options: {
         subtitle: [candidate.position, candidate.email, candidate.phone].filter(Boolean).join(' | '),
         icon: 'UserCheck',
         action: () => {
-          navigate(`/contacts/${candidate.id}`);
+          navigate(`/all-candidates?entity=${candidate.id}`);
           close();
           saveToHistory(searchQuery);
         }

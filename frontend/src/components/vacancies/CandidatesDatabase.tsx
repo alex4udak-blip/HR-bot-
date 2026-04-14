@@ -144,7 +144,7 @@ export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVac
 
   // Handlers
   const handleCandidateClick = (candidate: Entity) => {
-    navigate(`/contacts/${candidate.id}`);
+    navigate(`/all-candidates?entity=${candidate.id}`);
   };
 
   const handleParsedResume = (data: ParsedResume) => {

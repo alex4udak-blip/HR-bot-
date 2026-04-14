@@ -440,7 +440,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   };
 
   const handleViewCandidate = (app: VacancyApplication) => {
-    navigate(`/contacts/${app.entity_id}`);
+    navigate(`/all-candidates?entity=${app.entity_id}`);
   };
 
   // Handle AI score calculation

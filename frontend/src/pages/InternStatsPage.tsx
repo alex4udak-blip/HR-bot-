@@ -626,7 +626,7 @@ export default function InternStatsPage() {
           </div>
           {linkedContactId ? (
             <button
-              onClick={() => navigate(`/contacts/${linkedContactId}`)}
+              onClick={() => navigate(`/all-candidates?entity=${linkedContactId}`)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 rounded-lg text-xs font-medium transition-colors flex-shrink-0"
               title="Открыть Prometheus в карточке контакта"
             >

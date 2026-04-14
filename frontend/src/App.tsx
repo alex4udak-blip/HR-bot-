@@ -55,7 +55,7 @@ function lazyWithRetry<T extends ComponentType<any>>(
 // Using lazyWithRetry to handle chunk loading failures gracefully
 const DashboardPage = lazyWithRetry(() => import('@/pages/DashboardPage'));
 const ChatsPage = lazyWithRetry(() => import('@/pages/ChatsPage'));
-const ContactsPage = lazyWithRetry(() => import('@/pages/ContactsPage'));
+// ContactsPage lazy import removed — /contacts routes now redirect to /all-candidates
 const CallsPage = lazyWithRetry(() => import('@/pages/CallsPage'));
 const TrashPage = lazyWithRetry(() => import('@/pages/TrashPage'));
 const UsersPage = lazyWithRetry(() => import('@/pages/UsersPage'));
@@ -192,8 +192,8 @@ export default function App() {
           <Route path="all-candidates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><AllCandidatesPage /></RoleRoute></Suspense>} />
           <Route path="vacancies" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><VacanciesPage /></RoleRoute></Suspense>} />
           <Route path="vacancies/:vacancyId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><VacanciesPage /></RoleRoute></Suspense>} />
-          <Route path="contacts" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><ContactsPage /></RoleRoute></Suspense>} />
-          <Route path="contacts/:entityId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><ContactsPage /></RoleRoute></Suspense>} />
+          <Route path="contacts" element={<Navigate to="/all-candidates" replace />} />
+          <Route path="contacts/:entityId" element={<Navigate to="/all-candidates" replace />} />
           <Route path="calls" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><CallsPage /></RoleRoute></Suspense>} />
           <Route path="calls/:callId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><CallsPage /></RoleRoute></Suspense>} />
           <Route path="my-funnels" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><RecruiterFunnelsPage /></RoleRoute></Suspense>} />

@@ -99,7 +99,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
   };
 
   const handleNavigateToEntity = (entityId: number) => {
-    navigate(`/contacts/${entityId}`);
+    navigate(`/all-candidates?entity=${entityId}`);
   };
 
   const toggleExpanded = (id: number) => {

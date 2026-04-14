@@ -85,7 +85,7 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
   };
 
   const handleViewCandidate = () => {
-    navigate(`/contacts/${application.entity_id}`);
+    navigate(`/all-candidates?entity=${application.entity_id}`);
     onClose();
   };
 

@@ -339,7 +339,7 @@ export default function AllCandidatesPage() {
                       statusLabel={board?.columns.find(c => c.status === selectedStatus)?.label || selectedStatus}
                       columns={board?.columns || []}
                       onStatusChange={handleStatusChange}
-                      onOpenContact={() => navigate(`/contacts/${selectedCard.id}`)}
+                      onOpenContact={() => navigate(`/all-candidates?entity=${selectedCard.id}`)}
                       onEdit={() => setShowEditModal(true)}
                     />
                   ) : (

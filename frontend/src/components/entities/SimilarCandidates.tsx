@@ -134,7 +134,7 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
   }, []);
 
   const handleNavigateToCandidate = (candidateId: number) => {
-    navigate(`/contacts/${candidateId}`);
+    navigate(`/all-candidates?entity=${candidateId}`);
   };
 
   const getScoreColor = (score: number) => {
