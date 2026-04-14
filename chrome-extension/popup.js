@@ -126,12 +126,16 @@ function showParsedData() {
     const lines = parsedData.experience_summary.split('\n').slice(0, 3);
     details.push('Последние места: ' + lines.join('; '));
   }
+  if (parsedData.company) details.push('Компания: ' + parsedData.company);
   if (parsedData.skills && parsedData.skills.length > 0) {
     details.push('Навыки: ' + parsedData.skills.slice(0, 5).join(', ') +
       (parsedData.skills.length > 5 ? ` (+${parsedData.skills.length - 5})` : ''));
   }
   if (parsedData.languages && parsedData.languages.length > 0) {
     details.push('Языки: ' + parsedData.languages.join(', '));
+  }
+  if (parsedData.education && parsedData.education.length > 0) {
+    details.push('Образование: ' + parsedData.education.slice(0, 2).join('; '));
   }
   document.getElementById('parsedDetails').innerHTML = details.join('<br>');
   document.getElementById('parsedSource').textContent = parsedData.source;
@@ -323,6 +327,8 @@ document.getElementById('addBtn').addEventListener('click', async () => {
       experience_descriptions: parsedData.experience_descriptions || null,
       skills: parsedData.skills || null,
       languages: parsedData.languages || null,
+      company: parsedData.company || null,
+      education: parsedData.education || null,
     });
 
     if (resp.success) {

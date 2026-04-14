@@ -33,7 +33,9 @@
       birthday: '',
       gender: '',
       salary: '',
+      company: '',
       experience_summary: '',
+      education: [],
     };
 
     // --- Name ---
@@ -150,6 +152,10 @@
       if (pos || company) {
         experiences.push([pos, company, period].filter(Boolean).join(' | '));
       }
+      // Extract current/last company
+      if (i === 0 && company) {
+        data.company = company;
+      }
     }
     data.experience_summary = experiences.join('\n');
 
@@ -200,6 +206,17 @@
       if (text) languages.push(text);
     });
     data.languages = languages;
+
+    // --- Education ---
+    const eduNames = document.querySelectorAll('[data-qa="resume-block-education-name"]');
+    const eduOrgs = document.querySelectorAll('[data-qa="resume-block-education-organization"]');
+    const education = [];
+    for (let i = 0; i < eduOrgs.length && i < 3; i++) {
+      const org = eduOrgs[i]?.textContent?.trim() || '';
+      const name = eduNames[i]?.textContent?.trim() || '';
+      if (org || name) education.push([org, name].filter(Boolean).join(' — '));
+    }
+    data.education = education;
 
     return data;
   }

@@ -42,6 +42,8 @@ class MagicButtonData(BaseModel):
     experience_descriptions: Optional[list] = None
     skills: Optional[list] = None
     languages: Optional[list] = None
+    company: Optional[str] = None
+    education: Optional[list] = None
 
     # Recruiter's choice
     vacancy_id: Optional[int] = None  # which funnel to add to
@@ -202,6 +204,39 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         extra["skills"] = data.skills
     if data.languages:
         extra["languages"] = data.languages
+    if data.education:
+        extra["education"] = data.education
+
+    # Parse salary into min/max if possible
+    salary_min = None
+    salary_max = None
+    salary_currency = 'KZT'
+    if data.salary:
+        import re
+        # Detect currency
+        sal_text = data.salary.lower()
+        if 'usd' in sal_text or '$' in sal_text:
+            salary_currency = 'USD'
+        elif 'eur' in sal_text or '€' in sal_text:
+            salary_currency = 'EUR'
+        elif 'руб' in sal_text or '₽' in sal_text:
+            salary_currency = 'RUB'
+        elif 'тенге' in sal_text or 'kzt' in sal_text or '₸' in sal_text:
+            salary_currency = 'KZT'
+        # Extract numbers
+        numbers = re.findall(r'[\d\s]+', data.salary.replace('\xa0', ' '))
+        nums = [int(n.replace(' ', '')) for n in numbers if n.strip() and int(n.replace(' ', '')) > 100]
+        if len(nums) >= 2:
+            salary_min = min(nums)
+            salary_max = max(nums)
+        elif len(nums) == 1:
+            if 'от' in sal_text:
+                salary_min = nums[0]
+            elif 'до' in sal_text:
+                salary_max = nums[0]
+            else:
+                salary_min = nums[0]
+                salary_max = nums[0]
 
     entity = Entity(
         org_id=org.id,
@@ -211,7 +246,11 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         email=data.email,
         phone=data.phone,
         position=data.position,
+        company=data.company or None,
         telegram_usernames=tg_list,
+        expected_salary_min=salary_min,
+        expected_salary_max=salary_max,
+        expected_salary_currency=salary_currency,
         extra_data=extra,
         created_by=current_user.id,
     )
