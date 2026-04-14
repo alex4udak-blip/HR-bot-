@@ -192,9 +192,9 @@ async def should_trigger_ai(text: str) -> bool:
 
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.AsyncAnthropic(api_key=api_key)
 
-        response = client.messages.create(
+        response = await client.messages.create(
             model="claude-haiku-4-20250414",
             max_tokens=10,
             messages=[{"role": "user", "content": f"""Это сообщение из рабочего чата. Содержит ли оно план работ, задачи на день, или постановку задач кому-то?
@@ -293,9 +293,9 @@ async def parse_status_report(text: str) -> list[dict]:
         return []
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.AsyncAnthropic(api_key=api_key)
 
-        response = client.messages.create(
+        response = await client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=1000,
             messages=[{"role": "user", "content": f"""Разбери статус-отчёт по проектам. Извлеки название проекта и процент готовности.
@@ -445,13 +445,13 @@ async def parse_message_to_tasks(text: str, user_name: str, existing_tasks: list
         return []
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.AsyncAnthropic(api_key=api_key)
 
         existing_str = "\n".join(
             [f"- {t['title']} (status: {t['status']})" for t in existing_tasks[:20]]
         ) or "Нет задач"
 
-        response = client.messages.create(
+        response = await client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=1000,
             messages=[{"role": "user", "content": f"""Разбери сообщение из рабочего чата на отдельные задачи.

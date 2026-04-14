@@ -111,6 +111,7 @@ async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, o
             chat_type=ChatType.work,
             owner_id=owner_id,
             org_id=org_id,
+            auto_tasks_enabled=True,
         )
         session.add(chat)
         await session.commit()
@@ -2127,14 +2128,7 @@ async def collect_group_message(message: types.Message):
                 await process_external_links_in_message(content, org_id, owner_id, chat_db_id)
 
             if content_type == "text" and content and chat_auto_tasks:
-                _dbg(f"Auto-tasks ON, checking trigger...")
-                from ..services.task_trigger import should_trigger_ai
-                try:
-                    trigger_match = await should_trigger_ai(content)
-                    _dbg(f"Trigger result: {trigger_match}")
-                except Exception as e:
-                    _dbg(f"Trigger ERROR: {type(e).__name__}: {e}")
-                    trigger_match = False
+                _dbg(f"Auto-tasks ON for chat '{message.chat.title}', processing...")
 
                 # 1. Check for status report first (takes priority over task trigger)
                 is_status = False
