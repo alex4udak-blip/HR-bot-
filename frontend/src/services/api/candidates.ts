@@ -141,6 +141,7 @@ export interface KanbanCard {
   telegram_username?: string;
   position?: string;
   source?: string;
+  source_url?: string;
   recruiter_name?: string;
   created_at: string;
   tags: string[];

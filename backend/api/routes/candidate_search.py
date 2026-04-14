@@ -590,6 +590,7 @@ class KanbanCard(BaseModel):
     telegram_username: Optional[str] = None
     position: Optional[str] = None
     source: Optional[str] = None
+    source_url: Optional[str] = None
     recruiter_name: Optional[str] = None
     created_at: datetime
     tags: list = []
@@ -705,8 +706,10 @@ async def get_candidates_kanban(
             tg = e.telegram_usernames[0] if e.telegram_usernames else None
             source_val = None
             ed = e.extra_data if isinstance(e.extra_data, dict) else {}
+            source_url_val = None
             if ed:
                 source_val = ed.get("source")
+                source_url_val = ed.get("source_url")
 
             grouped[status_val].append(KanbanCard(
                 id=e.id,
@@ -716,6 +719,7 @@ async def get_candidates_kanban(
                 telegram_username=tg,
                 position=e.position,
                 source=source_val,
+                source_url=source_url_val,
                 recruiter_name=recruiter_map.get(e.created_by),
                 created_at=e.created_at,
                 tags=e.tags or [],

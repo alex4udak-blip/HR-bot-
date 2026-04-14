@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -41,7 +41,9 @@ import type {
   KanbanColumn,
   RecruiterOption,
 } from '@/services/api/candidates';
-import { updateEntity, uploadEntityFile } from '@/services/api/entities';
+import { updateEntity, uploadEntityFile, getEntityFiles, downloadEntityFile } from '@/services/api/entities';
+import type { EntityFile } from '@/services/api/entities';
+import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
 import { useAuthStore } from '@/stores/authStore';
 
 // ---------- constants ----------
@@ -92,7 +94,7 @@ function formatDateFull(dateStr: string): string {
 // ================================================================
 
 export default function AllCandidatesPage() {
-  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
   const [board, setBoard] = useState<KanbanBoardResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -108,6 +110,7 @@ export default function AllCandidatesPage() {
   const [detailTab, setDetailTab] = useState<'info' | 'resume'>('info');
   const [showStageSettings, setShowStageSettings] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showAddToVacancy, setShowAddToVacancy] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
@@ -136,13 +139,26 @@ export default function AllCandidatesPage() {
     return items;
   })();
 
-  // Auto-select first
+  // Auto-select from URL ?entity=ID or first card
+  const entityParam = searchParams.get('entity');
   useEffect(() => {
-    if (filteredCards.length > 0 && !selectedCard) {
+    if (filteredCards.length === 0) return;
+    // Try to select entity from URL param
+    if (entityParam) {
+      const entityId = parseInt(entityParam);
+      const match = filteredCards.find(fc => fc.card.id === entityId);
+      if (match) {
+        setSelectedCard(match.card);
+        setSelectedStatus(match.status);
+        return;
+      }
+    }
+    // Fallback: auto-select first
+    if (!selectedCard) {
       setSelectedCard(filteredCards[0].card);
       setSelectedStatus(filteredCards[0].status);
     }
-  }, [filteredCards.length]);
+  }, [filteredCards.length, entityParam]);
 
   const handleStatusChange = async (newStatus: string) => {
     if (!selectedCard || newStatus === selectedStatus) return;
@@ -339,7 +355,14 @@ export default function AllCandidatesPage() {
                       statusLabel={board?.columns.find(c => c.status === selectedStatus)?.label || selectedStatus}
                       columns={board?.columns || []}
                       onStatusChange={handleStatusChange}
-                      onOpenContact={() => navigate(`/all-candidates?entity=${selectedCard.id}`)}
+                      onOpenContact={() => {
+                        if (selectedCard.source_url) {
+                          window.open(selectedCard.source_url, '_blank');
+                        } else {
+                          toast.error('Нет ссылки на источник');
+                        }
+                      }}
+                      onAddToVacancy={() => setShowAddToVacancy(true)}
                       onEdit={() => setShowEditModal(true)}
                     />
                   ) : (
@@ -371,6 +394,14 @@ export default function AllCandidatesPage() {
             }}
           />
         )}
+        {showAddToVacancy && selectedCard && (
+          <AddToVacancyModal
+            entityId={selectedCard.id}
+            entityName={selectedCard.name}
+            onClose={() => setShowAddToVacancy(false)}
+            onSuccess={() => { setShowAddToVacancy(false); fetchBoard(); toast.success('Кандидат добавлен на вакансию'); }}
+          />
+        )}
       </AnimatePresence>
     </div>
   );
@@ -381,13 +412,14 @@ export default function AllCandidatesPage() {
 // INFO TAB — Huntflow-style detail panel with working actions
 // ================================================================
 
-function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenContact, onEdit }: {
+function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenContact, onAddToVacancy, onEdit }: {
   card: KanbanCard;
   status: string;
   statusLabel: string;
   columns: KanbanColumn[];
   onStatusChange: (s: string) => void;
   onOpenContact: () => void;
+  onAddToVacancy: () => void;
   onEdit: () => void;
 }) {
   const [showStageDD, setShowStageDD] = useState(false);
@@ -468,7 +500,10 @@ function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenCon
         >
           <Users className="w-4 h-4" /> Открыть профиль
         </button>
-        <button className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] transition-colors">
+        <button
+          onClick={onAddToVacancy}
+          className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
+        >
           <Plus className="w-4 h-4" /> На вакансию
         </button>
         <button
@@ -638,23 +673,139 @@ function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenCon
 // ================================================================
 
 function ResumeTab({ card }: { card: KanbanCard }) {
+  const [files, setFiles] = useState<EntityFile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [previewUrls, setPreviewUrls] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    setLoading(true);
+    getEntityFiles(card.id)
+      .then((data) => {
+        setFiles(data);
+        // Generate preview URLs for image files
+        data.filter(f => f.mime_type?.startsWith('image/')).forEach(async (f) => {
+          try {
+            const blob = await downloadEntityFile(card.id, f.id);
+            setPreviewUrls(prev => ({ ...prev, [f.id]: URL.createObjectURL(blob) }));
+          } catch { /* ignore */ }
+        });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [card.id]);
+
+  const resumeFiles = files.filter(f => f.file_type === 'resume');
+  const pdfFile = resumeFiles.find(f => f.mime_type === 'application/pdf');
+  const imageFiles = resumeFiles.filter(f => f.mime_type?.startsWith('image/'));
+
+  const handleDownload = async (file: EntityFile) => {
+    try {
+      const blob = await downloadEntityFile(card.id, file.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.file_name;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Ошибка скачивания');
+    }
+  };
+
+  const handlePrint = () => {
+    if (imageFiles.length > 0) {
+      const urls = imageFiles.map(f => previewUrls[f.id]).filter(Boolean);
+      if (urls.length === 0) { toast.error('Загрузка...'); return; }
+      const w = window.open('', '_blank');
+      if (w) {
+        w.document.write(`<html><body style="margin:0">${urls.map(u => `<img src="${u}" style="width:100%;page-break-after:always"/>`).join('')}</body></html>`);
+        w.document.close();
+        w.onload = () => w.print();
+      }
+    } else if (pdfFile) {
+      handleDownload(pdfFile);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-5 h-5 animate-spin text-dark-400" />
+      </div>
+    );
+  }
+
+  if (resumeFiles.length === 0) {
+    return (
+      <div className="p-5 max-w-3xl">
+        <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-8 text-center text-dark-500 text-sm min-h-[200px] flex flex-col items-center justify-center gap-2">
+          <FileText className="w-8 h-8 opacity-30" />
+          <p>Резюме ещё не сгенерировано</p>
+          <p className="text-xs text-dark-600">Резюме создаётся автоматически после добавления кандидата через Волшебную кнопку</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-5 max-w-3xl">
-      <p className="text-xs text-dark-600 text-center mb-3">Сохранено {formatDateFull(card.created_at)}</p>
+      <p className="text-xs text-dark-600 text-center mb-3">
+        Сохранено {formatDateFull(resumeFiles[0]?.created_at || card.created_at)}
+      </p>
       <div className="flex items-center justify-center gap-3 mb-4">
-        <button className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] rounded-lg text-xs text-dark-400 hover:text-dark-200 transition-colors">
-          <Eye className="w-3.5 h-3.5" /> Показать текст
-        </button>
-        <button className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] rounded-lg text-xs text-dark-400 hover:text-dark-200 transition-colors">
+        {card.source_url && (
+          <button
+            onClick={() => window.open(card.source_url!, '_blank')}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] rounded-lg text-xs text-dark-400 hover:text-dark-200 transition-colors"
+          >
+            <Eye className="w-3.5 h-3.5" /> Открыть источник
+          </button>
+        )}
+        <button
+          onClick={handlePrint}
+          className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] rounded-lg text-xs text-dark-400 hover:text-dark-200 transition-colors"
+        >
           <Printer className="w-3.5 h-3.5" /> Распечатать
         </button>
-        <button className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] rounded-lg text-xs text-dark-400 hover:text-dark-200 transition-colors">
-          <Download className="w-3.5 h-3.5" /> Скачать
-        </button>
+        {pdfFile && (
+          <button
+            onClick={() => handleDownload(pdfFile)}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] rounded-lg text-xs text-dark-400 hover:text-dark-200 transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" /> Скачать PDF
+          </button>
+        )}
       </div>
-      <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-8 text-center text-dark-600 text-sm min-h-[200px] flex items-center justify-center">
-        Резюме кандидата
-      </div>
+      {/* Resume preview — show JPEG pages */}
+      {imageFiles.length > 0 ? (
+        <div className="space-y-3">
+          {imageFiles.map((f) => (
+            <div key={f.id} className="bg-white/[0.02] border border-white/[0.06] rounded-lg overflow-hidden">
+              {previewUrls[f.id] ? (
+                <img src={previewUrls[f.id]} alt={f.file_name} className="w-full" />
+              ) : (
+                <div className="p-8 text-center text-dark-500 text-sm">Загрузка...</div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : pdfFile ? (
+        <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-6 text-center">
+          <FileText className="w-10 h-10 mx-auto mb-3 text-dark-400" />
+          <p className="text-sm text-dark-300 mb-2">{pdfFile.file_name}</p>
+          <p className="text-xs text-dark-500 mb-3">{(pdfFile.file_size / 1024).toFixed(0)} КБ</p>
+          <button
+            onClick={() => handleDownload(pdfFile)}
+            className="px-4 py-2 bg-accent-500/20 text-accent-400 rounded-lg text-sm hover:bg-accent-500/30 transition-colors"
+          >
+            <Download className="w-4 h-4 inline mr-1.5" /> Скачать
+          </button>
+        </div>
+      ) : (
+        <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-8 text-center text-dark-500 text-sm">
+          {resumeFiles.map(f => <p key={f.id}>{f.file_name}</p>)}
+        </div>
+      )}
     </div>
   );
 }
