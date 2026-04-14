@@ -263,15 +263,6 @@ async def update_application(
     old_stage = application.stage
     old_interview_at = application.next_interview_at
 
-    # Validate: interview_summary required before moving to practice stage
-    if data.stage == ApplicationStage.phone_screen and data.stage != application.stage:
-        summary = data.interview_summary if hasattr(data, 'interview_summary') and data.interview_summary else application.interview_summary
-        if not summary or not summary.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="Необходимо заполнить итог собеседования перед переводом на практику"
-            )
-
     # Track stage change
     if data.stage and data.stage != application.stage:
         application.last_stage_change_at = datetime.utcnow()
