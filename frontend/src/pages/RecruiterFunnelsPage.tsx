@@ -227,9 +227,16 @@ export default function RecruiterFunnelsPage() {
     }
     if (search.trim()) {
       const q = search.toLowerCase();
-      result = result.filter(
-        (v) => v.title.toLowerCase().includes(q) || v.department_name?.toLowerCase().includes(q)
-      );
+      result = result.filter((v) => {
+        // Search by vacancy title and department
+        const matchTitle = v.title.toLowerCase().includes(q) || v.department_name?.toLowerCase().includes(q);
+        // For admins: also search by recruiter name
+        if (isHrAdmin) {
+          const recruiterName = v.created_by_name || usersMap[v.created_by ?? 0] || '';
+          return matchTitle || recruiterName.toLowerCase().includes(q);
+        }
+        return matchTitle;
+      });
     }
     return result;
   }, [vacancies, user, isHrAdmin, statusFilter, search]);
@@ -783,16 +790,16 @@ export default function RecruiterFunnelsPage() {
 
   return (
     <div className="h-full flex overflow-hidden relative">
-      {/* Mobile sidebar overlay */}
-      {mobileSidebar && (
+      {/* Mobile sidebar overlay (admin only) */}
+      {isHrAdmin && mobileSidebar && (
         <div
           className="lg:hidden fixed inset-0 bg-black/50 z-40"
           onClick={() => setMobileSidebar(false)}
         />
       )}
 
-      {/* ========== LEFT SIDEBAR: Recruiter tree ========== */}
-      <aside className={clsx(
+      {/* ========== LEFT SIDEBAR: Recruiter tree (admin only) ========== */}
+      {isHrAdmin && <aside className={clsx(
         'flex-shrink-0 border-r border-white/[0.06] bg-dark-900/95 backdrop-blur-xl flex flex-col overflow-hidden z-50 transition-all duration-200',
         // Desktop: collapsible
         sidebarCollapsed
@@ -837,7 +844,7 @@ export default function RecruiterFunnelsPage() {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dark-500" />
             <input
               type="text"
-              placeholder="Поиск воронок..."
+              placeholder={isHrAdmin ? "Поиск по рекрутеру..." : "Поиск воронок..."}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
@@ -937,10 +944,10 @@ export default function RecruiterFunnelsPage() {
             ))
           )}
         </div>
-      </aside>
+      </aside>}
 
-      {/* Expand sidebar button (visible when collapsed) */}
-      {sidebarCollapsed && (
+      {/* Expand sidebar button (visible when collapsed, admin only) */}
+      {isHrAdmin && sidebarCollapsed && (
         <button
           onClick={() => setSidebarCollapsed(false)}
           className="hidden lg:flex items-center justify-center w-6 flex-shrink-0 border-r border-white/[0.06] bg-dark-900/50 hover:bg-dark-800/80 transition-colors group"

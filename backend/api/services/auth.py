@@ -449,12 +449,12 @@ async def has_full_database_access(user: User, org_id: int, db: AsyncSession) ->
     if user.role == UserRole.superadmin:
         return True
 
-    # Check if user is org owner (has_full_access column may not exist yet)
+    # Check if user is org owner or admin (both have full access)
     result = await db.execute(
         select(OrgMember.id, OrgMember.role).where(
             OrgMember.org_id == org_id,
             OrgMember.user_id == user.id,
-            OrgMember.role == OrgRole.owner
+            OrgMember.role.in_([OrgRole.owner, OrgRole.admin])
         )
     )
     return result.first() is not None
