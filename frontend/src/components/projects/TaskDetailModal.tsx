@@ -219,6 +219,7 @@ function CommentsTab({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState('');
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const commentFileRef = useRef<HTMLInputElement>(null);
 
   const loadComments = useCallback(async () => {
@@ -282,13 +283,16 @@ function CommentsTab({
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (files) {
-      setPendingFiles(prev => [...prev, ...Array.from(files)]);
+    if (files && files.length > 0) {
+      const newFiles = Array.from(files);
+      setPendingFiles(prev => [...prev, ...newFiles]);
+      toast.success(`${newFiles.length > 1 ? newFiles.length + ' файлов' : newFiles[0].name} прикреплено`);
     }
-    e.target.value = '';
-  };
+    // Reset input via key to allow re-selecting same file
+    setFileInputKey(k => k + 1);
+  }, []);
 
   const handleUpdate = async (commentId: number) => {
     const text = editContent.trim();
@@ -437,10 +441,12 @@ function CommentsTab({
             <Paperclip className="w-4 h-4" />
           </button>
           <input
+            key={fileInputKey}
             ref={commentFileRef}
             type="file"
             multiple
-            className="hidden"
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar"
+            style={{ position: 'absolute', width: 0, height: 0, opacity: 0, overflow: 'hidden' }}
             onChange={handleFileSelect}
           />
         </div>
