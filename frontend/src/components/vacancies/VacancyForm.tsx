@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Save, Briefcase, Sparkles, Loader2, Globe } from 'lucide-react';
+import { X, Save, Briefcase, Sparkles, Loader2, Globe, Check, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import type { Vacancy, VacancyStatus } from '@/types';
 import { VACANCY_STATUS_LABELS, EMPLOYMENT_TYPES, EXPERIENCE_LEVELS } from '@/types';
-import { getDepartments, getAssignableUsers, splitVacancyDescription } from '@/services/api';
+import { getDepartments, getAssignableUsers, splitVacancyDescription, assignVacancy } from '@/services/api';
 import type { Department, AssignableUser } from '@/services/api';
 import { CurrencySelect } from '@/components/ui';
 
@@ -44,6 +44,10 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     hiring_manager_id: vacancy?.hiring_manager_id || '',
     visible_to_all: vacancy?.visible_to_all ?? false,
   });
+
+  const [selectedRecruiters, setSelectedRecruiters] = useState<number[]>(vacancy?.assigned_to || []);
+  const [assignAll, setAssignAll] = useState(vacancy?.assigned_to_all ?? false);
+  const [showRecruiterDD, setShowRecruiterDD] = useState(false);
 
   useEffect(() => {
     // Load departments and users independently so one failure doesn't block the other
@@ -85,9 +89,15 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
 
       if (vacancy) {
         await updateVacancy(vacancy.id, data);
+        // Save recruiter assignments
+        await assignVacancy(vacancy.id, selectedRecruiters, assignAll);
         toast.success('Вакансия обновлена');
       } else {
-        await createVacancy(data);
+        const created = await createVacancy(data);
+        // Save recruiter assignments for new vacancy
+        if (selectedRecruiters.length > 0 || assignAll) {
+          await assignVacancy(created.id, selectedRecruiters, assignAll);
+        }
         toast.success('Вакансия создана');
       }
       onSuccess();
@@ -304,19 +314,80 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
               </div>
             </div>
 
-            {/* Hiring Manager */}
+            {/* Recruiter Assignment — multi-select */}
             <div>
-              <label className="block text-sm text-white/60 mb-1">Ответственный</label>
-              <select
-                value={formData.hiring_manager_id}
-                onChange={(e) => setFormData({ ...formData, hiring_manager_id: e.target.value })}
-                className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+              <label className="block text-sm text-white/60 mb-1">Назначить рекрутерам</label>
+              {/* Assign all toggle */}
+              <div
+                className="flex items-center gap-2 mb-2 p-2 glass-light rounded-lg cursor-pointer hover:bg-white/5 transition-colors"
+                onClick={() => { setAssignAll(!assignAll); if (!assignAll) setSelectedRecruiters([]); }}
               >
-                <option value="">Не назначен</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>{user.name}</option>
-                ))}
-              </select>
+                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${assignAll ? 'bg-green-500 border-green-500' : 'border-white/30'}`}>
+                  {assignAll && <Check className="w-3 h-3 text-white" />}
+                </div>
+                <span className="text-sm">Назначить всем рекрутерам</span>
+              </div>
+              {/* Individual recruiter checkboxes */}
+              {!assignAll && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowRecruiterDD(!showRecruiterDD)}
+                    className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg text-left text-sm sm:text-base flex items-center justify-between"
+                  >
+                    <span className={selectedRecruiters.length > 0 ? 'text-white' : 'text-white/40'}>
+                      {selectedRecruiters.length > 0
+                        ? `Выбрано: ${selectedRecruiters.length}`
+                        : 'Выберите рекрутеров'}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-white/40 transition-transform ${showRecruiterDD ? 'rotate-180' : ''}`} />
+                  </button>
+                  {showRecruiterDD && (
+                    <div className="absolute z-50 mt-1 w-full bg-dark-800 border border-white/10 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                      {users.map((u) => {
+                        const isSelected = selectedRecruiters.includes(u.id);
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedRecruiters(isSelected
+                                ? selectedRecruiters.filter(id => id !== u.id)
+                                : [...selectedRecruiters, u.id]
+                              );
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-sm text-left"
+                          >
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-white/30'}`}>
+                              {isSelected && <Check className="w-3 h-3 text-white" />}
+                            </div>
+                            <span>{u.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {/* Selected chips */}
+                  {selectedRecruiters.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {selectedRecruiters.map(id => {
+                        const u = users.find(u => u.id === id);
+                        return u ? (
+                          <span
+                            key={id}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded text-xs"
+                          >
+                            {u.name}
+                            <button type="button" onClick={() => setSelectedRecruiters(selectedRecruiters.filter(r => r !== id))} className="hover:text-white">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Visible to all toggle */}
