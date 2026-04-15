@@ -111,7 +111,7 @@ async def get_or_create_chat(session: AsyncSession, telegram_chat: types.Chat, o
             chat_type=ChatType.work,
             owner_id=owner_id,
             org_id=org_id,
-            auto_tasks_enabled=True,
+            auto_tasks_enabled=False,
         )
         session.add(chat)
         await session.commit()
