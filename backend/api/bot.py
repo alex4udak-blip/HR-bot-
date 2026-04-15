@@ -3042,7 +3042,31 @@ async def on_cleanup_callback(callback: CallbackQuery):
 async def start_bot():
     """Start the bot polling."""
     try:
+        from aiogram.types import BotCommand, BotCommandScopeDefault
+
         bot_instance = get_bot()
+
+        # Register commands so Telegram shows them in / menu
+        commands = [
+            BotCommand(command="menu", description="Главное меню"),
+            BotCommand(command="my", description="Мои задачи"),
+            BotCommand(command="status", description="Статус отделов"),
+            BotCommand(command="project", description="Управление проектами"),
+            BotCommand(command="dept", description="Мой отдел"),
+            BotCommand(command="meets", description="Созвоны и митинги"),
+            BotCommand(command="timeoff", description="Отпуск / отгул / больничный"),
+            BotCommand(command="blocker", description="Сообщить о блокере"),
+            BotCommand(command="chats", description="Список чатов"),
+            BotCommand(command="autotasks", description="Управление смарт-функциями"),
+            BotCommand(command="broadcast", description="Рассылка объявлений"),
+            BotCommand(command="remind", description="Напоминание о стендапе"),
+            BotCommand(command="cleanup", description="Выйти из чатов уволенных"),
+            BotCommand(command="bind", description="Привязать Telegram к аккаунту"),
+            BotCommand(command="start", description="Начало работы"),
+        ]
+        await bot_instance.set_my_commands(commands, scope=BotCommandScopeDefault())
+        logger.info(f"📋 Registered {len(commands)} bot commands")
+
         me = await bot_instance.get_me()
         logger.info(f"🤖 Bot started: @{me.username} (ID: {me.id})")
         await dp.start_polling(bot_instance)
