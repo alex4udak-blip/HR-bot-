@@ -605,7 +605,11 @@ async def get_assignable_users(
     result = await db.execute(
         select(User.id, User.name)
         .join(OrgMember, OrgMember.user_id == User.id)
-        .where(OrgMember.org_id == org.id, User.is_active == True)
+        .where(
+            OrgMember.org_id == org.id,
+            User.is_active == True,
+            OrgMember.role.in_([OrgRole.owner, OrgRole.admin, OrgRole.hr]),
+        )
         .order_by(User.name)
     )
     return [{"id": row[0], "name": row[1]} for row in result.all()]
