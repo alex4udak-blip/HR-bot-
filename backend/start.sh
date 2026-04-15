@@ -64,8 +64,7 @@ async def ensure_shadow_columns():
             print('Adding auto_tasks_enabled column to chats...')
             await conn.execute(text('ALTER TABLE chats ADD COLUMN auto_tasks_enabled BOOLEAN DEFAULT true'))
         else:
-            # Ensure all chats have auto_tasks enabled
-            await conn.execute(text('UPDATE chats SET auto_tasks_enabled = true WHERE auto_tasks_enabled = false OR auto_tasks_enabled IS NULL'))
+            # Just ensure the default is set correctly for new chats
             await conn.execute(text('ALTER TABLE chats ALTER COLUMN auto_tasks_enabled SET DEFAULT true'))
 
         # Check and add last_standup_at column to chats
