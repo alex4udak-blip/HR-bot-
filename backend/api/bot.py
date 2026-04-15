@@ -5,7 +5,7 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, ChatMemberUpdatedFilter, IS_NOT_MEMBER, IS_MEMBER
 from aiogram.types import ChatMemberUpdated, ContentType, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from .config import settings
@@ -2894,6 +2894,123 @@ async def on_broadcast_callback(callback: CallbackQuery):
                 failed_names.append(f"❌ {chat_name}: {e}")
 
         report = f"📢 <b>Рассылка завершена: {sent}/{len(chat_list)}</b>"
+        if failed_names:
+            report += "\n\n<b>Ошибки:</b>\n" + "\n".join(failed_names[:20])
+        await callback.message.edit_text(report, parse_mode="HTML")
+
+
+# Store pending cleanup: {user_id: [(chat_id, telegram_chat_id, name), ...]}
+_pending_cleanup: dict[int, list] = {}
+
+
+@dp.message(Command("cleanup"))
+async def cmd_cleanup(message: types.Message):
+    """Leave chats marked as fired/completed and deactivate them.
+
+    Usage: /cleanup — find and leave chats with 'уволен', 'завершил' in title.
+    """
+    from sqlalchemy import or_
+
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(Chat).where(
+                    Chat.is_active == True,
+                    or_(Chat.deleted_at == None, Chat.deleted_at.is_(None)),
+                    Chat.telegram_chat_id != None,
+                )
+            )
+            all_chats = list(result.scalars().all())
+
+            # Find chats with fired/completed markers in title
+            keywords = ['уволен', 'завершил', 'ушел', 'ушёл']
+            chats_to_leave = []
+            for chat in all_chats:
+                name = (chat.custom_name or chat.title or '').lower()
+                if any(kw in name for kw in keywords):
+                    chats_to_leave.append((chat.id, chat.telegram_chat_id, chat.custom_name or chat.title))
+
+            if not chats_to_leave:
+                await message.answer("✅ Нет чатов с пометкой 'уволен/завершил' для очистки.")
+                return
+
+            chat_names = [f"  • {name}" for _, _, name in chats_to_leave]
+            if len(chat_names) > 30:
+                shown = chat_names[:30]
+                shown.append(f"  ... и ещё {len(chat_names) - 30}")
+            else:
+                shown = chat_names
+
+            preview = (
+                f"🧹 <b>Очистка чатов</b>\n\n"
+                f"Найдено <b>{len(chats_to_leave)}</b> чатов с пометкой уволен/завершил:\n"
+                + "\n".join(shown)
+                + "\n\n⚠️ Бот выйдет из этих чатов и деактивирует их. Подтвердите:"
+            )
+
+            _pending_cleanup[message.from_user.id] = chats_to_leave
+
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="✅ Выйти из чатов", callback_data="cleanup:confirm"),
+                    InlineKeyboardButton(text="❌ Отмена", callback_data="cleanup:cancel"),
+                ]
+            ])
+
+            await message.answer(preview, parse_mode="HTML", reply_markup=keyboard)
+
+    except Exception as e:
+        logger.error(f"Error in /cleanup command: {e}")
+        await message.answer(f"⚠️ Ошибка: {e}")
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("cleanup:"))
+async def on_cleanup_callback(callback: CallbackQuery):
+    """Handle cleanup confirm/cancel buttons."""
+    action = callback.data.split(":")[1]
+    user_id = callback.from_user.id
+
+    if action == "cancel":
+        _pending_cleanup.pop(user_id, None)
+        await callback.message.edit_text("❌ Очистка отменена.")
+        await callback.answer()
+        return
+
+    if action == "confirm":
+        chats_to_leave = _pending_cleanup.pop(user_id, None)
+        if not chats_to_leave:
+            await callback.message.edit_text("⚠️ Данные устарели. Отправьте /cleanup заново.")
+            await callback.answer()
+            return
+
+        await callback.message.edit_text(f"🧹 Выхожу из {len(chats_to_leave)} чатов...")
+        await callback.answer()
+
+        bot_instance = get_bot()
+        left = 0
+        failed = 0
+        failed_names = []
+
+        async with async_session() as session:
+            for chat_db_id, telegram_chat_id, chat_name in chats_to_leave:
+                try:
+                    # Leave the Telegram chat
+                    await bot_instance.leave_chat(telegram_chat_id)
+                    # Deactivate in DB
+                    await session.execute(
+                        update(Chat).where(Chat.id == chat_db_id).values(
+                            is_active=False,
+                            auto_tasks_enabled=False,
+                        )
+                    )
+                    left += 1
+                except Exception as e:
+                    failed += 1
+                    failed_names.append(f"❌ {chat_name}: {e}")
+
+            await session.commit()
+
+        report = f"🧹 <b>Очистка завершена: вышел из {left}/{len(chats_to_leave)} чатов</b>"
         if failed_names:
             report += "\n\n<b>Ошибки:</b>\n" + "\n".join(failed_names[:20])
         await callback.message.edit_text(report, parse_mode="HTML")
