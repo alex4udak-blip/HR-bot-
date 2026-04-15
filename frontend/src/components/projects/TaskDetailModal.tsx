@@ -218,6 +218,8 @@ function CommentsTab({
   const [sending, setSending] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState('');
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const commentFileRef = useRef<HTMLInputElement>(null);
 
   const loadComments = useCallback(async () => {
     try {
@@ -236,18 +238,56 @@ function CommentsTab({
 
   const handleAdd = async () => {
     const text = newComment.trim();
-    if (!text) return;
+    if (!text && pendingFiles.length === 0) return;
     setSending(true);
     try {
-      await api.createTaskComment(projectId, taskId, text);
+      // Upload attached files first
+      for (const file of pendingFiles) {
+        await api.uploadTaskAttachment(projectId, taskId, file);
+      }
+      // Add comment text (mention attached files)
+      const fileNames = pendingFiles.map(f => f.name);
+      const fullText = fileNames.length > 0 && text
+        ? `${text}\n\n📎 ${fileNames.join(', ')}`
+        : fileNames.length > 0
+        ? `📎 ${fileNames.join(', ')}`
+        : text;
+      if (fullText) {
+        await api.createTaskComment(projectId, taskId, fullText);
+      }
       setNewComment('');
+      setPendingFiles([]);
       await loadComments();
-      toast.success('Комментарий добавлен');
+      toast.success(pendingFiles.length > 0 ? 'Комментарий и файлы добавлены' : 'Комментарий добавлен');
     } catch {
       toast.error('Не удалось добавить комментарий');
     } finally {
       setSending(false);
     }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        e.preventDefault();
+        const file = items[i].getAsFile();
+        if (file) {
+          const named = new File([file], `screenshot-${Date.now()}.png`, { type: file.type });
+          setPendingFiles(prev => [...prev, named]);
+          toast.success('Скриншот прикреплён');
+        }
+      }
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) {
+      setPendingFiles(prev => [...prev, ...Array.from(files)]);
+    }
+    e.target.value = '';
   };
 
   const handleUpdate = async (commentId: number) => {
@@ -356,24 +396,57 @@ function CommentsTab({
         )}
       </div>
 
+      {/* Pending files preview */}
+      {pendingFiles.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-2">
+          {pendingFiles.map((f, i) => (
+            <div key={i} className="flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
+              <Paperclip className="w-3 h-3" />
+              <span className="max-w-[120px] truncate">{f.name}</span>
+              <button onClick={() => setPendingFiles(prev => prev.filter((_, idx) => idx !== i))} className="hover:text-red-500">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* New comment input */}
       <div className="flex gap-2">
-        <textarea
-          value={newComment}
-          onChange={(e) => setNewComment(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              handleAdd();
-            }
-          }}
-          rows={2}
-          placeholder="Написать комментарий... (Ctrl+Enter — отправить)"
-          className="flex-1 bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none"
-        />
+        <div className="flex-1 relative">
+          <textarea
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            onPaste={handlePaste}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                handleAdd();
+              }
+            }}
+            rows={2}
+            placeholder="Комментарий... (Ctrl+V — вставить скрин, Ctrl+Enter — отправить)"
+            className="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 pr-10 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none"
+          />
+          <button
+            type="button"
+            onClick={() => commentFileRef.current?.click()}
+            className="absolute right-2 bottom-2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+            title="Прикрепить файл"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
+          <input
+            ref={commentFileRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={handleFileSelect}
+          />
+        </div>
         <button
           onClick={handleAdd}
-          disabled={sending || !newComment.trim()}
+          disabled={sending || (!newComment.trim() && pendingFiles.length === 0)}
           className="self-end px-3 py-2 text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition-colors"
         >
           {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
