@@ -137,6 +137,7 @@ export default function Layout() {
   // Sidebar: expandable "Мои воронки" with vacancy list
   const { vacancies, fetchVacancies } = useVacancyStore();
   const [expandedFunnels, setExpandedFunnels] = useState(false);
+  const [expandedRequests, setExpandedRequests] = useState(true);
 
   useEffect(() => {
     if (activeBlock === 'hr') {
@@ -452,6 +453,74 @@ export default function Layout() {
                       );
                     }
 
+                    // "Заявки" — expandable with vacancy request sub-list
+                    if (item.path === '/vacancies') {
+                      const requestVacancies = vacancies.filter(v =>
+                        v.status === 'draft' || v.status === 'open' || v.status === 'paused'
+                      ).slice(0, 15);
+                      return (
+                        <div key={item.path}>
+                          <div className="flex items-center">
+                            <NavLink
+                              to={item.path}
+                              className={({ isActive }) =>
+                                clsx(
+                                  'flex-1 flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all duration-200 text-sm',
+                                  isActive
+                                    ? clsx(BLOCK_ACCENT[activeBlock])
+                                    : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
+                                )
+                              }
+                            >
+                              <item.icon className="w-4 h-4 flex-shrink-0" />
+                              <span className="font-medium truncate">{item.label}</span>
+                              {assignedDraftCount > 0 && (
+                                <span className="ml-auto flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[10px] font-bold bg-orange-500 text-white rounded-full">
+                                  {assignedDraftCount > 99 ? '99+' : assignedDraftCount}
+                                </span>
+                              )}
+                            </NavLink>
+                            {requestVacancies.length > 0 && (
+                              <button
+                                onClick={() => setExpandedRequests(!expandedRequests)}
+                                className="p-1.5 rounded-lg text-white/30 hover:text-white/60 hover:bg-white/5 transition-all"
+                              >
+                                <ChevronDown className={clsx('w-3.5 h-3.5 transition-transform', expandedRequests && 'rotate-180')} />
+                              </button>
+                            )}
+                          </div>
+                          {expandedRequests && requestVacancies.length > 0 && (
+                            <div className="ml-4 pl-3 border-l border-white/5 mt-0.5 space-y-0.5">
+                              {requestVacancies.map(v => (
+                                <NavLink
+                                  key={v.id}
+                                  to={`/vacancies?v=${v.id}`}
+                                  className={({ isActive }) =>
+                                    clsx(
+                                      'flex items-center gap-2 py-1.5 px-2 rounded-md text-xs transition-all',
+                                      isActive
+                                        ? 'text-blue-400 bg-blue-500/10'
+                                        : 'text-white/40 hover:text-white/60 hover:bg-white/[0.03]'
+                                    )
+                                  }
+                                >
+                                  <span className={clsx(
+                                    'w-1.5 h-1.5 rounded-full flex-shrink-0',
+                                    v.status === 'draft' ? 'bg-orange-400' :
+                                    v.status === 'open' ? 'bg-green-400' : 'bg-yellow-400'
+                                  )} />
+                                  <span className="truncate">{v.title}</span>
+                                  {v.hiring_manager_name && (
+                                    <span className="text-white/20 truncate ml-auto text-[10px]">{v.hiring_manager_name}</span>
+                                  )}
+                                </NavLink>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+
                     return (
                       <NavLink
                         key={item.path}
@@ -469,11 +538,6 @@ export default function Layout() {
                       >
                         <item.icon className="w-4 h-4 flex-shrink-0" />
                         <span className="font-medium truncate">{item.label}</span>
-                        {item.path === '/vacancies' && assignedDraftCount > 0 && (
-                          <span className="ml-auto flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[10px] font-bold bg-orange-500 text-white rounded-full">
-                            {assignedDraftCount > 99 ? '99+' : assignedDraftCount}
-                          </span>
-                        )}
                       </NavLink>
                     );
                   })}
