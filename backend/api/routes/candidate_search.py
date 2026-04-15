@@ -602,6 +602,7 @@ class KanbanCard(BaseModel):
     total_experience: Optional[str] = None
     vacancy_name: Optional[str] = None
     rejection_reason: Optional[str] = None
+    extra_data: Optional[dict] = None
 
     class Config:
         from_attributes = True
@@ -732,6 +733,7 @@ async def get_candidates_kanban(
                 total_experience=ed.get("total_experience"),
                 vacancy_name=vacancy_map.get(e.id),
                 rejection_reason=rejection_map.get(e.id),
+                extra_data=ed if ed else None,
             ))
         except Exception as exc:
             logger.warning(f"Skipping entity {e.id} in kanban: {exc}")

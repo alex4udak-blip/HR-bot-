@@ -153,6 +153,7 @@ export interface KanbanCard {
   total_experience?: string;
   vacancy_name?: string;
   rejection_reason?: string;
+  extra_data?: Record<string, any>;
 }
 
 export interface KanbanColumn {

@@ -11,7 +11,6 @@ import {
   GripVertical,
   Users,
   Plus,
-  MessageSquare,
   Paperclip,
   Mail,
   Calendar,
@@ -466,14 +465,31 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
     toast('Назначение интервью — скоро будет доступно', { icon: '📅' });
   };
 
-  const handleComment = () => {
+  const handleComment = async () => {
     if (!comment.trim()) {
       toast.error('Введите комментарий');
       return;
     }
-    // TODO: Save comment via API when comment endpoint is ready
-    toast.success('Комментарий сохранён');
-    setComment('');
+    try {
+      const existingNotes: string[] = card.extra_data?.notes || [];
+      const newNote = {
+        text: comment.trim(),
+        date: new Date().toISOString(),
+      };
+      await updateEntity(card.id, {
+        extra_data: {
+          ...(card.extra_data || {}),
+          notes: [...existingNotes, newNote],
+        },
+      });
+      // Update card in-place so history shows immediately
+      if (!card.extra_data) card.extra_data = {};
+      card.extra_data.notes = [...existingNotes, newNote];
+      toast.success('Комментарий сохранён');
+      setComment('');
+    } catch {
+      toast.error('Ошибка сохранения комментария');
+    }
   };
 
   const handleOffer = () => {
@@ -637,22 +653,29 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
       </div>
 
       {/* ---- Comment textarea (Huntflow: "Написать комментарий") ---- */}
-      <div className="mb-4">
+      <div className="mb-4 relative">
         <textarea
           value={comment}
           onChange={(e) => setComment(e.target.value)}
           placeholder="Написать комментарий..."
           rows={2}
-          className="w-full px-4 py-3 bg-white/[0.02] border border-white/[0.06] rounded-lg text-sm text-dark-200 placeholder-dark-500 resize-none focus:outline-none focus:border-accent-500/30"
+          className="w-full px-4 py-3 pr-20 bg-white/[0.02] border border-white/[0.06] rounded-lg text-sm text-dark-200 placeholder-dark-500 resize-none focus:outline-none focus:border-accent-500/30"
           onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleComment(); }}
         />
+        {comment.trim() && (
+          <button
+            onClick={handleComment}
+            className="absolute right-3 bottom-3 px-3 py-1 bg-accent-500 text-white text-xs rounded-md hover:bg-accent-600"
+          >
+            Отправить
+          </button>
+        )}
       </div>
 
       {/* ---- Action chips (Huntflow: Письмо | Интервью | Комментарий | Оффер | Файл | Отказ) ---- */}
       <div className="flex items-center gap-1.5 mb-6 pb-5 border-b border-white/[0.06] flex-wrap">
         <ActionChip icon={Mail} label="Письмо" onClick={handleEmail} />
         <ActionChip icon={Calendar} label="Интервью" onClick={handleInterview} />
-        <ActionChip icon={MessageSquare} label="Комментарий" onClick={handleComment} />
         <ActionChip icon={ThumbsUp} label="Оффер" onClick={handleOffer} />
         <ActionChip icon={Paperclip} label="Файл" onClick={() => fileInputRef.current?.click()} loading={uploading} />
         <ActionChip icon={XCircle} label="Отказ" onClick={handleReject} danger />
@@ -662,6 +685,15 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
       <div>
         <div className="text-xs text-dark-500 mb-3 uppercase tracking-wider">История</div>
         <div className="relative pl-6 border-l border-white/[0.08]">
+          {/* Saved notes (newest first) */}
+          {(card.extra_data?.notes || []).slice().reverse().map((note: any, i: number) => (
+            <div key={`note-${i}`} className="relative pb-5">
+              <div className="absolute -left-[25px] w-3 h-3 rounded-full border-2 border-dark-800 bg-blue-500" />
+              <div className="text-xs text-dark-600 mb-1">{note.date ? formatDateFull(note.date) : ''}</div>
+              <div className="text-sm text-dark-300">{note.text}</div>
+            </div>
+          ))}
+          {/* Created event */}
           <div className="relative pb-5">
             <div className={clsx('absolute -left-[25px] w-3 h-3 rounded-full border-2 border-dark-800', sc.dot)} />
             <div className="text-xs text-dark-600 mb-1">{formatDateFull(card.created_at)}</div>
