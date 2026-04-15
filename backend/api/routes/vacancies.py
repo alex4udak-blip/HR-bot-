@@ -603,7 +603,7 @@ async def get_assignable_users(
         raise HTTPException(status_code=403, detail="Organization not found")
 
     result = await db.execute(
-        select(User.id, User.name)
+        select(User.id, User.name, OrgMember.role)
         .join(OrgMember, OrgMember.user_id == User.id)
         .where(
             OrgMember.org_id == org.id,
@@ -612,7 +612,9 @@ async def get_assignable_users(
         )
         .order_by(User.name)
     )
-    return [{"id": row[0], "name": row[1]} for row in result.all()]
+    users = result.all()
+    logger.info(f"Assignable users ({len(users)}): {[(r[1], r[2]) for r in users]}")
+    return [{"id": row[0], "name": row[1], "role": row[2]} for row in users]
 
 
 @router.get("", response_model=List[VacancyResponse])
