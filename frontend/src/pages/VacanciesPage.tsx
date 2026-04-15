@@ -10,7 +10,6 @@ import {
   DollarSign,
   Clock,
   Users,
-  ChevronLeft,
   Upload,
   Filter,
   X,
@@ -31,7 +30,6 @@ import { getDepartments, assignVacancy, takeVacancy, getAssignableUsers } from '
 import type { Department, ParsedVacancy, AssignableUser } from '@/services/api';
 import {
   VacancyForm,
-  KanbanBoard,
   VacancyCardSkeleton,
   VacancyStatusBadge,
 } from '@/components/vacancies';
@@ -516,61 +514,20 @@ export default function VacanciesPage() {
   };
 
   // Handle main tab change
-  // Detail view — Huntflow style
+  // Detail view — directly show edit form for the vacancy
   if (currentVacancy && vacancyId) {
     return (
       <div className="h-full w-full max-w-full flex flex-col overflow-hidden">
-        {/* Huntflow-style header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] bg-white/[0.02]">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleBack}
-              className="p-1.5 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[0.06] transition-colors"
-              title="К списку вакансий"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <div>
-              <h1 className="text-lg font-semibold text-white/90">{currentVacancy.title}</h1>
-              <VacancyStatusBadge status={currentVacancy.status} size="sm" />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-hidden">
-          <KanbanBoard vacancy={currentVacancy} />
-        </div>
-
-        {/* Delete confirmation dialog for detail view */}
-        <ConfirmDialog
-          open={confirmDialog.open}
-          title="Удалить вакансию"
-          message="Вы уверены, что хотите удалить эту вакансию? Это действие невозможно отменить."
-          confirmLabel="Удалить"
-          cancelLabel="Отмена"
-          variant="danger"
-          onConfirm={handleConfirmDelete}
-          onCancel={handleCancelConfirm}
-          loading={deleteLoading}
+        <VacancyForm
+          key={`edit-${currentVacancy.id}`}
+          vacancy={currentVacancy}
+          onClose={handleBack}
+          onSuccess={() => {
+            fetchVacancy(currentVacancy.id);
+            fetchVacancies();
+            toast.success('Заявка обновлена');
+          }}
         />
-
-        {/* Edit Modal for detail view */}
-        <AnimatePresence mode="wait">
-          {editingVacancy && (
-            <VacancyForm
-              key={`edit-detail-${editingVacancy.id}`}
-              vacancy={editingVacancy}
-              onClose={() => {
-                setEditingVacancy(null);
-              }}
-              onSuccess={() => {
-                setEditingVacancy(null);
-                fetchVacancy(currentVacancy.id);
-                fetchVacancies();
-              }}
-            />
-          )}
-        </AnimatePresence>
       </div>
     );
   }
