@@ -338,6 +338,9 @@ export {
   inviteCandidateToVacancy,
   // Assignable users
   getAssignableUsers,
+  // Vacancy assignment
+  assignVacancy,
+  takeVacancy,
   // AI Scoring
   calculateCompatibilityScore,
   findBestMatchesForVacancy,

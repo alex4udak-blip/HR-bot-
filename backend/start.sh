@@ -159,6 +159,22 @@ async def ensure_shadow_columns():
                 )
             '''))
 
+        # Check and add assigned_to column to vacancies (JSON array of recruiter user IDs)
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vacancies' AND column_name = 'assigned_to')\"
+        ))
+        if not result.scalar():
+            print('Adding assigned_to column to vacancies...')
+            await conn.execute(text(\"ALTER TABLE vacancies ADD COLUMN assigned_to JSON DEFAULT '[]'\"))
+
+        # Check and add assigned_to_all column to vacancies (visible to all HR users)
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vacancies' AND column_name = 'assigned_to_all')\"
+        ))
+        if not result.scalar():
+            print('Adding assigned_to_all column to vacancies...')
+            await conn.execute(text('ALTER TABLE vacancies ADD COLUMN assigned_to_all BOOLEAN DEFAULT false'))
+
         print('All columns verified')
 
     # ALTER TYPE ADD VALUE cannot run inside a transaction — use raw connection

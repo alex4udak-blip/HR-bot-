@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCurrencyRates } from '@/hooks';
 import { AnimatePresence } from 'framer-motion';
@@ -17,15 +17,18 @@ import {
   Check,
   ChevronDown,
   Calendar,
+  UserPlus,
+  PlayCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useVacancyStore } from '@/stores/vacancyStore';
+import { useAuthStore } from '@/stores/authStore';
 import type { Vacancy, VacancyStatus } from '@/types';
 import { EMPLOYMENT_TYPES } from '@/types';
 import { formatSalary } from '@/utils';
-import { getDepartments } from '@/services/api';
-import type { Department, ParsedVacancy } from '@/services/api';
+import { getDepartments, assignVacancy, takeVacancy, getAssignableUsers } from '@/services/api';
+import type { Department, ParsedVacancy, AssignableUser } from '@/services/api';
 import {
   VacancyForm,
   KanbanBoard,
@@ -71,6 +74,128 @@ interface QuickFilters {
   statuses: VacancyStatus[];
   salaryRange: string;
   dateRange: string;
+}
+
+// Assign vacancy modal
+function AssignModal({
+  vacancy,
+  onClose,
+  onAssigned,
+}: {
+  vacancy: Vacancy;
+  onClose: () => void;
+  onAssigned: () => void;
+}) {
+  const [users, setUsers] = useState<AssignableUser[]>([]);
+  const [selectedIds, setSelectedIds] = useState<number[]>(vacancy.assigned_to || []);
+  const [assignAll, setAssignAll] = useState(vacancy.assigned_to_all || false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    getAssignableUsers().then(setUsers).catch(() => toast.error('Не удалось загрузить пользователей'));
+  }, []);
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      await assignVacancy(vacancy.id, selectedIds, assignAll);
+      toast.success('Вакансия назначена');
+      onAssigned();
+    } catch {
+      toast.error('Не удалось назначить вакансию');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleUser = (id: number) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div
+        className="w-full max-w-md mx-4 bg-dark-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+          <h3 className="text-lg font-semibold">Назначить рекрутеров</h3>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/10 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4 max-h-96 overflow-y-auto">
+          {/* Assign to all toggle */}
+          <label className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] cursor-pointer hover:bg-white/[0.05] transition-colors">
+            <input
+              type="checkbox"
+              checked={assignAll}
+              onChange={() => setAssignAll(!assignAll)}
+              className="w-4 h-4 rounded border-white/20 text-blue-500 focus:ring-blue-500"
+            />
+            <div>
+              <span className="text-sm font-medium">Назначить всем</span>
+              <p className="text-xs text-white/40">Все рекрутеры увидят эту заявку</p>
+            </div>
+          </label>
+
+          {/* User list */}
+          {!assignAll && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-white/50 mb-2">Выберите рекрутеров:</p>
+              {users.length === 0 ? (
+                <div className="flex items-center justify-center py-6">
+                  <div className="animate-spin w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full" />
+                </div>
+              ) : (
+                users.map(u => (
+                  <label
+                    key={u.id}
+                    className={clsx(
+                      'flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors',
+                      selectedIds.includes(u.id)
+                        ? 'bg-blue-500/15 border border-blue-500/30'
+                        : 'hover:bg-white/[0.03] border border-transparent'
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(u.id)}
+                      onChange={() => toggleUser(u.id)}
+                      className="w-4 h-4 rounded border-white/20 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span className="text-sm">{u.name}</span>
+                  </label>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-white/10">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm rounded-lg text-white/60 hover:text-white hover:bg-white/[0.06] transition-colors"
+          >
+            Отмена
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={loading || (!assignAll && selectedIds.length === 0)}
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+          >
+            {loading ? (
+              <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+            ) : (
+              <UserPlus className="w-4 h-4" />
+            )}
+            Назначить
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function VacanciesPage() {
@@ -123,6 +248,36 @@ export default function VacanciesPage() {
     clearCurrentVacancy,
     clearError
   } = useVacancyStore();
+
+  // Auth state for role-based UI
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+
+  // Assign modal state
+  const [assigningVacancy, setAssigningVacancy] = useState<Vacancy | null>(null);
+
+  // Take vacancy handler
+  const [takingVacancyId, setTakingVacancyId] = useState<number | null>(null);
+  const handleTakeVacancy = useCallback(async (vacancy: Vacancy) => {
+    setTakingVacancyId(vacancy.id);
+    try {
+      await takeVacancy(vacancy.id);
+      toast.success('Заявка взята в работу');
+      fetchVacancies();
+    } catch {
+      toast.error('Не удалось взять заявку');
+    } finally {
+      setTakingVacancyId(null);
+    }
+  }, [fetchVacancies]);
+
+  // Check if a vacancy is assigned to the current user
+  const isAssignedToMe = useCallback((vacancy: Vacancy) => {
+    if (!user) return false;
+    if (vacancy.assigned_to_all) return true;
+    if (vacancy.assigned_to && vacancy.assigned_to.includes(user.id)) return true;
+    return false;
+  }, [user]);
 
   // Currency rates for salary conversion during filtering
   const { getComparableSalary } = useCurrencyRates();
@@ -743,6 +898,35 @@ export default function VacanciesPage() {
                       </div>
                     )}
 
+                    {/* Assignment actions */}
+                    {vacancy.status === 'draft' && (
+                      <div className="mt-3 flex items-center gap-2">
+                        {isAdmin && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setAssigningVacancy(vacancy); }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/20 rounded-lg transition-colors"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />
+                            Назначить
+                          </button>
+                        )}
+                        {!isAdmin && isAssignedToMe(vacancy) && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleTakeVacancy(vacancy); }}
+                            disabled={takingVacancyId === vacancy.id}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-500/15 hover:bg-green-500/25 text-green-300 border border-green-500/20 rounded-lg transition-colors disabled:opacity-50"
+                          >
+                            {takingVacancyId === vacancy.id ? (
+                              <div className="animate-spin w-3.5 h-3.5 border-2 border-green-300 border-t-transparent rounded-full" />
+                            ) : (
+                              <PlayCircle className="w-3.5 h-3.5" />
+                            )}
+                            Взять в работу
+                          </button>
+                        )}
+                      </div>
+                    )}
+
                     {/* Stats */}
                     <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm">
@@ -828,6 +1012,18 @@ export default function VacanciesPage() {
         onCancel={handleCancelConfirm}
         loading={deleteLoading}
       />
+
+      {/* Assign Modal */}
+      {assigningVacancy && (
+        <AssignModal
+          vacancy={assigningVacancy}
+          onClose={() => setAssigningVacancy(null)}
+          onAssigned={() => {
+            setAssigningVacancy(null);
+            fetchVacancies();
+          }}
+        />
+      )}
     </div>
   );
 }

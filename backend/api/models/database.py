@@ -881,6 +881,10 @@ class Vacancy(Base):
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
+    # Assignment workflow
+    assigned_to = Column(JSON, default=list)  # List of recruiter user IDs assigned to this vacancy
+    assigned_to_all = Column(Boolean, default=False, server_default="false")  # If True, visible to all HR users
+
     # Funnel customization
     custom_stages = Column(JSON, nullable=True)  # Custom stage labels/order per funnel
     kanban_card_fields = Column(JSON, nullable=True)  # Which fields to show on kanban cards

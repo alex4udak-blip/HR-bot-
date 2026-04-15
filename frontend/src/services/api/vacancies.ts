@@ -122,6 +122,16 @@ export const getAssignableUsers = async (): Promise<AssignableUser[]> => {
   return data;
 };
 
+export const assignVacancy = async (id: number, userIds: number[], all: boolean): Promise<Vacancy> => {
+  const { data } = await debouncedMutation<Vacancy>('post', `/vacancies/${id}/assign`, { user_ids: userIds, all });
+  return data;
+};
+
+export const takeVacancy = async (id: number): Promise<Vacancy> => {
+  const { data } = await debouncedMutation<Vacancy>('post', `/vacancies/${id}/take`);
+  return data;
+};
+
 // ============================================================
 // VACANCY APPLICATIONS API
 // ============================================================

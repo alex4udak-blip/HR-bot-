@@ -144,6 +144,19 @@ export default function Layout() {
     }
   }, [activeBlock, fetchVacancies]);
 
+  // Count of draft vacancies assigned to current user (for "Заявки" badge)
+  const assignedDraftCount = useMemo(() => {
+    if (!user) return 0;
+    const isAdmin = user.role === 'superadmin' || user.org_role === 'owner' || user.org_role === 'admin';
+    return vacancies.filter(v => {
+      if (v.status !== 'draft') return false;
+      if (isAdmin) return true;
+      if (v.assigned_to_all) return true;
+      if (v.assigned_to && v.assigned_to.includes(user.id)) return true;
+      return false;
+    }).length;
+  }, [vacancies, user]);
+
   // Notifications state
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -456,6 +469,11 @@ export default function Layout() {
                       >
                         <item.icon className="w-4 h-4 flex-shrink-0" />
                         <span className="font-medium truncate">{item.label}</span>
+                        {item.path === '/vacancies' && assignedDraftCount > 0 && (
+                          <span className="ml-auto flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[10px] font-bold bg-orange-500 text-white rounded-full">
+                            {assignedDraftCount > 99 ? '99+' : assignedDraftCount}
+                          </span>
+                        )}
                       </NavLink>
                     );
                   })}

@@ -593,6 +593,9 @@ export interface Vacancy {
     columns: Array<{ key: string; label: string; visible: boolean; maps_to?: string }>;
   } | null;
   kanban_card_fields?: string[] | null;
+  // Assignment
+  assigned_to?: number[];
+  assigned_to_all?: boolean;
 }
 
 export interface VacancyApplication {

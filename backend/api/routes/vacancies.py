@@ -2,7 +2,7 @@
 API routes for vacancy management and candidate pipeline (Kanban board).
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, or_, and_, update
+from sqlalchemy import select, func, or_, and_, update, text, type_coerce, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing import Optional, List, Literal
@@ -175,6 +175,13 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
         )
         if dept_member_result.scalar_one_or_none() is not None:
             return True
+
+    # Check if user is in assigned_to list or vacancy is assigned to all
+    assigned_to_list = vacancy.assigned_to or []
+    if user.id in assigned_to_list:
+        return True
+    if getattr(vacancy, 'assigned_to_all', False):
+        return True
 
     # Check if user has shared access to this vacancy
     if await has_shared_vacancy_access(vacancy.id, user.id, db):
@@ -487,6 +494,8 @@ class VacancyResponse(BaseModel):
     tags: List[str] = []
     extra_data: dict = {}
     visible_to_all: bool = False
+    assigned_to: List[int] = []
+    assigned_to_all: bool = False
     department_id: Optional[int] = None
     department_name: Optional[str] = None
     hiring_manager_id: Optional[int] = None
@@ -503,6 +512,12 @@ class VacancyResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class VacancyAssign(BaseModel):
+    """Request body for assigning a vacancy to recruiters."""
+    user_ids: List[int] = []
+    all: bool = False
 
 
 class ApplicationCreate(BaseModel):
@@ -660,6 +675,14 @@ async def list_vacancies(
         # Vacancies marked as visible to all org members
         access_conditions.append(Vacancy.visible_to_all == True)
 
+        # Vacancies assigned to this user (user ID in assigned_to JSON array)
+        # Use PostgreSQL JSON containment: assigned_to::jsonb @> '[user_id]'::jsonb
+        access_conditions.append(
+            text(f"vacancies.assigned_to::jsonb @> '[{int(current_user.id)}]'::jsonb")
+        )
+        # Vacancies assigned to all HR users
+        access_conditions.append(Vacancy.assigned_to_all == True)
+
         # Apply OR filter - user must match at least one condition
         query = query.where(or_(*access_conditions))
 
@@ -757,6 +780,8 @@ async def list_vacancies(
             tags=vacancy.tags or [],
             extra_data=vacancy.extra_data or {},
             visible_to_all=bool(getattr(vacancy, 'visible_to_all', False)),
+            assigned_to=vacancy.assigned_to or [],
+            assigned_to_all=bool(getattr(vacancy, 'assigned_to_all', False)),
             department_id=vacancy.department_id,
             department_name=dept_name,
             hiring_manager_id=vacancy.hiring_manager_id,
@@ -830,6 +855,8 @@ async def create_vacancy(
         tags=vacancy.tags or [],
         extra_data=vacancy.extra_data or {},
         visible_to_all=bool(getattr(vacancy, 'visible_to_all', False)),
+        assigned_to=vacancy.assigned_to or [],
+        assigned_to_all=bool(getattr(vacancy, 'assigned_to_all', False)),
         department_id=vacancy.department_id,
         hiring_manager_id=vacancy.hiring_manager_id,
         created_by=vacancy.created_by,
@@ -917,10 +944,209 @@ async def get_vacancy(
         tags=vacancy.tags or [],
         extra_data=vacancy.extra_data or {},
         visible_to_all=bool(getattr(vacancy, 'visible_to_all', False)),
+        assigned_to=vacancy.assigned_to or [],
+        assigned_to_all=bool(getattr(vacancy, 'assigned_to_all', False)),
         department_id=vacancy.department_id,
         department_name=dept_name,
         hiring_manager_id=vacancy.hiring_manager_id,
         hiring_manager_name=manager_name,
+        created_by=vacancy.created_by,
+        created_by_name=creator_name,
+        published_at=vacancy.published_at,
+        closes_at=vacancy.closes_at,
+        created_at=vacancy.created_at,
+        updated_at=vacancy.updated_at,
+        applications_count=total_apps,
+        stage_counts=stage_counts
+    )
+
+
+@router.post("/{vacancy_id}/assign", response_model=VacancyResponse)
+async def assign_vacancy(
+    vacancy_id: int,
+    data: VacancyAssign,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(check_vacancy_access)
+):
+    """Assign a vacancy to specific recruiters or all HR users.
+
+    Only org owners/admins and vacancy creators can assign vacancies.
+    Body: { "user_ids": [1, 2, 3], "all": false }
+    """
+    org = await get_user_org(current_user, db)
+
+    result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id)
+    )
+    vacancy = result.scalar()
+
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Only org owner/admin or vacancy creator can assign
+    is_owner = await is_org_owner(current_user, org, db)
+    if not is_owner and vacancy.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Only org owner or vacancy creator can assign vacancies")
+
+    # Update assignment fields
+    vacancy.assigned_to = data.user_ids
+    vacancy.assigned_to_all = data.all
+
+    await db.commit()
+    await db.refresh(vacancy)
+
+    # Build response (reuse same pattern as get_vacancy)
+    dept_name = None
+    if vacancy.department_id:
+        dept_result = await db.execute(
+            select(Department.name).where(Department.id == vacancy.department_id)
+        )
+        dept_name = dept_result.scalar()
+
+    manager_name = None
+    if vacancy.hiring_manager_id:
+        manager_result = await db.execute(
+            select(User.name).where(User.id == vacancy.hiring_manager_id)
+        )
+        manager_name = manager_result.scalar()
+
+    creator_name = None
+    if vacancy.created_by:
+        creator_result = await db.execute(
+            select(User.name).where(User.id == vacancy.created_by)
+        )
+        creator_name = creator_result.scalar()
+
+    stage_counts_result = await db.execute(
+        select(VacancyApplication.stage, func.count(VacancyApplication.id))
+        .where(VacancyApplication.vacancy_id == vacancy.id)
+        .group_by(VacancyApplication.stage)
+    )
+    stage_counts = {str(row[0].value): row[1] for row in stage_counts_result.all()}
+    total_apps = sum(stage_counts.values())
+
+    return VacancyResponse(
+        id=vacancy.id,
+        title=vacancy.title,
+        description=vacancy.description,
+        requirements=vacancy.requirements,
+        responsibilities=vacancy.responsibilities,
+        salary_min=vacancy.salary_min,
+        salary_max=vacancy.salary_max,
+        salary_currency=vacancy.salary_currency or "RUB",
+        location=vacancy.location,
+        employment_type=vacancy.employment_type,
+        experience_level=vacancy.experience_level,
+        status=vacancy.status,
+        priority=vacancy.priority or 0,
+        tags=vacancy.tags or [],
+        extra_data=vacancy.extra_data or {},
+        visible_to_all=bool(getattr(vacancy, 'visible_to_all', False)),
+        assigned_to=vacancy.assigned_to or [],
+        assigned_to_all=bool(getattr(vacancy, 'assigned_to_all', False)),
+        department_id=vacancy.department_id,
+        department_name=dept_name,
+        hiring_manager_id=vacancy.hiring_manager_id,
+        hiring_manager_name=manager_name,
+        created_by=vacancy.created_by,
+        created_by_name=creator_name,
+        published_at=vacancy.published_at,
+        closes_at=vacancy.closes_at,
+        created_at=vacancy.created_at,
+        updated_at=vacancy.updated_at,
+        applications_count=total_apps,
+        stage_counts=stage_counts
+    )
+
+
+@router.post("/{vacancy_id}/take", response_model=VacancyResponse)
+async def take_vacancy(
+    vacancy_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(check_vacancy_access)
+):
+    """Take a vacancy into work (recruiter claims it).
+
+    Sets hiring_manager_id to current user and status to 'open'.
+    User must be in assigned_to list or assigned_to_all must be True.
+    """
+    org = await get_user_org(current_user, db)
+
+    result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id)
+    )
+    vacancy = result.scalar()
+
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Check if vacancy is already taken (has a hiring manager and is open)
+    if vacancy.hiring_manager_id and vacancy.status == VacancyStatus.open:
+        raise HTTPException(status_code=409, detail="Vacancy is already taken by another recruiter")
+
+    # Check if user is allowed to take this vacancy
+    has_full_access = await has_full_database_access(current_user, org, db)
+    if not has_full_access:
+        assigned_to_list = vacancy.assigned_to or []
+        is_assigned = current_user.id in assigned_to_list
+        is_assigned_all = bool(getattr(vacancy, 'assigned_to_all', False))
+
+        if not is_assigned and not is_assigned_all:
+            raise HTTPException(status_code=403, detail="You are not assigned to this vacancy")
+
+    # Take the vacancy
+    vacancy.hiring_manager_id = current_user.id
+    vacancy.status = VacancyStatus.open
+
+    await db.commit()
+    await db.refresh(vacancy)
+
+    # Build response
+    dept_name = None
+    if vacancy.department_id:
+        dept_result = await db.execute(
+            select(Department.name).where(Department.id == vacancy.department_id)
+        )
+        dept_name = dept_result.scalar()
+
+    creator_name = None
+    if vacancy.created_by:
+        creator_result = await db.execute(
+            select(User.name).where(User.id == vacancy.created_by)
+        )
+        creator_name = creator_result.scalar()
+
+    stage_counts_result = await db.execute(
+        select(VacancyApplication.stage, func.count(VacancyApplication.id))
+        .where(VacancyApplication.vacancy_id == vacancy.id)
+        .group_by(VacancyApplication.stage)
+    )
+    stage_counts = {str(row[0].value): row[1] for row in stage_counts_result.all()}
+    total_apps = sum(stage_counts.values())
+
+    return VacancyResponse(
+        id=vacancy.id,
+        title=vacancy.title,
+        description=vacancy.description,
+        requirements=vacancy.requirements,
+        responsibilities=vacancy.responsibilities,
+        salary_min=vacancy.salary_min,
+        salary_max=vacancy.salary_max,
+        salary_currency=vacancy.salary_currency or "RUB",
+        location=vacancy.location,
+        employment_type=vacancy.employment_type,
+        experience_level=vacancy.experience_level,
+        status=vacancy.status,
+        priority=vacancy.priority or 0,
+        tags=vacancy.tags or [],
+        extra_data=vacancy.extra_data or {},
+        visible_to_all=bool(getattr(vacancy, 'visible_to_all', False)),
+        assigned_to=vacancy.assigned_to or [],
+        assigned_to_all=bool(getattr(vacancy, 'assigned_to_all', False)),
+        department_id=vacancy.department_id,
+        department_name=dept_name,
+        hiring_manager_id=vacancy.hiring_manager_id,
+        hiring_manager_name=current_user.name,
         created_by=vacancy.created_by,
         created_by_name=creator_name,
         published_at=vacancy.published_at,
