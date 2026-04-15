@@ -103,6 +103,92 @@ function formatFileSize(bytes: number): string {
 }
 
 // ============================================================
+// COMMENT CONTENT RENDERER (with inline attachment cards)
+// ============================================================
+
+const ATTACHMENT_REGEX = /\[attachment:(\d+):([^:]+):(\d+)\]/g;
+
+function CommentContent({
+  content,
+  projectId,
+  taskId,
+}: {
+  content: string;
+  projectId: number;
+  taskId: number;
+}) {
+  // Split content into text parts and attachment parts
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  const regex = new RegExp(ATTACHMENT_REGEX.source, 'g');
+
+  while ((match = regex.exec(content)) !== null) {
+    // Add text before this match
+    if (match.index > lastIndex) {
+      const textBefore = content.slice(lastIndex, match.index).trim();
+      if (textBefore) {
+        parts.push(
+          <span key={`t-${lastIndex}`} className="whitespace-pre-wrap">{textBefore}</span>
+        );
+      }
+    }
+    const attId = match[1];
+    const filename = match[2];
+    const fileSize = parseInt(match[3], 10);
+    parts.push(
+      <a
+        key={`a-${attId}`}
+        href={`/api/projects/${projectId}/tasks/${taskId}/attachments/${attId}/download`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-2 px-3 py-2 my-1 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors group w-fit"
+      >
+        <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
+        <span className="text-sm text-blue-700 font-medium truncate max-w-[200px]">{filename}</span>
+        <span className="text-[10px] text-blue-400">{formatFileSize(fileSize)}</span>
+        <Download className="w-3.5 h-3.5 text-blue-400 group-hover:text-blue-600 flex-shrink-0" />
+      </a>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text
+  if (lastIndex < content.length) {
+    const remaining = content.slice(lastIndex).trim();
+    if (remaining) {
+      parts.push(
+        <span key={`t-${lastIndex}`} className="whitespace-pre-wrap">{remaining}</span>
+      );
+    }
+  }
+
+  // If no attachments found, check for legacy "📎 filename" format
+  if (parts.length === 0) {
+    // Render legacy format with file icon styling
+    const lines = content.split('\n');
+    const rendered = lines.map((line, i) => {
+      if (line.startsWith('📎 ')) {
+        const filenames = line.slice(2).trim();
+        return (
+          <div key={i} className="flex items-center gap-2 px-3 py-2 my-1 bg-gray-50 border border-gray-200 rounded-lg w-fit">
+            <Paperclip className="w-4 h-4 text-gray-400 flex-shrink-0" />
+            <span className="text-sm text-gray-600">{filenames}</span>
+          </div>
+        );
+      }
+      return line ? <span key={i} className="whitespace-pre-wrap">{line}{i < lines.length - 1 ? '\n' : ''}</span> : null;
+    }).filter(Boolean);
+    if (rendered.length > 0) {
+      return <div className="text-sm text-gray-600 space-y-1">{rendered}</div>;
+    }
+    return <p className="text-sm text-gray-600 whitespace-pre-wrap">{content}</p>;
+  }
+
+  return <div className="text-sm text-gray-600 space-y-1">{parts}</div>;
+}
+
+// ============================================================
 // PROPS
 // ============================================================
 
@@ -242,24 +328,26 @@ function CommentsTab({
     if (!text && pendingFiles.length === 0) return;
     setSending(true);
     try {
-      // Upload attached files first
+      // Upload attached files and collect attachment metadata
+      const uploaded: { id: number; original_filename: string; file_size: number }[] = [];
       for (const file of pendingFiles) {
-        await api.uploadTaskAttachment(projectId, taskId, file);
+        const att = await api.uploadTaskAttachment(projectId, taskId, file);
+        uploaded.push({ id: att.id, original_filename: att.original_filename, file_size: att.file_size });
       }
-      // Add comment text (mention attached files)
-      const fileNames = pendingFiles.map(f => f.name);
-      const fullText = fileNames.length > 0 && text
-        ? `${text}\n\n📎 ${fileNames.join(', ')}`
-        : fileNames.length > 0
-        ? `📎 ${fileNames.join(', ')}`
-        : text;
+      // Build comment text with embedded attachment markers
+      const attachmentMarkers = uploaded
+        .map(a => `[attachment:${a.id}:${a.original_filename}:${a.file_size}]`)
+        .join('\n');
+      const fullText = text && attachmentMarkers
+        ? `${text}\n${attachmentMarkers}`
+        : attachmentMarkers || text;
       if (fullText) {
         await api.createTaskComment(projectId, taskId, fullText);
       }
       setNewComment('');
       setPendingFiles([]);
       await loadComments();
-      toast.success(pendingFiles.length > 0 ? 'Комментарий и файлы добавлены' : 'Комментарий добавлен');
+      toast.success(uploaded.length > 0 ? 'Комментарий и файлы добавлены' : 'Комментарий добавлен');
     } catch {
       toast.error('Не удалось добавить комментарий');
     } finally {
@@ -393,7 +481,7 @@ function CommentsTab({
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-gray-600 whitespace-pre-wrap">{c.content}</p>
+                <CommentContent content={c.content} projectId={projectId} taskId={taskId} />
               )}
             </div>
           ))
