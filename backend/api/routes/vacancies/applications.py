@@ -52,13 +52,19 @@ async def list_applications(
     result = await db.execute(query)
     applications = result.scalars().all()
 
+    # Bulk load all entities in one query to avoid N+1
+    entity_ids = list({app.entity_id for app in applications})
+    entities_map = {}
+    if entity_ids:
+        entities_result = await db.execute(
+            select(Entity).where(Entity.id.in_(entity_ids))
+        )
+        for entity in entities_result.scalars().all():
+            entities_map[entity.id] = entity
+
     responses = []
     for app in applications:
-        # Get entity info
-        entity_result = await db.execute(
-            select(Entity).where(Entity.id == app.entity_id)
-        )
-        entity = entity_result.scalar()
+        entity = entities_map.get(app.entity_id)
 
         responses.append(ApplicationResponse(
             id=app.id,

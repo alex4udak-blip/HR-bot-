@@ -623,6 +623,7 @@ class KanbanBoardResponse(BaseModel):
 async def get_candidates_kanban(
     q: Optional[str] = None,
     recruiter_id: Optional[int] = None,
+    per_column: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -738,13 +739,13 @@ async def get_candidates_kanban(
     columns = []
     total = 0
     for s in KANBAN_STATUSES:
-        cards = grouped.get(s, [])
-        total += len(cards)
+        all_cards = grouped.get(s, [])
+        total += len(all_cards)
         columns.append(KanbanColumn(
             status=s,
             label=KANBAN_STATUS_LABELS.get(s, s),
-            cards=cards,
-            count=len(cards),
+            cards=all_cards[:per_column],
+            count=len(all_cards),
         ))
 
     return KanbanBoardResponse(columns=columns, total=total)

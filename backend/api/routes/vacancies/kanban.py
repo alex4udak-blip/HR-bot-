@@ -97,19 +97,32 @@ async def get_kanban_board(
     )
     stage_total_counts = {row[0]: row[1] for row in counts_result.all()}
 
-    # Get applications per stage with limit (optimized queries)
-    all_apps = []
-    for display_stage, _, query_stages in stage_config:
-        stage_result = await db.execute(
-            select(VacancyApplication)
-            .where(
-                *base_filters,
-                VacancyApplication.stage.in_(query_stages)
-            )
-            .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
-            .limit(limit_per_column)
+    # Fetch all applications across all visible stages in one query,
+    # then apply per-column limit in Python to avoid N queries (one per stage).
+    all_visible_stages = []
+    for _, _, query_stages in stage_config:
+        all_visible_stages.extend(query_stages)
+
+    all_apps_result = await db.execute(
+        select(VacancyApplication)
+        .where(
+            *base_filters,
+            VacancyApplication.stage.in_(all_visible_stages)
         )
-        all_apps.extend(stage_result.scalars().all())
+        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
+    )
+    all_apps_unsorted = all_apps_result.scalars().all()
+
+    # Group by stage and apply per-column limit
+    from collections import defaultdict
+    apps_by_stage = defaultdict(list)
+    for app in all_apps_unsorted:
+        apps_by_stage[app.stage].append(app)
+
+    all_apps = []
+    for _, _, query_stages in stage_config:
+        for qs in query_stages:
+            all_apps.extend(apps_by_stage[qs][:limit_per_column])
 
     # Get entity info for all loaded applications (bulk load)
     entity_ids = [app.entity_id for app in all_apps]

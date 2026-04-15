@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -112,6 +112,8 @@ export default function AllCandidatesPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddToVacancy, setShowAddToVacancy] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const VISIBLE_STEP = 50;
+  const [visibleCount, setVisibleCount] = useState(VISIBLE_STEP);
 
   const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
   const anySelected = selectedIds.size > 0;
@@ -127,6 +129,9 @@ export default function AllCandidatesPage() {
   }, [debouncedSearch, recruiterId]);
 
   useEffect(() => { fetchBoard(); }, [fetchBoard]);
+
+  // Reset visible count when filters change
+  useEffect(() => { setVisibleCount(VISIBLE_STEP); }, [activeTab, debouncedSearch, recruiterId]);
 
   const filteredCards = (() => {
     if (!board) return [];
@@ -286,8 +291,8 @@ export default function AllCandidatesPage() {
             <div className={clsx('flex-1 overflow-y-auto', anySelected && 'pb-14')}>
               {filteredCards.length === 0 ? (
                 <div className="flex items-center justify-center h-40 text-dark-500 text-sm">Нет кандидатов</div>
-              ) : (
-                filteredCards.map(({ card, status }) => {
+              ) : (<>
+                {filteredCards.slice(0, visibleCount).map(({ card, status }) => {
                   const isSelected = selectedCard?.id === card.id;
                   const isChecked = selectedIds.has(card.id);
                   const initials = getInitials(card.name);
@@ -323,8 +328,16 @@ export default function AllCandidatesPage() {
                       </div>
                     </div>
                   );
-                })
-              )}
+                })}
+                {filteredCards.length > visibleCount && (
+                  <button
+                    onClick={() => setVisibleCount(prev => prev + VISIBLE_STEP)}
+                    className="w-full py-3 text-sm text-accent-400 hover:bg-white/[0.04] transition-colors border-b border-white/[0.04]"
+                  >
+                    Показать ещё ({filteredCards.length - visibleCount})
+                  </button>
+                )}
+              </>)}
             </div>
 
             {anySelected && (
@@ -412,7 +425,7 @@ export default function AllCandidatesPage() {
 // INFO TAB — Huntflow-style detail panel with working actions
 // ================================================================
 
-function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenContact, onAddToVacancy, onEdit }: {
+const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenContact, onAddToVacancy, onEdit }: {
   card: KanbanCard;
   status: string;
   statusLabel: string;
@@ -665,14 +678,14 @@ function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenCon
       </div>
     </div>
   );
-}
+});
 
 
 // ================================================================
 // RESUME TAB
 // ================================================================
 
-function ResumeTab({ card }: { card: KanbanCard }) {
+const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
   const [files, setFiles] = useState<EntityFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewUrls, setPreviewUrls] = useState<Record<number, string>>({});
@@ -808,7 +821,7 @@ function ResumeTab({ card }: { card: KanbanCard }) {
       )}
     </div>
   );
-}
+});
 
 
 // ================================================================

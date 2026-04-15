@@ -940,6 +940,14 @@ if STATIC_DIR.exists():
     if assets_dir.exists():
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
+        # Add immutable cache headers for hashed asset files
+        @app.middleware("http")
+        async def assets_cache_headers(request: Request, call_next):
+            response = await call_next(request)
+            if request.url.path.startswith("/assets/"):
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return response
+
     index_file = STATIC_DIR / "index.html"
     if index_file.exists():
         # Catch-all route for SPA - must be last
@@ -956,7 +964,7 @@ if STATIC_DIR.exists():
             if file_path.exists() and file_path.is_file():
                 return FileResponse(file_path)
             # Fallback to index.html for SPA routing
-            return FileResponse(index_file)
+            return FileResponse(index_file, headers={"Cache-Control": "no-cache"})
 
 
 if __name__ == "__main__":
