@@ -275,7 +275,7 @@ export default function AllCandidatesPage() {
                 <input
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Поиск кандидатов..."
+                  placeholder="Поиск по имени, должности, компании..."
                   className="w-full pl-9 pr-8 py-2 bg-white/[0.03] border border-white/[0.06] rounded-lg text-sm text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
                 />
                 {searchText && (

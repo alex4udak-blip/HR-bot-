@@ -644,6 +644,7 @@ async def get_candidates_kanban(
                 Entity.email.ilike(search_term),
                 Entity.phone.ilike(search_term),
                 Entity.position.ilike(search_term),
+                Entity.company.ilike(search_term),
             )
         )
 
