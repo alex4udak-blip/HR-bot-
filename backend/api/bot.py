@@ -2685,13 +2685,33 @@ async def cmd_autotasks(message: types.Message):
                 else:
                     off_chats.append(f"🔴 {name}")
 
-            report = "⚙️ <b>Смарт-функции (автозадачи, статусы, миты)</b>\n\n"
-            if on_chats:
-                report += "<b>Включены:</b>\n" + "\n".join(on_chats) + "\n\n"
-            if off_chats:
-                report += "<b>Выключены:</b>\n" + "\n".join(off_chats) + "\n\n"
+            # Build messages, splitting if too long for Telegram (4096 limit)
+            messages = []
+            header = "⚙️ <b>Смарт-функции (автозадачи, статусы, миты)</b>\n\n"
 
-            report += (
+            if on_chats:
+                chunk = header + f"<b>Включены ({len(on_chats)}):</b>\n"
+                for name in on_chats:
+                    line = name + "\n"
+                    if len(chunk) + len(line) > 3900:
+                        messages.append(chunk)
+                        chunk = f"<b>Включены (продолжение):</b>\n"
+                    chunk += line
+                chunk += "\n"
+                messages.append(chunk)
+
+            if off_chats:
+                chunk = f"<b>Выключены ({len(off_chats)}):</b>\n"
+                for name in off_chats:
+                    line = name + "\n"
+                    if len(chunk) + len(line) > 3900:
+                        messages.append(chunk)
+                        chunk = f"<b>Выключены (продолжение):</b>\n"
+                    chunk += line
+                messages.append(chunk)
+
+            # Help message always at the end
+            help_text = (
                 "<b>Управление:</b>\n"
                 "<code>/autotasks on\n"
                 "Кирилл\n"
@@ -2701,7 +2721,10 @@ async def cmd_autotasks(message: types.Message):
                 "<code>/autotasks all on</code> — включить всем\n"
                 "<code>/autotasks all off</code> — выключить всем"
             )
-            await message.answer(report, parse_mode="HTML")
+            messages.append(help_text)
+
+            for msg in messages:
+                await message.answer(msg.strip(), parse_mode="HTML")
 
     except Exception as e:
         logger.error(f"Error in /autotasks command: {e}")
