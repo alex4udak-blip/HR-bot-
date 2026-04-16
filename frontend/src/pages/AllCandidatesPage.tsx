@@ -437,8 +437,12 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
   const [showStageDD, setShowStageDD] = useState(false);
   const [comment, setComment] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [showTagInput, setShowTagInput] = useState(false);
+  const [tagInput, setTagInput] = useState('');
+  const [localTags, setLocalTags] = useState<string[]>(card.tags || []);
   const stageRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const tagInputRef = useRef<HTMLInputElement>(null);
   const sc = STATUS_COLORS[status] || FALLBACK_COLOR;
 
   useEffect(() => {
@@ -514,6 +518,35 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
 
   const handleReject = () => {
     onStatusChange('rejected');
+  };
+
+  const handleAddTag = async () => {
+    const tag = tagInput.trim();
+    if (!tag) return;
+    if (localTags.includes(tag)) {
+      toast.error('Метка уже существует');
+      return;
+    }
+    const newTags = [...localTags, tag];
+    try {
+      await updateEntity(card.id, { tags: newTags });
+      setLocalTags(newTags);
+      setTagInput('');
+      toast.success(`Метка "${tag}" добавлена`);
+    } catch {
+      toast.error('Ошибка добавления метки');
+    }
+  };
+
+  const handleRemoveTag = async (tag: string) => {
+    const newTags = localTags.filter(t => t !== tag);
+    try {
+      await updateEntity(card.id, { tags: newTags });
+      setLocalTags(newTags);
+      toast.success(`Метка "${tag}" удалена`);
+    } catch {
+      toast.error('Ошибка удаления метки');
+    }
   };
 
   return (
@@ -600,12 +633,38 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
         {/* Tags row */}
         <InfoRow label="Метки">
           <div className="flex flex-wrap items-center gap-1.5">
-            {card.tags.length > 0 && card.tags.map(t => (
-              <span key={t} className="px-2 py-0.5 rounded-full text-xs font-medium bg-accent-500/15 text-accent-400 border border-accent-500/20">{t}</span>
+            {localTags.map(t => (
+              <span key={t} className="group inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-accent-500/15 text-accent-400 border border-accent-500/20">
+                {t}
+                <button onClick={() => handleRemoveTag(t)} className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-400">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
             ))}
-            <button className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs text-dark-400 border border-white/[0.1] hover:border-white/[0.2] hover:text-dark-300 transition-colors">
-              Добавить
-            </button>
+            {showTagInput ? (
+              <form
+                onSubmit={(e) => { e.preventDefault(); handleAddTag(); }}
+                className="inline-flex items-center gap-1"
+              >
+                <input
+                  ref={tagInputRef}
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onBlur={() => { if (!tagInput.trim()) setShowTagInput(false); }}
+                  onKeyDown={(e) => { if (e.key === 'Escape') { setShowTagInput(false); setTagInput(''); } }}
+                  placeholder="Метка..."
+                  autoFocus
+                  className="w-24 px-2 py-0.5 rounded text-xs bg-white/5 border border-white/10 text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/50"
+                />
+              </form>
+            ) : (
+              <button
+                onClick={() => setShowTagInput(true)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs text-dark-400 border border-white/[0.1] hover:border-white/[0.2] hover:text-dark-300 transition-colors"
+              >
+                Добавить
+              </button>
+            )}
           </div>
         </InfoRow>
       </div>
