@@ -381,9 +381,8 @@ async def lifespan(app: FastAPI):
     employee_reminders_bg_task = asyncio.create_task(employee_reminders_task())
     logger.info("Employee reminders task started (daily)")
 
-    # Start standup reminder task (daily at 11:30 MSK)
-    standup_reminder_bg_task = asyncio.create_task(standup_reminder_task())
-    logger.info("Standup reminder task started (daily at 11:30 MSK)")
+    # Standup reminder task — DISABLED (user requested removal)
+    # standup_reminder_bg_task = asyncio.create_task(standup_reminder_task())
 
     # Log all registered routes for debugging
     logger.info("=== REGISTERED API ROUTES ===")
