@@ -2731,11 +2731,15 @@ async def cmd_autotasks(message: types.Message):
         await message.answer(f"⚠️ Ошибка: {e}")
 
 
+# Store pending reminds: {user_id: {"chat_ids": [...]}}
+_pending_reminds: dict[int, dict] = {}
+
+
 @dp.message(Command("remind"))
 async def cmd_remind(message: types.Message):
-    """Manually send standup reminders to chats that had no tasks today.
+    """Preview standup reminders, then send after confirmation.
 
-    Usage: /remind — sends reminders to all auto_tasks chats with no standup today.
+    Usage: /remind — shows chats that haven't reported today, confirm to send.
     """
     from datetime import datetime as dt, timezone, timedelta
     from sqlalchemy import or_
@@ -2765,31 +2769,78 @@ async def cmd_remind(message: types.Message):
                 await message.answer("✅ Все чаты уже отчитались сегодня!")
                 return
 
-            bot_instance = get_bot()
-            sent = 0
-            failed = 0
-            chat_names = []
+            # Build preview list
+            chat_lines = [f"  • {chat.custom_name or chat.title}" for chat in chats_to_remind]
+            if len(chat_lines) > 30:
+                shown = chat_lines[:30]
+                shown.append(f"  ... и ещё {len(chat_lines) - 30}")
+            else:
+                shown = chat_lines
 
-            for chat in chats_to_remind:
-                try:
-                    await bot_instance.send_message(
-                        chat.telegram_chat_id,
-                        "👋 Привет! Что сегодня собираешься делать?\n\n"
-                        "💡 Напиши план на день — я автоматически создам задачи.",
-                    )
-                    sent += 1
-                    chat_names.append(f"✅ {chat.custom_name or chat.title}")
-                except Exception as e:
-                    failed += 1
-                    chat_names.append(f"❌ {chat.custom_name or chat.title}: {e}")
+            preview = (
+                f"🔔 <b>Напоминание о стендапе</b>\n\n"
+                f"<b>Не отчитались сегодня ({len(chats_to_remind)}):</b>\n"
+                + "\n".join(shown)
+                + "\n\n⚠️ Отправить напоминания?"
+            )
 
-            report = f"📢 <b>Напоминания отправлены: {sent}/{len(chats_to_remind)}</b>\n\n"
-            report += "\n".join(chat_names)
-            await message.answer(report, parse_mode="HTML")
+            # Save pending remind
+            _pending_reminds[message.from_user.id] = {
+                "chat_ids": [(chat.telegram_chat_id, chat.custom_name or chat.title) for chat in chats_to_remind],
+            }
+
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="✅ Отправить", callback_data="remind:confirm"),
+                    InlineKeyboardButton(text="❌ Отмена", callback_data="remind:cancel"),
+                ]
+            ])
+
+            await message.answer(preview, parse_mode="HTML", reply_markup=keyboard)
 
     except Exception as e:
         logger.error(f"Error in /remind command: {e}")
         await message.answer(f"⚠️ Ошибка: {e}")
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("remind:"))
+async def on_remind_callback(callback: CallbackQuery):
+    """Handle remind confirm/cancel buttons."""
+    user_id = callback.from_user.id
+    action = callback.data.split(":")[1]
+
+    if action == "cancel":
+        _pending_reminds.pop(user_id, None)
+        await callback.message.edit_text("❌ Напоминание отменено.")
+        return
+
+    # Confirm — send reminders
+    pending = _pending_reminds.pop(user_id, None)
+    if not pending:
+        await callback.message.edit_text("⚠️ Данные устарели. Отправьте /remind заново.")
+        return
+
+    bot_instance = get_bot()
+    sent = 0
+    failed = 0
+    chat_names = []
+
+    for chat_id, chat_name in pending["chat_ids"]:
+        try:
+            await bot_instance.send_message(
+                chat_id,
+                "👋 Привет! Что сегодня собираешься делать?\n\n"
+                "💡 Напиши план на день — я автоматически создам задачи.",
+            )
+            sent += 1
+            chat_names.append(f"✅ {chat_name}")
+        except Exception as e:
+            failed += 1
+            chat_names.append(f"❌ {chat_name}: {e}")
+
+    report = f"📢 <b>Напоминания отправлены: {sent}/{len(pending['chat_ids'])}</b>\n\n"
+    report += "\n".join(chat_names)
+    await callback.message.edit_text(report, parse_mode="HTML")
 
 
 # Store pending broadcasts: {user_id: {"text": ..., "chat_ids": [...]}}
