@@ -2743,7 +2743,6 @@ async def cmd_remind(message: types.Message):
         async with async_session() as session:
             result = await session.execute(
                 select(Chat).where(
-                    Chat.auto_tasks_enabled == True,
                     Chat.is_active == True,
                     or_(Chat.deleted_at == None, Chat.deleted_at.is_(None)),
                     Chat.telegram_chat_id != None,
@@ -2752,7 +2751,7 @@ async def cmd_remind(message: types.Message):
             chats = list(result.scalars().all())
 
             if not chats:
-                await message.answer("⚠️ Нет чатов с включёнными смарт-функциями.")
+                await message.answer("⚠️ Нет активных чатов.")
                 return
 
             # Build list with remind status
@@ -2766,7 +2765,7 @@ async def cmd_remind(message: types.Message):
 
             text = (
                 f"🔔 <b>Напоминания о стендапе</b>\n\n"
-                f"<b>Чаты со смарт-функциями ({len(chats)}):</b>\n"
+                f"<b>Ваши чаты ({len(chats)}):</b>\n"
                 + "\n".join(lines)
                 + f"\n\n🔔 Получат напоминание: <b>{enabled_count}</b>"
                 + "\n🔕 Не получат: <b>" + str(len(chats) - enabled_count) + "</b>"
@@ -2831,7 +2830,6 @@ async def on_remind_toggle(callback: CallbackQuery):
             # Rebuild the full message with updated states
             result = await session.execute(
                 select(Chat).where(
-                    Chat.auto_tasks_enabled == True,
                     Chat.is_active == True,
                     or_(Chat.deleted_at == None, Chat.deleted_at.is_(None)),
                     Chat.telegram_chat_id != None,
@@ -2849,7 +2847,7 @@ async def on_remind_toggle(callback: CallbackQuery):
 
             text = (
                 f"🔔 <b>Напоминания о стендапе</b>\n\n"
-                f"<b>Чаты со смарт-функциями ({len(chats)}):</b>\n"
+                f"<b>Ваши чаты ({len(chats)}):</b>\n"
                 + "\n".join(lines)
                 + f"\n\n🔔 Получат напоминание: <b>{enabled_count}</b>"
                 + "\n🔕 Не получат: <b>" + str(len(chats) - enabled_count) + "</b>"
@@ -2909,7 +2907,6 @@ async def on_remind_action(callback: CallbackQuery):
                 # Only send to chats with remind_enabled AND not yet reported today
                 result = await session.execute(
                     select(Chat).where(
-                        Chat.auto_tasks_enabled == True,
                         Chat.remind_enabled == True,
                         Chat.is_active == True,
                         or_(Chat.deleted_at == None, Chat.deleted_at.is_(None)),
