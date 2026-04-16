@@ -2731,6 +2731,41 @@ async def cmd_autotasks(message: types.Message):
         await message.answer(f"⚠️ Ошибка: {e}")
 
 
+def _build_remind_message(chats, enabled_count):
+    """Build compact remind message with toggle buttons."""
+    text = (
+        f"🔔 <b>Напоминания о стендапе</b>\n\n"
+        f"Всего чатов: <b>{len(chats)}</b>\n"
+        f"🔔 Получат: <b>{enabled_count}</b> | "
+        f"🔕 Не получат: <b>{len(chats) - enabled_count}</b>\n\n"
+        f"Нажмите чат чтобы вкл/выкл:"
+    )
+
+    buttons = []
+    row = []
+    for chat in chats:
+        name = chat.custom_name or chat.title or f"Chat {chat.id}"
+        short_name = name[:18] + "…" if len(name) > 18 else name
+        enabled = getattr(chat, 'remind_enabled', True)
+        icon = "🔔" if enabled else "🔕"
+        row.append(InlineKeyboardButton(
+            text=f"{icon} {short_name}",
+            callback_data=f"remind_toggle:{chat.id}",
+        ))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    buttons.append([
+        InlineKeyboardButton(text="✅ Отправить", callback_data="remind:send"),
+        InlineKeyboardButton(text="❌ Закрыть", callback_data="remind:cancel"),
+    ])
+
+    return text, InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 @dp.message(Command("remind"))
 async def cmd_remind(message: types.Message):
     """Show chats eligible for reminders with toggle buttons, then send.
@@ -2754,49 +2789,8 @@ async def cmd_remind(message: types.Message):
                 await message.answer("⚠️ Нет активных чатов.")
                 return
 
-            # Build list with remind status
-            lines = []
-            for chat in chats:
-                name = chat.custom_name or chat.title or f"Chat {chat.id}"
-                status = "🔔" if getattr(chat, 'remind_enabled', True) else "🔕"
-                lines.append(f"  {status} {name}")
-
             enabled_count = sum(1 for c in chats if getattr(c, 'remind_enabled', True))
-
-            text = (
-                f"🔔 <b>Напоминания о стендапе</b>\n\n"
-                f"<b>Ваши чаты ({len(chats)}):</b>\n"
-                + "\n".join(lines)
-                + f"\n\n🔔 Получат напоминание: <b>{enabled_count}</b>"
-                + "\n🔕 Не получат: <b>" + str(len(chats) - enabled_count) + "</b>"
-                + "\n\nНажмите кнопку чата чтобы вкл/выкл напоминания:"
-            )
-
-            # Build toggle buttons (2 per row)
-            buttons = []
-            row = []
-            for chat in chats:
-                name = chat.custom_name or chat.title or f"Chat {chat.id}"
-                short_name = name[:20] + "…" if len(name) > 20 else name
-                enabled = getattr(chat, 'remind_enabled', True)
-                icon = "🔔" if enabled else "🔕"
-                row.append(InlineKeyboardButton(
-                    text=f"{icon} {short_name}",
-                    callback_data=f"remind_toggle:{chat.id}",
-                ))
-                if len(row) == 2:
-                    buttons.append(row)
-                    row = []
-            if row:
-                buttons.append(row)
-
-            # Add send/cancel buttons at the bottom
-            buttons.append([
-                InlineKeyboardButton(text="✅ Отправить напоминания", callback_data="remind:send"),
-                InlineKeyboardButton(text="❌ Закрыть", callback_data="remind:cancel"),
-            ])
-
-            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+            text, keyboard = _build_remind_message(chats, enabled_count)
             await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
 
     except Exception as e:
@@ -2837,46 +2831,8 @@ async def on_remind_toggle(callback: CallbackQuery):
             )
             chats = list(result.scalars().all())
 
-            lines = []
-            for c in chats:
-                cname = c.custom_name or c.title or f"Chat {c.id}"
-                status = "🔔" if getattr(c, 'remind_enabled', True) else "🔕"
-                lines.append(f"  {status} {cname}")
-
             enabled_count = sum(1 for c in chats if getattr(c, 'remind_enabled', True))
-
-            text = (
-                f"🔔 <b>Напоминания о стендапе</b>\n\n"
-                f"<b>Ваши чаты ({len(chats)}):</b>\n"
-                + "\n".join(lines)
-                + f"\n\n🔔 Получат напоминание: <b>{enabled_count}</b>"
-                + "\n🔕 Не получат: <b>" + str(len(chats) - enabled_count) + "</b>"
-                + "\n\nНажмите кнопку чата чтобы вкл/выкл напоминания:"
-            )
-
-            buttons = []
-            row = []
-            for c in chats:
-                cname = c.custom_name or c.title or f"Chat {c.id}"
-                short_name = cname[:20] + "…" if len(cname) > 20 else cname
-                enabled = getattr(c, 'remind_enabled', True)
-                icon = "🔔" if enabled else "🔕"
-                row.append(InlineKeyboardButton(
-                    text=f"{icon} {short_name}",
-                    callback_data=f"remind_toggle:{c.id}",
-                ))
-                if len(row) == 2:
-                    buttons.append(row)
-                    row = []
-            if row:
-                buttons.append(row)
-
-            buttons.append([
-                InlineKeyboardButton(text="✅ Отправить напоминания", callback_data="remind:send"),
-                InlineKeyboardButton(text="❌ Закрыть", callback_data="remind:cancel"),
-            ])
-
-            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+            text, keyboard = _build_remind_message(chats, enabled_count)
             await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
 
     except Exception as e:
