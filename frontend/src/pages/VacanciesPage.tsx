@@ -18,6 +18,7 @@ import {
   Calendar,
   UserPlus,
   PlayCircle,
+  XCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -202,7 +203,7 @@ export default function VacanciesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('open');
   const [departmentFilter, setDepartmentFilter] = useState<number | 'all'>('all');
   const [departments, setDepartments] = useState<Department[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -241,6 +242,7 @@ export default function VacanciesPage() {
     error,
     fetchVacancies,
     fetchVacancy,
+    updateVacancy,
     deleteVacancy,
     setFilters,
     clearCurrentVacancy,
@@ -250,6 +252,12 @@ export default function VacanciesPage() {
   // Auth state for role-based UI
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+
+  // Task 9: "My vacancies" filter — non-admin users see only their vacancies by default
+  const [showOnlyMine, setShowOnlyMine] = useState(!isAdmin);
+
+  // Task 12: Assignment filter for unassigned requests
+  const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'unassigned'>('all');
 
   // Assign modal state
   const [assigningVacancy, setAssigningVacancy] = useState<Vacancy | null>(null);
@@ -293,6 +301,20 @@ export default function VacanciesPage() {
   // Note: Salary ranges are in RUB, so we convert vacancy salaries to RUB for comparison
   const filteredVacancies = useMemo(() => {
     return vacancies.filter((vacancy) => {
+      // Task 9: "My vacancies" filter
+      if (showOnlyMine && user) {
+        const isMine = vacancy.created_by === user.id
+          || (vacancy.assigned_to && vacancy.assigned_to.includes(user.id))
+          || vacancy.assigned_to_all === true;
+        if (!isMine) return false;
+      }
+
+      // Task 12: Unassigned requests filter
+      if (assignmentFilter === 'unassigned') {
+        const hasAssignment = (vacancy.assigned_to && vacancy.assigned_to.length > 0) || vacancy.assigned_to_all;
+        if (hasAssignment) return false;
+      }
+
       // Status filter
       if (quickFilters.statuses.length > 0 && !quickFilters.statuses.includes(vacancy.status)) {
         return false;
@@ -333,7 +355,7 @@ export default function VacanciesPage() {
 
       return true;
     });
-  }, [vacancies, quickFilters, getComparableSalary]);
+  }, [vacancies, quickFilters, getComparableSalary, showOnlyMine, assignmentFilter, user]);
 
   // Sync quick filters to URL
   useEffect(() => {
@@ -450,18 +472,31 @@ export default function VacanciesPage() {
     setConfirmDialog({ open: true, vacancy, type: 'delete' });
   };
 
+  // Task 14: Close vacancy handler
+  const handleCloseClick = (vacancy: Vacancy) => {
+    setConfirmDialog({ open: true, vacancy, type: 'close' });
+  };
+
   const handleConfirmDelete = async () => {
     if (!confirmDialog.vacancy) return;
     setDeleteLoading(true);
     try {
-      await deleteVacancy(confirmDialog.vacancy.id);
-      toast.success('Вакансия удалена');
-      if (currentVacancy?.id === confirmDialog.vacancy.id) {
-        navigate('/vacancies');
+      if (confirmDialog.type === 'close') {
+        // Task 14: Close vacancy and auto-switch to "open" filter
+        await updateVacancy(confirmDialog.vacancy.id, { status: 'closed' });
+        toast.success('Вакансия закрыта');
+        setStatusFilter('open');
+        fetchVacancies();
+      } else {
+        await deleteVacancy(confirmDialog.vacancy.id);
+        toast.success('Вакансия удалена');
+        if (currentVacancy?.id === confirmDialog.vacancy.id) {
+          navigate('/vacancies');
+        }
       }
       setConfirmDialog({ open: false, vacancy: null, type: 'delete' });
     } catch {
-      toast.error('Не удалось удалить вакансию');
+      toast.error(confirmDialog.type === 'close' ? 'Не удалось закрыть вакансию' : 'Не удалось удалить вакансию');
     } finally {
       setDeleteLoading(false);
     }
@@ -629,6 +664,36 @@ export default function VacanciesPage() {
             ))}
           </select>
 
+          {/* Task 9: "My vacancies" toggle */}
+          <button
+            onClick={() => setShowOnlyMine(!showOnlyMine)}
+            className={clsx(
+              'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border',
+              showOnlyMine
+                ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
+                : 'border-white/10 text-white/60 hover:text-white hover:bg-white/[0.05]'
+            )}
+          >
+            <Users className="w-4 h-4" />
+            {showOnlyMine ? 'Только мои' : 'Все вакансии'}
+          </button>
+
+          {/* Task 12: Unassigned requests filter */}
+          {isAdmin && (
+            <button
+              onClick={() => setAssignmentFilter(prev => prev === 'all' ? 'unassigned' : 'all')}
+              className={clsx(
+                'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border',
+                assignmentFilter === 'unassigned'
+                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                  : 'border-white/10 text-white/60 hover:text-white hover:bg-white/[0.05]'
+              )}
+            >
+              <UserPlus className="w-4 h-4" />
+              {assignmentFilter === 'unassigned' ? 'Нераспределённые' : 'Все заявки'}
+            </button>
+          )}
+
           {/* Quick Filters Dropdown */}
           <div className="relative" ref={filtersDropdownRef}>
             <button
@@ -788,12 +853,21 @@ export default function VacanciesPage() {
               {filteredVacancies.map((vacancy) => (
                 <ContextMenu
                   key={vacancy.id}
-                  items={createVacancyContextMenu(
-                    () => handleVacancyClick(vacancy),
-                    () => setEditingVacancy(vacancy),
-                    () => handleDeleteClick(vacancy),
-                    () => handleCopyLink(vacancy)
-                  )}
+                  items={[
+                    ...createVacancyContextMenu(
+                      () => handleVacancyClick(vacancy),
+                      () => setEditingVacancy(vacancy),
+                      () => handleDeleteClick(vacancy),
+                      () => handleCopyLink(vacancy)
+                    ),
+                    ...(vacancy.status === 'open' || vacancy.status === 'paused' ? [{
+                      id: 'close',
+                      label: 'Закрыть вакансию',
+                      icon: XCircle,
+                      onClick: () => handleCloseClick(vacancy),
+                      divider: true,
+                    }] : []),
+                  ]}
                 >
                   <div
                     onClick={() => handleVacancyClick(vacancy)}
@@ -802,7 +876,19 @@ export default function VacanciesPage() {
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-lg truncate">{vacancy.title}</h3>
-                        <VacancyStatusBadge status={vacancy.status} size="sm" />
+                        <div className="flex items-center gap-2">
+                          <VacancyStatusBadge status={vacancy.status} size="sm" />
+                          {/* Task 15: Show "Заявка" badge if assigned to me but created by someone else */}
+                          {(user && vacancy.created_by !== user.id && (vacancy.assigned_to?.includes(user.id) || vacancy.assigned_to_all)) ? (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                              Заявка
+                            </span>
+                          ) : (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300/70">
+                              Вакансия
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="flex items-center gap-1.5">
                         {vacancy.visible_to_all && (
@@ -960,11 +1046,13 @@ export default function VacanciesPage() {
       {/* Confirmation Dialog */}
       <ConfirmDialog
         open={confirmDialog.open}
-        title="Удалить вакансию"
-        message="Вы уверены, что хотите удалить эту вакансию? Это действие невозможно отменить."
-        confirmLabel="Удалить"
+        title={confirmDialog.type === 'close' ? 'Закрыть вакансию' : 'Удалить вакансию'}
+        message={confirmDialog.type === 'close'
+          ? 'Вы уверены, что хотите закрыть эту вакансию? Она переместится в статус "Закрыта".'
+          : 'Вы уверены, что хотите удалить эту вакансию? Это действие невозможно отменить.'}
+        confirmLabel={confirmDialog.type === 'close' ? 'Закрыть' : 'Удалить'}
         cancelLabel="Отмена"
-        variant="danger"
+        variant={confirmDialog.type === 'close' ? 'warning' : 'danger'}
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelConfirm}
         loading={deleteLoading}
