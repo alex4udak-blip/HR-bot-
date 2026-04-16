@@ -68,6 +68,14 @@ async def ensure_shadow_columns():
             await conn.execute(text('UPDATE chats SET auto_tasks_enabled = false WHERE auto_tasks_enabled = true'))
             await conn.execute(text('ALTER TABLE chats ALTER COLUMN auto_tasks_enabled SET DEFAULT false'))
 
+        # Check and add remind_enabled column to chats
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chats' AND column_name = 'remind_enabled')\"
+        ))
+        if not result.scalar():
+            print('Adding remind_enabled column to chats...')
+            await conn.execute(text('ALTER TABLE chats ADD COLUMN remind_enabled BOOLEAN DEFAULT true'))
+
         # Check and add last_standup_at column to chats
         result = await conn.execute(text(
             \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chats' AND column_name = 'last_standup_at')\"

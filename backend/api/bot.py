@@ -2731,116 +2731,226 @@ async def cmd_autotasks(message: types.Message):
         await message.answer(f"⚠️ Ошибка: {e}")
 
 
-# Store pending reminds: {user_id: {"chat_ids": [...]}}
-_pending_reminds: dict[int, dict] = {}
-
-
 @dp.message(Command("remind"))
 async def cmd_remind(message: types.Message):
-    """Preview standup reminders, then send after confirmation.
+    """Show chats eligible for reminders with toggle buttons, then send.
 
-    Usage: /remind — shows chats that haven't reported today, confirm to send.
+    Usage: /remind — shows all auto_tasks chats, toggle remind on/off per chat, then send.
     """
-    from datetime import datetime as dt, timezone, timedelta
     from sqlalchemy import or_
 
     try:
         async with async_session() as session:
-            MSK = timezone(timedelta(hours=3))
-            today_start_utc = dt.now(MSK).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(
-                timezone.utc
-            ).replace(tzinfo=None)
-
             result = await session.execute(
                 select(Chat).where(
                     Chat.auto_tasks_enabled == True,
                     Chat.is_active == True,
                     or_(Chat.deleted_at == None, Chat.deleted_at.is_(None)),
                     Chat.telegram_chat_id != None,
-                    or_(
-                        Chat.last_standup_at == None,
-                        Chat.last_standup_at < today_start_utc,
-                    ),
-                )
+                ).order_by(Chat.title)
             )
-            chats_to_remind = list(result.scalars().all())
+            chats = list(result.scalars().all())
 
-            if not chats_to_remind:
-                await message.answer("✅ Все чаты уже отчитались сегодня!")
+            if not chats:
+                await message.answer("⚠️ Нет чатов с включёнными смарт-функциями.")
                 return
 
-            # Build preview list
-            chat_lines = [f"  • {chat.custom_name or chat.title}" for chat in chats_to_remind]
-            if len(chat_lines) > 30:
-                shown = chat_lines[:30]
-                shown.append(f"  ... и ещё {len(chat_lines) - 30}")
-            else:
-                shown = chat_lines
+            # Build list with remind status
+            lines = []
+            for chat in chats:
+                name = chat.custom_name or chat.title or f"Chat {chat.id}"
+                status = "🔔" if getattr(chat, 'remind_enabled', True) else "🔕"
+                lines.append(f"  {status} {name}")
 
-            preview = (
-                f"🔔 <b>Напоминание о стендапе</b>\n\n"
-                f"<b>Не отчитались сегодня ({len(chats_to_remind)}):</b>\n"
-                + "\n".join(shown)
-                + "\n\n⚠️ Отправить напоминания?"
+            enabled_count = sum(1 for c in chats if getattr(c, 'remind_enabled', True))
+
+            text = (
+                f"🔔 <b>Напоминания о стендапе</b>\n\n"
+                f"<b>Чаты со смарт-функциями ({len(chats)}):</b>\n"
+                + "\n".join(lines)
+                + f"\n\n🔔 Получат напоминание: <b>{enabled_count}</b>"
+                + "\n🔕 Не получат: <b>" + str(len(chats) - enabled_count) + "</b>"
+                + "\n\nНажмите кнопку чата чтобы вкл/выкл напоминания:"
             )
 
-            # Save pending remind
-            _pending_reminds[message.from_user.id] = {
-                "chat_ids": [(chat.telegram_chat_id, chat.custom_name or chat.title) for chat in chats_to_remind],
-            }
+            # Build toggle buttons (2 per row)
+            buttons = []
+            row = []
+            for chat in chats:
+                name = chat.custom_name or chat.title or f"Chat {chat.id}"
+                short_name = name[:20] + "…" if len(name) > 20 else name
+                enabled = getattr(chat, 'remind_enabled', True)
+                icon = "🔔" if enabled else "🔕"
+                row.append(InlineKeyboardButton(
+                    text=f"{icon} {short_name}",
+                    callback_data=f"remind_toggle:{chat.id}",
+                ))
+                if len(row) == 2:
+                    buttons.append(row)
+                    row = []
+            if row:
+                buttons.append(row)
 
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="✅ Отправить", callback_data="remind:confirm"),
-                    InlineKeyboardButton(text="❌ Отмена", callback_data="remind:cancel"),
-                ]
+            # Add send/cancel buttons at the bottom
+            buttons.append([
+                InlineKeyboardButton(text="✅ Отправить напоминания", callback_data="remind:send"),
+                InlineKeyboardButton(text="❌ Закрыть", callback_data="remind:cancel"),
             ])
 
-            await message.answer(preview, parse_mode="HTML", reply_markup=keyboard)
+            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+            await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
 
     except Exception as e:
         logger.error(f"Error in /remind command: {e}")
         await message.answer(f"⚠️ Ошибка: {e}")
 
 
+@dp.callback_query(lambda c: c.data and c.data.startswith("remind_toggle:"))
+async def on_remind_toggle(callback: CallbackQuery):
+    """Toggle remind_enabled for a specific chat."""
+    from sqlalchemy import or_
+
+    chat_id = int(callback.data.split(":")[1])
+
+    try:
+        async with async_session() as session:
+            chat = await session.get(Chat, chat_id)
+            if not chat:
+                await callback.answer("Чат не найден")
+                return
+
+            # Toggle remind_enabled
+            current = getattr(chat, 'remind_enabled', True)
+            chat.remind_enabled = not current
+            await session.commit()
+
+            name = chat.custom_name or chat.title or f"Chat {chat.id}"
+            new_status = "🔔 вкл" if chat.remind_enabled else "🔕 выкл"
+            await callback.answer(f"{name}: напоминания {new_status}")
+
+            # Rebuild the full message with updated states
+            result = await session.execute(
+                select(Chat).where(
+                    Chat.auto_tasks_enabled == True,
+                    Chat.is_active == True,
+                    or_(Chat.deleted_at == None, Chat.deleted_at.is_(None)),
+                    Chat.telegram_chat_id != None,
+                ).order_by(Chat.title)
+            )
+            chats = list(result.scalars().all())
+
+            lines = []
+            for c in chats:
+                cname = c.custom_name or c.title or f"Chat {c.id}"
+                status = "🔔" if getattr(c, 'remind_enabled', True) else "🔕"
+                lines.append(f"  {status} {cname}")
+
+            enabled_count = sum(1 for c in chats if getattr(c, 'remind_enabled', True))
+
+            text = (
+                f"🔔 <b>Напоминания о стендапе</b>\n\n"
+                f"<b>Чаты со смарт-функциями ({len(chats)}):</b>\n"
+                + "\n".join(lines)
+                + f"\n\n🔔 Получат напоминание: <b>{enabled_count}</b>"
+                + "\n🔕 Не получат: <b>" + str(len(chats) - enabled_count) + "</b>"
+                + "\n\nНажмите кнопку чата чтобы вкл/выкл напоминания:"
+            )
+
+            buttons = []
+            row = []
+            for c in chats:
+                cname = c.custom_name or c.title or f"Chat {c.id}"
+                short_name = cname[:20] + "…" if len(cname) > 20 else cname
+                enabled = getattr(c, 'remind_enabled', True)
+                icon = "🔔" if enabled else "🔕"
+                row.append(InlineKeyboardButton(
+                    text=f"{icon} {short_name}",
+                    callback_data=f"remind_toggle:{c.id}",
+                ))
+                if len(row) == 2:
+                    buttons.append(row)
+                    row = []
+            if row:
+                buttons.append(row)
+
+            buttons.append([
+                InlineKeyboardButton(text="✅ Отправить напоминания", callback_data="remind:send"),
+                InlineKeyboardButton(text="❌ Закрыть", callback_data="remind:cancel"),
+            ])
+
+            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+    except Exception as e:
+        logger.error(f"Error toggling remind: {e}")
+        await callback.answer(f"Ошибка: {e}")
+
+
 @dp.callback_query(lambda c: c.data and c.data.startswith("remind:"))
-async def on_remind_callback(callback: CallbackQuery):
-    """Handle remind confirm/cancel buttons."""
-    user_id = callback.from_user.id
+async def on_remind_action(callback: CallbackQuery):
+    """Handle remind send/cancel."""
+    from datetime import datetime as dt, timezone, timedelta
+    from sqlalchemy import or_
+
     action = callback.data.split(":")[1]
 
     if action == "cancel":
-        _pending_reminds.pop(user_id, None)
-        await callback.message.edit_text("❌ Напоминание отменено.")
+        await callback.message.edit_text("❌ Закрыто.")
         return
 
-    # Confirm — send reminders
-    pending = _pending_reminds.pop(user_id, None)
-    if not pending:
-        await callback.message.edit_text("⚠️ Данные устарели. Отправьте /remind заново.")
-        return
-
-    bot_instance = get_bot()
-    sent = 0
-    failed = 0
-    chat_names = []
-
-    for chat_id, chat_name in pending["chat_ids"]:
+    if action == "send":
         try:
-            await bot_instance.send_message(
-                chat_id,
-                "👋 Привет! Что сегодня собираешься делать?\n\n"
-                "💡 Напиши план на день — я автоматически создам задачи.",
-            )
-            sent += 1
-            chat_names.append(f"✅ {chat_name}")
-        except Exception as e:
-            failed += 1
-            chat_names.append(f"❌ {chat_name}: {e}")
+            async with async_session() as session:
+                MSK = timezone(timedelta(hours=3))
+                today_start_utc = dt.now(MSK).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(
+                    timezone.utc
+                ).replace(tzinfo=None)
 
-    report = f"📢 <b>Напоминания отправлены: {sent}/{len(pending['chat_ids'])}</b>\n\n"
-    report += "\n".join(chat_names)
-    await callback.message.edit_text(report, parse_mode="HTML")
+                # Only send to chats with remind_enabled AND not yet reported today
+                result = await session.execute(
+                    select(Chat).where(
+                        Chat.auto_tasks_enabled == True,
+                        Chat.remind_enabled == True,
+                        Chat.is_active == True,
+                        or_(Chat.deleted_at == None, Chat.deleted_at.is_(None)),
+                        Chat.telegram_chat_id != None,
+                        or_(
+                            Chat.last_standup_at == None,
+                            Chat.last_standup_at < today_start_utc,
+                        ),
+                    )
+                )
+                chats_to_remind = list(result.scalars().all())
+
+                if not chats_to_remind:
+                    await callback.message.edit_text("✅ Все чаты с 🔔 уже отчитались сегодня!")
+                    return
+
+                bot_instance = get_bot()
+                sent = 0
+                failed = 0
+                chat_names = []
+
+                for chat in chats_to_remind:
+                    try:
+                        await bot_instance.send_message(
+                            chat.telegram_chat_id,
+                            "👋 Привет! Что сегодня собираешься делать?\n\n"
+                            "💡 Напиши план на день — я автоматически создам задачи.",
+                        )
+                        sent += 1
+                        chat_names.append(f"✅ {chat.custom_name or chat.title}")
+                    except Exception as e:
+                        failed += 1
+                        chat_names.append(f"❌ {chat.custom_name or chat.title}: {e}")
+
+                report = f"📢 <b>Напоминания отправлены: {sent}/{len(chats_to_remind)}</b>\n\n"
+                report += "\n".join(chat_names)
+                await callback.message.edit_text(report, parse_mode="HTML")
+
+        except Exception as e:
+            logger.error(f"Error sending reminds: {e}")
+            await callback.message.edit_text(f"⚠️ Ошибка: {e}")
 
 
 # Store pending broadcasts: {user_id: {"text": ..., "chat_ids": [...]}}
