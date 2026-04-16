@@ -27,6 +27,7 @@
       email: '',
       phone: '',
       telegram: '',
+      photo_url: '',
       position: '',
       city: '',
       age: '',
@@ -44,6 +45,42 @@
       '.resume-header-name',
     ]);
 
+    // --- Photo ---
+    // Try multiple selectors for resume photo (hh.ru changes DOM frequently)
+    const photoSelectors = [
+      '[data-qa="resume-photo"] img',
+      '[data-qa="resume-photo-image"]',
+      '.resume-photo img',
+      '.resume-header-photo img',
+      '[data-qa="resume-avatar"] img',
+      '.resume-avatar img',
+      // Magritte-based layout selectors
+      '[class*="resume-photo"] img',
+      '[class*="resume-header"] img[src*="hhcdn"]',
+      'img[data-qa="bloko-image"][src*="hhcdn"]',
+    ];
+    for (const sel of photoSelectors) {
+      const photoEl = document.querySelector(sel);
+      if (photoEl) {
+        const src = photoEl.src || photoEl.getAttribute('src');
+        if (src && src.startsWith('http') && !src.includes('placeholder')) {
+          data.photo_url = src;
+          break;
+        }
+      }
+    }
+    // Fallback: look for any img with hhcdn.ru avatar-like URL
+    if (!data.photo_url) {
+      const allImgs = document.querySelectorAll('img[src*="hhcdn.ru"]');
+      for (const img of allImgs) {
+        const src = img.src || '';
+        if (src.includes('/photo/') || src.includes('/avatar/') || src.match(/\/\d+\.(?:jpg|jpeg|png)/i)) {
+          data.photo_url = src;
+          break;
+        }
+      }
+    }
+
     // --- Position/title ---
     data.position = getTextMulti([
       '[data-qa="resume-position"] [data-qa="title"]',
@@ -52,36 +89,84 @@
       '.resume-block__title-text_sub',
     ]);
 
-    // --- Contact info (new hh.ru selectors) ---
-    // Email - may have multiple elements with same data-qa, find the one with actual email text
-    const emailEls = document.querySelectorAll('[data-qa="resume-contact-email"]');
-    emailEls.forEach(el => {
-      const text = el.textContent.trim();
-      if (text.includes('@') && !data.email) data.email = text;
-    });
-    // Also check nested spans
-    if (!data.email) {
-      const emailSpans = document.querySelectorAll('[data-qa="resume-contact-email"] span');
-      emailSpans.forEach(el => {
+    // --- Contact info ---
+    // Note: HH.ru contacts may be hidden behind a "show contacts" button that requires
+    // employer access. If contacts are not visible, fields will remain empty - the extension
+    // still allows adding the candidate without contacts.
+
+    // Email - try multiple selectors and nested structures
+    const emailSelectors = [
+      '[data-qa="resume-contact-email"]',
+      '[data-qa="resume-contact-email"] a',
+      '[data-qa="resume-contact-email"] span',
+      '[data-qa="resume-serp__resume-contact-email"]',
+    ];
+    for (const sel of emailSelectors) {
+      if (data.email) break;
+      const els = document.querySelectorAll(sel);
+      els.forEach(el => {
         const text = el.textContent.trim();
-        if (text.includes('@') && !data.email) data.email = text;
+        const href = (el.href || el.getAttribute('href') || '');
+        // Extract from mailto: link
+        if (!data.email && href.includes('mailto:')) {
+          data.email = href.replace('mailto:', '').split('?')[0].trim();
+        }
+        // Or from text containing @
+        else if (!data.email && text.includes('@') && text.includes('.')) {
+          // Clean up: take only the email part if there's extra text
+          const emailMatch = text.match(/[\w.+-]+@[\w.-]+\.\w{2,}/);
+          if (emailMatch) data.email = emailMatch[0];
+        }
       });
     }
 
-    // Phone - direct selector
-    const phoneEl = document.querySelector('[data-qa="resume-contact-phone"]');
-    if (phoneEl) data.phone = phoneEl.textContent.trim();
+    // Phone - try multiple selectors, handle formatted numbers
+    const phoneSelectors = [
+      '[data-qa="resume-contact-phone"]',
+      '[data-qa="resume-contact-phone"] a',
+      '[data-qa="resume-serp__resume-contact-phone"]',
+      '[data-qa="resume-contact-phone-value"]',
+    ];
+    for (const sel of phoneSelectors) {
+      if (data.phone) break;
+      const els = document.querySelectorAll(sel);
+      els.forEach(el => {
+        if (data.phone) return;
+        const text = el.textContent.trim();
+        const href = (el.href || el.getAttribute('href') || '');
+        // Extract from tel: link
+        if (href.includes('tel:')) {
+          data.phone = href.replace('tel:', '').trim();
+        }
+        // Or from text that looks like a phone number
+        else if (text.match(/[\+\d][\d\s\-\(\)]{6,}/)) {
+          // Normalize: remove extra spaces but keep formatting
+          data.phone = text.replace(/\s+/g, ' ').trim();
+        }
+      });
+    }
 
-    // Telegram - deep link
-    const tgEl = document.querySelector('[data-qa="resume-phone-deep-link-telegram-text"]');
-    if (tgEl) {
-      data.telegram = tgEl.textContent.trim();
-    } else {
-      const tgLink = document.querySelector('[data-qa="resume-phone-deep-link-telegram"]');
-      if (tgLink) {
-        const href = tgLink.href || '';
-        const match = href.match(/t\.me\/([^\/?]+)/);
-        if (match) data.telegram = '@' + match[1];
+    // Telegram - try multiple selectors
+    const tgSelectors = [
+      '[data-qa="resume-phone-deep-link-telegram-text"]',
+      '[data-qa="resume-phone-deep-link-telegram"]',
+      '[data-qa="resume-contact-preferred"][href*="t.me"]',
+    ];
+    for (const sel of tgSelectors) {
+      if (data.telegram) break;
+      const el = document.querySelector(sel);
+      if (el) {
+        const text = el.textContent.trim();
+        const href = (el.href || el.getAttribute('href') || '');
+        if (href.includes('t.me/')) {
+          const match = href.match(/t\.me\/([^\/?]+)/);
+          if (match) data.telegram = '@' + match[1];
+        } else if (text.startsWith('@') || text.includes('t.me')) {
+          data.telegram = text.startsWith('@') ? text : '@' + text.replace(/.*t\.me\//, '');
+        } else if (text && !text.includes(' ')) {
+          // Plain username text in a telegram-specific element
+          data.telegram = text.startsWith('@') ? text : '@' + text;
+        }
       }
     }
 
@@ -91,23 +176,48 @@
       contactEls.forEach(el => {
         const text = el.textContent.trim();
         const href = el.href || '';
-        if (!data.email && (href.includes('mailto:') || text.includes('@'))) data.email = text;
+        if (!data.email && (href.includes('mailto:') || text.includes('@'))) {
+          const emailMatch = text.match(/[\w.+-]+@[\w.-]+\.\w{2,}/);
+          data.email = emailMatch ? emailMatch[0] : text;
+        }
         else if (!data.phone && (href.includes('tel:') || text.match(/^\+?\d/))) data.phone = text;
         else if (!data.telegram && (text.includes('t.me') || text.startsWith('@'))) data.telegram = text;
       });
     }
 
-    // Fallback: generic contact value selectors
+    // Fallback: generic contact value selectors (older hh.ru layout)
     if (!data.email || !data.phone || !data.telegram) {
       const allContacts = document.querySelectorAll('.resume-contact-value');
       allContacts.forEach(el => {
         const text = el.textContent.trim();
         const link = el.querySelector('a');
         const href = link ? link.href : '';
-        if (!data.email && href.includes('mailto:')) data.email = text;
+        if (!data.email && href.includes('mailto:')) {
+          const emailMatch = text.match(/[\w.+-]+@[\w.-]+\.\w{2,}/);
+          data.email = emailMatch ? emailMatch[0] : text;
+        }
         else if (!data.phone && href.includes('tel:')) data.phone = text;
         else if (!data.telegram && (text.includes('t.me') || text.startsWith('@'))) {
-          data.telegram = text.replace('t.me/', '@');
+          data.telegram = text.replace(/.*t\.me\//, '@');
+        }
+      });
+    }
+
+    // Fallback: scan all links on page for contact info (newest hh.ru layouts)
+    if (!data.email || !data.phone || !data.telegram) {
+      const allLinks = document.querySelectorAll('a[href]');
+      allLinks.forEach(link => {
+        const href = link.href || '';
+        const text = link.textContent.trim();
+        if (!data.email && href.includes('mailto:')) {
+          data.email = href.replace('mailto:', '').split('?')[0].trim();
+        }
+        if (!data.phone && href.includes('tel:') && text.match(/[\+\d]/)) {
+          data.phone = text.replace(/\s+/g, ' ').trim();
+        }
+        if (!data.telegram && href.includes('t.me/') && !href.includes('t.me/share')) {
+          const match = href.match(/t\.me\/([^\/?]+)/);
+          if (match) data.telegram = '@' + match[1];
         }
       });
     }

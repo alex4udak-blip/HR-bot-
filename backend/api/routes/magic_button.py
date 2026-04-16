@@ -27,6 +27,7 @@ class MagicButtonData(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     telegram: Optional[str] = None
+    photo_url: Optional[str] = None
     position: Optional[str] = None
     source_url: str
     source: str  # "hh.ru", "linkedin.com", "career.habr.com"
@@ -184,6 +185,8 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         "magic_button": True,
         "comment": data.comment,
     }
+    if data.photo_url:
+        extra["photo_url"] = data.photo_url
     if data.city:
         extra["city"] = data.city
     if data.age:

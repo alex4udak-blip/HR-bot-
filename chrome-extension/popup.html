@@ -20,9 +20,13 @@
     .field select option { background: #1a1a2e; }
 
     .parsed-info { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 12px; margin-bottom: 16px; }
-    .parsed-info .name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .parsed-info .name-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+    .parsed-info .name { font-size: 15px; font-weight: 600; }
     .parsed-info .details { font-size: 12px; color: rgba(255,255,255,0.5); line-height: 1.5; }
     .parsed-info .source { display: inline-block; background: rgba(99,102,241,0.2); color: #818cf8; padding: 2px 8px; border-radius: 4px; font-size: 10px; margin-top: 6px; }
+    .candidate-link { color: #818cf8; text-decoration: none; font-size: 13px; font-weight: 500; }
+    .candidate-link:hover { color: #a5b4fc; text-decoration: underline; }
+    .contacts-note { font-size: 11px; color: rgba(245,158,11,0.8); margin-top: 4px; padding: 4px 8px; background: rgba(245,158,11,0.08); border-radius: 4px; }
 
     .duplicate-warning { background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.4); border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 12px; color: #fcd34d; line-height: 1.8; }
     .duplicate-warning .icon { color: #f59e0b; font-size: 16px; font-weight: bold; }
@@ -96,8 +100,12 @@
     <!-- Parse Form -->
     <div class="parse-form" id="parseForm">
       <div class="parsed-info" id="parsedInfo">
-        <div class="name" id="parsedName">&mdash;</div>
+        <div class="name-row">
+          <div id="parsedPhoto" style="display:none;"></div>
+          <div class="name" id="parsedName">&mdash;</div>
+        </div>
         <div class="details" id="parsedDetails"></div>
+        <div id="contactsNote" class="contacts-note" style="display:none;">Контакты скрыты на hh.ru — кандидат будет добавлен без контактов</div>
         <div class="source" id="parsedSource"></div>
       </div>
 
@@ -144,6 +152,7 @@
         <div class="icon" id="resultIcon">OK</div>
         <h2 id="resultTitle">Кандидат добавлен!</h2>
         <p id="resultMessage"></p>
+        <div id="resultLink" style="display:none;margin-top:12px;"></div>
         <button class="btn btn-secondary" id="addAnotherBtn" style="margin-top:16px;">Добавить ещё</button>
       </div>
     </div>

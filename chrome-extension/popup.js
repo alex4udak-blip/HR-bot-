@@ -113,6 +113,15 @@ const STATUS_MAP = {
 function showParsedData() {
   document.getElementById('parsedName').textContent = parsedData.full_name || '\u2014';
 
+  // Show photo if available
+  const photoContainer = document.getElementById('parsedPhoto');
+  if (photoContainer && parsedData.photo_url) {
+    photoContainer.innerHTML = `<img src="${parsedData.photo_url}" alt="Photo" style="width:48px;height:48px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,0.1);">`;
+    photoContainer.style.display = 'block';
+  } else if (photoContainer) {
+    photoContainer.style.display = 'none';
+  }
+
   const details = [];
   if (parsedData.position) details.push(parsedData.position);
   if (parsedData.email) details.push('Email: ' + parsedData.email);
@@ -143,6 +152,14 @@ function showParsedData() {
   // Show manual email field if not parsed
   if (!parsedData.email) {
     document.getElementById('emailField').style.display = 'block';
+  }
+
+  // Show contacts-hidden note if no contacts at all
+  const contactsNote = document.getElementById('contactsNote');
+  if (contactsNote && !parsedData.email && !parsedData.phone && !parsedData.telegram) {
+    contactsNote.style.display = 'block';
+  } else if (contactsNote) {
+    contactsNote.style.display = 'none';
   }
 
   // Auto-check duplicates
@@ -312,6 +329,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
       email: parsedData.email || manualEmail || null,
       phone: parsedData.phone || null,
       telegram: parsedData.telegram || null,
+      photo_url: parsedData.photo_url || null,
       position: parsedData.position || null,
       source_url: parsedData.source_url,
       source: parsedData.source,
@@ -333,10 +351,22 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
     if (resp.success) {
       const result = resp.data;
+      document.getElementById('resultIcon').textContent = result.is_duplicate ? '!' : 'OK';
       document.getElementById('resultTitle').textContent = result.is_duplicate
         ? 'Кандидат добавлен (дубликат)'
         : 'Кандидат добавлен!';
       document.getElementById('resultMessage').textContent = result.message;
+      // Show link to the created candidate
+      const linkEl = document.getElementById('resultLink');
+      if (linkEl && result.entity_id) {
+        const candidateUrl = `${serverUrl}/candidates/${result.entity_id}`;
+        linkEl.innerHTML = `<a href="#" class="candidate-link" data-url="${candidateUrl}">Открыть карточку кандидата</a>`;
+        linkEl.style.display = 'block';
+        linkEl.querySelector('.candidate-link').addEventListener('click', (e) => {
+          e.preventDefault();
+          chrome.tabs.create({ url: candidateUrl });
+        });
+      }
       showView('result');
     } else {
       document.getElementById('addError').textContent = resp.error || 'Ошибка добавления';

@@ -477,6 +477,8 @@ class VacancyResponse(BaseModel):
     tags: List[str] = []
     extra_data: dict = {}
     visible_to_all: bool = False
+    assigned_to: List[int] = []
+    assigned_to_all: bool = False
     department_id: Optional[int] = None
     department_name: Optional[str] = None
     hiring_manager_id: Optional[int] = None
