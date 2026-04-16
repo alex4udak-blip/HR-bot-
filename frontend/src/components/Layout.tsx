@@ -105,12 +105,15 @@ function FABButton({ navigate }: { navigate: (path: string) => void }) {
 
       <button
         onClick={() => setOpen(!open)}
+        title="Создать"
         className={clsx(
-          'w-12 h-12 rounded-full flex items-center justify-center transition-colors',
-          open ? 'bg-red-600 hover:bg-red-500' : 'bg-cyan-600 hover:bg-cyan-500'
+          'w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg',
+          open
+            ? 'bg-red-600 hover:bg-red-500 shadow-red-500/30'
+            : 'bg-blue-500 hover:bg-blue-400 shadow-blue-500/40 animate-pulse-subtle'
         )}
       >
-        <Plus className={clsx('w-5 h-5 text-white transition-transform', open && 'rotate-45')} />
+        <Plus className={clsx('w-6 h-6 text-white transition-transform', open && 'rotate-45')} strokeWidth={2.5} />
       </button>
     </div>
   );

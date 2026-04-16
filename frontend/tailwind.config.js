@@ -49,6 +49,7 @@ export default {
         'shimmer': 'shimmer 2s linear infinite',
         'orbit': 'orbit 20s linear infinite',
         'orbit-reverse': 'orbit 25s linear infinite reverse',
+        'pulse-subtle': 'pulseSubtle 2s ease-in-out infinite',
       },
       keyframes: {
         fadeIn: {
@@ -85,6 +86,10 @@ export default {
         orbit: {
           '0%': { transform: 'rotate(0deg) translateX(150px) rotate(0deg)' },
           '100%': { transform: 'rotate(360deg) translateX(150px) rotate(-360deg)' },
+        },
+        pulseSubtle: {
+          '0%, 100%': { boxShadow: '0 0 8px rgba(59, 130, 246, 0.3)' },
+          '50%': { boxShadow: '0 0 20px rgba(59, 130, 246, 0.5)' },
         },
       },
     },

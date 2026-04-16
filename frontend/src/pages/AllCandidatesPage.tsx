@@ -285,7 +285,7 @@ export default function AllCandidatesPage() {
         <button
           onClick={() => { setActiveTab('all'); setSelectedCard(null); }}
           className={clsx(
-            'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+            'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
             activeTab === 'all' ? 'bg-accent-500 text-white' : 'text-dark-400 hover:bg-white/[0.06]',
           )}
         >
@@ -297,7 +297,7 @@ export default function AllCandidatesPage() {
             key={col.status}
             onClick={() => { setActiveTab(col.status); setSelectedCard(null); }}
             className={clsx(
-              'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
+              'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
               activeTab === col.status ? 'bg-accent-500 text-white' : 'text-dark-400 hover:bg-white/[0.06]',
             )}
           >
@@ -361,15 +361,16 @@ export default function AllCandidatesPage() {
                   const isSelected = selectedCard?.id === card.id;
                   const isChecked = selectedIds.has(card.id);
                   const initials = getInitials(card.name);
+                  const statusColor = STATUS_COLORS[status] || FALLBACK_COLOR;
                   return (
                     <div
                       key={card.id}
                       onClick={() => { setSelectedCard(card); setSelectedStatus(status); setDetailTab('info'); }}
                       className={clsx(
-                        'flex items-start gap-2 px-3 py-3 cursor-pointer border-b border-white/[0.04] transition-colors group/card',
+                        'flex items-start gap-2 px-3 py-3 cursor-pointer border-b border-white/[0.04] transition-all group/card border-l-[3px]',
                         isChecked || isSelected
-                          ? 'bg-accent-500/10 border-l-2 border-l-accent-500'
-                          : 'hover:bg-white/[0.03] border-l-2 border-l-transparent',
+                          ? 'bg-accent-500/10 border-l-accent-500'
+                          : clsx('hover:bg-white/[0.03]', statusColor.dot.replace('bg-', 'border-l-')),
                       )}
                     >
                       <div
@@ -385,9 +386,16 @@ export default function AllCandidatesPage() {
                         {initials}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-dark-100 truncate">{card.name}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-sm font-medium text-dark-100 truncate">{card.name}</div>
+                          <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', statusColor.dot)} title={status} />
+                        </div>
                         {card.position && <div className="text-xs text-dark-500 truncate mt-0.5">{card.position}</div>}
-                        <div className="text-xs text-dark-600 mt-0.5">
+                        <div className="text-xs text-dark-600 mt-0.5 flex items-center gap-1.5">
+                          {card.vacancy_name && (
+                            <span className="text-dark-500 truncate max-w-[140px]" title={card.vacancy_name}>{card.vacancy_name}</span>
+                          )}
+                          {card.vacancy_name && (card.source || card.created_at) && <span className="text-dark-700">&middot;</span>}
                           {card.source || ''}{card.created_at && <span className="ml-1">{formatDateShort(card.created_at)}</span>}
                         </div>
                       </div>
@@ -1142,7 +1150,7 @@ function ActionChip({ icon: Icon, label, onClick, danger, loading }: {
       onClick={onClick}
       disabled={loading}
       className={clsx(
-        'flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-colors',
+        'flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-all',
         danger
           ? 'border-red-500/20 text-red-400/70 hover:bg-red-500/10 hover:text-red-400'
           : 'border-white/[0.08] text-dark-400 hover:bg-white/[0.04] hover:text-dark-200',

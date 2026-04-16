@@ -44,6 +44,14 @@ import {
 } from '@/components/ui';
 import { OnboardingTooltip } from '@/components/onboarding';
 
+const STATUS_BORDER_COLORS: Record<string, string> = {
+  open: 'border-l-green-500',
+  draft: 'border-l-gray-500',
+  closed: 'border-l-red-500',
+  paused: 'border-l-yellow-500',
+  cancelled: 'border-l-gray-600',
+};
+
 const STATUS_FILTERS: { id: VacancyStatus | 'all'; name: string }[] = [
   { id: 'all', name: 'Все' },
   { id: 'draft', name: 'Черновик' },
@@ -609,9 +617,10 @@ export default function VacanciesPage() {
                     setShowCreateModal(true);
                   }}
                   data-tour="create-vacancy"
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
+                  title="Создать вакансию"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-500 hover:bg-blue-400 rounded-xl transition-all shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 text-white font-semibold text-sm animate-pulse-subtle"
                 >
-                  <Plus className="w-5 h-5" />
+                  <Plus className="w-5 h-5" strokeWidth={2.5} />
                   Новая вакансия
                 </button>
           </div>
@@ -639,7 +648,7 @@ export default function VacanciesPage() {
                 key={status.id}
                 onClick={() => setStatusFilter(status.id)}
                 className={clsx(
-                  'px-3 py-1.5 text-sm rounded-md transition-colors',
+                  'px-3 py-1.5 text-sm rounded-md transition-all',
                   statusFilter === status.id
                     ? 'bg-blue-600 text-white'
                     : 'text-white/60 hover:text-white'
@@ -871,14 +880,16 @@ export default function VacanciesPage() {
                 >
                   <div
                     onClick={() => handleVacancyClick(vacancy)}
-                    className="p-4 border border-white/[0.06] bg-white/[0.02] rounded-xl cursor-pointer group"
+                    className={clsx(
+                      'p-4 border border-white/[0.06] bg-white/[0.02] rounded-xl cursor-pointer group transition-all hover:bg-white/[0.04] hover:border-white/[0.1] border-l-[3px]',
+                      STATUS_BORDER_COLORS[vacancy.status] || 'border-l-gray-600'
+                    )}
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-lg truncate">{vacancy.title}</h3>
                         <div className="flex items-center gap-2">
                           <VacancyStatusBadge status={vacancy.status} size="sm" />
-                          {/* Task 15: Show "Заявка" badge if assigned to me but created by someone else */}
                           {(user && vacancy.created_by !== user.id && (vacancy.assigned_to?.includes(user.id) || vacancy.assigned_to_all)) ? (
                             <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
                               Заявка
@@ -886,6 +897,12 @@ export default function VacanciesPage() {
                           ) : (
                             <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300/70">
                               Вакансия
+                            </span>
+                          )}
+                          {vacancy.applications_count > 0 && (
+                            <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400">
+                              <Users className="w-3 h-3" />
+                              {vacancy.applications_count}
                             </span>
                           )}
                         </div>
