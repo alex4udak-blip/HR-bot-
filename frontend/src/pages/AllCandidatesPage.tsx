@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, memo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -26,6 +26,11 @@ import {
   Phone,
   Send,
   Check,
+  ExternalLink,
+  MapPin,
+  Trash2,
+  ChevronDown,
+  ArrowRightLeft,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -40,7 +45,7 @@ import type {
   KanbanColumn,
   RecruiterOption,
 } from '@/services/api/candidates';
-import { updateEntity, uploadEntityFile, getEntityFiles, downloadEntityFile } from '@/services/api/entities';
+import { updateEntity, uploadEntityFile, getEntityFiles, downloadEntityFile, deleteEntity } from '@/services/api/entities';
 import SendEmailModal from '@/components/entities/SendEmailModal';
 import type { EntityFile } from '@/services/api/entities';
 import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
@@ -95,6 +100,7 @@ function formatDateFull(dateStr: string): string {
 
 export default function AllCandidatesPage() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user } = useAuthStore();
   const [board, setBoard] = useState<KanbanBoardResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -202,6 +208,12 @@ export default function AllCandidatesPage() {
     });
   };
 
+  const [bulkStatusDD, setBulkStatusDD] = useState(false);
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [showBulkAddToVacancy, setShowBulkAddToVacancy] = useState(false);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const bulkStatusRef = useRef<HTMLDivElement>(null);
+
   const toggleSelection = (id: number) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -209,6 +221,59 @@ export default function AllCandidatesPage() {
       else next.add(id);
       return next;
     });
+  };
+
+  // Close bulk status dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (bulkStatusRef.current && !bulkStatusRef.current.contains(e.target as Node)) setBulkStatusDD(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleBulkStatusChange = async (newStatus: string) => {
+    setBulkStatusDD(false);
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkProcessing(true);
+    const label = board?.columns.find(c => c.status === newStatus)?.label || newStatus;
+    try {
+      for (const id of ids) {
+        await changeCandidateStatus(id, newStatus);
+      }
+      toast.success(`${ids.length} кандидат(ов) перемещено в "${label}"`);
+      setSelectedIds(new Set());
+      fetchBoard();
+    } catch {
+      toast.error('Ошибка при массовом изменении статуса');
+      fetchBoard();
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkProcessing(true);
+    setShowBulkDeleteConfirm(false);
+    try {
+      for (const id of ids) {
+        await deleteEntity(id);
+      }
+      toast.success(`${ids.length} кандидат(ов) удалено`);
+      setSelectedIds(new Set());
+      if (selectedCard && ids.includes(selectedCard.id)) {
+        setSelectedCard(null);
+      }
+      fetchBoard();
+    } catch {
+      toast.error('Ошибка при удалении');
+      fetchBoard();
+    } finally {
+      setBulkProcessing(false);
+    }
   };
 
   const totalCount = board?.total || 0;
@@ -288,7 +353,7 @@ export default function AllCandidatesPage() {
             </div>
 
             {/* List */}
-            <div className={clsx('flex-1 overflow-y-auto', anySelected && 'pb-14')}>
+            <div className="flex-1 overflow-y-auto">
               {filteredCards.length === 0 ? (
                 <div className="flex items-center justify-center h-40 text-dark-500 text-sm">Нет кандидатов</div>
               ) : (<>
@@ -340,12 +405,6 @@ export default function AllCandidatesPage() {
               </>)}
             </div>
 
-            {anySelected && (
-              <div className="absolute bottom-0 left-0 right-0 p-3 bg-dark-800 border-t border-white/[0.08] flex items-center justify-between">
-                <span className="text-xs text-dark-300 font-medium">Выбрано: {selectedIds.size}</span>
-                <button onClick={() => setSelectedIds(new Set())} className="px-2.5 py-1 text-xs font-medium rounded-lg text-dark-400 hover:bg-white/[0.06]">Снять</button>
-              </div>
-            )}
           </div>
 
           {/* RIGHT: Detail panel */}
@@ -369,11 +428,7 @@ export default function AllCandidatesPage() {
                       columns={board?.columns || []}
                       onStatusChange={handleStatusChange}
                       onOpenContact={() => {
-                        if (selectedCard.source_url) {
-                          window.open(selectedCard.source_url, '_blank');
-                        } else {
-                          toast.error('Нет ссылки на источник');
-                        }
+                        navigate(`/contacts?entity=${selectedCard.id}`);
                       }}
                       onAddToVacancy={() => setShowAddToVacancy(true)}
                       onEdit={() => setShowEditModal(true)}
@@ -395,6 +450,116 @@ export default function AllCandidatesPage() {
         </div>
       )}
 
+      {/* ===== BULK ACTIONS BAR ===== */}
+      <AnimatePresence>
+        {anySelected && (
+          <motion.div
+            initial={{ y: 60, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 60, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="flex-shrink-0 border-t border-white/[0.08] bg-dark-800 px-5 py-3 flex items-center gap-3"
+          >
+            <span className="text-sm font-medium text-dark-200">
+              Выбрано: {selectedIds.size}
+            </span>
+
+            {/* Status change dropdown */}
+            <div className="relative" ref={bulkStatusRef}>
+              <button
+                onClick={() => setBulkStatusDD(!bulkStatusDD)}
+                disabled={bulkProcessing}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-500/15 border border-accent-500/25 rounded-lg text-sm text-accent-400 hover:bg-accent-500/25 transition-colors disabled:opacity-50"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                Изменить статус
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              {bulkStatusDD && (
+                <div className="absolute left-0 bottom-full mb-1 z-50 w-56 py-1 bg-dark-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+                  <div className="px-3 py-1.5 text-[10px] text-dark-500 uppercase tracking-wider font-semibold">Перенести в</div>
+                  {board?.columns.map(col => {
+                    const colSc = STATUS_COLORS[col.status] || FALLBACK_COLOR;
+                    return (
+                      <button
+                        key={col.status}
+                        onClick={() => handleBulkStatusChange(col.status)}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors text-sm text-dark-300 hover:bg-white/[0.04]"
+                      >
+                        <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', colSc.dot)} />
+                        <span className="flex-1">{col.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Add to vacancy */}
+            <button
+              onClick={() => setShowBulkAddToVacancy(true)}
+              disabled={bulkProcessing}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] transition-colors disabled:opacity-50"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Переместить на вакансию
+            </button>
+
+            {/* Delete */}
+            <button
+              onClick={() => setShowBulkDeleteConfirm(true)}
+              disabled={bulkProcessing}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-red-500/20 rounded-lg text-sm text-red-400/70 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Удалить
+            </button>
+
+            <div className="flex-1" />
+
+            {bulkProcessing && <Loader2 className="w-4 h-4 animate-spin text-accent-400" />}
+
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="px-3 py-1.5 text-sm text-dark-400 hover:text-dark-200 hover:bg-white/[0.06] rounded-lg transition-colors"
+            >
+              Очистить выбор
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ===== BULK DELETE CONFIRMATION ===== */}
+      <AnimatePresence>
+        {showBulkDeleteConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+            onClick={() => setShowBulkDeleteConfirm(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-dark-800 border border-white/10 rounded-xl w-full max-w-sm p-6 shadow-2xl"
+            >
+              <h3 className="text-lg font-bold text-dark-100 mb-3">Удалить кандидатов?</h3>
+              <p className="text-sm text-dark-400 mb-5">
+                Вы уверены, что хотите удалить {selectedIds.size} кандидат(ов)? Это действие необратимо.
+              </p>
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setShowBulkDeleteConfirm(false)} className="px-4 py-2 text-sm text-dark-400 hover:text-dark-200">Отмена</button>
+                <button
+                  onClick={handleBulkDelete}
+                  className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  Удалить ({selectedIds.size})
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {showStageSettings && <StageSettingsModal onClose={() => setShowStageSettings(false)} />}
         {showEditModal && selectedCard && (
@@ -413,6 +578,20 @@ export default function AllCandidatesPage() {
             entityName={selectedCard.name}
             onClose={() => setShowAddToVacancy(false)}
             onSuccess={() => { setShowAddToVacancy(false); fetchBoard(); toast.success('Кандидат добавлен на вакансию'); }}
+          />
+        )}
+        {showBulkAddToVacancy && (
+          <AddToVacancyModal
+            entityId={Array.from(selectedIds)[0]}
+            entityName={`${selectedIds.size} кандидат(ов)`}
+            onClose={() => setShowBulkAddToVacancy(false)}
+            onSuccess={async () => {
+              setShowBulkAddToVacancy(false);
+              toast.success(`${selectedIds.size} кандидат(ов) добавлено на вакансию`);
+              setSelectedIds(new Set());
+              fetchBoard();
+            }}
+            bulkEntityIds={Array.from(selectedIds)}
           />
         )}
       </AnimatePresence>
@@ -635,10 +814,20 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
           </InfoRow>
         )}
         {card.age && <InfoRow label="Возраст"><span className="text-dark-200">{card.age}</span></InfoRow>}
-        {card.city && <InfoRow label="Город"><span className="text-dark-200">{card.city}</span></InfoRow>}
+        {card.city && <InfoRow label="Город"><span className="text-dark-200 inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-dark-500" />{card.city}</span></InfoRow>}
         {card.salary && <InfoRow label="Зарплата"><span className="text-dark-200">{card.salary}</span></InfoRow>}
         {card.total_experience && <InfoRow label="Опыт"><span className="text-dark-200">{card.total_experience}</span></InfoRow>}
-        {card.source && <InfoRow label="Источник"><span className="text-dark-200">{card.source}</span></InfoRow>}
+        {(card.source || card.source_url) && (
+          <InfoRow label="Источник">
+            {card.source_url ? (
+              <a href={card.source_url} target="_blank" rel="noopener noreferrer" className="text-accent-400 hover:text-accent-300 transition-colors inline-flex items-center gap-1">
+                {card.source || 'Ссылка'} <ExternalLink className="w-3 h-3" />
+              </a>
+            ) : (
+              <span className="text-dark-200">{card.source}</span>
+            )}
+          </InfoRow>
+        )}
 
         {/* Tags row */}
         <InfoRow label="Метки">

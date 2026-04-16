@@ -14,6 +14,7 @@ interface AddToVacancyModalProps {
   entityName: string;
   onClose: () => void;
   onSuccess: () => void;
+  bulkEntityIds?: number[];
 }
 
 // Source options for candidates
@@ -30,7 +31,8 @@ export default function AddToVacancyModal({
   entityId,
   entityName,
   onClose,
-  onSuccess
+  onSuccess,
+  bulkEntityIds,
 }: AddToVacancyModalProps) {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -69,8 +71,11 @@ export default function AddToVacancyModal({
 
     setLoading(true);
     try {
-      await applyEntityToVacancy(entityId, selectedVacancy.id, source || undefined);
-      toast.success('Кандидат добавлен в вакансию');
+      const ids = bulkEntityIds && bulkEntityIds.length > 0 ? bulkEntityIds : [entityId];
+      for (const id of ids) {
+        await applyEntityToVacancy(id, selectedVacancy.id, source || undefined);
+      }
+      toast.success(ids.length > 1 ? `${ids.length} кандидат(ов) добавлено в вакансию` : 'Кандидат добавлен в вакансию');
       onSuccess();
     } catch (error: any) {
       toast.error(getErrorDetail(error, 'Ошибка при добавлении'));
