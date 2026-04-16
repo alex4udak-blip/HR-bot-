@@ -1610,12 +1610,72 @@ async def delete_application(
     logger.info(f"Deleted application {application_id}")
 
 
+# === Recruiter Stats for Vacancy ===
+
+class RecruiterStat(BaseModel):
+    user_id: int
+    name: str
+    candidate_count: int
+
+@router.get("/{vacancy_id}/recruiter-stats", response_model=List[RecruiterStat])
+async def get_vacancy_recruiter_stats(
+    vacancy_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(check_vacancy_access)
+):
+    """Get per-recruiter candidate counts for a vacancy."""
+    org = await get_user_org(current_user, db)
+
+    vacancy_result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id)
+    )
+    vacancy = vacancy_result.scalar()
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    if not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
+
+    assigned_ids = vacancy.assigned_to or []
+    if not assigned_ids:
+        return []
+
+    # Get candidate counts per recruiter (created_by)
+    counts_result = await db.execute(
+        select(VacancyApplication.created_by, func.count(VacancyApplication.id))
+        .where(
+            VacancyApplication.vacancy_id == vacancy_id,
+            VacancyApplication.created_by.in_(assigned_ids)
+        )
+        .group_by(VacancyApplication.created_by)
+    )
+    counts_map = {row[0]: row[1] for row in counts_result.all()}
+
+    # Get recruiter names
+    users_result = await db.execute(
+        select(User.id, User.name).where(User.id.in_(assigned_ids))
+    )
+    users = users_result.all()
+
+    return [
+        RecruiterStat(
+            user_id=uid,
+            name=name or f"User #{uid}",
+            candidate_count=counts_map.get(uid, 0)
+        )
+        for uid, name in users
+    ]
+
+
 # === Kanban Board Endpoints ===
 
 @router.get("/{vacancy_id}/kanban", response_model=KanbanBoard)
 async def get_kanban_board(
     vacancy_id: int,
     limit_per_column: int = Query(50, ge=1, le=200, description="Max candidates per column"),
+    created_by: Optional[int] = Query(None, description="Filter by recruiter who added the candidate"),
+    applied_after: Optional[str] = Query(None, description="Filter candidates applied after this date (YYYY-MM-DD)"),
+    applied_before: Optional[str] = Query(None, description="Filter candidates applied before this date (YYYY-MM-DD)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
@@ -1648,23 +1708,49 @@ async def get_kanban_board(
         (ApplicationStage.rejected, "Отказ", [ApplicationStage.rejected]),
     ]
 
+    # Build extra filter conditions for recruiter / date range
+    extra_filters = []
+    if created_by is not None:
+        extra_filters.append(VacancyApplication.created_by == created_by)
+    if applied_after:
+        try:
+            dt_after = datetime.strptime(applied_after, "%Y-%m-%d")
+            extra_filters.append(VacancyApplication.applied_at >= dt_after)
+        except ValueError:
+            pass
+    if applied_before:
+        try:
+            dt_before = datetime.strptime(applied_before, "%Y-%m-%d")
+            # Include the whole day
+            dt_before = dt_before.replace(hour=23, minute=59, second=59)
+            extra_filters.append(VacancyApplication.applied_at <= dt_before)
+        except ValueError:
+            pass
+
     # Get total counts per stage (for UI to show "X more" indicators)
-    counts_result = await db.execute(
+    count_query = (
         select(VacancyApplication.stage, func.count(VacancyApplication.id))
         .where(VacancyApplication.vacancy_id == vacancy_id)
-        .group_by(VacancyApplication.stage)
     )
+    for f in extra_filters:
+        count_query = count_query.where(f)
+    counts_result = await db.execute(count_query.group_by(VacancyApplication.stage))
     stage_total_counts = {row[0]: row[1] for row in counts_result.all()}
 
     # Get applications per stage with limit (optimized queries)
     all_apps = []
     for display_stage, _, query_stages in stage_config:
-        stage_result = await db.execute(
+        stage_query = (
             select(VacancyApplication)
             .where(
                 VacancyApplication.vacancy_id == vacancy_id,
                 VacancyApplication.stage.in_(query_stages)
             )
+        )
+        for f in extra_filters:
+            stage_query = stage_query.where(f)
+        stage_result = await db.execute(
+            stage_query
             .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
             .limit(limit_per_column)
         )

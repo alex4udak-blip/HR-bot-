@@ -576,7 +576,7 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
           onClick={onAddToVacancy}
           className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
         >
-          <Plus className="w-4 h-4" /> На вакансию
+          <Plus className="w-4 h-4" /> Переместить
         </button>
         <button
           onClick={onEdit}

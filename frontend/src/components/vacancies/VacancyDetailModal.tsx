@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
@@ -18,7 +18,8 @@ import {
   XCircle,
   TrendingUp,
   ExternalLink,
-  Share2
+  Share2,
+  UserCheck
 } from 'lucide-react';
 import type { Vacancy } from '@/types';
 import {
@@ -29,6 +30,8 @@ import {
   VACANCY_STATUS_COLORS
 } from '@/types';
 import { formatSalary, formatDate } from '@/utils';
+import { getVacancyRecruiterStats } from '@/services/api';
+import type { RecruiterStat } from '@/services/api';
 import ShareModal from '@/components/common/ShareModal';
 
 interface VacancyDetailModalProps {
@@ -40,6 +43,16 @@ interface VacancyDetailModalProps {
 
 export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare = true }: VacancyDetailModalProps) {
   const [showShareModal, setShowShareModal] = useState(false);
+  const [recruiterStats, setRecruiterStats] = useState<RecruiterStat[]>([]);
+
+  // Fetch recruiter stats when vacancy has assigned recruiters
+  useEffect(() => {
+    if (vacancy.assigned_to && vacancy.assigned_to.length > 0) {
+      getVacancyRecruiterStats(vacancy.id)
+        .then(setRecruiterStats)
+        .catch(() => {});
+    }
+  }, [vacancy.id, vacancy.assigned_to]);
 
   // Calculate stats
   const totalCandidates = vacancy.applications_count || 0;
@@ -231,6 +244,31 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* Assigned Recruiters */}
+          {recruiterStats.length > 0 && (
+            <div className="p-4 glass-light rounded-lg">
+              <h3 className="text-sm font-medium text-white/60 mb-3 flex items-center gap-1.5">
+                <UserCheck className="w-4 h-4" />
+                Назначенные рекрутеры
+              </h3>
+              <div className="space-y-2">
+                {recruiterStats.map((r) => (
+                  <div key={r.user_id} className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-white/5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full bg-cyan-500/20 flex items-center justify-center text-cyan-400 text-xs font-medium">
+                        {r.name.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="text-sm">{r.name}</span>
+                    </div>
+                    <span className="text-xs text-white/50 bg-white/5 px-2 py-0.5 rounded-full">
+                      {r.candidate_count} {r.candidate_count === 1 ? 'кандидат' : r.candidate_count < 5 ? 'кандидата' : 'кандидатов'}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           )}

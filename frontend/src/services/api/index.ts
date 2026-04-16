@@ -341,6 +341,8 @@ export {
   // Vacancy assignment
   assignVacancy,
   takeVacancy,
+  // Recruiter stats
+  getVacancyRecruiterStats,
   // AI Scoring
   calculateCompatibilityScore,
   findBestMatchesForVacancy,
@@ -358,6 +360,7 @@ export type {
   ApplicationCreate,
   ApplicationUpdate,
   AssignableUser,
+  RecruiterStat,
   KanbanFilters
 } from './vacancies';
 

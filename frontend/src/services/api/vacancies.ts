@@ -157,6 +157,21 @@ export const deleteApplication = async (applicationId: number): Promise<void> =>
 };
 
 // ============================================================
+// RECRUITER STATS API
+// ============================================================
+
+export interface RecruiterStat {
+  user_id: number;
+  name: string;
+  candidate_count: number;
+}
+
+export const getVacancyRecruiterStats = async (vacancyId: number): Promise<RecruiterStat[]> => {
+  const { data } = await deduplicatedGet<RecruiterStat[]>(`/vacancies/${vacancyId}/recruiter-stats`);
+  return data;
+};
+
+// ============================================================
 // KANBAN BOARD API
 // ============================================================
 

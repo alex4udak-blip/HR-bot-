@@ -1294,7 +1294,7 @@ export default function RecruiterFunnelsPage() {
                                       ) : (
                                         <Plus className="w-4 h-4" />
                                       )}
-                                      На вакансию
+                                      Переместить
                                     </button>
                                     {showAddToVacancy && (
                                       <div className="absolute top-full left-0 mt-1 w-72 max-h-64 overflow-y-auto z-50 bg-dark-800 border border-white/[0.1] rounded-xl shadow-xl">
