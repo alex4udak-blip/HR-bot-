@@ -45,7 +45,6 @@ export default function SendEmailModal({
   const [loading, setLoading] = useState(true);
   const [previewing, setPreviewing] = useState(false);
   const [sending, setSending] = useState(false);
-  const [previewHtml, setPreviewHtml] = useState('');
   const [showPreview, setShowPreview] = useState(false);
 
   const loadTemplates = useCallback(async () => {
