@@ -143,7 +143,6 @@ export default function Layout() {
   const [expandedFunnels, setExpandedFunnels] = useState(false);
   const [expandedRequests, setExpandedRequests] = useState(true);
   const [sidebarVacancy, setSidebarVacancy] = useState<Vacancy | null>(null);
-  const [sidebarVacancyLoading, setSidebarVacancyLoading] = useState(false);
 
   useEffect(() => {
     if (activeBlock === 'hr') {
@@ -152,15 +151,11 @@ export default function Layout() {
   }, [activeBlock, fetchVacancies]);
 
   const openVacancyModal = useCallback(async (id: number) => {
-    setSidebarVacancyLoading(true);
     try {
       const v = await getVacancy(id);
       setSidebarVacancy(v);
     } catch {
-      // fallback: navigate to vacancy page
       navigate(`/vacancies/${id}`);
-    } finally {
-      setSidebarVacancyLoading(false);
     }
   }, [navigate]);
 
