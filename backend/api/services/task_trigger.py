@@ -709,19 +709,55 @@ async def create_tasks_from_message(
                     target_project = p
                     break
 
-        # Resolve assignee from hint — search by name, then by chat title
+        # Resolve assignee from hint — prioritize chat owner, then search by name
         assignee_id = user.id
         assignee_display = user_name
         assignee_hint = task_data.get("assignee_name")
         if assignee_hint:
             hint_lower = assignee_hint.lower()
-            # 1. Direct search by User.name
-            assignee_result = await db.execute(
-                select(User).where(User.name.ilike(f"%{assignee_hint}%"))
-            )
-            found_user = assignee_result.scalar_one_or_none()
+            found_user = None
 
-            # 2. If not found, search by chat title (chats named like "RND - Дима (Разработчик)")
+            # 1. PRIORITY: Check if the current chat's owner matches the hint
+            #    (e.g., chat "RND - Евгений" → owner is the correct Евгений)
+            if chat_id:
+                chat_search_result = await db.execute(
+                    select(Chat).where(Chat.telegram_chat_id == chat_id)
+                )
+                current_chat = chat_search_result.scalar_one_or_none()
+                if current_chat and current_chat.owner_id:
+                    owner_result = await db.execute(
+                        select(User).where(User.id == current_chat.owner_id)
+                    )
+                    chat_owner = owner_result.scalar_one_or_none()
+                    if chat_owner:
+                        owner_name_lower = (chat_owner.name or "").lower()
+                        # Check if hint matches chat owner name
+                        if hint_lower in owner_name_lower or owner_name_lower in hint_lower:
+                            found_user = chat_owner
+                            logger.info(f"🎯 Assignee matched to chat owner: {chat_owner.name}")
+                        # Also check chat title contains the hint (e.g. "RND - Евгений")
+                        chat_title = (current_chat.custom_name or current_chat.title or "").lower()
+                        if not found_user and hint_lower in chat_title:
+                            found_user = chat_owner
+                            logger.info(f"🎯 Assignee matched via chat title to owner: {chat_owner.name}")
+
+            # 2. Search org members by name (scoped to org, not global)
+            if not found_user:
+                org_members_result = await db.execute(
+                    select(User)
+                    .join(OrgMember, OrgMember.user_id == User.id)
+                    .where(OrgMember.org_id == org_id)
+                    .where(User.name.ilike(f"%{assignee_hint}%"))
+                )
+                candidates = list(org_members_result.scalars().all())
+                if len(candidates) == 1:
+                    found_user = candidates[0]
+                elif len(candidates) > 1:
+                    # Multiple matches — prefer chat owner if any match
+                    logger.warning(f"⚠️ Multiple users match '{assignee_hint}': {[u.name for u in candidates]}")
+                    # Don't pick randomly, keep default assignee (message sender)
+
+            # 3. If not found, search by chat title (chats named like "RND - Дима")
             if not found_user:
                 chat_search = await db.execute(
                     select(Chat).where(
@@ -730,20 +766,13 @@ async def create_tasks_from_message(
                     )
                 )
                 matched_chat = chat_search.scalar_one_or_none()
-                if matched_chat and matched_chat.entity_id:
-                    # Chat is linked to an entity — find user via entity
-                    from ..models.database import Entity
-                    entity_result = await db.execute(
-                        select(User).where(User.name.ilike(f"%{assignee_hint}%"))
+                if matched_chat and matched_chat.owner_id:
+                    owner_result = await db.execute(
+                        select(User).where(User.id == matched_chat.owner_id)
                     )
-                    # Try finding user by the chat's owner
-                    if matched_chat.owner_id:
-                        owner_result = await db.execute(
-                            select(User).where(User.id == matched_chat.owner_id)
-                        )
-                        found_user = owner_result.scalar_one_or_none()
+                    found_user = owner_result.scalar_one_or_none()
 
-            # 3. If still not found, try searching org members by first name
+            # 4. If still not found, try first name match among org members
             if not found_user:
                 all_members_result = await db.execute(
                     select(User)
@@ -752,13 +781,11 @@ async def create_tasks_from_message(
                 )
                 all_members = all_members_result.scalars().all()
                 for m in all_members:
-                    # Match first name: "Дима" in "Дмитрий Иванов" — check first name similarity
                     member_name_lower = (m.name or "").lower()
                     member_first = member_name_lower.split()[0] if member_name_lower else ""
                     if hint_lower in member_name_lower or member_name_lower in hint_lower:
                         found_user = m
                         break
-                    # Common Russian diminutives
                     if hint_lower.startswith(member_first[:3]) and len(member_first) >= 3:
                         found_user = m
                         break
