@@ -179,6 +179,43 @@ async def ensure_shadow_columns():
             print('Adding assigned_to_all column to vacancies...')
             await conn.execute(text('ALTER TABLE vacancies ADD COLUMN assigned_to_all BOOLEAN DEFAULT false'))
 
+        # Seed default email templates for all orgs
+        result = await conn.execute(text('SELECT id FROM organizations'))
+        org_ids = [r[0] for r in result.fetchall()]
+        for oid in org_ids:
+            # Welcome template
+            exists = await conn.execute(text(
+                \"SELECT 1 FROM email_templates WHERE org_id = :oid AND template_type = 'welcome' AND is_default = true\"
+            ), {'oid': oid})
+            if not exists.fetchone():
+                print(f'Seeding welcome email template for org {oid}...')
+                await conn.execute(text(\"\"\"
+                    INSERT INTO email_templates (org_id, name, template_type, subject, body_html, body_text, is_active, is_default, variables, tags, created_at, updated_at)
+                    VALUES (:oid, 'Приветственное письмо', 'welcome',
+                        'Добро пожаловать в {{company_name}}!',
+                        '<p>Здравствуйте, {{candidate_name}}!</p><p>Мы рады сообщить, что вы успешно прошли отбор на позицию <b>{{vacancy_title}}</b> в компании {{company_name}}.</p><p>Мы уверены, что ваш опыт и навыки станут ценным вкладом в нашу команду.</p><p>Если у вас есть вопросы, не стесняйтесь обращаться.</p><p>С уважением,<br>{{hr_name}}</p>',
+                        'Здравствуйте, {{candidate_name}}! Мы рады сообщить, что вы успешно прошли отбор на позицию {{vacancy_title}} в компании {{company_name}}. С уважением, {{hr_name}}',
+                        true, true,
+                        '[\"candidate_name\", \"vacancy_title\", \"company_name\", \"hr_name\"]'::json,
+                        '[]'::json, now(), now())
+                \"\"\"), {'oid': oid})
+            # Rejection template
+            exists = await conn.execute(text(
+                \"SELECT 1 FROM email_templates WHERE org_id = :oid AND template_type = 'rejection' AND is_default = true\"
+            ), {'oid': oid})
+            if not exists.fetchone():
+                print(f'Seeding rejection email template for org {oid}...')
+                await conn.execute(text(\"\"\"
+                    INSERT INTO email_templates (org_id, name, template_type, subject, body_html, body_text, is_active, is_default, variables, tags, created_at, updated_at)
+                    VALUES (:oid, 'Письмо-отказ', 'rejection',
+                        'Ответ по вашему отклику — {{company_name}}',
+                        '<p>Здравствуйте, {{candidate_name}}!</p><p>Благодарим вас за интерес к позиции <b>{{vacancy_title}}</b> в {{company_name}} и время, уделённое на прохождение отбора.</p><p>К сожалению, в этот раз мы приняли решение в пользу другого кандидата. Это не умаляет ваших профессиональных качеств — конкурс был очень высоким.</p><p>Мы сохраним ваше резюме и обязательно свяжемся, если появится подходящая вакансия.</p><p>Желаем успехов в поиске!<br>С уважением,<br>{{hr_name}}</p>',
+                        'Здравствуйте, {{candidate_name}}! Благодарим за интерес к позиции {{vacancy_title}}. К сожалению, мы приняли решение в пользу другого кандидата. Желаем успехов! С уважением, {{hr_name}}',
+                        true, true,
+                        '[\"candidate_name\", \"vacancy_title\", \"company_name\", \"hr_name\"]'::json,
+                        '[]'::json, now(), now())
+                \"\"\"), {'oid': oid})
+
         print('All columns verified')
 
     # ALTER TYPE ADD VALUE cannot run inside a transaction — use raw connection

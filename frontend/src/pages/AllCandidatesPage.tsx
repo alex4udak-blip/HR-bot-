@@ -41,6 +41,7 @@ import type {
   RecruiterOption,
 } from '@/services/api/candidates';
 import { updateEntity, uploadEntityFile, getEntityFiles, downloadEntityFile } from '@/services/api/entities';
+import SendEmailModal from '@/components/entities/SendEmailModal';
 import type { EntityFile } from '@/services/api/entities';
 import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
 import { useAuthStore } from '@/stores/authStore';
@@ -455,13 +456,10 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
 
   // --- Action handlers ---
 
+  const [showEmailModal, setShowEmailModal] = useState(false);
+
   const handleEmail = () => {
-    if (card.email) {
-      window.open(`mailto:${card.email}`, '_blank');
-      toast.success('Открываем почтовый клиент');
-    } else {
-      toast.error('Email кандидата не указан');
-    }
+    setShowEmailModal(true);
   };
 
   const handleInterview = () => {
@@ -553,6 +551,18 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
     <div className="p-5 max-w-3xl">
       {/* Hidden file input */}
       <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" />
+
+      {/* Send Email Modal */}
+      <AnimatePresence>
+        {showEmailModal && (
+          <SendEmailModal
+            entityId={card.id}
+            entityName={card.name}
+            entityEmail={card.email}
+            onClose={() => setShowEmailModal(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* ---- Top action buttons (Huntflow: Взять на вакансию | Редактировать) ---- */}
       <div className="flex items-center gap-3 mb-5">
