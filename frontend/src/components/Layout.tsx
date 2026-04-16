@@ -45,6 +45,10 @@ import type { Notification as AppNotification } from '@/services/api/notificatio
 import BackgroundEffects from './BackgroundEffects';
 import ThemeToggle from './ThemeToggle';
 import { OnboardingTour } from './onboarding';
+import { VacancyForm } from '@/components/vacancies';
+import { getVacancy } from '@/services/api/vacancies';
+import type { Vacancy } from '@/types';
+import { AnimatePresence, motion } from 'framer-motion';
 import clsx from 'clsx';
 
 // Note: iconMap and labelMap removed — using section-based navigation now
@@ -138,12 +142,27 @@ export default function Layout() {
   const { vacancies, fetchVacancies } = useVacancyStore();
   const [expandedFunnels, setExpandedFunnels] = useState(false);
   const [expandedRequests, setExpandedRequests] = useState(true);
+  const [sidebarVacancy, setSidebarVacancy] = useState<Vacancy | null>(null);
+  const [sidebarVacancyLoading, setSidebarVacancyLoading] = useState(false);
 
   useEffect(() => {
     if (activeBlock === 'hr') {
       fetchVacancies();
     }
   }, [activeBlock, fetchVacancies]);
+
+  const openVacancyModal = useCallback(async (id: number) => {
+    setSidebarVacancyLoading(true);
+    try {
+      const v = await getVacancy(id);
+      setSidebarVacancy(v);
+    } catch {
+      // fallback: navigate to vacancy page
+      navigate(`/vacancies/${id}`);
+    } finally {
+      setSidebarVacancyLoading(false);
+    }
+  }, [navigate]);
 
   // Count of draft vacancies assigned to current user (for "Заявки" badge)
   const assignedDraftCount = useMemo(() => {
@@ -492,28 +511,21 @@ export default function Layout() {
                           {expandedRequests && requestVacancies.length > 0 && (
                             <div className="ml-4 pl-3 border-l border-white/5 mt-0.5 space-y-0.5">
                               {requestVacancies.map(v => (
-                                <NavLink
+                                <button
                                   key={v.id}
-                                  to={`/vacancies?v=${v.id}`}
-                                  className={({ isActive }) =>
-                                    clsx(
-                                      'flex items-center gap-2 py-1.5 px-2 rounded-md text-xs transition-all',
-                                      isActive
-                                        ? 'text-blue-400 bg-blue-500/10'
-                                        : 'text-white/40 hover:text-white/60 hover:bg-white/[0.03]'
-                                    )
-                                  }
+                                  onClick={() => openVacancyModal(v.id)}
+                                  className="w-full flex items-center gap-2 py-1.5 px-2 rounded-md text-xs transition-all text-white/40 hover:text-white/60 hover:bg-white/[0.03]"
                                 >
                                   <span className={clsx(
                                     'w-1.5 h-1.5 rounded-full flex-shrink-0',
                                     v.status === 'draft' ? 'bg-orange-400' :
                                     v.status === 'open' ? 'bg-green-400' : 'bg-yellow-400'
                                   )} />
-                                  <span className="truncate">{v.title}</span>
+                                  <span className="truncate text-left">{v.title}</span>
                                   {v.hiring_manager_name && (
                                     <span className="text-white/20 truncate ml-auto text-[10px]">{v.hiring_manager_name}</span>
                                   )}
-                                </NavLink>
+                                </button>
                               ))}
                             </div>
                           )}
@@ -833,6 +845,39 @@ export default function Layout() {
 
       {/* Onboarding Tour */}
       <OnboardingTour autoStart />
+
+      {/* Sidebar Vacancy Modal */}
+      <AnimatePresence>
+        {sidebarVacancy && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          >
+            <div
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setSidebarVacancy(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white dark:bg-dark-900 rounded-2xl shadow-2xl"
+            >
+              <VacancyForm
+                key={`sidebar-${sidebarVacancy.id}`}
+                vacancy={sidebarVacancy}
+                onClose={() => setSidebarVacancy(null)}
+                onSuccess={() => {
+                  setSidebarVacancy(null);
+                  fetchVacancies();
+                }}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
