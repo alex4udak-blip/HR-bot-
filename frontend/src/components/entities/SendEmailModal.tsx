@@ -74,7 +74,6 @@ export default function SendEmailModal({
       });
       setSubject(preview.subject);
       setBody(preview.body_html);
-      setPreviewHtml(preview.body_html);
     } catch {
       toast.error('Не удалось загрузить превью');
     } finally {
