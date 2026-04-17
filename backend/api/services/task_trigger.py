@@ -167,10 +167,49 @@ TRIGGER_PATTERNS = [
 
 TRIGGER_REGEX = re.compile('|'.join(TRIGGER_PATTERNS), re.IGNORECASE)
 
+# ── Негативные паттерны: НЕ создавать задачу ────────────────────────
+# Прошедшее время, вопросы, предположения — не являются постановкой задач
+_NEGATIVE_PATTERNS = [
+    r'должн\w*\s+был[аоиь]?\b',    # "должны были", "должен был" — past tense
+    r'надо\s+было\b',               # "надо было сделать" — past tense
+    r'нужно\s+было\b',              # "нужно было" — past tense
+    r'следовало\b',                  # "следовало бы"
+    r'стоило\b',                     # "стоило бы"
+    r'\bмб\b',                       # "мб сделать" — speculation (может быть)
+    r'может\s+быть',                 # "может быть сделать"
+    r'может\s+стоит',               # "может стоит"
+    r'а\s+что\s+если',              # "а что если сделать"
+    r'что\s+если\b',                # "что если"
+    r'не\s+кажется\s+ли',           # rhetorical
+    r'интересно\s*,?\s*(?:а\s+)?(?:можно|стоит|надо)',  # "интересно, а можно..."
+]
+NEGATIVE_REGEX = re.compile('|'.join(_NEGATIVE_PATTERNS), re.IGNORECASE)
+
+
+def _is_question(text: str) -> bool:
+    """Check if message is a question (ends with ? or starts with question words)."""
+    stripped = text.strip()
+    if stripped.endswith('?'):
+        return True
+    # Question words at start of sentence
+    if re.match(r'^(а |как |зачем |почему |можно ли |нет ли |разве )', stripped, re.IGNORECASE):
+        return True
+    return False
+
 
 def should_trigger(text: str) -> bool:
     """Check if message contains trigger words (fast regex pre-filter)."""
-    return bool(TRIGGER_REGEX.search(text))
+    if not TRIGGER_REGEX.search(text):
+        return False
+    # Reject if negative patterns match (past tense, speculation, questions)
+    if NEGATIVE_REGEX.search(text):
+        logger.debug(f"🚫 Negative pattern matched, skipping: {text[:80]}...")
+        return False
+    # Reject short questions — they are discussions, not task assignments
+    if _is_question(text) and len(text.strip()) < 120:
+        logger.debug(f"🚫 Short question rejected: {text[:80]}...")
+        return False
+    return True
 
 
 async def should_trigger_ai(text: str) -> bool:
@@ -181,7 +220,17 @@ async def should_trigger_ai(text: str) -> bool:
     if len(text.strip()) < 10:
         return False
 
-    # Fast regex check first — if it matches, no need for AI
+    # Negative patterns always reject — even before AI check
+    if NEGATIVE_REGEX.search(text):
+        logger.info(f"🚫 Negative pattern matched, skipping AI: {text[:60]}...")
+        return False
+
+    # Short questions are almost never tasks
+    if _is_question(text) and len(text.strip()) < 120:
+        logger.info(f"🚫 Short question rejected: {text[:60]}...")
+        return False
+
+    # Fast regex check — if it matches, verify with AI for borderline cases
     if should_trigger(text):
         logger.info(f"🔍 Regex trigger matched, skipping AI check")
         return True
@@ -197,7 +246,15 @@ async def should_trigger_ai(text: str) -> bool:
         response = await client.messages.create(
             model="claude-haiku-4-20250414",
             max_tokens=10,
-            messages=[{"role": "user", "content": f"""Это сообщение из рабочего чата. Содержит ли оно план работ, задачи на день, или постановку задач кому-то?
+            messages=[{"role": "user", "content": f"""Это сообщение из рабочего чата. Содержит ли оно КОНКРЕТНУЮ постановку задач или план работ?
+
+Отвечай НЕТ если:
+- Это вопрос или предложение ("мб сделать?", "а что если?")
+- Это обсуждение того, что БЫЛО сделано или ДОЛЖНО БЫЛО быть сделано
+- Это просто разговор/обсуждение без конкретного поручения
+- Человек рассуждает, а не ставит задачу
+
+Отвечай ДА только если человек ЯВНО ставит задачу, даёт поручение, или описывает свой план действий.
 
 Сообщение:
 {text}
