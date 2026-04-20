@@ -968,8 +968,8 @@ function SystemUsers({ currentUser }: { currentUser: any }) {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('Пользователь удалён');
     },
-    onError: () => {
-      toast.error('Ошибка удаления');
+    onError: (error: any) => {
+      toast.error(getErrorDetail(error, 'Ошибка удаления'));
     },
   });
 

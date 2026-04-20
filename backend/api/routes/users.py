@@ -513,6 +513,14 @@ async def delete_user(
             "DELETE FROM entity_analyses WHERE user_id = :user_id",
             "DELETE FROM report_subscriptions WHERE user_id = :user_id",
             "DELETE FROM impersonation_logs WHERE superadmin_id = :user_id OR impersonated_user_id = :user_id",
+            "DELETE FROM refresh_tokens WHERE user_id = :user_id",
+            "DELETE FROM notifications WHERE user_id = :user_id",
+            "DELETE FROM project_members WHERE user_id = :user_id",
+            "DELETE FROM time_off WHERE user_id = :user_id",
+            "DELETE FROM interns WHERE user_id = :user_id",
+            "DELETE FROM blockers WHERE user_id = :user_id",
+            "DELETE FROM recruiter_workspaces WHERE recruiter_id = :user_id",
+            "DELETE FROM user_settings WHERE user_id = :user_id",
         ]
 
         for query in delete_queries:
@@ -522,8 +530,12 @@ async def delete_user(
                 logger.debug(f"Delete query skipped: {qe}")
 
         # Nullify optional foreign keys using raw SQL (handles missing columns gracefully)
+        # IMPORTANT: This list must cover all FKs to users.id where ondelete is not CASCADE.
+        # If a column was added later without a migration, the DB constraint may still
+        # default to NO ACTION, which would block DELETE FROM users — hence the explicit nullify.
         nullify_queries = [
             "UPDATE chats SET owner_id = NULL WHERE owner_id = :user_id",
+            "UPDATE chats SET shadow_owner_id = NULL WHERE shadow_owner_id = :user_id",
             "UPDATE call_recordings SET owner_id = NULL WHERE owner_id = :user_id",
             "UPDATE entities SET created_by = NULL WHERE created_by = :user_id",
             "UPDATE entities SET transferred_to_id = NULL WHERE transferred_to_id = :user_id",
@@ -533,6 +545,24 @@ async def delete_user(
             "UPDATE invitations SET invited_by_id = NULL WHERE invited_by_id = :user_id",
             "UPDATE invitations SET used_by_id = NULL WHERE used_by_id = :user_id",
             "UPDATE criteria_presets SET created_by = NULL WHERE created_by = :user_id",
+            "UPDATE projects SET created_by = NULL WHERE created_by = :user_id",
+            "UPDATE project_tasks SET assignee_id = NULL WHERE assignee_id = :user_id",
+            "UPDATE project_tasks SET created_by = NULL WHERE created_by = :user_id",
+            "UPDATE vacancies SET created_by = NULL WHERE created_by = :user_id",
+            "UPDATE vacancies SET hiring_manager_id = NULL WHERE hiring_manager_id = :user_id",
+            "UPDATE vacancy_applications SET created_by = NULL WHERE created_by = :user_id",
+            "UPDATE stage_transitions SET changed_by = NULL WHERE changed_by = :user_id",
+            "UPDATE entity_files SET uploaded_by = NULL WHERE uploaded_by = :user_id",
+            "UPDATE departments SET lead_id = NULL WHERE lead_id = :user_id",
+            "UPDATE notifications SET assigned_by = NULL WHERE assigned_by = :user_id",
+            "UPDATE time_off SET approved_by = NULL WHERE approved_by = :user_id",
+            "UPDATE document_templates SET created_by = NULL WHERE created_by = :user_id",
+            "UPDATE email_templates SET created_by = NULL WHERE created_by = :user_id",
+            "UPDATE email_templates SET updated_by = NULL WHERE updated_by = :user_id",
+            "UPDATE email_messages SET sent_by = NULL WHERE sent_by = :user_id",
+            "UPDATE blockers SET resolved_by = NULL WHERE resolved_by = :user_id",
+            "UPDATE intern_reviews SET reviewed_by = NULL WHERE reviewed_by = :user_id",
+            "UPDATE intern_status_history SET changed_by = NULL WHERE changed_by = :user_id",
             """UPDATE messages SET sender_telegram_id = NULL WHERE sender_telegram_id IN (
                 SELECT telegram_id FROM users WHERE id = :user_id
             )""",
@@ -542,8 +572,22 @@ async def delete_user(
             try:
                 await db.execute(text(query), {"user_id": user_id})
             except Exception as qe:
-                # Column might not exist yet, skip
-                logger.debug(f"Skipping query (column may not exist): {qe}")
+                # Column or table might not exist yet, skip
+                logger.debug(f"Skipping query (column/table may not exist): {qe}")
+
+        # Also handle JSON array fields that reference user IDs
+        json_array_queries = [
+            # vacancies.assigned_to is a JSON array of user IDs
+            """UPDATE vacancies SET assigned_to = COALESCE(
+                (SELECT jsonb_agg(elem) FROM jsonb_array_elements(assigned_to::jsonb) elem WHERE elem::int != :user_id),
+                '[]'::jsonb
+            )::json WHERE assigned_to::jsonb @> :uid_json::jsonb""",
+        ]
+        for query in json_array_queries:
+            try:
+                await db.execute(text(query), {"user_id": user_id, "uid_json": f"[{user_id}]"})
+            except Exception as qe:
+                logger.debug(f"JSON cleanup skipped: {qe}")
 
         # Flush all changes to ensure FK cleanup is applied
         await db.flush()
@@ -553,6 +597,17 @@ async def delete_user(
         await db.commit()
         logger.info(f"Successfully deleted user {user_id}")
     except Exception as e:
-        logger.error(f"Error deleting user {user_id}: {e}")
+        logger.error(f"Error deleting user {user_id}: {e}", exc_info=True)
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
+        # Surface a clean message about the FK that blocked deletion
+        msg = str(e)
+        if "violates foreign key constraint" in msg or "ForeignKeyViolation" in msg:
+            # Extract constraint/table name from PG error for diagnostic
+            import re as _re
+            m = _re.search(r'on table "(\w+)"', msg)
+            table = m.group(1) if m else "unknown"
+            raise HTTPException(
+                status_code=409,
+                detail=f"Не удалось удалить: пользователь связан с записями в таблице '{table}'. Свяжитесь с администратором.",
+            )
+        raise HTTPException(status_code=500, detail=f"Не удалось удалить пользователя: {msg[:200]}")
