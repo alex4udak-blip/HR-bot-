@@ -323,7 +323,12 @@ export default function VacanciesPage() {
         if (hasAssignment) return false;
       }
 
-      // Status filter
+      // Main status tab filter (top tabs)
+      if (statusFilter !== 'all' && vacancy.status !== statusFilter) {
+        return false;
+      }
+
+      // Quick filter statuses (multi-select inside dropdown)
       if (quickFilters.statuses.length > 0 && !quickFilters.statuses.includes(vacancy.status)) {
         return false;
       }
@@ -363,7 +368,7 @@ export default function VacanciesPage() {
 
       return true;
     });
-  }, [vacancies, quickFilters, getComparableSalary, showOnlyMine, assignmentFilter, user]);
+  }, [vacancies, quickFilters, getComparableSalary, showOnlyMine, assignmentFilter, statusFilter, user]);
 
   // Sync quick filters to URL
   useEffect(() => {
