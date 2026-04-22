@@ -292,12 +292,13 @@ async def update_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Any project member can edit/move tasks; only managers can reassign
+    # Reassignment: managers, task creator, and current assignee can reassign
     is_manager = await can_manage_tasks(project, current_user, org, db)
-    if not is_manager:
-        # Non-managers cannot reassign tasks to other people
-        if data.assignee_id is not None and data.assignee_id != task.assignee_id:
-            raise HTTPException(status_code=403, detail="You cannot reassign tasks")
+    is_task_creator = task.created_by == current_user.id
+    is_task_assignee = task.assignee_id == current_user.id
+    if data.assignee_id is not None and data.assignee_id != task.assignee_id:
+        if not (is_manager or is_task_creator or is_task_assignee):
+            raise HTTPException(status_code=403, detail="Только менеджер проекта, создатель задачи или её исполнитель может изменить исполнителя")
 
     update_data = data.model_dump(exclude_unset=True)
     old_status = task.status
@@ -356,13 +357,11 @@ async def delete_task(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a task."""
+    """Delete a task. Allowed for project editors, the task creator, and its current assignee."""
     org = await get_user_org(current_user, db)
     project = await db.get(Project, project_id)
     if not project or project.org_id != org.id:
         raise HTTPException(status_code=404, detail="Project not found")
-    if not await can_edit_project(project, current_user, org, db):
-        raise HTTPException(status_code=403, detail="Access denied")
 
     result = await db.execute(
         select(ProjectTask).where(ProjectTask.id == task_id, ProjectTask.project_id == project_id)
@@ -370,6 +369,12 @@ async def delete_task(
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    can_edit = await can_edit_project(project, current_user, org, db)
+    is_task_creator = task.created_by == current_user.id
+    is_task_assignee = task.assignee_id == current_user.id
+    if not (can_edit or is_task_creator or is_task_assignee):
+        raise HTTPException(status_code=403, detail="Удалить задачу может только менеджер проекта, её создатель или исполнитель")
 
     await db.delete(task)
     await db.flush()

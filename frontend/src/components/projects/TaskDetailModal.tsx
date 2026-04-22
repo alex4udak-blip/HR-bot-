@@ -25,6 +25,7 @@ import {
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import * as api from '@/services/api';
+import { getErrorDetail } from '@/utils';
 import type {
   ProjectTask,
   ProjectMember,
@@ -1148,8 +1149,8 @@ export default function TaskDetailModal({
         toast.success('Задача обновлена');
         onTaskUpdated?.();
       }
-    } catch {
-      toast.error(isCreateMode ? 'Не удалось создать задачу' : 'Не удалось сохранить изменения');
+    } catch (err) {
+      toast.error(getErrorDetail(err, isCreateMode ? 'Не удалось создать задачу' : 'Не удалось сохранить изменения'));
     } finally {
       setSaving(false);
     }
@@ -1161,8 +1162,8 @@ export default function TaskDetailModal({
       await api.deleteProjectTask(projectId, task.id);
       toast.success('Задача удалена');
       onTaskDeleted?.();
-    } catch {
-      toast.error('Не удалось удалить задачу');
+    } catch (err) {
+      toast.error(getErrorDetail(err, 'Не удалось удалить задачу'));
     }
   };
 
