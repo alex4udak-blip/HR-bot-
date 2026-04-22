@@ -82,7 +82,7 @@ async def check_duplicate(
     conditions = []
     # Primary identifier: resume URL (works even when contacts are hidden).
     if data.source_url:
-        conditions.append(Entity.extra_data["source_url"].astext == data.source_url)
+        conditions.append(Entity.extra_data.op('->>')('source_url') == data.source_url)
     if data.email:
         conditions.append(Entity.email == data.email)
     if data.phone:
@@ -195,7 +195,7 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
             select(Entity).where(
                 Entity.org_id == org.id,
                 Entity.type == EntityType.candidate,
-                Entity.extra_data["source_url"].astext == data.source_url,
+                Entity.extra_data.op('->>')('source_url') == data.source_url,
             ).limit(1)
         )
         duplicate = dup_by_url.scalar_one_or_none()
