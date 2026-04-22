@@ -110,6 +110,25 @@ const STATUS_MAP = {
   archived: { label: 'Архив', badge: 'badge-default' },
 };
 
+// Stage labels for pipeline history (VacancyApplication.stage values)
+const STAGE_LABELS = {
+  applied: 'Заявка',
+  screening: 'Скрининг',
+  phone_screen: 'Интервью назначено',
+  interview: 'Интервью пройдено',
+  assessment: 'Практика',
+  offer: 'Оффер',
+  hired: 'Принят',
+  rejected: 'Отказ',
+  withdrawn: 'Отозван',
+};
+
+function formatDateShort(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('ru', { day: 'numeric', month: 'short', year: '2-digit' });
+}
+
 function showParsedData() {
   document.getElementById('parsedName').textContent = parsedData.full_name || '\u2014';
 
@@ -187,14 +206,39 @@ async function checkDuplicatesOnLoad() {
       dupStatus.innerHTML = `⚠️ <b>Уже в базе (${dups.length}):</b>` +
         dups.map(d => {
           const st = STATUS_MAP[d.status] || { label: d.status, badge: 'badge-default' };
-          const url = `${serverUrl}/candidates/${d.entity_id}`;
+          // Correct URL: open candidate in Kanban board via entity query param
+          const url = `${serverUrl}/all-candidates?entity=${d.entity_id}`;
           const info = [];
           if (d.email) info.push(d.email);
           if (d.phone) info.push(d.phone);
           const infoStr = info.length ? ` <span class="dup-details">${info.join(' · ')}</span>` : '';
+
+          // Build pipeline history block: list of vacancies + stages
+          const apps = d.applications || [];
+          let historyHtml = '';
+          if (apps.length > 0) {
+            historyHtml = '<div class="dup-history"><div class="dup-history-title">📋 История:</div>' +
+              apps.map(a => {
+                const stageLabel = STAGE_LABELS[a.stage] || a.stage;
+                const when = formatDateShort(a.last_stage_change_at || a.applied_at);
+                return `<div class="dup-history-row">
+                  <span class="dup-history-vacancy">${a.vacancy_title}</span>
+                  <span class="dup-history-stage">${stageLabel}</span>
+                  ${when ? `<span class="dup-history-date">${when}</span>` : ''}
+                </div>`;
+              }).join('') +
+              '</div>';
+          } else {
+            historyHtml = '<div class="dup-history dup-history-empty">Пока нет откликов на вакансии</div>';
+          }
+
           return `<div class="dup-item">
-            <a href="#" class="dup-name" data-url="${url}">👤 ${d.name}</a>
-            <span class="dup-badge ${st.badge}">${st.label}</span>${infoStr}
+            <div class="dup-head">
+              <a href="#" class="dup-name" data-url="${url}">👤 ${d.name}</a>
+              <span class="dup-badge ${st.badge}">${st.label}</span>
+            </div>
+            ${infoStr ? `<div class="dup-info">${infoStr}</div>` : ''}
+            ${historyHtml}
           </div>`;
         }).join('');
 

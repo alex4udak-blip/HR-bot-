@@ -13,7 +13,7 @@ from datetime import datetime
 from ..database import get_db
 from ..models.database import (
     Entity, EntityType, EntityStatus, EntityFile, EntityFileType,
-    User, Vacancy, VacancyApplication, ApplicationStage,
+    User, Vacancy, VacancyApplication, ApplicationStage, StageTransition,
 )
 from ..services.auth import get_current_user, get_user_org
 
@@ -105,19 +105,57 @@ async def check_duplicate(
     )
     duplicates = dup_result.scalars().all()
 
+    # For each duplicate, load their work history: vacancy applications + recent stage transitions
+    result_list = []
+    for d in duplicates:
+        # All vacancy applications for this candidate
+        apps_result = await db.execute(
+            select(VacancyApplication, Vacancy.title)
+            .join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
+            .where(VacancyApplication.entity_id == d.id)
+            .order_by(VacancyApplication.applied_at.desc())
+        )
+        applications = []
+        for app, vacancy_title in apps_result.all():
+            applications.append({
+                "vacancy_id": app.vacancy_id,
+                "vacancy_title": vacancy_title,
+                "stage": app.stage.value if app.stage else "applied",
+                "rating": app.rating,
+                "applied_at": app.applied_at.isoformat() if app.applied_at else None,
+                "last_stage_change_at": app.last_stage_change_at.isoformat() if app.last_stage_change_at else None,
+            })
+
+        # Recent stage transitions (last 10) — quick history view
+        trans_result = await db.execute(
+            select(StageTransition)
+            .where(StageTransition.entity_id == d.id)
+            .order_by(StageTransition.created_at.desc())
+            .limit(10)
+        )
+        transitions = [
+            {
+                "from_stage": t.from_stage,
+                "to_stage": t.to_stage,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+            }
+            for t in trans_result.scalars().all()
+        ]
+
+        result_list.append({
+            "entity_id": d.id,
+            "name": d.name,
+            "email": d.email,
+            "phone": d.phone,
+            "status": d.status.value if d.status else "unknown",
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "applications": applications,
+            "recent_transitions": transitions,
+        })
+
     return DuplicateCheckResponse(
         is_duplicate=len(duplicates) > 0,
-        duplicates=[
-            {
-                "entity_id": d.id,
-                "name": d.name,
-                "email": d.email,
-                "phone": d.phone,
-                "status": d.status.value if d.status else "unknown",
-                "created_at": d.created_at.isoformat() if d.created_at else None,
-            }
-            for d in duplicates
-        ],
+        duplicates=result_list,
     )
 
 @router.post("/parse")
