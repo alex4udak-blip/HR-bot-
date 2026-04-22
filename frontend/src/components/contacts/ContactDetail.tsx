@@ -200,10 +200,21 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
     setEntityFilesVersion(v => v + 1);
   }, []);
 
-  // Load photo from entity files
+  // Load photo — prefer the URL parsed by the magic-button extension
+  // (stored in extra_data.photo_url), fall back to uploaded entity files.
   useEffect(() => {
     let mounted = true;
+    let createdObjectUrl: string | null = null;
+
     const loadPhoto = async () => {
+      // 1) Direct URL from HH/LinkedIn/Habr parser
+      const parsedPhotoUrl = (entity.extra_data as any)?.photo_url;
+      if (parsedPhotoUrl && typeof parsedPhotoUrl === 'string') {
+        if (mounted) setPhotoUrl(parsedPhotoUrl);
+        return;
+      }
+
+      // 2) Uploaded image file
       const photoFile = entityFiles.find(f =>
         (f.file_type === 'portfolio' || f.file_type === 'other') &&
         f.mime_type?.startsWith('image/') &&
@@ -219,16 +230,20 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
       if (photoFile) {
         try {
           const blob = await api.downloadEntityFile(entity.id, photoFile.id);
-          if (mounted) setPhotoUrl(URL.createObjectURL(blob));
+          if (mounted) {
+            createdObjectUrl = URL.createObjectURL(blob);
+            setPhotoUrl(createdObjectUrl);
+          }
         } catch { /* ignore */ }
       }
     };
     loadPhoto();
     return () => {
       mounted = false;
-      if (photoUrl) URL.revokeObjectURL(photoUrl);
+      // Only revoke object URLs we created (not external http URLs from extra_data)
+      if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl);
     };
-  }, [entity.id, entityFiles]);
+  }, [entity.id, entity.extra_data, entityFiles]);
 
   // Load resume files as inline images
   useEffect(() => {
