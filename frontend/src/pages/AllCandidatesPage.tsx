@@ -799,7 +799,7 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
           <img
             src={card.photo_url}
             alt={card.name}
-            className="w-[72px] h-[88px] rounded-lg object-cover flex-shrink-0 bg-accent-500/20"
+            className="w-[120px] h-[150px] rounded-xl object-cover flex-shrink-0 bg-accent-500/20"
             onError={(e) => {
               const el = e.currentTarget as HTMLImageElement;
               el.style.display = 'none';
@@ -808,7 +808,7 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
           />
         ) : null}
         <div className={clsx(
-          'w-[72px] h-[88px] rounded-lg bg-accent-500/20 flex items-center justify-center text-accent-400 text-xl font-bold flex-shrink-0',
+          'w-[120px] h-[150px] rounded-xl bg-accent-500/20 flex items-center justify-center text-accent-400 text-4xl font-bold flex-shrink-0',
           card.photo_url && 'hidden'
         )}>
           {getInitials(card.name)}
