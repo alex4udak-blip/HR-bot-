@@ -64,40 +64,79 @@
     // Final placeholder will be rebuilt after fields are parsed (see end of function)
 
     // --- Photo ---
-    // Try multiple selectors for resume photo (hh.ru changes DOM frequently)
+    // hh.ru photo URLs are hosted on *.hhcdn.ru; a real photo URL contains
+    // "/photo/" or a numeric filename (e.g. /12345.jpeg). We reject generic
+    // placeholders (silhouettes, icons, logos).
+    const isRealPhotoUrl = (src) => {
+      if (!src || typeof src !== 'string') return false;
+      if (!src.startsWith('http') && !src.startsWith('//')) return false;
+      const lower = src.toLowerCase();
+      if (lower.includes('placeholder') || lower.includes('empty-avatar') ||
+          lower.includes('default-avatar') || lower.includes('silhouette') ||
+          lower.includes('no-photo') || lower.endsWith('.svg')) return false;
+      // Must look like a user-uploaded image on hh's CDN
+      return lower.includes('hhcdn') || lower.includes('/photo/') ||
+             /\/\d{4,}\.(?:jpe?g|png|webp)/i.test(lower);
+    };
+
     const photoSelectors = [
       '[data-qa="resume-photo"] img',
       '[data-qa="resume-photo-image"]',
+      '[data-qa="resume-personal-photo"] img',
       '.resume-photo img',
       '.resume-header-photo img',
       '[data-qa="resume-avatar"] img',
       '.resume-avatar img',
-      // Magritte-based layout selectors
+      // Magritte-based layout (current hh.ru 2025+)
       '[class*="resume-photo"] img',
-      '[class*="resume-header"] img[src*="hhcdn"]',
-      'img[data-qa="bloko-image"][src*="hhcdn"]',
+      '[class*="resume-header"] img',
+      '[class*="avatar"] img',
+      'img[data-qa="bloko-image"]',
+      // Fallback: any <img> whose src looks like an hh photo CDN path
+      'img[src*="hhcdn"]',
     ];
     for (const sel of photoSelectors) {
-      const photoEl = document.querySelector(sel);
-      if (photoEl) {
-        const src = photoEl.src || photoEl.getAttribute('src');
-        if (src && src.startsWith('http') && !src.includes('placeholder')) {
-          data.photo_url = src;
+      const els = document.querySelectorAll(sel);
+      for (const el of els) {
+        const src = el.src || el.getAttribute('src') || '';
+        const normalized = src.startsWith('//') ? 'https:' + src : src;
+        if (isRealPhotoUrl(normalized)) {
+          data.photo_url = normalized;
           break;
         }
       }
+      if (data.photo_url) break;
     }
-    // Fallback: look for any img with hhcdn.ru avatar-like URL
+    // Last-resort: scan every img on the page
     if (!data.photo_url) {
-      const allImgs = document.querySelectorAll('img[src*="hhcdn.ru"]');
+      const allImgs = document.querySelectorAll('img');
       for (const img of allImgs) {
-        const src = img.src || '';
-        if (src.includes('/photo/') || src.includes('/avatar/') || src.match(/\/\d+\.(?:jpg|jpeg|png)/i)) {
-          data.photo_url = src;
+        const src = (img.src || '').trim();
+        const normalized = src.startsWith('//') ? 'https:' + src : src;
+        if (isRealPhotoUrl(normalized)) {
+          data.photo_url = normalized;
           break;
         }
       }
     }
+    // Also check background-image on div containers (hh sometimes uses CSS backgrounds)
+    if (!data.photo_url) {
+      const candidates = document.querySelectorAll(
+        '[class*="photo"], [class*="avatar"], [data-qa*="photo"], [data-qa*="avatar"]'
+      );
+      for (const el of candidates) {
+        const bg = getComputedStyle(el).backgroundImage || '';
+        const match = bg.match(/url\(["']?([^"')]+)["']?\)/);
+        if (match) {
+          const normalized = match[1].startsWith('//') ? 'https:' + match[1] : match[1];
+          if (isRealPhotoUrl(normalized)) {
+            data.photo_url = normalized;
+            break;
+          }
+        }
+      }
+    }
+    console.log('[HR-Bot Magic Button] photo_url:', data.photo_url || '(not found)');
 
     // --- Position/title ---
     data.position = getTextMulti([
