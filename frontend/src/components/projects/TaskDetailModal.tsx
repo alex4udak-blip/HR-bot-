@@ -739,16 +739,42 @@ function SubtasksTab({
       setShowAdd(false);
       await loadSubtasks();
       toast.success('Подзадача создана');
-    } catch {
-      toast.error('Не удалось создать подзадачу');
+    } catch (err) {
+      toast.error(getErrorDetail(err, 'Не удалось создать подзадачу'));
     } finally {
       setCreating(false);
     }
   };
 
-  const getStatusLabel = (slug: string): string => {
-    const st = statuses.find((s) => s.slug === slug);
-    return st?.name || DEFAULT_STATUS_LABELS[slug] || slug;
+  const handleDeleteSubtask = async (subtaskId: number) => {
+    if (!confirm('Удалить подзадачу?')) return;
+    try {
+      await api.deleteProjectTask(projectId, subtaskId);
+      setSubtasks((prev) => prev.filter((s) => s.id !== subtaskId));
+      toast.success('Подзадача удалена');
+    } catch (err) {
+      toast.error(getErrorDetail(err, 'Не удалось удалить подзадачу'));
+    }
+  };
+
+  const handleChangeStatus = async (subtaskId: number, newStatus: string) => {
+    try {
+      await api.updateProjectTask(projectId, subtaskId, { status: newStatus });
+      setSubtasks((prev) => prev.map((s) => (s.id === subtaskId ? { ...s, status: newStatus } : s)));
+    } catch (err) {
+      toast.error(getErrorDetail(err, 'Не удалось изменить статус'));
+    }
+  };
+
+  const handleChangeAssignee = async (subtaskId: number, assigneeId: number | null) => {
+    try {
+      const updated = await api.updateProjectTask(projectId, subtaskId, {
+        assignee_id: assigneeId ?? undefined,
+      });
+      setSubtasks((prev) => prev.map((s) => (s.id === subtaskId ? updated : s)));
+    } catch (err) {
+      toast.error(getErrorDetail(err, 'Не удалось изменить исполнителя'));
+    }
   };
 
   const getStatusColor = (slug: string): string | undefined => {
@@ -833,9 +859,9 @@ function SubtasksTab({
             return (
               <div
                 key={st.id}
-                className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-3"
+                className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 group"
               >
-                <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
                   {dotColor ? (
                     <span
                       className="w-2.5 h-2.5 rounded-full flex-shrink-0"
@@ -850,21 +876,50 @@ function SubtasksTab({
                       'bg-purple-400': st.status === 'review',
                     })} />
                   )}
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className={clsx('text-sm truncate', st.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-900')}>
                       {st.title}
                     </p>
-                    <span className="text-[10px] text-gray-400">{getStatusLabel(st.status)}</span>
+                    <select
+                      value={st.status}
+                      onChange={(e) => handleChangeStatus(st.id, e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-[10px] text-gray-500 bg-transparent border-none p-0 cursor-pointer hover:text-gray-700 focus:outline-none"
+                    >
+                      {statuses.length > 0 ? (
+                        statuses.map((s) => (
+                          <option key={s.slug} value={s.slug}>{s.name}</option>
+                        ))
+                      ) : (
+                        Object.entries(DEFAULT_STATUS_LABELS).map(([slug, label]) => (
+                          <option key={slug} value={slug}>{label}</option>
+                        ))
+                      )}
+                    </select>
                   </div>
                 </div>
-                {st.assignee_name && (
-                  <div className="flex items-center gap-1.5 flex-shrink-0 ml-3">
-                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center">
-                      <span className="text-[8px] text-white font-medium">{st.assignee_name.charAt(0).toUpperCase()}</span>
-                    </div>
-                    <span className="text-xs text-gray-500">{st.assignee_name}</span>
-                  </div>
-                )}
+                <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                  <select
+                    value={st.assignee_id ?? ''}
+                    onChange={(e) => handleChangeAssignee(st.id, e.target.value ? Number(e.target.value) : null)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-xs text-gray-600 bg-white border border-gray-200 rounded-md px-2 py-1 cursor-pointer hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="">Без исполнителя</option>
+                    {members.map((m) => (
+                      <option key={m.user_id} value={m.user_id}>
+                        {m.user_name || m.user_email || `User ${m.user_id}`}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteSubtask(st.id); }}
+                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-all"
+                    title="Удалить подзадачу"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             );
           })}
