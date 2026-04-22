@@ -415,6 +415,7 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         "experience_descriptions": data.experience_descriptions,
         "skills": data.skills,
         "languages": data.languages,
+        "photo_url": data.photo_url,
     }
     background_tasks.add_task(
         _generate_resume_files, entity_id, org_id, user_id, candidate_data
@@ -445,9 +446,34 @@ async def _generate_resume_files(
         markdown = await generate_ai_summary(candidate_data)
         logger.info(f"AI summary generated for entity {entity_id}: {len(markdown)} chars")
 
-        # 2. PDF
+        # 1b. Download photo if URL was parsed by the extension. Photo is used
+        # both inside the PDF and saved as a separate image file on the entity
+        # so the UI can load it from files even if extra_data.photo_url is lost.
+        photo_bytes = None
+        photo_mime = None
+        photo_url = candidate_data.get("photo_url")
+        if photo_url:
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                    resp = await client.get(photo_url)
+                    if resp.status_code == 200:
+                        ct = resp.headers.get("content-type", "").lower()
+                        if ct.startswith("image/"):
+                            photo_bytes = resp.content
+                            photo_mime = ct.split(";")[0].strip()
+                            logger.info(
+                                f"Downloaded candidate photo for entity {entity_id}: "
+                                f"{len(photo_bytes)} bytes, {photo_mime}"
+                            )
+                        else:
+                            logger.warning(f"Photo URL returned non-image content-type: {ct}")
+            except Exception as e:
+                logger.warning(f"Failed to download photo for entity {entity_id}: {e}")
+
+        # 2. PDF (with photo if we have it)
         candidate_name = candidate_data.get("full_name", "Кандидат")
-        pdf_bytes = generate_candidate_pdf(markdown, candidate_name)
+        pdf_bytes = generate_candidate_pdf(markdown, candidate_name, photo_bytes=photo_bytes)
         logger.info(f"PDF generated for entity {entity_id}: {len(pdf_bytes)} bytes")
 
         # 3. PDF → JPEG pages
@@ -456,6 +482,28 @@ async def _generate_resume_files(
 
         # 4. Save to DB
         async with AsyncSessionLocal() as db:
+            # Save candidate photo as a standalone image file (when available)
+            if photo_bytes and photo_mime:
+                ext = {
+                    "image/jpeg": "jpg",
+                    "image/jpg": "jpg",
+                    "image/png": "png",
+                    "image/webp": "webp",
+                }.get(photo_mime, "jpg")
+                photo_file = EntityFile(
+                    entity_id=entity_id,
+                    org_id=org_id,
+                    file_type=EntityFileType.other,
+                    file_name=f"Фото_{candidate_name.replace(' ', '_')}.{ext}",
+                    file_path="",
+                    file_size=len(photo_bytes),
+                    mime_type=photo_mime,
+                    description="Фото кандидата (HH)",
+                    uploaded_by=user_id,
+                    file_data=photo_bytes,
+                )
+                db.add(photo_file)
+
             # Save PDF
             pdf_file = EntityFile(
                 entity_id=entity_id,

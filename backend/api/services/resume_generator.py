@@ -18,7 +18,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    HRFlowable,
+    HRFlowable, Image,
 )
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -205,8 +205,16 @@ def _fallback_summary(data: dict) -> str:
     return "\n".join(lines)
 
 
-def generate_candidate_pdf(markdown_content: str, candidate_name: str) -> bytes:
-    """Generate a styled PDF from markdown content."""
+def generate_candidate_pdf(
+    markdown_content: str,
+    candidate_name: str,
+    photo_bytes: Optional[bytes] = None,
+) -> bytes:
+    """Generate a styled PDF from markdown content.
+
+    If photo_bytes is provided, renders the photo at the top of the first
+    page next to the candidate's name (inside a 2-column table).
+    """
     use_cyrillic = _register_fonts()
     font_regular = 'DejaVuSans' if use_cyrillic else 'Helvetica'
     font_bold = 'DejaVuSans-Bold' if use_cyrillic else 'Helvetica-Bold'
@@ -258,6 +266,30 @@ def generate_candidate_pdf(markdown_content: str, candidate_name: str) -> bytes:
     ))
 
     story = []
+
+    # Header: photo (left, 25mm square) + candidate name (right), if photo is provided
+    if photo_bytes:
+        try:
+            photo_img = Image(io.BytesIO(photo_bytes), width=25 * mm, height=30 * mm)
+            header_name = Paragraph(
+                f"<b>{_escape(candidate_name)}</b>",
+                styles['CandTitle'],
+            )
+            header_table = Table(
+                [[photo_img, header_name]],
+                colWidths=[28 * mm, None],
+            )
+            header_table.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                ('TOPPADDING', (0, 0), (-1, -1), 0),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ]))
+            story.append(header_table)
+            story.append(Spacer(1, 6))
+        except Exception as e:
+            logger.warning(f"Failed to embed photo in PDF: {e}")
 
     # Parse markdown
     lines = markdown_content.split('\n')
