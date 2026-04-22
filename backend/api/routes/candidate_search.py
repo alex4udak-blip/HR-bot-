@@ -726,7 +726,7 @@ async def get_candidates_kanban(
                 recruiter_name=recruiter_map.get(e.created_by),
                 created_at=e.created_at,
                 tags=e.tags or [],
-                photo_url=None,
+                photo_url=ed.get("photo_url") if ed else None,
                 company=getattr(e, 'company', None),
                 city=ed.get("city"),
                 age=ed.get("age"),

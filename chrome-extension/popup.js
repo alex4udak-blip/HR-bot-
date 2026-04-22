@@ -214,6 +214,7 @@ async function checkDuplicatesOnLoad() {
       email: parsedData.email || manualEmail || null,
       phone: parsedData.phone || null,
       telegram: parsedData.telegram || null,
+      source_url: parsedData.source_url || null,
     });
 
     if (checkResp.success && checkResp.data.is_duplicate) {

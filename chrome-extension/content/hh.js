@@ -47,8 +47,10 @@
       'h1[data-qa*="personal"]',
       'h2[data-qa="resume-personal-name"]',
     ]);
-    // Fallback: if contacts are hidden, hh.ru renders the heading as
-    // just "Кандидат" — parse any top-level heading that contains it.
+    // Detect closed-contact placeholder: hh.ru renders heading as "Кандидат"
+    // when contacts require paid unlock. Mark this so we build a better
+    // placeholder AFTER we've parsed position/city/age below.
+    const rawNameIsPlaceholder = !data.full_name || /^\s*кандидат\s*$/i.test(data.full_name);
     if (!data.full_name) {
       const headings = document.querySelectorAll('h1, h2');
       for (const h of headings) {
@@ -59,14 +61,7 @@
         }
       }
     }
-    // Last-resort placeholder so the popup still opens
-    if (!data.full_name) {
-      // Extract resume ID from URL for a stable placeholder
-      const match = window.location.pathname.match(/\/resume\/([a-f0-9]+)/i);
-      const shortId = match ? match[1].slice(0, 8) : '';
-      data.full_name = shortId ? `Кандидат hh.ru/${shortId}` : 'Кандидат hh.ru';
-      data.name_is_placeholder = true;
-    }
+    // Final placeholder will be rebuilt after fields are parsed (see end of function)
 
     // --- Photo ---
     // Try multiple selectors for resume photo (hh.ru changes DOM frequently)
@@ -350,6 +345,24 @@
       if (org || name) education.push([org, name].filter(Boolean).join(' — '));
     }
     data.education = education;
+
+    // ----- Build a more useful placeholder name when contacts are hidden -----
+    // Real name is unknown; build one from what IS visible so each candidate
+    // is distinguishable in the kanban and dedup can work by source_url.
+    if (rawNameIsPlaceholder) {
+      const parts = [];
+      if (data.position) parts.push(data.position);
+      if (data.city) parts.push(data.city);
+      if (data.age) parts.push(data.age);
+      if (parts.length > 0) {
+        data.full_name = parts.join(', ');
+      } else {
+        const match = window.location.pathname.match(/\/resume\/([a-f0-9]+)/i);
+        const shortId = match ? match[1].slice(0, 8) : '';
+        data.full_name = shortId ? `Кандидат hh.ru/${shortId}` : 'Кандидат hh.ru';
+      }
+      data.name_is_placeholder = true;
+    }
 
     return data;
   }

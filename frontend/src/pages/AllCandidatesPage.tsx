@@ -382,9 +382,18 @@ export default function AllCandidatesPage() {
                       >
                         {isChecked ? <CheckSquare className="w-4 h-4 text-accent-400" /> : <Square className="w-4 h-4 text-dark-500 hover:text-dark-300" />}
                       </div>
-                      <div className="w-9 h-9 rounded-full bg-accent-500/20 flex items-center justify-center text-accent-400 text-sm font-medium flex-shrink-0">
-                        {initials}
-                      </div>
+                      {card.photo_url ? (
+                        <img
+                          src={card.photo_url}
+                          alt={card.name}
+                          className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-accent-500/20"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-accent-500/20 flex items-center justify-center text-accent-400 text-sm font-medium flex-shrink-0">
+                          {initials}
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <div className="text-sm font-medium text-dark-100 truncate">{card.name}</div>
@@ -785,8 +794,23 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
             </p>
           )}
         </div>
-        {/* Avatar photo placeholder */}
-        <div className="w-[72px] h-[88px] rounded-lg bg-accent-500/20 flex items-center justify-center text-accent-400 text-xl font-bold flex-shrink-0">
+        {/* Avatar photo */}
+        {card.photo_url ? (
+          <img
+            src={card.photo_url}
+            alt={card.name}
+            className="w-[72px] h-[88px] rounded-lg object-cover flex-shrink-0 bg-accent-500/20"
+            onError={(e) => {
+              const el = e.currentTarget as HTMLImageElement;
+              el.style.display = 'none';
+              el.nextElementSibling?.classList.remove('hidden');
+            }}
+          />
+        ) : null}
+        <div className={clsx(
+          'w-[72px] h-[88px] rounded-lg bg-accent-500/20 flex items-center justify-center text-accent-400 text-xl font-bold flex-shrink-0',
+          card.photo_url && 'hidden'
+        )}>
           {getInitials(card.name)}
         </div>
       </div>

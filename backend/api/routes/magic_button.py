@@ -62,6 +62,7 @@ class DuplicateCheckRequest(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     telegram: Optional[str] = None
+    source_url: Optional[str] = None
 
 class DuplicateCheckResponse(BaseModel):
     is_duplicate: bool
@@ -79,19 +80,25 @@ async def check_duplicate(
         raise HTTPException(400, "User not in organization")
 
     conditions = []
+    # Primary identifier: resume URL (works even when contacts are hidden).
+    if data.source_url:
+        conditions.append(Entity.extra_data["source_url"].astext == data.source_url)
     if data.email:
         conditions.append(Entity.email == data.email)
     if data.phone:
         conditions.append(Entity.phone == data.phone)
     if data.telegram:
         conditions.append(Entity.telegram_usernames.cast(String).ilike(f"%{data.telegram.lower()}%"))
-    # Name match
-    name_parts = data.full_name.strip().split()
-    if len(name_parts) >= 2:
-        # Match by last name + first name (ignore middle name typos)
-        conditions.append(Entity.name.ilike(f"%{name_parts[0]}%{name_parts[1]}%"))
-    else:
-        conditions.append(Entity.name.ilike(f"%{data.full_name}%"))
+    # Name match — skip for generic placeholders so every "Кандидат ..."
+    # doesn't match every other placeholder in the DB.
+    name_lower = (data.full_name or "").strip().lower()
+    is_placeholder_name = name_lower.startswith("кандидат")
+    if data.full_name and not is_placeholder_name:
+        name_parts = data.full_name.strip().split()
+        if len(name_parts) >= 2:
+            conditions.append(Entity.name.ilike(f"%{name_parts[0]}%{name_parts[1]}%"))
+        else:
+            conditions.append(Entity.name.ilike(f"%{data.full_name}%"))
 
     if not conditions:
         return DuplicateCheckResponse(is_duplicate=False, duplicates=[])
@@ -178,28 +185,45 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
     if not org:
         raise HTTPException(400, "User not in organization")
 
-    # Check for duplicates by email, phone, telegram, name
+    # Check for duplicates — prefer source_url (unique per resume, reliable
+    # even when contacts are hidden on hh.ru), then fall back to contact-based
+    # matching. Name-based matching is skipped if the name looks like a generic
+    # placeholder so we don't collapse all "Кандидат" entries into one record.
     duplicate = None
-    conditions = []
-    if data.email:
-        conditions.append(Entity.email == data.email)
-    if data.phone:
-        conditions.append(Entity.phone == data.phone)
-    if data.telegram:
-        # telegram_usernames is a JSON array, check if it contains the value
-        conditions.append(Entity.telegram_usernames.cast(String).ilike(f"%{data.telegram.lower()}%"))
-    # Also check by name (fuzzy)
-    conditions.append(Entity.name.ilike(f"%{data.full_name}%"))
-
-    if conditions:
-        dup_result = await db.execute(
+    if data.source_url:
+        dup_by_url = await db.execute(
             select(Entity).where(
                 Entity.org_id == org.id,
                 Entity.type == EntityType.candidate,
-                or_(*conditions)
+                Entity.extra_data["source_url"].astext == data.source_url,
             ).limit(1)
         )
-        duplicate = dup_result.scalar_one_or_none()
+        duplicate = dup_by_url.scalar_one_or_none()
+
+    if duplicate is None:
+        conditions = []
+        if data.email:
+            conditions.append(Entity.email == data.email)
+        if data.phone:
+            conditions.append(Entity.phone == data.phone)
+        if data.telegram:
+            # telegram_usernames is a JSON array, check if it contains the value
+            conditions.append(Entity.telegram_usernames.cast(String).ilike(f"%{data.telegram.lower()}%"))
+        # Name match ONLY when the name is specific (not a "Кандидат ..." placeholder)
+        name_lower = (data.full_name or "").strip().lower()
+        is_placeholder_name = name_lower.startswith("кандидат")
+        if data.full_name and not is_placeholder_name:
+            conditions.append(Entity.name.ilike(f"%{data.full_name}%"))
+
+        if conditions:
+            dup_result = await db.execute(
+                select(Entity).where(
+                    Entity.org_id == org.id,
+                    Entity.type == EntityType.candidate,
+                    or_(*conditions)
+                ).limit(1)
+            )
+            duplicate = dup_result.scalar_one_or_none()
 
     is_duplicate = duplicate is not None
     duplicate_info = None
