@@ -57,6 +57,38 @@ class MagicButtonResponse(BaseModel):
     duplicate_info: Optional[dict] = None  # who added, when, last status
     message: str
 
+class UpdatePhotoRequest(BaseModel):
+    photo_url: str
+
+
+@router.post("/entity/{entity_id}/photo")
+async def update_entity_photo(
+    entity_id: int,
+    data: UpdatePhotoRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update the photo_url stored in an entity's extra_data.
+
+    Used by the Chrome extension to backfill a photo on an already-added
+    candidate without going through the full /parse flow.
+    """
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(400, "User not in organization")
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Candidate not found")
+    ed = dict(entity.extra_data or {})
+    ed["photo_url"] = data.photo_url
+    entity.extra_data = ed
+    await db.commit()
+    return {"success": True, "photo_url": data.photo_url}
+
+
 class DuplicateCheckRequest(BaseModel):
     full_name: str
     email: Optional[str] = None
@@ -184,6 +216,13 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(400, "User not in organization")
+
+    # Log incoming photo_url so Railway logs show whether extension sent it
+    logger.info(
+        f"magic-button parse: source={data.source} url={data.source_url} "
+        f"photo_url={'<yes>' if data.photo_url else '<no>'} "
+        f"({(data.photo_url or '')[:100]})"
+    )
 
     # Check for duplicates — prefer source_url (unique per resume, reliable
     # even when contacts are hidden on hh.ru), then fall back to contact-based

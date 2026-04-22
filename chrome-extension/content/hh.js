@@ -71,12 +71,16 @@
       if (!src || typeof src !== 'string') return false;
       if (!src.startsWith('http') && !src.startsWith('//')) return false;
       const lower = src.toLowerCase();
+      // Reject obvious placeholders / icons / ui chrome
       if (lower.includes('placeholder') || lower.includes('empty-avatar') ||
           lower.includes('default-avatar') || lower.includes('silhouette') ||
-          lower.includes('no-photo') || lower.endsWith('.svg')) return false;
-      // Must look like a user-uploaded image on hh's CDN
-      return lower.includes('hhcdn') || lower.includes('/photo/') ||
-             /\/\d{4,}\.(?:jpe?g|png|webp)/i.test(lower);
+          lower.includes('no-photo') || lower.includes('noavatar') ||
+          lower.endsWith('.svg') ||
+          lower.includes('/icons/') || lower.includes('/logo/') ||
+          lower.includes('sprite')) return false;
+      // Must look like a real image file (jpg/jpeg/png/webp anywhere in the URL,
+      // including before a query string)
+      return /\.(?:jpe?g|png|webp)(?:[?#]|$)/i.test(lower);
     };
 
     const photoSelectors = [
