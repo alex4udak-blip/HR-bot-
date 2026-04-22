@@ -267,31 +267,34 @@ def generate_candidate_pdf(
 
     story = []
 
-    # Header: photo (left, 25mm square) + candidate name (right), if photo is provided
+    # Header: photo (left, 30x40mm) + candidate name (right), if photo is provided
+    photo_rendered = False
     if photo_bytes:
         try:
-            photo_img = Image(io.BytesIO(photo_bytes), width=25 * mm, height=30 * mm)
-            header_name = Paragraph(
-                f"<b>{_escape(candidate_name)}</b>",
-                styles['CandTitle'],
-            )
+            photo_img = Image(io.BytesIO(photo_bytes), width=30 * mm, height=40 * mm)
+            photo_img.hAlign = 'LEFT'
+            name_para = Paragraph(_escape(candidate_name), styles['CandTitle'])
             header_table = Table(
-                [[photo_img, header_name]],
-                colWidths=[28 * mm, None],
+                [[photo_img, name_para]],
+                colWidths=[34 * mm, None],
             )
             header_table.setStyle(TableStyle([
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('LEFTPADDING', (0, 0), (-1, -1), 0),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (0, 0), 6),
+                ('RIGHTPADDING', (1, 0), (1, 0), 0),
                 ('TOPPADDING', (0, 0), (-1, -1), 0),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
             ]))
             story.append(header_table)
-            story.append(Spacer(1, 6))
+            story.append(Spacer(1, 8))
+            photo_rendered = True
         except Exception as e:
             logger.warning(f"Failed to embed photo in PDF: {e}")
 
-    # Parse markdown
+    # Parse markdown — skip the first H1 if we already rendered the name
+    # inside the photo header block to avoid a duplicate title.
+    skipped_first_h1 = not photo_rendered
     lines = markdown_content.split('\n')
     for line in lines:
         line = line.rstrip()
@@ -311,6 +314,10 @@ def generate_candidate_pdf(
             ))
             story.append(Paragraph(_escape(stripped[3:]), styles['CandH2']))
         elif stripped.startswith('# '):
+            if not skipped_first_h1:
+                # First H1 — skip, we already rendered the name in the photo header
+                skipped_first_h1 = True
+                continue
             story.append(Paragraph(_escape(stripped[2:]), styles['CandTitle']))
         elif stripped.startswith('**') and stripped.endswith('**'):
             story.append(Paragraph(
