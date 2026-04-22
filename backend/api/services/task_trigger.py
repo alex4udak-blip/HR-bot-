@@ -655,83 +655,31 @@ async def create_tasks_from_message(
 
     logger.info(f"🏢 Org resolved: org_id={org_id}")
 
-    # Get ALL org projects (for project_hint matching from text)
+    # Get ALL org projects (we only create tasks if message mentions one of them by name)
     all_projects_result = await db.execute(
         select(Project).where(Project.org_id == org_id)
     )
     all_projects = list(all_projects_result.scalars().all())
     logger.info(f"📂 Found {len(all_projects)} org projects: {[p.name for p in all_projects[:5]]}")
 
-    # Find user's projects (where they are a member)
-    result = await db.execute(
-        select(Project)
-        .join(ProjectMember, ProjectMember.project_id == Project.id)
-        .where(ProjectMember.user_id == user.id)
-        .where(Project.status == 'active')
-    )
-    projects = list(result.scalars().all())
-    logger.info(f"👤 User {user.name} has {len(projects)} active projects: {[p.name for p in projects[:5]]}")
-
-    # ALWAYS check if text mentions a project name — prioritize it over user's first project
+    # STRICT MATCHING: a project name MUST appear in the message text.
+    # No fallback to user's first project, no auto-creating projects — if the
+    # message doesn't mention an existing project by name, skip silently.
     text_lower = message_text.lower()
     text_matched_project = None
     for p in all_projects:
-        if p.name.lower() in text_lower:
+        # Require at least 3 chars to avoid matching very short/generic names
+        if len(p.name) >= 3 and p.name.lower() in text_lower:
             text_matched_project = p
             logger.info(f"🎯 Matched project '{p.name}' from message text")
             break
 
-    # If text mentions a project, use it (even if user is not a member)
-    if text_matched_project:
-        if text_matched_project not in projects:
-            projects.insert(0, text_matched_project)
-        else:
-            # Move matched to front
-            projects.remove(text_matched_project)
-            projects.insert(0, text_matched_project)
-
-    # If no project found but text mentions a project-like name, try to extract and auto-create
-    if not projects:
-        # Try to extract project name from the message (first line or word before numbered list)
-        project_hint = _extract_project_hint(message_text)
-        if project_hint:
-            logger.info(f"🔨 Auto-creating project '{project_hint}' for org {org_id}")
-            new_project = Project(
-                org_id=org_id,
-                name=project_hint,
-                status=ProjectStatus.active,
-                created_by=user.id,
-            )
-            db.add(new_project)
-            await db.flush()
-            # Add user as member
-            db.add(ProjectMember(
-                project_id=new_project.id,
-                user_id=user.id,
-                role=ProjectRole.developer,
-            ))
-            await db.flush()
-            projects = [new_project]
-            logger.info(f"✅ Created project '{project_hint}' (id={new_project.id})")
-
-    if not projects:
-        logger.warning(f"❌ No active projects for user {user_name} and could not auto-create")
+    if not text_matched_project:
+        logger.info(f"⏭️ No project name mentioned in message — skipping task creation")
         return []
 
-    # Use first active project as default
-    project = projects[0]
-
-    # If chat is linked to a project, prefer that project
-    if chat_id:
-        chat_result = await db.execute(
-            select(Chat).where(Chat.telegram_chat_id == chat_id)
-        )
-        chat = chat_result.scalar_one_or_none()
-        if chat and chat.entity_id:
-            for p in projects:
-                if p.id == chat.entity_id:
-                    project = p
-                    break
+    project = text_matched_project
+    projects = [project]
 
     # Get existing tasks for duplicate detection
     existing_result = await db.execute(
