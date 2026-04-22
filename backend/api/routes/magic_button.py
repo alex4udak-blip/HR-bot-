@@ -327,9 +327,15 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
             salary_currency = 'RUB'
         elif 'тенге' in sal_text or 'kzt' in sal_text or '₸' in sal_text:
             salary_currency = 'KZT'
-        # Extract numbers
-        numbers = re.findall(r'[\d\s]+', data.salary.replace('\xa0', ' '))
-        nums = [int(n.replace(' ', '')) for n in numbers if n.strip() and int(n.replace(' ', '')) > 100]
+        # Extract numbers — HH formats with various whitespace separators
+        # (regular space, U+00A0 no-break, U+2009 thin space, U+202F narrow nbsp)
+        # so we strip all whitespace-ish chars before int().
+        def _to_int(s):
+            cleaned = re.sub(r'\D', '', s)
+            return int(cleaned) if cleaned else 0
+        numbers = re.findall(r'[\d\s\u00A0\u2009\u202F]+', data.salary)
+        nums = [_to_int(n) for n in numbers if any(c.isdigit() for c in n)]
+        nums = [n for n in nums if n > 100]
         if len(nums) >= 2:
             salary_min = min(nums)
             salary_max = max(nums)
