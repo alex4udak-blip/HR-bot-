@@ -132,6 +132,21 @@ function formatDateShort(iso) {
 function showParsedData() {
   document.getElementById('parsedName').textContent = parsedData.full_name || '\u2014';
 
+  // If name is a placeholder (hh.ru closed contacts), prompt user to type it
+  const nameField = document.getElementById('nameField');
+  if (nameField) {
+    if (parsedData.name_is_placeholder) {
+      nameField.style.display = 'block';
+      const nameInput = document.getElementById('manualName');
+      if (nameInput && !nameInput.value) {
+        nameInput.placeholder = 'Например: Иванов Иван';
+        nameInput.focus();
+      }
+    } else {
+      nameField.style.display = 'none';
+    }
+  }
+
   // Show photo if available
   const photoContainer = document.getElementById('parsedPhoto');
   if (photoContainer && parsedData.photo_url) {
@@ -193,8 +208,9 @@ async function checkDuplicatesOnLoad() {
 
   try {
     const manualEmail = document.getElementById('manualEmail')?.value;
+    const manualNameForCheck = document.getElementById('manualName')?.value?.trim();
     const checkResp = await apiRequest('POST', '/api/magic-button/check-duplicate', {
-      full_name: parsedData.full_name,
+      full_name: (parsedData.name_is_placeholder && manualNameForCheck) ? manualNameForCheck : parsedData.full_name,
       email: parsedData.email || manualEmail || null,
       phone: parsedData.phone || null,
       telegram: parsedData.telegram || null,
@@ -368,8 +384,10 @@ document.getElementById('addBtn').addEventListener('click', async () => {
   btn.textContent = 'Добавляем...';
 
   try {
+    const manualName = document.getElementById('manualName')?.value?.trim();
+    const finalName = (parsedData.name_is_placeholder && manualName) ? manualName : parsedData.full_name;
     const resp = await apiRequest('POST', '/api/magic-button/parse', {
-      full_name: parsedData.full_name,
+      full_name: finalName,
       email: parsedData.email || manualEmail || null,
       phone: parsedData.phone || null,
       telegram: parsedData.telegram || null,

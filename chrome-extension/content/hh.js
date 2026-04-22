@@ -43,7 +43,30 @@
     data.full_name = getTextMulti([
       '[data-qa="resume-personal-name"]',
       '.resume-header-name',
+      'h1[class*="bloko-header"]',
+      'h1[data-qa*="personal"]',
+      'h2[data-qa="resume-personal-name"]',
     ]);
+    // Fallback: if contacts are hidden, hh.ru renders the heading as
+    // just "Кандидат" — parse any top-level heading that contains it.
+    if (!data.full_name) {
+      const headings = document.querySelectorAll('h1, h2');
+      for (const h of headings) {
+        const txt = h.textContent.trim();
+        if (txt && txt.length < 80 && /кандидат|candidate/i.test(txt)) {
+          data.full_name = txt;
+          break;
+        }
+      }
+    }
+    // Last-resort placeholder so the popup still opens
+    if (!data.full_name) {
+      // Extract resume ID from URL for a stable placeholder
+      const match = window.location.pathname.match(/\/resume\/([a-f0-9]+)/i);
+      const shortId = match ? match[1].slice(0, 8) : '';
+      data.full_name = shortId ? `Кандидат hh.ru/${shortId}` : 'Кандидат hh.ru';
+      data.name_is_placeholder = true;
+    }
 
     // --- Photo ---
     // Try multiple selectors for resume photo (hh.ru changes DOM frequently)
