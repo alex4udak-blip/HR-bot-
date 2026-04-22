@@ -680,6 +680,36 @@ async def get_candidates_kanban(
     entity_ids = [e.id for e in entities]
     vacancy_map: dict = {}
     rejection_map: dict = {}
+
+    # Bulk fetch photo files (EntityFile rows with image mime types) as a
+    # fallback when extra_data.photo_url is missing. Keyed by entity_id →
+    # download URL string the frontend can render directly in <img>.
+    photo_file_map: dict = {}
+    if entity_ids:
+        try:
+            from ..models.database import EntityFile
+            f_result = await db.execute(
+                select(EntityFile.entity_id, EntityFile.id, EntityFile.file_name)
+                .where(
+                    EntityFile.entity_id.in_(entity_ids),
+                    EntityFile.mime_type.startswith("image/"),
+                )
+                .order_by(EntityFile.id.desc())
+            )
+            for row in f_result.all():
+                # first (most recent) photo wins per entity
+                if row.entity_id not in photo_file_map:
+                    # Skip resume-page JPEGs (AI-generated profile pages) —
+                    # those are multi-page PDF renders, not a real avatar.
+                    fname = (row.file_name or "").lower()
+                    if "_стр" in fname or "профиль_" in fname or "_page" in fname:
+                        continue
+                    photo_file_map[row.entity_id] = (
+                        f"/api/entities/{row.entity_id}/files/{row.id}/download"
+                    )
+        except Exception as exc:
+            logger.warning(f"Photo file fallback query failed (non-critical): {exc}")
+
     if entity_ids:
         try:
             va_result = await db.execute(
@@ -726,7 +756,7 @@ async def get_candidates_kanban(
                 recruiter_name=recruiter_map.get(e.created_by),
                 created_at=e.created_at,
                 tags=e.tags or [],
-                photo_url=ed.get("photo_url") if ed else None,
+                photo_url=(ed.get("photo_url") if ed else None) or photo_file_map.get(e.id),
                 company=getattr(e, 'company', None),
                 city=ed.get("city"),
                 age=ed.get("age"),
