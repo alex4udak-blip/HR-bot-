@@ -365,11 +365,10 @@ function CommentsTab({
   const currentUser = useAuthStore((s) => s.user);
   const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin);
   const isOwner = useAuthStore((s) => s.isOwner);
-  const isAdmin = useAuthStore((s) => s.isAdmin);
   const canManageComment = (authorId: number): boolean => {
     if (!currentUser) return false;
     if (currentUser.id === authorId) return true;
-    return isSuperAdmin() || isOwner() || isAdmin();
+    return isSuperAdmin() || isOwner();
   };
 
   const [comments, setComments] = useState<TaskComment[]>([]);
