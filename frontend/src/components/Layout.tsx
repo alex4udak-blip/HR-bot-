@@ -298,7 +298,6 @@ export default function Layout() {
       items: [
         { path: '/projects', icon: FolderKanban, label: 'Все проекты' },
         { path: '/all-tasks', icon: ListTodo, label: 'Все задачи' },
-        { path: '/chats', icon: MessageSquare, label: 'Чаты' },
         { path: '/team', icon: Users, label: 'Команда' },
         { path: '/timeoff', icon: Calendar, label: 'Отпуска' },
         { path: '/blockers', icon: AlertTriangle, label: 'Блокеры' },
