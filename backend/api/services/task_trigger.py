@@ -49,7 +49,12 @@ _ACTIONS = [
     r'удалить', r'убрать',
     r'создать', r'создавать',
     r'реализовать', r'имплементировать', r'заимплементить',
-    r'протестировать', r'тестировать', r'потестить',
+    r'протестировать', r'протестить', r'тестировать', r'потестить', r'стестить',
+    r'откалибровать', r'калибровать', r'перекалибровать',
+    r'замерить', r'измерить', r'измерять',
+    r'собрать', r'пересобрать', r'разобрать',
+    r'снять', r'снимать',
+    r'загрузить', r'загружать', r'выгрузить', r'выгружать',
     r'задеплоить', r'деплоить', r'выкатить', r'выкатывать',
     r'отрефакторить', r'рефакторить', r'рефакторинг',
     r'оптимизировать',
@@ -127,7 +132,7 @@ TRIGGER_PATTERNS = [
     r'интегрируем', r'оптимизируем', r'внедрим', r'переделаем',
 
     # ── Планирование ──────────────────────────────────────────────
-    r'план на', r'в планах', r'планы на',
+    r'план на', r'по плану', r'планы', r'в планах', r'планы на',
     r'начну делать', r'начну работать',
     r'начинаю работать', r'начинаю делать',
     r'приступаю', r'приступлю',
@@ -662,20 +667,31 @@ async def create_tasks_from_message(
     all_projects = list(all_projects_result.scalars().all())
     logger.info(f"📂 Found {len(all_projects)} org projects: {[p.name for p in all_projects[:5]]}")
 
-    # STRICT MATCHING: a project name MUST appear in the message text.
-    # No fallback to user's first project, no auto-creating projects — if the
-    # message doesn't mention an existing project by name, skip silently.
+    # LENIENT MATCHING: normalize both sides (lowercase, strip non-alphanumerics)
+    # so "AdsCombinePro" matches "AdsCombine Pro", "ads-combine-pro" и т.д.
+    def _normalize(s: str) -> str:
+        return re.sub(r'[^a-zа-я0-9]+', '', s.lower())
+
     text_lower = message_text.lower()
+    text_normalized = _normalize(message_text)
     text_matched_project = None
     for p in all_projects:
-        # Require at least 3 chars to avoid matching very short/generic names
-        if len(p.name) >= 3 and p.name.lower() in text_lower:
+        if len(p.name) < 3:
+            continue
+        name_lower = p.name.lower()
+        name_normalized = _normalize(p.name)
+        # 1) точный substring без нормализации (как было)
+        # 2) substring после нормализации — ловит "AdsCombine Pro" ≈ "AdsCombinePro"
+        if name_lower in text_lower or (name_normalized and name_normalized in text_normalized):
             text_matched_project = p
             logger.info(f"🎯 Matched project '{p.name}' from message text")
             break
 
     if not text_matched_project:
-        logger.info(f"⏭️ No project name mentioned in message — skipping task creation")
+        logger.warning(
+            f"⏭️ No project name mentioned — available: {[p.name for p in all_projects]}; "
+            f"message: {message_text[:160]}"
+        )
         return []
 
     project = text_matched_project
@@ -709,8 +725,10 @@ async def create_tasks_from_message(
         target_project = project
         project_hint = task_data.get("project_hint")
         if project_hint:
+            hint_norm = _normalize(project_hint)
             for p in all_projects:
-                if project_hint.lower() in p.name.lower():
+                p_norm = _normalize(p.name)
+                if project_hint.lower() in p.name.lower() or (hint_norm and p_norm and hint_norm in p_norm):
                     target_project = p
                     break
 
