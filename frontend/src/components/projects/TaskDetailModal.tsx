@@ -26,6 +26,7 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import * as api from '@/services/api';
 import { getErrorDetail } from '@/utils';
+import { useAuthStore } from '@/stores/authStore';
 import type {
   ProjectTask,
   ProjectMember,
@@ -108,6 +109,44 @@ function formatFileSize(bytes: number): string {
 // ============================================================
 
 const ATTACHMENT_REGEX = /\[attachment:(\d+):([^:]+):(\d+)\]/g;
+const URL_REGEX = /(https?:\/\/[^\s<>"')]+)/g;
+const IMAGE_EXT_REGEX = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
+
+function renderTextWithLinks(text: string, keyPrefix: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let lastIdx = 0;
+  let m: RegExpExecArray | null;
+  const re = new RegExp(URL_REGEX.source, 'g');
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > lastIdx) {
+      nodes.push(
+        <span key={`${keyPrefix}-t-${lastIdx}`} className="whitespace-pre-wrap break-words">
+          {text.slice(lastIdx, m.index)}
+        </span>
+      );
+    }
+    nodes.push(
+      <a
+        key={`${keyPrefix}-u-${m.index}`}
+        href={m[1]}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 hover:text-blue-800 underline break-all"
+      >
+        {m[1]}
+      </a>
+    );
+    lastIdx = m.index + m[0].length;
+  }
+  if (lastIdx < text.length) {
+    nodes.push(
+      <span key={`${keyPrefix}-t-${lastIdx}`} className="whitespace-pre-wrap break-words">
+        {text.slice(lastIdx)}
+      </span>
+    );
+  }
+  return nodes;
+}
 
 function CommentContent({
   content,
@@ -118,75 +157,99 @@ function CommentContent({
   projectId: number;
   taskId: number;
 }) {
-  // Split content into text parts and attachment parts
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   const regex = new RegExp(ATTACHMENT_REGEX.source, 'g');
 
+  const pushText = (text: string, key: string) => {
+    if (!text) return;
+    parts.push(
+      <span key={key} className="block">
+        {renderTextWithLinks(text, key)}
+      </span>
+    );
+  };
+
   while ((match = regex.exec(content)) !== null) {
-    // Add text before this match
     if (match.index > lastIndex) {
-      const textBefore = content.slice(lastIndex, match.index).trim();
-      if (textBefore) {
-        parts.push(
-          <span key={`t-${lastIndex}`} className="whitespace-pre-wrap">{textBefore}</span>
-        );
-      }
+      pushText(content.slice(lastIndex, match.index).replace(/\n+$/, ''), `t-${lastIndex}`);
     }
     const attId = match[1];
     const filename = match[2];
     const fileSize = parseInt(match[3], 10);
-    parts.push(
-      <a
-        key={`a-${attId}`}
-        href={`/api/projects/${projectId}/tasks/${taskId}/attachments/${attId}/download`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex items-center gap-2 px-3 py-2 my-1 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors group w-fit"
-      >
-        <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
-        <span className="text-sm text-blue-700 font-medium truncate max-w-[200px]">{filename}</span>
-        <span className="text-[10px] text-blue-400">{formatFileSize(fileSize)}</span>
-        <Download className="w-3.5 h-3.5 text-blue-400 group-hover:text-blue-600 flex-shrink-0" />
-      </a>
-    );
+    const isImage = IMAGE_EXT_REGEX.test(filename);
+    const attUrl = `/api/projects/${projectId}/tasks/${taskId}/attachments/${attId}`;
+    if (isImage) {
+      parts.push(
+        <a
+          key={`a-${attId}`}
+          href={attUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block my-1 w-fit max-w-full"
+          title={filename}
+        >
+          <img
+            src={attUrl}
+            alt={filename}
+            loading="lazy"
+            className="max-w-full max-h-80 rounded-lg border border-gray-200 object-contain bg-white"
+          />
+        </a>
+      );
+    } else {
+      parts.push(
+        <a
+          key={`a-${attId}`}
+          href={attUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-3 py-2 my-1 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors group w-fit max-w-full"
+        >
+          <Paperclip className="w-4 h-4 text-blue-500 flex-shrink-0" />
+          <span className="text-sm text-blue-700 font-medium truncate max-w-[200px]">{filename}</span>
+          <span className="text-[10px] text-blue-400">{formatFileSize(fileSize)}</span>
+          <Download className="w-3.5 h-3.5 text-blue-400 group-hover:text-blue-600 flex-shrink-0" />
+        </a>
+      );
+    }
     lastIndex = match.index + match[0].length;
   }
 
-  // Add remaining text
   if (lastIndex < content.length) {
-    const remaining = content.slice(lastIndex).trim();
-    if (remaining) {
-      parts.push(
-        <span key={`t-${lastIndex}`} className="whitespace-pre-wrap">{remaining}</span>
-      );
-    }
+    pushText(content.slice(lastIndex).replace(/^\n+/, ''), `t-${lastIndex}`);
   }
 
-  // If no attachments found, check for legacy "📎 filename" format
   if (parts.length === 0) {
-    // Render legacy format with file icon styling
     const lines = content.split('\n');
     const rendered = lines.map((line, i) => {
       if (line.startsWith('📎 ')) {
         const filenames = line.slice(2).trim();
         return (
-          <div key={i} className="flex items-center gap-2 px-3 py-2 my-1 bg-gray-50 border border-gray-200 rounded-lg w-fit">
+          <div key={i} className="flex items-center gap-2 px-3 py-2 my-1 bg-gray-50 border border-gray-200 rounded-lg w-fit max-w-full">
             <Paperclip className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            <span className="text-sm text-gray-600">{filenames}</span>
+            <span className="text-sm text-gray-600 truncate">{filenames}</span>
           </div>
         );
       }
-      return line ? <span key={i} className="whitespace-pre-wrap">{line}{i < lines.length - 1 ? '\n' : ''}</span> : null;
+      return line ? (
+        <span key={i} className="block">
+          {renderTextWithLinks(line, `l-${i}`)}
+        </span>
+      ) : null;
     }).filter(Boolean);
     if (rendered.length > 0) {
-      return <div className="text-sm text-gray-600 space-y-1">{rendered}</div>;
+      return <div className="text-sm text-gray-600 space-y-1 break-words overflow-hidden">{rendered}</div>;
     }
-    return <p className="text-sm text-gray-600 whitespace-pre-wrap">{content}</p>;
+    return (
+      <p className="text-sm text-gray-600 whitespace-pre-wrap break-words overflow-hidden">
+        {renderTextWithLinks(content, 'all')}
+      </p>
+    );
   }
 
-  return <div className="text-sm text-gray-600 space-y-1">{parts}</div>;
+  return <div className="text-sm text-gray-600 space-y-1 break-words overflow-hidden">{parts}</div>;
 }
 
 // ============================================================
@@ -299,6 +362,16 @@ function CommentsTab({
   projectId: number;
   taskId: number;
 }) {
+  const currentUser = useAuthStore((s) => s.user);
+  const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin);
+  const isOwner = useAuthStore((s) => s.isOwner);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
+  const canManageComment = (authorId: number): boolean => {
+    if (!currentUser) return false;
+    if (currentUser.id === authorId) return true;
+    return isSuperAdmin() || isOwner() || isAdmin();
+  };
+
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [newComment, setNewComment] = useState('');
@@ -435,25 +508,27 @@ function CommentsTab({
                   <span className="text-[10px] text-gray-400">{formatDateTime(c.created_at)}</span>
                   {c.edited_at && <span className="text-[10px] text-gray-300">(ред.)</span>}
                 </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => {
-                      setEditingId(c.id);
-                      setEditContent(c.content);
-                    }}
-                    className="p-1 text-gray-300 hover:text-gray-500 transition-colors"
-                    title="Редактировать"
-                  >
-                    <Pencil className="w-3 h-3" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(c.id)}
-                    className="p-1 text-gray-300 hover:text-red-500 transition-colors"
-                    title="Удалить"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
+                {canManageComment(c.user_id) && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        setEditingId(c.id);
+                        setEditContent(c.content);
+                      }}
+                      className="p-1 text-gray-300 hover:text-gray-500 transition-colors"
+                      title="Редактировать"
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(c.id)}
+                      className="p-1 text-gray-300 hover:text-red-500 transition-colors"
+                      title="Удалить"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
               </div>
               {editingId === c.id ? (
                 <div className="space-y-2">
