@@ -746,6 +746,7 @@ async def create_tasks_from_message(
         # Resolve assignee from hint — prioritize chat owner, then search by name
         assignee_id = user.id
         assignee_display = user_name
+        assignee_resolved = False  # стал ли хинт известным юзером
         assignee_hint = task_data.get("assignee_name")
         if assignee_hint:
             hint_lower = assignee_hint.lower()
@@ -827,9 +828,11 @@ async def create_tasks_from_message(
             if found_user:
                 assignee_id = found_user.id
                 assignee_display = found_user.name
+                assignee_resolved = True
 
-        # Блокер без явного ассайни → вешаем на разработчика проекта
-        if blocker_mode and not assignee_hint:
+        # Блокер → вешаем на разработчика проекта, если явный ассайни не зарезолвлен
+        # (не было хинта, либо хинт был, но никого не нашли в орге)
+        if blocker_mode and not assignee_resolved:
             dev_result = await db.execute(
                 select(User)
                 .join(ProjectMember, ProjectMember.user_id == User.id)
