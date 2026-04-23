@@ -294,8 +294,8 @@ export default function Layout() {
     // PROJECTS block — admin-only разделы ниже отфильтрованы по роли
     const isAdminRole = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
     const projectItems: { path: string; icon: LucideIcon; label: string }[] = [
-      { path: '/projects', icon: FolderKanban, label: 'Все проекты' },
-      { path: '/all-tasks', icon: ListTodo, label: 'Все задачи' },
+      { path: '/projects', icon: FolderKanban, label: isAdminRole ? 'Все проекты' : 'Мои проекты' },
+      { path: '/all-tasks', icon: ListTodo, label: isAdminRole ? 'Все задачи' : 'Мои задачи' },
     ];
     if (isAdminRole) {
       projectItems.push(
