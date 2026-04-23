@@ -2173,8 +2173,29 @@ async def collect_group_message(message: types.Message):
 
                             lines = ["\u2705 Задачи созданы из плана:"]
                             for t in created_tasks:
-                                lines.append(f"  \u2022 {t['task_key']} \"{t['title']}\" \u2192 {t['assignee']}")
+                                prefix = "\U0001f6a8 " if t.get("is_blocker") else "\u2022 "
+                                lines.append(f"  {prefix}{t['task_key']} \"{t['title']}\" \u2192 {t['assignee']}")
                             await message.reply("\n".join(lines))
+
+                            # DM-пинг каждому ассайни (кроме автора сообщения)
+                            import os as _os
+                            frontend_url = _os.getenv("FRONTEND_URL", "https://hr-bot-production-c613.up.railway.app")
+                            for t in created_tasks:
+                                assignee_id = t.get("assignee_id")
+                                creator_id = t.get("creator_id")
+                                if not assignee_id or assignee_id == creator_id:
+                                    continue
+                                blocker_tag = "\U0001f6a8 <b>БЛОКЕР</b>\n" if t.get("is_blocker") else ""
+                                text = (
+                                    f"{blocker_tag}\U0001f4cb <b>Новая задача назначена на вас</b>\n\n"
+                                    f"\U0001f4dd {t['title']}\n"
+                                    f"\U0001f4c2 Проект: {t['project']}\n"
+                                    f'\U0001f517 <a href="{frontend_url}/projects/{t["project_id"]}">Открыть</a>'
+                                )
+                                try:
+                                    await send_telegram_notification(assignee_id, text)
+                                except Exception as e:
+                                    _dbg(f"DM to assignee {assignee_id} failed: {type(e).__name__}: {e}")
                     except Exception as e:
                         _dbg(f"Task trigger ERROR: {type(e).__name__}: {e}")
                         logger.error(f"Task trigger error: {e}", exc_info=True)

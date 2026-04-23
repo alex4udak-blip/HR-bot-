@@ -172,6 +172,14 @@ TRIGGER_PATTERNS = [
 
 TRIGGER_REGEX = re.compile('|'.join(TRIGGER_PATTERNS), re.IGNORECASE)
 
+# ── Блокеры: явно сигнализируют о срочной задаче разработчику ──────
+BLOCKER_REGEX = re.compile(r'\bблокер\w*|\bblock(?:er|ing)?\b|\bне\s+работает\b|\bсломал\w*\b|\bпадает\b|\bкрит(?:ично|ичный)?\b', re.IGNORECASE)
+
+
+def is_blocker(text: str) -> bool:
+    """Сообщение упоминает блокер/критическую проблему."""
+    return bool(BLOCKER_REGEX.search(text))
+
 # ── Негативные паттерны: НЕ создавать задачу ────────────────────────
 # Прошедшее время, вопросы, предположения — не являются постановкой задач
 _NEGATIVE_PATTERNS = [
@@ -576,10 +584,13 @@ async def create_tasks_from_message(
         Project, ProjectTask, ProjectMember, ProjectStatus, ProjectRole, User, Chat, OrgMember,
     )
 
-    is_task = await should_trigger_ai(message_text)
+    blocker_mode = is_blocker(message_text)
+    is_task = blocker_mode or await should_trigger_ai(message_text)
     if not is_task:
         logger.info(f"⏭️ No trigger (regex+AI) for {user_name}: {message_text[:80]}...")
         return []
+    if blocker_mode:
+        logger.info(f"🚨 Blocker detected from {user_name}: {message_text[:80]}...")
 
     logger.info(f"✅ Task trigger activated for {user_name}: {message_text[:100]}...")
 
@@ -817,6 +828,27 @@ async def create_tasks_from_message(
                 assignee_id = found_user.id
                 assignee_display = found_user.name
 
+        # Блокер без явного ассайни → вешаем на разработчика проекта
+        if blocker_mode and not assignee_hint:
+            dev_result = await db.execute(
+                select(User)
+                .join(ProjectMember, ProjectMember.user_id == User.id)
+                .where(ProjectMember.project_id == target_project.id)
+                .where(ProjectMember.role == ProjectRole.developer)
+                .order_by(ProjectMember.joined_at)
+                .limit(1)
+            )
+            project_dev = dev_result.scalar_one_or_none()
+            if project_dev:
+                assignee_id = project_dev.id
+                assignee_display = project_dev.name
+                logger.info(f"🚨 Blocker → assigned to project developer: {project_dev.name}")
+
+        # Блокер — всегда критический приоритет
+        priority = task_data.get("priority", 1)
+        if blocker_mode:
+            priority = 3
+
         # Increment project task counter
         target_project.task_counter = (target_project.task_counter or 0) + 1
 
@@ -826,20 +858,26 @@ async def create_tasks_from_message(
             title=task_data.get("title", "Без названия"),
             description=task_data.get("description"),
             status="todo",
-            priority=task_data.get("priority", 1),
+            priority=priority,
             estimated_hours=task_data.get("estimated_hours"),
             assignee_id=assignee_id,
             due_date=today,
             created_by=user.id,
         )
         db.add(task)
+        await db.flush()
 
         task_key = f"{target_project.prefix}-{target_project.task_counter}" if target_project.prefix else f"#{target_project.task_counter}"
         created.append({
             "task_key": task_key,
+            "task_id": task.id,
             "title": task_data.get("title"),
             "assignee": assignee_display,
+            "assignee_id": assignee_id,
             "project": target_project.name,
+            "project_id": target_project.id,
+            "is_blocker": blocker_mode,
+            "creator_id": user.id,
         })
 
     if created:
