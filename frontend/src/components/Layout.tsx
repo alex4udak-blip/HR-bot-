@@ -291,19 +291,25 @@ export default function Layout() {
   const navSections = useMemo((): NavSection[] => {
     const sections: NavSection[] = [];
 
-    // PROJECTS block — everyone sees this
-    sections.push({
-      id: 'projects',
-      label: 'Проекты',
-      items: [
-        { path: '/projects', icon: FolderKanban, label: 'Все проекты' },
-        { path: '/all-tasks', icon: ListTodo, label: 'Все задачи' },
+    // PROJECTS block — admin-only разделы ниже отфильтрованы по роли
+    const isAdminRole = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+    const projectItems: { path: string; icon: LucideIcon; label: string }[] = [
+      { path: '/projects', icon: FolderKanban, label: 'Все проекты' },
+      { path: '/all-tasks', icon: ListTodo, label: 'Все задачи' },
+    ];
+    if (isAdminRole) {
+      projectItems.push(
         { path: '/team', icon: Users, label: 'Команда' },
         { path: '/timeoff', icon: Calendar, label: 'Отпуска' },
         { path: '/blockers', icon: AlertTriangle, label: 'Блокеры' },
         { path: '/dept-manager', icon: Building2, label: 'Отделы' },
         { path: '/saturn', icon: Cloud, label: 'Saturn' },
-      ],
+      );
+    }
+    sections.push({
+      id: 'projects',
+      label: 'Проекты',
+      items: projectItems,
     });
 
     // HR block — superadmin, owner, admin (HR Admin = Настя), hr (рекрутер = Мария)
