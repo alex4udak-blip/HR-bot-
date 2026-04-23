@@ -1895,6 +1895,45 @@ async def cmd_blocker(message: types.Message):
                 f"Менеджер увидит блокер на дашборде.",
                 parse_mode="HTML",
             )
+
+            # Авто-создаём задачу на разработчика проекта (если проект упомянут)
+            try:
+                blocker_msg = f"Блокер: {description}"
+                created_tasks = await create_tasks_from_message(
+                    db=session,
+                    message_text=blocker_msg,
+                    user_name=sender_name,
+                    telegram_user_id=message.from_user.id,
+                    chat_id=message.chat.id if message.chat.type in ("group", "supergroup") else None,
+                    telegram_username=message.from_user.username,
+                )
+                if created_tasks:
+                    lines = ["\u2705 Задача по блокеру создана:"]
+                    for t in created_tasks:
+                        lines.append(f"  \U0001f6a8 {t['task_key']} \"{t['title']}\" \u2192 {t['assignee']}")
+                    await message.answer("\n".join(lines))
+
+                    # DM-пинг ассайни
+                    import os as _os
+                    frontend_url = _os.getenv("FRONTEND_URL", "https://hr-bot-production-c613.up.railway.app")
+                    for t in created_tasks:
+                        assignee_id = t.get("assignee_id")
+                        creator_id = t.get("creator_id")
+                        if not assignee_id or assignee_id == creator_id:
+                            continue
+                        text = (
+                            f"\U0001f6a8 <b>БЛОКЕР</b>\n"
+                            f"\U0001f4cb <b>Новая задача назначена на вас</b>\n\n"
+                            f"\U0001f4dd {t['title']}\n"
+                            f"\U0001f4c2 Проект: {t['project']}\n"
+                            f'\U0001f517 <a href="{frontend_url}/projects/{t["project_id"]}">Открыть</a>'
+                        )
+                        try:
+                            await send_telegram_notification(assignee_id, text)
+                        except Exception as e:
+                            _dbg(f"Blocker DM to {assignee_id} failed: {type(e).__name__}: {e}")
+            except Exception as e:
+                logger.error(f"Blocker → task auto-creation failed: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"Error in /blocker: {e}")
         await message.answer(f"⚠️ Ошибка: {e}")
