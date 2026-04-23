@@ -18,7 +18,7 @@ logger = logging.getLogger("hr-analyzer.projects.attachments")
 
 from .common import (
     Project, ProjectTask, User,
-    can_access_project, can_edit_project,
+    can_access_project, can_edit_project, has_full_access,
     get_db, get_current_user, get_user_org,
     Organization,
 )
@@ -104,12 +104,16 @@ async def upload_attachment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """Upload a file attachment to a task."""
+    """Upload a file attachment to a task.
+
+    Доступ: любой, кто видит проект (включая обычных участников) — чтобы
+    можно было прикладывать картинки/файлы к комментариям.
+    """
     org = await get_user_org(current_user, db)
     project = await db.get(Project, project_id)
     if not project or project.org_id != org.id:
         raise HTTPException(status_code=404, detail="Project not found")
-    if not await can_edit_project(project, current_user, org, db):
+    if not await can_access_project(project, current_user, org, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     await _get_task_or_404(project_id, task_id, db)
@@ -194,12 +198,15 @@ async def delete_attachment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> None:
-    """Delete a file attachment."""
+    """Delete a file attachment.
+
+    Доступ: автор вложения, superadmin/owner или редактор проекта.
+    """
     org = await get_user_org(current_user, db)
     project = await db.get(Project, project_id)
     if not project or project.org_id != org.id:
         raise HTTPException(status_code=404, detail="Project not found")
-    if not await can_edit_project(project, current_user, org, db):
+    if not await can_access_project(project, current_user, org, db):
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = await db.execute(
@@ -211,6 +218,14 @@ async def delete_attachment(
     attachment = result.scalar_one_or_none()
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
+
+    is_author = attachment.user_id == current_user.id
+    is_privileged = (
+        await has_full_access(current_user, org, db)
+        or await can_edit_project(project, current_user, org, db)
+    )
+    if not is_author and not is_privileged:
+        raise HTTPException(status_code=403, detail="Can only delete your own attachments")
 
     # Remove file from disk
     if os.path.exists(attachment.storage_path):
