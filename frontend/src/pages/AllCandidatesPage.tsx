@@ -1191,6 +1191,60 @@ function ActionChip({ icon: Icon, label, onClick, danger, loading }: {
 // EDIT CANDIDATE MODAL
 // ================================================================
 
+// ФИО — минимум 2 слова, буквы/дефисы/апострофы, допускаем кириллицу и латиницу
+const NAME_REGEX = /^[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё'\- ]{1,}$/;
+// E.164: опциональный +, затем 7–15 цифр (после удаления пробелов/дефисов/скобок)
+const PHONE_DIGITS_REGEX = /^\+?\d{7,15}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+// Telegram: 5–32 символа, буквы/цифры/подчёркивания, не может начинаться с цифры или подчёркивания
+const TELEGRAM_REGEX = /^[a-zA-Z][a-zA-Z0-9_]{4,31}$/;
+
+function normalizePhone(raw: string): string {
+  return raw.replace(/[\s\-()]/g, '');
+}
+
+function validateName(value: string): string | null {
+  const v = value.trim();
+  if (!v) return 'Обязательное поле';
+  if (v.length < 2) return 'Минимум 2 символа';
+  if (v.length > 200) return 'Максимум 200 символов';
+  if (!NAME_REGEX.test(v)) return 'Только буквы, пробелы, дефис и апостроф';
+  return null;
+}
+
+function validatePhone(value: string): string | null {
+  const v = value.trim();
+  if (!v) return null;
+  const normalized = normalizePhone(v);
+  if (!PHONE_DIGITS_REGEX.test(normalized)) {
+    return 'Формат: +7 999 123 4567 (7–15 цифр)';
+  }
+  return null;
+}
+
+function validateEmail(value: string): string | null {
+  const v = value.trim();
+  if (!v) return null;
+  if (v.length > 254) return 'Слишком длинный email';
+  if (!EMAIL_REGEX.test(v)) return 'Некорректный email';
+  return null;
+}
+
+function validateTelegram(value: string): string | null {
+  const v = value.trim().replace(/^@/, '');
+  if (!v) return null;
+  if (!TELEGRAM_REGEX.test(v)) {
+    return '5–32 символа, буквы/цифры/_, начинается с буквы';
+  }
+  return null;
+}
+
+function validateFreeText(value: string, maxLen = 200): string | null {
+  const v = value.trim();
+  if (v.length > maxLen) return `Максимум ${maxLen} символов`;
+  return null;
+}
+
 function EditCandidateModal({ card, onClose, onSaved }: {
   card: KanbanCard;
   onClose: () => void;
@@ -1203,25 +1257,44 @@ function EditCandidateModal({ card, onClose, onSaved }: {
   const [position, setPosition] = useState(card.position || '');
   const [company, setCompany] = useState(card.company || '');
   const [saving, setSaving] = useState(false);
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  const errors = {
+    name: validateName(name),
+    phone: validatePhone(phone),
+    email: validateEmail(email),
+    telegram: validateTelegram(telegram),
+    position: validateFreeText(position, 200),
+    company: validateFreeText(company, 200),
+  };
+  const hasErrors = Object.values(errors).some((e) => e !== null);
+
+  const markTouched = (field: string) => setTouched((t) => ({ ...t, [field]: true }));
 
   const handleSave = async () => {
-    if (!name.trim()) { toast.error('Имя обязательно'); return; }
+    setTouched({ name: true, phone: true, email: true, telegram: true, position: true, company: true });
+    if (hasErrors) {
+      toast.error('Исправьте ошибки в форме');
+      return;
+    }
     setSaving(true);
     try {
+      const normalizedPhone = phone.trim() ? normalizePhone(phone) : undefined;
+      const cleanTelegram = telegram.trim().replace(/^@/, '');
       await updateEntity(card.id, {
         name: name.trim(),
-        phone: phone.trim() || undefined,
+        phone: normalizedPhone,
         email: email.trim() || undefined,
-        telegram_usernames: telegram.trim() ? [telegram.trim().replace(/^@/, '')] : undefined,
+        telegram_usernames: cleanTelegram ? [cleanTelegram] : undefined,
         position: position.trim() || undefined,
         company: company.trim() || undefined,
       });
       toast.success('Кандидат обновлён');
       onSaved({
         name: name.trim(),
-        phone: phone.trim() || undefined,
+        phone: normalizedPhone,
         email: email.trim() || undefined,
-        telegram_username: telegram.trim() || undefined,
+        telegram_username: cleanTelegram || undefined,
         position: position.trim() || undefined,
         company: company.trim() || undefined,
       });
@@ -1249,20 +1322,26 @@ function EditCandidateModal({ card, onClose, onSaved }: {
         </div>
 
         <div className="space-y-3">
-          <EditField label="ФИО" value={name} onChange={setName} required />
-          <EditField label="Телефон" value={phone} onChange={setPhone} placeholder="+7 999 123 4567" />
-          <EditField label="Email" value={email} onChange={setEmail} placeholder="email@example.com" type="email" />
-          <EditField label="Telegram" value={telegram} onChange={setTelegram} placeholder="@username" />
-          <EditField label="Должность" value={position} onChange={setPosition} placeholder="Frontend Developer" />
-          <EditField label="Компания" value={company} onChange={setCompany} placeholder="Google" />
+          <EditField label="ФИО" value={name} onChange={setName} required
+            error={touched.name ? errors.name : null} onBlur={() => markTouched('name')} />
+          <EditField label="Телефон" value={phone} onChange={setPhone} placeholder="+7 999 123 4567" type="tel"
+            error={touched.phone ? errors.phone : null} onBlur={() => markTouched('phone')} />
+          <EditField label="Email" value={email} onChange={setEmail} placeholder="email@example.com" type="email"
+            error={touched.email ? errors.email : null} onBlur={() => markTouched('email')} />
+          <EditField label="Telegram" value={telegram} onChange={setTelegram} placeholder="@username"
+            error={touched.telegram ? errors.telegram : null} onBlur={() => markTouched('telegram')} />
+          <EditField label="Должность" value={position} onChange={setPosition} placeholder="Frontend Developer"
+            error={touched.position ? errors.position : null} onBlur={() => markTouched('position')} />
+          <EditField label="Компания" value={company} onChange={setCompany} placeholder="Google"
+            error={touched.company ? errors.company : null} onBlur={() => markTouched('company')} />
         </div>
 
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={onClose} className="px-4 py-2 text-sm text-dark-400 hover:text-dark-200">Отмена</button>
           <button
             onClick={handleSave}
-            disabled={saving || !name.trim()}
-            className="flex items-center gap-2 px-5 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+            disabled={saving || hasErrors}
+            className="flex items-center gap-2 px-5 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             Сохранить
@@ -1273,13 +1352,15 @@ function EditCandidateModal({ card, onClose, onSaved }: {
   );
 }
 
-function EditField({ label, value, onChange, placeholder, type, required }: {
+function EditField({ label, value, onChange, placeholder, type, required, error, onBlur }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   type?: string;
   required?: boolean;
+  error?: string | null;
+  onBlur?: () => void;
 }) {
   return (
     <div>
@@ -1290,9 +1371,17 @@ function EditField({ label, value, onChange, placeholder, type, required }: {
         type={type || 'text'}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
         placeholder={placeholder}
-        className="w-full px-3 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-dark-200 placeholder-dark-600 focus:outline-none focus:border-accent-500/40"
+        aria-invalid={!!error}
+        className={clsx(
+          'w-full px-3 py-2 bg-white/[0.03] border rounded-lg text-sm text-dark-200 placeholder-dark-600 focus:outline-none',
+          error
+            ? 'border-red-500/60 focus:border-red-500'
+            : 'border-white/[0.08] focus:border-accent-500/40'
+        )}
       />
+      {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
     </div>
   );
 }
