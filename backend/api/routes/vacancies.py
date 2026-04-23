@@ -592,11 +592,11 @@ async def get_assignable_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Return all active org members for the 'Responsible' dropdown.
+    """Вернуть активных HR-рекрутеров (org_role=hr) для дропдауна
+    «Назначить рекрутерам» в модалке вакансии.
 
-    Any authenticated org member can see all other members (id + name)
-    so they can assign a hiring manager to a vacancy.
-    No feature-gate: this is a basic org-member listing, not a restricted feature.
+    Раньше сюда попадали owner и admin тоже — но они не рекрутёры,
+    их не должно быть в списке назначения.
     """
     org = await get_user_org(current_user, db)
     if not org:
@@ -608,12 +608,12 @@ async def get_assignable_users(
         .where(
             OrgMember.org_id == org.id,
             User.is_active == True,
-            OrgMember.role.in_([OrgRole.owner, OrgRole.admin, OrgRole.hr]),
+            OrgMember.role == OrgRole.hr,
         )
         .order_by(User.name)
     )
     users = result.all()
-    logger.info(f"Assignable users ({len(users)}): {[(r[1], r[2]) for r in users]}")
+    logger.info(f"Assignable recruiters ({len(users)}): {[(r[1], r[2]) for r in users]}")
     return [{"id": row[0], "name": row[1], "role": row[2]} for row in users]
 
 
