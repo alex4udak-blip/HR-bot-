@@ -1,6 +1,8 @@
 """
 Task comments — CRUD for comment threads on project tasks.
 """
+import os
+import re
 from fastapi import Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +18,90 @@ from .common import (
     get_db, get_current_user, get_user_org,
     Organization,
 )
-from ...models.database import TaskComment
+from ...models.database import TaskComment, Notification, OrgMember
+
+MENTION_PATTERN = re.compile(r'@\[([^\]\n]+)\]')
+
+
+async def _notify_mentions(
+    db: AsyncSession,
+    content: str,
+    author: User,
+    project: Project,
+    task: ProjectTask,
+    org: Organization,
+    already_notified_ids: Optional[set[int]] = None,
+) -> set[int]:
+    """Парсим @[Name] в тексте и шлём в ЛС и в in-app каждому упомянутому.
+
+    Возвращает множество user_id кого реально нашли — чтобы при update не слать повторно.
+    """
+    names = MENTION_PATTERN.findall(content)
+    if not names:
+        return set()
+
+    notified: set[int] = set(already_notified_ids or set())
+    newly_notified: set[int] = set()
+    frontend_url = os.getenv("FRONTEND_URL", "https://hr-bot-production-c613.up.railway.app")
+
+    for raw_name in names:
+        name = raw_name.strip()
+        if not name:
+            continue
+        # exact match сперва, потом substring
+        result = await db.execute(
+            select(User)
+            .join(OrgMember, OrgMember.user_id == User.id)
+            .where(OrgMember.org_id == org.id)
+            .where(User.name == name)
+            .limit(1)
+        )
+        mentioned = result.scalar_one_or_none()
+        if not mentioned:
+            result = await db.execute(
+                select(User)
+                .join(OrgMember, OrgMember.user_id == User.id)
+                .where(OrgMember.org_id == org.id)
+                .where(User.name.ilike(f"%{name}%"))
+                .limit(1)
+            )
+            mentioned = result.scalar_one_or_none()
+        if not mentioned or mentioned.id == author.id or mentioned.id in notified:
+            continue
+        notified.add(mentioned.id)
+        newly_notified.add(mentioned.id)
+
+        # in-app уведомление
+        try:
+            db.add(Notification(
+                user_id=mentioned.id,
+                type="comment_mention",
+                title=f"Вас упомянули в задаче: {task.title}",
+                message=(content[:280] + '…') if len(content) > 280 else content,
+                link=f"/projects/{project.id}",
+            ))
+        except Exception as e:
+            logger.warning(f"Failed to create in-app notification for mention: {e}")
+
+        # Telegram DM
+        try:
+            from ...bot import send_telegram_notification
+            snippet = content[:400].replace('<', '&lt;').replace('>', '&gt;')
+            text = (
+                f"\U0001f4ac <b>Вас упомянули в комментарии</b>\n\n"
+                f"\U0001f464 {author.name}\n"
+                f"\U0001f4dd Задача: {task.title}\n"
+                f"\U0001f4c2 Проект: {project.name}\n\n"
+                f"{snippet}\n\n"
+                f'\U0001f517 <a href="{frontend_url}/projects/{project.id}">Открыть</a>'
+            )
+            await send_telegram_notification(mentioned.id, text)
+        except Exception as e:
+            logger.warning(f"Failed to send mention DM to {mentioned.name}: {e}")
+
+    if newly_notified:
+        logger.info(f"Mention notifications sent to {len(newly_notified)} user(s) for task {task.id}")
+    return notified
 
 
 # === Schemas ===
@@ -116,12 +201,21 @@ async def create_comment(
     if not data.content or not data.content.strip():
         raise HTTPException(status_code=400, detail="Comment content cannot be empty")
 
+    content = data.content.strip()
     comment = TaskComment(
         task_id=task_id,
         user_id=current_user.id,
-        content=data.content.strip(),
+        content=content,
     )
     db.add(comment)
+    await db.flush()
+
+    # Пинг упомянутых через @[Name]
+    try:
+        await _notify_mentions(db, content, current_user, project, task, org)
+    except Exception as e:
+        logger.warning(f"notify_mentions failed on create: {e}")
+
     await db.commit()
     await db.refresh(comment)
 
@@ -164,8 +258,35 @@ async def update_comment(
     if not data.content or not data.content.strip():
         raise HTTPException(status_code=400, detail="Comment content cannot be empty")
 
-    comment.content = data.content.strip()
+    # Вычисляем кого уже упоминали в ПРОШЛОЙ версии, чтобы не слать DM повторно
+    previously_mentioned_names = set(MENTION_PATTERN.findall(comment.content or ""))
+    previously_notified_ids: set[int] = set()
+    if previously_mentioned_names:
+        for name in previously_mentioned_names:
+            res = await db.execute(
+                select(User.id)
+                .join(OrgMember, OrgMember.user_id == User.id)
+                .where(OrgMember.org_id == org.id)
+                .where(User.name == name)
+                .limit(1)
+            )
+            uid = res.scalar_one_or_none()
+            if uid:
+                previously_notified_ids.add(uid)
+
+    new_content = data.content.strip()
+    comment.content = new_content
     comment.edited_at = datetime.utcnow()
+
+    # Пинг только НОВЫМ упомянутым
+    try:
+        await _notify_mentions(
+            db, new_content, current_user, project, task, org,
+            already_notified_ids=previously_notified_ids,
+        )
+    except Exception as e:
+        logger.warning(f"notify_mentions failed on update: {e}")
+
     await db.commit()
     await db.refresh(comment)
 

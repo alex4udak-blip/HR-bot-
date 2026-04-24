@@ -109,14 +109,16 @@ function formatFileSize(bytes: number): string {
 // ============================================================
 
 const ATTACHMENT_REGEX = /\[attachment:(\d+):([^:]+):(\d+)\]/g;
-const URL_REGEX = /(https?:\/\/[^\s<>"')]+)/g;
 const IMAGE_EXT_REGEX = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
+// Порядок в master-регексе определяет приоритет: mention > bold > code > URL
+const INLINE_REGEX = /@\[([^\]\n]+)\]|\*\*([^*\n]+)\*\*|`([^`\n]+)`|(https?:\/\/[^\s<>"')]+)/g;
 
-function renderTextWithLinks(text: string, keyPrefix: string): React.ReactNode[] {
+function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
   let lastIdx = 0;
   let m: RegExpExecArray | null;
-  const re = new RegExp(URL_REGEX.source, 'g');
+  let i = 0;
+  const re = new RegExp(INLINE_REGEX.source, 'g');
   while ((m = re.exec(text)) !== null) {
     if (m.index > lastIdx) {
       nodes.push(
@@ -125,17 +127,38 @@ function renderTextWithLinks(text: string, keyPrefix: string): React.ReactNode[]
         </span>
       );
     }
-    nodes.push(
-      <a
-        key={`${keyPrefix}-u-${m.index}`}
-        href={m[1]}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-blue-600 hover:text-blue-800 underline break-all"
-      >
-        {m[1]}
-      </a>
-    );
+    const key = `${keyPrefix}-m-${i++}`;
+    if (m[1] !== undefined) {
+      // mention @[Name]
+      nodes.push(
+        <span
+          key={key}
+          className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 text-xs font-medium mx-0.5 align-baseline"
+        >
+          @{m[1]}
+        </span>
+      );
+    } else if (m[2] !== undefined) {
+      nodes.push(
+        <strong key={key} className="font-semibold">{m[2]}</strong>
+      );
+    } else if (m[3] !== undefined) {
+      nodes.push(
+        <code key={key} className="px-1 py-0.5 rounded bg-gray-100 text-gray-800 text-xs font-mono break-all">{m[3]}</code>
+      );
+    } else if (m[4] !== undefined) {
+      nodes.push(
+        <a
+          key={key}
+          href={m[4]}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 hover:text-blue-800 underline break-all"
+        >
+          {m[4]}
+        </a>
+      );
+    }
     lastIdx = m.index + m[0].length;
   }
   if (lastIdx < text.length) {
@@ -166,7 +189,7 @@ function CommentContent({
     if (!text) return;
     parts.push(
       <span key={key} className="block">
-        {renderTextWithLinks(text, key)}
+        {renderInline(text, key)}
       </span>
     );
   };
@@ -235,7 +258,7 @@ function CommentContent({
       }
       return line ? (
         <span key={i} className="block">
-          {renderTextWithLinks(line, `l-${i}`)}
+          {renderInline(line, `l-${i}`)}
         </span>
       ) : null;
     }).filter(Boolean);
@@ -244,7 +267,7 @@ function CommentContent({
     }
     return (
       <p className="text-sm text-gray-600 whitespace-pre-wrap break-words overflow-hidden">
-        {renderTextWithLinks(content, 'all')}
+        {renderInline(content, 'all')}
       </p>
     );
   }
@@ -358,9 +381,11 @@ function DescriptionTab({
 function CommentsTab({
   projectId,
   taskId,
+  members,
 }: {
   projectId: number;
   taskId: number;
+  members: ProjectMember[];
 }) {
   const currentUser = useAuthStore((s) => s.user);
   const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin);
@@ -380,6 +405,51 @@ function CommentsTab({
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [fileInputKey, setFileInputKey] = useState(0);
   const commentFileRef = useRef<HTMLInputElement>(null);
+
+  // Mention autocomplete state
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionStart, setMentionStart] = useState<number>(-1);
+  const [mentionIndex, setMentionIndex] = useState<number>(0);
+
+  const mentionCandidates = mentionQuery === null
+    ? []
+    : members
+        .filter((m) => m.user_name && m.user_name.toLowerCase().includes(mentionQuery.toLowerCase()))
+        .slice(0, 8);
+
+  const updateMentionState = (value: string, caret: number) => {
+    // Ищем последний @ до каретки, у которого перед ним пробел/перевод строки/начало
+    const before = value.slice(0, caret);
+    const at = before.lastIndexOf('@');
+    if (at === -1) { setMentionQuery(null); return; }
+    // @ должен быть в начале строки или после пробела
+    if (at > 0 && !/\s/.test(before[at - 1])) { setMentionQuery(null); return; }
+    const query = before.slice(at + 1);
+    // Не активируем если в query есть пробел/скобки — значит уже не мeншн
+    if (/[\s\[\]]/.test(query) || query.length > 30) { setMentionQuery(null); return; }
+    setMentionQuery(query);
+    setMentionStart(at);
+    setMentionIndex(0);
+  };
+
+  const insertMention = (name: string) => {
+    if (mentionStart < 0 || !textareaRef.current) return;
+    const ta = textareaRef.current;
+    const caret = ta.selectionStart;
+    const before = newComment.slice(0, mentionStart);
+    const after = newComment.slice(caret);
+    const inserted = `@[${name}] `;
+    const next = before + inserted + after;
+    setNewComment(next);
+    setMentionQuery(null);
+    // Ставим каретку сразу после вставленного
+    setTimeout(() => {
+      const pos = before.length + inserted.length;
+      ta.focus();
+      ta.setSelectionRange(pos, pos);
+    }, 0);
+  };
 
   const loadComments = useCallback(async () => {
     try {
@@ -582,19 +652,75 @@ function CommentsTab({
       <div className="flex gap-2">
         <div className="flex-1 relative">
           <textarea
+            ref={textareaRef}
             value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setNewComment(v);
+              updateMentionState(v, e.target.selectionStart);
+            }}
+            onKeyUp={(e) => {
+              const el = e.currentTarget;
+              updateMentionState(el.value, el.selectionStart);
+            }}
             onPaste={handlePaste}
+            onBlur={() => setTimeout(() => setMentionQuery(null), 150)}
             onKeyDown={(e) => {
+              if (mentionQuery !== null && mentionCandidates.length > 0) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setMentionIndex((i) => (i + 1) % mentionCandidates.length);
+                  return;
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setMentionIndex((i) => (i - 1 + mentionCandidates.length) % mentionCandidates.length);
+                  return;
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                  e.preventDefault();
+                  const pick = mentionCandidates[mentionIndex];
+                  if (pick?.user_name) insertMention(pick.user_name);
+                  return;
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setMentionQuery(null);
+                  return;
+                }
+              }
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 handleAdd();
               }
             }}
             rows={2}
-            placeholder="Комментарий... (Ctrl+V — вставить скрин, Ctrl+Enter — отправить)"
+            placeholder="Комментарий... (@ — упомянуть, **жирный**, `код`, Ctrl+V — скрин, Ctrl+Enter — отправить)"
             className="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 pr-10 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-y min-h-[56px] max-h-[400px]"
           />
+          {mentionQuery !== null && mentionCandidates.length > 0 && (
+            <div className="absolute left-2 bottom-full mb-1 z-20 w-64 max-h-56 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
+              {mentionCandidates.map((m, i) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); if (m.user_name) insertMention(m.user_name); }}
+                  className={clsx(
+                    'w-full flex items-center gap-2 px-3 py-2 text-left text-sm',
+                    i === mentionIndex ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                  )}
+                >
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center flex-shrink-0">
+                    <span className="text-[9px] text-white font-medium">
+                      {(m.user_name || '?').charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <span className="truncate">{m.user_name}</span>
+                  <span className="ml-auto text-[10px] text-gray-400 uppercase">{m.role}</span>
+                </button>
+              ))}
+            </div>
+          )}
           <button
             type="button"
             onClick={() => commentFileRef.current?.click()}
@@ -1461,7 +1587,7 @@ export default function TaskDetailModal({
                           />
                         )}
                         {activeTab === 'comments' && task && (
-                          <CommentsTab projectId={projectId} taskId={task.id} />
+                          <CommentsTab projectId={projectId} taskId={task.id} members={members} />
                         )}
                         {activeTab === 'attachments' && task && (
                           <AttachmentsTab projectId={projectId} taskId={task.id} />
