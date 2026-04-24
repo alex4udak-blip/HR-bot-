@@ -468,8 +468,9 @@ async def get_assignable_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Вернуть активных HR-рекрутеров (org_role='hr') для дропдауна
-    'Назначить рекрутерам' в модалке вакансии.
+    """Вернуть HR-блок (org_role IN ('admin', 'hr')) — HR Админы и
+    HR Рекрутеры — для дропдауна 'Назначить рекрутерам' в модалке вакансии.
+    Owner и member (не-HR) исключены.
     """
     org = await get_user_org(current_user, db)
     if not org:
@@ -481,10 +482,10 @@ async def get_assignable_users(
         .where(
             OrgMember.org_id == org.id,
             User.is_active == True,
-            OrgMember.role == OrgRole.hr,
+            OrgMember.role.in_([OrgRole.admin, OrgRole.hr]),
         )
         .order_by(User.name)
     )
     users = result.all()
-    logger.info(f"Assignable recruiters ({len(users)}): {[(r[1], r[2]) for r in users]}")
+    logger.info(f"Assignable HR block ({len(users)}): {[(r[1], r[2]) for r in users]}")
     return [{"id": row[0], "name": row[1], "role": row[2]} for row in users]
