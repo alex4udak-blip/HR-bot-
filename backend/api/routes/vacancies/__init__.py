@@ -54,6 +54,7 @@ from .crud import (
     update_vacancy,
     delete_vacancy,
     get_assignable_users,
+    assign_vacancy,
 )
 
 # Import application handlers
@@ -128,6 +129,7 @@ router.add_api_route("", create_vacancy, methods=["POST"], status_code=201, tags
 router.add_api_route("/{vacancy_id}", get_vacancy, methods=["GET"], tags=["vacancies"])
 router.add_api_route("/{vacancy_id}", update_vacancy, methods=["PUT"], tags=["vacancies"])
 router.add_api_route("/{vacancy_id}", delete_vacancy, methods=["DELETE"], status_code=204, tags=["vacancies"])
+router.add_api_route("/{vacancy_id}/assign", assign_vacancy, methods=["POST"], tags=["vacancies"])
 
 # Vacancy applications
 router.add_api_route("/{vacancy_id}/applications", list_applications, methods=["GET"], tags=["vacancy-applications"])

@@ -2,6 +2,7 @@
 Basic CRUD operations for vacancies.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
@@ -16,6 +17,11 @@ from .common import (
 )
 from ...services.auth import get_current_user, get_user_org
 from ...services.cache import scoring_cache
+
+
+class AssignRequest(BaseModel):
+    user_ids: List[int] = []
+    all: bool = False
 
 router = APIRouter()
 
@@ -526,3 +532,53 @@ async def get_assignable_users(
     users = result.all()
     logger.info(f"Assignable HR block ({len(users)}): {[(r[1], r[2]) for r in users]}")
     return [{"id": row[0], "name": row[1], "role": row[2]} for row in users]
+
+
+async def assign_vacancy(
+    vacancy_id: int,
+    data: AssignRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Назначить рекрутеров на вакансию.
+
+    data.all = True  → assigned_to_all=True, assigned_to=[]
+    data.all = False → assigned_to=user_ids, assigned_to_all=False
+
+    Требует прав редактирования вакансии (can_edit_vacancy).
+    """
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=403, detail="Organization not found")
+
+    vacancy = await db.get(Vacancy, vacancy_id)
+    if not vacancy or vacancy.org_id != org.id:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    if not await can_edit_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="No permission to edit this vacancy")
+
+    if data.all:
+        vacancy.assigned_to_all = True
+        vacancy.assigned_to = []
+    else:
+        # Проверяем что все user_ids — валидные участники орга
+        if data.user_ids:
+            check = await db.execute(
+                select(User.id)
+                .join(OrgMember, OrgMember.user_id == User.id)
+                .where(OrgMember.org_id == org.id, User.id.in_(data.user_ids))
+            )
+            valid_ids = {row[0] for row in check.all()}
+            invalid = set(data.user_ids) - valid_ids
+            if invalid:
+                raise HTTPException(status_code=400, detail=f"Users not in org: {sorted(invalid)}")
+        vacancy.assigned_to_all = False
+        vacancy.assigned_to = list(dict.fromkeys(data.user_ids))  # unique, preserve order
+
+    await db.commit()
+    await db.refresh(vacancy)
+    logger.info(f"Vacancy {vacancy_id} assigned: all={vacancy.assigned_to_all}, ids={vacancy.assigned_to}")
+
+    # Возвращаем сериализованную вакансию через тот же механизм, что get_vacancy
+    return await get_vacancy(vacancy_id, db=db, current_user=current_user)
