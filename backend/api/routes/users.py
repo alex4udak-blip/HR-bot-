@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
@@ -362,6 +362,14 @@ async def update_user(
     if data.is_active is not None:
         user.is_active = data.is_active
 
+    # Explicit dept_role from request (если admin явно указал)
+    explicit_dept_role: Optional[DeptRole] = None
+    if data.dept_role:
+        try:
+            explicit_dept_role = DeptRole(data.dept_role)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid dept_role: {data.dept_role}")
+
     # Update department membership if department_id is provided
     if data.department_id:
         # Check if user already has department membership
@@ -370,8 +378,8 @@ async def update_user(
         )
         existing_dept_member = dept_member_result.scalar_one_or_none()
 
-        # Determine department role based on user role
-        dept_role = map_user_role_to_dept_role(user.role)
+        # Приоритет: explicit dept_role из запроса > автомаппинг от system-role
+        dept_role = explicit_dept_role or map_user_role_to_dept_role(user.role)
 
         if existing_dept_member:
             # Update existing membership
@@ -385,6 +393,14 @@ async def update_user(
                 role=dept_role
             )
             db.add(dept_member)
+    elif explicit_dept_role is not None:
+        # Меняем только роль в уже существующем отделе, если новый department_id не передан
+        dept_member_result = await db.execute(
+            select(DepartmentMember).where(DepartmentMember.user_id == user_id)
+        )
+        existing_dept_member = dept_member_result.scalar_one_or_none()
+        if existing_dept_member:
+            existing_dept_member.role = explicit_dept_role
 
     # Determine org role to set
     target_org_role = None
@@ -419,8 +435,8 @@ async def update_user(
                 )
                 db.add(new_member)
 
-    # Also sync department role when system role changes
-    if new_role is not None and not data.department_id:
+    # Also sync department role when system role changes (не перетираем explicit dept_role)
+    if new_role is not None and not data.department_id and explicit_dept_role is None:
         dept_member_result = await db.execute(
             select(DepartmentMember).where(DepartmentMember.user_id == user_id)
         )

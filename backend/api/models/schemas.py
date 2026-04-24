@@ -95,6 +95,7 @@ class UserUpdate(BaseModel):
     name: Optional[str] = None
     role: Optional[str] = None  # Accept string, validate in route (superadmin, admin, sub_admin, member)
     org_role: Optional[str] = None  # OrgRole: owner, admin, hr, member
+    dept_role: Optional[str] = None  # DeptRole: lead, sub_admin, member
     telegram_id: Optional[int] = None
     telegram_username: Optional[str] = None
     is_active: Optional[bool] = None

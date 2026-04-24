@@ -88,6 +88,8 @@ export interface AdminUserUpdate {
   name?: string;
   email?: string;
   role?: string;
+  org_role?: string;
+  dept_role?: string;
   telegram_username?: string | null;
   department_id?: number | null;
   is_active?: boolean;

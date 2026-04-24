@@ -1346,10 +1346,14 @@ function EditUserModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  const currentUser = useAuthStore((s) => s.user);
+  const isSuperAdmin = currentUser?.role === 'superadmin';
+
   const [name, setName] = useState(user.name || '');
   const [email, setEmail] = useState(user.email || '');
   const [role, setRole] = useState<string>(user.role || 'member');
   const [orgRole, setOrgRole] = useState<string>('');
+  const [deptRole, setDeptRole] = useState<string>('');
   const [telegramUsername, setTelegramUsername] = useState(user.telegram_username || '');
   const [departmentId, setDepartmentId] = useState<number | ''>('');
   const [saving, setSaving] = useState(false);
@@ -1374,6 +1378,7 @@ function EditUserModal({
 
       if (departmentId) payload.department_id = departmentId;
       if (orgRole) payload.org_role = orgRole;
+      if (deptRole) payload.dept_role = deptRole;
 
       if (Object.keys(payload).length === 0) {
         onClose();
@@ -1441,21 +1446,24 @@ function EditUserModal({
             />
           </div>
 
-          <div>
-            <label className="block text-sm text-dark-400 mb-1">Системная роль</label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
-            >
-              <option value="member">Сотрудник</option>
-              <option value="admin">Админ</option>
-              <option value="superadmin">Суперадмин</option>
-            </select>
-          </div>
+          {isSuperAdmin && (
+            <div>
+              <label className="block text-sm text-dark-400 mb-1">
+                Системная роль <span className="text-xs text-white/30">(только для superadmin)</span>
+              </label>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+              >
+                <option value="member">Сотрудник</option>
+                <option value="superadmin">Суперадмин</option>
+              </select>
+            </div>
+          )}
 
           <div>
-            <label className="block text-sm text-dark-400 mb-1">Роль в организации</label>
+            <label className="block text-sm text-dark-400 mb-1">Роль в организации (HR блок)</label>
             <select
               value={orgRole}
               onChange={(e) => setOrgRole(e.target.value)}
@@ -1464,24 +1472,42 @@ function EditUserModal({
               <option value="">Не менять</option>
               <option value="admin">HR Админ</option>
               <option value="hr">HR Рекрутер</option>
-              <option value="member">Сотрудник</option>
+              <option value="member">Сотрудник (не HR)</option>
             </select>
+            <p className="text-xs text-white/30 mt-1">Определяет доступ к HR-фичам (кандидаты/вакансии/созвоны)</p>
           </div>
 
           {departments.length > 0 && (
-            <div>
-              <label className="block text-sm text-dark-400 mb-1">Отдел</label>
-              <select
-                value={departmentId}
-                onChange={(e) => setDepartmentId(e.target.value ? Number(e.target.value) : '')}
-                className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
-              >
-                <option value="">Не менять</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
-            </div>
+            <>
+              <div>
+                <label className="block text-sm text-dark-400 mb-1">Отдел (Dev блок)</label>
+                <select
+                  value={departmentId}
+                  onChange={(e) => setDepartmentId(e.target.value ? Number(e.target.value) : '')}
+                  className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+                >
+                  <option value="">Не менять</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-dark-400 mb-1">Роль в отделе</label>
+                <select
+                  value={deptRole}
+                  onChange={(e) => setDeptRole(e.target.value)}
+                  className="w-full glass-light rounded-xl py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-accent-500/50"
+                >
+                  <option value="">Не менять</option>
+                  <option value="lead">Lead (руководитель)</option>
+                  <option value="sub_admin">Sub-admin</option>
+                  <option value="member">Разработчик / участник</option>
+                </select>
+                <p className="text-xs text-white/30 mt-1">Для разработчиков: отдел «Разработка» + роль «member»; тимлида — «lead»</p>
+              </div>
+            </>
           )}
 
           <div>
