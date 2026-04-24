@@ -290,40 +290,46 @@ export default function Layout() {
   const navSections = useMemo((): NavSection[] => {
     const sections: NavSection[] = [];
 
-    // PROJECTS block — admin-only разделы ниже отфильтрованы по роли
-    const isAdminRole = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
-    const projectItems: { path: string; icon: LucideIcon; label: string }[] = [
-      { path: '/projects', icon: FolderKanban, label: isAdminRole ? 'Все проекты' : 'Мои проекты' },
-      { path: '/all-tasks', icon: ListTodo, label: isAdminRole ? 'Все задачи' : 'Мои задачи' },
-    ];
-    if (isAdminRole) {
-      projectItems.push(
-        { path: '/team', icon: Users, label: 'Команда' },
-        { path: '/timeoff', icon: Calendar, label: 'Отпуска' },
-        { path: '/blockers', icon: AlertTriangle, label: 'Блокеры' },
-        { path: '/dept-manager', icon: Building2, label: 'Отделы' },
-        { path: '/saturn', icon: Cloud, label: 'Saturn' },
-      );
-    }
-    sections.push({
-      id: 'projects',
-      label: 'Проекты',
-      items: projectItems,
-    });
+    // Роли:
+    // - platform admin (superadmin/owner) — видит ВСЁ
+    // - HR-блок (org_role=admin/hr, но НЕ платформенный админ) — видит ТОЛЬКО HR
+    // - обычные сотрудники (member) — видят только Проекты (ограниченные)
+    const isPlatformAdmin = user?.role === 'superadmin' || user?.org_role === 'owner';
+    const isHrOnly = !isPlatformAdmin && (user?.org_role === 'admin' || user?.org_role === 'hr');
 
-    // HR block — superadmin, owner, admin (HR Admin = Настя), hr (рекрутер = Мария)
+    // PROJECTS block — скрыт у HR-only
+    if (!isHrOnly) {
+      const projectItems: { path: string; icon: LucideIcon; label: string }[] = [
+        { path: '/projects', icon: FolderKanban, label: isPlatformAdmin ? 'Все проекты' : 'Мои проекты' },
+        { path: '/all-tasks', icon: ListTodo, label: isPlatformAdmin ? 'Все задачи' : 'Мои задачи' },
+      ];
+      if (isPlatformAdmin) {
+        projectItems.push(
+          { path: '/team', icon: Users, label: 'Команда' },
+          { path: '/timeoff', icon: Calendar, label: 'Отпуска' },
+          { path: '/blockers', icon: AlertTriangle, label: 'Блокеры' },
+          { path: '/dept-manager', icon: Building2, label: 'Отделы' },
+          { path: '/saturn', icon: Cloud, label: 'Saturn' },
+        );
+      }
+      sections.push({
+        id: 'projects',
+        label: 'Проекты',
+        items: projectItems,
+      });
+    }
+
+    // HR block — superadmin, owner, admin (HR Admin), hr (рекрутер)
     // member (обычные сотрудники) НЕ видят HR блок
-    const isHrRole = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin' || user?.org_role === 'hr';
-    const isHrAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+    const isHrRole = isPlatformAdmin || user?.org_role === 'admin' || user?.org_role === 'hr';
+    const isHrAdmin = isPlatformAdmin || user?.org_role === 'admin';  // HR Admin видит расширенное
     if (isHrRole) {
       const hrItems: { path: string; icon: LucideIcon; label: string }[] = [];
-      // Базовые HR — видят все HR роли
       hrItems.push({ path: '/all-candidates', icon: Users, label: 'Все кандидаты' });
       hrItems.push({ path: '/dashboard', icon: BarChart3, label: 'Аналитика' });
       hrItems.push({ path: '/my-funnels', icon: Briefcase, label: 'Мои вакансии' });
       hrItems.push({ path: '/vacancies', icon: GitBranch, label: 'Заявки' });
       hrItems.push({ path: '/extension', icon: Puzzle, label: 'Волшебная кнопка' });
-      // Расширенные — только admin/owner/superadmin
       if (isHrAdmin) {
         hrItems.push({ path: '/interns', icon: GraduationCap, label: 'Практиканты' });
         hrItems.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
@@ -336,7 +342,6 @@ export default function Layout() {
         hrItems.push({ path: '/exports', icon: FileSpreadsheet, label: 'Экспорт CSV' });
         hrItems.push({ path: '/import', icon: Upload, label: 'Импорт CSV' });
       }
-
       sections.push({
         id: 'hr',
         label: 'HR',
@@ -344,8 +349,8 @@ export default function Layout() {
       });
     }
 
-    // ADMIN block — superadmin/owner only
-    if (user?.role === 'superadmin' || user?.org_role === 'owner') {
+    // ADMIN block — только superadmin/owner, скрыт у HR-only
+    if (isPlatformAdmin) {
       const adminItems: { path: string; icon: LucideIcon; label: string }[] = [
         { path: '/departments', icon: Building2, label: 'Департаменты' },
         { path: '/settings', icon: Settings, label: 'Настройки' },
