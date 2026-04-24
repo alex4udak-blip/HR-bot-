@@ -9,7 +9,7 @@ from datetime import datetime
 
 from .common import (
     logger, get_db, Vacancy, VacancyStatus, VacancyApplication,
-    User, Department, DepartmentMember, DeptRole, OrgMember,
+    User, Department, DepartmentMember, DeptRole, OrgMember, OrgRole,
     VacancyCreate, VacancyUpdate, VacancyResponse,
     check_vacancy_access, has_full_database_access, can_access_vacancy,
     can_edit_vacancy, get_shared_vacancy_ids
@@ -468,20 +468,23 @@ async def get_assignable_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Return all active org members for the 'Responsible' dropdown.
-
-    Any authenticated org member can see all other members (id + name)
-    so they can assign a hiring manager to a vacancy.
-    No feature-gate: this is a basic org-member listing, not a restricted feature.
+    """Вернуть активных HR-рекрутеров (org_role='hr') для дропдауна
+    'Назначить рекрутерам' в модалке вакансии.
     """
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(status_code=403, detail="Organization not found")
 
     result = await db.execute(
-        select(User.id, User.name)
+        select(User.id, User.name, OrgMember.role)
         .join(OrgMember, OrgMember.user_id == User.id)
-        .where(OrgMember.org_id == org.id, User.is_active == True)
+        .where(
+            OrgMember.org_id == org.id,
+            User.is_active == True,
+            OrgMember.role == OrgRole.hr,
+        )
         .order_by(User.name)
     )
-    return [{"id": row[0], "name": row[1]} for row in result.all()]
+    users = result.all()
+    logger.info(f"Assignable recruiters ({len(users)}): {[(r[1], r[2]) for r in users]}")
+    return [{"id": row[0], "name": row[1], "role": row[2]} for row in users]
