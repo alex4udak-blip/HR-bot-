@@ -468,24 +468,61 @@ async def get_assignable_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Вернуть HR-блок (org_role IN ('admin', 'hr')) — HR Админы и
-    HR Рекрутеры — для дропдауна 'Назначить рекрутерам' в модалке вакансии.
-    Owner и member (не-HR) исключены.
+    """Вернуть только реальный HR-персонал для дропдауна 'Назначить рекрутерам'.
+
+    Логика:
+    1. Ищем HR-отделы — по названию, содержащему 'hr' или 'рекрут' (case-insensitive).
+    2. Если HR-отделы есть → возвращаем их членов с org_role IN ('admin','hr').
+    3. Если HR-отделов нет в орге → fallback: все org_role IN ('admin','hr').
     """
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(status_code=403, detail="Organization not found")
 
-    result = await db.execute(
-        select(User.id, User.name, OrgMember.role)
-        .join(OrgMember, OrgMember.user_id == User.id)
-        .where(
-            OrgMember.org_id == org.id,
-            User.is_active == True,
-            OrgMember.role.in_([OrgRole.admin, OrgRole.hr]),
+    # 1. Находим HR-отделы по названию
+    hr_depts_result = await db.execute(
+        select(Department.id).where(
+            Department.org_id == org.id,
+            Department.is_active == True,
+            or_(
+                Department.name.ilike('%hr%'),
+                Department.name.ilike('%рекрут%'),
+            ),
         )
-        .order_by(User.name)
     )
+    hr_dept_ids = [row[0] for row in hr_depts_result.all()]
+
+    # 2. Базовый фильтр — всегда только HR org_role
+    base_conds = [
+        OrgMember.org_id == org.id,
+        User.is_active == True,
+        OrgMember.role.in_([OrgRole.admin, OrgRole.hr]),
+    ]
+
+    if hr_dept_ids:
+        # Только те HR, кто является членом HR-отдела
+        result = await db.execute(
+            select(User.id, User.name, OrgMember.role)
+            .join(OrgMember, OrgMember.user_id == User.id)
+            .join(DepartmentMember, DepartmentMember.user_id == User.id)
+            .where(
+                *base_conds,
+                DepartmentMember.department_id.in_(hr_dept_ids),
+            )
+            .distinct()
+            .order_by(User.name)
+        )
+        logger.info(f"Filtering recruiters by HR departments: {hr_dept_ids}")
+    else:
+        # HR-отделов нет — fallback на OrgRole
+        result = await db.execute(
+            select(User.id, User.name, OrgMember.role)
+            .join(OrgMember, OrgMember.user_id == User.id)
+            .where(*base_conds)
+            .order_by(User.name)
+        )
+        logger.info("No HR departments found — falling back to OrgRole filter")
+
     users = result.all()
     logger.info(f"Assignable HR block ({len(users)}): {[(r[1], r[2]) for r in users]}")
     return [{"id": row[0], "name": row[1], "role": row[2]} for row in users]
