@@ -540,8 +540,11 @@ async def delete_user(
         ]
 
         for query in delete_queries:
+            # SAVEPOINT: если таблица/колонка не существует — откатываем только этот
+            # запрос, не поражая всю транзакцию (asyncpg иначе помечает её aborted)
             try:
-                await db.execute(text(query), {"user_id": user_id})
+                async with db.begin_nested():
+                    await db.execute(text(query), {"user_id": user_id})
             except Exception as qe:
                 logger.debug(f"Delete query skipped: {qe}")
 
@@ -586,9 +589,10 @@ async def delete_user(
 
         for query in nullify_queries:
             try:
-                await db.execute(text(query), {"user_id": user_id})
+                async with db.begin_nested():
+                    await db.execute(text(query), {"user_id": user_id})
             except Exception as qe:
-                # Column or table might not exist yet, skip
+                # Column or table might not exist yet, skip (savepoint откатит этот запрос)
                 logger.debug(f"Skipping query (column/table may not exist): {qe}")
 
         # Also handle JSON array fields that reference user IDs
@@ -601,7 +605,8 @@ async def delete_user(
         ]
         for query in json_array_queries:
             try:
-                await db.execute(text(query), {"user_id": user_id, "uid_json": f"[{user_id}]"})
+                async with db.begin_nested():
+                    await db.execute(text(query), {"user_id": user_id, "uid_json": f"[{user_id}]"})
             except Exception as qe:
                 logger.debug(f"JSON cleanup skipped: {qe}")
 
