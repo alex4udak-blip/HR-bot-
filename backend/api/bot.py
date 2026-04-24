@@ -1939,6 +1939,165 @@ async def cmd_blocker(message: types.Message):
         await message.answer(f"⚠️ Ошибка: {e}")
 
 
+async def _parse_vacancy_text(text: str) -> dict:
+    """Parse free-form vacancy request into structured fields via Claude Sonnet.
+
+    Возвращает dict с полями: title, description, requirements, responsibilities,
+    salary_min, salary_max, salary_currency, location, employment_type, experience_level, priority.
+    Неизвестные поля → None.
+    """
+    import os as _os
+    import json as _json
+    api_key = _os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return {"title": text[:100] or "Без названия", "description": text}
+    try:
+        import anthropic
+        client = anthropic.AsyncAnthropic(api_key=api_key)
+        response = await client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1500,
+            messages=[{"role": "user", "content": f"""Разбери заявку на вакансию в структурированные поля. Входной текст — произвольный.
+
+ТЕКСТ:
+{text}
+
+Верни JSON со следующими полями (если не упомянуто — null):
+{{
+  "title": "короткое название должности (например 'Python Developer (Senior)')",
+  "description": "описание одной строкой или null",
+  "requirements": "требования одной строкой или null",
+  "responsibilities": "обязанности одной строкой или null",
+  "salary_min": число в рублях или null (например '250к' = 250000),
+  "salary_max": число в рублях или null,
+  "salary_currency": "RUB" / "USD" / "EUR" или "RUB" по умолчанию,
+  "location": "город или 'Удаленно' или null",
+  "employment_type": "full-time" / "part-time" / "contract" / "remote" или null,
+  "experience_level": "junior" / "middle" / "senior" / "lead" или null,
+  "priority": 0 / 1 / 2 (0=обычный, 1=высокий, 2=срочный)
+}}
+
+Верни ТОЛЬКО JSON-объект, без markdown."""}],
+        )
+        ai_text = response.content[0].text.strip()
+        if ai_text.startswith("```"):
+            ai_text = ai_text.split("```")[1]
+            if ai_text.startswith("json"):
+                ai_text = ai_text[4:]
+            ai_text = ai_text.strip()
+        return _json.loads(ai_text)
+    except Exception as e:
+        logger.error(f"Vacancy AI parse error: {e}")
+        return {"title": text[:100] or "Заявка из Telegram", "description": text}
+
+
+@dp.message(Command("vacancy", "заявка"))
+async def cmd_vacancy(message: types.Message):
+    """Создать заявку на вакансию через бота.
+
+    Usage:
+        /vacancy Нужен Python senior, 250-350к, удаленка
+        /заявка Таргетолог FB, 100-150к, офис Москва
+    """
+    try:
+        async with async_session() as session:
+            user = await find_user_by_telegram_id(session, message.from_user.id)
+
+            org_id = None
+            user_id = None
+            if user:
+                user_id = user.id
+                org_result = await session.execute(
+                    select(OrgMember.org_id).where(OrgMember.user_id == user.id).limit(1)
+                )
+                org_id = org_result.scalar_one_or_none()
+
+            if not org_id and message.chat.type in ("group", "supergroup"):
+                chat_result = await session.execute(
+                    select(Chat).where(Chat.telegram_chat_id == message.chat.id)
+                )
+                chat_obj = chat_result.scalar_one_or_none()
+                if chat_obj:
+                    org_id = chat_obj.org_id
+                    if not user_id and chat_obj.owner_id:
+                        user_id = chat_obj.owner_id
+
+            if not org_id or not user_id:
+                await message.answer("Не удалось определить организацию. Используйте /bind <email>")
+                return
+
+            # Parse description
+            text = (message.text or "").strip()
+            parts = text.split(None, 1)
+            if len(parts) < 2 or not parts[1].strip():
+                await message.answer(
+                    "📋 <b>Создать заявку на вакансию</b>\n\n"
+                    "Формат:\n"
+                    "<code>/vacancy Python senior, 250-350к, удалёнка</code>\n"
+                    "<code>/заявка Таргетолог FB, 100-150к, офис Москва</code>\n\n"
+                    "AI сам разберёт название, зарплату, формат работы и приоритет.",
+                    parse_mode="HTML",
+                )
+                return
+
+            raw = parts[1].strip()
+            await message.answer("⏳ Парсю заявку...")
+
+            parsed = await _parse_vacancy_text(raw)
+            title = (parsed.get("title") or "Без названия")[:255]
+
+            from .models.database import Vacancy, VacancyStatus as _VS
+            vacancy = Vacancy(
+                org_id=org_id,
+                title=title,
+                description=parsed.get("description") or raw,
+                requirements=parsed.get("requirements"),
+                responsibilities=parsed.get("responsibilities"),
+                salary_min=parsed.get("salary_min"),
+                salary_max=parsed.get("salary_max"),
+                salary_currency=parsed.get("salary_currency") or "RUB",
+                location=parsed.get("location"),
+                employment_type=parsed.get("employment_type"),
+                experience_level=parsed.get("experience_level"),
+                priority=parsed.get("priority") or 0,
+                status=_VS.draft,
+                created_by=user_id,
+                hiring_manager_id=user_id,
+            )
+            session.add(vacancy)
+            await session.commit()
+            await session.refresh(vacancy)
+
+            import os as _os
+            frontend_url = _os.getenv("FRONTEND_URL", "https://hr-bot-production-c613.up.railway.app")
+
+            # Сформировать читаемое summary
+            salary = ""
+            if vacancy.salary_min or vacancy.salary_max:
+                if vacancy.salary_min and vacancy.salary_max:
+                    salary = f"\n💰 {vacancy.salary_min:,}–{vacancy.salary_max:,} {vacancy.salary_currency}"
+                elif vacancy.salary_min:
+                    salary = f"\n💰 от {vacancy.salary_min:,} {vacancy.salary_currency}"
+                else:
+                    salary = f"\n💰 до {vacancy.salary_max:,} {vacancy.salary_currency}"
+            loc = f"\n📍 {vacancy.location}" if vacancy.location else ""
+            exp = f"\n🎓 {vacancy.experience_level}" if vacancy.experience_level else ""
+            emp = f"\n💼 {vacancy.employment_type}" if vacancy.employment_type else ""
+
+            await message.answer(
+                f"✅ <b>Заявка создана</b>\n\n"
+                f"📝 {vacancy.title}"
+                f"{salary}{loc}{exp}{emp}\n\n"
+                f"Статус: Черновик. HR рекрутёры увидят её в разделе «Заявки».\n"
+                f'🔗 <a href="{frontend_url}/vacancies/{vacancy.id}">Открыть</a>',
+                parse_mode="HTML",
+            )
+            logger.info(f"Vacancy {vacancy.id} created via /vacancy by user {user_id}")
+    except Exception as e:
+        logger.error(f"Error in /vacancy: {e}", exc_info=True)
+        await message.answer(f"⚠️ Ошибка: {e}")
+
+
 @dp.message(F.chat.type.in_({"group", "supergroup"}), lambda msg: not (msg.text and msg.text.startswith("/")))
 async def collect_group_message(message: types.Message):
     """Silently collect all messages from groups. Skips commands so they reach their handlers."""
