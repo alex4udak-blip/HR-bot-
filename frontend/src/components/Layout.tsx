@@ -476,9 +476,16 @@ export default function Layout() {
 
                     // "Заявки" — expandable with vacancy request sub-list
                     if (item.path === '/vacancies') {
-                      const requestVacancies = vacancies.filter(v =>
-                        v.status === 'draft' || v.status === 'open' || v.status === 'paused'
-                      ).slice(0, 15);
+                      // Показываем только НЕназначенные заявки — как только на вакансию
+                      // повесили рекрутёра (assigned_to_all или список непустой), она
+                      // уходит из этого дропдауна.
+                      const requestVacancies = vacancies.filter(v => {
+                        const statusOk = v.status === 'draft' || v.status === 'open' || v.status === 'paused';
+                        if (!statusOk) return false;
+                        if (v.assigned_to_all) return false;
+                        if (v.assigned_to && v.assigned_to.length > 0) return false;
+                        return true;
+                      }).slice(0, 15);
                       return (
                         <div key={item.path}>
                           <div className="flex items-center">
