@@ -318,6 +318,11 @@ export default function VacanciesPage() {
   // Note: Salary ranges are in RUB, so we convert vacancy salaries to RUB for comparison
   const filteredVacancies = useMemo(() => {
     return vacancies.filter((vacancy) => {
+      // Заявки page = только заявки, не персональные клоны рекрутёров.
+      // Личные вакансии (включая клоны) живут в "Мои вакансии".
+      const cloneSrc = (vacancy.extra_data as Record<string, unknown> | undefined)?.cloned_from_request_id;
+      if (typeof cloneSrc === 'number') return false;
+
       // Task 9: "My vacancies" filter
       if (showOnlyMine && user) {
         const isMine = vacancy.created_by === user.id
