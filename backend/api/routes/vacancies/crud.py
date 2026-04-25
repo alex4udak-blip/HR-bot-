@@ -543,6 +543,44 @@ async def get_assignable_users(
     return [{"id": row[0], "name": row[1], "role": row[2]} for row in users]
 
 
+async def take_vacancy(
+    vacancy_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(check_vacancy_access),
+):
+    """Рекрутёр берёт заявку в работу: становится hiring_manager, статус → open.
+
+    Доступно только тем, кто в assigned_to или если assigned_to_all=True
+    (либо у пользователя полный доступ к БД).
+    """
+    org = await get_user_org(current_user, db)
+    vacancy = await db.get(Vacancy, vacancy_id)
+    if not vacancy or (org and vacancy.org_id != org.id):
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    if vacancy.hiring_manager_id and vacancy.status == VacancyStatus.open:
+        raise HTTPException(status_code=409, detail="Vacancy is already taken by another recruiter")
+
+    has_full_access = await has_full_database_access(current_user, org, db)
+    if not has_full_access:
+        assigned_to_list = vacancy.assigned_to or []
+        is_assigned = current_user.id in assigned_to_list
+        is_assigned_all = bool(getattr(vacancy, 'assigned_to_all', False))
+        if not is_assigned and not is_assigned_all:
+            raise HTTPException(status_code=403, detail="You are not assigned to this vacancy")
+
+    vacancy.hiring_manager_id = current_user.id
+    vacancy.status = VacancyStatus.open
+    if not vacancy.published_at:
+        vacancy.published_at = datetime.utcnow()
+
+    await db.commit()
+    await db.refresh(vacancy)
+    logger.info(f"Vacancy {vacancy_id} taken by user {current_user.id}")
+
+    return await get_vacancy(vacancy_id, db=db, current_user=current_user)
+
+
 async def assign_vacancy(
     vacancy_id: int,
     data: AssignRequest,
