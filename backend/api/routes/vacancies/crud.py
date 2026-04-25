@@ -548,37 +548,82 @@ async def take_vacancy(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access),
 ):
-    """Рекрутёр берёт заявку в работу: становится hiring_manager, статус → open.
+    """Рекрутёр берёт заявку в работу.
 
-    Доступно только тем, кто в assigned_to или если assigned_to_all=True
+    Создаётся НОВАЯ вакансия — клон заявки, где рекрутёр становится
+    creator/hiring_manager, статус 'open'. Оригинал заявки не меняется,
+    остаётся доступен другим рекрутёрам.
+
+    Доступно тем, кто в assigned_to или при assigned_to_all=True
     (либо у пользователя полный доступ к БД).
     """
     org = await get_user_org(current_user, db)
-    vacancy = await db.get(Vacancy, vacancy_id)
-    if not vacancy or (org and vacancy.org_id != org.id):
+    source = await db.get(Vacancy, vacancy_id)
+    if not source or (org and source.org_id != org.id):
         raise HTTPException(status_code=404, detail="Vacancy not found")
-
-    if vacancy.hiring_manager_id and vacancy.status == VacancyStatus.open:
-        raise HTTPException(status_code=409, detail="Vacancy is already taken by another recruiter")
 
     has_full_access = await has_full_database_access(current_user, org, db)
     if not has_full_access:
-        assigned_to_list = vacancy.assigned_to or []
+        assigned_to_list = source.assigned_to or []
         is_assigned = current_user.id in assigned_to_list
-        is_assigned_all = bool(getattr(vacancy, 'assigned_to_all', False))
+        is_assigned_all = bool(getattr(source, 'assigned_to_all', False))
         if not is_assigned and not is_assigned_all:
             raise HTTPException(status_code=403, detail="You are not assigned to this vacancy")
 
-    vacancy.hiring_manager_id = current_user.id
-    vacancy.status = VacancyStatus.open
-    if not vacancy.published_at:
-        vacancy.published_at = datetime.utcnow()
+    # Проверка: рекрутёр уже не брал эту заявку
+    src_id = int(source.id)
+    existing = await db.execute(
+        select(Vacancy.id).where(
+            Vacancy.created_by == current_user.id,
+            text(
+                f"vacancies.extra_data::jsonb @> '{{\"cloned_from_request_id\": {src_id}}}'::jsonb"
+            ),
+        )
+    )
+    if existing.scalar():
+        raise HTTPException(status_code=409, detail="Заявка уже взята вами в работу")
 
+    cloned_extra = dict(source.extra_data or {})
+    cloned_extra['cloned_from_request_id'] = source.id
+
+    clone_kwargs = dict(
+        org_id=source.org_id,
+        department_id=source.department_id,
+        title=source.title,
+        description=source.description,
+        requirements=source.requirements,
+        responsibilities=source.responsibilities,
+        salary_min=source.salary_min,
+        salary_max=source.salary_max,
+        salary_currency=source.salary_currency,
+        location=source.location,
+        employment_type=source.employment_type,
+        experience_level=source.experience_level,
+        status=VacancyStatus.open,
+        priority=source.priority,
+        tags=list(source.tags or []),
+        extra_data=cloned_extra,
+        visible_to_all=False,
+        hiring_manager_id=current_user.id,
+        created_by=current_user.id,
+        published_at=datetime.utcnow(),
+        closes_at=source.closes_at,
+        assigned_to=[],
+        assigned_to_all=False,
+    )
+    if hasattr(Vacancy, 'custom_stages'):
+        clone_kwargs['custom_stages'] = source.custom_stages
+    if hasattr(Vacancy, 'kanban_card_fields'):
+        clone_kwargs['kanban_card_fields'] = source.kanban_card_fields
+
+    clone = Vacancy(**clone_kwargs)
+    db.add(clone)
     await db.commit()
-    await db.refresh(vacancy)
-    logger.info(f"Vacancy {vacancy_id} taken by user {current_user.id}")
+    await db.refresh(clone)
 
-    return await get_vacancy(vacancy_id, db=db, current_user=current_user)
+    logger.info(f"Request {source.id} taken by user {current_user.id} → cloned vacancy {clone.id}")
+
+    return await get_vacancy(clone.id, db=db, current_user=current_user)
 
 
 async def assign_vacancy(

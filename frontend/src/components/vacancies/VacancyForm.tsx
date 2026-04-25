@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { X, Save, Briefcase, Sparkles, Loader2, Globe, Check, ChevronDown } from 'lucide-react';
+import { X, Save, Briefcase, Sparkles, Loader2, Globe, Check, ChevronDown, PlayCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
+import { useAuthStore } from '@/stores/authStore';
 import type { Vacancy, VacancyStatus } from '@/types';
 import { VACANCY_STATUS_LABELS, EMPLOYMENT_TYPES, EXPERIENCE_LEVELS } from '@/types';
-import { getDepartments, getAssignableUsers, splitVacancyDescription, assignVacancy } from '@/services/api';
+import { getDepartments, getAssignableUsers, splitVacancyDescription, assignVacancy, takeVacancy } from '@/services/api';
 import type { Department, AssignableUser } from '@/services/api';
 import { CurrencySelect } from '@/components/ui';
 
@@ -17,6 +18,43 @@ interface VacancyFormProps {
 }
 
 export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }: VacancyFormProps) {
+  const { user } = useAuthStore();
+  const { vacancies, fetchVacancies } = useVacancyStore();
+
+  // Режим заявки: рекрутёр без прав на редактирование смотрит чужую заявку.
+  // - не админ
+  // - не creator и не hiring_manager
+  // - назначен (assigned_to / assigned_to_all)
+  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+  const isMineByOwnership = !!(user && vacancy && (vacancy.created_by === user.id || vacancy.hiring_manager_id === user.id));
+  const isAssignedToMe = !!(user && vacancy && (vacancy.assigned_to_all || (vacancy.assigned_to || []).includes(user.id)));
+  const isReadOnlyRequest = !!vacancy && !isAdmin && !isMineByOwnership && isAssignedToMe;
+
+  // Уже ли рекрутёр взял эту заявку (есть клон с cloned_from_request_id)
+  const alreadyTaken = useMemo(() => {
+    if (!isReadOnlyRequest || !vacancy || !user) return false;
+    return vacancies.some(v =>
+      v.created_by === user.id &&
+      (v.extra_data as Record<string, unknown> | undefined)?.cloned_from_request_id === vacancy.id
+    );
+  }, [vacancies, vacancy, user, isReadOnlyRequest]);
+
+  const [taking, setTaking] = useState(false);
+  const handleTake = async () => {
+    if (!vacancy) return;
+    setTaking(true);
+    try {
+      await takeVacancy(vacancy.id);
+      toast.success('Заявка взята в работу — открыта в "Мои вакансии"');
+      await fetchVacancies();
+      onClose();
+    } catch {
+      toast.error('Не удалось взять заявку');
+    } finally {
+      setTaking(false);
+    }
+  };
+
   const { createVacancy, updateVacancy } = useVacancyStore();
   const [loading, setLoading] = useState(false);
   const [splitting, setSplitting] = useState(false);
@@ -61,6 +99,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isReadOnlyRequest) return;
     if (!formData.title.trim()) {
       toast.error('Введите название вакансии');
       return;
@@ -172,7 +211,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
               <Briefcase className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
             </div>
             <h2 className="text-base sm:text-lg font-semibold">
-              {vacancy ? 'Редактировать вакансию' : 'Новая вакансия'}
+              {isReadOnlyRequest ? 'Заявка' : (vacancy ? 'Редактировать вакансию' : 'Новая вакансия')}
             </h2>
           </div>
           <button
@@ -192,7 +231,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 type="text"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                disabled={isReadOnlyRequest}
+                className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
                 placeholder="Senior Python Developer"
               />
             </div>
@@ -204,7 +244,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <select
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value as VacancyStatus })}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  disabled={isReadOnlyRequest}
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {Object.entries(VACANCY_STATUS_LABELS).map(([value, label]) => (
                     <option key={value} value={value}>{label}</option>
@@ -216,7 +257,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <select
                   value={formData.priority}
                   onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) })}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  disabled={isReadOnlyRequest}
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <option value={0}>Обычный</option>
                   <option value={1}>Важно</option>
@@ -233,7 +275,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   type="text"
                   value={formData.location}
                   onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  disabled={isReadOnlyRequest}
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
                   placeholder="Удалённо / Москва"
                 />
               </div>
@@ -242,7 +285,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <select
                   value={formData.employment_type}
                   onChange={(e) => setFormData({ ...formData, employment_type: e.target.value })}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  disabled={isReadOnlyRequest}
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <option value="">Не указан</option>
                   {EMPLOYMENT_TYPES.map((type) => (
@@ -259,7 +303,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <select
                   value={formData.experience_level}
                   onChange={(e) => setFormData({ ...formData, experience_level: e.target.value })}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  disabled={isReadOnlyRequest}
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <option value="">Не указан</option>
                   {EXPERIENCE_LEVELS.map((level) => (
@@ -272,7 +317,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <select
                   value={formData.department_id}
                   onChange={(e) => setFormData({ ...formData, department_id: e.target.value })}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  disabled={isReadOnlyRequest}
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <option value="">Не указан</option>
                   {departments.map((dept) => (
@@ -290,7 +336,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   type="number"
                   value={formData.salary_min}
                   onChange={(e) => setFormData({ ...formData, salary_min: e.target.value })}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  disabled={isReadOnlyRequest}
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
                   placeholder="100000"
                 />
               </div>
@@ -300,7 +347,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   type="number"
                   value={formData.salary_max}
                   onChange={(e) => setFormData({ ...formData, salary_max: e.target.value })}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                  disabled={isReadOnlyRequest}
+                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
                   placeholder="200000"
                 />
               </div>
@@ -309,12 +357,14 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <CurrencySelect
                   value={formData.salary_currency}
                   onChange={(currency) => setFormData({ ...formData, salary_currency: currency })}
+                  disabled={isReadOnlyRequest}
                   className="w-full"
                 />
               </div>
             </div>
 
-            {/* Recruiter Assignment — multi-select */}
+            {/* Recruiter Assignment — multi-select. Скрыто для read-only режима. */}
+            {!isReadOnlyRequest && (
             <div>
               <label className="block text-sm text-white/60 mb-1">Назначить рекрутерам</label>
               {/* Assign all toggle */}
@@ -390,7 +440,10 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
               )}
             </div>
 
-            {/* Visible to all toggle */}
+            )}
+
+            {/* Visible to all toggle. Скрыто для read-only. */}
+            {!isReadOnlyRequest && (
             <div
               className="flex items-center gap-3 p-3 glass-light rounded-lg cursor-pointer hover:bg-white/5 transition-colors"
               onClick={() => setFormData({ ...formData, visible_to_all: !formData.visible_to_all })}
@@ -410,6 +463,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 />
               </div>
             </div>
+            )}
 
             {/* Description */}
             <div>
@@ -436,7 +490,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 rows={3}
-                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base"
+                disabled={isReadOnlyRequest}
+                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
                 placeholder="Краткое описание вакансии..."
               />
               {canSplitDescription && (
@@ -453,7 +508,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 value={formData.requirements}
                 onChange={(e) => setFormData({ ...formData, requirements: e.target.value })}
                 rows={3}
-                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base"
+                disabled={isReadOnlyRequest}
+                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
                 placeholder="Необходимые навыки и опыт..."
               />
             </div>
@@ -465,7 +521,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 value={formData.responsibilities}
                 onChange={(e) => setFormData({ ...formData, responsibilities: e.target.value })}
                 rows={3}
-                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base"
+                disabled={isReadOnlyRequest}
+                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
                 placeholder="Ключевые обязанности..."
               />
             </div>
@@ -477,7 +534,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 type="text"
                 value={formData.tags}
                 onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-                className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base"
+                disabled={isReadOnlyRequest}
+                className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
                 placeholder="python, backend, fastapi"
               />
             </div>
@@ -490,16 +548,29 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
             onClick={onClose}
             className="px-3 sm:px-4 py-2 text-white/60 hover:text-white transition-colors text-sm sm:text-base touch-manipulation"
           >
-            Отмена
+            {isReadOnlyRequest ? 'Закрыть' : 'Отмена'}
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
-            className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg transition-colors text-sm sm:text-base touch-manipulation"
-          >
-            <Save className="w-4 h-4" />
-            {loading ? 'Сохранение...' : 'Сохранить'}
-          </button>
+          {isReadOnlyRequest ? (
+            !alreadyTaken && (
+              <button
+                onClick={handleTake}
+                disabled={taking}
+                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-lg transition-colors text-sm sm:text-base touch-manipulation"
+              >
+                {taking ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
+                {taking ? 'Беру...' : 'Взять в работу'}
+              </button>
+            )
+          ) : (
+            <button
+              onClick={handleSubmit}
+              disabled={loading}
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg transition-colors text-sm sm:text-base touch-manipulation"
+            >
+              <Save className="w-4 h-4" />
+              {loading ? 'Сохранение...' : 'Сохранить'}
+            </button>
+          )}
         </div>
       </motion.div>
     </motion.div>

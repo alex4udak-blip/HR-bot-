@@ -293,6 +293,15 @@ export default function VacanciesPage() {
     return false;
   }, [user]);
 
+  // Уже ли рекрутёр взял эту заявку в работу (есть клон с cloned_from_request_id)
+  const hasAlreadyTaken = useCallback((vacancy: Vacancy) => {
+    if (!user) return false;
+    return vacancies.some(v =>
+      v.created_by === user.id &&
+      (v.extra_data as Record<string, unknown> | undefined)?.cloned_from_request_id === vacancy.id
+    );
+  }, [vacancies, user]);
+
   // Currency rates for salary conversion during filtering
   const { getComparableSalary } = useCurrencyRates();
 
@@ -964,33 +973,39 @@ export default function VacanciesPage() {
                     )}
 
                     {/* Assignment actions */}
-                    {vacancy.status === 'draft' && (
-                      <div className="mt-3 flex items-center gap-2">
-                        {isAdmin && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setAssigningVacancy(vacancy); }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/20 rounded-lg transition-colors"
-                          >
-                            <UserPlus className="w-3.5 h-3.5" />
-                            Назначить
-                          </button>
-                        )}
-                        {!isAdmin && isAssignedToMe(vacancy) && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleTakeVacancy(vacancy); }}
-                            disabled={takingVacancyId === vacancy.id}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-500/15 hover:bg-green-500/25 text-green-300 border border-green-500/20 rounded-lg transition-colors disabled:opacity-50"
-                          >
-                            {takingVacancyId === vacancy.id ? (
-                              <div className="animate-spin w-3.5 h-3.5 border-2 border-green-300 border-t-transparent rounded-full" />
-                            ) : (
-                              <PlayCircle className="w-3.5 h-3.5" />
-                            )}
-                            Взять в работу
-                          </button>
-                        )}
-                      </div>
-                    )}
+                    {(() => {
+                      const isRequestForMe = !isAdmin && user && vacancy.created_by !== user.id && isAssignedToMe(vacancy);
+                      const showAdminAssign = isAdmin && vacancy.status === 'draft';
+                      const showTakeBtn = isRequestForMe && !hasAlreadyTaken(vacancy);
+                      if (!showAdminAssign && !showTakeBtn) return null;
+                      return (
+                        <div className="mt-3 flex items-center gap-2">
+                          {showAdminAssign && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setAssigningVacancy(vacancy); }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/20 rounded-lg transition-colors"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              Назначить
+                            </button>
+                          )}
+                          {showTakeBtn && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleTakeVacancy(vacancy); }}
+                              disabled={takingVacancyId === vacancy.id}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-500/15 hover:bg-green-500/25 text-green-300 border border-green-500/20 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                              {takingVacancyId === vacancy.id ? (
+                                <div className="animate-spin w-3.5 h-3.5 border-2 border-green-300 border-t-transparent rounded-full" />
+                              ) : (
+                                <PlayCircle className="w-3.5 h-3.5" />
+                              )}
+                              Взять в работу
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* Stats */}
                     <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">

@@ -161,16 +161,26 @@ export default function Layout() {
     }
   }, [navigate]);
 
-  // Count of draft vacancies assigned to current user (for "Заявки" badge)
+  // Count of vacancies for the "Заявки" badge.
+  // Админ — все нераспределённые заявки в статусе draft.
+  // Рекрутёр — назначенные ему/всем, ещё не взятые в работу (нет клона).
   const assignedDraftCount = useMemo(() => {
     if (!user) return 0;
     const isAdmin = user.role === 'superadmin' || user.org_role === 'owner' || user.org_role === 'admin';
+    if (isAdmin) {
+      return vacancies.filter(v => v.status === 'draft').length;
+    }
+    const myCloneFor = new Set<number>();
+    vacancies.forEach(v => {
+      if (v.created_by !== user.id) return;
+      const src = (v.extra_data as Record<string, unknown> | undefined)?.cloned_from_request_id;
+      if (typeof src === 'number') myCloneFor.add(src);
+    });
     return vacancies.filter(v => {
-      if (v.status !== 'draft') return false;
-      if (isAdmin) return true;
-      if (v.assigned_to_all) return true;
-      if (v.assigned_to && v.assigned_to.includes(user.id)) return true;
-      return false;
+      if (v.created_by === user.id) return false;
+      const assigned = v.assigned_to_all || (v.assigned_to && v.assigned_to.includes(user.id));
+      if (!assigned) return false;
+      return !myCloneFor.has(v.id);
     }).length;
   }, [vacancies, user]);
 
@@ -482,8 +492,16 @@ export default function Layout() {
                     // "Заявки" — expandable with vacancy request sub-list
                     if (item.path === '/vacancies') {
                       // Админ видит НЕназначенные заявки (нужно распределить).
-                      // Рекрутёр видит свои заявки: назначенные на него или открытые для всех.
+                      // Рекрутёр — назначенные на него и ещё не взятые в работу.
                       const isAdminUser = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+                      const myClonesFor = new Set<number>();
+                      if (user) {
+                        vacancies.forEach(v => {
+                          if (v.created_by !== user.id) return;
+                          const src = (v.extra_data as Record<string, unknown> | undefined)?.cloned_from_request_id;
+                          if (typeof src === 'number') myClonesFor.add(src);
+                        });
+                      }
                       const requestVacancies = vacancies.filter(v => {
                         const statusOk = v.status === 'draft' || v.status === 'open' || v.status === 'paused';
                         if (!statusOk) return false;
@@ -492,8 +510,11 @@ export default function Layout() {
                           if (v.assigned_to && v.assigned_to.length > 0) return false;
                           return true;
                         }
+                        if (!user) return false;
+                        if (v.created_by === user.id) return false;
+                        if (myClonesFor.has(v.id)) return false;
                         if (v.assigned_to_all) return true;
-                        if (v.assigned_to && user && v.assigned_to.includes(user.id)) return true;
+                        if (v.assigned_to && v.assigned_to.includes(user.id)) return true;
                         return false;
                       }).slice(0, 15);
                       return (
