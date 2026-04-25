@@ -3,7 +3,7 @@ Basic CRUD operations for vacancies.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 from datetime import datetime
@@ -70,6 +70,8 @@ async def list_vacancies(
         # 2. Vacancies where they are hiring manager
         # 3. Vacancies in departments where they are lead/sub_admin
         # 4. Vacancies shared with them via SharedAccess
+        # 5. Vacancies assigned to them (assigned_to JSON contains user_id)
+        # 6. Vacancies open for all HR (assigned_to_all == True)
         access_conditions = []
 
         # Always add created_by and hiring_manager conditions
@@ -83,6 +85,13 @@ async def list_vacancies(
 
         # Vacancies marked as visible to all org members
         access_conditions.append(Vacancy.visible_to_all == True)
+
+        # Vacancies assigned to this user (JSON containment via PostgreSQL)
+        access_conditions.append(
+            text(f"vacancies.assigned_to::jsonb @> '[{int(current_user.id)}]'::jsonb")
+        )
+        # Vacancies open for all HR recruiters
+        access_conditions.append(Vacancy.assigned_to_all == True)
 
         # Apply OR filter - user must match at least one condition
         query = query.where(or_(*access_conditions))

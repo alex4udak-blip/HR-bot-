@@ -481,15 +481,20 @@ export default function Layout() {
 
                     // "Заявки" — expandable with vacancy request sub-list
                     if (item.path === '/vacancies') {
-                      // Показываем только НЕназначенные заявки — как только на вакансию
-                      // повесили рекрутёра (assigned_to_all или список непустой), она
-                      // уходит из этого дропдауна.
+                      // Админ видит НЕназначенные заявки (нужно распределить).
+                      // Рекрутёр видит свои заявки: назначенные на него или открытые для всех.
+                      const isAdminUser = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
                       const requestVacancies = vacancies.filter(v => {
                         const statusOk = v.status === 'draft' || v.status === 'open' || v.status === 'paused';
                         if (!statusOk) return false;
-                        if (v.assigned_to_all) return false;
-                        if (v.assigned_to && v.assigned_to.length > 0) return false;
-                        return true;
+                        if (isAdminUser) {
+                          if (v.assigned_to_all) return false;
+                          if (v.assigned_to && v.assigned_to.length > 0) return false;
+                          return true;
+                        }
+                        if (v.assigned_to_all) return true;
+                        if (v.assigned_to && user && v.assigned_to.includes(user.id)) return true;
+                        return false;
                       }).slice(0, 15);
                       return (
                         <div key={item.path}>

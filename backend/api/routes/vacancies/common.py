@@ -153,6 +153,15 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
     if getattr(vacancy, 'visible_to_all', False):
         return True
 
+    # Vacancy open for all HR recruiters
+    if getattr(vacancy, 'assigned_to_all', False):
+        return True
+
+    # User is in assigned_to list
+    assigned_to_list = vacancy.assigned_to or []
+    if user.id in assigned_to_list:
+        return True
+
     # User is the creator or hiring manager
     if vacancy.created_by == user.id or vacancy.hiring_manager_id == user.id:
         return True
