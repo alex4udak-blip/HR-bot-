@@ -42,7 +42,6 @@ import {
   ConfirmDialog,
   ErrorMessage
 } from '@/components/ui';
-import { OnboardingTooltip } from '@/components/onboarding';
 
 const STATUS_BORDER_COLORS: Record<string, string> = {
   open: 'border-l-green-500',
@@ -601,16 +600,10 @@ export default function VacanciesPage() {
       <div className="p-4 border-b border-white/10">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
-            <OnboardingTooltip
-              id="vacancies-page"
-              content="Создавайте вакансии и отслеживайте кандидатов через воронку найма"
-              position="bottom"
-            >
-              <h1 className="text-2xl font-bold flex items-center gap-2">
-                <Briefcase className="w-7 h-7 text-blue-400" />
-                Заявки
-              </h1>
-            </OnboardingTooltip>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Briefcase className="w-7 h-7 text-blue-400" />
+              Заявки
+            </h1>
           </div>
 
           <div className="flex items-center gap-2">

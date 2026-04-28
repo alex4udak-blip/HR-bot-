@@ -12,7 +12,6 @@ import {
   UserCog,
   Briefcase,
   GraduationCap,
-  HelpCircle,
   FileSpreadsheet,
   FolderKanban,
   ListTodo,
@@ -38,7 +37,6 @@ import {
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useVacancyStore } from '@/stores/vacancyStore';
-import { useOnboardingTour } from '@/hooks/useOnboardingTour';
 import * as notificationsApi from '@/services/api/notifications';
 import type { Notification as AppNotification } from '@/services/api/notifications';
 import BackgroundEffects from './BackgroundEffects';
@@ -138,7 +136,6 @@ export default function Layout() {
     }
   }, [user?.org_role]);
   const navigate = useNavigate();
-  const { startTour, resetTour, hasCompletedTour } = useOnboardingTour();
 
   // Sidebar: expandable "Мои воронки" with vacancy list
   const { vacancies, fetchVacancies } = useVacancyStore();
@@ -256,12 +253,6 @@ export default function Layout() {
     const interval = setInterval(fetchUnreadCount, 30000);
     return () => clearInterval(interval);
   }, [user?.id, fetchUnreadCount]);
-
-  // Handler for starting/restarting the tour
-  const handleHelpClick = () => {
-    resetTour();
-    setTimeout(() => startTour(), 100);
-  };
 
   // Fetch permissions on mount
   useEffect(() => {
@@ -705,14 +696,6 @@ export default function Layout() {
             <User className="w-5 h-5" />
             <span className="font-medium">Мой профиль</span>
           </NavLink>
-          <button
-            onClick={handleHelpClick}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-dark-300 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all duration-200 mb-2"
-            aria-label={hasCompletedTour ? 'Пройти тур заново' : 'Открыть справку'}
-          >
-            <HelpCircle className="w-5 h-5" aria-hidden="true" />
-            <span className="font-medium">{hasCompletedTour ? 'Пройти тур заново' : 'Помощь'}</span>
-          </button>
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-dark-300 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
