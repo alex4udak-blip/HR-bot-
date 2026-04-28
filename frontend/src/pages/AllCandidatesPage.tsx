@@ -669,7 +669,9 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
       return;
     }
     try {
-      const existingNotes: string[] = card.extra_data?.notes || [];
+      const existingNotes: Array<{ text: string; date: string }> = Array.isArray(card.extra_data?.notes)
+        ? card.extra_data.notes
+        : [];
       const newNote = {
         text: comment.trim(),
         date: new Date().toISOString(),
@@ -976,7 +978,7 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
         <div className="text-xs text-dark-500 mb-3 uppercase tracking-wider">История</div>
         <div className="relative pl-6 border-l border-white/[0.08]">
           {/* Saved notes (newest first) */}
-          {(card.extra_data?.notes || []).slice().reverse().map((note: any, i: number) => (
+          {(Array.isArray(card.extra_data?.notes) ? card.extra_data.notes : []).slice().reverse().map((note: any, i: number) => (
             <div key={`note-${i}`} className="relative pb-5">
               <div className="absolute -left-[25px] w-3 h-3 rounded-full border-2 border-dark-800 bg-blue-500" />
               <div className="text-xs text-dark-600 mb-1">{note.date ? formatDateFull(note.date) : ''}</div>
