@@ -4,6 +4,7 @@ import { Mail, Lock, Eye, EyeOff, Sparkles, KeyRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
 import { login, changePassword } from '@/services/api';
+import { getDefaultLandingPath } from '@/utils/landing';
 
 // Helper to extract error message from API response
 const getErrorMessage = (error: any, fallback: string): string => {
@@ -42,7 +43,7 @@ export default function LoginPage() {
         toast('Необходимо сменить пароль', { icon: '🔐' });
       } else {
         toast.success('С возвращением!');
-        navigate('/dashboard');
+        navigate(getDefaultLandingPath(loggedInUser));
       }
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Ошибка авторизации'));
@@ -72,7 +73,7 @@ export default function LoginPage() {
         setUser({ ...user, must_change_password: false });
       }
       toast.success('Пароль успешно изменён!');
-      navigate('/dashboard');
+      navigate(getDefaultLandingPath(user));
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Ошибка смены пароля'));
     } finally {

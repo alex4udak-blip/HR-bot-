@@ -6,6 +6,16 @@ import { getCurrentUser } from '@/services/api';
 import Layout from '@/components/Layout';
 import RoleRoute from '@/components/RoleRoute';
 import { WebSocketProvider } from '@/components/WebSocketProvider';
+import { getDefaultLandingPath } from '@/utils/landing';
+
+/**
+ * Редирект на дефолтный лендинг — зависит от роли/депта юзера.
+ * Practice-only → /chats, остальные → /dashboard.
+ */
+function DefaultRedirect() {
+  const user = useAuthStore((s) => s.user);
+  return <Navigate to={getDefaultLandingPath(user)} replace />;
+}
 
 // Code splitting: Lazy load pages for better initial bundle size
 // Login and Invite are loaded eagerly since they're entry points
@@ -175,7 +185,7 @@ export default function App() {
         >
           {/* Wrap lazy-loaded routes in Suspense for loading state */}
           {/* Open routes — any authenticated user */}
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<DefaultRedirect />} />
           <Route path="dashboard" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
           <Route path="projects" element={<Suspense fallback={<PageLoader />}><ProjectsPage /></Suspense>} />
           <Route path="projects/:projectId" element={<Suspense fallback={<PageLoader />}><ProjectDetailPage /></Suspense>} />
@@ -227,7 +237,7 @@ export default function App() {
           <Route path="admin" element={<Navigate to="/admin/simulator" replace />} />
           <Route path="admin/simulator" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin']}><AdminSimulatorPage /></RoleRoute></Suspense>} />
           {/* Catch-all for unknown routes */}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<DefaultRedirect />} />
         </Route>
       </Routes>
     </ErrorBoundary>
