@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Clock, Users, Filter, ChevronDown, Printer,
+  Clock, Users, Filter, ChevronDown, FileSpreadsheet,
   FileDown, XCircle, ArrowRight, UserCheck,
   BarChart3, CalendarRange,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import * as XLSX from 'xlsx';
 import api from '@/services/api/client';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -244,10 +245,95 @@ export default function DashboardPage() {
     loadReport();
   }, [loadReport]);
 
-  // Find current category & report info
+  // Find current category & report info — должно быть до handleExportExcel
   const currentCat = REPORT_CATEGORIES.find(c => c.id === activeCategory);
   const currentReport = currentCat?.reports.find(r => r.id === activeReport);
   const currentStatus = VACANCY_STATUS_OPTIONS.find(s => s.id === vacancyStatus);
+
+  // Экспорт текущего отчёта в Excel
+  const handleExportExcel = useCallback(() => {
+    const wb = XLSX.utils.book_new();
+    const fmt = (n: number | null | undefined): string | number => (n == null ? '' : n);
+    let sheetsAdded = 0;
+    type Row = (string | number)[];
+    const aoa = (rows: Row[]) => XLSX.utils.aoa_to_sheet(rows);
+
+    if (activeReport === 'ttf' && ttfData) {
+      const summary: Row[] = [
+        ['Показатель', 'Значение'],
+        ['Средний срок закрытия (дн)', fmt(ttfData.summary.avg_days_to_close)],
+        ['Средняя просрочка (дн)', fmt(ttfData.summary.avg_delay_days)],
+        ['Закрыто позиций', ttfData.summary.closed_positions],
+        ['Всего позиций', ttfData.summary.total_positions],
+      ];
+      XLSX.utils.book_append_sheet(wb, aoa(summary), 'Сводка');
+      const stages: Row[] = [['Этап', 'Среднее время (дн)'], ...ttfData.stage_timings.map(s => [s.label, s.avg_days] as Row)];
+      XLSX.utils.book_append_sheet(wb, aoa(stages), 'Время на этапах');
+      const closings: Row[] = [
+        ['Кандидат', 'Вакансия', 'Рекрутер', 'Дата старта', 'Дата закрытия', 'Дней до закрытия'],
+        ...ttfData.last_closings.map(c => [
+          c.candidate_name, c.vacancy_title, c.recruiter_name ?? '', c.start_date ?? '', c.closed_date ?? '', fmt(c.days_to_close),
+        ] as Row),
+      ];
+      XLSX.utils.book_append_sheet(wb, aoa(closings), 'Последние закрытия');
+      sheetsAdded = 3;
+    } else if (activeReport === 'funnel' && funnelData) {
+      const stages: Row[] = [
+        ['Этап', 'Кандидатов', 'Отказов'],
+        ...funnelData.stages.map(s => [s.label, s.candidate_count, s.rejection_count] as Row),
+      ];
+      XLSX.utils.book_append_sheet(wb, aoa(stages), 'Воронка');
+      const sources: Row[] = [['Источник', 'Кол-во'], ...funnelData.sources.map(s => [s.source, s.count] as Row)];
+      XLSX.utils.book_append_sheet(wb, aoa(sources), 'Источники');
+      const reasons: Row[] = [['Причина отказа', 'Кол-во'], ...funnelData.rejection_reasons.map(r => [r.reason, r.count] as Row)];
+      XLSX.utils.book_append_sheet(wb, aoa(reasons), 'Причины отказов');
+      sheetsAdded = 3;
+    } else if (activeReport === 'funnel-recruiter' && funnelByRecruiter) {
+      const summary: Row[] = [
+        ['Этап', 'Кандидатов', 'Отказов'],
+        ...funnelByRecruiter.summary.stages.map(s => [s.label, s.candidate_count, s.rejection_count] as Row),
+      ];
+      XLSX.utils.book_append_sheet(wb, aoa(summary), 'Сводка');
+      funnelByRecruiter.by_recruiter.forEach(rec => {
+        const rows: Row[] = [
+          [`Рекрутер: ${rec.recruiter_name}`],
+          ['Этап', 'Кандидатов', 'Отказов'],
+          ...rec.stages.map(s => [s.label, s.candidate_count, s.rejection_count] as Row),
+        ];
+        const sheetName = rec.recruiter_name.slice(0, 28).replace(/[\\/?*[\]:]/g, '_');
+        XLSX.utils.book_append_sheet(wb, aoa(rows), sheetName || `Рекрутер ${rec.recruiter_id}`);
+      });
+      sheetsAdded = 1 + funnelByRecruiter.by_recruiter.length;
+    } else if (activeReport === 'rejections' && rejectionsData) {
+      const top: Row[] = [['Причина', 'Кол-во'], ...rejectionsData.top_reasons.map(r => [r.reason, r.count] as Row)];
+      XLSX.utils.book_append_sheet(wb, aoa(top), 'Топ причин');
+      const byStage: Row[] = [['Этап', 'Всего отказов']];
+      rejectionsData.by_stage.forEach(s => byStage.push([s.label, s.count]));
+      XLSX.utils.book_append_sheet(wb, aoa(byStage), 'По этапам');
+      sheetsAdded = 2;
+    } else if (activeReport === 'sources' && sourcesData) {
+      const total: Row[] = [['Источник', 'Кол-во'], ...sourcesData.sources.map(s => [s.source, s.count] as Row)];
+      XLSX.utils.book_append_sheet(wb, aoa(total), 'Все источники');
+      sheetsAdded = 1;
+    } else if (activeReport === 'movement' && movementData) {
+      const moves: Row[] = [
+        ['Из этапа', 'В этап', 'Кол-во'],
+        ...movementData.movements.map(m => [m.from_label, m.to_label, m.count] as Row),
+      ];
+      XLSX.utils.book_append_sheet(wb, aoa(moves), 'Движение');
+      sheetsAdded = 1;
+    }
+
+    if (sheetsAdded === 0) {
+      toast.error('Нет данных для экспорта');
+      return;
+    }
+
+    const reportLabel = currentReport?.label?.replace(/[\\/?*[\]:]/g, '_') ?? 'report';
+    const today = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `${reportLabel}_${today}.xlsx`);
+    toast.success('Excel экспортирован');
+  }, [activeReport, ttfData, funnelData, funnelByRecruiter, rejectionsData, sourcesData, movementData, currentReport]);
 
   return (
     <div className="h-full flex overflow-hidden">
@@ -306,11 +392,12 @@ export default function DashboardPage() {
               </h1>
             </div>
             <button
-              onClick={() => window.print()}
-              className="p-2 rounded-lg hover:bg-white/[0.06] text-white/30 hover:text-white/60 transition-colors"
-              title="Печать"
+              onClick={handleExportExcel}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/20 transition-colors text-sm font-medium"
+              title="Экспорт в Excel"
             >
-              <Printer className="w-4.5 h-4.5" />
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Excel</span>
             </button>
           </div>
 
