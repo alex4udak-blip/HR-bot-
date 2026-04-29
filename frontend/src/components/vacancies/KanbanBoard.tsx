@@ -31,7 +31,6 @@ import ApplicationDetailModal from './ApplicationDetailModal';
 import InterviewSummaryModal from './InterviewSummaryModal';
 import type { InterviewSummaryData } from './InterviewSummaryModal';
 import { KanbanCardSkeleton, Skeleton, EmptyKanban, ConfirmDialog, ErrorMessage } from '@/components/ui';
-import { OnboardingTooltip } from '@/components/onboarding';
 import CompatibilityBadge from '@/components/CompatibilityBadge';
 
 interface KanbanBoardProps {
@@ -570,13 +569,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
       <div className="border-b border-white/10">
         <div className="flex items-center justify-between p-3 sm:p-4">
           <div className="flex items-center gap-2 sm:gap-4">
-            <OnboardingTooltip
-              id="kanban-board"
-              content="Перетаскивайте кандидатов между этапами для обновления статуса"
-              position="bottom"
-            >
-              <h2 className="text-base sm:text-lg font-semibold">Kanban доска</h2>
-            </OnboardingTooltip>
+            <h2 className="text-base sm:text-lg font-semibold">Kanban доска</h2>
             <span className="text-white/40 text-xs sm:text-sm">
               {kanbanBoard.total_count} кандидатов
             </span>

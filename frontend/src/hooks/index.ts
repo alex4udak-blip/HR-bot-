@@ -7,19 +7,6 @@ export type {
   CallFailedEvent,
 } from './useWebSocket';
 
-export { useOnboarding } from './useOnboarding';
-export type {
-  TooltipId,
-  UseOnboardingReturn,
-} from './useOnboarding';
-
-export { useOnboardingTour, DEFAULT_TOUR_STEPS } from './useOnboardingTour';
-export type {
-  TourStep,
-  TourAnalyticsEvent,
-  UseOnboardingTourReturn,
-} from './useOnboardingTour';
-
 export { useCanAccessFeature } from './useCanAccessFeature';
 export type {
   FeatureName,

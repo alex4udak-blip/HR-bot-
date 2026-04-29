@@ -41,7 +41,6 @@ import EntityAI from '@/components/contacts/EntityAI';
 import ShareModal from '@/components/common/ShareModal';
 import ParserModal from '@/components/parser/ParserModal';
 import ParseJobsPanel from '@/components/parser/ParseJobsPanel';
-import { OnboardingTooltip } from '@/components/onboarding';
 import { FeatureGatedButton } from '@/components/auth/FeatureGate';
 import { useCanAccessFeature } from '@/hooks/useCanAccessFeature';
 
@@ -359,16 +358,10 @@ export default function ContactsPage() {
         {/* Header */}
         <div className="border-b border-white/[0.06] p-4">
           <div className="flex items-center justify-between mb-3">
-            <OnboardingTooltip
-              id="contacts-page"
-              content="Import candidates from hh.ru or upload resumes"
-              position="bottom"
-            >
-              <h1 className={clsx(
-                'font-semibold text-white truncate',
-                layoutMode === 'ai-open' ? 'text-base' : 'text-xl'
-              )}>Контакты</h1>
-            </OnboardingTooltip>
+            <h1 className={clsx(
+              'font-semibold text-white truncate',
+              layoutMode === 'ai-open' ? 'text-base' : 'text-xl'
+            )}>Контакты</h1>
             <div className="flex items-center gap-1.5 flex-shrink-0">
               <FeatureGatedButton
                 feature="candidate_database"

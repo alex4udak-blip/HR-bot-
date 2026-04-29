@@ -42,7 +42,6 @@ import * as notificationsApi from '@/services/api/notifications';
 import type { Notification as AppNotification } from '@/services/api/notifications';
 import BackgroundEffects from './BackgroundEffects';
 import ThemeToggle from './ThemeToggle';
-import { OnboardingTour } from './onboarding';
 import { VacancyForm } from '@/components/vacancies';
 import { getVacancy } from '@/services/api/vacancies';
 import type { Vacancy } from '@/types';
@@ -886,9 +885,6 @@ export default function Layout() {
           </NavLink>
         ))}
       </nav>
-
-      {/* Onboarding Tour */}
-      <OnboardingTour autoStart />
 
       {/* Sidebar Vacancy Modal */}
       <AnimatePresence>

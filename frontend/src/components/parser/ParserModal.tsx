@@ -12,7 +12,6 @@ import {
   uploadEntityFile,
 } from '@/services/api';
 import ParsedDataPreview from './ParsedDataPreview';
-import { OnboardingTooltip } from '@/components/onboarding';
 import type { Entity } from '@/types';
 
 interface ParserModalProps {
@@ -292,20 +291,14 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10 flex-shrink-0">
-          <OnboardingTooltip
-            id="parser-modal"
-            content="Paste a URL from hh.ru, LinkedIn or upload a PDF resume"
-            position="bottom"
-          >
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-cyan-500/20 rounded-lg">
-                <Search className="w-5 h-5 text-cyan-400" aria-hidden="true" />
-              </div>
-              <h2 id="parser-modal-title" className="text-lg font-semibold">
-                {isResume ? 'Парсинг резюме' : 'Парсинг вакансии'}
-              </h2>
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-cyan-500/20 rounded-lg">
+              <Search className="w-5 h-5 text-cyan-400" aria-hidden="true" />
             </div>
-          </OnboardingTooltip>
+            <h2 id="parser-modal-title" className="text-lg font-semibold">
+              {isResume ? 'Парсинг резюме' : 'Парсинг вакансии'}
+            </h2>
+          </div>
           <button
             onClick={onClose}
             className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
