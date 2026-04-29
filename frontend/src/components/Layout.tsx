@@ -276,9 +276,9 @@ export default function Layout() {
     const path = location.pathname;
     if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager') || path.startsWith('/timeoff') || path.startsWith('/blockers')) {
       setActiveBlock('projects');
-    } else if (path.startsWith('/chats') || path.startsWith('/interns') || path.startsWith('/practice-list')) {
+    } else if (path.startsWith('/chats') || path.startsWith('/interns') || path.startsWith('/practice-list') || path.startsWith('/calls')) {
       setActiveBlock('practice');
-    } else if (['/dashboard', '/all-candidates', '/workspaces', '/my-funnels', '/form-builder', '/document-templates', '/employees', '/my-profile', '/vacancies', '/analytics', '/hr-reports', '/pen', '/calls', '/extension', '/exports', '/import'].some(p => path.startsWith(p))) {
+    } else if (['/dashboard', '/all-candidates', '/workspaces', '/my-funnels', '/form-builder', '/document-templates', '/employees', '/my-profile', '/vacancies', '/analytics', '/hr-reports', '/pen', '/extension', '/exports', '/import'].some(p => path.startsWith(p))) {
       setActiveBlock('hr');
     } else if (['/users', '/departments', '/settings', '/admin', '/trash'].some(p => path.startsWith(p))) {
       setActiveBlock('admin');
@@ -334,6 +334,7 @@ export default function Layout() {
         label: 'Практика',
         items: [
           { path: '/chats', icon: MessageSquare, label: 'Чаты' },
+          { path: '/calls', icon: Phone, label: 'Созвоны' },
           { path: '/interns', icon: GraduationCap, label: 'Практиканты' },
           { path: '/practice-list', icon: ClipboardList, label: 'База практикантов' },
         ],
@@ -351,7 +352,6 @@ export default function Layout() {
       hrItems.push({ path: '/vacancies', icon: GitBranch, label: 'Заявки' });
       hrItems.push({ path: '/extension', icon: Puzzle, label: 'Волшебная кнопка' });
       if (isHrAdmin) {
-        hrItems.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
         hrItems.push({ path: '/analytics', icon: BarChart3, label: 'HR Аналитика' });
         hrItems.push({ path: '/hr-reports', icon: ClipboardList, label: 'Центр отчётов' });
         hrItems.push({ path: '/pen', icon: TrendingUp, label: 'ПЭН (бонусы)' });

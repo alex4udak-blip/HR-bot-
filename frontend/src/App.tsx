@@ -180,8 +180,8 @@ export default function App() {
           <Route path="projects" element={<Suspense fallback={<PageLoader />}><ProjectsPage /></Suspense>} />
           <Route path="projects/:projectId" element={<Suspense fallback={<PageLoader />}><ProjectDetailPage /></Suspense>} />
           <Route path="all-tasks" element={<Suspense fallback={<PageLoader />}><AllTasksPage /></Suspense>} />
-          <Route path="chats" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
-          <Route path="chats/:chatId" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
+          <Route path="chats" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><ChatsPage /></RoleRoute></Suspense>} />
+          <Route path="chats/:chatId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><ChatsPage /></RoleRoute></Suspense>} />
           <Route path="team" element={<Suspense fallback={<PageLoader />}><TeamPage /></Suspense>} />
           <Route path="timeoff" element={<Suspense fallback={<PageLoader />}><TimeOffPage /></Suspense>} />
           <Route path="blockers" element={<Suspense fallback={<PageLoader />}><BlockersPage /></Suspense>} />
@@ -194,13 +194,13 @@ export default function App() {
           <Route path="vacancies/:vacancyId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><VacanciesPage /></RoleRoute></Suspense>} />
           <Route path="contacts" element={<Navigate to="/all-candidates" replace />} />
           <Route path="contacts/:entityId" element={<Navigate to="/all-candidates" replace />} />
-          <Route path="calls" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><CallsPage /></RoleRoute></Suspense>} />
-          <Route path="calls/:callId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><CallsPage /></RoleRoute></Suspense>} />
+          <Route path="calls" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><CallsPage /></RoleRoute></Suspense>} />
+          <Route path="calls/:callId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><CallsPage /></RoleRoute></Suspense>} />
           <Route path="my-funnels" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><RecruiterFunnelsPage /></RoleRoute></Suspense>} />
           <Route path="workspaces" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><RecruiterWorkspacePage /></RoleRoute></Suspense>} />
-<Route path="interns" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><InternsPage /></RoleRoute></Suspense>} />
-          <Route path="interns/:internId/stats" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><InternStatsPage /></RoleRoute></Suspense>} />
-          <Route path="practice-list" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><PracticeListPage /></RoleRoute></Suspense>} />
+<Route path="interns" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><InternsPage /></RoleRoute></Suspense>} />
+          <Route path="interns/:internId/stats" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><InternStatsPage /></RoleRoute></Suspense>} />
+          <Route path="practice-list" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><PracticeListPage /></RoleRoute></Suspense>} />
           <Route path="form-builder" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><FormBuilderPage /></RoleRoute></Suspense>} />
           <Route path="form-builder/:formId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><FormBuilderPage /></RoleRoute></Suspense>} />
           <Route path="document-templates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><DocumentTemplatesPage /></RoleRoute></Suspense>} />
