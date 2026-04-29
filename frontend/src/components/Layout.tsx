@@ -32,6 +32,7 @@ import {
   Calendar,
   AlertTriangle,
   ClipboardList,
+  MessageSquare,
   type LucideIcon
 } from 'lucide-react';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
@@ -71,6 +72,7 @@ const BLOCK_ACTIVE_BG: Record<string, string> = {
 
 const BLOCK_ACCENT: Record<string, string> = {
   projects: 'bg-blue-500/20 text-blue-400',
+  practice: 'bg-purple-500/20 text-purple-400',
   hr: 'bg-emerald-500/20 text-emerald-400',
   admin: 'bg-amber-500/20 text-amber-400',
 };
@@ -272,9 +274,11 @@ export default function Layout() {
   // Auto-switch active block based on current URL
   useEffect(() => {
     const path = location.pathname;
-    if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager') || path.startsWith('/chats') || path.startsWith('/timeoff') || path.startsWith('/blockers')) {
+    if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager') || path.startsWith('/timeoff') || path.startsWith('/blockers')) {
       setActiveBlock('projects');
-    } else if (['/dashboard', '/all-candidates', '/workspaces', '/my-funnels', '/form-builder', '/practice-list', '/document-templates', '/employees', '/my-profile', '/vacancies', '/interns', '/analytics', '/hr-reports', '/pen', '/calls', '/extension', '/exports', '/import'].some(p => path.startsWith(p))) {
+    } else if (path.startsWith('/chats') || path.startsWith('/interns') || path.startsWith('/practice-list')) {
+      setActiveBlock('practice');
+    } else if (['/dashboard', '/all-candidates', '/workspaces', '/my-funnels', '/form-builder', '/document-templates', '/employees', '/my-profile', '/vacancies', '/analytics', '/hr-reports', '/pen', '/calls', '/extension', '/exports', '/import'].some(p => path.startsWith(p))) {
       setActiveBlock('hr');
     } else if (['/users', '/departments', '/settings', '/admin', '/trash'].some(p => path.startsWith(p))) {
       setActiveBlock('admin');
@@ -320,10 +324,25 @@ export default function Layout() {
       });
     }
 
+    // PRACTICE block — superadmin, owner и HR Admin (org_role='admin').
+    // Обычный рекрутёр (org_role='hr') и member НЕ видят.
+    // Содержит: чаты с AI/критериями/отчётами, Практиканты, База практикантов.
+    const isHrAdmin = isPlatformAdmin || user?.org_role === 'admin';
+    if (isHrAdmin) {
+      sections.push({
+        id: 'practice',
+        label: 'Практика',
+        items: [
+          { path: '/chats', icon: MessageSquare, label: 'Чаты' },
+          { path: '/interns', icon: GraduationCap, label: 'Практиканты' },
+          { path: '/practice-list', icon: ClipboardList, label: 'База практикантов' },
+        ],
+      });
+    }
+
     // HR block — superadmin, owner, admin (HR Admin), hr (рекрутер)
     // member (обычные сотрудники) НЕ видят HR блок
     const isHrRole = isPlatformAdmin || user?.org_role === 'admin' || user?.org_role === 'hr';
-    const isHrAdmin = isPlatformAdmin || user?.org_role === 'admin';  // HR Admin видит расширенное
     if (isHrRole) {
       const hrItems: { path: string; icon: LucideIcon; label: string }[] = [];
       hrItems.push({ path: '/all-candidates', icon: Users, label: 'Все кандидаты' });
@@ -332,7 +351,6 @@ export default function Layout() {
       hrItems.push({ path: '/vacancies', icon: GitBranch, label: 'Заявки' });
       hrItems.push({ path: '/extension', icon: Puzzle, label: 'Волшебная кнопка' });
       if (isHrAdmin) {
-        hrItems.push({ path: '/interns', icon: GraduationCap, label: 'Практиканты' });
         hrItems.push({ path: '/calls', icon: Phone, label: 'Созвоны' });
         hrItems.push({ path: '/analytics', icon: BarChart3, label: 'HR Аналитика' });
         hrItems.push({ path: '/hr-reports', icon: ClipboardList, label: 'Центр отчётов' });
