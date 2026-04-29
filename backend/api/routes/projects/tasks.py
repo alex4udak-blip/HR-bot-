@@ -16,7 +16,7 @@ from .common import (
     get_db, get_current_user, get_user_org,
     Organization,
 )
-from ...models.database import ProjectTaskStatus, Notification
+from ...models.database import ProjectTaskStatus, Notification, Blocker, BlockerStatus
 
 
 TASK_STATUS_ORDER = ["backlog", "todo", "in_progress", "review", "done"]
@@ -27,6 +27,58 @@ TASK_STATUS_LABELS = {
     "review": "На ревью",
     "done": "Готово",
 }
+
+
+async def _close_linked_blocker_on_done(
+    task: ProjectTask,
+    project: Project,
+    current_user: User,
+    db: AsyncSession,
+) -> None:
+    """Если задача создана из блокера и блокер ещё открыт — закрываем
+    его и уведомляем создателя блокера (в колокольчик + Telegram DM).
+    Идемпотентно: если блокер уже resolved, ничего не делает.
+    """
+    if not getattr(task, "blocker_id", None):
+        return
+    blocker = await db.get(Blocker, task.blocker_id)
+    if not blocker:
+        return
+    blocker_status = blocker.status if isinstance(blocker.status, str) else blocker.status.value
+    if blocker_status == "resolved":
+        return
+
+    blocker.status = BlockerStatus.resolved
+    blocker.resolved_by = current_user.id
+    blocker.resolved_at = datetime.utcnow()
+    blocker.resolve_comment = f"Авто-закрытие: задача «{task.title}» переведена в Готово"
+
+    # In-app колокольчик создателю
+    if blocker.user_id and blocker.user_id != current_user.id:
+        notif = Notification(
+            user_id=blocker.user_id,
+            type="blocker_resolved",
+            title="Блокер закрыт — можно проверять",
+            message=f"📝 {blocker.description}\n✅ Задача «{task.title}» выполнена.",
+            link=f"/projects/{project.id}",
+        )
+        db.add(notif)
+
+        # Telegram DM
+        try:
+            from ...bot import send_telegram_notification
+            import os
+            frontend_url = os.getenv("FRONTEND_URL", "https://hr-bot-production-c613.up.railway.app")
+            await send_telegram_notification(
+                blocker.user_id,
+                f"✅ <b>Блокер закрыт — можно проверять</b>\n\n"
+                f"\U0001f4dd {blocker.description}\n"
+                f"\U0001f527 Задача: {task.title}\n"
+                f"\U0001f4c2 Проект: {project.name}\n"
+                f'\U0001f517 <a href="{frontend_url}/projects/{project.id}">Открыть</a>',
+            )
+        except Exception as e:
+            logger.warning(f"Telegram DM about resolved blocker failed: {e}")
 
 
 def serialize_task(t: ProjectTask) -> dict:
@@ -64,6 +116,7 @@ def serialize_task(t: ProjectTask) -> dict:
         tags=t.tags or [],
         total_hours_logged=total_hours,
         parent_task_id=t.parent_task_id,
+        blocker_id=getattr(t, 'blocker_id', None),
         subtask_count=subtask_count,
         subtasks_done=subtasks_done,
         comment_count=comment_count,
@@ -333,11 +386,13 @@ async def update_task(
         except Exception:
             pass
 
-    # If moved to done, set completed_at
+    # If moved to done, set completed_at + закрыть связанный блокер
     new_status = data.status
-    if new_status == "done" and old_status != "done":
+    old_status_str = old_status if isinstance(old_status, str) else (old_status.value if old_status else None)
+    if new_status == "done" and old_status_str != "done":
         task.completed_at = datetime.utcnow()
-    elif new_status and new_status != "done" and old_status == "done":
+        await _close_linked_blocker_on_done(task, project, current_user, db)
+    elif new_status and new_status != "done" and old_status_str == "done":
         task.completed_at = None
 
     await db.flush()
@@ -472,9 +527,12 @@ async def bulk_move_tasks(
     tasks = list(result.scalars().all())
 
     for task in tasks:
+        old_status_str = task.status if isinstance(task.status, str) else (task.status.value if task.status else None)
         task.status = data.target_status
         if data.target_status == "done":
             task.completed_at = now
+            if old_status_str != "done":
+                await _close_linked_blocker_on_done(task, project, current_user, db)
         else:
             task.completed_at = None
 

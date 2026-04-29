@@ -578,6 +578,7 @@ async def create_tasks_from_message(
     telegram_user_id: Optional[int],
     chat_id: Optional[int],
     telegram_username: Optional[str] = None,
+    blocker_id: Optional[int] = None,
 ) -> list[dict]:
     """Full pipeline: detect trigger -> parse -> create tasks -> return results."""
     from ..models.database import (
@@ -866,6 +867,7 @@ async def create_tasks_from_message(
             assignee_id=assignee_id,
             due_date=today,
             created_by=user.id,
+            blocker_id=blocker_id if blocker_mode else None,
         )
         db.add(task)
         await db.flush()

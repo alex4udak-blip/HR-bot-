@@ -179,6 +179,15 @@ async def ensure_shadow_columns():
             print('Adding assigned_to_all column to vacancies...')
             await conn.execute(text('ALTER TABLE vacancies ADD COLUMN assigned_to_all BOOLEAN DEFAULT false'))
 
+        # Check and add blocker_id column to project_tasks (link task → blocker)
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'project_tasks' AND column_name = 'blocker_id')\"
+        ))
+        if not result.scalar():
+            print('Adding blocker_id column to project_tasks...')
+            await conn.execute(text('ALTER TABLE project_tasks ADD COLUMN blocker_id INTEGER REFERENCES blockers(id) ON DELETE SET NULL'))
+            await conn.execute(text('CREATE INDEX ix_task_blocker ON project_tasks (blocker_id)'))
+
         # Seed default email templates for all orgs
         result = await conn.execute(text('SELECT id FROM organizations'))
         org_ids = [r[0] for r in result.fetchall()]

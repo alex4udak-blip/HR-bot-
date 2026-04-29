@@ -1273,6 +1273,7 @@ class ProjectTask(Base):
     sort_order = Column(Integer, default=0)
     tags = Column(JSON, default=list)
     parent_task_id = Column(Integer, ForeignKey("project_tasks.id", ondelete="CASCADE"), nullable=True, index=True)
+    blocker_id = Column(Integer, ForeignKey("blockers.id", ondelete="SET NULL"), nullable=True, index=True)  # Если задача создана из блокера — ссылка на него
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())

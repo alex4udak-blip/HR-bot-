@@ -158,6 +158,7 @@ class TaskResponse(BaseModel):
     tags: list = []
     total_hours_logged: int = 0
     parent_task_id: Optional[int] = None
+    blocker_id: Optional[int] = None
     subtask_count: int = 0
     subtasks_done: int = 0
     comment_count: int = 0

@@ -1906,6 +1906,7 @@ async def cmd_blocker(message: types.Message):
                     telegram_user_id=message.from_user.id,
                     chat_id=message.chat.id if message.chat.type in ("group", "supergroup") else None,
                     telegram_username=message.from_user.username,
+                    blocker_id=blocker.id,
                 )
                 if created_tasks:
                     lines = ["\u2705 Задача по блокеру создана:"]
