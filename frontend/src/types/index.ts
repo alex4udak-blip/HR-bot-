@@ -11,6 +11,7 @@ export interface User {
   department_id?: number;
   department_name?: string;
   department_role?: DeptRole;
+  department_names?: string[];
   telegram_id?: number;
   telegram_username?: string;
   // Additional contact identifiers for speaker matching

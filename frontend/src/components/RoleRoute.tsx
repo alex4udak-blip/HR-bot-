@@ -12,6 +12,7 @@
  *   'hr_all'    — superadmin | owner | admin | hr  (anyone with HR access)
  *   'hr_admin'  — superadmin | owner | admin       (HR admin level: PEN, exports, settings)
  *   'management'— superadmin | owner               (org management: users, departments)
+ *   'practice'  — член департамента 'Практика' (любой org_role)
  *   'any'       — any authenticated user
  */
 
@@ -56,6 +57,7 @@ export default function RoleRoute({ children, allow, feature }: RoleRouteProps) 
   }
 
   // Check access
+  const isPracticeMember = (user.department_names || []).some(n => n.trim().toLowerCase() === 'практика');
   const hasAccess =
     // System superadmin
     (roles.has('superadmin') && user.role === 'superadmin') ||
@@ -64,7 +66,9 @@ export default function RoleRoute({ children, allow, feature }: RoleRouteProps) 
     // Org admin = HR Admin (owner inherits admin, superadmin inherits admin)
     (roles.has('admin') && (user.org_role === 'admin' || user.org_role === 'owner' || user.role === 'superadmin')) ||
     // Org hr = HR recruiter
-    (roles.has('hr_role') && (user.org_role === 'hr' || user.org_role === 'admin' || user.org_role === 'owner' || user.role === 'superadmin'));
+    (roles.has('hr_role') && (user.org_role === 'hr' || user.org_role === 'admin' || user.org_role === 'owner' || user.role === 'superadmin')) ||
+    // Department-based: член депта 'Практика'
+    (roles.has('practice') && isPracticeMember);
 
   if (!hasAccess) return <AccessDenied />;
 

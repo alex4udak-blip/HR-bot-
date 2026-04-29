@@ -119,6 +119,7 @@ class UserResponse(BaseModel):
     department_id: Optional[int] = None
     department_name: Optional[str] = None
     department_role: Optional[str] = None  # lead, sub_admin, member
+    department_names: List[str] = []  # все департаменты, в которых состоит юзер
     telegram_id: Optional[int] = None
     telegram_username: Optional[str] = None
     additional_emails: List[str] = []

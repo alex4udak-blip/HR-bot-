@@ -211,12 +211,14 @@ async def login(
         .join(Department, Department.id == DepartmentMember.department_id)
         .where(DepartmentMember.user_id == authenticated_user.id)
     )
-    dept_row = dept_result.first()
-    if dept_row:
-        dept_member, dept = dept_row
-        department_id = dept.id
-        department_name = dept.name
-        department_role = dept_member.role.value if dept_member.role else None
+    dept_rows = dept_result.all()
+    department_names: list[str] = []
+    if dept_rows:
+        first_member, first_dept = dept_rows[0]
+        department_id = first_dept.id
+        department_name = first_dept.name
+        department_role = first_member.role.value if first_member.role else None
+        department_names = [d.name for _, d in dept_rows]
 
     # Return access token + user info in response body (needed by Chrome extension)
     # Cookies are also set above for browser-based auth
@@ -230,6 +232,7 @@ async def login(
             department_id=department_id,
             department_name=department_name,
             department_role=department_role,
+            department_names=department_names,
             telegram_id=authenticated_user.telegram_id,
             telegram_username=authenticated_user.telegram_username,
             is_active=authenticated_user.is_active, created_at=authenticated_user.created_at,
@@ -451,12 +454,14 @@ async def get_me(
         .join(Department, Department.id == DepartmentMember.department_id)
         .where(DepartmentMember.user_id == user.id)
     )
-    dept_row = dept_result.first()
-    if dept_row:
-        dept_member, dept = dept_row
-        department_id = dept.id
-        department_name = dept.name
-        department_role = dept_member.role.value if dept_member.role else None
+    dept_rows = dept_result.all()
+    department_names: list[str] = []
+    if dept_rows:
+        first_member, first_dept = dept_rows[0]
+        department_id = first_dept.id
+        department_name = first_dept.name
+        department_role = first_member.role.value if first_member.role else None
+        department_names = [d.name for _, d in dept_rows]
 
     return UserResponse(
         id=user.id, email=user.email, name=user.name,
@@ -465,6 +470,7 @@ async def get_me(
         department_id=department_id,
         department_name=department_name,
         department_role=department_role,
+        department_names=department_names,
         telegram_id=user.telegram_id,
         telegram_username=user.telegram_username,
         is_active=user.is_active, created_at=user.created_at,

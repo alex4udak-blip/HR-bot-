@@ -299,11 +299,14 @@ export default function Layout() {
     // - platform admin (superadmin/owner) — видит ВСЁ
     // - HR-блок (org_role=admin/hr, но НЕ платформенный админ) — видит ТОЛЬКО HR
     // - обычные сотрудники (member) — видят только Проекты (ограниченные)
+    // - Practice-only (член депта 'Практика', не платформ-админ) — видит ТОЛЬКО блок Практика
     const isPlatformAdmin = user?.role === 'superadmin' || user?.org_role === 'owner';
     const isHrOnly = !isPlatformAdmin && (user?.org_role === 'admin' || user?.org_role === 'hr');
+    const isPracticeMember = (user?.department_names || []).some(n => n.trim().toLowerCase() === 'практика');
+    const isPracticeOnly = isPracticeMember && !isPlatformAdmin;
 
-    // PROJECTS block — скрыт у HR-only
-    if (!isHrOnly) {
+    // PROJECTS block — скрыт у HR-only и Practice-only
+    if (!isHrOnly && !isPracticeOnly) {
       const projectItems: { path: string; icon: LucideIcon; label: string }[] = [
         { path: '/projects', icon: FolderKanban, label: isPlatformAdmin ? 'Все проекты' : 'Мои проекты' },
         { path: '/all-tasks', icon: ListTodo, label: isPlatformAdmin ? 'Все задачи' : 'Мои задачи' },
@@ -324,11 +327,11 @@ export default function Layout() {
       });
     }
 
-    // PRACTICE block — superadmin, owner и HR Admin (org_role='admin').
-    // Обычный рекрутёр (org_role='hr') и member НЕ видят.
-    // Содержит: чаты с AI/критериями/отчётами, Практиканты, База практикантов.
+    // PRACTICE block — superadmin, owner, HR Admin (org_role='admin'),
+    // и любой член депта 'Практика'. Содержит: чаты с AI/критериями/отчётами,
+    // Созвоны, Практиканты, База практикантов.
     const isHrAdmin = isPlatformAdmin || user?.org_role === 'admin';
-    if (isHrAdmin) {
+    if (isHrAdmin || isPracticeMember) {
       sections.push({
         id: 'practice',
         label: 'Практика',
@@ -342,9 +345,9 @@ export default function Layout() {
     }
 
     // HR block — superadmin, owner, admin (HR Admin), hr (рекрутер)
-    // member (обычные сотрудники) НЕ видят HR блок
+    // member (обычные сотрудники) и Practice-only НЕ видят HR блок
     const isHrRole = isPlatformAdmin || user?.org_role === 'admin' || user?.org_role === 'hr';
-    if (isHrRole) {
+    if (isHrRole && !isPracticeOnly) {
       const hrItems: { path: string; icon: LucideIcon; label: string }[] = [];
       hrItems.push({ path: '/all-candidates', icon: Users, label: 'Все кандидаты' });
       hrItems.push({ path: '/dashboard', icon: BarChart3, label: 'Аналитика' });
