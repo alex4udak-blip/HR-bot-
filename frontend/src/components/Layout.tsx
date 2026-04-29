@@ -445,7 +445,13 @@ export default function Layout() {
                   {section.items.map((item) => {
                     // "Мои воронки" — expandable with vacancy sub-list
                     if (item.path === '/my-funnels') {
-                      const myVacancies = vacancies.filter(v => v.status === 'open' || v.status === 'paused').slice(0, 10);
+                      // Логика та же, что на RecruiterFunnelsPage: HR Admin видит все
+                      // open/paused, рекрутёр — только свои (created_by === user.id).
+                      const isAdminViewer = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+                      const myVacancies = vacancies
+                        .filter(v => (v.status === 'open' || v.status === 'paused'))
+                        .filter(v => isAdminViewer || (user && v.created_by === user.id))
+                        .slice(0, 10);
                       return (
                         <div key={item.path}>
                           <div className="flex items-center">
