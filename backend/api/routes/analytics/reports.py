@@ -18,8 +18,9 @@ from pydantic import BaseModel
 
 from ...database import get_db
 from ...models.database import (
-    User, Vacancy, VacancyStatus, VacancyApplication,
+    User, UserRole, Vacancy, VacancyStatus, VacancyApplication,
     ApplicationStage, Entity, EntityType, StageTransition,
+    OrgMember, OrgRole,
 )
 from ...services.auth import get_current_user, get_user_org
 from ...utils.logging import get_logger
@@ -184,6 +185,35 @@ def _get_date_filter(period: str, date_from_str: Optional[str] = None, date_to_s
     return None, None
 
 
+async def _is_admin_analytics(user: User, org_id: int, db: AsyncSession) -> bool:
+    """Видит общую аналитику по всей организации: superadmin/owner/admin.
+    Обычный hr-рекрутёр (org_role='hr') и member видят только свои данные.
+    """
+    if user.role == UserRole.superadmin:
+        return True
+    res = await db.execute(
+        select(OrgMember.role).where(
+            OrgMember.user_id == user.id,
+            OrgMember.org_id == org_id,
+        )
+    )
+    role = res.scalar_one_or_none()
+    return role in (OrgRole.owner, OrgRole.admin)
+
+
+async def _scope_recruiter_id(
+    recruiter_id: Optional[int],
+    current_user: User,
+    org_id: int,
+    db: AsyncSession,
+) -> Optional[int]:
+    """Если юзер не админ-уровня — фильтр всегда current_user.id (любой
+    переданный recruiter_id игнорируется). Админ может смотреть кого угодно."""
+    if await _is_admin_analytics(current_user, org_id, db):
+        return recruiter_id
+    return current_user.id
+
+
 # ========== ENDPOINTS ==========
 
 @router.get("/time-to-fill", response_model=TimeToFillReport)
@@ -201,6 +231,7 @@ async def get_time_to_fill(
     if not org:
         raise HTTPException(404, "Organization not found")
 
+    recruiter_id = await _scope_recruiter_id(recruiter_id, current_user, org.id, db)
     date_from_dt, date_to_dt = _get_date_filter(period, date_from, date_to)
 
     # --- Closed positions (hired applications) ---
@@ -330,6 +361,7 @@ async def get_funnel_report(
     if not org:
         raise HTTPException(404, "Organization not found")
 
+    recruiter_id = await _scope_recruiter_id(recruiter_id, current_user, org.id, db)
     date_from_dt, date_to_dt = _get_date_filter(period, date_from, date_to)
 
     # Base filter
@@ -458,20 +490,26 @@ async def get_funnel_by_recruiter(
     if not org:
         raise HTTPException(404, "Organization not found")
 
-    # Get summary funnel first
+    is_admin = await _is_admin_analytics(current_user, org.id, db)
+
+    # Get summary funnel first.
+    # Для не-админа — суммарная воронка по его собственным вакансиям, не по всей оргe.
     summary = await get_funnel_report(
-        period=period, recruiter_id=None, vacancy_status=vacancy_status,
+        period=period, recruiter_id=None if is_admin else current_user.id,
+        vacancy_status=vacancy_status,
         date_from=date_from, date_to=date_to,
         db=db, current_user=current_user,
     )
 
-    # Get recruiter list (those who have vacancies)
+    # Get recruiter list. Не-админ видит только себя.
     recruiter_q = (
         select(User.id, User.name)
         .join(Vacancy, Vacancy.created_by == User.id)
         .where(Vacancy.org_id == org.id)
         .group_by(User.id, User.name)
     )
+    if not is_admin:
+        recruiter_q = recruiter_q.where(User.id == current_user.id)
     recruiter_result = await db.execute(recruiter_q)
     recruiters = recruiter_result.all()
 
@@ -511,6 +549,7 @@ async def get_rejections_report(
     if not org:
         raise HTTPException(404, "Organization not found")
 
+    recruiter_id = await _scope_recruiter_id(recruiter_id, current_user, org.id, db)
     date_from_dt, date_to_dt = _get_date_filter(period, date_from, date_to)
 
     base_filter = [
@@ -633,6 +672,7 @@ async def get_sources_report(
     if not org:
         raise HTTPException(404, "Organization not found")
 
+    recruiter_id = await _scope_recruiter_id(recruiter_id, current_user, org.id, db)
     date_from_dt, date_to_dt = _get_date_filter(period, date_from, date_to)
 
     base_filter = [Vacancy.org_id == org.id]
@@ -707,6 +747,7 @@ async def get_movement_report(
     if not org:
         raise HTTPException(404, "Organization not found")
 
+    recruiter_id = await _scope_recruiter_id(recruiter_id, current_user, org.id, db)
     date_from_dt, date_to_dt = _get_date_filter(period, date_from, date_to)
 
     move_q = (

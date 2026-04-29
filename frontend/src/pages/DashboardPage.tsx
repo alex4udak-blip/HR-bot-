@@ -7,6 +7,7 @@ import {
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import api from '@/services/api/client';
+import { useAuthStore } from '@/stores/authStore';
 
 // ===== TYPES =====
 
@@ -162,6 +163,18 @@ const BAR_COLORS = {
 // ===== MAIN COMPONENT =====
 
 export default function DashboardPage() {
+  const user = useAuthStore((s) => s.user);
+  const isAdminAnalytics =
+    user?.role === 'superadmin' ||
+    user?.org_role === 'owner' ||
+    user?.org_role === 'admin';
+  // Не-админ (HR рекрутёр) видит только категорию "Вакансии" — все цифры
+  // backend отскейпит на его recruiter_id. Категория "Рекрутеры" скрыта,
+  // т.к. там воронка по всем рекрутерам — для не-админа смысла нет.
+  const visibleCategories = isAdminAnalytics
+    ? REPORT_CATEGORIES
+    : REPORT_CATEGORIES.filter(c => c.id !== 'recruiter');
+
   const [activeCategory, setActiveCategory] = useState('vacancy');
   const [activeReport, setActiveReport] = useState('ttf');
   const [period, setPeriod] = useState('current');
@@ -244,7 +257,7 @@ export default function DashboardPage() {
           <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">Аналитика</h2>
         </div>
 
-        {REPORT_CATEGORIES.map(cat => (
+        {visibleCategories.map(cat => (
           <div key={cat.id} className="mb-2">
             {/* Category header */}
             <div className="px-5 py-2">
