@@ -30,7 +30,7 @@ from sqlalchemy import select, func, distinct, delete, and_, or_
 from sqlalchemy.orm import selectinload
 
 from ..database import get_db
-from ..models.database import User, UserRole, Chat, Message, ChatCriteria, AIConversation, AnalysisHistory, Entity, OrgRole, DepartmentMember, DeptRole, SharedAccess, ResourceType, AccessLevel
+from ..models.database import User, UserRole, Chat, Message, ChatCriteria, AIConversation, AnalysisHistory, Entity, OrgRole, Department, DepartmentMember, DeptRole, SharedAccess, ResourceType, AccessLevel
 from ..models.schemas import ChatResponse, ChatUpdate, ChatTypeConfig
 from ..models.sharing import BaseShareRequest as ShareRequest
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, can_share_to
@@ -107,11 +107,26 @@ async def get_chats(
 
         # Salesforce-style access control:
         # - Org Owner: see all in organization
+        # - Member депта 'Практика': видит ВСЕ чаты в org (вся команда практики
+        #   работает с чатами кандидатов вместе)
         # - Dept Lead/Sub_admin: see dept members' records + entity-linked chats
         # - Others: own + shared
         user_role = await get_user_org_role(user, org.id, db)
 
-        if user_role != "owner":
+        # Проверка: член депта 'Практика'?
+        practice_check = await db.execute(
+            select(DepartmentMember.id)
+            .join(Department, Department.id == DepartmentMember.department_id)
+            .where(
+                DepartmentMember.user_id == user.id,
+                Department.org_id == org.id,
+                func.lower(func.trim(Department.name)) == 'практика',
+            )
+            .limit(1)
+        )
+        is_practice_member = practice_check.scalar_one_or_none() is not None
+
+        if user_role != "owner" and not is_practice_member:
             # Get IDs of chats shared with current user
             shared_result = await db.execute(
                 select(SharedAccess.resource_id).where(
