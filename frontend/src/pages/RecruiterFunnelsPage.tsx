@@ -144,7 +144,7 @@ function CopyButton({ value }: { value: string }) {
 export default function RecruiterFunnelsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { vacancies, isLoading, fetchVacancies, createVacancy, updateVacancy } = useVacancyStore();
+  const { vacancies, isLoading, fetchVacancies, updateVacancy } = useVacancyStore();
   const { user } = useAuthStore();
 
   const isHrAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
@@ -657,11 +657,6 @@ export default function RecruiterFunnelsPage() {
 
   const deselectVacancy = () => {
     setSearchParams({});
-  };
-
-  const handleFunnelCreated = (vacancy: Vacancy) => {
-    setShowCreateModal(false);
-    selectVacancy(vacancy.id);
   };
 
   const handleCloseVacancy = async (vacancy: Vacancy) => {
@@ -1826,12 +1821,12 @@ export default function RecruiterFunnelsPage() {
         )}
       </main>
 
-      {/* Create Funnel Modal */}
+      {/* Create / Edit Vacancy Modal — единая VacancyForm */}
       {showCreateModal && (
-        <CreateFunnelModal
+        <VacancyForm
+          key="create-funnel"
           onClose={() => setShowCreateModal(false)}
-          onCreated={handleFunnelCreated}
-          createVacancy={createVacancy}
+          onSuccess={() => { setShowCreateModal(false); fetchVacancies(); }}
         />
       )}
 
@@ -1844,91 +1839,6 @@ export default function RecruiterFunnelsPage() {
         />
       )}
 
-    </div>
-  );
-}
-
-/* ===================== Create Funnel Modal ===================== */
-
-function CreateFunnelModal({
-  onClose,
-  onCreated,
-  createVacancy,
-}: {
-  onClose: () => void;
-  onCreated: (vacancy: Vacancy) => void;
-  createVacancy: (data: { title: string; status: VacancyStatus }) => Promise<Vacancy>;
-}) {
-  const [title, setTitle] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (title.trim().length < 3) {
-      toast.error('Название минимум 3 символа');
-      return;
-    }
-    setSaving(true);
-    try {
-      const vacancy = await createVacancy({
-        title: title.trim(),
-        status: 'open' as VacancyStatus,
-      });
-      toast.success('Воронка создана');
-      onCreated(vacancy);
-    } catch {
-      toast.error('Ошибка создания воронки');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative glass rounded-2xl border border-white/10 shadow-2xl w-full max-w-md p-6">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-dark-50">Новая воронка</h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-white/10 text-dark-400 hover:text-dark-100 transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit}>
-          <div className="mb-5">
-            <label className="block text-sm font-medium text-dark-200 mb-2">
-              Название воронки <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="text"
-              autoFocus
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Например: Frontend React Developer"
-              className="w-full px-4 py-2.5 glass-light border border-white/[0.08] rounded-lg text-sm text-dark-100 placeholder-dark-400 focus:outline-none focus:border-accent-500/50"
-            />
-            <p className="mt-1.5 text-xs text-dark-400">
-              Стадии воронки можно настроить после создания через ⚙️
-            </p>
-          </div>
-          <div className="flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-dark-300 hover:text-dark-100 transition-colors"
-            >
-              Отмена
-            </button>
-            <button
-              type="submit"
-              disabled={saving || title.trim().length < 3}
-              className="flex items-center gap-2 px-5 py-2 bg-accent-500 hover:bg-accent-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              Создать
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 }
