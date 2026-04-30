@@ -386,6 +386,7 @@ export default function AllCandidatesPage() {
                         <img
                           src={card.photo_url}
                           alt={card.name}
+                          referrerPolicy="no-referrer"
                           className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-accent-500/20"
                           onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                         />
@@ -801,6 +802,7 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
           <img
             src={card.photo_url}
             alt={card.name}
+            referrerPolicy="no-referrer"
             className="w-[120px] h-[150px] rounded-xl object-cover flex-shrink-0 bg-accent-500/20"
             onError={(e) => {
               const el = e.currentTarget as HTMLImageElement;

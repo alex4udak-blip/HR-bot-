@@ -420,6 +420,13 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
     background_tasks.add_task(
         _generate_resume_files, entity_id, org_id, user_id, candidate_data
     )
+    # Отдельный быстрый таск: скачать фото и сохранить как EntityFile.
+    # AI-резюме длится дольше и может упасть (нет API-ключа, парс ошибки и т.д.) —
+    # фото так бы пропало. Этот таск делает только photo download → fast.
+    if data.photo_url:
+        background_tasks.add_task(
+            _download_candidate_photo_eager, entity_id, org_id, user_id, data.photo_url, data.full_name
+        )
 
     return MagicButtonResponse(
         success=True,
@@ -428,6 +435,63 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         duplicate_info=duplicate_info,
         message="Кандидат добавлен" + (" (дубликат найден)" if is_duplicate else ""),
     )
+
+
+async def _download_candidate_photo_eager(
+    entity_id: int, org_id: int, user_id: int, photo_url: str, candidate_name: str
+):
+    """Быстрый background-task: только скачивает фото с hh.ru и сохраняет
+    как EntityFile. Запускается сразу после создания кандидата, не зависит от
+    AI-резюме (который может упасть из-за API/парсера). Идемпотентно: если у
+    entity уже есть photo-файл, пропускает.
+    """
+    from ..database import AsyncSessionLocal
+    try:
+        async with AsyncSessionLocal() as db:
+            # Skip if photo file already exists for this entity
+            existing = await db.execute(
+                select(EntityFile.id).where(
+                    EntityFile.entity_id == entity_id,
+                    EntityFile.mime_type.startswith("image/"),
+                ).limit(1)
+            )
+            if existing.scalar():
+                logger.info(f"Photo file already exists for entity {entity_id}, skip eager download")
+                return
+
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                resp = await client.get(photo_url, headers={"User-Agent": "Mozilla/5.0"})
+                if resp.status_code != 200:
+                    logger.warning(f"Eager photo download failed for entity {entity_id}: HTTP {resp.status_code}")
+                    return
+                ct = resp.headers.get("content-type", "").lower().split(";")[0].strip()
+                if not ct.startswith("image/"):
+                    logger.warning(f"Eager photo download non-image content-type: {ct} for entity {entity_id}")
+                    return
+                photo_bytes = resp.content
+
+            ext = {
+                "image/jpeg": "jpg", "image/jpg": "jpg",
+                "image/png": "png", "image/webp": "webp",
+            }.get(ct, "jpg")
+            photo_file = EntityFile(
+                entity_id=entity_id,
+                org_id=org_id,
+                file_type=EntityFileType.other,
+                file_name=f"Фото_{(candidate_name or 'кандидат').replace(' ', '_')}.{ext}",
+                file_path="",
+                file_size=len(photo_bytes),
+                mime_type=ct,
+                description="Фото кандидата (HH, eager)",
+                uploaded_by=user_id,
+                file_data=photo_bytes,
+            )
+            db.add(photo_file)
+            await db.commit()
+            logger.info(f"Eager photo saved for entity {entity_id}: {len(photo_bytes)} bytes, {ct}")
+    except Exception as e:
+        logger.warning(f"Eager photo download crashed for entity {entity_id}: {type(e).__name__}: {e}")
 
 
 async def _generate_resume_files(

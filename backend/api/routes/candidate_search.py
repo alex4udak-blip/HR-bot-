@@ -756,7 +756,10 @@ async def get_candidates_kanban(
                 recruiter_name=recruiter_map.get(e.created_by),
                 created_at=e.created_at,
                 tags=e.tags or [],
-                photo_url=(ed.get("photo_url") if ed else None) or photo_file_map.get(e.id),
+                # Локальный URL предпочтительнее внешнего: hh.ru CDN может
+                # отдавать 403 на чужой Referer / истечь срок ссылки. Локальный
+                # /api/entities/.../files/.../download грузится по куке.
+                photo_url=photo_file_map.get(e.id) or (ed.get("photo_url") if ed else None),
                 company=getattr(e, 'company', None),
                 city=ed.get("city"),
                 age=ed.get("age"),
