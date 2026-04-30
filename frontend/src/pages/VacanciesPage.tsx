@@ -46,6 +46,7 @@ import {
 const STATUS_BORDER_COLORS: Record<string, string> = {
   open: 'border-l-green-500',
   draft: 'border-l-gray-500',
+  pending_review: 'border-l-purple-500',
   closed: 'border-l-red-500',
   paused: 'border-l-yellow-500',
   cancelled: 'border-l-gray-600',
@@ -53,7 +54,7 @@ const STATUS_BORDER_COLORS: Record<string, string> = {
 
 const STATUS_FILTERS: { id: VacancyStatus | 'all'; name: string }[] = [
   { id: 'all', name: 'Все' },
-  { id: 'draft', name: 'Черновик' },
+  { id: 'pending_review', name: 'На рассмотрении' },
   { id: 'open', name: 'Открыта' },
   { id: 'paused', name: 'На паузе' },
   { id: 'closed', name: 'Закрыта' },
@@ -764,7 +765,7 @@ export default function VacanciesPage() {
                         Статус
                       </label>
                       <div className="flex flex-wrap gap-1.5">
-                        {(['open', 'draft', 'paused', 'closed'] as VacancyStatus[]).map((status) => (
+                        {(['open', 'pending_review', 'paused', 'closed'] as VacancyStatus[]).map((status) => (
                           <button
                             key={status}
                             onClick={() => handleToggleStatusFilter(status)}

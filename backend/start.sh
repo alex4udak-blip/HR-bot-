@@ -238,6 +238,15 @@ async def ensure_shadow_columns():
             print('Adding hr value to orgrole enum...')
             await raw_conn.execute(text(\"ALTER TYPE orgrole ADD VALUE 'hr'\"))
             print('Added hr to orgrole enum')
+
+        # Add 'pending_review' to vacancystatus enum (заявка на апрув)
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'pending_review' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'vacancystatus'))\"
+        ))
+        if not result.scalar():
+            print('Adding pending_review value to vacancystatus enum...')
+            await raw_conn.execute(text(\"ALTER TYPE vacancystatus ADD VALUE 'pending_review'\"))
+            print('Added pending_review to vacancystatus enum')
     await raw_engine.dispose()
 
     await engine.dispose()

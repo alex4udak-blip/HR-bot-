@@ -535,7 +535,7 @@ export const CALL_STATUS_COLORS: Record<CallStatus, string> = {
 
 // === Vacancy Types ===
 
-export type VacancyStatus = 'draft' | 'open' | 'paused' | 'closed' | 'cancelled';
+export type VacancyStatus = 'draft' | 'pending_review' | 'open' | 'paused' | 'closed' | 'cancelled';
 
 export type ApplicationStage =
   // Main pipeline stages (using existing PostgreSQL enum values)
@@ -712,6 +712,7 @@ export interface VacancyStats {
 
 export const VACANCY_STATUS_LABELS: Record<VacancyStatus, string> = {
   draft: 'Черновик',
+  pending_review: 'На рассмотрении',
   open: 'Открыта',
   paused: 'На паузе',
   closed: 'Закрыта',
@@ -720,6 +721,7 @@ export const VACANCY_STATUS_LABELS: Record<VacancyStatus, string> = {
 
 export const VACANCY_STATUS_COLORS: Record<VacancyStatus, string> = {
   draft: 'bg-gray-500/20 text-gray-300',
+  pending_review: 'bg-purple-500/20 text-purple-300',
   open: 'bg-green-500/20 text-green-300',
   paused: 'bg-yellow-500/20 text-yellow-300',
   closed: 'bg-blue-500/20 text-blue-300',

@@ -22,6 +22,7 @@ interface VacancyStatusBadgeProps {
  */
 export const VACANCY_STATUS_BADGE_COLORS: Record<VacancyStatus, string> = {
   draft: 'bg-gray-100 text-gray-700 dark:bg-gray-500/20 dark:text-gray-300',
+  pending_review: 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300',
   open: 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300',
   paused: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/20 dark:text-yellow-300',
   closed: 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300',
@@ -33,6 +34,7 @@ export const VACANCY_STATUS_BADGE_COLORS: Record<VacancyStatus, string> = {
  */
 export const VACANCY_STATUS_BADGE_LABELS: Record<VacancyStatus, string> = {
   draft: 'Draft',
+  pending_review: 'Pending review',
   open: 'Open',
   paused: 'Paused',
   closed: 'Closed',
@@ -44,6 +46,7 @@ export const VACANCY_STATUS_BADGE_LABELS: Record<VacancyStatus, string> = {
  */
 export const VACANCY_STATUS_BADGE_LABELS_RU: Record<VacancyStatus, string> = {
   draft: 'Черновик',
+  pending_review: 'На рассмотрении',
   open: 'Открыта',
   paused: 'На паузе',
   closed: 'Закрыта',

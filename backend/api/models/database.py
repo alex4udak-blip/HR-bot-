@@ -76,11 +76,12 @@ class EntityStatus(str, enum.Enum):
 
 class VacancyStatus(str, enum.Enum):
     """Status of a job vacancy"""
-    draft = "draft"          # Not yet published
-    open = "open"            # Actively hiring
-    paused = "paused"        # Temporarily paused
-    closed = "closed"        # Position filled
-    cancelled = "cancelled"  # Cancelled/no longer needed
+    draft = "draft"                      # Not yet published (legacy, не показывается на UI)
+    pending_review = "pending_review"    # На рассмотрении — заявка отправлена на апрув
+    open = "open"                        # Actively hiring
+    paused = "paused"                    # Temporarily paused
+    closed = "closed"                    # Position filled
+    cancelled = "cancelled"              # Cancelled/no longer needed
 
 
 class ProjectStatus(str, enum.Enum):
