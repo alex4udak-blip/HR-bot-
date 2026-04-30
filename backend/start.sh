@@ -249,6 +249,13 @@ async def ensure_shadow_columns():
             print('Added pending_review to vacancystatus enum')
     await raw_engine.dispose()
 
+    # One-time data migration: legacy draft → pending_review
+    # 'Черновик' статус был removed с UI, существующие записи переезжают в новый
+    # 'На рассмотрении' статус. Идемпотентно: WHERE status='draft'.
+    async with engine.begin() as mig_conn:
+        res = await mig_conn.execute(text(\"UPDATE vacancies SET status='pending_review' WHERE status='draft'\"))
+        print(f\"Migrated {res.rowcount} draft vacancies → pending_review\")
+
     await engine.dispose()
 
 asyncio.run(ensure_shadow_columns())

@@ -589,7 +589,7 @@ async def take_vacancy(
     # Оригинал-заявка переходит в статус 'open' (если был draft/paused),
     # сигнализируя что её взяли в работу. Сама заявка остаётся доступной
     # другим назначенным рекрутёрам.
-    if source.status in (VacancyStatus.draft, VacancyStatus.paused):
+    if source.status in (VacancyStatus.draft, VacancyStatus.pending_review, VacancyStatus.paused):
         source.status = VacancyStatus.open
         if not source.published_at:
             source.published_at = datetime.utcnow()

@@ -160,13 +160,13 @@ export default function Layout() {
   }, [navigate]);
 
   // Count of vacancies for the "Заявки" badge.
-  // Админ — все нераспределённые заявки в статусе draft.
+  // Админ — все нераспределённые заявки в статусе 'На рассмотрении' (+ legacy draft).
   // Рекрутёр — назначенные ему/всем, ещё не взятые в работу (нет клона).
   const assignedDraftCount = useMemo(() => {
     if (!user) return 0;
     const isAdmin = user.role === 'superadmin' || user.org_role === 'owner' || user.org_role === 'admin';
     if (isAdmin) {
-      return vacancies.filter(v => v.status === 'draft').length;
+      return vacancies.filter(v => v.status === 'pending_review' || v.status === 'draft').length;
     }
     const myCloneFor = new Set<number>();
     vacancies.forEach(v => {
@@ -520,7 +520,7 @@ export default function Layout() {
                         });
                       }
                       const requestVacancies = vacancies.filter(v => {
-                        const statusOk = v.status === 'draft' || v.status === 'open' || v.status === 'paused';
+                        const statusOk = v.status === 'pending_review' || v.status === 'draft' || v.status === 'open' || v.status === 'paused';
                         if (!statusOk) return false;
                         if (isAdminUser) {
                           if (v.assigned_to_all) return false;
@@ -575,6 +575,7 @@ export default function Layout() {
                                 >
                                   <span className={clsx(
                                     'w-1.5 h-1.5 rounded-full flex-shrink-0',
+                                    v.status === 'pending_review' ? 'bg-purple-400' :
                                     v.status === 'draft' ? 'bg-orange-400' :
                                     v.status === 'open' ? 'bg-green-400' : 'bg-yellow-400'
                                   )} />

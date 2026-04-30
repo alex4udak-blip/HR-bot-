@@ -974,7 +974,7 @@ export default function VacanciesPage() {
                     {/* Assignment actions */}
                     {(() => {
                       const isRequestForMe = !isAdmin && user && vacancy.created_by !== user.id && isAssignedToMe(vacancy);
-                      const showAdminAssign = isAdmin && vacancy.status === 'draft';
+                      const showAdminAssign = isAdmin && (vacancy.status === 'pending_review' || vacancy.status === 'draft');
                       const showTakeBtn = isRequestForMe && !hasAlreadyTaken(vacancy);
                       if (!showAdminAssign && !showTakeBtn) return null;
                       return (

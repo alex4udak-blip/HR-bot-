@@ -868,7 +868,7 @@ class Vacancy(Base):
     location = Column(String(255), nullable=True)  # Work location
     employment_type = Column(String(50), nullable=True)  # full-time, part-time, contract, remote
     experience_level = Column(String(50), nullable=True)  # junior, middle, senior, lead
-    status = Column(SQLEnum(VacancyStatus), default=VacancyStatus.draft, index=True)
+    status = Column(SQLEnum(VacancyStatus), default=VacancyStatus.pending_review, index=True)
     priority = Column(Integer, default=0)  # 0=normal, 1=high, 2=urgent
     tags = Column(JSON, default=list)
     extra_data = Column(JSON, default=dict)  # Additional custom fields

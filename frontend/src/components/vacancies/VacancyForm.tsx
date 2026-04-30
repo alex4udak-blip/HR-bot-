@@ -75,7 +75,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     location: initialData?.location || '',
     employment_type: initialData?.employment_type || '',
     experience_level: initialData?.experience_level || '',
-    status: vacancy?.status || 'draft' as VacancyStatus,
+    status: vacancy?.status || 'pending_review' as VacancyStatus,
     priority: vacancy?.priority || 0,
     tags: initialData?.tags?.join(', ') || '',
     department_id: vacancy?.department_id || '',

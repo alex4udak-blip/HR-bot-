@@ -304,7 +304,7 @@ class VacancyCreate(BaseModel):
     location: Optional[str] = None
     employment_type: Optional[str] = None
     experience_level: Optional[str] = None
-    status: VacancyStatus = VacancyStatus.draft
+    status: VacancyStatus = VacancyStatus.pending_review
     priority: int = 0
     tags: List[str] = []
     extra_data: dict = {}
