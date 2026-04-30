@@ -112,7 +112,7 @@ export default function AddToVacancyModal({
               <Briefcase className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Добавить в вакансию</h2>
+              <h2 className="text-lg font-semibold">Добавить на вакансию</h2>
               <p className="text-sm text-white/60">{entityName}</p>
             </div>
           </div>

@@ -519,7 +519,7 @@ export default function AllCandidatesPage() {
               className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] transition-colors disabled:opacity-50"
             >
               <Plus className="w-3.5 h-3.5" />
-              Переместить на вакансию
+              Добавить на вакансию
             </button>
 
             {/* Delete */}
@@ -774,7 +774,7 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
           onClick={onAddToVacancy}
           className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
         >
-          <Plus className="w-4 h-4" /> Переместить
+          <Plus className="w-4 h-4" /> Добавить на вакансию
         </button>
         <button
           onClick={onEdit}
