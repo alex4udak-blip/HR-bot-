@@ -259,6 +259,7 @@ async def ensure_shadow_columns():
     # XSS cleanup: вырезаем <html-теги> из существующих данных, в которых
     # они могли попасть до серверной санитизации. Идемпотентно (regex no-op
     # если тегов уже нет).
+    import re as _re
     async with engine.begin() as san_conn:
         # vacancy.title
         res = await san_conn.execute(text(
@@ -274,11 +275,35 @@ async def ensure_shadow_columns():
         ))
         print(f\"Stripped HTML from {res.rowcount} entity tag names\")
 
+        # entities.name (имена кандидатов и контактов с XSS-payload)
+        res = await san_conn.execute(text(
+            r\"UPDATE entities SET name = trim(regexp_replace(name, '<[^>]*>', '', 'g')) \"
+            r\"WHERE name ~ '<[^>]*>'\"
+        ))
+        print(f\"Stripped HTML from {res.rowcount} entity names\")
+
+        # entities.tags (JSON-массив строк)
+        rows = await san_conn.execute(text(
+            r\"SELECT id, tags FROM entities WHERE tags::text ~ '<[^>]*>'\"
+        ))
+        entity_cleaned = 0
+        for row in rows:
+            try:
+                cleaned = [_re.sub(r'<[^>]*>', '', t).strip()[:80] for t in (row.tags or []) if isinstance(t, str)]
+                cleaned = [t for t in cleaned if t]
+                await san_conn.execute(
+                    text(\"UPDATE entities SET tags = CAST(:tags AS JSON) WHERE id = :id\"),
+                    {'tags': __import__('json').dumps(cleaned, ensure_ascii=False), 'id': row.id}
+                )
+                entity_cleaned += 1
+            except Exception as e:
+                print(f\"Failed to clean tags on entity {row.id}: {e}\")
+        print(f\"Stripped HTML from tags on {entity_cleaned} entities\")
+
         # vacancies.tags (JSON-массив строк) — обновляем элементы по одному
         rows = await san_conn.execute(text(
             r\"SELECT id, tags FROM vacancies WHERE tags::text ~ '<[^>]*>'\"
         ))
-        import re as _re
         cleaned_count = 0
         for row in rows:
             try:

@@ -557,6 +557,13 @@ export const downloadEntityFile = async (entityId: number, fileId: number): Prom
   });
 
   if (!response.ok) {
+    // 410 Gone = file_data утерян на сервере, фронт может предложить пересоздать.
+    if (response.status === 410) {
+      const err = new Error('Содержимое файла утрачено на сервере');
+      (err as Error & { code?: string; status?: number }).code = 'file_content_lost';
+      (err as Error & { code?: string; status?: number }).status = 410;
+      throw err;
+    }
     throw new Error(`HTTP error! status: ${response.status}`);
   }
 

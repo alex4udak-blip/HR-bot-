@@ -660,31 +660,41 @@ export default function RecruiterFunnelsPage() {
     setSearchParams({});
   };
 
-  const handleCloseVacancy = async (vacancy: Vacancy) => {
-    if (!confirm(`Закрыть вакансию "${vacancy.title}"?`)) return;
-    try {
-      await updateVacancy(vacancy.id, { status: 'closed' });
-      toast.success('Вакансия закрыта');
-      fetchVacancies();
-    } catch {
-      toast.error('Ошибка при закрытии вакансии');
-    }
+  // Confirmation modal — единый для close/delete (window.confirm не везде работает в headless/iframe).
+  const [confirmDialog, setConfirmDialog] = useState<{
+    type: 'close' | 'delete';
+    vacancy: Vacancy;
+  } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+
+  const handleCloseVacancy = (vacancy: Vacancy) => {
+    setConfirmDialog({ type: 'close', vacancy });
   };
 
-  const handleDeleteVacancy = async (vacancy: Vacancy) => {
-    if (!confirm(
-      `Удалить вакансию "${vacancy.title}" безвозвратно? Все кандидаты в воронке потеряют связь с этой вакансией.`
-    )) return;
+  const handleDeleteVacancy = (vacancy: Vacancy) => {
+    setConfirmDialog({ type: 'delete', vacancy });
+  };
+
+  const runConfirmedAction = async () => {
+    if (!confirmDialog) return;
+    setConfirmBusy(true);
     try {
-      await deleteVacancy(vacancy.id);
-      toast.success('Вакансия удалена');
-      // Если открытая вакансия совпадает — снимаем выбор
-      if (selectedVacancyId === vacancy.id) {
-        setSearchParams({});
+      if (confirmDialog.type === 'close') {
+        await updateVacancy(confirmDialog.vacancy.id, { status: 'closed' });
+        toast.success('Вакансия закрыта');
+      } else {
+        await deleteVacancy(confirmDialog.vacancy.id);
+        toast.success('Вакансия удалена');
+        if (selectedVacancyId === confirmDialog.vacancy.id) {
+          setSearchParams({});
+        }
       }
+      setConfirmDialog(null);
       fetchVacancies();
     } catch {
-      toast.error('Ошибка при удалении вакансии');
+      toast.error(confirmDialog.type === 'close' ? 'Ошибка при закрытии' : 'Ошибка при удалении');
+    } finally {
+      setConfirmBusy(false);
     }
   };
 
@@ -1014,7 +1024,7 @@ export default function RecruiterFunnelsPage() {
                             v.status === 'paused' ? 'bg-yellow-400' :
                             v.status === 'closed' ? 'bg-red-400' : 'bg-dark-500'
                           )} />
-                          <span className="text-sm truncate flex-1">{v.title}</span>
+                          <span className={clsx('text-sm truncate flex-1', !v.title?.trim() && 'italic text-dark-500')}>{v.title?.trim() || 'Без названия'}</span>
                           <span className={clsx(
                             'text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0',
                             isSelected ? 'bg-accent-500/20 text-accent-400' : 'bg-white/[0.06] text-dark-400',
@@ -1132,8 +1142,11 @@ export default function RecruiterFunnelsPage() {
                 >
                   ← Назад
                 </button>
-                <span className="text-dark-200 font-medium truncate max-w-[180px] sm:max-w-[250px]">
-                  {selectedVacancy.title}
+                <span className={clsx(
+                  'font-medium truncate max-w-[180px] sm:max-w-[250px]',
+                  selectedVacancy.title?.trim() ? 'text-dark-200' : 'text-dark-500 italic',
+                )}>
+                  {selectedVacancy.title?.trim() || 'Без названия'}
                 </span>
                 <span className="text-xs text-dark-500 ml-1 sm:ml-2 flex-shrink-0">
                   {candidates.length}
@@ -2014,6 +2027,56 @@ export default function RecruiterFunnelsPage() {
         </div>
       )}
 
+      {/* Confirm modal — close / delete vacancy */}
+      {confirmDialog && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => !confirmBusy && setConfirmDialog(null)}
+        >
+          <div
+            className="glass rounded-xl p-5 w-full max-w-sm space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h3 className="text-base font-semibold text-white mb-1">
+                {confirmDialog.type === 'close' ? 'Закрыть вакансию?' : 'Удалить вакансию?'}
+              </h3>
+              <p className="text-sm text-dark-300">
+                «{confirmDialog.vacancy.title?.trim() || 'Без названия'}»
+              </p>
+              {confirmDialog.type === 'delete' && (
+                <p className="text-xs text-red-400/80 mt-2">
+                  Действие нельзя отменить. Кандидаты в воронке потеряют связь с этой вакансией.
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmDialog(null)}
+                disabled={confirmBusy}
+                className="px-3 py-1.5 text-sm text-dark-300 hover:text-white transition-colors disabled:opacity-50"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={runConfirmedAction}
+                disabled={confirmBusy}
+                className={clsx(
+                  'px-4 py-1.5 text-sm font-medium text-white rounded-lg transition-colors disabled:opacity-50',
+                  confirmDialog.type === 'delete'
+                    ? 'bg-red-500 hover:bg-red-600'
+                    : 'bg-amber-500 hover:bg-amber-600',
+                )}
+              >
+                {confirmBusy
+                  ? 'Применяем…'
+                  : confirmDialog.type === 'close' ? 'Закрыть' : 'Удалить'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -2111,8 +2174,11 @@ function FunnelCard({ vacancy, onClick, onEdit, onClose, onDelete }: { vacancy: 
       className="p-3 rounded-lg border border-white/[0.06] glass-light hover:border-white/[0.12] cursor-pointer transition-colors group relative"
     >
       <div className="flex items-start justify-between mb-2">
-        <h3 className="text-sm font-medium text-dark-100 group-hover:text-accent-400 transition-colors line-clamp-2 flex-1 mr-2">
-          {vacancy.title}
+        <h3 className={clsx(
+          'text-sm font-medium group-hover:text-accent-400 transition-colors line-clamp-2 flex-1 mr-2',
+          vacancy.title?.trim() ? 'text-dark-100' : 'text-dark-500 italic',
+        )}>
+          {vacancy.title?.trim() || 'Без названия'}
         </h3>
         {/* Action buttons — приглушены до hover, но всегда видны */}
         <div className="flex items-center gap-0.5 shrink-0">

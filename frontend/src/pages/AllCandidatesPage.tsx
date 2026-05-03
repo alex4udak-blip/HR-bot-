@@ -694,13 +694,48 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
 
   const [showEmailModal, setShowEmailModal] = useState(false);
 
+  // Inline interview-date picker
+  const [showInterviewModal, setShowInterviewModal] = useState(false);
+  const [interviewDateTime, setInterviewDateTime] = useState('');
+  const [interviewSaving, setInterviewSaving] = useState(false);
+
   const handleEmail = () => {
     setShowEmailModal(true);
   };
 
   const handleInterview = () => {
-    // TODO: Full interview scheduling modal
-    toast('Назначение интервью — скоро будет доступно', { icon: '📅' });
+    const cur = (card.extra_data as Record<string, unknown> | undefined)?.next_interview_at;
+    if (typeof cur === 'string' && cur) {
+      const d = new Date(cur);
+      const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+        .toISOString().slice(0, 16);
+      setInterviewDateTime(local);
+    } else {
+      setInterviewDateTime('');
+    }
+    setShowInterviewModal(true);
+  };
+
+  const handleSaveInterview = async () => {
+    if (!interviewDateTime) {
+      toast.error('Выберите дату и время');
+      return;
+    }
+    setInterviewSaving(true);
+    try {
+      const iso = new Date(interviewDateTime).toISOString();
+      await updateEntity(card.id, {
+        extra_data: { ...(card.extra_data || {}), next_interview_at: iso },
+      });
+      if (!card.extra_data) card.extra_data = {};
+      card.extra_data.next_interview_at = iso;
+      toast.success('Интервью назначено');
+      setShowInterviewModal(false);
+    } catch {
+      toast.error('Не удалось назначить интервью');
+    } finally {
+      setInterviewSaving(false);
+    }
   };
 
   const handleComment = async () => {
@@ -801,6 +836,50 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
           />
         )}
       </AnimatePresence>
+
+      {/* Interview scheduling modal */}
+      {showInterviewModal && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => !interviewSaving && setShowInterviewModal(false)}
+        >
+          <div
+            className="glass rounded-xl p-5 w-full max-w-sm space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h3 className="text-base font-semibold text-white mb-1">Назначить интервью</h3>
+              <p className="text-xs text-dark-400">{card.name}</p>
+            </div>
+            <input
+              type="datetime-local"
+              value={interviewDateTime}
+              onChange={(e) => setInterviewDateTime(e.target.value)}
+              className="w-full px-3 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-dark-100 focus:outline-none focus:border-blue-500"
+              autoFocus
+            />
+            <p className="text-[11px] text-dark-500">
+              Сохранится как пометка по кандидату. Привязать интервью к конкретной вакансии можно в разделе «Мои вакансии».
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowInterviewModal(false)}
+                disabled={interviewSaving}
+                className="px-3 py-1.5 text-sm text-dark-300 hover:text-white transition-colors disabled:opacity-50"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleSaveInterview}
+                disabled={interviewSaving || !interviewDateTime}
+                className="px-4 py-1.5 text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50"
+              >
+                {interviewSaving ? 'Сохраняем…' : 'Назначить'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---- Top action buttons (Huntflow: Взять на вакансию | Редактировать) ---- */}
       <div className="flex items-center gap-3 mb-5">
@@ -1085,7 +1164,12 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
       console.error('PDF download failed:', err);
-      toast.error('Не удалось скачать файл');
+      const e = err as Error & { code?: string };
+      if (e.code === 'file_content_lost') {
+        toast.error('Файл утерян на сервере. Перезагрузите резюме кандидата.', { duration: 6000 });
+      } else {
+        toast.error('Не удалось скачать файл');
+      }
     }
   };
 

@@ -886,7 +886,17 @@ async def download_entity_file(
         f"FILE_DOWNLOAD: missing | entity_id={entity_id} | file_id={file_id} | "
         f"file_name='{entity_file.file_name}' | no disk file, no DB data"
     )
-    raise HTTPException(404, "File not found")
+    # 410 Gone — файл существовал, но содержимое утрачено (Railway ephemeral disk
+    # + старая запись без file_data). Фронт может предложить пересоздать резюме.
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "code": "file_content_lost",
+            "message": "Содержимое файла утрачено. Попробуйте пересоздать резюме.",
+            "file_id": file_id,
+            "entity_id": entity_id,
+        },
+    )
 
 
 @router.post("/{entity_id}/files/reconvert-resume")

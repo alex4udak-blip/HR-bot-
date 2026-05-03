@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing import Optional, List, Literal
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 import re
 import logging
 import asyncio
@@ -126,6 +126,27 @@ class EntityCreate(BaseModel):
     expected_salary_max: Optional[int] = None
     expected_salary_currency: Optional[str] = 'RUB'
 
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, v: str) -> str:
+        cleaned = re.sub(r"<[^>]*>", "", v).strip()
+        if not cleaned:
+            raise ValueError("name cannot be empty")
+        return cleaned[:200]
+
+    @field_validator("tags")
+    @classmethod
+    def _clean_tags(cls, v):
+        if v is None:
+            return []
+        out = []
+        for t in v:
+            if isinstance(t, str):
+                cleaned = re.sub(r"<[^>]*>", "", t).strip()[:80]
+                if cleaned:
+                    out.append(cleaned)
+        return out
+
 
 class EntityUpdate(BaseModel):
     name: Optional[str] = None
@@ -148,6 +169,30 @@ class EntityUpdate(BaseModel):
     expected_salary_currency: Optional[str] = None
     # Optimistic locking version (optional, for concurrent update detection)
     version: Optional[int] = None
+
+    @staticmethod
+    def _strip_html(s: str) -> str:
+        return re.sub(r"<[^>]*>", "", s).strip()
+
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, v):
+        if v is None:
+            return v
+        return cls._strip_html(v)[:200]
+
+    @field_validator("tags")
+    @classmethod
+    def _clean_tags(cls, v):
+        if v is None:
+            return v
+        out = []
+        for t in v:
+            if isinstance(t, str):
+                cleaned = cls._strip_html(t)[:80]
+                if cleaned:
+                    out.append(cleaned)
+        return out
 
 
 class TransferCreate(BaseModel):

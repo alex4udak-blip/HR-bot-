@@ -908,7 +908,10 @@ export default function VacanciesPage() {
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-lg truncate">{vacancy.title}</h3>
+                        <h3 className={clsx(
+                          'font-semibold text-lg truncate',
+                          !vacancy.title?.trim() && 'italic text-white/40',
+                        )}>{vacancy.title?.trim() || 'Без названия'}</h3>
                         <div className="flex items-center gap-2">
                           <VacancyStatusBadge status={vacancy.status} size="sm" />
                           {(user && vacancy.created_by !== user.id && (vacancy.assigned_to?.includes(user.id) || vacancy.assigned_to_all)) ? (
