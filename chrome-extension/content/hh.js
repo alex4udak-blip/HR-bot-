@@ -411,7 +411,19 @@
   }
 
   // Parse and send to background
-  const parsed = parseHHResume();
-  console.log('[HR-Bot Magic Button] Parsed resume data:', parsed);
-  chrome.runtime.sendMessage({ type: 'PARSE_RESULT', data: parsed });
+  function runAndSend() {
+    const parsed = parseHHResume();
+    console.log('[HR-Bot Magic Button] Parsed resume data:', parsed);
+    chrome.runtime.sendMessage({ type: 'PARSE_RESULT', data: parsed });
+    return parsed;
+  }
+  runAndSend();
+
+  // Re-parse on demand (popup нажал 'Добавить ещё')
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg && msg.type === 'RE_PARSE') {
+      const fresh = runAndSend();
+      sendResponse({ success: true, data: fresh });
+    }
+  });
 })();

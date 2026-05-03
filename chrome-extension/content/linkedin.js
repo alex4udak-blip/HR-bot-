@@ -188,7 +188,18 @@
     return data;
   }
 
-  const parsed = parseLinkedIn();
-  console.log('[HR-Bot Magic Button] Parsed LinkedIn data:', parsed);
-  chrome.runtime.sendMessage({ type: 'PARSE_RESULT', data: parsed });
+  function runAndSend() {
+    const parsed = parseLinkedIn();
+    console.log('[HR-Bot Magic Button] Parsed LinkedIn data:', parsed);
+    chrome.runtime.sendMessage({ type: 'PARSE_RESULT', data: parsed });
+    return parsed;
+  }
+  runAndSend();
+
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg && msg.type === 'RE_PARSE') {
+      const fresh = runAndSend();
+      sendResponse({ success: true, data: fresh });
+    }
+  });
 })();

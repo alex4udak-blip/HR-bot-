@@ -52,36 +52,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  // Get parsed data from content script
-  chrome.runtime.sendMessage({ type: 'GET_PARSED_DATA' }, (data) => {
-    if (data && data.full_name) {
-      parsedData = data;
-      showParsedData();
-      loadVacancies();
-      showView('parse');
-    } else {
-      // Try to parse current tab
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const url = tabs[0]?.url || '';
-        if (url.includes('hh.ru') || url.includes('habr.com') || url.includes('linkedin.com')) {
-          // Content script should have run, wait a bit
-          setTimeout(() => {
-            chrome.runtime.sendMessage({ type: 'GET_PARSED_DATA' }, (data2) => {
-              if (data2 && data2.full_name) {
-                parsedData = data2;
-                showParsedData();
-                loadVacancies();
-                showView('parse');
-              } else {
-                showView('nodata');
-              }
-            });
-          }, 500);
-        } else {
-          showView('nodata');
-        }
-      });
-    }
+  // Получаем активную вкладку и кэш одновременно — кэш валиден только если URL совпадает.
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tabUrl = (tabs[0] && tabs[0].url) || '';
+    const isResumeTab = tabUrl.includes('hh.ru') || tabUrl.includes('habr.com') || tabUrl.includes('linkedin.com');
+
+    chrome.runtime.sendMessage({ type: 'GET_PARSED_DATA' }, (data) => {
+      const cachedUrl = data && data._captured_url;
+      // Кэш свежий, если: есть данные, есть URL, и он совпадает с активной вкладкой
+      const cacheFresh = data && data.full_name && (!cachedUrl || cachedUrl === tabUrl);
+
+      if (cacheFresh) {
+        parsedData = data;
+        showParsedData();
+        loadVacancies();
+        showView('parse');
+        return;
+      }
+
+      // Кэш устарел или пуст — на странице резюме просим content-скрипт перепарсить
+      if (isResumeTab) {
+        chrome.runtime.sendMessage({ type: 'CLEAR_PARSED_DATA' }, () => {
+          chrome.runtime.sendMessage({ type: 'RE_PARSE_ACTIVE_TAB' }, () => {
+            setTimeout(() => {
+              chrome.runtime.sendMessage({ type: 'GET_PARSED_DATA' }, (data2) => {
+                if (data2 && data2.full_name) {
+                  parsedData = data2;
+                  showParsedData();
+                  loadVacancies();
+                  showView('parse');
+                } else {
+                  showView('nodata');
+                }
+              });
+            }, 400);
+          });
+        });
+      } else {
+        showView('nodata');
+      }
+    });
   });
 });
 
@@ -183,10 +193,14 @@ function showParsedData() {
   document.getElementById('parsedDetails').innerHTML = details.join('<br>');
   document.getElementById('parsedSource').textContent = parsedData.source;
 
-  // Show manual email field if not parsed
-  if (!parsedData.email) {
-    document.getElementById('emailField').style.display = 'block';
-  }
+  // Show manual fields if соответствующий контакт не распознан автоматически
+  const setFieldVisible = (id, show) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = show ? 'block' : 'none';
+  };
+  setFieldVisible('emailField', !parsedData.email);
+  setFieldVisible('phoneField', !parsedData.phone);
+  setFieldVisible('telegramField', !parsedData.telegram);
 
   // Show contacts-hidden note if no contacts at all
   const contactsNote = document.getElementById('contactsNote');
@@ -366,7 +380,12 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
 document.getElementById('addBtn').addEventListener('click', async () => {
   if (!parsedData) return;
 
-  const manualEmail = document.getElementById('manualEmail').value;
+  const manualEmail = document.getElementById('manualEmail').value.trim();
+  const manualPhone = document.getElementById('manualPhone')?.value.trim() || '';
+  const manualTelegramRaw = document.getElementById('manualTelegram')?.value.trim() || '';
+  const manualTelegram = manualTelegramRaw
+    ? (manualTelegramRaw.startsWith('@') ? manualTelegramRaw : '@' + manualTelegramRaw.replace(/.*t\.me\//, ''))
+    : '';
   const vacancyId = document.getElementById('funnelSelect').value;
   const comment = document.getElementById('commentField').value;
   const dupStatus = document.getElementById('dupStatus');
@@ -390,8 +409,8 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     const resp = await apiRequest('POST', '/api/magic-button/parse', {
       full_name: finalName,
       email: parsedData.email || manualEmail || null,
-      phone: parsedData.phone || null,
-      telegram: parsedData.telegram || null,
+      phone: parsedData.phone || manualPhone || null,
+      telegram: parsedData.telegram || manualTelegram || null,
       photo_url: parsedData.photo_url || null,
       position: parsedData.position || null,
       source_url: parsedData.source_url,
@@ -422,7 +441,8 @@ document.getElementById('addBtn').addEventListener('click', async () => {
       // Show link to the created candidate
       const linkEl = document.getElementById('resultLink');
       if (linkEl && result.entity_id) {
-        const candidateUrl = `${serverUrl}/candidates/${result.entity_id}`;
+        // Маршрут /candidates/:id в SPA не существует — открываем доску с авто-выбором.
+        const candidateUrl = `${serverUrl}/all-candidates?entity=${result.entity_id}`;
         linkEl.innerHTML = `<a href="#" class="candidate-link" data-url="${candidateUrl}">Открыть карточку кандидата</a>`;
         linkEl.style.display = 'block';
         linkEl.querySelector('.candidate-link').addEventListener('click', (e) => {
@@ -454,13 +474,34 @@ document.getElementById('copyFormLink').addEventListener('click', async () => {
   });
 });
 
-// Add another
-document.getElementById('addAnotherBtn').addEventListener('click', () => {
-  showView('parse');
+// Add another — сбрасываем кэш предыдущего кандидата и парсим активную вкладку заново
+document.getElementById('addAnotherBtn').addEventListener('click', async () => {
+  parsedData = null;
   document.getElementById('duplicateWarning').style.display = 'none';
   document.getElementById('addError').textContent = '';
   document.getElementById('addBtn').textContent = 'Добавить кандидата';
   document.getElementById('addBtn').classList.remove('warning', 'confirmed');
+  // Очищаем поля ввода
+  ['manualName', 'manualEmail', 'manualPhone', 'manualTelegram', 'commentField']
+    .forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+
+  // Сбрасываем кэш в storage и просим content-скрипт активной вкладки перепарсить
+  await new Promise((r) => chrome.runtime.sendMessage({ type: 'CLEAR_PARSED_DATA' }, r));
+  await new Promise((r) => chrome.runtime.sendMessage({ type: 'RE_PARSE_ACTIVE_TAB' }, r));
+
+  // Даём content-скрипту время сложить новые данные и тянем их
+  setTimeout(() => {
+    chrome.runtime.sendMessage({ type: 'GET_PARSED_DATA' }, (data) => {
+      if (data && data.full_name) {
+        parsedData = data;
+        showParsedData();
+        loadVacancies();
+        showView('parse');
+      } else {
+        showView('nodata');
+      }
+    });
+  }, 300);
 });
 
 // Logout

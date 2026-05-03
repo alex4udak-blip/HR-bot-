@@ -45,7 +45,7 @@ import type {
   KanbanColumn,
   RecruiterOption,
 } from '@/services/api/candidates';
-import { updateEntity, uploadEntityFile, getEntityFiles, downloadEntityFile, deleteEntity } from '@/services/api/entities';
+import { updateEntity, uploadEntityFile, getEntityFiles, downloadEntityFile, deleteEntity, getEntity } from '@/services/api/entities';
 import SendEmailModal from '@/components/entities/SendEmailModal';
 import type { EntityFile } from '@/services/api/entities';
 import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
@@ -164,9 +164,10 @@ export default function AllCandidatesPage() {
 
   // Auto-select from URL ?entity=ID or first card
   const entityParam = searchParams.get('entity');
+  // Чтобы не тянуть entity повторно после неудачной попытки селекта.
+  const entityFetchTriedRef = useRef<number | null>(null);
   useEffect(() => {
-    if (filteredCards.length === 0) return;
-    // Try to select entity from URL param
+    if (!board) return;
     if (entityParam) {
       const entityId = parseInt(entityParam);
       const match = filteredCards.find(fc => fc.card.id === entityId);
@@ -175,13 +176,29 @@ export default function AllCandidatesPage() {
         setSelectedStatus(match.status);
         return;
       }
+      // Кандидат пришёл из расширения / другой страницы и не виден на текущем фильтре —
+      // подтягиваем по имени, чтобы доска подгрузила его и авто-селект сработал.
+      if (entityFetchTriedRef.current !== entityId) {
+        entityFetchTriedRef.current = entityId;
+        getEntity(entityId)
+          .then((entity) => {
+            if (entity?.name) {
+              setActiveTab('all');
+              setSearchText(entity.name);
+            } else {
+              toast.error('Кандидат не найден');
+            }
+          })
+          .catch(() => toast.error('Не удалось открыть кандидата (нет доступа?)'));
+        return;
+      }
     }
     // Fallback: auto-select first
-    if (!selectedCard) {
+    if (filteredCards.length > 0 && !selectedCard) {
       setSelectedCard(filteredCards[0].card);
       setSelectedStatus(filteredCards[0].status);
     }
-  }, [filteredCards.length, entityParam]);
+  }, [filteredCards.length, entityParam, board]);
 
   const handleStatusChange = async (newStatus: string) => {
     if (!selectedCard || newStatus === selectedStatus) return;
