@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, memo } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -101,7 +101,6 @@ function formatDateFull(dateStr: string): string {
 
 export default function AllCandidatesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const [showParserModal, setShowParserModal] = useState(false);
   const { user } = useAuthStore();
   const [board, setBoard] = useState<KanbanBoardResponse | null>(null);
