@@ -256,6 +256,43 @@ async def ensure_shadow_columns():
         res = await mig_conn.execute(text(\"UPDATE vacancies SET status='pending_review' WHERE status='draft'\"))
         print(f\"Migrated {res.rowcount} draft vacancies → pending_review\")
 
+    # XSS cleanup: вырезаем <html-теги> из существующих данных, в которых
+    # они могли попасть до серверной санитизации. Идемпотентно (regex no-op
+    # если тегов уже нет).
+    async with engine.begin() as san_conn:
+        # vacancy.title
+        res = await san_conn.execute(text(
+            r\"UPDATE vacancies SET title = trim(regexp_replace(title, '<[^>]*>', '', 'g')) \"
+            r\"WHERE title ~ '<[^>]*>'\"
+        ))
+        print(f\"Stripped HTML from {res.rowcount} vacancy titles\")
+
+        # entity_tags_catalog.name
+        res = await san_conn.execute(text(
+            r\"UPDATE entity_tags_catalog SET name = trim(regexp_replace(name, '<[^>]*>', '', 'g')) \"
+            r\"WHERE name ~ '<[^>]*>'\"
+        ))
+        print(f\"Stripped HTML from {res.rowcount} entity tag names\")
+
+        # vacancies.tags (JSON-массив строк) — обновляем элементы по одному
+        rows = await san_conn.execute(text(
+            r\"SELECT id, tags FROM vacancies WHERE tags::text ~ '<[^>]*>'\"
+        ))
+        import re as _re
+        cleaned_count = 0
+        for row in rows:
+            try:
+                cleaned = [_re.sub(r'<[^>]*>', '', t).strip()[:80] for t in (row.tags or []) if isinstance(t, str)]
+                cleaned = [t for t in cleaned if t]
+                await san_conn.execute(
+                    text(\"UPDATE vacancies SET tags = CAST(:tags AS JSON) WHERE id = :id\"),
+                    {'tags': __import__('json').dumps(cleaned, ensure_ascii=False), 'id': row.id}
+                )
+                cleaned_count += 1
+            except Exception as e:
+                print(f\"Failed to clean tags on vacancy {row.id}: {e}\")
+        print(f\"Stripped HTML from tags on {cleaned_count} vacancies\")
+
     await engine.dispose()
 
 asyncio.run(ensure_shadow_columns())

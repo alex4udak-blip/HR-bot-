@@ -34,7 +34,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, createApplication } from '@/services/api';
+import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, updateEntity, uploadEntityFile, createApplication } from '@/services/api';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
@@ -703,6 +703,79 @@ export default function RecruiterFunnelsPage() {
       toast.error('Ошибка смены статуса');
     }
   }, [fetchVacancies, stagesConfig]);
+
+  // ─── Interview scheduling modal ───
+  const [interviewForCandidate, setInterviewForCandidate] = useState<typeof selectedCandidate | null>(null);
+  const [interviewDateTime, setInterviewDateTime] = useState('');
+  const [interviewSaving, setInterviewSaving] = useState(false);
+
+  const handleSaveInterview = useCallback(async () => {
+    if (!interviewForCandidate) return;
+    if (!interviewDateTime) {
+      toast.error('Выберите дату и время');
+      return;
+    }
+    setInterviewSaving(true);
+    try {
+      // datetime-local даёт 'YYYY-MM-DDTHH:mm' без таймзоны — backend ожидает ISO
+      const iso = new Date(interviewDateTime).toISOString();
+      await updateApplication(interviewForCandidate.id, { next_interview_at: iso });
+      toast.success('Интервью назначено');
+      setInterviewForCandidate(null);
+      setInterviewDateTime('');
+    } catch {
+      toast.error('Не удалось назначить интервью');
+    } finally {
+      setInterviewSaving(false);
+    }
+  }, [interviewForCandidate, interviewDateTime]);
+
+  // ─── Comment textarea state ───
+  const commentRef = useRef<HTMLTextAreaElement | null>(null);
+  const [commentSaving, setCommentSaving] = useState(false);
+
+  const handleSaveComment = useCallback(async (text: string) => {
+    if (!selectedCandidate?.entity_id || !text.trim()) return;
+    setCommentSaving(true);
+    try {
+      const entity = await getEntity(selectedCandidate.entity_id);
+      const existing = Array.isArray((entity.extra_data as Record<string, unknown> | undefined)?.notes)
+        ? ((entity.extra_data as { notes: Array<{ text: string; date: string }> }).notes)
+        : [];
+      const newNote = { text: text.trim(), date: new Date().toISOString() };
+      await updateEntity(selectedCandidate.entity_id, {
+        extra_data: { ...(entity.extra_data || {}), notes: [...existing, newNote] },
+      });
+      toast.success('Комментарий сохранён');
+      if (commentRef.current) commentRef.current.value = '';
+    } catch {
+      toast.error('Не удалось сохранить комментарий');
+    } finally {
+      setCommentSaving(false);
+    }
+  }, [selectedCandidate]);
+
+  // ─── File attach (Файл button) ───
+  const candidateFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [candidateFileUploading, setCandidateFileUploading] = useState(false);
+
+  const handleCandidateFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedCandidate?.entity_id) return;
+    setCandidateFileUploading(true);
+    try {
+      await uploadEntityFile(selectedCandidate.entity_id, file, 'other');
+      toast.success(`Файл "${file.name}" загружен`);
+      // Re-fetch entity files so они показались в правой панели
+      const fresh = await getEntityFiles(selectedCandidate.entity_id);
+      setEntityFiles(fresh);
+    } catch {
+      toast.error('Ошибка загрузки файла');
+    } finally {
+      setCandidateFileUploading(false);
+      if (e.target) e.target.value = '';
+    }
+  }, [selectedCandidate]);
 
   // Toggle checkbox selection for a candidate
   const toggleCandidateSelection = useCallback((candidateId: number) => {
@@ -1537,17 +1610,16 @@ export default function RecruiterFunnelsPage() {
                               {/* Comment input — Huntflow style */}
                               <div className="mb-5">
                                 <textarea
-                                  placeholder="Написать комментарий..."
-                                  className="w-full px-4 py-3 rounded-xl border border-white/[0.08] bg-white/[0.02] text-sm text-dark-200 placeholder:text-dark-500 focus:outline-none focus:border-white/[0.15] resize-none"
+                                  ref={commentRef}
+                                  placeholder="Написать комментарий... (Enter — отправить, Shift+Enter — новая строка)"
+                                  className="w-full px-4 py-3 rounded-xl border border-white/[0.08] bg-white/[0.02] text-sm text-dark-200 placeholder:text-dark-500 focus:outline-none focus:border-white/[0.15] resize-none disabled:opacity-50"
                                   rows={2}
+                                  disabled={commentSaving}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter' && !e.shiftKey) {
                                       e.preventDefault();
-                                      const val = (e.target as HTMLTextAreaElement).value.trim();
-                                      if (val) {
-                                        toast.success('Комментарий сохранён');
-                                        (e.target as HTMLTextAreaElement).value = '';
-                                      }
+                                      const val = (e.target as HTMLTextAreaElement).value;
+                                      if (val.trim()) handleSaveComment(val);
                                     }
                                   }}
                                 />
@@ -1568,29 +1640,48 @@ export default function RecruiterFunnelsPage() {
                                   <Mail className="w-3.5 h-3.5" /> Письмо
                                 </button>
                                 <button
-                                  onClick={() => toast('Скоро будет доступно', { icon: '📅' })}
+                                  onClick={() => {
+                                    setInterviewForCandidate(selectedCandidate);
+                                    // Pre-fill: текущий next_interview_at в local input format
+                                    const cur = selectedCandidate.next_interview_at;
+                                    if (cur) {
+                                      const d = new Date(cur);
+                                      const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+                                        .toISOString().slice(0, 16);
+                                      setInterviewDateTime(local);
+                                    } else {
+                                      setInterviewDateTime('');
+                                    }
+                                  }}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
                                 >
                                   <Calendar className="w-3.5 h-3.5" /> Интервью
                                 </button>
                                 <button
-                                  onClick={() => toast('Скоро будет доступно', { icon: '💬' })}
+                                  onClick={() => commentRef.current?.focus()}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
                                 >
                                   <MessageSquare className="w-3.5 h-3.5" /> Комментарий
                                 </button>
                                 <button
-                                  onClick={() => toast('Скоро будет доступно', { icon: '👍' })}
+                                  onClick={() => handleStageChange(selectedCandidate.id, 'offer' as ApplicationStage)}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
                                 >
                                   <ThumbsUp className="w-3.5 h-3.5" /> Оффер
                                 </button>
                                 <button
-                                  onClick={() => toast('Скоро будет доступно', { icon: '📎' })}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
+                                  onClick={() => candidateFileInputRef.current?.click()}
+                                  disabled={candidateFileUploading}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors disabled:opacity-50"
                                 >
-                                  <Paperclip className="w-3.5 h-3.5" /> Файл
+                                  <Paperclip className="w-3.5 h-3.5" /> {candidateFileUploading ? 'Загрузка…' : 'Файл'}
                                 </button>
+                                <input
+                                  type="file"
+                                  ref={candidateFileInputRef}
+                                  onChange={handleCandidateFileUpload}
+                                  className="hidden"
+                                />
                                 <button
                                   onClick={() => handleStageChange(selectedCandidate.id, 'rejected' as ApplicationStage)}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/20 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
@@ -1878,6 +1969,49 @@ export default function RecruiterFunnelsPage() {
           onClose={() => setEditingVacancy(null)}
           onSuccess={() => { setEditingVacancy(null); fetchVacancies(); }}
         />
+      )}
+
+      {/* Interview scheduling modal — простой datetime-picker */}
+      {interviewForCandidate && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => !interviewSaving && setInterviewForCandidate(null)}
+        >
+          <div
+            className="glass rounded-xl p-5 w-full max-w-sm space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h3 className="text-base font-semibold text-white mb-1">Назначить интервью</h3>
+              <p className="text-xs text-dark-400">
+                {interviewForCandidate.entity_name}
+              </p>
+            </div>
+            <input
+              type="datetime-local"
+              value={interviewDateTime}
+              onChange={(e) => setInterviewDateTime(e.target.value)}
+              className="w-full px-3 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-dark-100 focus:outline-none focus:border-accent-500"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setInterviewForCandidate(null)}
+                disabled={interviewSaving}
+                className="px-3 py-1.5 text-sm text-dark-300 hover:text-white transition-colors disabled:opacity-50"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleSaveInterview}
+                disabled={interviewSaving || !interviewDateTime}
+                className="px-4 py-1.5 text-sm font-medium bg-accent-500 hover:bg-accent-600 text-white rounded-lg transition-colors disabled:opacity-50"
+              >
+                {interviewSaving ? 'Сохраняем…' : 'Назначить'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
