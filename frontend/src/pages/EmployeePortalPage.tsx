@@ -294,6 +294,11 @@ function LeaveRequestModal({
 // ─── Employee Profile (self-service view) ───────────────────
 
 function MyProfileView() {
+  const { user } = useAuthStore();
+  const isHrOrAdmin = user?.role === 'superadmin'
+    || user?.org_role === 'owner'
+    || user?.org_role === 'admin'
+    || user?.org_role === 'hr';
   const [profile, setProfile] = useState<EmployeeData | null>(null);
   const [balance, setBalance] = useState<LeaveBalance | null>(null);
   const [loading, setLoading] = useState(true);
@@ -318,14 +323,22 @@ function MyProfileView() {
     } catch (e: unknown) {
       const err = e as { response?: { status?: number } };
       if (err?.response?.status === 404) {
-        setError('Профиль сотрудника ещё не создан. Обратитесь к HR.');
+        // У HR/owner/admin нет employee-карточки — это нормально, не показываем тревожное сообщение.
+        if (isHrOrAdmin) {
+          setError(
+            'Это страница самообслуживания для сотрудников. У вас роль HR/администратора — '
+            + 'управление сотрудниками доступно в разделе «Сотрудники».'
+          );
+        } else {
+          setError('Профиль сотрудника ещё не создан. Обратитесь к HR.');
+        }
       } else {
         setError('Ошибка загрузки профиля');
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isHrOrAdmin]);
 
   useEffect(() => { loadProfile(); }, [loadProfile]);
 

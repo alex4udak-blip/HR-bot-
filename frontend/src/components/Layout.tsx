@@ -92,7 +92,7 @@ function FABButton({ navigate }: { navigate: (path: string) => void }) {
             Добавить вакансию
           </button>
           <button
-            onClick={() => { navigate('/all-candidates'); setOpen(false); }}
+            onClick={() => { navigate('/all-candidates?add=resume'); setOpen(false); }}
             className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors whitespace-nowrap"
           >
             <UserPlus className="w-4 h-4" />

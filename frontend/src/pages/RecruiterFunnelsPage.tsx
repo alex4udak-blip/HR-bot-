@@ -28,6 +28,7 @@ import {
   Tag,
   Pencil,
   Archive,
+  Trash2,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -144,7 +145,7 @@ function CopyButton({ value }: { value: string }) {
 export default function RecruiterFunnelsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { vacancies, isLoading, fetchVacancies, updateVacancy } = useVacancyStore();
+  const { vacancies, isLoading, fetchVacancies, updateVacancy, deleteVacancy } = useVacancyStore();
   const { user } = useAuthStore();
 
   const isHrAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
@@ -670,6 +671,23 @@ export default function RecruiterFunnelsPage() {
     }
   };
 
+  const handleDeleteVacancy = async (vacancy: Vacancy) => {
+    if (!confirm(
+      `Удалить вакансию "${vacancy.title}" безвозвратно? Все кандидаты в воронке потеряют связь с этой вакансией.`
+    )) return;
+    try {
+      await deleteVacancy(vacancy.id);
+      toast.success('Вакансия удалена');
+      // Если открытая вакансия совпадает — снимаем выбор
+      if (selectedVacancyId === vacancy.id) {
+        setSearchParams({});
+      }
+      fetchVacancies();
+    } catch {
+      toast.error('Ошибка при удалении вакансии');
+    }
+  };
+
   // Change candidate stage
   const handleStageChange = useCallback(async (applicationId: number, newStage: ApplicationStage) => {
     try {
@@ -1004,7 +1022,7 @@ export default function RecruiterFunnelsPage() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {filteredVacancies.map((v) => (
-                  <FunnelCard key={v.id} vacancy={v} onClick={() => selectVacancy(v.id)} onEdit={() => setEditingVacancy(v)} onClose={() => handleCloseVacancy(v)} />
+                  <FunnelCard key={v.id} vacancy={v} onClick={() => selectVacancy(v.id)} onEdit={() => setEditingVacancy(v)} onClose={() => handleCloseVacancy(v)} onDelete={() => handleDeleteVacancy(v)} />
                 ))}
               </div>
             )}
@@ -1924,7 +1942,7 @@ function StageDropdown({
 
 /* ===================== Funnel Card ===================== */
 
-function FunnelCard({ vacancy, onClick, onEdit, onClose }: { vacancy: Vacancy; onClick: () => void; onEdit: () => void; onClose: () => void }) {
+function FunnelCard({ vacancy, onClick, onEdit, onClose, onDelete }: { vacancy: Vacancy; onClick: () => void; onEdit: () => void; onClose: () => void; onDelete: () => void }) {
   const count = vacancy.applications_count ?? 0;
   const stageCounts = vacancy.stage_counts ?? {};
   const mainStages = ['applied', 'screening', 'phone_screen', 'interview', 'assessment', 'offer', 'hired'];
@@ -1958,6 +1976,13 @@ function FunnelCard({ vacancy, onClick, onEdit, onClose }: { vacancy: Vacancy; o
                 <Archive className="w-3.5 h-3.5" />
               </button>
             )}
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              className="p-1 rounded-md hover:bg-red-500/20 text-dark-400 hover:text-red-400 transition-colors"
+              title="Удалить воронку"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
           </div>
           <ChevronRight className="w-4 h-4 text-dark-500 group-hover:text-accent-400 transition-colors mt-0.5" />
         </div>

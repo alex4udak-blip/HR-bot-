@@ -49,6 +49,7 @@ import { updateEntity, uploadEntityFile, getEntityFiles, downloadEntityFile, del
 import SendEmailModal from '@/components/entities/SendEmailModal';
 import type { EntityFile } from '@/services/api/entities';
 import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
+import ParserModal from '@/components/parser/ParserModal';
 import { useAuthStore } from '@/stores/authStore';
 
 // ---------- constants ----------
@@ -99,8 +100,9 @@ function formatDateFull(dateStr: string): string {
 // ================================================================
 
 export default function AllCandidatesPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const [showParserModal, setShowParserModal] = useState(false);
   const { user } = useAuthStore();
   const [board, setBoard] = useState<KanbanBoardResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -149,6 +151,16 @@ export default function AllCandidatesPage() {
     }
     return items;
   })();
+
+  // Открыть форму добавления при ?add=resume в URL (триггер из FAB-кнопки)
+  useEffect(() => {
+    if (searchParams.get('add') === 'resume') {
+      setShowParserModal(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('add');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   // Auto-select from URL ?entity=ID or first card
   const entityParam = searchParams.get('entity');
@@ -445,9 +457,6 @@ export default function AllCandidatesPage() {
                       statusLabel={board?.columns.find(c => c.status === selectedStatus)?.label || selectedStatus}
                       columns={board?.columns || []}
                       onStatusChange={handleStatusChange}
-                      onOpenContact={() => {
-                        navigate(`/contacts?entity=${selectedCard.id}`);
-                      }}
                       onAddToVacancy={() => setShowAddToVacancy(true)}
                       onEdit={() => setShowEditModal(true)}
                     />
@@ -579,6 +588,21 @@ export default function AllCandidatesPage() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {showParserModal && (
+          <ParserModal
+            type="resume"
+            onClose={() => setShowParserModal(false)}
+            onParsed={() => {
+              setShowParserModal(false);
+              fetchBoard();
+              toast.success('Кандидат добавлен');
+            }}
+            onAttachedToEntity={() => {
+              setShowParserModal(false);
+              fetchBoard();
+            }}
+          />
+        )}
         {showStageSettings && <StageSettingsModal onClose={() => setShowStageSettings(false)} />}
         {showEditModal && selectedCard && (
           <EditCandidateModal
@@ -622,13 +646,12 @@ export default function AllCandidatesPage() {
 // INFO TAB — Huntflow-style detail panel with working actions
 // ================================================================
 
-const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onStatusChange, onOpenContact, onAddToVacancy, onEdit }: {
+const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onStatusChange, onAddToVacancy, onEdit }: {
   card: KanbanCard;
   status: string;
   statusLabel: string;
   columns: KanbanColumn[];
   onStatusChange: (s: string) => void;
-  onOpenContact: () => void;
   onAddToVacancy: () => void;
   onEdit: () => void;
 }) {
@@ -765,12 +788,6 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
 
       {/* ---- Top action buttons (Huntflow: Взять на вакансию | Редактировать) ---- */}
       <div className="flex items-center gap-3 mb-5">
-        <button
-          onClick={onOpenContact}
-          className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
-        >
-          <Users className="w-4 h-4" /> Открыть профиль
-        </button>
         <button
           onClick={onAddToVacancy}
           className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
@@ -1044,10 +1061,15 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
       const a = document.createElement('a');
       a.href = url;
       a.download = file.file_name;
+      a.style.display = 'none';
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Ошибка скачивания');
+      document.body.removeChild(a);
+      // Освобождаем URL чуть позже, чтобы Safari/Firefox успели запустить загрузку.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error('PDF download failed:', err);
+      toast.error('Не удалось скачать файл');
     }
   };
 
