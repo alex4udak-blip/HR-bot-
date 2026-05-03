@@ -432,6 +432,25 @@ async def update_vacancy(
     if data.status == VacancyStatus.open and not vacancy.published_at:
         vacancy.published_at = datetime.utcnow()
 
+    # Когда рекрутёр закрывает/отменяет свой клон заявки, заявка должна исчезнуть
+    # у него из "Заявок": убираем его из assigned_to оригинала и помечаем dismissed_by.
+    if data.status in (VacancyStatus.closed, VacancyStatus.cancelled):
+        cloned_from = (vacancy.extra_data or {}).get("cloned_from_request_id")
+        if isinstance(cloned_from, int):
+            original = await db.get(Vacancy, cloned_from)
+            if original is not None:
+                assigned = list(original.assigned_to or [])
+                if current_user.id in assigned:
+                    original.assigned_to = [u for u in assigned if u != current_user.id]
+                # Покрываем кейс assigned_to_all=True: помечаем что этот рекрутёр
+                # уже закончил с заявкой, фронт фильтрует по dismissed_by.
+                orig_extra = dict(original.extra_data or {})
+                dismissed = list(orig_extra.get("dismissed_by") or [])
+                if current_user.id not in dismissed:
+                    dismissed.append(current_user.id)
+                    orig_extra["dismissed_by"] = dismissed
+                    original.extra_data = orig_extra
+
     await db.commit()
     await db.refresh(vacancy)
 

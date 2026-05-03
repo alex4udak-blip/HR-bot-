@@ -320,8 +320,16 @@ export default function VacanciesPage() {
     return vacancies.filter((vacancy) => {
       // Заявки page = только заявки, не персональные клоны рекрутёров.
       // Личные вакансии (включая клоны) живут в "Мои вакансии".
-      const cloneSrc = (vacancy.extra_data as Record<string, unknown> | undefined)?.cloned_from_request_id;
+      const extra = vacancy.extra_data as Record<string, unknown> | undefined;
+      const cloneSrc = extra?.cloned_from_request_id;
       if (typeof cloneSrc === 'number') return false;
+
+      // Рекрутёр, который уже закрыл/отменил свой клон, больше не должен
+      // видеть оригинальную заявку (бэкенд складывает его id в dismissed_by).
+      if (user) {
+        const dismissedBy = extra?.dismissed_by;
+        if (Array.isArray(dismissedBy) && dismissedBy.includes(user.id)) return false;
+      }
 
       // Task 9: "My vacancies" filter
       if (showOnlyMine && user) {
