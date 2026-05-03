@@ -633,7 +633,7 @@ function FunnelContent({ data }: { data: FunnelReport }) {
                     className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: i === 0 ? BAR_COLORS.source_green : BAR_COLORS.source_red }}
                   />
-                  <span className="text-gray-600">{s.source}</span>
+                  <span className="text-gray-600">{s.source === 'unknown' ? 'Не указан' : s.source}</span>
                 </div>
                 <span className="text-gray-700">{s.count}</span>
               </div>

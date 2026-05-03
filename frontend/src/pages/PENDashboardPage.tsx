@@ -146,6 +146,10 @@ export default function PENDashboardPage() {
   // ============================================================
 
   const loadMetrics = useCallback(async () => {
+    if (periodFrom && periodTo && periodFrom > periodTo) {
+      toast.error('Дата начала должна быть раньше даты конца');
+      return;
+    }
     try {
       setIsLoading(true);
       setError(null);

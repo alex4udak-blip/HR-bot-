@@ -150,7 +150,7 @@ async def get_vacancy_analytics(
     # Source breakdown
     source_result = await db.execute(
         select(
-            func.coalesce(VacancyApplication.source, 'unknown'),
+            func.coalesce(VacancyApplication.source, 'Не указан'),
             func.count(VacancyApplication.id)
         )
         .where(VacancyApplication.vacancy_id == vacancy_id)
@@ -414,7 +414,7 @@ async def get_source_effectiveness(
 
     query = (
         select(
-            func.coalesce(VacancyApplication.source, 'unknown').label("source"),
+            func.coalesce(VacancyApplication.source, 'Не указан').label("source"),
             func.count(VacancyApplication.id).label("total"),
             func.sum(case((VacancyApplication.stage == 'hired', 1), else_=0)).label("hired"),
             func.avg(

@@ -1,6 +1,7 @@
 """
 Shared schemas, imports, and helper functions for vacancy management.
 """
+import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, or_, and_, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,16 @@ from typing import Optional, List, Literal
 from datetime import datetime, timezone
 from pydantic import BaseModel, field_validator, model_validator
 import logging
+
+
+_HTML_TAG_RE = re.compile(r"<[^>]*>")
+
+
+def _strip_html(value: str) -> str:
+    """Удаляет HTML-теги из строки (защита от мусора в title/tag/label)."""
+    if not value:
+        return value
+    return _HTML_TAG_RE.sub("", value)
 
 logger = logging.getLogger("hr-analyzer.vacancies")
 
@@ -318,12 +329,15 @@ class VacancyCreate(BaseModel):
     @field_validator("title")
     @classmethod
     def validate_title(cls, v: str) -> str:
-        """Validate title is not empty and has at least 3 characters."""
+        """Validate title: non-empty, min 3 chars, max 200, без HTML-тегов."""
         if not v or not v.strip():
             raise ValueError("title cannot be empty")
-        if len(v.strip()) < 3:
+        cleaned = _strip_html(v).strip()
+        if len(cleaned) < 3:
             raise ValueError("title must be at least 3 characters long")
-        return v.strip()
+        if len(cleaned) > 200:
+            raise ValueError("title must be 200 characters or fewer")
+        return cleaned
 
     @field_validator("salary_min", "salary_max")
     @classmethod
@@ -354,12 +368,19 @@ class VacancyCreate(BaseModel):
     @field_validator("tags", mode="before")
     @classmethod
     def validate_tags(cls, v) -> List[str]:
-        """Ensure tags is a valid list."""
+        """Ensure tags is a valid list and strip HTML/whitespace."""
         if v is None:
             return []
         if not isinstance(v, list):
             raise ValueError("tags must be a list")
-        return v
+        cleaned = []
+        for item in v:
+            if not isinstance(item, str):
+                continue
+            stripped = _strip_html(item).strip()
+            if stripped:
+                cleaned.append(stripped[:80])
+        return cleaned
 
     @field_validator("extra_data", mode="before")
     @classmethod
@@ -405,13 +426,16 @@ class VacancyUpdate(BaseModel):
     @field_validator("title")
     @classmethod
     def validate_title(cls, v: Optional[str]) -> Optional[str]:
-        """Validate title is not empty and has at least 3 characters if provided."""
+        """Validate title: non-empty, min 3, max 200, без HTML-тегов."""
         if v is not None:
-            if not v.strip():
+            cleaned = _strip_html(v).strip()
+            if not cleaned:
                 raise ValueError("title cannot be empty")
-            if len(v.strip()) < 3:
+            if len(cleaned) < 3:
                 raise ValueError("title must be at least 3 characters long")
-            return v.strip()
+            if len(cleaned) > 200:
+                raise ValueError("title must be 200 characters or fewer")
+            return cleaned
         return v
 
     @field_validator("salary_min", "salary_max")
@@ -443,12 +467,19 @@ class VacancyUpdate(BaseModel):
     @field_validator("tags", mode="before")
     @classmethod
     def validate_tags(cls, v) -> Optional[List[str]]:
-        """Ensure tags is a valid list if provided."""
+        """Ensure tags is a valid list if provided, strip HTML/whitespace."""
         if v is None:
             return None
         if not isinstance(v, list):
             raise ValueError("tags must be a list")
-        return v
+        cleaned = []
+        for item in v:
+            if not isinstance(item, str):
+                continue
+            stripped = _strip_html(item).strip()
+            if stripped:
+                cleaned.append(stripped[:80])
+        return cleaned
 
     @field_validator("extra_data", mode="before")
     @classmethod

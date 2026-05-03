@@ -1,10 +1,11 @@
 """Entity tags / labels endpoints."""
+import re
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from ..models.database import EntityTag, Entity, User, OrgMember, entity_tag_association
 from ..database import get_db
@@ -13,9 +14,24 @@ from ..services.auth import get_current_user
 router = APIRouter()
 
 
+_HTML_TAG_RE = re.compile(r"<[^>]*>")
+
+
 class TagCreate(BaseModel):
     name: str
     color: str = "#3b82f6"
+
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, v: str) -> str:
+        if not v:
+            raise ValueError("name cannot be empty")
+        cleaned = _HTML_TAG_RE.sub("", v).strip()
+        if not cleaned:
+            raise ValueError("name cannot be empty")
+        if len(cleaned) > 80:
+            raise ValueError("name must be 80 characters or fewer")
+        return cleaned
 
 
 class TagOut(BaseModel):

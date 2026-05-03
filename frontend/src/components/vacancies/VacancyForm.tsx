@@ -105,6 +105,17 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
       return;
     }
 
+    const minNum = formData.salary_min !== '' ? Number(formData.salary_min) : null;
+    const maxNum = formData.salary_max !== '' ? Number(formData.salary_max) : null;
+    if ((minNum !== null && minNum < 0) || (maxNum !== null && maxNum < 0)) {
+      toast.error('Зарплата не может быть отрицательной');
+      return;
+    }
+    if (minNum !== null && maxNum !== null && minNum > maxNum) {
+      toast.error('"Зарплата от" не может быть больше "Зарплата до"');
+      return;
+    }
+
     setLoading(true);
     try {
       const data = {
@@ -334,6 +345,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <label className="block text-sm text-white/60 mb-1">Зарплата от</label>
                 <input
                   type="number"
+                  min={0}
                   value={formData.salary_min}
                   onChange={(e) => setFormData({ ...formData, salary_min: e.target.value })}
                   disabled={isReadOnlyRequest}
@@ -345,6 +357,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <label className="block text-sm text-white/60 mb-1">Зарплата до</label>
                 <input
                   type="number"
+                  min={0}
                   value={formData.salary_max}
                   onChange={(e) => setFormData({ ...formData, salary_max: e.target.value })}
                   disabled={isReadOnlyRequest}

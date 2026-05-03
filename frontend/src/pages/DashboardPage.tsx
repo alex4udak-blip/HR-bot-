@@ -712,7 +712,7 @@ function FunnelContent({ data }: { data: FunnelReport }) {
           <LegendItem
             key={i}
             color={legendColors[i % legendColors.length]}
-            label={s.source}
+            label={s.source === 'unknown' ? 'Не указан' : s.source}
             count={s.count}
           />
         ))}
@@ -858,7 +858,7 @@ function SourcesContent({ data }: { data: SourceReport }) {
             width={(s.count / maxCount) * 100}
             color={colors[i % colors.length]}
             value={s.count}
-            label={s.source}
+            label={s.source === 'unknown' ? 'Не указан' : s.source}
           />
         ))}
       </div>
