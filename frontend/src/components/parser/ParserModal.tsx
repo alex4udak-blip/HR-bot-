@@ -375,8 +375,14 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                       type="url"
                       value={url}
                       onChange={(e) => {
-                        setUrl(e.target.value);
-                        setError(null);
+                        const next = e.target.value;
+                        setUrl(next);
+                        // Подсказываем сразу: ввели что-то, но не URL — красная подпись.
+                        if (next.trim() && !isValidUrl(next.trim())) {
+                          setError('Введите корректный URL (например, https://hh.ru/resume/...)');
+                        } else {
+                          setError(null);
+                        }
                       }}
                       onKeyDown={handleKeyDown}
                       placeholder={isResume

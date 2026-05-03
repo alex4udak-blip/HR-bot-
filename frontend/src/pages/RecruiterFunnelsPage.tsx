@@ -1067,7 +1067,7 @@ export default function RecruiterFunnelsPage() {
                 </span>
               </div>
 
-              {/* Search + View toggle */}
+              {/* Search + Actions */}
               <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
                 <div className="relative flex-1 sm:flex-none">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dark-500" />
@@ -1079,6 +1079,29 @@ export default function RecruiterFunnelsPage() {
                     className="w-full sm:w-44 pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
                   />
                 </div>
+                <button
+                  onClick={() => setEditingVacancy(selectedVacancy)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-dark-300 hover:text-white hover:bg-white/[0.06] transition-colors"
+                  title="Редактировать вакансию"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                {selectedVacancy.status !== 'closed' && (
+                  <button
+                    onClick={() => handleCloseVacancy(selectedVacancy)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-dark-300 hover:text-amber-300 hover:bg-amber-500/10 transition-colors"
+                    title="Закрыть вакансию"
+                  >
+                    <Archive className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <button
+                  onClick={() => handleDeleteVacancy(selectedVacancy)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-dark-300 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                  title="Удалить вакансию"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
 
@@ -1957,9 +1980,9 @@ function FunnelCard({ vacancy, onClick, onEdit, onClose, onDelete }: { vacancy: 
         <h3 className="text-sm font-medium text-dark-100 group-hover:text-accent-400 transition-colors line-clamp-2 flex-1 mr-2">
           {vacancy.title}
         </h3>
-        {/* Action buttons — show on hover, replacing chevron */}
+        {/* Action buttons — приглушены до hover, но всегда видны */}
         <div className="flex items-center gap-0.5 shrink-0">
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-center gap-0.5 opacity-50 group-hover:opacity-100 transition-opacity">
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(); }}
               className="p-1 rounded-md hover:bg-white/[0.1] text-dark-400 hover:text-white transition-colors"
@@ -1998,30 +2021,43 @@ function FunnelCard({ vacancy, onClick, onEdit, onClose, onDelete }: { vacancy: 
         <span>{count} кандидатов</span>
       </div>
       {total > 0 && (
-        <div className="flex gap-0.5 h-1 rounded-full overflow-hidden bg-white/[0.04]">
-          {mainStages.map((stage) => {
-            const c = stageCounts[stage] || 0;
-            if (c === 0) return null;
-            const pct = (c / total) * 100;
-            return (
-              <div
-                key={stage}
-                className={clsx(
-                  'h-full rounded-full',
-                  stage === 'applied' && 'bg-blue-500/70',
-                  stage === 'screening' && 'bg-cyan-500/70',
-                  stage === 'phone_screen' && 'bg-purple-500/70',
-                  stage === 'interview' && 'bg-indigo-500/70',
-                  stage === 'assessment' && 'bg-orange-500/70',
-                  stage === 'offer' && 'bg-yellow-500/70',
-                  stage === 'hired' && 'bg-green-500/70',
-                )}
-                style={{ width: `${Math.max(pct, 4)}%` }}
-                title={`${stage}: ${c}`}
-              />
-            );
-          })}
-        </div>
+        <>
+          <div
+            className="flex items-center justify-between text-[10px] text-dark-500 mb-1"
+            title="Распределение кандидатов по этапам воронки"
+          >
+            <span>Этапы</span>
+            <span>{Math.round(((stageCounts['hired'] || 0) / total) * 100)}% наняты</span>
+          </div>
+          <div
+            className="flex gap-0.5 h-1 rounded-full overflow-hidden bg-white/[0.04]"
+            title="Распределение кандидатов по этапам (наведите на сегмент)"
+          >
+            {mainStages.map((stage) => {
+              const c = stageCounts[stage] || 0;
+              if (c === 0) return null;
+              const pct = (c / total) * 100;
+              const stageLabel = STAGE_LABELS[stage] || stage;
+              return (
+                <div
+                  key={stage}
+                  className={clsx(
+                    'h-full rounded-full',
+                    stage === 'applied' && 'bg-blue-500/70',
+                    stage === 'screening' && 'bg-cyan-500/70',
+                    stage === 'phone_screen' && 'bg-purple-500/70',
+                    stage === 'interview' && 'bg-indigo-500/70',
+                    stage === 'assessment' && 'bg-orange-500/70',
+                    stage === 'offer' && 'bg-yellow-500/70',
+                    stage === 'hired' && 'bg-green-500/70',
+                  )}
+                  style={{ width: `${Math.max(pct, 4)}%` }}
+                  title={`${stageLabel}: ${c} (${Math.round(pct)}%)`}
+                />
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );

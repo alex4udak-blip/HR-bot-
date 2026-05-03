@@ -593,7 +593,11 @@ async def get_rejections_report(
 
     by_stage = []
     for row in by_stage_result:
-        stage_key = row.from_stage or "unknown"
+        # Если StageTransition.from_stage NULL (старые данные / прямой отказ
+        # без явного перехода) — пропускаем, чтобы в графике не было 'unknown'.
+        if not row.from_stage:
+            continue
+        stage_key = row.from_stage
         # Get rejection reasons for this stage
         reason_q = (
             select(
@@ -624,7 +628,7 @@ async def get_rejections_report(
 
         by_stage.append(RejectionsByStage(
             stage=stage_key,
-            label=STAGE_LABELS.get(stage_key, stage_key),
+            label=STAGE_LABELS.get(stage_key) or 'Без стадии',
             count=row.cnt,
             reasons=reasons,
         ))

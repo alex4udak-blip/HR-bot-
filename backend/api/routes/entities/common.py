@@ -387,6 +387,25 @@ async def check_entity_access(
     shared_access = shared_result.scalar_one_or_none()
 
     if not shared_access:
+        # 6. Доступ через вакансию: рекрутёр работает с заявкой,
+        # на которую этот entity подал заявку. Только для read-доступа.
+        if required_level is None:
+            from sqlalchemy import text as _text
+            vac_app_q = select(VacancyApplication.id).join(
+                Vacancy, Vacancy.id == VacancyApplication.vacancy_id
+            ).where(
+                VacancyApplication.entity_id == entity.id,
+                or_(
+                    Vacancy.created_by == user.id,
+                    Vacancy.hiring_manager_id == user.id,
+                    Vacancy.visible_to_all == True,
+                    Vacancy.assigned_to_all == True,
+                    _text(f"vacancies.assigned_to::jsonb @> '[{int(user.id)}]'::jsonb"),
+                ),
+            ).limit(1)
+            vac_app_result = await db.execute(vac_app_q)
+            if vac_app_result.scalar_one_or_none() is not None:
+                return True
         return False
 
     # Check access level

@@ -194,6 +194,10 @@ export default function DashboardPage() {
   const [movementData, setMovementData] = useState<MovementReport | null>(null);
 
   const loadReport = useCallback(async () => {
+    if (period === 'custom' && customFrom && customTo && customFrom > customTo) {
+      toast.error('Дата начала не может быть позже даты окончания');
+      return;
+    }
     setIsLoading(true);
     try {
       const params: Record<string, string> = { period, vacancy_status: vacancyStatus };
@@ -573,11 +577,11 @@ function TTFContent({ data }: { data: TimeToFillReport }) {
       {/* KPI row */}
       <div className="grid grid-cols-3 gap-5 mb-8">
         <KPICard
-          value={summary.avg_days_to_close != null ? `${summary.avg_days_to_close}` : '—'}
+          value={summary.avg_days_to_close != null ? `${summary.avg_days_to_close}` : '0'}
           label="Ср. срок закрытия, дн"
         />
         <KPICard
-          value={summary.avg_delay_days != null ? `${summary.avg_delay_days}` : '—'}
+          value={summary.avg_delay_days != null ? `${summary.avg_delay_days}` : '0'}
           label="Ср. просрочка, дн"
         />
         <KPICard
@@ -598,7 +602,7 @@ function TTFContent({ data }: { data: TimeToFillReport }) {
             key={st.stage}
             width={(st.avg_days / maxDays) * 100}
             color={BAR_COLORS.primary}
-            value={st.avg_days > 0 ? `${st.avg_days} дн` : '—'}
+            value={st.avg_days > 0 ? `${st.avg_days} дн` : '0 дн'}
             label={st.label}
           />
         ))}
