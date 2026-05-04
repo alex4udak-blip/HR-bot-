@@ -563,6 +563,23 @@ export const addEntityNote = async (
   return data;
 };
 
+export const updateEntityNote = async (
+  entityId: number,
+  noteId: string,
+  text: string
+): Promise<{ success: boolean; note: EntityNote }> => {
+  const { data } = await api.patch(`/entities/${entityId}/notes/${encodeURIComponent(noteId)}`, { text });
+  return data;
+};
+
+export const deleteEntityNote = async (
+  entityId: number,
+  noteId: string
+): Promise<{ success: boolean; total_notes: number }> => {
+  const { data } = await api.delete(`/entities/${entityId}/notes/${encodeURIComponent(noteId)}`);
+  return data;
+};
+
 export const reconvertResume = async (entityId: number): Promise<{ success: boolean; pages_created: number }> => {
   const { data } = await api.post(`/entities/${entityId}/files/reconvert-resume`);
   return data;

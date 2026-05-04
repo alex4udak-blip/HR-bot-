@@ -45,7 +45,7 @@ import type {
   KanbanColumn,
   RecruiterOption,
 } from '@/services/api/candidates';
-import { updateEntity, uploadEntityFile, getEntityFiles, downloadEntityFile, deleteEntity, getEntity, addEntityNote } from '@/services/api/entities';
+import { updateEntity, uploadEntityFile, getEntityFiles, downloadEntityFile, deleteEntity, getEntity, addEntityNote, updateEntityNote, deleteEntityNote } from '@/services/api/entities';
 import SendEmailModal from '@/components/entities/SendEmailModal';
 import type { EntityFile } from '@/services/api/entities';
 import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
@@ -671,6 +671,10 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
   onAddToVacancy: () => void;
   onEdit: () => void;
 }) {
+  const { user: currentUser } = useAuthStore();
+  const isAdmin = currentUser?.role === 'superadmin'
+    || currentUser?.org_role === 'owner'
+    || currentUser?.org_role === 'admin';
   const [showStageDD, setShowStageDD] = useState(false);
   const [comment, setComment] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -1094,54 +1098,19 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
             {(card.extra_data.notes as any[])
               .slice()
               .sort((a, b) => {
-                // Новые сверху. Старые naive-даты (без TZ) — JS их парсит как
-                // local, формально OK для сравнения внутри одной TZ.
                 const ta = a?.date ? new Date(a.date).getTime() : 0;
                 const tb = b?.date ? new Date(b.date).getTime() : 0;
                 return tb - ta;
               })
-              .map((note, i) => {
-              // Стадию берём только из самого коммента. Если её нет (legacy
-              // коммент до фикса) — нейтральный серый фон без подмены под
-              // текущий статус кандидата (иначе фоны "плыли" при смене этапа).
-              const noteStage = note.stage as string | undefined;
-              const noteSc = noteStage ? (STATUS_COLORS[noteStage] || FALLBACK_COLOR) : FALLBACK_COLOR;
-              const initials = (note.author_name || '?')[0].toUpperCase();
-              return (
-                <div
-                  key={`note-${i}`}
-                  className={clsx(
-                    'rounded-lg border border-white/[0.06] p-3',
-                    noteSc.bg,
-                  )}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className={clsx(
-                        'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0',
-                        noteSc.badge,
-                      )}>
-                        {initials}
-                      </div>
-                      <span className="text-xs font-medium text-dark-200 truncate">
-                        {note.author_name || 'Аноним'}
-                      </span>
-                      {noteStage && (
-                        <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0', noteSc.badge)}>
-                          {note.stage_label || noteStage}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[10px] text-dark-500 flex-shrink-0">
-                      {note.date ? formatDateFull(note.date) : ''}
-                    </span>
-                  </div>
-                  <div className="text-sm text-dark-200 whitespace-pre-wrap break-words">
-                    {note.text}
-                  </div>
-                </div>
-              );
-            })}
+              .map((note, i) => (
+                <CommentCard
+                  key={note.id || `note-${note.date || i}`}
+                  card={card}
+                  note={note}
+                  currentUserId={currentUser?.id}
+                  isAdmin={isAdmin}
+                />
+              ))}
           </div>
         </div>
       )}
@@ -1164,6 +1133,189 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
           )}
         </div>
       </div>
+    </div>
+  );
+});
+
+
+// ================================================================
+// COMMENT CARD — отдельный коммент с edit/delete для автора/админа
+// ================================================================
+
+interface NoteShape {
+  id?: string;
+  text: string;
+  date?: string;
+  stage?: string;
+  stage_label?: string;
+  author_id?: number;
+  author_name?: string;
+  edited_at?: string;
+}
+
+const CommentCard = memo(function CommentCard({
+  card,
+  note,
+  currentUserId,
+  isAdmin,
+}: {
+  card: KanbanCard;
+  note: NoteShape;
+  currentUserId?: number;
+  isAdmin: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(note.text);
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const noteStage = note.stage;
+  const noteSc = noteStage ? (STATUS_COLORS[noteStage] || FALLBACK_COLOR) : FALLBACK_COLOR;
+  const initials = (note.author_name || '?')[0].toUpperCase();
+  // Можно править/удалить если: я автор, либо админ. Legacy-комменты без
+  // author_id трогать может только админ.
+  const canModify = isAdmin
+    || (note.author_id !== undefined && currentUserId !== undefined && Number(note.author_id) === Number(currentUserId));
+  // ID для API: новые имеют uuid, у legacy используем "date:<iso>" фолбэк
+  // (бэкенд понимает оба).
+  const noteId = note.id || (note.date ? `date:${note.date}` : null);
+
+  const save = async () => {
+    if (!noteId) { toast.error('Не удалось определить коммент'); return; }
+    const t = editText.trim();
+    if (!t) { toast.error('Текст не может быть пустым'); return; }
+    setBusy(true);
+    try {
+      const resp = await updateEntityNote(card.id, noteId, t);
+      // Обновляем in-place — заметка та же по reference, поправим её поля
+      Object.assign(note, resp.note);
+      setEditing(false);
+      toast.success('Коммент обновлён');
+    } catch (err) {
+      console.error('Update note failed:', err);
+      toast.error('Не удалось обновить коммент');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!noteId) { toast.error('Не удалось определить коммент'); return; }
+    setBusy(true);
+    try {
+      await deleteEntityNote(card.id, noteId);
+      // Убираем из массива по ссылке
+      if (Array.isArray(card.extra_data?.notes)) {
+        const idx = card.extra_data.notes.findIndex((n: NoteShape) => n === note);
+        if (idx >= 0) card.extra_data.notes.splice(idx, 1);
+      }
+      toast.success('Коммент удалён');
+    } catch (err) {
+      console.error('Delete note failed:', err);
+      toast.error('Не удалось удалить коммент');
+    } finally {
+      setBusy(false);
+      setConfirmDelete(false);
+    }
+  };
+
+  return (
+    <div className={clsx('group rounded-lg border border-white/[0.06] p-3 relative', noteSc.bg)}>
+      <div className="flex items-center justify-between mb-1.5 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className={clsx(
+            'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0',
+            noteSc.badge,
+          )}>
+            {initials}
+          </div>
+          <span className="text-xs font-medium text-dark-200 truncate">
+            {note.author_name || 'Аноним'}
+          </span>
+          {noteStage && (
+            <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0', noteSc.badge)}>
+              {note.stage_label || noteStage}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className="text-[10px] text-dark-500">
+            {note.date ? formatDateFull(note.date) : ''}
+            {note.edited_at && ' · изм.'}
+          </span>
+          {canModify && !editing && !confirmDelete && (
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+              <button
+                onClick={() => { setEditText(note.text); setEditing(true); }}
+                className="p-1 rounded hover:bg-white/[0.1] text-dark-400 hover:text-white"
+                title="Редактировать"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="p-1 rounded hover:bg-red-500/20 text-dark-400 hover:text-red-400"
+                title="Удалить"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {editing ? (
+        <div className="space-y-2">
+          <textarea
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            disabled={busy}
+            rows={3}
+            className="w-full px-2 py-1.5 rounded-md bg-white/[0.05] border border-white/[0.1] text-sm text-dark-100 focus:outline-none focus:border-blue-500 resize-y disabled:opacity-50"
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setEditing(false)}
+              disabled={busy}
+              className="px-2 py-1 text-xs text-dark-300 hover:text-white disabled:opacity-50"
+            >
+              Отмена
+            </button>
+            <button
+              onClick={save}
+              disabled={busy}
+              className="px-3 py-1 text-xs font-medium bg-blue-500 hover:bg-blue-600 text-white rounded-md disabled:opacity-50"
+            >
+              {busy ? 'Сохраняем…' : 'Сохранить'}
+            </button>
+          </div>
+        </div>
+      ) : confirmDelete ? (
+        <div className="flex items-center justify-between gap-3 p-2 rounded-md bg-red-500/10 border border-red-500/20">
+          <span className="text-xs text-red-300">Удалить этот коммент?</span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => setConfirmDelete(false)}
+              disabled={busy}
+              className="px-2 py-1 text-xs text-dark-300 hover:text-white disabled:opacity-50"
+            >
+              Нет
+            </button>
+            <button
+              onClick={remove}
+              disabled={busy}
+              className="px-2.5 py-1 text-xs font-medium bg-red-500 hover:bg-red-600 text-white rounded-md disabled:opacity-50"
+            >
+              {busy ? 'Удаляем…' : 'Удалить'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="text-sm text-dark-200 whitespace-pre-wrap break-words">
+          {note.text}
+        </div>
+      )}
     </div>
   );
 });

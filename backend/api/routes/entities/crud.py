@@ -930,6 +930,27 @@ class NoteCreate(BaseModel):
     stage_label: Optional[str] = None
 
 
+class NoteUpdate(BaseModel):
+    text: str
+
+
+def _note_org_check(entity, current_user, org):
+    """Общая проверка: org-scope доступа к entity для notes-эндпоинтов."""
+    if current_user.role != UserRole.superadmin:
+        if not org or entity.org_id != org.id:
+            raise HTTPException(404, "Entity not found")
+
+
+def _note_can_modify(note: dict, current_user) -> bool:
+    """Edit/delete: только автор коммента или админ/owner/superadmin."""
+    if current_user.role == UserRole.superadmin:
+        return True
+    # Owner/admin org-роли проверяются на уровне аутентификации; здесь —
+    # просто сверяем author_id с текущим пользователем.
+    author_id = note.get("author_id")
+    return author_id is not None and int(author_id) == int(current_user.id)
+
+
 @router.post("/{entity_id}/notes")
 async def add_entity_note(
     entity_id: int,
@@ -944,6 +965,8 @@ async def add_entity_note(
     видит всех кандидатов оргa). Комментарий не модифицирует данные
     кандидата, а только дополняет workflow.
     """
+    import uuid
+    from datetime import timezone as _tz
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org and current_user.role != UserRole.superadmin:
@@ -955,11 +978,7 @@ async def add_entity_note(
     entity = result.scalar_one_or_none()
     if not entity:
         raise HTTPException(404, "Entity not found")
-
-    # Org-scope: superadmin ходит везде, остальные — только в своей орг.
-    if current_user.role != UserRole.superadmin:
-        if not org or entity.org_id != org.id:
-            raise HTTPException(404, "Entity not found")
+    _note_org_check(entity, current_user, org)
 
     text_clean = (data.text or "").strip()
     if not text_clean:
@@ -969,11 +988,8 @@ async def add_entity_note(
 
     extra = dict(entity.extra_data or {})
     notes = list(extra.get("notes") or [])
-    # ISO с явной UTC-зоной — фронт корректно сконвертит в локалью.
-    # datetime.utcnow().isoformat() возвращает naive — JS считает локалью
-    # → ломается отображение времени.
-    from datetime import timezone as _tz
     note = {
+        "id": str(uuid.uuid4()),
         "text": text_clean,
         "date": datetime.now(_tz.utc).isoformat(),
         "stage": data.stage,
@@ -987,6 +1003,96 @@ async def add_entity_note(
     await db.commit()
     await db.refresh(entity)
     return {"success": True, "note": note, "total_notes": len(notes)}
+
+
+def _find_note_index(notes: list, note_id: str) -> int:
+    """Ищем по id; для legacy-комментов без id допускаем поиск по date."""
+    for i, n in enumerate(notes):
+        if isinstance(n, dict):
+            if n.get("id") == note_id:
+                return i
+            # legacy fallback: id-формат "date:<iso>" (фронт может прислать)
+            if note_id.startswith("date:") and n.get("date") == note_id[5:]:
+                return i
+    return -1
+
+
+@router.patch("/{entity_id}/notes/{note_id}")
+async def update_entity_note(
+    entity_id: int,
+    note_id: str,
+    data: NoteUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Редактировать комментарий — только автор или superadmin."""
+    from datetime import timezone as _tz
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+
+    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+    _note_org_check(entity, current_user, org)
+
+    text_clean = (data.text or "").strip()
+    if not text_clean:
+        raise HTTPException(400, "Comment text cannot be empty")
+    if len(text_clean) > 5000:
+        raise HTTPException(400, "Comment too long (max 5000)")
+
+    extra = dict(entity.extra_data or {})
+    notes = list(extra.get("notes") or [])
+    idx = _find_note_index(notes, note_id)
+    if idx < 0:
+        raise HTTPException(404, "Comment not found")
+
+    note = dict(notes[idx])
+    if not _note_can_modify(note, current_user):
+        raise HTTPException(403, "You can only edit your own comments")
+
+    note["text"] = text_clean
+    note["edited_at"] = datetime.now(_tz.utc).isoformat()
+    notes[idx] = note
+    extra["notes"] = notes
+    entity.extra_data = extra
+    await db.commit()
+    await db.refresh(entity)
+    return {"success": True, "note": note}
+
+
+@router.delete("/{entity_id}/notes/{note_id}")
+async def delete_entity_note(
+    entity_id: int,
+    note_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Удалить комментарий — только автор или superadmin."""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+
+    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+    _note_org_check(entity, current_user, org)
+
+    extra = dict(entity.extra_data or {})
+    notes = list(extra.get("notes") or [])
+    idx = _find_note_index(notes, note_id)
+    if idx < 0:
+        raise HTTPException(404, "Comment not found")
+
+    if not _note_can_modify(notes[idx], current_user):
+        raise HTTPException(403, "You can only delete your own comments")
+
+    notes.pop(idx)
+    extra["notes"] = notes
+    entity.extra_data = extra
+    await db.commit()
+    return {"success": True, "total_notes": len(notes)}
 
 
 @router.patch("/{entity_id}/status")
