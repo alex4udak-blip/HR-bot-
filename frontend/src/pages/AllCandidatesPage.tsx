@@ -1101,8 +1101,11 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
                 return tb - ta;
               })
               .map((note, i) => {
-              const noteStage = (note.stage as string) || status;
-              const noteSc = STATUS_COLORS[noteStage] || FALLBACK_COLOR;
+              // Стадию берём только из самого коммента. Если её нет (legacy
+              // коммент до фикса) — нейтральный серый фон без подмены под
+              // текущий статус кандидата (иначе фоны "плыли" при смене этапа).
+              const noteStage = note.stage as string | undefined;
+              const noteSc = noteStage ? (STATUS_COLORS[noteStage] || FALLBACK_COLOR) : FALLBACK_COLOR;
               const initials = (note.author_name || '?')[0].toUpperCase();
               return (
                 <div
@@ -1123,9 +1126,11 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
                       <span className="text-xs font-medium text-dark-200 truncate">
                         {note.author_name || 'Аноним'}
                       </span>
-                      <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0', noteSc.badge)}>
-                        {note.stage_label || noteStage}
-                      </span>
+                      {noteStage && (
+                        <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0', noteSc.badge)}>
+                          {note.stage_label || noteStage}
+                        </span>
+                      )}
                     </div>
                     <span className="text-[10px] text-dark-500 flex-shrink-0">
                       {note.date ? formatDateFull(note.date) : ''}
