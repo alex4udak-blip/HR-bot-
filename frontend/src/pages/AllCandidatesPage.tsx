@@ -45,7 +45,7 @@ import type {
   KanbanColumn,
   RecruiterOption,
 } from '@/services/api/candidates';
-import { updateEntity, uploadEntityFile, getEntityFiles, downloadEntityFile, deleteEntity, getEntity } from '@/services/api/entities';
+import { updateEntity, uploadEntityFile, getEntityFiles, downloadEntityFile, deleteEntity, getEntity, addEntityNote } from '@/services/api/entities';
 import SendEmailModal from '@/components/entities/SendEmailModal';
 import type { EntityFile } from '@/services/api/entities';
 import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
@@ -671,7 +671,6 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
   onAddToVacancy: () => void;
   onEdit: () => void;
 }) {
-  const { user: currentUser } = useAuthStore();
   const [showStageDD, setShowStageDD] = useState(false);
   const [comment, setComment] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -745,31 +744,24 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
       return;
     }
     try {
-      const existingNotes: Array<Record<string, unknown>> = Array.isArray(card.extra_data?.notes)
-        ? card.extra_data.notes
-        : [];
-      // Сохраняем стадию и автора в момент комментария — нужны для цвета
-      // фона и подписи в отдельном блоке "Комментарии".
-      const newNote = {
+      // Используем dedicated endpoint /entities/{id}/notes — он требует только
+      // view-доступ (рекрутёр через вакансию имеет его), в отличие от PUT /entities,
+      // который требует full edit-прав.
+      const resp = await addEntityNote(card.id, {
         text: comment.trim(),
-        date: new Date().toISOString(),
         stage: status,
         stage_label: statusLabel,
-        author_id: currentUser?.id,
-        author_name: currentUser?.name,
-      };
-      await updateEntity(card.id, {
-        extra_data: {
-          ...(card.extra_data || {}),
-          notes: [...existingNotes, newNote],
-        },
       });
       // Update card in-place so block обновляется immediately
       if (!card.extra_data) card.extra_data = {};
-      card.extra_data.notes = [...existingNotes, newNote];
+      const existingNotes: Array<Record<string, unknown>> = Array.isArray(card.extra_data.notes)
+        ? card.extra_data.notes
+        : [];
+      card.extra_data.notes = [...existingNotes, resp.note];
       toast.success('Комментарий сохранён');
       setComment('');
-    } catch {
+    } catch (err) {
+      console.error('Failed to save comment:', err);
       toast.error('Ошибка сохранения комментария');
     }
   };

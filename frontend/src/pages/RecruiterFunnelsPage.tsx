@@ -34,7 +34,8 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, updateEntity, uploadEntityFile, createApplication } from '@/services/api';
+import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
+import { addEntityNote } from '@/services/api/entities';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
@@ -750,22 +751,21 @@ export default function RecruiterFunnelsPage() {
     if (!selectedCandidate?.entity_id || !text.trim()) return;
     setCommentSaving(true);
     try {
-      const entity = await getEntity(selectedCandidate.entity_id);
-      const existing = Array.isArray((entity.extra_data as Record<string, unknown> | undefined)?.notes)
-        ? ((entity.extra_data as { notes: Array<{ text: string; date: string }> }).notes)
-        : [];
-      const newNote = { text: text.trim(), date: new Date().toISOString() };
-      await updateEntity(selectedCandidate.entity_id, {
-        extra_data: { ...(entity.extra_data || {}), notes: [...existing, newNote] },
+      // Через POST /entities/{id}/notes — рекрутёру достаточно view-доступа.
+      await addEntityNote(selectedCandidate.entity_id, {
+        text: text.trim(),
+        stage: selectedCandidate.stage as string | undefined,
+        stage_label: stagesConfig.labels[selectedCandidate.stage] || (selectedCandidate.stage as string),
       });
       toast.success('Комментарий сохранён');
       if (commentRef.current) commentRef.current.value = '';
-    } catch {
+    } catch (err) {
+      console.error('Failed to save comment:', err);
       toast.error('Не удалось сохранить комментарий');
     } finally {
       setCommentSaving(false);
     }
-  }, [selectedCandidate]);
+  }, [selectedCandidate, stagesConfig]);
 
   // ─── File attach (Файл button) ───
   const candidateFileInputRef = useRef<HTMLInputElement | null>(null);

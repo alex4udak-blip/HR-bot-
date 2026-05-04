@@ -546,6 +546,23 @@ export const deleteEntityFile = async (entityId: number, fileId: number): Promis
   await debouncedMutation<void>('delete', `/entities/${entityId}/files/${fileId}`);
 };
 
+export interface EntityNote {
+  text: string;
+  date: string;
+  stage?: string | null;
+  stage_label?: string | null;
+  author_id?: number | null;
+  author_name?: string | null;
+}
+
+export const addEntityNote = async (
+  entityId: number,
+  payload: { text: string; stage?: string | null; stage_label?: string | null }
+): Promise<{ success: boolean; note: EntityNote; total_notes: number }> => {
+  const { data } = await api.post(`/entities/${entityId}/notes`, payload);
+  return data;
+};
+
 export const reconvertResume = async (entityId: number): Promise<{ success: boolean; pages_created: number }> => {
   const { data } = await api.post(`/entities/${entityId}/files/reconvert-resume`);
   return data;

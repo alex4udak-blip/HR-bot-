@@ -4,6 +4,7 @@ CRUD operations for entities (create, read, update, delete).
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 import asyncio
@@ -921,6 +922,66 @@ async def update_entity(
     await broadcast_entity_updated(org.id, response_data)
 
     return response_data
+
+
+class NoteCreate(BaseModel):
+    text: str
+    stage: Optional[str] = None
+    stage_label: Optional[str] = None
+
+
+@router.post("/{entity_id}/notes")
+async def add_entity_note(
+    entity_id: int,
+    data: NoteCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Добавить комментарий-заметку кандидату.
+
+    Доступно всем у кого есть VIEW-доступ к entity (включая рекрутёров,
+    у которых доступ через вакансию-application). Без полного edit-права
+    на саму карточку — потому что комментарий не модифицирует данные
+    кандидата, а только дополняет workflow рекрутёра.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(404, "Entity not found")
+
+    text_clean = (data.text or "").strip()
+    if not text_clean:
+        raise HTTPException(400, "Comment text cannot be empty")
+    if len(text_clean) > 5000:
+        raise HTTPException(400, "Comment too long (max 5000)")
+
+    extra = dict(entity.extra_data or {})
+    notes = list(extra.get("notes") or [])
+    note = {
+        "text": text_clean,
+        "date": datetime.utcnow().isoformat(),
+        "stage": data.stage,
+        "stage_label": data.stage_label,
+        "author_id": current_user.id,
+        "author_name": current_user.name,
+    }
+    notes.append(note)
+    extra["notes"] = notes
+    entity.extra_data = extra
+    await db.commit()
+    await db.refresh(entity)
+    return {"success": True, "note": note, "total_notes": len(notes)}
 
 
 @router.patch("/{entity_id}/status")
