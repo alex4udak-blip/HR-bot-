@@ -12,13 +12,10 @@ import {
   UserCog,
   Briefcase,
   GraduationCap,
-  FileSpreadsheet,
   FolderKanban,
   ListTodo,
   Cloud,
   GitBranch,
-  FileText,
-  FileSignature,
   Bell,
   Check,
   BarChart3,
@@ -27,7 +24,6 @@ import {
   UserPlus,
   TrendingUp,
   Puzzle,
-  Upload,
   ChevronDown,
   Calendar,
   AlertTriangle,
@@ -363,14 +359,9 @@ export default function Layout() {
       hrItems.push({ path: '/vacancies', icon: GitBranch, label: 'Заявки' });
       hrItems.push({ path: '/extension', icon: Puzzle, label: 'Волшебная кнопка' });
       if (isHrAdmin) {
-        hrItems.push({ path: '/analytics', icon: BarChart3, label: 'HR Аналитика' });
-        hrItems.push({ path: '/hr-reports', icon: ClipboardList, label: 'Центр отчётов' });
+        // У HR-админа в боковом меню оставлено только ПЭН — остальные пункты
+        // (Аналитика, Отчёты, Формы, Шаблоны, Сотрудники, CSV) убраны по запросу.
         hrItems.push({ path: '/pen', icon: TrendingUp, label: 'ПЭН (бонусы)' });
-        hrItems.push({ path: '/form-builder', icon: FileText, label: 'Конструктор форм' });
-        hrItems.push({ path: '/document-templates', icon: FileSignature, label: 'Шаблоны документов' });
-        hrItems.push({ path: '/employees', icon: UserCog, label: 'Сотрудники' });
-        hrItems.push({ path: '/exports', icon: FileSpreadsheet, label: 'Экспорт CSV' });
-        hrItems.push({ path: '/import', icon: Upload, label: 'Импорт CSV' });
       }
       sections.push({
         id: 'hr',
