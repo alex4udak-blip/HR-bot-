@@ -36,14 +36,15 @@ FUNNEL_STAGES = [
 ]
 
 STAGE_LABELS = {
-    "applied": "Новые",
-    "screening": "Резюме у заказчика",
-    "phone_screen": "Интервью с HR",
-    "interview": "Интервью с заказчиком",
-    "assessment": "Принятие решения/ СБ",
-    "offer": "Выставлен оффер",
-    "hired": "Оффер принят",
-    "rejected": "Отказ",
+    # Единые лейблы — согласованы с KANBAN_STATUS_LABELS / фронтом.
+    "applied": "Новый",
+    "screening": "Скрининг",
+    "phone_screen": "Практика",
+    "interview": "Тех-практика",
+    "assessment": "ИС",
+    "offer": "Оффер",
+    "hired": "Принят",
+    "rejected": "Отклонён",
     "withdrawn": "Отозван",
 }
 

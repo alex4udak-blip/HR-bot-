@@ -68,15 +68,17 @@ const STAGE_ORDER = [
   'assessment', 'offer', 'hired', 'rejected', 'withdrawn',
 ] as const;
 
+// Единые лейблы стадий — синхронизированы с backend KANBAN_STATUS_LABELS
+// (отображаются на /all-candidates). Не разводить разные наборы по страницам.
 const STAGE_LABELS: Record<string, string> = {
-  applied: 'Новая заявка',
-  screening: 'Отбор',
-  phone_screen: 'Собеседование назначено',
-  interview: 'Собеседование пройдено',
-  assessment: 'Практика',
+  applied: 'Новый',
+  screening: 'Скрининг',
+  phone_screen: 'Практика',
+  interview: 'Тех-практика',
+  assessment: 'ИС',
   offer: 'Оффер',
-  hired: 'Вышел на работу',
-  rejected: 'Отказ',
+  hired: 'Принят',
+  rejected: 'Отклонён',
   withdrawn: 'Отозван',
 };
 

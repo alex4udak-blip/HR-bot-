@@ -729,15 +729,16 @@ export const VACANCY_STATUS_COLORS: Record<VacancyStatus, string> = {
 };
 
 export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = {
-  // HR Pipeline по ТЗ (DB enum values → display labels)
+  // Единые лейблы стадий — синхронизированы с backend KANBAN_STATUS_LABELS
+  // и теми, что отображаются на /all-candidates. Не разводить разные наборы.
   applied: 'Новый',
-  screening: 'Отбор',
-  phone_screen: 'Собеседование назначено',
-  interview: 'Собеседование пройдено',
-  assessment: 'Практика',
+  screening: 'Скрининг',
+  phone_screen: 'Практика',
+  interview: 'Тех-практика',
+  assessment: 'ИС',
   offer: 'Оффер',
-  hired: 'Вышел на работу',
-  rejected: 'Отказ',
+  hired: 'Принят',
+  rejected: 'Отклонён',
   withdrawn: 'Отозван'
 };
 

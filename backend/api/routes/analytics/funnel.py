@@ -27,7 +27,8 @@ logger = get_logger("analytics-funnel")
 router = APIRouter()
 
 
-# HR Pipeline stage labels (Russian)
+# HR Pipeline stage labels (Russian) — единый источник, согласован с
+# KANBAN_STATUS_LABELS в candidate_search.py и фронтом.
 STAGE_LABELS = {
     "applied": "Новый",
     "screening": "Скрининг",
@@ -36,7 +37,7 @@ STAGE_LABELS = {
     "assessment": "ИС",
     "offer": "Оффер",
     "hired": "Принят",
-    "rejected": "Отказ",
+    "rejected": "Отклонён",
     "withdrawn": "Отозван",
 }
 
