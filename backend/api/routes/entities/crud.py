@@ -939,26 +939,27 @@ async def add_entity_note(
 ):
     """Добавить комментарий-заметку кандидату.
 
-    Доступно всем у кого есть VIEW-доступ к entity (включая рекрутёров,
-    у которых доступ через вакансию-application). Без полного edit-права
-    на саму карточку — потому что комментарий не модифицирует данные
-    кандидата, а только дополняет workflow рекрутёра.
+    Доступно любому пользователю в той же организации, что и entity —
+    зеркалит видимость в общем kanban'e /all-candidates (где рекрутёр
+    видит всех кандидатов оргa). Комментарий не модифицирует данные
+    кандидата, а только дополняет workflow.
     """
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
-    if not org:
+    if not org and current_user.role != UserRole.superadmin:
         raise HTTPException(403, "No organization access")
 
     result = await db.execute(
-        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+        select(Entity).where(Entity.id == entity_id)
     )
     entity = result.scalar_one_or_none()
     if not entity:
         raise HTTPException(404, "Entity not found")
 
-    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
-    if not has_access:
-        raise HTTPException(404, "Entity not found")
+    # Org-scope: superadmin ходит везде, остальные — только в своей орг.
+    if current_user.role != UserRole.superadmin:
+        if not org or entity.org_id != org.id:
+            raise HTTPException(404, "Entity not found")
 
     text_clean = (data.text or "").strip()
     if not text_clean:
@@ -968,9 +969,13 @@ async def add_entity_note(
 
     extra = dict(entity.extra_data or {})
     notes = list(extra.get("notes") or [])
+    # ISO с явной UTC-зоной — фронт корректно сконвертит в локалью.
+    # datetime.utcnow().isoformat() возвращает naive — JS считает локалью
+    # → ломается отображение времени.
+    from datetime import timezone as _tz
     note = {
         "text": text_clean,
-        "date": datetime.utcnow().isoformat(),
+        "date": datetime.now(_tz.utc).isoformat(),
         "stage": data.stage,
         "stage_label": data.stage_label,
         "author_id": current_user.id,

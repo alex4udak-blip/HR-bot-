@@ -1091,7 +1091,16 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
         <div className="mb-6">
           <div className="text-xs text-dark-500 mb-3 uppercase tracking-wider">Комментарии</div>
           <div className="space-y-2">
-            {(card.extra_data.notes as any[]).slice().reverse().map((note, i) => {
+            {(card.extra_data.notes as any[])
+              .slice()
+              .sort((a, b) => {
+                // Новые сверху. Старые naive-даты (без TZ) — JS их парсит как
+                // local, формально OK для сравнения внутри одной TZ.
+                const ta = a?.date ? new Date(a.date).getTime() : 0;
+                const tb = b?.date ? new Date(b.date).getTime() : 0;
+                return tb - ta;
+              })
+              .map((note, i) => {
               const noteStage = (note.stage as string) || status;
               const noteSc = STATUS_COLORS[noteStage] || FALLBACK_COLOR;
               const initials = (note.author_name || '?')[0].toUpperCase();
