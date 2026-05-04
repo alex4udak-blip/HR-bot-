@@ -376,8 +376,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
               </div>
             </div>
 
-            {/* Recruiter Assignment — multi-select. Скрыто для read-only режима. */}
-            {!isReadOnlyRequest && (
+            {/* Recruiter Assignment — admin-only (рекрутёры не назначают других на свои заявки) */}
+            {!isReadOnlyRequest && isAdmin && (
             <div>
               <label className="block text-sm text-white/60 mb-1">Назначить рекрутерам</label>
               {/* Assign all toggle */}
@@ -455,8 +455,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
 
             )}
 
-            {/* Visible to all toggle. Скрыто для read-only. */}
-            {!isReadOnlyRequest && (
+            {/* Visible to all toggle — admin-only (рекрутёр не управляет видимостью оргой) */}
+            {!isReadOnlyRequest && isAdmin && (
             <div
               className="flex items-center gap-3 p-3 glass-light rounded-lg cursor-pointer hover:bg-white/5 transition-colors"
               onClick={() => setFormData({ ...formData, visible_to_all: !formData.visible_to_all })}
