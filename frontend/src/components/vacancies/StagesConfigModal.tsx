@@ -13,16 +13,17 @@ export interface StageColumn {
   color?: string;   // color key from STAGE_COLORS palette
 }
 
-// Default stages derived from the hardcoded pipeline
+// Default stages — единый набор согласован с KANBAN_STATUS_LABELS
+// (отображается на /all-candidates) и фронтовым STAGE_LABELS.
 const DEFAULT_STAGES: StageColumn[] = [
   { key: 'applied', label: 'Новый', visible: true },
-  { key: 'screening', label: 'Отбор', visible: true },
-  { key: 'phone_screen', label: 'Собеседование назначено', visible: true },
-  { key: 'interview', label: 'Собеседование пройдено', visible: true },
-  { key: 'assessment', label: 'Практика', visible: true },
+  { key: 'screening', label: 'Скрининг', visible: true },
+  { key: 'phone_screen', label: 'Практика', visible: true },
+  { key: 'interview', label: 'Тех-практика', visible: true },
+  { key: 'assessment', label: 'ИС', visible: true },
   { key: 'offer', label: 'Оффер', visible: true },
-  { key: 'hired', label: 'Вышел на работу', visible: true },
-  { key: 'rejected', label: 'Отказ', visible: true },
+  { key: 'hired', label: 'Принят', visible: true },
+  { key: 'rejected', label: 'Отклонён', visible: true },
 ];
 
 // Real DB enum values that virtual stages can map to

@@ -21,6 +21,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Vacancy, VacancyApplication, ApplicationStage, CompatibilityScore } from '@/types';
 import { APPLICATION_STAGE_LABELS, APPLICATION_STAGE_COLORS } from '@/types';
 import { useVacancyStore } from '@/stores/vacancyStore';
+import { useAuthStore } from '@/stores/authStore';
 import { updateApplication, calculateCompatibilityScore, getAssignableUsers } from '@/services/api';
 import { updateVacancy } from '@/services/api/vacancies';
 import type { AssignableUser } from '@/services/api/vacancies';
@@ -125,6 +126,8 @@ function getStagesConfig(vacancy: Vacancy): {
 
 export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
   const [showAddCandidate, setShowAddCandidate] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<VacancyApplication | null>(null);
   const [showStagesConfig, setShowStagesConfig] = useState(false);
@@ -575,13 +578,15 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowStagesConfig(true)}
-              className="p-1.5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white/60 transition-colors"
-              title="Настройка этапов воронки"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setShowStagesConfig(true)}
+                className="p-1.5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white/60 transition-colors"
+                title="Настройка этапов воронки"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={clsx(

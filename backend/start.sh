@@ -318,6 +318,56 @@ async def ensure_shadow_columns():
                 print(f\"Failed to clean tags on vacancy {row.id}: {e}\")
         print(f\"Stripped HTML from tags on {cleaned_count} vacancies\")
 
+    # Backfill: переписываем custom_stages у вакансий, где сохранён старый набор
+    # лейблов ('Новая заявка', 'Отбор', 'Собеседование назначено', 'Вышел на работу',
+    # 'Отказ' и т.п.). Приводим к канону KANBAN_STATUS_LABELS.
+    CANONICAL_LABELS = {
+        'applied': 'Новый',
+        'screening': 'Скрининг',
+        'phone_screen': 'Практика',
+        'interview': 'Тех-практика',
+        'assessment': 'ИС',
+        'offer': 'Оффер',
+        'hired': 'Принят',
+        'rejected': 'Отклонён',
+        'withdrawn': 'Отозван',
+    }
+    OLD_LABELS = {'Новая заявка', 'Отбор', 'Собеседование назначено',
+                  'Собеседование пройдено', 'Вышел на работу', 'Отказ'}
+    async with engine.begin() as cs_conn:
+        rows = await cs_conn.execute(text(
+            \"SELECT id, custom_stages FROM vacancies WHERE custom_stages IS NOT NULL\"
+        ))
+        cs_fixed = 0
+        for row in rows:
+            try:
+                cs = row.custom_stages or {}
+                cols = cs.get('columns') if isinstance(cs, dict) else None
+                if not isinstance(cols, list) or not cols:
+                    continue
+                has_old = any(isinstance(c, dict) and c.get('label') in OLD_LABELS for c in cols)
+                if not has_old:
+                    continue
+                new_cols = []
+                for c in cols:
+                    if not isinstance(c, dict):
+                        continue
+                    enum_key = c.get('maps_to') or c.get('key')
+                    new_label = CANONICAL_LABELS.get(enum_key, c.get('label', enum_key))
+                    nc = dict(c)
+                    nc['label'] = new_label
+                    new_cols.append(nc)
+                new_cs = dict(cs)
+                new_cs['columns'] = new_cols
+                await cs_conn.execute(
+                    text(\"UPDATE vacancies SET custom_stages = CAST(:cs AS JSON) WHERE id = :id\"),
+                    {'cs': __import__('json').dumps(new_cs, ensure_ascii=False), 'id': row.id}
+                )
+                cs_fixed += 1
+            except Exception as e:
+                print(f\"Failed to backfill custom_stages on vacancy {row.id}: {e}\")
+        print(f\"Backfilled custom_stages labels on {cs_fixed} vacancies\")
+
     await engine.dispose()
 
 asyncio.run(ensure_shadow_columns())

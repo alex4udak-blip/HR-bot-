@@ -47,16 +47,17 @@ async def get_kanban_board(
         raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
     # Derive stage_config from vacancy.custom_stages when present,
-    # falling back to the default HR pipeline.
+    # falling back to the default HR pipeline. Лейблы согласованы с
+    # KANBAN_STATUS_LABELS / фронтом — единый набор по всему приложению.
     default_stage_config = [
         (ApplicationStage.applied, "Новый", [ApplicationStage.applied]),
-        (ApplicationStage.screening, "Отбор", [ApplicationStage.screening]),
-        (ApplicationStage.phone_screen, "Собеседование назначено", [ApplicationStage.phone_screen]),
-        (ApplicationStage.interview, "Собеседование пройдено", [ApplicationStage.interview]),
-        (ApplicationStage.assessment, "Практика", [ApplicationStage.assessment]),
+        (ApplicationStage.screening, "Скрининг", [ApplicationStage.screening]),
+        (ApplicationStage.phone_screen, "Практика", [ApplicationStage.phone_screen]),
+        (ApplicationStage.interview, "Тех-практика", [ApplicationStage.interview]),
+        (ApplicationStage.assessment, "ИС", [ApplicationStage.assessment]),
         (ApplicationStage.offer, "Оффер", [ApplicationStage.offer]),
-        (ApplicationStage.hired, "Вышел на работу", [ApplicationStage.hired]),
-        (ApplicationStage.rejected, "Отказ", [ApplicationStage.rejected]),
+        (ApplicationStage.hired, "Принят", [ApplicationStage.hired]),
+        (ApplicationStage.rejected, "Отклонён", [ApplicationStage.rejected]),
     ]
 
     custom_columns = (vacancy.custom_stages or {}).get("columns") if vacancy.custom_stages else None
