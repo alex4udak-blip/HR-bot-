@@ -671,6 +671,7 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
   onAddToVacancy: () => void;
   onEdit: () => void;
 }) {
+  const { user: currentUser } = useAuthStore();
   const [showStageDD, setShowStageDD] = useState(false);
   const [comment, setComment] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -744,12 +745,18 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
       return;
     }
     try {
-      const existingNotes: Array<{ text: string; date: string }> = Array.isArray(card.extra_data?.notes)
+      const existingNotes: Array<Record<string, unknown>> = Array.isArray(card.extra_data?.notes)
         ? card.extra_data.notes
         : [];
+      // Сохраняем стадию и автора в момент комментария — нужны для цвета
+      // фона и подписи в отдельном блоке "Комментарии".
       const newNote = {
         text: comment.trim(),
         date: new Date().toISOString(),
+        stage: status,
+        stage_label: statusLabel,
+        author_id: currentUser?.id,
+        author_name: currentUser?.name,
       };
       await updateEntity(card.id, {
         extra_data: {
@@ -757,7 +764,7 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
           notes: [...existingNotes, newNote],
         },
       });
-      // Update card in-place so history shows immediately
+      // Update card in-place so block обновляется immediately
       if (!card.extra_data) card.extra_data = {};
       card.extra_data.notes = [...existingNotes, newNote];
       toast.success('Комментарий сохранён');
@@ -1087,19 +1094,56 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
         <ActionChip icon={XCircle} label="Отказ" onClick={handleReject} danger />
       </div>
 
-      {/* ---- History timeline ---- */}
+      {/* ---- Комментарии: отдельный блок, фон по стадии в момент комментария ---- */}
+      {Array.isArray(card.extra_data?.notes) && card.extra_data.notes.length > 0 && (
+        <div className="mb-6">
+          <div className="text-xs text-dark-500 mb-3 uppercase tracking-wider">Комментарии</div>
+          <div className="space-y-2">
+            {(card.extra_data.notes as any[]).slice().reverse().map((note, i) => {
+              const noteStage = (note.stage as string) || status;
+              const noteSc = STATUS_COLORS[noteStage] || FALLBACK_COLOR;
+              const initials = (note.author_name || '?')[0].toUpperCase();
+              return (
+                <div
+                  key={`note-${i}`}
+                  className={clsx(
+                    'rounded-lg border border-white/[0.06] p-3',
+                    noteSc.bg,
+                  )}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className={clsx(
+                        'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0',
+                        noteSc.badge,
+                      )}>
+                        {initials}
+                      </div>
+                      <span className="text-xs font-medium text-dark-200 truncate">
+                        {note.author_name || 'Аноним'}
+                      </span>
+                      <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0', noteSc.badge)}>
+                        {note.stage_label || noteStage}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-dark-500 flex-shrink-0">
+                      {note.date ? formatDateFull(note.date) : ''}
+                    </span>
+                  </div>
+                  <div className="text-sm text-dark-200 whitespace-pre-wrap break-words">
+                    {note.text}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ---- История: только смена стадий, без комментариев ---- */}
       <div>
         <div className="text-xs text-dark-500 mb-3 uppercase tracking-wider">История</div>
         <div className="relative pl-6 border-l border-white/[0.08]">
-          {/* Saved notes (newest first) */}
-          {(Array.isArray(card.extra_data?.notes) ? card.extra_data.notes : []).slice().reverse().map((note: any, i: number) => (
-            <div key={`note-${i}`} className="relative pb-5">
-              <div className="absolute -left-[25px] w-3 h-3 rounded-full border-2 border-dark-800 bg-blue-500" />
-              <div className="text-xs text-dark-600 mb-1">{note.date ? formatDateFull(note.date) : ''}</div>
-              <div className="text-sm text-dark-300">{note.text}</div>
-            </div>
-          ))}
-          {/* Created event */}
           <div className="relative pb-5">
             <div className={clsx('absolute -left-[25px] w-3 h-3 rounded-full border-2 border-dark-800', sc.dot)} />
             <div className="text-xs text-dark-600 mb-1">{formatDateFull(card.created_at)}</div>
