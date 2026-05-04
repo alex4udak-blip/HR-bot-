@@ -43,10 +43,12 @@ import type { Notification as AppNotification } from '@/services/api/notificatio
 import BackgroundEffects from './BackgroundEffects';
 import ThemeToggle from './ThemeToggle';
 import { VacancyForm } from '@/components/vacancies';
+import ParserModal from '@/components/parser/ParserModal';
 import { getVacancy } from '@/services/api/vacancies';
 import type { Vacancy } from '@/types';
 import { AnimatePresence, motion } from 'framer-motion';
 import clsx from 'clsx';
+import toast from 'react-hot-toast';
 
 // Note: iconMap and labelMap removed — using section-based navigation now
 
@@ -77,7 +79,10 @@ const BLOCK_ACCENT: Record<string, string> = {
 };
 
 // FAB — floating action button for HR block
-function FABButton({ navigate }: { navigate: (path: string) => void }) {
+function FABButton({ onCreateVacancy, onAddCandidate }: {
+  onCreateVacancy: () => void;
+  onAddCandidate: () => void;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -85,14 +90,14 @@ function FABButton({ navigate }: { navigate: (path: string) => void }) {
       {open && (
         <div className="absolute bottom-16 right-0 flex flex-col gap-2 items-end mb-2">
           <button
-            onClick={() => { navigate('/vacancies?new=1'); setOpen(false); }}
+            onClick={() => { onCreateVacancy(); setOpen(false); }}
             className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-xl transition-colors whitespace-nowrap"
           >
             <Briefcase className="w-4 h-4" />
             Добавить вакансию
           </button>
           <button
-            onClick={() => { navigate('/all-candidates?add=resume'); setOpen(false); }}
+            onClick={() => { onAddCandidate(); setOpen(false); }}
             className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors whitespace-nowrap"
           >
             <UserPlus className="w-4 h-4" />
@@ -143,6 +148,10 @@ export default function Layout() {
   const [expandedFunnels, setExpandedFunnels] = useState(false);
   const [expandedRequests, setExpandedRequests] = useState(true);
   const [sidebarVacancy, setSidebarVacancy] = useState<Vacancy | null>(null);
+
+  // FAB-triggered modals — открываются in-place без навигации
+  const [showFabVacancyForm, setShowFabVacancyForm] = useState(false);
+  const [showFabParserModal, setShowFabParserModal] = useState(false);
 
   useEffect(() => {
     if (activeBlock === 'hr') {
@@ -865,7 +874,10 @@ export default function Layout() {
 
           {/* FAB — floating action button for HR block */}
           {activeBlock === 'hr' && (
-            <FABButton navigate={navigate} />
+            <FABButton
+              onCreateVacancy={() => setShowFabVacancyForm(true)}
+              onAddCandidate={() => setShowFabParserModal(true)}
+            />
           )}
         </div>
       </main>
@@ -923,6 +935,38 @@ export default function Layout() {
               />
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* FAB → Новая вакансия — открывается прямо здесь, без перехода на /vacancies */}
+      <AnimatePresence>
+        {showFabVacancyForm && (
+          <VacancyForm
+            key="fab-new-vacancy"
+            onClose={() => setShowFabVacancyForm(false)}
+            onSuccess={() => {
+              setShowFabVacancyForm(false);
+              fetchVacancies();
+              toast.success('Вакансия создана');
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* FAB → Добавить кандидата — парсер резюме поверх текущей страницы */}
+      <AnimatePresence>
+        {showFabParserModal && (
+          <ParserModal
+            type="resume"
+            onClose={() => setShowFabParserModal(false)}
+            onParsed={() => {
+              setShowFabParserModal(false);
+              toast.success('Кандидат добавлен');
+            }}
+            onAttachedToEntity={() => {
+              setShowFabParserModal(false);
+            }}
+          />
         )}
       </AnimatePresence>
     </div>
