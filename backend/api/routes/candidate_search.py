@@ -106,8 +106,16 @@ class RecruiterItem(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _base_candidate_query(org_id: Optional[int], current_user: User, isolated_ids: list) -> Select:
-    """Return a base SELECT for Entity filtered to candidates + org scoping."""
-    q = select(Entity).where(Entity.type == EntityType.candidate)
+    """Return a base SELECT for Entity filtered to candidates + org scoping.
+
+    Скрываем frozen-копии после трансфера (is_transferred=true) — это
+    read-only артефакты с суффиксом '[Transferred -> ...]' в имени,
+    они не должны загромождать активную доску HR.
+    """
+    q = select(Entity).where(
+        Entity.type == EntityType.candidate,
+        Entity.is_transferred.is_not(True),
+    )
     if current_user.role == UserRole.superadmin:
         if isolated_ids:
             q = q.where(~Entity.created_by.in_(isolated_ids))

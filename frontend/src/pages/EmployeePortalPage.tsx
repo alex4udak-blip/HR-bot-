@@ -351,6 +351,40 @@ function MyProfileView() {
   }
 
   if (error || !profile) {
+    if (isHrOrAdmin) {
+      // Для HR/admin показываем не "пустую страницу" а полезные шорткаты
+      // на разделы, которыми они реально пользуются.
+      return (
+        <div className="max-w-2xl mx-auto py-12">
+          <div className="text-center mb-8">
+            <User className="w-12 h-12 text-white/20 mx-auto mb-4" />
+            <h2 className="text-lg font-semibold text-white/80 mb-2">Личный кабинет HR-администратора</h2>
+            <p className="text-white/40 text-sm">
+              Эта страница — для самообслуживания обычных сотрудников.
+              Для HR-задач используйте разделы ниже.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <a href="/all-candidates" className="block p-4 rounded-xl bg-dark-800/50 border border-white/5 hover:border-emerald-500/30 transition-colors">
+              <div className="text-sm font-medium text-white/90 mb-1">👥 Все кандидаты</div>
+              <div className="text-xs text-white/40">Канбан-доска кандидатов</div>
+            </a>
+            <a href="/my-funnels" className="block p-4 rounded-xl bg-dark-800/50 border border-white/5 hover:border-emerald-500/30 transition-colors">
+              <div className="text-sm font-medium text-white/90 mb-1">🗂 Мои вакансии</div>
+              <div className="text-xs text-white/40">Воронки и заявки</div>
+            </a>
+            <a href="/dashboard" className="block p-4 rounded-xl bg-dark-800/50 border border-white/5 hover:border-emerald-500/30 transition-colors">
+              <div className="text-sm font-medium text-white/90 mb-1">📊 Аналитика</div>
+              <div className="text-xs text-white/40">Метрики и отчёты</div>
+            </a>
+            <a href="/extension" className="block p-4 rounded-xl bg-dark-800/50 border border-white/5 hover:border-emerald-500/30 transition-colors">
+              <div className="text-sm font-medium text-white/90 mb-1">✨ Волшебная кнопка</div>
+              <div className="text-xs text-white/40">Chrome-расширение</div>
+            </a>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="max-w-2xl mx-auto py-12 text-center">
         <User className="w-12 h-12 text-white/20 mx-auto mb-4" />

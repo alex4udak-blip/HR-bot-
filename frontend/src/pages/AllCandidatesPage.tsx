@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, memo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -140,7 +140,9 @@ export default function AllCandidatesPage() {
   // Reset visible count when filters change
   useEffect(() => { setVisibleCount(VISIBLE_STEP); }, [activeTab, debouncedSearch, recruiterId]);
 
-  const filteredCards = (() => {
+  // useMemo чтобы фильтрация была реактивной и не пересчитывалась лишний раз
+  // (без него были репорты что переключение таба не обновляет список).
+  const filteredCards = useMemo(() => {
     if (!board) return [];
     const items: { card: KanbanCard; status: string; label: string }[] = [];
     for (const col of board.columns) {
@@ -149,7 +151,7 @@ export default function AllCandidatesPage() {
       }
     }
     return items;
-  })();
+  }, [board, activeTab]);
 
   // Открыть форму добавления при ?add=resume в URL (триггер из FAB-кнопки)
   useEffect(() => {
@@ -372,7 +374,11 @@ export default function AllCandidatesPage() {
                   placeholder="Поиск по имени, должности, компании..."
                   className="w-full pl-9 pr-8 py-2 bg-white/[0.03] border border-white/[0.06] rounded-lg text-sm text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
                 />
-                {searchText && (
+                {/* Спиннер пока идёт fetch с введённым searchText (визуальный feedback) */}
+                {searchText && loading && (
+                  <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-accent-400 animate-spin" />
+                )}
+                {searchText && !loading && (
                   <button onClick={() => setSearchText('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-dark-500 hover:text-dark-300">
                     <X className="w-3.5 h-3.5" />
                   </button>
