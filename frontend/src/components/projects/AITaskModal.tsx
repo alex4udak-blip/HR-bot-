@@ -25,7 +25,7 @@ interface AITaskModalProps {
 }
 
 const PRIORITY_LABELS: Record<number, { label: string; color: string }> = {
-  0: { label: 'Низкий', color: 'bg-gray-100 text-gray-500' },
+  0: { label: 'Низкий', color: 'bg-gray-100 dark:bg-dark-800 text-gray-500 dark:text-dark-400' },
   1: { label: 'Обычный', color: 'bg-blue-50 text-blue-600' },
   2: { label: 'Высокий', color: 'bg-amber-50 text-amber-600' },
   3: { label: 'Критический', color: 'bg-red-50 text-red-600' },
@@ -34,7 +34,7 @@ const PRIORITY_LABELS: Record<number, { label: string; color: string }> = {
 const ACTION_CONFIG = {
   create: { icon: Plus, label: 'Создать', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
   update: { icon: RefreshCw, label: 'Обновить', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
-  skip: { icon: SkipForward, label: 'Пропустить', color: 'text-gray-400', bg: 'bg-gray-50 border-gray-200' },
+  skip: { icon: SkipForward, label: 'Пропустить', color: 'text-gray-400 dark:text-dark-500', bg: 'bg-gray-50 dark:bg-dark-800 border-gray-200 dark:border-white/[0.08]' },
 } as const;
 
 export default function AITaskModal({ isOpen, onClose, projectId, onTasksCreated }: AITaskModalProps) {
@@ -142,24 +142,24 @@ export default function AITaskModal({ isOpen, onClose, projectId, onTasksCreated
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="relative w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col"
+            className="relative w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl bg-white dark:bg-dark-900 shadow-2xl flex flex-col"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-white/[0.08]">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-xl bg-purple-50 border border-purple-100">
                   <Sparkles className="w-5 h-5 text-purple-600" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">AI-создание задач</h2>
-                  <p className="text-xs text-gray-400">
+                  <h2 className="text-lg font-bold text-gray-900 dark:text-dark-100">AI-создание задач</h2>
+                  <p className="text-xs text-gray-400 dark:text-dark-500">
                     {step === 'input'
                       ? 'Вставьте текст плана — AI разберёт на задачи'
                       : `Найдено ${items.length} задач — проверьте и подтвердите`}
                   </p>
                 </div>
               </div>
-              <button onClick={handleClose} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+              <button onClick={handleClose} className="p-2 text-gray-400 dark:text-dark-500 hover:text-gray-600 dark:text-dark-300 hover:bg-gray-100 dark:hover:bg-dark-800 dark:bg-dark-800 rounded-lg transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -178,10 +178,10 @@ export default function AITaskModal({ isOpen, onClose, projectId, onTasksCreated
                       value={text}
                       onChange={(e) => setText(e.target.value)}
                       placeholder={`Вставьте ваш план на день, например:\n\n1. Провести код-ревью PR #42 (Иван, 2ч)\n2. Доделать фичу авторизации — критично!\n3. Созвон с дизайнерами по новому UI\n4. Написать тесты для API эндпоинтов`}
-                      className="w-full h-64 bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
+                      className="w-full h-64 bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-900 dark:text-dark-100 placeholder-gray-400 dark:placeholder-dark-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
                       autoFocus
                     />
-                    <p className="mt-2 text-xs text-gray-400">
+                    <p className="mt-2 text-xs text-gray-400 dark:text-dark-500">
                       AI определит приоритеты, исполнителей и найдёт дубликаты среди существующих задач.
                     </p>
                   </motion.div>
@@ -208,8 +208,8 @@ export default function AITaskModal({ isOpen, onClose, projectId, onTasksCreated
                           className={clsx(
                             'rounded-xl border p-3 transition-all',
                             isChecked
-                              ? 'bg-gray-50 border-gray-200'
-                              : 'bg-white border-gray-100 opacity-50'
+                              ? 'bg-gray-50 dark:bg-dark-800 border-gray-200 dark:border-white/[0.08]'
+                              : 'bg-white dark:bg-dark-900 border-gray-100 dark:border-white/[0.06] opacity-50'
                           )}
                         >
                           <div className="flex items-start gap-3">
@@ -220,7 +220,7 @@ export default function AITaskModal({ isOpen, onClose, projectId, onTasksCreated
                                 'mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors',
                                 isChecked
                                   ? 'bg-purple-600 border-purple-600'
-                                  : 'border-gray-300 hover:border-gray-400'
+                                  : 'border-gray-300 dark:border-white/10 hover:border-gray-400'
                               )}
                             >
                               {isChecked && <Check className="w-3 h-3 text-white" />}
@@ -249,7 +249,7 @@ export default function AITaskModal({ isOpen, onClose, projectId, onTasksCreated
 
                                 {/* Hours */}
                                 {item.estimated_hours && (
-                                  <span className="flex items-center gap-0.5 text-[10px] text-gray-400">
+                                  <span className="flex items-center gap-0.5 text-[10px] text-gray-400 dark:text-dark-500">
                                     <Clock className="w-3 h-3" />
                                     {item.estimated_hours}ч
                                   </span>
@@ -257,7 +257,7 @@ export default function AITaskModal({ isOpen, onClose, projectId, onTasksCreated
 
                                 {/* Assignee */}
                                 {item.assignee_hint && (
-                                  <span className="flex items-center gap-0.5 text-[10px] text-gray-400">
+                                  <span className="flex items-center gap-0.5 text-[10px] text-gray-400 dark:text-dark-500">
                                     <User className="w-3 h-3" />
                                     {item.assignee_hint}
                                   </span>
@@ -265,16 +265,16 @@ export default function AITaskModal({ isOpen, onClose, projectId, onTasksCreated
                               </div>
 
                               {/* Title */}
-                              <p className="mt-1 text-sm text-gray-900 font-medium">{item.title}</p>
+                              <p className="mt-1 text-sm text-gray-900 dark:text-dark-100 font-medium">{item.title}</p>
 
                               {/* Description */}
                               {item.description && (
-                                <p className="mt-0.5 text-xs text-gray-400 line-clamp-2">{item.description}</p>
+                                <p className="mt-0.5 text-xs text-gray-400 dark:text-dark-500 line-clamp-2">{item.description}</p>
                               )}
 
                               {/* Existing task reference */}
                               {item.existing_task_title && (
-                                <p className="mt-1 text-[10px] text-gray-400 flex items-center gap-1">
+                                <p className="mt-1 text-[10px] text-gray-400 dark:text-dark-500 flex items-center gap-1">
                                   <AlertCircle className="w-3 h-3" />
                                   Связана с: &quot;{item.existing_task_title}&quot;
                                 </p>
@@ -295,11 +295,11 @@ export default function AITaskModal({ isOpen, onClose, projectId, onTasksCreated
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-dark-800 flex items-center justify-between">
               {step === 'preview' && (
                 <button
                   onClick={() => setStep('input')}
-                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+                  className="px-4 py-2 text-sm text-gray-600 dark:text-dark-300 hover:text-gray-900 dark:hover:text-dark-100 dark:text-dark-100 hover:bg-gray-200 rounded-lg transition-colors"
                 >
                   Назад к тексту
                 </button>
@@ -309,7 +309,7 @@ export default function AITaskModal({ isOpen, onClose, projectId, onTasksCreated
               <div className="flex items-center gap-3">
                 <button
                   onClick={handleClose}
-                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+                  className="px-4 py-2 text-sm text-gray-600 dark:text-dark-300 hover:text-gray-900 dark:hover:text-dark-100 dark:text-dark-100 hover:bg-gray-200 rounded-lg transition-colors"
                 >
                   Отмена
                 </button>

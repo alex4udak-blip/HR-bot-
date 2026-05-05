@@ -49,7 +49,7 @@ const PRIORITY_LABELS: Record<number, string> = {
 };
 
 const PRIORITY_COLORS: Record<number, string> = {
-  0: 'bg-gray-100 text-gray-500 border-gray-200',
+  0: 'bg-gray-100 dark:bg-dark-800 text-gray-500 dark:text-dark-400 border-gray-200 dark:border-white/[0.08]',
   1: 'bg-blue-50 text-blue-600 border-blue-200',
   2: 'bg-amber-50 text-amber-600 border-amber-200',
   3: 'bg-red-50 text-red-600 border-red-200',
@@ -144,7 +144,7 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
       );
     } else if (m[3] !== undefined) {
       nodes.push(
-        <code key={key} className="px-1 py-0.5 rounded bg-gray-100 text-gray-800 text-xs font-mono break-all">{m[3]}</code>
+        <code key={key} className="px-1 py-0.5 rounded bg-gray-100 dark:bg-dark-800 text-gray-800 dark:text-dark-100 text-xs font-mono break-all">{m[3]}</code>
       );
     } else if (m[4] !== undefined) {
       nodes.push(
@@ -217,7 +217,7 @@ function CommentContent({
             src={attUrl}
             alt={filename}
             loading="lazy"
-            className="max-w-full max-h-80 rounded-lg border border-gray-200 object-contain bg-white"
+            className="max-w-full max-h-80 rounded-lg border border-gray-200 dark:border-white/[0.08] object-contain bg-white dark:bg-dark-900"
           />
         </a>
       );
@@ -250,9 +250,9 @@ function CommentContent({
       if (line.startsWith('📎 ')) {
         const filenames = line.slice(2).trim();
         return (
-          <div key={i} className="flex items-center gap-2 px-3 py-2 my-1 bg-gray-50 border border-gray-200 rounded-lg w-fit max-w-full">
-            <Paperclip className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            <span className="text-sm text-gray-600 truncate">{filenames}</span>
+          <div key={i} className="flex items-center gap-2 px-3 py-2 my-1 bg-gray-50 dark:bg-dark-800 border border-gray-200 dark:border-white/[0.08] rounded-lg w-fit max-w-full">
+            <Paperclip className="w-4 h-4 text-gray-400 dark:text-dark-500 flex-shrink-0" />
+            <span className="text-sm text-gray-600 dark:text-dark-300 truncate">{filenames}</span>
           </div>
         );
       }
@@ -263,16 +263,16 @@ function CommentContent({
       ) : null;
     }).filter(Boolean);
     if (rendered.length > 0) {
-      return <div className="text-sm text-gray-600 space-y-1 break-words overflow-hidden">{rendered}</div>;
+      return <div className="text-sm text-gray-600 dark:text-dark-300 space-y-1 break-words overflow-hidden">{rendered}</div>;
     }
     return (
-      <p className="text-sm text-gray-600 whitespace-pre-wrap break-words overflow-hidden">
+      <p className="text-sm text-gray-600 dark:text-dark-300 whitespace-pre-wrap break-words overflow-hidden">
         {renderInline(content, 'all')}
       </p>
     );
   }
 
-  return <div className="text-sm text-gray-600 space-y-1 break-words overflow-hidden">{parts}</div>;
+  return <div className="text-sm text-gray-600 dark:text-dark-300 space-y-1 break-words overflow-hidden">{parts}</div>;
 }
 
 // ============================================================
@@ -325,17 +325,17 @@ function DescriptionTab({
   return (
     <div className="space-y-4">
       <div>
-        <label className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2 block">Описание</label>
+        <label className="text-xs font-medium text-gray-500 dark:text-dark-400 uppercase tracking-wider mb-2 block">Описание</label>
         <textarea
           value={description}
           onChange={(e) => onDescriptionChange(e.target.value)}
           rows={8}
           placeholder="Добавьте описание задачи..."
-          className="w-full bg-white border border-gray-300 rounded-lg px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-y"
+          className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-4 py-3 text-sm text-gray-900 dark:text-dark-100 placeholder-gray-400 dark:placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-y"
         />
       </div>
       <div>
-        <label className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2 block">Теги</label>
+        <label className="text-xs font-medium text-gray-500 dark:text-dark-400 uppercase tracking-wider mb-2 block">Теги</label>
         <div className="flex flex-wrap gap-2 mb-2">
           {tags.map((tag) => (
             <span
@@ -360,11 +360,11 @@ function DescriptionTab({
               }
             }}
             placeholder="Новый тег..."
-            className="flex-1 bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            className="flex-1 bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-dark-100 placeholder-gray-400 dark:placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
           />
           <button
             onClick={addTag}
-            className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors"
+            className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-dark-300 hover:text-gray-900 dark:hover:text-dark-100 dark:text-dark-100 bg-gray-50 dark:bg-dark-800 hover:bg-gray-100 dark:hover:bg-dark-800 rounded-lg border border-gray-200 dark:border-white/[0.08] transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
@@ -562,10 +562,10 @@ function CommentsTab({
       {/* Comment list */}
       <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
         {comments.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-8">Нет комментариев</p>
+          <p className="text-sm text-gray-400 dark:text-dark-500 text-center py-8">Нет комментариев</p>
         ) : (
           comments.map((c) => (
-            <div key={c.id} className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+            <div key={c.id} className="bg-gray-50 dark:bg-dark-800 border border-gray-200 dark:border-white/[0.08] rounded-xl p-3">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center">
@@ -573,8 +573,8 @@ function CommentsTab({
                       {(c.user_name || '?').charAt(0).toUpperCase()}
                     </span>
                   </div>
-                  <span className="text-xs font-medium text-gray-700">{c.user_name || `User ${c.user_id}`}</span>
-                  <span className="text-[10px] text-gray-400">{formatDateTime(c.created_at)}</span>
+                  <span className="text-xs font-medium text-gray-700 dark:text-dark-200">{c.user_name || `User ${c.user_id}`}</span>
+                  <span className="text-[10px] text-gray-400 dark:text-dark-500">{formatDateTime(c.created_at)}</span>
                   {c.edited_at && <span className="text-[10px] text-gray-300">(ред.)</span>}
                 </div>
                 {canManageComment(c.user_id) && (
@@ -584,7 +584,7 @@ function CommentsTab({
                         setEditingId(c.id);
                         setEditContent(c.content);
                       }}
-                      className="p-1 text-gray-300 hover:text-gray-500 transition-colors"
+                      className="p-1 text-gray-300 hover:text-gray-500 dark:text-dark-400 transition-colors"
                       title="Редактировать"
                     >
                       <Pencil className="w-3 h-3" />
@@ -605,7 +605,7 @@ function CommentsTab({
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
                     rows={3}
-                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-y min-h-[80px] max-h-[400px]"
+                    className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-dark-100 placeholder-gray-400 dark:placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-y min-h-[80px] max-h-[400px]"
                   />
                   <div className="flex gap-2">
                     <button
@@ -619,7 +619,7 @@ function CommentsTab({
                         setEditingId(null);
                         setEditContent('');
                       }}
-                      className="px-3 py-1 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                      className="px-3 py-1 text-xs text-gray-500 dark:text-dark-400 hover:text-gray-700 dark:hover:text-dark-200 dark:text-dark-200 transition-colors"
                     >
                       Отмена
                     </button>
@@ -696,10 +696,10 @@ function CommentsTab({
             }}
             rows={2}
             placeholder="Комментарий... (@ — упомянуть, **жирный**, `код`, Ctrl+V — скрин, Ctrl+Enter — отправить)"
-            className="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 pr-10 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-y min-h-[56px] max-h-[400px]"
+            className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-xl px-4 py-2 pr-10 text-sm text-gray-900 dark:text-dark-100 placeholder-gray-400 dark:placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-y min-h-[56px] max-h-[400px]"
           />
           {mentionQuery !== null && mentionCandidates.length > 0 && (
-            <div className="absolute left-2 bottom-full mb-1 z-20 w-64 max-h-56 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
+            <div className="absolute left-2 bottom-full mb-1 z-20 w-64 max-h-56 overflow-y-auto bg-white dark:bg-dark-900 border border-gray-200 dark:border-white/[0.08] rounded-lg shadow-lg">
               {mentionCandidates.map((m, i) => (
                 <button
                   key={m.id}
@@ -707,7 +707,7 @@ function CommentsTab({
                   onMouseDown={(e) => { e.preventDefault(); if (m.user_name) insertMention(m.user_name); }}
                   className={clsx(
                     'w-full flex items-center gap-2 px-3 py-2 text-left text-sm',
-                    i === mentionIndex ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                    i === mentionIndex ? 'bg-blue-50 text-blue-700' : 'text-gray-700 dark:text-dark-200 hover:bg-gray-50 dark:hover:bg-dark-800 dark:bg-dark-800'
                   )}
                 >
                   <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center flex-shrink-0">
@@ -716,7 +716,7 @@ function CommentsTab({
                     </span>
                   </div>
                   <span className="truncate">{m.user_name}</span>
-                  <span className="ml-auto text-[10px] text-gray-400 uppercase">{m.role}</span>
+                  <span className="ml-auto text-[10px] text-gray-400 dark:text-dark-500 uppercase">{m.role}</span>
                 </button>
               ))}
             </div>
@@ -724,7 +724,7 @@ function CommentsTab({
           <button
             type="button"
             onClick={() => commentFileRef.current?.click()}
-            className="absolute right-2 bottom-2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+            className="absolute right-2 bottom-2 p-1 text-gray-400 dark:text-dark-500 hover:text-gray-600 dark:text-dark-300 transition-colors"
             title="Прикрепить файл"
           >
             <Paperclip className="w-4 h-4" />
@@ -829,7 +829,7 @@ function AttachmentsTab({
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors disabled:opacity-40"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-dark-300 hover:text-gray-900 dark:hover:text-dark-100 dark:text-dark-100 bg-gray-50 dark:bg-dark-800 hover:bg-gray-100 dark:hover:bg-dark-800 rounded-xl border border-gray-200 dark:border-white/[0.08] transition-colors disabled:opacity-40"
         >
           {uploading ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -842,19 +842,19 @@ function AttachmentsTab({
 
       {/* File list */}
       {attachments.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-8">Нет файлов</p>
+        <p className="text-sm text-gray-400 dark:text-dark-500 text-center py-8">Нет файлов</p>
       ) : (
         <div className="space-y-2">
           {attachments.map((a) => (
             <div
               key={a.id}
-              className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-3"
+              className="flex items-center justify-between bg-gray-50 dark:bg-dark-800 border border-gray-200 dark:border-white/[0.08] rounded-xl px-4 py-3"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <Paperclip className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <Paperclip className="w-4 h-4 text-gray-400 dark:text-dark-500 flex-shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-sm text-gray-900 truncate">{a.original_filename}</p>
-                  <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                  <p className="text-sm text-gray-900 dark:text-dark-100 truncate">{a.original_filename}</p>
+                  <div className="flex items-center gap-2 text-[10px] text-gray-400 dark:text-dark-500">
                     <span>{formatFileSize(a.file_size)}</span>
                     {a.user_name && <span>{a.user_name}</span>}
                     {a.created_at && <span>{formatDateTime(a.created_at)}</span>}
@@ -866,7 +866,7 @@ function AttachmentsTab({
                   href={`/api/projects/${projectId}/tasks/${taskId}/attachments/${a.id}/download`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="p-1.5 text-gray-300 hover:text-gray-600 transition-colors"
+                  className="p-1.5 text-gray-300 hover:text-gray-600 dark:text-dark-300 transition-colors"
                   title="Скачать"
                 >
                   <Download className="w-4 h-4" />
@@ -906,8 +906,14 @@ function SubtasksTab({
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [newTitle, setNewTitle] = useState('');
+  const [newDescription, setNewDescription] = useState('');
   const [newAssignee, setNewAssignee] = useState<number | ''>('');
   const [creating, setCreating] = useState(false);
+  // Раскрытое описание подзадачи + инлайн-редактирование
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [editDescId, setEditDescId] = useState<number | null>(null);
+  const [editDescText, setEditDescText] = useState('');
+  const [savingDesc, setSavingDesc] = useState(false);
 
   const loadSubtasks = useCallback(async () => {
     try {
@@ -931,10 +937,12 @@ function SubtasksTab({
     try {
       await api.createProjectTask(projectId, {
         title,
+        description: newDescription.trim() || undefined,
         parent_task_id: taskId,
         assignee_id: newAssignee || undefined,
       });
       setNewTitle('');
+      setNewDescription('');
       setNewAssignee('');
       setShowAdd(false);
       await loadSubtasks();
@@ -943,6 +951,22 @@ function SubtasksTab({
       toast.error(getErrorDetail(err, 'Не удалось создать подзадачу'));
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleSaveDescription = async (subtaskId: number) => {
+    setSavingDesc(true);
+    try {
+      const updated = await api.updateProjectTask(projectId, subtaskId, {
+        description: editDescText.trim() || undefined,
+      });
+      setSubtasks((prev) => prev.map((s) => (s.id === subtaskId ? updated : s)));
+      setEditDescId(null);
+      toast.success('Описание сохранено');
+    } catch (err) {
+      toast.error(getErrorDetail(err, 'Не удалось сохранить описание'));
+    } finally {
+      setSavingDesc(false);
     }
   };
 
@@ -995,30 +1019,37 @@ function SubtasksTab({
       {!showAdd ? (
         <button
           onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-dark-300 hover:text-gray-900 dark:hover:text-dark-100 dark:text-dark-100 bg-gray-50 dark:bg-dark-800 hover:bg-gray-100 dark:hover:bg-dark-800 rounded-xl border border-gray-200 dark:border-white/[0.08] transition-colors"
         >
           <Plus className="w-4 h-4" />
           Добавить подзадачу
         </button>
       ) : (
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+        <div className="bg-gray-50 dark:bg-dark-800 border border-gray-200 dark:border-white/[0.08] rounded-xl p-4 space-y-3">
           <input
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+              if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 handleCreate();
               }
             }}
             placeholder="Название подзадачи..."
-            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-dark-100 placeholder-gray-400 dark:placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             autoFocus
+          />
+          <textarea
+            value={newDescription}
+            onChange={(e) => setNewDescription(e.target.value)}
+            placeholder="Описание (необязательно)"
+            rows={2}
+            className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-dark-100 placeholder-gray-400 dark:placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-y"
           />
           <select
             value={newAssignee}
             onChange={(e) => setNewAssignee(e.target.value ? Number(e.target.value) : '')}
-            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
+            className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-dark-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
           >
             <option value="">Без исполнителя</option>
             {members.map((m) => (
@@ -1039,9 +1070,10 @@ function SubtasksTab({
               onClick={() => {
                 setShowAdd(false);
                 setNewTitle('');
+                setNewDescription('');
                 setNewAssignee('');
               }}
-              className="px-4 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+              className="px-4 py-1.5 text-xs text-gray-500 dark:text-dark-400 hover:text-gray-700 dark:hover:text-dark-200 dark:text-dark-200 transition-colors"
             >
               Отмена
             </button>
@@ -1051,75 +1083,133 @@ function SubtasksTab({
 
       {/* Subtask list */}
       {subtasks.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-8">Нет подзадач</p>
+        <p className="text-sm text-gray-400 dark:text-dark-500 text-center py-8">Нет подзадач</p>
       ) : (
         <div className="space-y-2">
           {subtasks.map((st) => {
             const dotColor = getStatusColor(st.status);
+            const isExpanded = expandedId === st.id;
+            const isEditingDesc = editDescId === st.id;
             return (
               <div
                 key={st.id}
-                className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 group"
+                className="bg-gray-50 dark:bg-dark-800 border border-gray-200 dark:border-white/[0.08] rounded-xl group"
               >
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  {dotColor ? (
-                    <span
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: dotColor }}
-                    />
-                  ) : (
-                    <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', {
-                      'bg-green-400': st.status === 'done',
-                      'bg-amber-400': st.status === 'in_progress',
-                      'bg-blue-400': st.status === 'todo',
-                      'bg-gray-300': st.status === 'backlog' || st.status === 'cancelled',
-                      'bg-purple-400': st.status === 'review',
-                    })} />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className={clsx('text-sm truncate', st.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-900')}>
-                      {st.title}
-                    </p>
+                <div className="flex items-center justify-between px-4 py-3">
+                  <div
+                    className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer"
+                    onClick={() => setExpandedId(isExpanded ? null : st.id)}
+                    title={isExpanded ? 'Свернуть' : 'Раскрыть'}
+                  >
+                    {dotColor ? (
+                      <span
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: dotColor }}
+                      />
+                    ) : (
+                      <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', {
+                        'bg-green-400': st.status === 'done',
+                        'bg-amber-400': st.status === 'in_progress',
+                        'bg-blue-400': st.status === 'todo',
+                        'bg-gray-300': st.status === 'backlog' || st.status === 'cancelled',
+                        'bg-purple-400': st.status === 'review',
+                      })} />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className={clsx('text-sm truncate', st.status === 'done' ? 'text-gray-400 dark:text-dark-500 line-through' : 'text-gray-900 dark:text-dark-100')}>
+                        {st.title}
+                      </p>
+                      <select
+                        value={st.status}
+                        onChange={(e) => handleChangeStatus(st.id, e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-[10px] text-gray-500 dark:text-dark-400 bg-transparent border-none p-0 cursor-pointer hover:text-gray-700 dark:hover:text-dark-200 dark:text-dark-200 focus:outline-none"
+                      >
+                        {statuses.length > 0 ? (
+                          statuses.map((s) => (
+                            <option key={s.slug} value={s.slug}>{s.name}</option>
+                          ))
+                        ) : (
+                          Object.entries(DEFAULT_STATUS_LABELS).map(([slug, label]) => (
+                            <option key={slug} value={slug}>{label}</option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                    {st.description && !isExpanded && (
+                      <span className="text-[10px] text-gray-400 dark:text-dark-500" title="Есть описание">📝</span>
+                    )}
                     <select
-                      value={st.status}
-                      onChange={(e) => handleChangeStatus(st.id, e.target.value)}
+                      value={st.assignee_id ?? ''}
+                      onChange={(e) => handleChangeAssignee(st.id, e.target.value ? Number(e.target.value) : null)}
                       onClick={(e) => e.stopPropagation()}
-                      className="text-[10px] text-gray-500 bg-transparent border-none p-0 cursor-pointer hover:text-gray-700 focus:outline-none"
+                      className="text-xs text-gray-600 dark:text-dark-300 bg-white dark:bg-dark-900 border border-gray-200 dark:border-white/[0.08] rounded-md px-2 py-1 cursor-pointer hover:border-gray-300 dark:hover:border-white/10 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     >
-                      {statuses.length > 0 ? (
-                        statuses.map((s) => (
-                          <option key={s.slug} value={s.slug}>{s.name}</option>
-                        ))
-                      ) : (
-                        Object.entries(DEFAULT_STATUS_LABELS).map(([slug, label]) => (
-                          <option key={slug} value={slug}>{label}</option>
-                        ))
-                      )}
+                      <option value="">Без исполнителя</option>
+                      {members.map((m) => (
+                        <option key={m.user_id} value={m.user_id}>
+                          {m.user_name || m.user_email || `User ${m.user_id}`}
+                        </option>
+                      ))}
                     </select>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteSubtask(st.id); }}
+                      className="p-1.5 text-gray-400 dark:text-dark-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md opacity-0 group-hover:opacity-100 transition-all"
+                      title="Удалить подзадачу"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                  <select
-                    value={st.assignee_id ?? ''}
-                    onChange={(e) => handleChangeAssignee(st.id, e.target.value ? Number(e.target.value) : null)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="text-xs text-gray-600 bg-white border border-gray-200 rounded-md px-2 py-1 cursor-pointer hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  >
-                    <option value="">Без исполнителя</option>
-                    {members.map((m) => (
-                      <option key={m.user_id} value={m.user_id}>
-                        {m.user_name || m.user_email || `User ${m.user_id}`}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDeleteSubtask(st.id); }}
-                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-all"
-                    title="Удалить подзадачу"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+
+                {/* Раскрытое описание + inline-редактирование */}
+                {isExpanded && (
+                  <div className="border-t border-gray-200 dark:border-white/[0.08] px-4 py-3">
+                    {isEditingDesc ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={editDescText}
+                          onChange={(e) => setEditDescText(e.target.value)}
+                          disabled={savingDesc}
+                          rows={3}
+                          placeholder="Описание подзадачи..."
+                          className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-dark-100 placeholder-gray-400 dark:placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-y disabled:opacity-50"
+                          autoFocus
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => setEditDescId(null)}
+                            disabled={savingDesc}
+                            className="px-3 py-1 text-xs text-gray-500 dark:text-dark-400 hover:text-gray-700 dark:hover:text-dark-200 dark:text-dark-200 disabled:opacity-50"
+                          >
+                            Отмена
+                          </button>
+                          <button
+                            onClick={() => handleSaveDescription(st.id)}
+                            disabled={savingDesc}
+                            className="px-3 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50"
+                          >
+                            {savingDesc ? 'Сохраняем…' : 'Сохранить'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="text-xs text-gray-600 dark:text-dark-300 whitespace-pre-wrap break-words flex-1">
+                          {st.description || <span className="italic text-gray-400 dark:text-dark-500">Нет описания</span>}
+                        </p>
+                        <button
+                          onClick={() => { setEditDescText(st.description || ''); setEditDescId(st.id); }}
+                          className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex-shrink-0"
+                        >
+                          {st.description ? 'Изменить' : '+ описание'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1187,7 +1277,7 @@ function CustomFieldsTab({
   }
 
   if (fields.length === 0) {
-    return <p className="text-sm text-gray-400 text-center py-8">Настраиваемые поля не добавлены</p>;
+    return <p className="text-sm text-gray-400 dark:text-dark-500 text-center py-8">Настраиваемые поля не добавлены</p>;
   }
 
   return (
@@ -1199,7 +1289,7 @@ function CustomFieldsTab({
 
         return (
           <div key={field.id}>
-            <label className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">
+            <label className="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-dark-400 uppercase tracking-wider mb-1.5">
               {field.name}
               {field.is_required && <span className="text-red-500">*</span>}
               {isSaving && <Loader2 className="w-3 h-3 animate-spin text-gray-300" />}
@@ -1208,7 +1298,7 @@ function CustomFieldsTab({
               <input
                 value={currentValue}
                 onChange={(e) => handleChange(field.id, e.target.value)}
-                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-dark-100 placeholder-gray-400 dark:placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
               />
             )}
             {(field.field_type === 'number' || field.field_type === 'currency') && (
@@ -1217,10 +1307,10 @@ function CustomFieldsTab({
                   type="number"
                   value={currentValue}
                   onChange={(e) => handleChange(field.id, e.target.value)}
-                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-dark-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
                 {field.field_type === 'currency' && field.currency && (
-                  <span className="text-xs text-gray-400">{field.currency}</span>
+                  <span className="text-xs text-gray-400 dark:text-dark-500">{field.currency}</span>
                 )}
               </div>
             )}
@@ -1228,7 +1318,7 @@ function CustomFieldsTab({
               <select
                 value={currentValue}
                 onChange={(e) => handleChange(field.id, e.target.value)}
-                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
+                className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-dark-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
               >
                 <option value="">— Не выбрано —</option>
                 {field.options.map((opt) => (
@@ -1241,7 +1331,7 @@ function CustomFieldsTab({
                 type="date"
                 value={currentValue}
                 onChange={(e) => handleChange(field.id, e.target.value)}
-                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-dark-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
               />
             )}
             {field.field_type === 'checkbox' && (
@@ -1250,9 +1340,9 @@ function CustomFieldsTab({
                   type="checkbox"
                   checked={currentValue === 'true'}
                   onChange={(e) => handleChange(field.id, e.target.checked ? 'true' : 'false')}
-                  className="w-4 h-4 rounded bg-white border border-gray-300"
+                  className="w-4 h-4 rounded bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10"
                 />
-                <span className="text-sm text-gray-600">{currentValue === 'true' ? 'Да' : 'Нет'}</span>
+                <span className="text-sm text-gray-600 dark:text-dark-300">{currentValue === 'true' ? 'Да' : 'Нет'}</span>
               </label>
             )}
           </div>
@@ -1462,7 +1552,7 @@ export default function TaskDetailModal({
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 20 }}
             transition={{ duration: 0.2 }}
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl relative"
+            className="bg-white dark:bg-dark-900 rounded-2xl shadow-2xl w-full max-w-5xl relative"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Loading state */}
@@ -1473,7 +1563,7 @@ export default function TaskDetailModal({
             ) : (task || isCreateMode) ? (
               <>
                 {/* ========== HEADER ========== */}
-                <div className="flex items-start justify-between gap-4 p-6 pb-4 border-b border-gray-200">
+                <div className="flex items-start justify-between gap-4 p-6 pb-4 border-b border-gray-200 dark:border-white/[0.08]">
                   <div className="flex-1 min-w-0">
                     {/* Title */}
                     {isEditingTitle || isCreateMode ? (
@@ -1490,12 +1580,12 @@ export default function TaskDetailModal({
                           }
                         }}
                         placeholder={isCreateMode ? 'Название задачи...' : undefined}
-                        className="w-full text-xl font-bold text-gray-900 bg-transparent border-b-2 border-blue-500 pb-1 focus:outline-none placeholder-gray-400"
+                        className="w-full text-xl font-bold text-gray-900 dark:text-dark-100 bg-transparent border-b-2 border-blue-500 pb-1 focus:outline-none placeholder-gray-400 dark:placeholder-dark-500"
                         autoFocus={isCreateMode}
                       />
                     ) : (
                       <h2
-                        className="text-xl font-bold text-gray-900 cursor-pointer hover:text-gray-600 transition-colors truncate"
+                        className="text-xl font-bold text-gray-900 dark:text-dark-100 cursor-pointer hover:text-gray-600 dark:text-dark-300 transition-colors truncate"
                         onClick={() => setIsEditingTitle(true)}
                         title="Нажмите для редактирования"
                       >
@@ -1508,12 +1598,12 @@ export default function TaskDetailModal({
                       {(() => {
                         const dotColor = getStatusColor(status);
                         return dotColor ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-700">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-lg border border-gray-200 dark:border-white/[0.08] text-gray-700 dark:text-dark-200">
                             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: dotColor }} />
                             {getStatusLabel(status)}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-lg border bg-gray-100 text-gray-600 border-gray-200">
+                          <span className="inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-lg border bg-gray-100 dark:bg-dark-800 text-gray-600 dark:text-dark-300 border-gray-200 dark:border-white/[0.08]">
                             {getStatusLabel(status)}
                           </span>
                         );
@@ -1523,7 +1613,7 @@ export default function TaskDetailModal({
                         {PRIORITY_LABELS[priority] ?? 'Нормальный'}
                       </span>
                       {task?.parent_task_id && (
-                        <span className="text-[10px] text-gray-400">Подзадача</span>
+                        <span className="text-[10px] text-gray-400 dark:text-dark-500">Подзадача</span>
                       )}
                     </div>
                   </div>
@@ -1531,7 +1621,7 @@ export default function TaskDetailModal({
                   {/* Close button */}
                   <button
                     onClick={onClose}
-                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors flex-shrink-0"
+                    className="p-2 text-gray-400 dark:text-dark-500 hover:text-gray-600 dark:text-dark-300 hover:bg-gray-100 dark:hover:bg-dark-800 dark:bg-dark-800 rounded-xl transition-colors flex-shrink-0"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -1540,9 +1630,9 @@ export default function TaskDetailModal({
                 {/* ========== BODY: LEFT + RIGHT ========== */}
                 <div className="flex flex-col lg:flex-row">
                   {/* ---- LEFT: TABS ---- */}
-                  <div className="flex-1 min-w-0 p-6 border-r border-gray-200">
+                  <div className="flex-1 min-w-0 p-6 border-r border-gray-200 dark:border-white/[0.08]">
                     {/* Tab buttons */}
-                    <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1 border border-gray-200 overflow-x-auto">
+                    <div className="flex gap-1 mb-5 bg-gray-100 dark:bg-dark-800 rounded-xl p-1 border border-gray-200 dark:border-white/[0.08] overflow-x-auto">
                       {(isCreateMode ? TABS.filter(t => t.id === 'description') : TABS).map((tab) => (
                         <button
                           key={tab.id}
@@ -1550,20 +1640,20 @@ export default function TaskDetailModal({
                           className={clsx(
                             'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all whitespace-nowrap',
                             activeTab === tab.id
-                              ? 'bg-white text-gray-900 shadow-sm'
-                              : 'text-gray-500 hover:text-gray-700'
+                              ? 'bg-white dark:bg-dark-900 text-gray-900 dark:text-dark-100 shadow-sm'
+                              : 'text-gray-500 dark:text-dark-400 hover:text-gray-700 dark:hover:text-dark-200 dark:text-dark-200'
                           )}
                         >
                           {tab.icon}
                           {tab.label}
                           {tab.id === 'comments' && (task?.comment_count || 0) > 0 && (
-                            <span className="text-[10px] text-gray-400">{task?.comment_count}</span>
+                            <span className="text-[10px] text-gray-400 dark:text-dark-500">{task?.comment_count}</span>
                           )}
                           {tab.id === 'attachments' && (task?.attachment_count || 0) > 0 && (
-                            <span className="text-[10px] text-gray-400">{task?.attachment_count}</span>
+                            <span className="text-[10px] text-gray-400 dark:text-dark-500">{task?.attachment_count}</span>
                           )}
                           {tab.id === 'subtasks' && (task?.subtask_count || 0) > 0 && (
-                            <span className="text-[10px] text-gray-400">{task?.subtask_count}</span>
+                            <span className="text-[10px] text-gray-400 dark:text-dark-500">{task?.subtask_count}</span>
                           )}
                         </button>
                       ))}
@@ -1608,17 +1698,17 @@ export default function TaskDetailModal({
                   </div>
 
                   {/* ---- RIGHT: SIDEBAR ---- */}
-                  <div className="lg:w-[300px] flex-shrink-0 p-6 space-y-5 bg-gray-50">
+                  <div className="lg:w-[300px] flex-shrink-0 p-6 space-y-5 bg-gray-50 dark:bg-dark-800">
                     {/* Status */}
                     <div>
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-dark-400 uppercase tracking-wider mb-1.5">
                         <Check className="w-3.5 h-3.5" />
                         Статус
                       </label>
                       <select
                         value={status}
                         onChange={(e) => setStatus(e.target.value)}
-                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
+                        className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-dark-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
                       >
                         {statusOptions.map((opt) => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -1628,14 +1718,14 @@ export default function TaskDetailModal({
 
                     {/* Assignee */}
                     <div>
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-dark-400 uppercase tracking-wider mb-1.5">
                         <User className="w-3.5 h-3.5" />
                         Исполнитель
                       </label>
                       <select
                         value={assigneeId}
                         onChange={(e) => setAssigneeId(e.target.value ? Number(e.target.value) : '')}
-                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
+                        className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-dark-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
                       >
                         <option value="">Не назначен</option>
                         {members.map((m) => (
@@ -1648,14 +1738,14 @@ export default function TaskDetailModal({
 
                     {/* Priority */}
                     <div>
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-dark-400 uppercase tracking-wider mb-1.5">
                         <Flag className="w-3.5 h-3.5" />
                         Приоритет
                       </label>
                       <select
                         value={priority}
                         onChange={(e) => setPriority(Number(e.target.value))}
-                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
+                        className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-dark-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
                       >
                         {Object.entries(PRIORITY_LABELS).map(([val, label]) => (
                           <option key={val} value={val}>{label}</option>
@@ -1665,7 +1755,7 @@ export default function TaskDetailModal({
 
                     {/* Due date */}
                     <div>
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-dark-400 uppercase tracking-wider mb-1.5">
                         <Calendar className="w-3.5 h-3.5" />
                         Дедлайн
                       </label>
@@ -1674,13 +1764,13 @@ export default function TaskDetailModal({
                         value={dueDate ? dueDate.slice(0, 10) : ''}
                         min={new Date().toISOString().slice(0, 10)}
                         onChange={(e) => setDueDate(e.target.value)}
-                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-dark-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                       />
                     </div>
 
                     {/* Estimated hours */}
                     <div>
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-dark-400 uppercase tracking-wider mb-1.5">
                         <Clock className="w-3.5 h-3.5" />
                         Оценка (часы)
                       </label>
@@ -1691,39 +1781,39 @@ export default function TaskDetailModal({
                         value={estimatedHours}
                         onChange={(e) => setEstimatedHours(e.target.value)}
                         placeholder="0"
-                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        className="w-full bg-white dark:bg-dark-900 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-dark-100 placeholder-gray-400 dark:placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                       />
                     </div>
 
                     {/* Divider */}
                     {!isCreateMode && task && (
-                      <div className="border-t border-gray-200 pt-4 space-y-3">
+                      <div className="border-t border-gray-200 dark:border-white/[0.08] pt-4 space-y-3">
                         {task.task_key && (
                           <div>
-                            <span className="text-[10px] text-gray-400 uppercase tracking-wider">ID</span>
-                            <p className="text-xs text-gray-600 mt-0.5 font-mono">{task.task_key}</p>
+                            <span className="text-[10px] text-gray-400 dark:text-dark-500 uppercase tracking-wider">ID</span>
+                            <p className="text-xs text-gray-600 dark:text-dark-300 mt-0.5 font-mono">{task.task_key}</p>
                           </div>
                         )}
                         <div>
-                          <span className="text-[10px] text-gray-400 uppercase tracking-wider">Создал</span>
-                          <p className="text-xs text-gray-500 mt-0.5">
+                          <span className="text-[10px] text-gray-400 dark:text-dark-500 uppercase tracking-wider">Создал</span>
+                          <p className="text-xs text-gray-500 dark:text-dark-400 mt-0.5">
                             {task.creator_name || (task.created_by ? `User ${task.created_by}` : '—')}
                           </p>
                         </div>
                         <div>
-                          <span className="text-[10px] text-gray-400 uppercase tracking-wider">Создано</span>
-                          <p className="text-xs text-gray-500 mt-0.5">{formatDate(task.created_at)}</p>
+                          <span className="text-[10px] text-gray-400 dark:text-dark-500 uppercase tracking-wider">Создано</span>
+                          <p className="text-xs text-gray-500 dark:text-dark-400 mt-0.5">{formatDate(task.created_at)}</p>
                         </div>
                         {task.updated_at && (
                           <div>
-                            <span className="text-[10px] text-gray-400 uppercase tracking-wider">Обновлено</span>
-                            <p className="text-xs text-gray-500 mt-0.5">{formatDateTime(task.updated_at)}</p>
+                            <span className="text-[10px] text-gray-400 dark:text-dark-500 uppercase tracking-wider">Обновлено</span>
+                            <p className="text-xs text-gray-500 dark:text-dark-400 mt-0.5">{formatDateTime(task.updated_at)}</p>
                           </div>
                         )}
                         {task.total_hours_logged > 0 && (
                           <div>
-                            <span className="text-[10px] text-gray-400 uppercase tracking-wider">Залогировано</span>
-                            <p className="text-xs text-gray-500 mt-0.5">{task.total_hours_logged}ч</p>
+                            <span className="text-[10px] text-gray-400 dark:text-dark-500 uppercase tracking-wider">Залогировано</span>
+                            <p className="text-xs text-gray-500 dark:text-dark-400 mt-0.5">{task.total_hours_logged}ч</p>
                           </div>
                         )}
                       </div>
@@ -1732,7 +1822,7 @@ export default function TaskDetailModal({
                 </div>
 
                 {/* ========== FOOTER ========== */}
-                <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-2xl">
+                <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-dark-800 rounded-b-2xl">
                   {!isCreateMode ? (
                     <button
                       onClick={() => setShowDeleteConfirm(true)}
@@ -1746,7 +1836,7 @@ export default function TaskDetailModal({
                   <div className="flex items-center gap-3">
                     <button
                       onClick={onClose}
-                      className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+                      className="px-4 py-2 text-sm text-gray-600 dark:text-dark-300 hover:text-gray-900 dark:hover:text-dark-100 dark:text-dark-100 hover:bg-gray-200 rounded-lg transition-colors"
                     >
                       Отмена
                     </button>
@@ -1779,22 +1869,22 @@ export default function TaskDetailModal({
                         initial={{ scale: 0.95, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                         exit={{ scale: 0.95, opacity: 0 }}
-                        className="bg-white border border-gray-200 rounded-2xl p-6 w-full max-w-sm shadow-2xl"
+                        className="bg-white dark:bg-dark-900 border border-gray-200 dark:border-white/[0.08] rounded-2xl p-6 w-full max-w-sm shadow-2xl"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="flex items-center gap-3 mb-4">
                           <div className="p-2 rounded-xl bg-red-50">
                             <AlertTriangle className="w-5 h-5 text-red-600" />
                           </div>
-                          <h3 className="text-lg font-semibold text-gray-900">Удалить задачу?</h3>
+                          <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-100">Удалить задачу?</h3>
                         </div>
-                        <p className="text-sm text-gray-600 mb-6">
+                        <p className="text-sm text-gray-600 dark:text-dark-300 mb-6">
                           Задача &laquo;{task?.title}&raquo; будет удалена безвозвратно.
                         </p>
                         <div className="flex justify-end gap-3">
                           <button
                             onClick={() => setShowDeleteConfirm(false)}
-                            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                            className="px-4 py-2 text-sm text-gray-600 dark:text-dark-300 hover:text-gray-900 dark:hover:text-dark-100 dark:text-dark-100 hover:bg-gray-100 dark:hover:bg-dark-800 dark:bg-dark-800 rounded-lg transition-colors"
                           >
                             Отмена
                           </button>

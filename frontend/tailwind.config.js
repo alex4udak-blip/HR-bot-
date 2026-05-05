@@ -4,6 +4,10 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  // dark: классы триггерятся по data-theme="dark" на <html>, который
+  // ставит useTheme. Без этого dark:bg-... работает только по
+  // prefers-color-scheme — модалки в проектах оставались белыми.
+  darkMode: ['variant', '&:where([data-theme="dark"], [data-theme="dark"] *)'],
   theme: {
     extend: {
       colors: {
