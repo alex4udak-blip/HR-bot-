@@ -1,4 +1,8 @@
 (function() {
+  // Guard от двойного inject (manifest matches + programmatic).
+  if (window.__hr_bot_habr_loaded__) return;
+  window.__hr_bot_habr_loaded__ = true;
+
   function parseHabrProfile() {
     const data = {
       source: 'career.habr.com',

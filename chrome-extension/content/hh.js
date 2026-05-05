@@ -1,7 +1,13 @@
 (function() {
-  // Detect if we're on a resume page
-  const isResumePage = window.location.href.includes('/resume/');
-  if (!isResumePage) return;
+  // Guard: при programmatic inject (chrome.scripting.executeScript) скрипт может
+  // выполниться повторно поверх уже зарегистрированного listener'а. Без этого
+  // на одно RE_PARSE приходило бы несколько ответов.
+  if (window.__hr_bot_hh_loaded__) return;
+  window.__hr_bot_hh_loaded__ = true;
+
+  // Раньше тут был early-return если URL не /resume/* — но на страницах
+  // работодателя hh.ru/employer/...?resumeId=... данные тоже есть, и нам
+  // нужно их парсить. Если ничего не найдём — popup покажет nodata.
 
   // Helper: get text content from selector
   function getText(selector) {

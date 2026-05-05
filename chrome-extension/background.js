@@ -21,16 +21,63 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === 'RE_PARSE_ACTIVE_TAB') {
     // Просим content-скрипт активной вкладки перепарсить DOM повторно.
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    // Если он не зарегистрирован (страница не подходит под matches в манифесте)
+    // — инжектим программно через chrome.scripting. Это покрывает кейсы вроде
+    // hh.ru/employer/vacancy?...resumeId=... где manifest matches не сработал.
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
       const tab = tabs[0];
       if (!tab || !tab.id) { sendResponse({ success: false, error: 'no active tab' }); return; }
-      chrome.tabs.sendMessage(tab.id, { type: 'RE_PARSE' }, (resp) => {
-        if (chrome.runtime.lastError) {
-          sendResponse({ success: false, error: chrome.runtime.lastError.message });
-        } else {
-          sendResponse({ success: true, data: resp });
-        }
+
+      const sendRePerse = () => new Promise((resolve) => {
+        chrome.tabs.sendMessage(tab.id, { type: 'RE_PARSE' }, (resp) => {
+          if (chrome.runtime.lastError) {
+            resolve({ ok: false, err: chrome.runtime.lastError.message });
+          } else {
+            resolve({ ok: true, data: resp });
+          }
+        });
       });
+
+      // Первая попытка — может скрипт уже зарегистрирован
+      let result = await sendRePerse();
+
+      if (!result.ok && result.err && /Receiving end does not exist/i.test(result.err)) {
+        // Контент-скрипт не на странице — определяем какой инжектить по URL.
+        const url = tab.url || '';
+        let scriptFile = null;
+        if (url.includes('hh.ru')) scriptFile = 'content/hh.js';
+        else if (url.includes('career.habr.com')) scriptFile = 'content/habr.js';
+        else if (url.includes('linkedin.com')) scriptFile = 'content/linkedin.js';
+
+        if (!scriptFile || !chrome.scripting) {
+          sendResponse({ success: false, error: result.err });
+          return;
+        }
+
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: [scriptFile],
+          });
+          // После инжекта content-скрипт сам вызовет PARSE_RESULT, либо
+          // RE_PARSE listener зарегистрируется и ответит на повторный запрос.
+          // Даём ему 200мс чтобы листенер был готов.
+          await new Promise((r) => setTimeout(r, 200));
+          result = await sendRePerse();
+        } catch (injectErr) {
+          sendResponse({
+            success: false,
+            error: 'Не удалось внедрить парсер: ' + (injectErr && injectErr.message),
+          });
+          return;
+        }
+      }
+
+      if (result.ok) {
+        sendResponse({ success: true, data: result.data });
+      } else {
+        sendResponse({ success: false, error: result.err || 'unknown' });
+      }
     });
     return true;
   }
