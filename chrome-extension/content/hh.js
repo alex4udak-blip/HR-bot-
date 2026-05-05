@@ -161,7 +161,19 @@
     // employer access. If contacts are not visible, fields will remain empty - the extension
     // still allows adding the candidate without contacts.
 
-    // Email - try multiple selectors and nested structures
+    // Email - try multiple selectors and nested structures.
+    // Известный список TLD — нужен чтобы regex не сожрал суффикс типа
+    // 'gmail.comWhatsappViberTelegram' (когда лейблы мессенджеров склеены
+    // с email в одном textContent). Жадный [\w.-]+ ловил бы всё подряд.
+    // Список TLD-якорей. Regex берёт email ДО конца TLD и не лезет дальше,
+    // поэтому 'gmail.comWhatsappViberTelegram' даст 'gmail.com'.
+    const TLD_RE = /[\w.+-]+@[\w-]+(?:\.[a-z]{2,})*\.(?:com|ru|net|org|io|co|me|by|ua|kz|us|uk|de|fr|it|es|pl|email|edu|gov|biz|info|dev|app|pro|tech|cloud|online|store|site|name|ai|cc|tv|xyz)/i;
+    const extractEmailFromText = (txt) => {
+      if (!txt) return null;
+      const m = txt.match(TLD_RE);
+      return m ? m[0] : null;
+    };
+
     const emailSelectors = [
       '[data-qa="resume-contact-email"]',
       '[data-qa="resume-contact-email"] a',
@@ -172,18 +184,27 @@
       if (data.email) break;
       const els = document.querySelectorAll(sel);
       els.forEach(el => {
+        if (data.email) return;
+        // 1. Самое надёжное — есть ли внутри <a href="mailto:...">.
+        //    href всегда чистый, без мусора из соседних span'ов.
+        const mailtoEl = el.matches?.('a[href^="mailto:"]') ? el : el.querySelector?.('a[href^="mailto:"]');
+        if (mailtoEl) {
+          const href = mailtoEl.getAttribute('href') || '';
+          if (href.startsWith('mailto:')) {
+            data.email = href.slice(7).split('?')[0].trim();
+            return;
+          }
+        }
+        // 2. Прямой href самого элемента (если это <a>).
+        const ownHref = el.getAttribute?.('href') || '';
+        if (ownHref.startsWith('mailto:')) {
+          data.email = ownHref.slice(7).split('?')[0].trim();
+          return;
+        }
+        // 3. Fallback на text — но через строгий TLD-regex.
         const text = el.textContent.trim();
-        const href = (el.href || el.getAttribute('href') || '');
-        // Extract from mailto: link
-        if (!data.email && href.includes('mailto:')) {
-          data.email = href.replace('mailto:', '').split('?')[0].trim();
-        }
-        // Or from text containing @
-        else if (!data.email && text.includes('@') && text.includes('.')) {
-          // Clean up: take only the email part if there's extra text
-          const emailMatch = text.match(/[\w.+-]+@[\w.-]+\.\w{2,}/);
-          if (emailMatch) data.email = emailMatch[0];
-        }
+        const fromText = extractEmailFromText(text);
+        if (fromText) data.email = fromText;
       });
     }
 
@@ -253,8 +274,13 @@
         const text = el.textContent.trim();
         const href = el.href || '';
         if (!data.email && (href.includes('mailto:') || text.includes('@'))) {
-          const emailMatch = text.match(/[\w.+-]+@[\w.-]+\.\w{2,}/);
-          data.email = emailMatch ? emailMatch[0] : text;
+          // mailto: чище чем text — если есть, используем его.
+          if (href.startsWith('mailto:')) {
+            data.email = href.slice(7).split('?')[0].trim();
+          } else {
+            const fromText = extractEmailFromText(text);
+            if (fromText) data.email = fromText;
+          }
         }
         else if (!data.phone && (href.includes('tel:') || text.match(/^\+?\d/))) data.phone = text;
         else if (!data.telegram && (text.includes('t.me') || text.startsWith('@'))) data.telegram = text;
@@ -269,8 +295,8 @@
         const link = el.querySelector('a');
         const href = link ? link.href : '';
         if (!data.email && href.includes('mailto:')) {
-          const emailMatch = text.match(/[\w.+-]+@[\w.-]+\.\w{2,}/);
-          data.email = emailMatch ? emailMatch[0] : text;
+          // mailto-ссылка надёжнее текста — берём её напрямую.
+          data.email = href.replace('mailto:', '').split('?')[0].trim();
         }
         else if (!data.phone && href.includes('tel:')) data.phone = text;
         else if (!data.telegram && (text.includes('t.me') || text.startsWith('@'))) {
