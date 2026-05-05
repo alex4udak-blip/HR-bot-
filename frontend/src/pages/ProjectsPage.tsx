@@ -905,20 +905,23 @@ export default function ProjectsPage() {
     return list;
   }, [projects, searchQuery, statusFilter, deptFilter]);
 
-  const statusMap = useMemo(() => {
-    const map: Record<string, ProjectStatusDef2> = {};
-    projectStatuses.forEach(s => { map[s.slug] = s; });
-    return map;
-  }, [projectStatuses]);
-
   const metrics = useMemo(() => {
     const active = projects.filter((p) => p.status === 'active').length;
-    const burning = projects.filter((p) => getProjectHealth(p, statusMap).status === 'critical').length;
     const totalTasks = projects.reduce((sum, p) =>
       sum + Object.values(p.task_counts || {}).reduce((s: number, n: number) => s + n, 0), 0);
     const inProgressTasks = projects.reduce((sum, p) => sum + (p.task_counts?.in_progress || 0), 0);
-    return { active, burning, totalTasks, inProgressTasks };
-  }, [projects, statusMap]);
+    // Открытые задачи — всё что не done / cancelled (по запросу из QA-отчёта).
+    // Раньше тут был виджет "Горящие" — 5/5 опрошенных сказали "не смотрю",
+    // заменил на полезную метрику открытых задач.
+    const openTasks = projects.reduce((sum, p) => {
+      const counts = p.task_counts || {};
+      return sum + Object.entries(counts).reduce(
+        (s, [status, n]) => (status === 'done' || status === 'cancelled') ? s : s + (n as number),
+        0,
+      );
+    }, 0);
+    return { active, openTasks, totalTasks, inProgressTasks };
+  }, [projects]);
 
   const handleCreate = async (data: ProjectCreate | ProjectUpdate) => {
     try {
@@ -967,10 +970,10 @@ export default function ProjectsPage() {
           subtext={`из ${projects.length} всего`}
         />
         <MetricCard
-          label="Горящие" value={metrics.burning}
-          icon={<Flame className="w-4 h-4" />}
-          color={metrics.burning > 0 ? 'red' : 'emerald'}
-          subtext={metrics.burning > 0 ? 'требуют внимания' : 'всё по плану'}
+          label="Открытые задачи" value={metrics.openTasks}
+          icon={<ListTodo className="w-4 h-4" />}
+          color="amber"
+          subtext={`из ${metrics.totalTasks} всего`}
         />
         <MetricCard
           label="Задач в работе" value={metrics.inProgressTasks}

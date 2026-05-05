@@ -306,9 +306,14 @@ export default function AllTasksPage() {
                           </div>
                         )}
 
-                        {/* Task rows */}
+                        {/* Task rows — клик открывает задачу через deep-link
+                            (ProjectDetailPage читает ?task=ID и открывает модалку) */}
                         {!statusCollapsed && tasks.map((task) => (
-                          <TaskRow key={task.id} task={task} />
+                          <TaskRow
+                            key={task.id}
+                            task={task}
+                            onClick={() => navigate(`/projects/${group.project_id}?task=${task.id}`)}
+                          />
                         ))}
                       </motion.div>
                     );

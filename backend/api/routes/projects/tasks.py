@@ -53,14 +53,14 @@ async def _close_linked_blocker_on_done(
     blocker.resolved_at = datetime.utcnow()
     blocker.resolve_comment = f"Авто-закрытие: задача «{task.title}» переведена в Готово"
 
-    # In-app колокольчик создателю
+    # In-app колокольчик создателю — с deep-link на саму задачу
     if blocker.user_id and blocker.user_id != current_user.id:
         notif = Notification(
             user_id=blocker.user_id,
             type="blocker_resolved",
             title="Блокер закрыт — можно проверять",
             message=f"📝 {blocker.description}\n✅ Задача «{task.title}» выполнена.",
-            link=f"/projects/{project.id}",
+            link=f"/projects/{project.id}?task={task.id}",
         )
         db.add(notif)
 
@@ -243,14 +243,14 @@ async def create_task(
     await db.flush()
     await _recalc_progress(project_id, db)
 
-    # Notify assignee about new task
+    # Notify assignee about new task — deep-link сразу на задачу
     if task.assignee_id and task.assignee_id != current_user.id:
         notif = Notification(
             user_id=task.assignee_id,
             type="task_assigned",
             title=f"Вам назначена задача: {task.title}",
             message=f"Проект: {project.name}",
-            link=f"/projects/{project_id}",
+            link=f"/projects/{project_id}?task={task.id}",
         )
         db.add(notif)
 
@@ -360,14 +360,14 @@ async def update_task(
     for key, value in update_data.items():
         setattr(task, key, value)
 
-    # Notify new assignee if changed
+    # Notify new assignee if changed — deep-link сразу на задачу
     if data.assignee_id is not None and data.assignee_id != old_assignee_id and data.assignee_id != current_user.id:
         notif = Notification(
             user_id=data.assignee_id,
             type="task_assigned",
             title=f"Вам назначена задача: {task.title}",
             message=f"Проект: {project.name}",
-            link=f"/projects/{project_id}",
+            link=f"/projects/{project_id}?task={task.id}",
         )
         db.add(notif)
 

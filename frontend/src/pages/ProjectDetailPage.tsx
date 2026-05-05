@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DndContext,
@@ -892,6 +892,29 @@ function TasksTab({
   const [viewMode, setViewMode] = useState<TaskViewMode>('board');
   const [statuses, setStatuses] = useState<ProjectTaskStatusDef[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  // Из notification deep-link приходим с ?task=ID&comment=ID — открываем задачу
+  // и пробрасываем comment в TaskDetailModal для скролла.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [scrollToCommentId, setScrollToCommentId] = useState<number | null>(null);
+  useEffect(() => {
+    const taskParam = searchParams.get('task');
+    const commentParam = searchParams.get('comment');
+    if (taskParam) {
+      const taskIdNum = parseInt(taskParam);
+      if (!isNaN(taskIdNum)) {
+        setSelectedTaskId(taskIdNum);
+        if (commentParam) {
+          const cid = parseInt(commentParam);
+          if (!isNaN(cid)) setScrollToCommentId(cid);
+        }
+        // Чистим query чтобы при перезагрузке модалка не открывалась повторно
+        const next = new URLSearchParams(searchParams);
+        next.delete('task');
+        next.delete('comment');
+        setSearchParams(next, { replace: true });
+      }
+    }
+  }, [searchParams, setSearchParams]);
 
   // Filters
   const [showFilters, setShowFilters] = useState(false);
@@ -1198,11 +1221,12 @@ function TasksTab({
       {/* Task detail/edit modal */}
       <TaskDetailModal
         isOpen={selectedTaskId !== null && !showTaskForm}
-        onClose={() => setSelectedTaskId(null)}
+        onClose={() => { setSelectedTaskId(null); setScrollToCommentId(null); }}
         projectId={projectId}
         taskId={selectedTaskId!}
         members={members}
         statuses={statuses}
+        scrollToCommentId={scrollToCommentId}
         onTaskUpdated={() => fetchTaskKanban(projectId)}
         onTaskDeleted={() => { setSelectedTaskId(null); fetchTaskKanban(projectId); }}
       />

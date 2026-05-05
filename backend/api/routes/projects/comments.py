@@ -31,6 +31,7 @@ async def _notify_mentions(
     task: ProjectTask,
     org: Organization,
     already_notified_ids: Optional[set[int]] = None,
+    comment_id: Optional[int] = None,
 ) -> set[int]:
     """Парсим @[Name] в тексте и шлём в ЛС и в in-app каждому упомянутому.
 
@@ -71,14 +72,19 @@ async def _notify_mentions(
         notified.add(mentioned.id)
         newly_notified.add(mentioned.id)
 
-        # in-app уведомление
+        # in-app уведомление с deep-link на конкретную задачу + коммент,
+        # чтобы клик в панели уведомлений сразу открывал нужное место,
+        # а не страницу проекта с поиском вручную.
         try:
+            link = f"/projects/{project.id}?task={task.id}"
+            if comment_id:
+                link += f"&comment={comment_id}"
             db.add(Notification(
                 user_id=mentioned.id,
                 type="comment_mention",
                 title=f"Вас упомянули в задаче: {task.title}",
                 message=(content[:280] + '…') if len(content) > 280 else content,
-                link=f"/projects/{project.id}",
+                link=link,
             ))
         except Exception as e:
             logger.warning(f"Failed to create in-app notification for mention: {e}")
@@ -210,9 +216,9 @@ async def create_comment(
     db.add(comment)
     await db.flush()
 
-    # Пинг упомянутых через @[Name]
+    # Пинг упомянутых через @[Name] — передаём comment.id для deep-link
     try:
-        await _notify_mentions(db, content, current_user, project, task, org)
+        await _notify_mentions(db, content, current_user, project, task, org, comment_id=comment.id)
     except Exception as e:
         logger.warning(f"notify_mentions failed on create: {e}")
 
@@ -283,6 +289,7 @@ async def update_comment(
         await _notify_mentions(
             db, new_content, current_user, project, task, org,
             already_notified_ids=previously_notified_ids,
+            comment_id=comment.id,
         )
     except Exception as e:
         logger.warning(f"notify_mentions failed on update: {e}")

@@ -291,6 +291,9 @@ interface TaskDetailModalProps {
   onTaskDeleted?: () => void;
   onTaskCreated?: (task: api.ProjectTask) => void;
   parentTaskId?: number;
+  /** Если передан — после загрузки коментов модалка переключится на вкладку
+   *  'comments' и проскроллит к нужному коментарию + подсветит его. */
+  scrollToCommentId?: number | null;
 }
 
 // ============================================================
@@ -382,10 +385,12 @@ function CommentsTab({
   projectId,
   taskId,
   members,
+  scrollToCommentId,
 }: {
   projectId: number;
   taskId: number;
   members: ProjectMember[];
+  scrollToCommentId?: number | null;
 }) {
   const currentUser = useAuthStore((s) => s.user);
   const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin);
@@ -461,6 +466,20 @@ function CommentsTab({
       setLoading(false);
     }
   }, [projectId, taskId]);
+
+  // Если пришли по deep-link с notification — скроллим к нужному коментарию
+  // и подсвечиваем его на 2 секунды.
+  const [highlightedCommentId, setHighlightedCommentId] = useState<number | null>(null);
+  useEffect(() => {
+    if (!scrollToCommentId || loading || comments.length === 0) return;
+    const el = document.querySelector(`[data-comment-id="${scrollToCommentId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightedCommentId(scrollToCommentId);
+      const t = setTimeout(() => setHighlightedCommentId(null), 2500);
+      return () => clearTimeout(t);
+    }
+  }, [scrollToCommentId, loading, comments.length]);
 
   useEffect(() => {
     loadComments();
@@ -565,7 +584,13 @@ function CommentsTab({
           <p className="text-sm text-gray-400 dark:text-dark-500 text-center py-8">Нет комментариев</p>
         ) : (
           comments.map((c) => (
-            <div key={c.id} className="bg-gray-50 dark:bg-dark-800 border border-gray-200 dark:border-white/[0.08] rounded-xl p-3">
+            <div
+              key={c.id}
+              data-comment-id={c.id}
+              className={clsx(
+                'bg-gray-50 dark:bg-dark-800 border border-gray-200 dark:border-white/[0.08] rounded-xl p-3 transition-colors',
+                highlightedCommentId === c.id && 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-500/10',
+              )}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center">
@@ -1116,7 +1141,7 @@ function SubtasksTab({
                       })} />
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className={clsx('text-sm truncate', st.status === 'done' ? 'text-gray-400 dark:text-dark-500 line-through' : 'text-gray-900 dark:text-dark-100')}>
+                      <p className={clsx('text-sm break-words', st.status === 'done' ? 'text-gray-400 dark:text-dark-500 line-through' : 'text-gray-900 dark:text-dark-100')}>
                         {st.title}
                       </p>
                       <select
@@ -1368,6 +1393,7 @@ export default function TaskDetailModal({
   onTaskDeleted,
   onTaskCreated,
   parentTaskId,
+  scrollToCommentId,
 }: TaskDetailModalProps) {
   const isCreateMode = modeProp === 'create' || !taskId;
 
@@ -1412,7 +1438,9 @@ export default function TaskDetailModal({
   useEffect(() => {
     if (!isOpen || !taskId || isCreateMode) return;
     setLoading(true);
-    setActiveTab('description');
+    // Если пришли по deep-link из notification к коментарию — открываем
+    // сразу вкладку 'Комментарии', иначе обычный дефолт.
+    setActiveTab(scrollToCommentId ? 'comments' : 'description');
     setShowDeleteConfirm(false);
 
     const loadTask = async () => {
@@ -1442,7 +1470,7 @@ export default function TaskDetailModal({
     };
 
     loadTask();
-  }, [isOpen, taskId, projectId, onClose]);
+  }, [isOpen, taskId, projectId, onClose, scrollToCommentId]);
 
   // Focus title input when editing
   useEffect(() => {
@@ -1677,7 +1705,7 @@ export default function TaskDetailModal({
                           />
                         )}
                         {activeTab === 'comments' && task && (
-                          <CommentsTab projectId={projectId} taskId={task.id} members={members} />
+                          <CommentsTab projectId={projectId} taskId={task.id} members={members} scrollToCommentId={scrollToCommentId} />
                         )}
                         {activeTab === 'attachments' && task && (
                           <AttachmentsTab projectId={projectId} taskId={task.id} />
