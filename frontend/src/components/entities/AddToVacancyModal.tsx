@@ -8,6 +8,7 @@ import { getVacancies, applyEntityToVacancy } from '@/services/api';
 import type { Vacancy } from '@/types';
 import { VACANCY_STATUS_LABELS, VACANCY_STATUS_COLORS } from '@/types';
 import { formatSalary } from '@/utils';
+import { useAuthStore } from '@/stores/authStore';
 
 interface AddToVacancyModalProps {
   entityId: number;
@@ -35,6 +36,12 @@ export default function AddToVacancyModal({
   bulkEntityIds,
 }: AddToVacancyModalProps) {
   const [loading, setLoading] = useState(false);
+  const { user } = useAuthStore();
+  // Админ видит все open-вакансии орги; рекрут — только свои
+  // (own + клоны после взятия в работу: created_by === me).
+  const isAdmin = user?.role === 'superadmin'
+    || user?.org_role === 'owner'
+    || user?.org_role === 'admin';
   const [searchQuery, setSearchQuery] = useState('');
   const [vacancies, setVacancies] = useState<Vacancy[]>([]);
   const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null);
@@ -50,7 +57,10 @@ export default function AddToVacancyModal({
           status: 'open',
           search: searchQuery || undefined
         });
-        setVacancies(data);
+        const filtered = isAdmin
+          ? data
+          : data.filter((v) => user && v.created_by === user.id);
+        setVacancies(filtered);
       } catch (error) {
         console.error('Failed to load vacancies:', error);
         toast.error('Не удалось загрузить вакансии');
@@ -61,7 +71,7 @@ export default function AddToVacancyModal({
 
     const debounce = setTimeout(loadVacancies, 300);
     return () => clearTimeout(debounce);
-  }, [searchQuery]);
+  }, [searchQuery, isAdmin, user]);
 
   const handleSubmit = async () => {
     if (!selectedVacancy) {
