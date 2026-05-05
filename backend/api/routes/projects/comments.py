@@ -93,13 +93,18 @@ async def _notify_mentions(
         try:
             from ...bot import send_telegram_notification
             snippet = content[:400].replace('<', '&lt;').replace('>', '&gt;')
+            # Deep-link на саму задачу + якорь на конкретный коммент
+            # (фронт умеет ?task=&comment=, скроллит и подсвечивает).
+            link_path = f"/projects/{project.id}?task={task.id}"
+            if comment_id:
+                link_path += f"&comment={comment_id}"
             text = (
                 f"\U0001f4ac <b>Вас упомянули в комментарии</b>\n\n"
                 f"\U0001f464 {author.name}\n"
                 f"\U0001f4dd Задача: {task.title}\n"
                 f"\U0001f4c2 Проект: {project.name}\n\n"
                 f"{snippet}\n\n"
-                f'\U0001f517 <a href="{frontend_url}/projects/{project.id}">Открыть</a>'
+                f'\U0001f517 <a href="{frontend_url}{link_path}">Открыть</a>'
             )
             await send_telegram_notification(mentioned.id, text)
         except Exception as e:
