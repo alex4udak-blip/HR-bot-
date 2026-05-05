@@ -193,6 +193,10 @@
       '[data-qa="resume-contact-phone"] a',
       '[data-qa="resume-serp__resume-contact-phone"]',
       '[data-qa="resume-contact-phone-value"]',
+      // Новая разметка hh.ru (видна когда работодатель раскрыл контакты):
+      // телефон сидит в resume-contact-preferred с href="tel:...".
+      '[data-qa="resume-contact-preferred"][href*="tel:"]',
+      'a[data-qa="resume-contact-preferred"][href^="tel:"]',
     ];
     for (const sel of phoneSelectors) {
       if (data.phone) break;
@@ -218,6 +222,11 @@
       '[data-qa="resume-phone-deep-link-telegram-text"]',
       '[data-qa="resume-phone-deep-link-telegram"]',
       '[data-qa="resume-contact-preferred"][href*="t.me"]',
+      // Новая разметка hh.ru — отдельный блок «способы связи» с
+      // attribute resume-communication-method-telegram, плюс может
+      // дублироваться в personalsite-personal как ссылка t.me.
+      '[data-qa="resume-communication-method-telegram"]',
+      'a[data-qa="resume-personalsite-personal"][href*="t.me"]',
     ];
     for (const sel of tgSelectors) {
       if (data.telegram) break;
