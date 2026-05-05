@@ -80,6 +80,7 @@ const InternStatsPage = lazyWithRetry(() => import('@/pages/InternStatsPage'));
 const ExportsPage = lazyWithRetry(() => import('@/pages/ExportsPage'));
 const ProjectsPage = lazyWithRetry(() => import('@/pages/ProjectsPage'));
 const ProjectDetailPage = lazyWithRetry(() => import('@/pages/ProjectDetailPage'));
+const ProjectTaskPage = lazyWithRetry(() => import('@/pages/ProjectTaskPage'));
 const AllTasksPage = lazyWithRetry(() => import('@/pages/AllTasksPage'));
 const SaturnPage = lazyWithRetry(() => import('@/pages/SaturnPage'));
 const TeamPage = lazyWithRetry(() => import('@/pages/TeamPage'));
@@ -189,6 +190,7 @@ export default function App() {
           <Route path="dashboard" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
           <Route path="projects" element={<Suspense fallback={<PageLoader />}><ProjectsPage /></Suspense>} />
           <Route path="projects/:projectId" element={<Suspense fallback={<PageLoader />}><ProjectDetailPage /></Suspense>} />
+          <Route path="projects/:projectId/tasks/:taskId" element={<Suspense fallback={<PageLoader />}><ProjectTaskPage /></Suspense>} />
           <Route path="all-tasks" element={<Suspense fallback={<PageLoader />}><AllTasksPage /></Suspense>} />
           <Route path="chats" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin', 'practice']}><ChatsPage /></RoleRoute></Suspense>} />
           <Route path="chats/:chatId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin', 'practice']}><ChatsPage /></RoleRoute></Suspense>} />

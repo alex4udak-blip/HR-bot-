@@ -312,7 +312,7 @@ export default function AllTasksPage() {
                           <TaskRow
                             key={task.id}
                             task={task}
-                            onClick={() => navigate(`/projects/${group.project_id}?task=${task.id}`)}
+                            onClick={() => navigate(`/projects/${group.project_id}/tasks/${task.id}`)}
                           />
                         ))}
                       </motion.div>

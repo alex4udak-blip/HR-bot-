@@ -1958,7 +1958,7 @@ async def cmd_blocker(message: types.Message):
                             f"\U0001f4cb <b>Новая задача назначена на вас</b>\n\n"
                             f"\U0001f4dd {t['title']}\n"
                             f"\U0001f4c2 Проект: {t['project']}\n"
-                            f'\U0001f517 <a href="{frontend_url}/projects/{t["project_id"]}?task={t["task_id"]}">Открыть</a>'
+                            f'\U0001f517 <a href="{frontend_url}/projects/{t["project_id"]}/tasks/{t["task_id"]}">Открыть</a>'
                         )
                         try:
                             await send_telegram_notification(assignee_id, text)
@@ -2420,7 +2420,7 @@ async def collect_group_message(message: types.Message):
                                     f"{blocker_tag}\U0001f4cb <b>Новая задача назначена на вас</b>\n\n"
                                     f"\U0001f4dd {t['title']}\n"
                                     f"\U0001f4c2 Проект: {t['project']}\n"
-                                    f'\U0001f517 <a href="{frontend_url}/projects/{t["project_id"]}?task={t["task_id"]}">Открыть</a>'
+                                    f'\U0001f517 <a href="{frontend_url}/projects/{t["project_id"]}/tasks/{t["task_id"]}">Открыть</a>'
                                 )
                                 try:
                                     await send_telegram_notification(assignee_id, text)

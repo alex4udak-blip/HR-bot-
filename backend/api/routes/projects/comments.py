@@ -76,9 +76,9 @@ async def _notify_mentions(
         # чтобы клик в панели уведомлений сразу открывал нужное место,
         # а не страницу проекта с поиском вручную.
         try:
-            link = f"/projects/{project.id}?task={task.id}"
+            link = f"/projects/{project.id}/tasks/{task.id}"
             if comment_id:
-                link += f"&comment={comment_id}"
+                link += f"?comment={comment_id}"
             db.add(Notification(
                 user_id=mentioned.id,
                 type="comment_mention",
@@ -94,10 +94,10 @@ async def _notify_mentions(
             from ...bot import send_telegram_notification
             snippet = content[:400].replace('<', '&lt;').replace('>', '&gt;')
             # Deep-link на саму задачу + якорь на конкретный коммент
-            # (фронт умеет ?task=&comment=, скроллит и подсвечивает).
-            link_path = f"/projects/{project.id}?task={task.id}"
+            # (фронт умеет ?comment=, скроллит и подсвечивает).
+            link_path = f"/projects/{project.id}/tasks/{task.id}"
             if comment_id:
-                link_path += f"&comment={comment_id}"
+                link_path += f"?comment={comment_id}"
             text = (
                 f"\U0001f4ac <b>Вас упомянули в комментарии</b>\n\n"
                 f"\U0001f464 {author.name}\n"

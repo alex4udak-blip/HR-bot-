@@ -60,7 +60,7 @@ async def _close_linked_blocker_on_done(
             type="blocker_resolved",
             title="Блокер закрыт — можно проверять",
             message=f"📝 {blocker.description}\n✅ Задача «{task.title}» выполнена.",
-            link=f"/projects/{project.id}?task={task.id}",
+            link=f"/projects/{project.id}/tasks/{task.id}",
         )
         db.add(notif)
 
@@ -75,7 +75,7 @@ async def _close_linked_blocker_on_done(
                 f"\U0001f4dd {blocker.description}\n"
                 f"\U0001f527 Задача: {task.title}\n"
                 f"\U0001f4c2 Проект: {project.name}\n"
-                f'\U0001f517 <a href="{frontend_url}/projects/{project.id}?task={task.id}">Открыть</a>',
+                f'\U0001f517 <a href="{frontend_url}/projects/{project.id}/tasks/{task.id}">Открыть</a>',
             )
         except Exception as e:
             logger.warning(f"Telegram DM about resolved blocker failed: {e}")
@@ -250,7 +250,7 @@ async def create_task(
             type="task_assigned",
             title=f"Вам назначена задача: {task.title}",
             message=f"Проект: {project.name}",
-            link=f"/projects/{project_id}?task={task.id}",
+            link=f"/projects/{project_id}/tasks/{task.id}",
         )
         db.add(notif)
 
@@ -267,7 +267,7 @@ async def create_task(
                 f"\U0001f4cb <b>\u041d\u043e\u0432\u0430\u044f \u0437\u0430\u0434\u0430\u0447\u0430 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0430 \u043d\u0430 \u0432\u0430\u0441</b>\n\n"
                 f"\U0001f4dd {task.title}\n"
                 f"\U0001f4c2 \u041f\u0440\u043e\u0435\u043a\u0442: {project.name}\n"
-                f'\U0001f517 <a href="{frontend_url}/projects/{project.id}?task={task.id}">\u041e\u0442\u043a\u0440\u044b\u0442\u044c</a>',
+                f'\U0001f517 <a href="{frontend_url}/projects/{project.id}/tasks/{task.id}">\u041e\u0442\u043a\u0440\u044b\u0442\u044c</a>',
             )
         except Exception:
             pass
@@ -367,7 +367,7 @@ async def update_task(
             type="task_assigned",
             title=f"Вам назначена задача: {task.title}",
             message=f"Проект: {project.name}",
-            link=f"/projects/{project_id}?task={task.id}",
+            link=f"/projects/{project_id}/tasks/{task.id}",
         )
         db.add(notif)
 
@@ -381,7 +381,7 @@ async def update_task(
                 f"\U0001f4cb <b>\u041d\u043e\u0432\u0430\u044f \u0437\u0430\u0434\u0430\u0447\u0430 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0430 \u043d\u0430 \u0432\u0430\u0441</b>\n\n"
                 f"\U0001f4dd {task.title}\n"
                 f"\U0001f4c2 \u041f\u0440\u043e\u0435\u043a\u0442: {project.name}\n"
-                f'\U0001f517 <a href="{frontend_url}/projects/{project.id}?task={task.id}">\u041e\u0442\u043a\u0440\u044b\u0442\u044c</a>',
+                f'\U0001f517 <a href="{frontend_url}/projects/{project.id}/tasks/{task.id}">\u041e\u0442\u043a\u0440\u044b\u0442\u044c</a>',
             )
         except Exception:
             pass
