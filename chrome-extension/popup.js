@@ -59,13 +59,68 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadFromActiveTab();
 });
 
+function detectTabState(tabUrl) {
+  // 'wrong-site' | 'wrong-page' | 'resume-page'
+  const isHh = tabUrl.includes('hh.ru');
+  const isHabr = tabUrl.includes('career.habr.com');
+  const isLinkedIn = tabUrl.includes('linkedin.com');
+  if (!isHh && !isHabr && !isLinkedIn) return 'wrong-site';
+
+  // Эвристика «это похоже на страницу конкретного резюме»:
+  // hh.ru — /resume/ ИЛИ есть resumeId в query
+  // habr — /<username>/ или /<username>/profile
+  // linkedin — /in/<username>
+  if (isHh) {
+    if (/\/resume\//.test(tabUrl) || /[?&]resumeId=/.test(tabUrl)) return 'resume-page';
+    return 'wrong-page';
+  }
+  if (isHabr) {
+    if (/career\.habr\.com\/[^?#/]+/.test(tabUrl)) return 'resume-page';
+    return 'wrong-page';
+  }
+  if (isLinkedIn) {
+    if (/\/in\//.test(tabUrl)) return 'resume-page';
+    return 'wrong-page';
+  }
+  return 'wrong-site';
+}
+
+function showNodata(state, tabUrl) {
+  const wrong = document.getElementById('nodataWrongSite');
+  const page = document.getElementById('nodataWrongPage');
+  const noParse = document.getElementById('nodataNoParse');
+  const example = document.getElementById('nodataExample');
+  const urlEl = document.getElementById('nodataCurrentUrl');
+  if (wrong) wrong.style.display = 'none';
+  if (page) page.style.display = 'none';
+  if (noParse) noParse.style.display = 'none';
+
+  if (state === 'wrong-site' && wrong) wrong.style.display = 'block';
+  if (state === 'wrong-page' && page) {
+    page.style.display = 'block';
+    // Подстраиваем пример URL под сайт
+    if (example) {
+      let host = 'hh.ru'; let path = '/resume/&lt;id&gt;';
+      if (tabUrl.includes('career.habr.com')) { host = 'career.habr.com'; path = '/&lt;username&gt;'; }
+      else if (tabUrl.includes('linkedin.com')) { host = 'linkedin.com'; path = '/in/&lt;username&gt;'; }
+      example.innerHTML = `<b>Пример URL для ${host}:</b><br>` +
+        `<span style="font-family:ui-monospace,monospace;">${host}${path}</span>`;
+    }
+  }
+  if (state === 'no-parse' && noParse) noParse.style.display = 'block';
+
+  if (urlEl) urlEl.textContent = tabUrl || 'нет вкладки';
+  showView('nodata');
+}
+
 async function loadFromActiveTab() {
   const tabs = await new Promise((r) => chrome.tabs.query({ active: true, currentWindow: true }, r));
   const tabUrl = (tabs[0] && tabs[0].url) || '';
-  const isResumeTab = tabUrl.includes('hh.ru') || tabUrl.includes('habr.com') || tabUrl.includes('linkedin.com');
+  const tabState = detectTabState(tabUrl);
 
-  // Если активная вкладка не на резюме-сайте — сразу пробуем кэш / nodata.
-  if (!isResumeTab) {
+  // Если вкладка не на сайте резюме — сразу контекстный nodata, без RE_PARSE.
+  if (tabState === 'wrong-site') {
+    // Кэш всё-таки попробуем — вдруг есть свежий парс с предыдущей вкладки
     chrome.runtime.sendMessage({ type: 'GET_PARSED_DATA' }, (data) => {
       if (data && data.full_name) {
         parsedData = data;
@@ -73,9 +128,15 @@ async function loadFromActiveTab() {
         loadVacancies();
         showView('parse');
       } else {
-        showView('nodata');
+        showNodata('wrong-site', tabUrl);
       }
     });
+    return;
+  }
+
+  if (tabState === 'wrong-page') {
+    // На правильном сайте, но не на карточке резюме — конкретный месседж.
+    showNodata('wrong-page', tabUrl);
     return;
   }
 
@@ -85,10 +146,8 @@ async function loadFromActiveTab() {
     chrome.runtime.sendMessage({ type: 'RE_PARSE_ACTIVE_TAB' }, r)
   );
 
-  // Пробуем получить свежие данные. Если RE_PARSE сработал — данные уже
-  // лежат в storage (background.js обновил кэш через PARSE_RESULT).
-  // Если content-скрипт не успел зарегистрироваться (страница только грузится)
-  // — даём пару попыток с короткими интервалами.
+  // Пробуем получить свежие данные с ретраями — content-скрипт мог только
+  // что зарегистрироваться и ещё не успеть положить данные в storage.
   const tryFetch = (delay) => new Promise((res) => {
     setTimeout(() => {
       chrome.runtime.sendMessage({ type: 'GET_PARSED_DATA' }, (data) => res(data || null));
@@ -109,11 +168,12 @@ async function loadFromActiveTab() {
     return;
   }
 
-  // Content-скрипт не ответил — диагностика для понимания почему
+  // На правильной странице, но парсер ничего не нашёл (DOM не такой,
+  // контакты под подпиской, и т.п.) — третий вариант nodata.
   if (reparseResp && reparseResp.success === false) {
     console.warn('[HR-Bot] RE_PARSE failed:', reparseResp.error);
   }
-  showView('nodata');
+  showNodata('no-parse', tabUrl);
 }
 
 

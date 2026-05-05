@@ -71,7 +71,17 @@
     .success p { font-size: 13px; color: rgba(255,255,255,0.5); }
 
     .error { color: #ef4444; font-size: 12px; margin-top: 8px; }
-    .no-data { text-align: center; padding: 30px; color: rgba(255,255,255,0.4); font-size: 13px; }
+    .no-data { padding: 24px 18px; color: rgba(255,255,255,0.7); font-size: 13px; }
+    .nodata-icon { display: flex; justify-content: center; margin-bottom: 12px; font-size: 28px; }
+    .nodata-title { text-align: center; font-weight: 600; color: #fff; font-size: 15px; margin-bottom: 8px; }
+    .nodata-text { text-align: center; color: rgba(255,255,255,0.55); margin-bottom: 14px; line-height: 1.5; }
+    .nodata-text b { color: rgba(255,255,255,0.85); }
+    .nodata-sites { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-bottom: 16px; }
+    .nodata-site { display: inline-block; padding: 4px 10px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; font-size: 11px; color: rgba(255,255,255,0.7); }
+    .nodata-example { background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.18); border-radius: 8px; padding: 10px 12px; font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 12px; }
+    .nodata-example b { color: rgba(255,255,255,0.75); }
+    .nodata-current-url { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: rgba(255,255,255,0.35); word-break: break-all; padding: 8px 10px; background: rgba(0,0,0,0.2); border-radius: 6px; line-height: 1.4; }
+    .nodata-current-url-label { font-size: 10px; color: rgba(255,255,255,0.3); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
 
     .settings-link { text-align: center; margin-top: 12px; }
     .settings-link a { color: rgba(255,255,255,0.3); font-size: 11px; text-decoration: none; }
@@ -166,9 +176,52 @@
       </div>
     </div>
 
-    <!-- No Data -->
+    <!-- No Data — три контекстных варианта в зависимости от URL текущей вкладки -->
     <div class="no-data" id="noData" style="display:none;">
-      <p>Откройте страницу резюме на<br><b>hh.ru</b>, <b>career.habr.com</b> или <b>linkedin.com</b></p>
+      <!-- Состояние 1: юзер не на сайте резюме (любой другой URL) -->
+      <div id="nodataWrongSite" style="display:none;">
+        <div class="nodata-icon">🌐</div>
+        <div class="nodata-title">Эта страница не поддерживается</div>
+        <div class="nodata-text">
+          Расширение читает резюме только с этих сайтов:
+        </div>
+        <div class="nodata-sites">
+          <span class="nodata-site">hh.ru</span>
+          <span class="nodata-site">career.habr.com</span>
+          <span class="nodata-site">linkedin.com</span>
+        </div>
+        <div class="nodata-text">Открой страницу кандидата на одном из них.</div>
+      </div>
+
+      <!-- Состояние 2: юзер на hh.ru / habr / linkedin, но не на конкретной карточке резюме -->
+      <div id="nodataWrongPage" style="display:none;">
+        <div class="nodata-icon">🔍</div>
+        <div class="nodata-title">Это не страница резюме</div>
+        <div class="nodata-text">
+          Ты на правильном сайте, но это <b>не карточка конкретного кандидата</b>.
+          Открой страницу резюме — ту, где видно имя, опыт и контакты.
+        </div>
+        <div class="nodata-example" id="nodataExample">
+          <b>Пример URL для hh.ru:</b><br>
+          <span style="font-family:ui-monospace,monospace;">hh.ru/resume/&lt;id&gt;</span>
+        </div>
+      </div>
+
+      <!-- Состояние 3: юзер на /resume/, но парсер ничего не нашёл -->
+      <div id="nodataNoParse" style="display:none;">
+        <div class="nodata-icon">🤔</div>
+        <div class="nodata-title">Не нашёл данных кандидата</div>
+        <div class="nodata-text">
+          Страница похожа на резюме, но парсер не вытащил данные.<br>
+          Попробуй обновить страницу <b>(F5)</b> или нажми <b>↻</b> в попапе.<br>
+          Если контакты скрыты под подпиской hh.ru — добавь кандидата
+          без них и заполни вручную.
+        </div>
+      </div>
+
+      <!-- Текущий URL — чтобы рекрут видел "вот что я вижу сейчас" -->
+      <div class="nodata-current-url-label">Текущая вкладка</div>
+      <div class="nodata-current-url" id="nodataCurrentUrl">—</div>
     </div>
 
     <!-- Success Result -->
