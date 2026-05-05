@@ -37,15 +37,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'API_REQUEST') {
     // Make API request (background script has CORS bypass)
     const { url, method, body, token } = message;
+    // 25-сек хард-таймаут — сервис-воркер MV3 может уснуть и потерять
+    // sendResponse, либо backend завис. Без AbortController попап
+    // зависнет с 'Добавляем...'.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+    const headers = { 'Content-Type': 'application/json' };
+    // 'session-sync' — наш фейковый маркер что юзер авторизован через
+    // cookie. Bearer заголовок только если есть настоящий JWT.
+    if (token && token !== 'session-sync') {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     fetch(url, {
       method: method || 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
+      headers,
+      // Для cookie-авторизации (session-sync) нужны credentials.
+      credentials: 'include',
       body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
     })
     .then(r => {
+      clearTimeout(timeoutId);
       if (!r.ok) {
         return r.text().then(text => {
           let detail = `HTTP ${r.status}`;
@@ -62,7 +76,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       return r.text().then(text => sendResponse({ success: false, error: 'Non-JSON response: ' + text.substring(0, 200) }));
     })
-    .catch(err => sendResponse({ success: false, error: err.message }));
+    .catch(err => {
+      clearTimeout(timeoutId);
+      const msg = err && err.name === 'AbortError'
+        ? 'Сервер не ответил за 25 сек. Проверь сеть и попробуй ещё раз.'
+        : (err && err.message ? err.message : 'Сетевая ошибка');
+      sendResponse({ success: false, error: msg });
+    });
     return true;
   }
 });

@@ -330,10 +330,20 @@ async function loadVacancies() {
   }
 }
 
-async function apiRequest(method, path, body) {
+async function apiRequest(method, path, body, timeoutMs = 30000) {
   const url = (serverUrl || document.getElementById('serverUrl').value) + path;
 
+  // MV3 service worker может заснуть посреди запроса и sendResponse теряется
+  // → попап будет ждать вечно. Прикрываем явным таймаутом.
   return new Promise((resolve) => {
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      console.warn('[HR-Bot] API_REQUEST timeout', { method, url });
+      resolve({ success: false, error: 'Таймаут запроса (30 сек). Попробуйте ещё раз.' });
+    }, timeoutMs);
+
     chrome.runtime.sendMessage({
       type: 'API_REQUEST',
       url,
@@ -341,7 +351,15 @@ async function apiRequest(method, path, body) {
       body,
       token: authToken,
     }, (response) => {
-      resolve(response || { success: false, error: 'No response' });
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (chrome.runtime.lastError) {
+        console.warn('[HR-Bot] sendMessage error:', chrome.runtime.lastError);
+        resolve({ success: false, error: chrome.runtime.lastError.message || 'Соединение с фоновым процессом потеряно' });
+        return;
+      }
+      resolve(response || { success: false, error: 'Пустой ответ от фонового процесса' });
     });
   });
 }
@@ -454,35 +472,44 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     });
 
     if (resp.success) {
-      const result = resp.data;
-      document.getElementById('resultIcon').textContent = result.is_duplicate ? '!' : 'OK';
-      document.getElementById('resultTitle').textContent = result.is_duplicate
-        ? 'Кандидат добавлен (дубликат)'
-        : 'Кандидат добавлен!';
-      document.getElementById('resultMessage').textContent = result.message;
-      // Show link to the created candidate
-      const linkEl = document.getElementById('resultLink');
-      if (linkEl && result.entity_id) {
-        // Маршрут /candidates/:id в SPA не существует — открываем доску с авто-выбором.
-        const candidateUrl = `${serverUrl}/all-candidates?entity=${result.entity_id}`;
-        linkEl.innerHTML = `<a href="#" class="candidate-link" data-url="${candidateUrl}">Открыть карточку кандидата</a>`;
-        linkEl.style.display = 'block';
-        linkEl.querySelector('.candidate-link').addEventListener('click', (e) => {
-          e.preventDefault();
-          chrome.tabs.create({ url: candidateUrl });
-        });
+      try {
+        const result = resp.data;
+        document.getElementById('resultIcon').textContent = result.is_duplicate ? '!' : 'OK';
+        document.getElementById('resultTitle').textContent = result.is_duplicate
+          ? 'Кандидат добавлен (дубликат)'
+          : 'Кандидат добавлен!';
+        document.getElementById('resultMessage').textContent = result.message;
+        const linkEl = document.getElementById('resultLink');
+        if (linkEl && result.entity_id) {
+          const candidateUrl = `${serverUrl}/all-candidates?entity=${result.entity_id}`;
+          linkEl.innerHTML = `<a href="#" class="candidate-link" data-url="${candidateUrl}">Открыть карточку кандидата</a>`;
+          linkEl.style.display = 'block';
+          linkEl.querySelector('.candidate-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            chrome.tabs.create({ url: candidateUrl });
+          });
+        }
+        showView('result');
+      } catch (renderErr) {
+        // Сервер ответил OK, но что-то сломалось при рендере экрана успеха —
+        // не оставляем юзера с залипшим 'Добавляем...'.
+        console.error('[HR-Bot] Result render failed:', renderErr);
+        document.getElementById('addError').textContent =
+          'Кандидат сохранён, но не удалось показать экран. Обнови страницу.';
       }
-      showView('result');
     } else {
       document.getElementById('addError').textContent = resp.error || 'Ошибка добавления';
     }
   } catch (e) {
-    document.getElementById('addError').textContent = 'Ошибка: ' + e.message;
+    console.error('[HR-Bot] Add failed:', e);
+    document.getElementById('addError').textContent = 'Ошибка: ' + (e && e.message ? e.message : 'неизвестная');
+  } finally {
+    // Кнопка должна вернуться в исходное состояние ВСЕГДА — даже если
+    // что-то упало в success-ветке или таймаут не сработал.
+    btn.disabled = false;
+    btn.textContent = 'Добавить кандидата';
+    btn.classList.remove('warning', 'confirmed');
   }
-
-  btn.disabled = false;
-  btn.textContent = 'Добавить кандидата';
-  btn.classList.remove('warning', 'confirmed');
 });
 
 // Copy form link
