@@ -52,48 +52,70 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  // Получаем активную вкладку и кэш одновременно — кэш валиден только если URL совпадает.
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tabUrl = (tabs[0] && tabs[0].url) || '';
-    const isResumeTab = tabUrl.includes('hh.ru') || tabUrl.includes('habr.com') || tabUrl.includes('linkedin.com');
+  // Главное правило: кэш не доверяем. На каждом открытии попапа просим
+  // content-скрипт перепарсить активную вкладку. Кэш используем только как
+  // запасной вариант, если content-скрипт не отвечает (например, страница
+  // ещё грузится или сайт не из списка).
+  loadFromActiveTab();
+});
 
+async function loadFromActiveTab() {
+  const tabs = await new Promise((r) => chrome.tabs.query({ active: true, currentWindow: true }, r));
+  const tabUrl = (tabs[0] && tabs[0].url) || '';
+  const isResumeTab = tabUrl.includes('hh.ru') || tabUrl.includes('habr.com') || tabUrl.includes('linkedin.com');
+
+  // Если активная вкладка не на резюме-сайте — сразу пробуем кэш / nodata.
+  if (!isResumeTab) {
     chrome.runtime.sendMessage({ type: 'GET_PARSED_DATA' }, (data) => {
-      const cachedUrl = data && data._captured_url;
-      // Кэш свежий, если: есть данные, есть URL, и он совпадает с активной вкладкой
-      const cacheFresh = data && data.full_name && (!cachedUrl || cachedUrl === tabUrl);
-
-      if (cacheFresh) {
+      if (data && data.full_name) {
         parsedData = data;
         showParsedData();
         loadVacancies();
         showView('parse');
-        return;
-      }
-
-      // Кэш устарел или пуст — на странице резюме просим content-скрипт перепарсить
-      if (isResumeTab) {
-        chrome.runtime.sendMessage({ type: 'CLEAR_PARSED_DATA' }, () => {
-          chrome.runtime.sendMessage({ type: 'RE_PARSE_ACTIVE_TAB' }, () => {
-            setTimeout(() => {
-              chrome.runtime.sendMessage({ type: 'GET_PARSED_DATA' }, (data2) => {
-                if (data2 && data2.full_name) {
-                  parsedData = data2;
-                  showParsedData();
-                  loadVacancies();
-                  showView('parse');
-                } else {
-                  showView('nodata');
-                }
-              });
-            }, 400);
-          });
-        });
       } else {
         showView('nodata');
       }
     });
+    return;
+  }
+
+  // На резюме-странице: чистим кэш и заставляем content-скрипт перепарсить.
+  await new Promise((r) => chrome.runtime.sendMessage({ type: 'CLEAR_PARSED_DATA' }, r));
+  const reparseResp = await new Promise((r) =>
+    chrome.runtime.sendMessage({ type: 'RE_PARSE_ACTIVE_TAB' }, r)
+  );
+
+  // Пробуем получить свежие данные. Если RE_PARSE сработал — данные уже
+  // лежат в storage (background.js обновил кэш через PARSE_RESULT).
+  // Если content-скрипт не успел зарегистрироваться (страница только грузится)
+  // — даём пару попыток с короткими интервалами.
+  const tryFetch = (delay) => new Promise((res) => {
+    setTimeout(() => {
+      chrome.runtime.sendMessage({ type: 'GET_PARSED_DATA' }, (data) => res(data || null));
+    }, delay);
   });
-});
+
+  let data = null;
+  for (const delay of [200, 400, 800]) {
+    data = await tryFetch(delay);
+    if (data && data.full_name) break;
+  }
+
+  if (data && data.full_name) {
+    parsedData = data;
+    showParsedData();
+    loadVacancies();
+    showView('parse');
+    return;
+  }
+
+  // Content-скрипт не ответил — диагностика для понимания почему
+  if (reparseResp && reparseResp.success === false) {
+    console.warn('[HR-Bot] RE_PARSE failed:', reparseResp.error);
+  }
+  showView('nodata');
+}
+
 
 function showView(view) {
   loginForm.classList.remove('active');
@@ -474,35 +496,30 @@ document.getElementById('copyFormLink').addEventListener('click', async () => {
   });
 });
 
-// Add another — сбрасываем кэш предыдущего кандидата и парсим активную вкладку заново
+// Add another — сбрасываем форму и подтягиваем активную вкладку через единый
+// загрузчик loadFromActiveTab (он уже умеет re-parse + ретраи).
 document.getElementById('addAnotherBtn').addEventListener('click', async () => {
   parsedData = null;
   document.getElementById('duplicateWarning').style.display = 'none';
   document.getElementById('addError').textContent = '';
   document.getElementById('addBtn').textContent = 'Добавить кандидата';
   document.getElementById('addBtn').classList.remove('warning', 'confirmed');
-  // Очищаем поля ввода
   ['manualName', 'manualEmail', 'manualPhone', 'manualTelegram', 'commentField']
     .forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
-
-  // Сбрасываем кэш в storage и просим content-скрипт активной вкладки перепарсить
-  await new Promise((r) => chrome.runtime.sendMessage({ type: 'CLEAR_PARSED_DATA' }, r));
-  await new Promise((r) => chrome.runtime.sendMessage({ type: 'RE_PARSE_ACTIVE_TAB' }, r));
-
-  // Даём content-скрипту время сложить новые данные и тянем их
-  setTimeout(() => {
-    chrome.runtime.sendMessage({ type: 'GET_PARSED_DATA' }, (data) => {
-      if (data && data.full_name) {
-        parsedData = data;
-        showParsedData();
-        loadVacancies();
-        showView('parse');
-      } else {
-        showView('nodata');
-      }
-    });
-  }, 300);
+  await loadFromActiveTab();
 });
+
+// Manual refresh — пользователь жмёт когда хочет принудительно перечитать
+// текущую вкладку (страховка если auto-load промахнулся).
+const refreshBtn = document.getElementById('refreshBtn');
+if (refreshBtn) {
+  refreshBtn.addEventListener('click', async () => {
+    refreshBtn.disabled = true;
+    parsedData = null;
+    await loadFromActiveTab();
+    refreshBtn.disabled = false;
+  });
+}
 
 // Logout
 document.getElementById('logoutLink').addEventListener('click', (e) => {
