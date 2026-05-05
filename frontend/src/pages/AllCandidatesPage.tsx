@@ -46,6 +46,7 @@ import type {
   RecruiterOption,
 } from '@/services/api/candidates';
 import { updateEntity, uploadEntityFile, getEntityFiles, downloadEntityFile, deleteEntity, getEntity, addEntityNote, updateEntityNote, deleteEntityNote } from '@/services/api/entities';
+import { getOrgStages, updateOrgStages } from '@/services/api/auth';
 import SendEmailModal from '@/components/entities/SendEmailModal';
 import type { EntityFile } from '@/services/api/entities';
 import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
@@ -625,7 +626,12 @@ export default function AllCandidatesPage() {
             }}
           />
         )}
-        {showStageSettings && <StageSettingsModal onClose={() => setShowStageSettings(false)} />}
+        {showStageSettings && (
+          <StageSettingsModal
+            onClose={() => setShowStageSettings(false)}
+            onSaved={() => fetchBoard()}
+          />
+        )}
         {showEditModal && selectedCard && (
           <EditCandidateModal
             card={selectedCard}
@@ -1725,17 +1731,40 @@ function EditField({ label, value, onChange, placeholder, type, required, error,
 // STAGE SETTINGS MODAL (admin only)
 // ================================================================
 
-function StageSettingsModal({ onClose }: { onClose: () => void }) {
-  const [stages, setStages] = useState([
-    { key: 'new', label: 'Новый', color: '#3b82f6' },
-    { key: 'screening', label: 'Скрининг', color: '#06b6d4' },
-    { key: 'practice', label: 'Практика', color: '#a855f7' },
-    { key: 'tech_practice', label: 'Тех-практика', color: '#6366f1' },
-    { key: 'is_interview', label: 'ИС', color: '#f97316' },
-    { key: 'offer', label: 'Оффер', color: '#eab308' },
-    { key: 'hired', label: 'Принят', color: '#22c55e' },
-    { key: 'rejected', label: 'Отклонён', color: '#ef4444' },
-  ]);
+function StageSettingsModal({ onClose, onSaved }: { onClose: () => void; onSaved?: () => void }) {
+  const [stages, setStages] = useState<Array<{ key: string; label: string; color: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getOrgStages()
+      .then((r) => setStages(r.stages))
+      .catch(() => toast.error('Не удалось загрузить настройки'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    if (stages.some((s) => !s.label.trim())) {
+      toast.error('Названия этапов не могут быть пустыми');
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateOrgStages(stages.map((s) => ({
+        key: s.key,
+        label: s.label.trim(),
+        color: s.color,
+      })));
+      toast.success('Этапы сохранены');
+      onSaved?.();
+      onClose();
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || 'Не удалось сохранить';
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <motion.div
@@ -1752,23 +1781,48 @@ function StageSettingsModal({ onClose }: { onClose: () => void }) {
           <h3 className="text-lg font-bold text-dark-100">Настройка этапов</h3>
           <button onClick={onClose} className="text-dark-400 hover:text-dark-200"><X className="w-5 h-5" /></button>
         </div>
-        <p className="text-xs text-dark-500 mb-4">Настройте названия и цвета этапов воронки.</p>
-        <div className="space-y-1.5 mb-6">
-          {stages.map((s, i) => (
-            <div key={s.key} className="flex items-center gap-3 p-2.5 bg-white/[0.02] rounded-lg border border-white/[0.05]">
-              <GripVertical className="w-4 h-4 text-dark-600 cursor-grab" />
-              <input type="color" value={s.color} onChange={(e) => setStages(p => p.map((x,j) => j===i ? {...x,color:e.target.value} : x))} className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent" />
-              <input type="text" value={s.label} onChange={(e) => setStages(p => p.map((x,j) => j===i ? {...x,label:e.target.value} : x))} className="flex-1 bg-transparent text-sm text-dark-200 focus:outline-none" />
-              <span className="text-[10px] text-dark-600 font-mono">{s.key}</span>
+        <p className="text-xs text-dark-500 mb-4">
+          Настройте названия и цвета этапов воронки. Применится ко всей организации.
+        </p>
+        {loading ? (
+          <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-accent-400" /></div>
+        ) : (
+          <>
+            <div className="space-y-1.5 mb-6">
+              {stages.map((s, i) => (
+                <div key={s.key} className="flex items-center gap-3 p-2.5 bg-white/[0.02] rounded-lg border border-white/[0.05]">
+                  <GripVertical className="w-4 h-4 text-dark-600 cursor-grab" />
+                  <input
+                    type="color"
+                    value={s.color}
+                    disabled={saving}
+                    onChange={(e) => setStages((p) => p.map((x, j) => (j === i ? { ...x, color: e.target.value } : x)))}
+                    className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent"
+                  />
+                  <input
+                    type="text"
+                    value={s.label}
+                    disabled={saving}
+                    onChange={(e) => setStages((p) => p.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
+                    className="flex-1 bg-transparent text-sm text-dark-200 focus:outline-none"
+                  />
+                  <span className="text-[10px] text-dark-600 font-mono">{s.key}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <div className="flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-dark-400 hover:text-dark-200">Отмена</button>
-          <button onClick={() => { toast.success('Сохранено'); onClose(); }} className="flex items-center gap-2 px-5 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors">
-            <Save className="w-4 h-4" /> Сохранить
-          </button>
-        </div>
+            <div className="flex justify-end gap-3">
+              <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-dark-400 hover:text-dark-200 disabled:opacity-50">Отмена</button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-2 px-5 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                {saving ? 'Сохраняем…' : 'Сохранить'}
+              </button>
+            </div>
+          </>
+        )}
       </motion.div>
     </motion.div>
   );

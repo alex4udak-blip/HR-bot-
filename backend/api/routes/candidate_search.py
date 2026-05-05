@@ -619,6 +619,7 @@ class KanbanCard(BaseModel):
 class KanbanColumn(BaseModel):
     status: str
     label: str
+    color: Optional[str] = None  # из org stage_config (если задан)
     cards: List[KanbanCard]
     count: int
 
@@ -780,14 +781,29 @@ async def get_candidates_kanban(
         except Exception as exc:
             logger.warning(f"Skipping entity {e.id} in kanban: {exc}")
 
+    # Org-level кастомизация лейблов/цветов этапов (если админ настроил
+    # через UI в /all-candidates → ⚙️). Если не настроена — дефолты.
+    stage_overrides: dict[str, dict] = {}
+    if org_id:
+        from ..models.database import Organization
+        org_res = await db.execute(select(Organization).where(Organization.id == org_id))
+        org_row = org_res.scalar_one_or_none()
+        cfg = (org_row.settings or {}).get("stage_config") if org_row else None
+        if isinstance(cfg, list):
+            for s in cfg:
+                if isinstance(s, dict) and s.get("key"):
+                    stage_overrides[s["key"]] = s
+
     columns = []
     total = 0
     for s in KANBAN_STATUSES:
         all_cards = grouped.get(s, [])
         total += len(all_cards)
+        override = stage_overrides.get(s) or {}
         columns.append(KanbanColumn(
             status=s,
-            label=KANBAN_STATUS_LABELS.get(s, s),
+            label=override.get("label") or KANBAN_STATUS_LABELS.get(s, s),
+            color=override.get("color"),
             cards=all_cards[:per_column],
             count=len(all_cards),
         ))

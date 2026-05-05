@@ -35,6 +35,22 @@ export const getTelegramLinkInfo = async (): Promise<TelegramLinkInfo> => {
   return data;
 };
 
+export interface OrgStage {
+  key: string;
+  label: string;
+  color: string;
+}
+
+export const getOrgStages = async (): Promise<{ stages: OrgStage[] }> => {
+  const { data } = await api.get('/auth/org-stages');
+  return data;
+};
+
+export const updateOrgStages = async (stages: OrgStage[]): Promise<{ success: boolean; stages: OrgStage[] }> => {
+  const { data } = await api.put('/auth/org-stages', { stages });
+  return data;
+};
+
 /**
  * Refresh the access token using the refresh token stored in httpOnly cookie.
  * This is called automatically by the interceptor on 401 errors.
