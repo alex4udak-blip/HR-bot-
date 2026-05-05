@@ -479,6 +479,31 @@ async def get_me(
     )
 
 
+@router.get("/telegram-link")
+async def get_telegram_link(user: User = Depends(get_current_user)):
+    """Возвращает статус привязки Telegram + deep-link для подключения.
+
+    Telegram-боты не могут писать первыми тем, кто им не написал /start —
+    из-за этого юзер не получает уведомления, пока сам не нажмёт start.
+    Этот эндпоинт даёт фронту всё нужное чтобы показать баннер
+    'Подключите Telegram-бота' с готовой ссылкой.
+    """
+    bot_username = (settings.telegram_bot_username or "").lstrip("@")
+    is_linked = user.telegram_id is not None
+    link_url = (
+        f"https://t.me/{bot_username}?start=bind_{user.id}"
+        if bot_username and not is_linked
+        else None
+    )
+    return {
+        "is_linked": is_linked,
+        "telegram_id": user.telegram_id,
+        "telegram_username": user.telegram_username,
+        "bot_username": bot_username or None,
+        "link_url": link_url,
+    }
+
+
 @router.post("/change-password")
 @limiter.limit("3/minute")
 async def change_password(

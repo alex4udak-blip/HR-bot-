@@ -22,6 +22,19 @@ export const getCurrentUser = async (): Promise<User> => {
   return data;
 };
 
+export interface TelegramLinkInfo {
+  is_linked: boolean;
+  telegram_id: number | null;
+  telegram_username: string | null;
+  bot_username: string | null;
+  link_url: string | null;
+}
+
+export const getTelegramLinkInfo = async (): Promise<TelegramLinkInfo> => {
+  const { data } = await api.get<TelegramLinkInfo>('/auth/telegram-link');
+  return data;
+};
+
 /**
  * Refresh the access token using the refresh token stored in httpOnly cookie.
  * This is called automatically by the interceptor on 401 errors.

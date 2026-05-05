@@ -1049,6 +1049,37 @@ async def cmd_menu(message: types.Message):
         await message.answer("📱 Главное меню:", reply_markup=main_menu_kb(access))
 
 
+@dp.message(Command("help"))
+async def cmd_help(message: types.Message):
+    """Полный список команд — discoverability /blocker, /timeoff и других."""
+    is_private = message.chat.type == "private"
+    text = (
+        "🤖 *Команды бота Enceladus*\n\n"
+        "*Базовое*\n"
+        "/start — приветствие и привязка аккаунта (по deep-link)\n"
+        "/bind <email> — вручную привязать аккаунт к Telegram\n"
+        "/menu — главное меню кнопок\n\n"
+        "*Работа*\n"
+        "/timeoff — оформить отгул / отпуск / больничный\n"
+        "/blocker — сообщить менеджеру что застрял\n"
+        "/my — мои задачи\n"
+        "/project — выбрать проект\n"
+        "/status — статус проекта / стендап\n"
+        "/dept — мой отдел\n\n"
+        "*HR*\n"
+        "/vacancy (/заявка) — создать заявку на подбор\n\n"
+        "*Уведомления приходят в личку только если ты сначала нажал /start.*"
+    )
+    if is_private:
+        await message.answer(text, parse_mode="Markdown")
+    else:
+        # В групповом чате не выводим длинную портянку — подсказываем перейти в личку
+        await message.answer(
+            "📖 Полный список команд — в личке: открой меня и напиши /help.\n"
+            "Часто используемые здесь: /timeoff, /blocker, /vacancy"
+        )
+
+
 @dp.callback_query(F.data == "menu:main")
 async def cb_main_menu(callback: CallbackQuery):
     """Return to main menu."""

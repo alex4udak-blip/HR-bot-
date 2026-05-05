@@ -40,6 +40,7 @@ import BackgroundEffects from './BackgroundEffects';
 import ThemeToggle from './ThemeToggle';
 import { VacancyForm } from '@/components/vacancies';
 import ParserModal from '@/components/parser/ParserModal';
+import TelegramConnectBanner from '@/components/TelegramConnectBanner';
 import { getVacancy } from '@/services/api/vacancies';
 import type { Vacancy } from '@/types';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -827,6 +828,8 @@ export default function Layout() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-hidden flex flex-col" role="main" aria-label="Main content">
+        {/* Telegram bot connect banner — показываем если у юзера не привязан tg */}
+        <TelegramConnectBanner />
         {/* Impersonation Banner */}
         {isImpersonating() && user && (
           <div
