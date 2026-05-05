@@ -37,11 +37,10 @@ export default function AddToVacancyModal({
 }: AddToVacancyModalProps) {
   const [loading, setLoading] = useState(false);
   const { user } = useAuthStore();
-  // Админ видит все open-вакансии орги; рекрут — только свои
-  // (own + клоны после взятия в работу: created_by === me).
-  const isAdmin = user?.role === 'superadmin'
-    || user?.org_role === 'owner'
-    || user?.org_role === 'admin';
+  // Все open-вакансии орги видят только платформенные роли
+  // (superadmin / owner). HR-админ и рекрут — только СВОИ
+  // (created_by === me): личные + клоны после 'Взять в работу'.
+  const seesAllVacancies = user?.role === 'superadmin' || user?.org_role === 'owner';
   const [searchQuery, setSearchQuery] = useState('');
   const [vacancies, setVacancies] = useState<Vacancy[]>([]);
   const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null);
@@ -57,7 +56,7 @@ export default function AddToVacancyModal({
           status: 'open',
           search: searchQuery || undefined
         });
-        const filtered = isAdmin
+        const filtered = seesAllVacancies
           ? data
           : data.filter((v) => user && v.created_by === user.id);
         setVacancies(filtered);
@@ -71,7 +70,7 @@ export default function AddToVacancyModal({
 
     const debounce = setTimeout(loadVacancies, 300);
     return () => clearTimeout(debounce);
-  }, [searchQuery, isAdmin, user]);
+  }, [searchQuery, seesAllVacancies, user]);
 
   const handleSubmit = async () => {
     if (!selectedVacancy) {
