@@ -367,10 +367,29 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
     db.add(entity)
     await db.flush()
 
-    # Add to vacancy/funnel if specified
-    if data.vacancy_id:
+    # Add to vacancy/funnel if specified.
+    # Если выбранная вакансия — это заявка (request), а у текущего рекрутёра
+    # уже есть свой клон этой заявки (взял её в работу), кладём кандидата
+    # в КЛОН — иначе он не появится в /my-funnels у рекрутёра, application
+    # будет лежать на оригинале, а в воронке «Мои вакансии» виден клон.
+    target_vacancy_id = data.vacancy_id
+    if target_vacancy_id:
+        from sqlalchemy import text as _text
+        clone_q = await db.execute(
+            select(Vacancy.id).where(
+                Vacancy.created_by == current_user.id,
+                _text(
+                    f"vacancies.extra_data::jsonb @> "
+                    f"'{{\"cloned_from_request_id\": {int(target_vacancy_id)}}}'::jsonb"
+                ),
+            ).limit(1)
+        )
+        my_clone_id = clone_q.scalar_one_or_none()
+        if my_clone_id:
+            target_vacancy_id = my_clone_id
+
         app = VacancyApplication(
-            vacancy_id=data.vacancy_id,
+            vacancy_id=target_vacancy_id,
             entity_id=entity.id,
             stage=ApplicationStage.applied,
             source=data.source,
@@ -380,11 +399,11 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
     await db.commit()
 
     # --- Notification: new candidate from magic button ---
-    if data.vacancy_id:
+    if target_vacancy_id:
         try:
             from ..services.hr_notifications import notify_new_candidate
             vac_result = await db.execute(
-                select(Vacancy).where(Vacancy.id == data.vacancy_id)
+                select(Vacancy).where(Vacancy.id == target_vacancy_id)
             )
             vacancy = vac_result.scalar_one_or_none()
             if vacancy:

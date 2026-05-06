@@ -340,6 +340,18 @@ export default function RecruiterFunnelsPage() {
     }
   }, []);
 
+  // Авто-refresh когда юзер возвращается на вкладку браузера —
+  // например, после добавления кандидата через волшебную кнопку из
+  // другой вкладки. Иначе нужен F5 чтобы увидеть новых.
+  useEffect(() => {
+    const onFocus = () => {
+      if (selectedVacancyId) loadCandidates(selectedVacancyId);
+      fetchVacancies();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [selectedVacancyId, loadCandidates, fetchVacancies]);
+
   // Filter candidates by search
   const filteredCandidates = useMemo(() => {
     if (!candidateSearch.trim()) return candidates;

@@ -166,13 +166,18 @@ export default function Layout() {
   }, [navigate]);
 
   // Count of vacancies for the "Заявки" badge.
-  // Админ — все нераспределённые заявки в статусе 'На рассмотрении' (+ legacy draft).
+  // Админ — нераспределённые заявки 'На рассмотрении' (+ legacy draft),
+  //   но НЕ свои собственные (когда админ сам создаёт заявку, ему не
+  //   нужен пинг про неё — иначе любая создание сразу "флешит жёлтым").
   // Рекрутёр — назначенные ему/всем, ещё не взятые в работу (нет клона).
   const assignedDraftCount = useMemo(() => {
     if (!user) return 0;
     const isAdmin = user.role === 'superadmin' || user.org_role === 'owner' || user.org_role === 'admin';
     if (isAdmin) {
-      return vacancies.filter(v => v.status === 'pending_review' || v.status === 'draft').length;
+      return vacancies.filter(v =>
+        (v.status === 'pending_review' || v.status === 'draft') &&
+        v.created_by !== user.id
+      ).length;
     }
     const myCloneFor = new Set<number>();
     vacancies.forEach(v => {
