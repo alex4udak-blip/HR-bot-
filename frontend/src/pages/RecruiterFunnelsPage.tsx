@@ -802,10 +802,17 @@ export default function RecruiterFunnelsPage() {
     setCommentSaving(true);
     try {
       // Через POST /entities/{id}/notes — рекрутёру достаточно view-доступа.
-      await addEntityNote(selectedCandidate.entity_id, {
+      const resp = await addEntityNote(selectedCandidate.entity_id, {
         text: text.trim(),
         stage: selectedCandidate.stage as string | undefined,
         stage_label: stagesConfig.labels[selectedCandidate.stage] || (selectedCandidate.stage as string),
+      });
+      // Локально мерджим только что добавленный коммент в entity_data
+      // — иначе пришлось бы ждать reload entity, и юзер думал бы что
+      // 'не сохранилось'.
+      setEntityExtraData((prev) => {
+        const existing = Array.isArray(prev?.notes) ? (prev!.notes as unknown[]) : [];
+        return { ...(prev || {}), notes: [...existing, resp.note] };
       });
       toast.success('Комментарий сохранён');
       if (commentRef.current) commentRef.current.value = '';
@@ -1755,7 +1762,58 @@ export default function RecruiterFunnelsPage() {
                                 </button>
                               </div>
 
-                              {/* Notes */}
+                              {/* Comments — те же что в /all-candidates,
+                                  читаются из Entity.extra_data.notes */}
+                              {Array.isArray(entityExtraData?.notes) && (entityExtraData!.notes as unknown[]).length > 0 && (
+                                <div className="mb-5">
+                                  <div className="text-xs text-dark-500 mb-2 uppercase tracking-wider">Комментарии</div>
+                                  <div className="space-y-2">
+                                    {(entityExtraData!.notes as Array<Record<string, unknown>>)
+                                      .slice()
+                                      .sort((a, b) => {
+                                        const ta = a?.date ? new Date(a.date as string).getTime() : 0;
+                                        const tb = b?.date ? new Date(b.date as string).getTime() : 0;
+                                        return tb - ta;
+                                      })
+                                      .map((note, i) => {
+                                        const stage = note.stage as string | undefined;
+                                        const stageLabel = (note.stage_label as string | undefined)
+                                          || (stage ? (stagesConfig.labels[stage] || stage) : null);
+                                        const authorName = (note.author_name as string) || 'Аноним';
+                                        const dateStr = note.date ? new Date(note.date as string).toLocaleString('ru-RU', {
+                                          day: '2-digit', month: '2-digit', year: 'numeric',
+                                          hour: '2-digit', minute: '2-digit',
+                                        }) : '';
+                                        return (
+                                          <div
+                                            key={(note.id as string) || `note-${i}`}
+                                            className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-3"
+                                          >
+                                            <div className="flex items-center justify-between mb-1.5 gap-2">
+                                              <div className="flex items-center gap-2 min-w-0">
+                                                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0 bg-white/[0.08] text-white/70">
+                                                  {(authorName || '?')[0].toUpperCase()}
+                                                </div>
+                                                <span className="text-xs font-medium text-dark-200 truncate">{authorName}</span>
+                                                {stageLabel && (
+                                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/[0.06] text-white/60 flex-shrink-0">
+                                                    {stageLabel}
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <span className="text-[10px] text-dark-500 flex-shrink-0">{dateStr}</span>
+                                            </div>
+                                            <div className="text-sm text-dark-200 whitespace-pre-wrap break-words">
+                                              {String(note.text)}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Legacy notes (VacancyApplication.notes string) */}
                               {selectedCandidate.notes && (
                                 <div className="mb-5">
                                   <div className="text-xs text-dark-500 mb-2">Заметки</div>
