@@ -1516,15 +1516,38 @@ export default function RecruiterFunnelsPage() {
                                 </button>
                               </div>
 
-                              {/* Name — large, Huntflow style */}
-                              <h2 className="text-2xl font-bold text-dark-50 mb-1">
-                                {selectedCandidate.entity_name || 'Без имени'}
-                              </h2>
-                              {(selectedCandidate.entity_position || selectedCandidate.entity_company) && (
-                                <p className="text-sm text-dark-400 mb-5">
-                                  {[selectedCandidate.entity_position, selectedCandidate.entity_company].filter(Boolean).join(' · ')}
-                                </p>
-                              )}
+                              {/* Name + large photo (Huntflow / AllCandidatesPage style) */}
+                              <div className="flex items-start justify-between gap-4 mb-5">
+                                <div className="flex-1 min-w-0">
+                                  <h2 className="text-2xl font-bold text-dark-50 mb-1">
+                                    {selectedCandidate.entity_name || 'Без имени'}
+                                  </h2>
+                                  {(selectedCandidate.entity_position || selectedCandidate.entity_company) && (
+                                    <p className="text-sm text-dark-400">
+                                      {[selectedCandidate.entity_position, selectedCandidate.entity_company].filter(Boolean).join(' · ')}
+                                    </p>
+                                  )}
+                                </div>
+                                {(selectedCandidate as { entity_photo?: string }).entity_photo ? (
+                                  <img
+                                    src={(selectedCandidate as { entity_photo?: string }).entity_photo}
+                                    alt={selectedCandidate.entity_name || ''}
+                                    referrerPolicy="no-referrer"
+                                    className="w-[120px] h-[150px] rounded-xl object-cover flex-shrink-0 bg-accent-500/20"
+                                    onError={(e) => {
+                                      const el = e.currentTarget as HTMLImageElement;
+                                      el.style.display = 'none';
+                                      el.nextElementSibling?.classList.remove('hidden');
+                                    }}
+                                  />
+                                ) : null}
+                                <div className={clsx(
+                                  'w-[120px] h-[150px] rounded-xl bg-accent-500/20 flex items-center justify-center text-accent-400 text-4xl font-bold flex-shrink-0',
+                                  (selectedCandidate as { entity_photo?: string }).entity_photo && 'hidden'
+                                )}>
+                                  {(selectedCandidate.entity_name || '?')[0].toUpperCase()}
+                                </div>
+                              </div>
 
                               {/* Contact info — Huntflow dotted-line rows */}
                               <div className="space-y-0 mb-6 text-sm">
