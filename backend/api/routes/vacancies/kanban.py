@@ -140,7 +140,7 @@ async def get_kanban_board(
             *base_filters,
             VacancyApplication.stage.in_(all_visible_stages)
         )
-        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
+        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at.desc())
     )
     all_apps_unsorted = all_apps_result.scalars().all()
 
@@ -277,7 +277,7 @@ async def get_kanban_column(
             VacancyApplication.vacancy_id == vacancy_id,
             VacancyApplication.stage == stage
         )
-        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
+        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at.desc())
         .offset(skip)
         .limit(limit)
     )
@@ -349,7 +349,7 @@ async def rebalance_stage_orders(
             VacancyApplication.vacancy_id == vacancy_id,
             VacancyApplication.stage == stage
         )
-        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
+        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at.desc())
     )
     applications = result.scalars().all()
 

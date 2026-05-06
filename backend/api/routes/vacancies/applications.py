@@ -43,7 +43,7 @@ async def list_applications(
     query = (
         select(VacancyApplication)
         .where(VacancyApplication.vacancy_id == vacancy_id)
-        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at)
+        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at.desc())
     )
 
     if stage:

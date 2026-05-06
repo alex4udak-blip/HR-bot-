@@ -211,7 +211,9 @@ export default function VacanciesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('open');
+  // Дефолтный таб 'Все' — иначе только что созданная заявка (status=pending_review)
+  // не видна в открытом по умолчанию 'Открыта', и юзер думает что она пропала.
+  const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
   const [departmentFilter, setDepartmentFilter] = useState<number | 'all'>('all');
   const [departments, setDepartments] = useState<Department[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
