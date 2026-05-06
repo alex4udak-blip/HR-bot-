@@ -18,15 +18,51 @@ from ...services.auth import get_user_org
 router = APIRouter()
 
 
-@router.get("/{vacancy_id}/applications", response_model=List[ApplicationResponse])
+async def _load_photo_file_map(db: AsyncSession, entity_ids: list[int]) -> dict:
+    """Bulk-load EntityFile (image/*) для списка entity_ids.
+    Возвращает {entity_id → /api/entities/.../files/.../download}.
+    Локальный файл предпочтительнее extra_data.photo_url, т.к. hh.ru CDN
+    может отдавать 403 / истечь срок ссылки. Совпадает с логикой
+    /api/candidates/search (candidate_search.py)."""
+    photo_file_map: dict = {}
+    if not entity_ids:
+        return photo_file_map
+    try:
+        from ...models.database import EntityFile
+        f_result = await db.execute(
+            select(EntityFile.entity_id, EntityFile.id, EntityFile.file_name)
+            .where(
+                EntityFile.entity_id.in_(entity_ids),
+                EntityFile.mime_type.startswith("image/"),
+            )
+            .order_by(EntityFile.id.desc())
+        )
+        for row in f_result.all():
+            if row.entity_id in photo_file_map:
+                continue
+            fname = (row.file_name or "").lower()
+            if "_стр" in fname or "профиль_" in fname or "_page" in fname:
+                continue
+            photo_file_map[row.entity_id] = (
+                f"/api/entities/{row.entity_id}/files/{row.id}/download"
+            )
+    except Exception as exc:
+        logger.warning(f"Photo file fallback query failed (non-critical): {exc}")
+    return photo_file_map
 
-def _entity_photo(entity):
-    """photo_url из Entity.extra_data — magic-button и hh.ru-парсер кладут сюда."""
+
+def _entity_photo(entity, photo_file_map: Optional[dict] = None):
+    """Локальный файл (EntityFile image/*) → fallback на extra_data.photo_url."""
     if entity is None:
         return None
+    if photo_file_map and entity.id in photo_file_map:
+        return photo_file_map[entity.id]
     ed = entity.extra_data if isinstance(entity.extra_data, dict) else {}
     photo = ed.get("photo_url") if ed else None
     return photo if isinstance(photo, str) else None
+
+
+@router.get("/{vacancy_id}/applications", response_model=List[ApplicationResponse])
 
 async def list_applications(
     vacancy_id: int,
@@ -71,6 +107,8 @@ async def list_applications(
         for entity in entities_result.scalars().all():
             entities_map[entity.id] = entity
 
+    photo_file_map = await _load_photo_file_map(db, entity_ids)
+
     responses = []
     for app in applications:
         entity = entities_map.get(app.entity_id)
@@ -85,7 +123,7 @@ async def list_applications(
             entity_phone=entity.phone if entity else None,
             entity_position=entity.position if entity else None,
 
-            entity_photo=_entity_photo(entity),
+            entity_photo=_entity_photo(entity, photo_file_map),
             stage=app.stage,
             stage_order=app.stage_order or 0,
             rating=app.rating,
@@ -165,23 +203,25 @@ async def create_application(
         initial_stage = STATUS_SYNC_MAP[entity.status]
         logger.info(f"Using entity status {entity.status} -> stage {initial_stage} for new application")
 
-    # Get max stage_order for this stage
-    # Note: FOR UPDATE cannot be used with aggregate functions in PostgreSQL
-    # Race condition is acceptable here as stage_order is just for display ordering
-    max_order_result = await db.execute(
-        select(func.max(VacancyApplication.stage_order))
+    # New candidates appear at TOP of the column (Maria's request).
+    # Sort is ORDER BY stage_order ASC, applied_at DESC, so we need the
+    # smallest stage_order. Use min(stage_order) - 1000 to leave gap room.
+    # Race condition acceptable — stage_order is display-only.
+    min_order_result = await db.execute(
+        select(func.min(VacancyApplication.stage_order))
         .where(
             VacancyApplication.vacancy_id == vacancy_id,
             VacancyApplication.stage == initial_stage
         )
     )
-    max_order = max_order_result.scalar() or 0
+    min_order = min_order_result.scalar()
+    new_order = (min_order - 1000) if min_order is not None else 0
 
     application = VacancyApplication(
         vacancy_id=vacancy_id,
         entity_id=data.entity_id,
         stage=initial_stage,
-        stage_order=max_order + 1,
+        stage_order=new_order,
         rating=data.rating,
         notes=data.notes,
         source=data.source,
@@ -224,6 +264,8 @@ async def create_application(
 
     logger.info(f"Created application {application.id} for vacancy {vacancy_id}")
 
+    photo_file_map = await _load_photo_file_map(db, [entity.id])
+
     return ApplicationResponse(
         id=application.id,
         vacancy_id=application.vacancy_id,
@@ -234,7 +276,7 @@ async def create_application(
         entity_phone=entity.phone,
         entity_position=entity.position,
 
-        entity_photo=_entity_photo(entity),
+        entity_photo=_entity_photo(entity, photo_file_map),
         stage=application.stage,
         stage_order=application.stage_order or 0,
         rating=application.rating,
@@ -377,6 +419,8 @@ async def update_application(
 
     logger.info(f"Updated application {application.id}, stage: {application.stage}")
 
+    photo_file_map = await _load_photo_file_map(db, [entity.id]) if entity else {}
+
     return ApplicationResponse(
         id=application.id,
         vacancy_id=application.vacancy_id,
@@ -388,7 +432,7 @@ async def update_application(
         entity_phone=entity.phone if entity else None,
         entity_position=entity.position if entity else None,
 
-        entity_photo=_entity_photo(entity),
+        entity_photo=_entity_photo(entity, photo_file_map),
         stage=application.stage,
         stage_order=application.stage_order or 0,
         rating=application.rating,
