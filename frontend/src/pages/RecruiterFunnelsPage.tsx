@@ -1330,9 +1330,19 @@ export default function RecruiterFunnelsPage() {
                                 <Square className="w-4 h-4 text-dark-500 hover:text-dark-300" />
                               )}
                             </div>
-                            <div className="w-9 h-9 rounded-full bg-accent-500/20 flex items-center justify-center text-accent-400 text-sm font-medium flex-shrink-0">
-                              {initials}
-                            </div>
+                            {(candidate as { entity_photo?: string }).entity_photo ? (
+                              <img
+                                src={(candidate as { entity_photo?: string }).entity_photo}
+                                alt={candidate.entity_name || ''}
+                                referrerPolicy="no-referrer"
+                                className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-accent-500/20"
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                              />
+                            ) : (
+                              <div className="w-9 h-9 rounded-full bg-accent-500/20 flex items-center justify-center text-accent-400 text-sm font-medium flex-shrink-0">
+                                {initials}
+                              </div>
+                            )}
                             <div className="flex-1 min-w-0">
                               <div className="text-sm font-medium text-dark-100 truncate">
                                 {candidate.entity_name || 'Без имени'}

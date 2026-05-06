@@ -19,6 +19,15 @@ router = APIRouter()
 
 
 @router.get("/{vacancy_id}/applications", response_model=List[ApplicationResponse])
+
+def _entity_photo(entity):
+    """photo_url из Entity.extra_data — magic-button и hh.ru-парсер кладут сюда."""
+    if entity is None:
+        return None
+    ed = entity.extra_data if isinstance(entity.extra_data, dict) else {}
+    photo = ed.get("photo_url") if ed else None
+    return photo if isinstance(photo, str) else None
+
 async def list_applications(
     vacancy_id: int,
     stage: Optional[ApplicationStage] = None,
@@ -75,6 +84,8 @@ async def list_applications(
             entity_email=entity.email if entity else None,
             entity_phone=entity.phone if entity else None,
             entity_position=entity.position if entity else None,
+
+            entity_photo=_entity_photo(entity),
             stage=app.stage,
             stage_order=app.stage_order or 0,
             rating=app.rating,
@@ -222,6 +233,8 @@ async def create_application(
         entity_email=entity.email,
         entity_phone=entity.phone,
         entity_position=entity.position,
+
+        entity_photo=_entity_photo(entity),
         stage=application.stage,
         stage_order=application.stage_order or 0,
         rating=application.rating,
@@ -374,6 +387,8 @@ async def update_application(
         entity_email=entity.email if entity else None,
         entity_phone=entity.phone if entity else None,
         entity_position=entity.position if entity else None,
+
+        entity_photo=_entity_photo(entity),
         stage=application.stage,
         stage_order=application.stage_order or 0,
         rating=application.rating,

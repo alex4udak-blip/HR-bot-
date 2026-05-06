@@ -286,6 +286,21 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         "magic_button": True,
         "comment": data.comment,
     }
+    # Если рекрут написал коммент в попапе расширения — кладём его в notes-массив
+    # (тот же формат что использует /all-candidates → блок "Комментарии").
+    # Иначе коммент висит только в extra_data.comment и нигде не отображается.
+    if data.comment and data.comment.strip():
+        import uuid
+        from datetime import timezone as _tz
+        extra["notes"] = [{
+            "id": str(uuid.uuid4()),
+            "text": data.comment.strip(),
+            "date": datetime.now(_tz.utc).isoformat(),
+            "stage": "new",
+            "stage_label": "Новый",
+            "author_id": current_user.id,
+            "author_name": current_user.name,
+        }]
     if data.photo_url:
         extra["photo_url"] = data.photo_url
     if data.city:

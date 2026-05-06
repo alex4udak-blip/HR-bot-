@@ -570,6 +570,7 @@ class ApplicationResponse(BaseModel):
     entity_phone: Optional[str] = None
     entity_telegram: Optional[str] = None
     entity_position: Optional[str] = None
+    entity_photo: Optional[str] = None  # photo URL для аватара в списке
     stage: ApplicationStage
     stage_order: int = 0
     rating: Optional[int] = None
