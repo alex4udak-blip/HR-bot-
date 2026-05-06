@@ -987,9 +987,17 @@ export default function VacanciesPage() {
                     {/* Assignment actions */}
                     {(() => {
                       const isRequestForMe = !isAdmin && user && vacancy.created_by !== user.id && isAssignedToMe(vacancy);
-                      const showAdminAssign = isAdmin && (vacancy.status === 'pending_review' || vacancy.status === 'draft');
+                      // Админ видит «Назначить» на pending_review/draft, и
+                      // «Переназначить» на open — на случай если хочет сменить состав.
+                      const isAlreadyAssigned = vacancy.assigned_to_all || (vacancy.assigned_to && vacancy.assigned_to.length > 0);
+                      const showAdminAssign = isAdmin && (
+                        vacancy.status === 'pending_review' ||
+                        vacancy.status === 'draft' ||
+                        (vacancy.status === 'open' && !isAlreadyAssigned)
+                      );
+                      const showAdminReassign = isAdmin && vacancy.status === 'open' && isAlreadyAssigned;
                       const showTakeBtn = isRequestForMe && !hasAlreadyTaken(vacancy);
-                      if (!showAdminAssign && !showTakeBtn) return null;
+                      if (!showAdminAssign && !showAdminReassign && !showTakeBtn) return null;
                       return (
                         <div className="mt-3 flex items-center gap-2">
                           {showAdminAssign && (
@@ -998,7 +1006,16 @@ export default function VacanciesPage() {
                               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/20 rounded-lg transition-colors"
                             >
                               <UserPlus className="w-3.5 h-3.5" />
-                              Назначить
+                              {isAlreadyAssigned ? 'Переназначить' : 'Назначить'}
+                            </button>
+                          )}
+                          {showAdminReassign && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setAssigningVacancy(vacancy); }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white/[0.05] hover:bg-white/[0.08] text-white/60 border border-white/[0.1] rounded-lg transition-colors"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              Переназначить
                             </button>
                           )}
                           {showTakeBtn && (

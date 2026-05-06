@@ -695,6 +695,15 @@ async def assign_vacancy(
         vacancy.assigned_to_all = False
         vacancy.assigned_to = list(dict.fromkeys(data.user_ids))  # unique, preserve order
 
+    # Если кто-то реально назначен — переводим заявку из pending_review в open.
+    # Иначе админ снова и снова видит кнопку 'Назначить' и думает что save
+    # не прошёл. Назначили = это уже открытая позиция в работе.
+    has_assignment = vacancy.assigned_to_all or (vacancy.assigned_to and len(vacancy.assigned_to) > 0)
+    if has_assignment and vacancy.status in (VacancyStatus.pending_review, VacancyStatus.draft):
+        vacancy.status = VacancyStatus.open
+        if not vacancy.published_at:
+            vacancy.published_at = datetime.utcnow()
+
     await db.commit()
     await db.refresh(vacancy)
     logger.info(f"Vacancy {vacancy_id} assigned: all={vacancy.assigned_to_all}, ids={vacancy.assigned_to}")
