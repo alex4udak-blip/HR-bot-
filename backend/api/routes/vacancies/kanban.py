@@ -46,18 +46,48 @@ async def get_kanban_board(
     if not await can_access_vacancy(vacancy, current_user, org, db):
         raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
-    # Derive stage_config from vacancy.custom_stages when present,
-    # falling back to the default HR pipeline. Лейблы согласованы с
-    # KANBAN_STATUS_LABELS / фронтом — единый набор по всему приложению.
+    # Org-level кастомизация лейблов с /all-candidates → ⚙️ Настройка этапов.
+    # Org config хранит EntityStatus-ключи (new/screening/practice/...).
+    # ApplicationStage и EntityStatus связаны через STAGE_SYNC_MAP, поэтому
+    # для каждой колонки воронки находим соответствующий EntityStatus и
+    # подтягиваем его лейбл из org-config (если задан).
+    from ...models.database import STAGE_SYNC_MAP, Organization
+    org_stage_overrides: dict[str, str] = {}
+    if org:
+        org_row = await db.get(Organization, org.id)
+        cfg = (org_row.settings or {}).get("stage_config") if org_row else None
+        if isinstance(cfg, list):
+            for s in cfg:
+                if isinstance(s, dict) and s.get("key") and s.get("label"):
+                    org_stage_overrides[s["key"]] = s["label"]
+
+    def _label_for(app_stage: ApplicationStage, fallback: str) -> str:
+        # ApplicationStage → EntityStatus → org-level label
+        entity_status = STAGE_SYNC_MAP.get(app_stage)
+        if entity_status is not None:
+            key = entity_status.value if hasattr(entity_status, "value") else str(entity_status)
+            return org_stage_overrides.get(key, fallback)
+        return fallback
+
+    # Default labels for ApplicationStage (если у орги нет кастомизации
+    # — берутся отсюда). Должны совпадать с дефолтами /all-candidates.
+    _DEFAULTS = {
+        ApplicationStage.applied: "Новый",
+        ApplicationStage.screening: "Скрининг",
+        ApplicationStage.phone_screen: "Практика",
+        ApplicationStage.interview: "Тех-практика",
+        ApplicationStage.assessment: "ИС",
+        ApplicationStage.offer: "Оффер",
+        ApplicationStage.hired: "Принят",
+        ApplicationStage.rejected: "Отклонён",
+    }
     default_stage_config = [
-        (ApplicationStage.applied, "Новый", [ApplicationStage.applied]),
-        (ApplicationStage.screening, "Скрининг", [ApplicationStage.screening]),
-        (ApplicationStage.phone_screen, "Практика", [ApplicationStage.phone_screen]),
-        (ApplicationStage.interview, "Тех-практика", [ApplicationStage.interview]),
-        (ApplicationStage.assessment, "ИС", [ApplicationStage.assessment]),
-        (ApplicationStage.offer, "Оффер", [ApplicationStage.offer]),
-        (ApplicationStage.hired, "Принят", [ApplicationStage.hired]),
-        (ApplicationStage.rejected, "Отклонён", [ApplicationStage.rejected]),
+        (s, _label_for(s, _DEFAULTS[s]), [s]) for s in [
+            ApplicationStage.applied, ApplicationStage.screening,
+            ApplicationStage.phone_screen, ApplicationStage.interview,
+            ApplicationStage.assessment, ApplicationStage.offer,
+            ApplicationStage.hired, ApplicationStage.rejected,
+        ]
     ]
 
     custom_columns = (vacancy.custom_stages or {}).get("columns") if vacancy.custom_stages else None

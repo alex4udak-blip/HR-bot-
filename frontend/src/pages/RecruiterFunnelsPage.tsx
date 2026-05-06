@@ -35,6 +35,7 @@ import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
+import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote } from '@/services/api/entities';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
@@ -205,6 +206,30 @@ export default function RecruiterFunnelsPage() {
   const [addingToVacancy, setAddingToVacancy] = useState(false);
   const addToVacancyRef = useRef<HTMLDivElement>(null);
 
+  // Org-level лейблы этапов с /all-candidates → ⚙️.
+  // Маппинг: ApplicationStage (applied/screening/phone_screen/...) ↔
+  //          EntityStatus       (new/screening/practice/...)
+  const APP_TO_ENTITY_STAGE: Record<string, string> = {
+    applied: 'new',
+    screening: 'screening',
+    phone_screen: 'practice',
+    interview: 'tech_practice',
+    assessment: 'is_interview',
+    offer: 'offer',
+    hired: 'hired',
+    rejected: 'rejected',
+  };
+  const [orgStageOverrides, setOrgStageOverrides] = useState<Record<string, string>>({});
+  useEffect(() => {
+    getOrgStages()
+      .then((r) => {
+        const map: Record<string, string> = {};
+        r.stages.forEach((s) => { map[s.key] = s.label; });
+        setOrgStageOverrides(map);
+      })
+      .catch(() => { /* не критично — будут дефолты */ });
+  }, []);
+
   // Load data
   useEffect(() => {
     fetchVacancies();
@@ -337,6 +362,13 @@ export default function RecruiterFunnelsPage() {
     colorKeys: Record<string, string>;   // column key → color key for STAGE_COLORS
     isVirtual: Record<string, boolean>;  // column key → has maps_to (can be deleted)
   } => {
+    // Утилита: для App-стадии находим org-override через mapping → EntityStatus.
+    const labelFor = (appStage: string, fallback: string): string => {
+      const entityKey = APP_TO_ENTITY_STAGE[appStage];
+      if (entityKey && orgStageOverrides[entityKey]) return orgStageOverrides[entityKey];
+      return fallback;
+    };
+
     const cols = selectedVacancy?.custom_stages?.columns as StageColumn[] | undefined;
     if (cols && cols.length > 0) {
       const visible = cols.filter(c => c.visible);
@@ -348,7 +380,12 @@ export default function RecruiterFunnelsPage() {
       }
       return {
         keys: visible.map(c => c.key),
-        labels: Object.fromEntries(visible.map(c => [c.key, c.label])),
+        // Per-vacancy custom_stages всё ещё имеют приоритет, но если
+        // лейбл там пустой/совпадает с дефолтом — берём org-override.
+        labels: Object.fromEntries(visible.map(c => {
+          const appKey = c.maps_to || c.key;
+          return [c.key, labelFor(appKey, c.label)];
+        })),
         keyToEnum: Object.fromEntries(visible.map(c => [c.key, c.maps_to || c.key])),
         enumToKeys,
         colorKeys: Object.fromEntries(visible.map(c => [c.key, colorToStageColor(c.color, c.maps_to || c.key)])),
@@ -359,13 +396,14 @@ export default function RecruiterFunnelsPage() {
     for (const s of STAGE_ORDER) enumToKeys[s] = [s];
     return {
       keys: [...STAGE_ORDER],
-      labels: { ...STAGE_LABELS },
+      // Для дефолтной воронки лейбл = org-override либо STAGE_LABELS.
+      labels: Object.fromEntries(STAGE_ORDER.map(s => [s, labelFor(s, STAGE_LABELS[s] || s)])),
       keyToEnum: Object.fromEntries(STAGE_ORDER.map(s => [s, s])),
       enumToKeys,
       colorKeys: Object.fromEntries(STAGE_ORDER.map(s => [s, s])),
       isVirtual: Object.fromEntries(STAGE_ORDER.map(s => [s, false])),
     };
-  }, [selectedVacancy]);
+  }, [selectedVacancy, orgStageOverrides]);
 
   // Group candidates by stage columns (handles virtual stages via maps_to)
   const groupedByStage = useMemo(() => {
