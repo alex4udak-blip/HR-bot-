@@ -13,7 +13,7 @@ from datetime import datetime
 from ..database import get_db
 from ..models.database import (
     Entity, EntityType, EntityStatus, EntityFile, EntityFileType,
-    User, Vacancy, VacancyApplication, ApplicationStage, StageTransition,
+    User, Vacancy, VacancyStatus, VacancyApplication, ApplicationStage, StageTransition,
 )
 from ..services.auth import get_current_user, get_user_org
 
@@ -647,13 +647,23 @@ async def get_my_vacancies_for_extension(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get recruiter's vacancies for the extension popup dropdown."""
+    """Get recruiter's vacancies for the extension popup dropdown.
+
+    Включаем активные статусы: open, pending_review, draft (legacy).
+    Исключаем paused/closed/cancelled — туда добавлять кандидатов нельзя.
+    pending_review нужен потому что после миграции a1727dd все новые
+    вакансии создаются в pending_review до апрува админом, и без
+    включения этого статуса дропдаун окажется пустым."""
     org = await get_user_org(current_user, db)
     result = await db.execute(
         select(Vacancy).where(
             Vacancy.org_id == org.id,
             Vacancy.created_by == current_user.id,
-            Vacancy.status == 'open',
+            Vacancy.status.in_([
+                VacancyStatus.open,
+                VacancyStatus.pending_review,
+                VacancyStatus.draft,
+            ]),
         ).order_by(Vacancy.title)
     )
     vacancies = result.scalars().all()
