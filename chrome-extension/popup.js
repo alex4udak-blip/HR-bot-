@@ -375,19 +375,55 @@ async function checkDuplicatesOnLoad() {
 }
 
 async function loadVacancies() {
-  try {
-    const resp = await apiRequest('GET', '/api/magic-button/vacancies');
-    if (resp.success) {
-      vacancies = resp.data;
-      const select = document.getElementById('funnelSelect');
-      select.innerHTML = '<option value="">Без воронки</option>';
-      vacancies.forEach(v => {
-        select.innerHTML += `<option value="${v.id}">${v.title}</option>`;
-      });
+  // Маша: иногда воронки пропадали и появлялись через 5 минут — это
+  // совпадало с redeploy Railway / временным таймаутом сети. Раньше
+  // молчаливо ловили catch и оставляли пустой селект. Теперь:
+  //  • до 3 попыток с задержкой 1.5с / 3с
+  //  • показываем явный disabled-option «не удалось загрузить» если все упали
+  //  • показываем «нет открытых воронок» если API вернул пустой массив
+  const select = document.getElementById('funnelSelect');
+  select.innerHTML = '<option value="">Загружаем воронки…</option>';
+  select.disabled = true;
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const resp = await apiRequest('GET', '/api/magic-button/vacancies');
+      if (resp.success && Array.isArray(resp.data)) {
+        vacancies = resp.data;
+        select.disabled = false;
+        if (vacancies.length === 0) {
+          select.innerHTML =
+            '<option value="">Без воронки</option>' +
+            '<option value="" disabled>— у вас нет открытых воронок —</option>';
+        } else {
+          select.innerHTML = '<option value="">Без воронки</option>';
+          vacancies.forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v.id;
+            opt.textContent = v.title;
+            select.appendChild(opt);
+          });
+        }
+        return;
+      }
+      lastError = resp && resp.error ? resp.error : 'unknown error';
+      console.warn(`[HR-Bot] loadVacancies attempt ${attempt} failed:`, lastError);
+    } catch (e) {
+      lastError = e && e.message ? e.message : String(e);
+      console.warn(`[HR-Bot] loadVacancies attempt ${attempt} threw:`, lastError);
     }
-  } catch (e) {
-    console.error('Failed to load vacancies:', e);
+    if (attempt < 3) {
+      await new Promise(r => setTimeout(r, attempt * 1500));
+    }
   }
+
+  // Все попытки упали — показываем явную ошибку, не пустой дропдаун.
+  console.error('Failed to load vacancies after retries:', lastError);
+  select.innerHTML =
+    '<option value="">Без воронки</option>' +
+    '<option value="" disabled>⚠ не удалось загрузить — нажмите «Перезагрузить»</option>';
+  select.disabled = false;
 }
 
 async function apiRequest(method, path, body, timeoutMs = 30000) {
