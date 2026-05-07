@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy import select, or_, String
+from sqlalchemy import select, or_, String, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from typing import Optional
@@ -403,10 +403,25 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         if my_clone_id:
             target_vacancy_id = my_clone_id
 
+        # Маша: новый кандидат должен оказываться вверху колонки, а не в
+        # хвосте. Аналогично applications.create_application: stage_order =
+        # min - 1000, чтобы при сортировке ORDER BY stage_order ASC новый
+        # был самым первым. Без этого новый получал default=0 и падал
+        # ниже existing рядов с отрицательным stage_order.
+        min_order_q = await db.execute(
+            select(func.min(VacancyApplication.stage_order)).where(
+                VacancyApplication.vacancy_id == target_vacancy_id,
+                VacancyApplication.stage == ApplicationStage.applied,
+            )
+        )
+        min_order = min_order_q.scalar()
+        new_order = (min_order - 1000) if min_order is not None else 0
+
         app = VacancyApplication(
             vacancy_id=target_vacancy_id,
             entity_id=entity.id,
             stage=ApplicationStage.applied,
+            stage_order=new_order,
             source=data.source,
         )
         db.add(app)
