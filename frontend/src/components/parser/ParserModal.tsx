@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Search, Link, FileText, Upload, Loader2, AlertCircle, UserCheck, Plus } from 'lucide-react';
+import { X, Search, Link, FileText, Upload, Loader2, AlertCircle, UserCheck, Plus, Briefcase } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import type { ParsedResume, ParsedVacancy } from '@/services/api';
@@ -10,9 +10,12 @@ import {
   parseVacancyFromUrl,
   getEntities,
   uploadEntityFile,
+  createEntityFromResume,
+  getVacancies,
+  createApplication,
 } from '@/services/api';
 import ParsedDataPreview from './ParsedDataPreview';
-import type { Entity } from '@/types';
+import type { Entity, Vacancy } from '@/types';
 
 interface ParserModalProps {
   type: 'resume' | 'vacancy';
@@ -80,6 +83,30 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
   const [isSearchingCandidates, setIsSearchingCandidates] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isAttaching, setIsAttaching] = useState(false);
+
+  // Vacancy attachment state — кандидата можно сразу добавить на воронку
+  const [vacancyOptions, setVacancyOptions] = useState<Pick<Vacancy, 'id' | 'title'>[]>([]);
+  const [selectedVacancyId, setSelectedVacancyId] = useState<number | ''>('');
+  const [isCreating, setIsCreating] = useState(false);
+
+  // Подгружаем список своих воронок один раз — нужен только в режиме резюме.
+  useEffect(() => {
+    if (type !== 'resume') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const all = await getVacancies({ status: 'open' });
+        if (cancelled) return;
+        const myOpen = all
+          .filter(v => v.status === 'open' || v.status === 'pending_review')
+          .map(v => ({ id: v.id, title: v.title }));
+        setVacancyOptions(myOpen);
+      } catch (e) {
+        console.warn('Failed to load vacancies for attach picker:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [type]);
 
   const detectedSource = url ? detectSource(url) : null;
   const isUrlValid = url && isValidUrl(url);
@@ -244,7 +271,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
     setParsedData(data);
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!parsedData) return;
 
     // Validate required fields
@@ -254,15 +281,65 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
         toast.error('Название вакансии обязательно');
         return;
       }
-    } else {
-      const resumeData = parsedData as ParsedResume;
-      if (!resumeData.name?.trim()) {
-        toast.error('Имя контакта обязательно');
-        return;
-      }
+      onParsed(parsedData);
+      return;
     }
 
-    onParsed(parsedData);
+    const resumeData = parsedData as ParsedResume;
+    if (!resumeData.name?.trim()) {
+      toast.error('Имя контакта обязательно');
+      return;
+    }
+
+    // Резюме: создаём кандидата здесь же. Раньше onParsed только показывал
+    // toast и ничего не создавал — пользователи жаловались «куда этот файл
+    // загружается». Теперь либо createEntityFromResume (если есть файл,
+    // он же приложит резюме как файл к карточке), либо парент-форма
+    // (URL-парс — там нужны доп. поля).
+    setIsCreating(true);
+    try {
+      let createdEntityId: number | null = null;
+
+      if (uploadedFile) {
+        const resp = await createEntityFromResume(uploadedFile);
+        createdEntityId = resp?.entity?.id ?? null;
+      } else {
+        // URL-парсинг — оставляем парент-flow (CandidatesDatabase открывает
+        // pre-filled CreateCandidateModal). Просто пробрасываем данные.
+        onParsed(parsedData);
+        return;
+      }
+
+      if (!createdEntityId) {
+        toast.error('Кандидат не создан — попробуйте ещё раз');
+        return;
+      }
+
+      // Опционально цепляем на воронку.
+      if (selectedVacancyId) {
+        try {
+          await createApplication(Number(selectedVacancyId), {
+            vacancy_id: Number(selectedVacancyId),
+            entity_id: createdEntityId,
+            source: 'resume_upload',
+          });
+          const vacancyTitle = vacancyOptions.find(v => v.id === selectedVacancyId)?.title;
+          toast.success(`Кандидат добавлен на воронку «${vacancyTitle ?? '...'}»`);
+        } catch (e) {
+          console.error('Attach to vacancy failed:', e);
+          toast.error('Кандидат создан, но не удалось добавить на воронку');
+        }
+      } else {
+        toast.success('Кандидат добавлен');
+      }
+
+      onParsed(parsedData);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Ошибка создания кандидата';
+      toast.error(msg);
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -517,6 +594,32 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                 onDataChange={handleDataChange}
               />
 
+              {/* Vacancy attach picker — только для резюме с загруженным файлом.
+                  Для URL-резюме сначала открывается форма редактирования карточки,
+                  поэтому пикер тут не имеет смысла. */}
+              {isResume && uploadedFile && (
+                <div className="border-t border-white/10 pt-4">
+                  <label className="block text-sm font-medium text-white/70 mb-2 flex items-center gap-2">
+                    <Briefcase className="w-4 h-4" />
+                    Добавить на воронку (опционально)
+                  </label>
+                  <select
+                    value={selectedVacancyId}
+                    onChange={(e) => setSelectedVacancyId(e.target.value ? Number(e.target.value) : '')}
+                    className="w-full px-3 py-2.5 glass-light border border-white/10 rounded-lg text-sm focus:outline-none focus:border-cyan-500"
+                    disabled={isCreating}
+                  >
+                    <option value="">— без воронки —</option>
+                    {vacancyOptions.map(v => (
+                      <option key={v.id} value={v.id}>{v.title}</option>
+                    ))}
+                  </select>
+                  {vacancyOptions.length === 0 && (
+                    <p className="text-xs text-white/40 mt-1.5">У вас нет открытых воронок</p>
+                  )}
+                </div>
+              )}
+
               {/* Matched candidates section for resume */}
               {isResume && (isSearchingCandidates || matchedCandidates.length > 0) && (
                 <div className="border-t border-white/10 pt-4">
@@ -575,10 +678,17 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
           {parsedData && (
             <button
               onClick={handleCreate}
-              className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition-colors"
+              disabled={isCreating}
+              className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
             >
-              <Plus className="w-4 h-4" aria-hidden="true" />
-              {isResume ? 'Создать нового кандидата' : 'Создать вакансию'}
+              {isCreating ? (
+                <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Plus className="w-4 h-4" aria-hidden="true" />
+              )}
+              {isResume
+                ? (selectedVacancyId ? 'Создать и добавить на воронку' : 'Создать нового кандидата')
+                : 'Создать вакансию'}
             </button>
           )}
         </div>
