@@ -443,22 +443,25 @@ async def apply_entity_to_vacancy(
             detail="Candidate is already applied to this vacancy"
         )
 
-    # Get max stage_order for the 'applied' stage
-    max_order_result = await db.execute(
-        select(func.max(VacancyApplication.stage_order))
+    # Маша: новый кандидат должен быть сверху колонки, а не в хвосте.
+    # Та же логика что в applications.create_application и magic_button:
+    # stage_order = min - 1000.
+    min_order_result = await db.execute(
+        select(func.min(VacancyApplication.stage_order))
         .where(
             VacancyApplication.vacancy_id == data.vacancy_id,
             VacancyApplication.stage == ApplicationStage.applied
         )
     )
-    max_order = max_order_result.scalar() or 0
+    min_order = min_order_result.scalar()
+    new_order = (min_order - 1000) if min_order is not None else 0
 
     # Create application
     application = VacancyApplication(
         vacancy_id=data.vacancy_id,
         entity_id=entity_id,
         stage=ApplicationStage.applied,
-        stage_order=max_order + 1,
+        stage_order=new_order,
         source=data.source,
         notes=data.notes,
         created_by=current_user.id
