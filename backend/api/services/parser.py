@@ -99,6 +99,15 @@ class ParsedResume(BaseModel):
             return []
         return v
 
+    @field_validator('salary_currency', mode='before')
+    @classmethod
+    def ensure_currency(cls, v):
+        """Если Claude вернул null (нет указанной валюты в резюме) —
+        фолбек на RUB вместо ошибки валидации Pydantic."""
+        if v is None or v == "":
+            return "RUB"
+        return v
+
 
 class ParsedVacancy(BaseModel):
     """Extracted vacancy data"""
@@ -110,6 +119,14 @@ class ParsedVacancy(BaseModel):
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
     salary_currency: str = "RUB"
+
+    @field_validator('salary_currency', mode='before')
+    @classmethod
+    def ensure_currency(cls, v):
+        """Тот же фолбек что и в ParsedResume — null → RUB."""
+        if v is None or v == "":
+            return "RUB"
+        return v
     location: Optional[str] = None
     employment_type: Optional[str] = None  # full-time, part-time, remote
     experience_level: Optional[str] = None  # junior, middle, senior
