@@ -569,6 +569,53 @@ def _clean_json_response(response_text: str) -> str:
     return response_text
 
 
+def _repair_truncated_json(json_str: str) -> str:
+    """Best-effort repair для усечённого JSON (Claude упёрся в max_tokens).
+    Стратегия: сканируем строку, считаем открытые { и [, закрываем их;
+    если оборвало посередине строки — закрываем кавычку. Не идеально,
+    но лучше чем падать с invalid JSON."""
+    if not json_str:
+        return json_str
+    s = json_str.rstrip()
+    # Если последний значимый символ — запятая, отрезаем (trailing comma).
+    while s.endswith(','):
+        s = s[:-1].rstrip()
+
+    # Сканируем посимвольно, отслеживая контекст строк и стеки скобок.
+    in_string = False
+    escape = False
+    stack: list[str] = []
+    for ch in s:
+        if escape:
+            escape = False
+            continue
+        if ch == '\\' and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == '{':
+            stack.append('}')
+        elif ch == '[':
+            stack.append(']')
+        elif ch in ('}', ']'):
+            if stack and stack[-1] == ch:
+                stack.pop()
+
+    # Если оборвало в строке — закрываем её.
+    if in_string:
+        s += '"'
+    # Если последний символ перед закрытием стал запятой/двоеточием — обрезаем.
+    s = re.sub(r'[,:]\s*$', '', s)
+    # Закрываем оставшиеся { и [ в обратном порядке.
+    for closer in reversed(stack):
+        s += closer
+    return s
+
+
 async def parse_with_ai(
     content: str,
     parse_type: Literal["resume", "vacancy"],
@@ -596,10 +643,13 @@ async def parse_with_ai(
         if source_context:
             prompt = source_context + "\n\n" + prompt
 
+    response_text = ""
     try:
         response = await client.messages.create(
             model=settings.claude_model,
-            max_tokens=2048,
+            # 8192 чтобы длинные резюме (опыт работы 15+ лет) не упирались
+            # в лимит и JSON не обрывался на середине.
+            max_tokens=8192,
             messages=[{"role": "user", "content": prompt}],
         )
 
@@ -607,14 +657,28 @@ async def parse_with_ai(
 
         # Clean and parse JSON response
         json_str = _clean_json_response(response_text)
-        result = json.loads(json_str)
-
-        return result
-
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse AI response as JSON: {e}")
-        logger.debug(f"Raw response: {response_text[:500] if response_text else 'empty'}")
-        raise ValueError(f"AI returned invalid JSON: {str(e)}")
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError as e_strict:
+            # Fallback: пробуем починить усечённый/невалидный JSON.
+            # Чаще всего это max_tokens cutoff (хотя 8192 редко бьём)
+            # или непроэкранированная кавычка внутри строки.
+            repaired = _repair_truncated_json(json_str)
+            try:
+                result = json.loads(repaired)
+                logger.warning(
+                    f"AI JSON was malformed but repaired: {e_strict}. "
+                    f"Repaired length={len(repaired)} (orig={len(json_str)})"
+                )
+                return result
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse AI response as JSON (strict + repair): {e_strict}")
+                logger.debug(f"Raw response (first 1000 chars): {response_text[:1000]}")
+                raise ValueError(
+                    "AI вернул некорректный JSON. Попробуйте ещё раз — обычно помогает."
+                )
+    except ValueError:
+        raise
     except Exception as e:
         logger.error(f"AI parsing failed: {e}")
         raise
