@@ -283,6 +283,140 @@ async def standup_reminder_task():
             await asyncio.sleep(3600)
 
 
+async def daily_review_check_task():
+    """Daily 20:00 МСК: для каждой орги собрать список юзеров, которые сегодня
+    не двинули ни одной таски в статус review, и отправить этот список
+    каждому owner/admin орги в Telegram. Главный сигнал «человек работал».
+    Если у юзера нет telegram_id — он не учитывается в рассылке (как admin),
+    но в списке появляется.
+    """
+    from datetime import datetime, timedelta, timezone
+    from api.database import AsyncSessionLocal
+    from api.models.database import (
+        User, Organization, OrgMember, OrgRole, ProjectTask, TaskStatus, Project,
+    )
+    from sqlalchemy import select
+
+    MSK = timezone(timedelta(hours=3))
+
+    # Wait for bot startup
+    await asyncio.sleep(60)
+
+    while True:
+        try:
+            now_msk = datetime.now(MSK)
+            target = now_msk.replace(hour=20, minute=0, second=0, microsecond=0)
+            if now_msk >= target:
+                target += timedelta(days=1)
+            wait_seconds = (target - now_msk).total_seconds()
+            logger.info(
+                f"Daily review check: next run in {wait_seconds:.0f}s "
+                f"(at {target.strftime('%Y-%m-%d %H:%M %Z')})"
+            )
+            await asyncio.sleep(wait_seconds)
+
+            # 20:00 МСК. «Сегодня» = с 00:00 МСК до сейчас.
+            today_start_msk = datetime.now(MSK).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_start_utc = today_start_msk.astimezone(timezone.utc).replace(tzinfo=None)
+
+            async with AsyncSessionLocal() as db:
+                # По каждой орге отдельный отчёт.
+                orgs = (await db.execute(select(Organization))).scalars().all()
+
+                from api.bot import get_bot
+                bot = get_bot()
+
+                for org in orgs:
+                    members_q = await db.execute(
+                        select(OrgMember).where(OrgMember.org_id == org.id)
+                    )
+                    members = list(members_q.scalars().all())
+                    if not members:
+                        continue
+
+                    user_ids = [m.user_id for m in members]
+                    users_q = await db.execute(
+                        select(User).where(User.id.in_(user_ids))
+                    )
+                    users = {u.id: u for u in users_q.scalars().all()}
+
+                    # Кто двинул хотя бы одну таску в review за сегодня?
+                    # (Аудит-лога нет — используем status=review AND updated_at >= today_start.
+                    # Прокси даёт ложно-положительные «работал», если юзер просто
+                    # отредактировал review-таску, но не ложно-отрицательные —
+                    # настоящего бездельника не пропустим.)
+                    project_ids_q = await db.execute(
+                        select(Project.id).where(Project.org_id == org.id)
+                    )
+                    project_ids = [r[0] for r in project_ids_q.all()]
+
+                    active_user_ids: set[int] = set()
+                    if project_ids:
+                        active_q = await db.execute(
+                            select(ProjectTask.assignee_id)
+                            .where(
+                                ProjectTask.project_id.in_(project_ids),
+                                ProjectTask.status == TaskStatus.review,
+                                ProjectTask.updated_at >= today_start_utc,
+                                ProjectTask.assignee_id.is_not(None),
+                            )
+                        )
+                        active_user_ids = {r[0] for r in active_q.all()}
+
+                    silent_users = [
+                        users[uid] for uid in user_ids
+                        if uid in users and uid not in active_user_ids
+                    ]
+
+                    # Кому шлём — owner и admin орги.
+                    recipients = [
+                        users[m.user_id] for m in members
+                        if m.role in (OrgRole.owner, OrgRole.admin)
+                        and users.get(m.user_id) and users[m.user_id].telegram_id
+                    ]
+                    if not recipients:
+                        logger.info(f"Daily review check: org {org.id} has no admins with telegram")
+                        continue
+
+                    if not silent_users:
+                        msg = (
+                            f"✅ <b>{datetime.now(MSK).strftime('%d.%m')} — все молодцы</b>\n\n"
+                            f"Сегодня каждый из {len(user_ids)} участников орги "
+                            f"перевёл хотя бы одну задачу в Ревью."
+                        )
+                    else:
+                        lines = [
+                            f"⚠️ <b>{datetime.now(MSK).strftime('%d.%m')} — никто не двинул таску в Ревью</b>",
+                            "",
+                            f"Тихие сегодня ({len(silent_users)} из {len(user_ids)}):",
+                        ]
+                        for u in silent_users:
+                            tag = f" @{u.telegram_username}" if u.telegram_username else ""
+                            lines.append(f"• {u.name}{tag}")
+                        msg = "\n".join(lines)
+
+                    sent = 0
+                    for admin in recipients:
+                        try:
+                            await bot.send_message(admin.telegram_id, msg, parse_mode="HTML")
+                            sent += 1
+                        except Exception as e:
+                            logger.warning(
+                                f"Daily review check: failed to DM admin {admin.id} "
+                                f"(tg {admin.telegram_id}): {e}"
+                            )
+                    logger.info(
+                        f"Daily review check (org {org.id}): silent={len(silent_users)}/"
+                        f"{len(user_ids)}, sent to {sent}/{len(recipients)} admins"
+                    )
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Daily review check task error: {e}", exc_info=True)
+            await asyncio.sleep(3600)
+
+
 async def check_playwright_status():
     """Check Playwright status at startup and log the result."""
     import os
@@ -381,6 +515,10 @@ async def lifespan(app: FastAPI):
     employee_reminders_bg_task = asyncio.create_task(employee_reminders_task())
     logger.info("Employee reminders task started (daily)")
 
+    # Daily 20:00 МСК review check — рассылка админам кто сегодня не двинул task в review
+    daily_review_bg_task = asyncio.create_task(daily_review_check_task())
+    logger.info("Daily review check task started (20:00 МСК)")
+
     # Standup reminder task — DISABLED (user requested removal)
     # standup_reminder_bg_task = asyncio.create_task(standup_reminder_task())
 
@@ -409,6 +547,8 @@ async def lifespan(app: FastAPI):
         saturn_sync_task.cancel()
     if employee_reminders_bg_task:
         employee_reminders_bg_task.cancel()
+    if daily_review_bg_task:
+        daily_review_bg_task.cancel()
     if standup_reminder_bg_task:
         standup_reminder_bg_task.cancel()
 
