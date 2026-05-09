@@ -515,9 +515,12 @@ async def lifespan(app: FastAPI):
     employee_reminders_bg_task = asyncio.create_task(employee_reminders_task())
     logger.info("Employee reminders task started (daily)")
 
-    # Daily 20:00 МСК review check — рассылка админам кто сегодня не двинул task в review
-    daily_review_bg_task = asyncio.create_task(daily_review_check_task())
-    logger.info("Daily review check task started (20:00 МСК)")
+    # Daily 20:00 МСК review check — DISABLED: рассылка уходила всем
+    # owner+admin орги (Егор, Маша, Настя), а должен получать только
+    # запросивший. Включить обратно когда уточним кому слать.
+    daily_review_bg_task = None
+    # daily_review_bg_task = asyncio.create_task(daily_review_check_task())
+    # logger.info("Daily review check task started (20:00 МСК)")
 
     # Standup reminder task — DISABLED (user requested removal)
     # standup_reminder_bg_task = asyncio.create_task(standup_reminder_task())
